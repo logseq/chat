@@ -99,3 +99,56 @@ CAMLprim value logseq_chat_https_send(value method, value url, value body, value
   NSString *result = [NSString stringWithFormat:@"%ld\n%@", (long)status, responseBody];
   CAMLreturn(LogseqChatCopyResult(result));
 }
+
+CAMLprim value logseq_chat_https_upload_file(value method, value url, value file_path,
+                                              value content_type, value token) {
+  CAMLparam5(method, url, file_path, content_type, token);
+
+  NSURL *requestURL = [NSURL URLWithString:LogseqChatString(url)];
+  NSURL *fileURL = [NSURL fileURLWithPath:LogseqChatString(file_path)];
+  if (requestURL == nil || ![[NSFileManager defaultManager] fileExistsAtPath:[fileURL path]]) {
+    CAMLreturn(caml_copy_string("ERROR\nInvalid upload URL or missing local file"));
+  }
+
+  NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:requestURL];
+  [request setHTTPMethod:LogseqChatString(method)];
+  [request setTimeoutInterval:LogseqChatRequestTimeout];
+  [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+  [request setValue:LogseqChatString(content_type) forHTTPHeaderField:@"Content-Type"];
+  [request setValue:[@"Bearer " stringByAppendingString:LogseqChatString(token)]
+      forHTTPHeaderField:@"Authorization"];
+
+  dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+  __block NSData *responseData = nil;
+  __block NSURLResponse *urlResponse = nil;
+  __block NSError *requestError = nil;
+  NSURLSessionUploadTask *task = [[NSURLSession sharedSession]
+      uploadTaskWithRequest:request
+                  fromFile:fileURL
+         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+           responseData = data;
+           urlResponse = response;
+           requestError = error;
+           dispatch_semaphore_signal(semaphore);
+         }];
+  [task resume];
+
+  dispatch_time_t timeout =
+      dispatch_time(DISPATCH_TIME_NOW, (int64_t)(LogseqChatRequestTimeout * NSEC_PER_SEC));
+  if (dispatch_semaphore_wait(semaphore, timeout) != 0) {
+    [task cancel];
+    CAMLreturn(caml_copy_string("ERROR\nHTTPS upload timed out after 30s"));
+  }
+  if (requestError != nil) {
+    NSString *message = [@"ERROR\n" stringByAppendingString:[requestError localizedDescription]];
+    CAMLreturn(LogseqChatCopyResult(message));
+  }
+  if (![urlResponse isKindOfClass:[NSHTTPURLResponse class]]) {
+    CAMLreturn(caml_copy_string("ERROR\nHTTPS upload response was not HTTP"));
+  }
+
+  NSInteger status = [(NSHTTPURLResponse *)urlResponse statusCode];
+  NSString *body = [[NSString alloc] initWithData:(responseData ?: [NSData data])
+                                         encoding:NSUTF8StringEncoding] ?: @"";
+  CAMLreturn(LogseqChatCopyResult([NSString stringWithFormat:@"%ld\n%@", (long)status, body]));
+}

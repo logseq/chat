@@ -1,5 +1,19 @@
 open Datascript
 
+type entity_summary =
+  { uuid : string
+  ; kind : string
+  ; title : string
+  }
+
+type status =
+  { uuid : string
+  ; ident : string option
+  ; title : string
+  ; icon_type : string option
+  ; icon_id : string option
+  }
+
 type block =
   { uuid : string
   ; kind : string
@@ -9,6 +23,13 @@ type block =
   ; created_at : int
   ; updated_at : int
   ; sync_status : string
+  ; tags : entity_summary list
+  ; references : entity_summary list
+  ; status : status option
+  ; asset_type : string option
+  ; asset_size : int option
+  ; asset_checksum : string option
+  ; local_path : string option
   }
 
 type t =
@@ -41,6 +62,13 @@ let schema =
   ; "block/created-at", one ~value_type:NumberType ~indexed:true ()
   ; "block/updated-at", one ~value_type:NumberType ~indexed:true ()
   ; "block/sync-status", one ~value_type:StringType ~indexed:true ()
+  ; "block/tags-json", one ~value_type:StringType ()
+  ; "block/references-json", one ~value_type:StringType ()
+  ; "block/status-json", one ~value_type:StringType ()
+  ; "block/asset-type", one ~value_type:StringType ~indexed:true ()
+  ; "block/asset-size", one ~value_type:NumberType ()
+  ; "block/asset-checksum", one ~value_type:StringType ()
+  ; "block/local-path", one ~value_type:StringType ()
   ; "page/journal-day", one ~value_type:NumberType ~indexed:true ()
   ; "page/title", one ~value_type:StringType ()
   ]
@@ -100,6 +128,65 @@ let option_string_attr db entity_ref attr =
   | None -> None
 ;;
 
+let summaries_json (summaries : entity_summary list) =
+  `List
+    (List.map
+       (fun (summary : entity_summary) ->
+         `Assoc
+           [ "uuid", `String summary.uuid
+           ; "kind", `String summary.kind
+           ; "title", `String summary.title
+           ])
+       summaries)
+  |> Yojson.Basic.to_string
+;;
+
+let summaries_of_json value =
+  match Yojson.Basic.from_string value with
+  | `List values ->
+    List.filter_map
+      (function
+        | `Assoc fields ->
+          (match List.assoc_opt "uuid" fields, List.assoc_opt "kind" fields, List.assoc_opt "title" fields with
+           | Some (`String uuid), Some (`String kind), Some (`String title) ->
+             Some { uuid; kind; title }
+           | _ -> None)
+        | _ -> None)
+      values
+  | _ -> []
+  | exception _ -> []
+;;
+
+let status_json (status : status) =
+  let optional name = function Some value -> [ name, `String value ] | None -> [] in
+  `Assoc
+    ([ "uuid", `String status.uuid; "title", `String status.title ]
+     @ optional "ident" status.ident
+     @ optional "icon-type" status.icon_type
+     @ optional "icon-id" status.icon_id)
+  |> Yojson.Basic.to_string
+;;
+
+let status_of_json value =
+  let string fields name =
+    match List.assoc_opt name fields with Some (`String value) -> Some value | _ -> None
+  in
+  match Yojson.Basic.from_string value with
+  | `Assoc fields ->
+    (match string fields "uuid", string fields "title" with
+     | Some uuid, Some title ->
+       Some
+         { uuid
+         ; ident = string fields "ident"
+         ; title
+         ; icon_type = string fields "icon-type"
+         ; icon_id = string fields "icon-id"
+         }
+     | _ -> None)
+  | _ -> None
+  | exception _ -> None
+;;
+
 let block_exists model uuid =
   entity_attr_value model.db (block_ref uuid) "block/uuid" <> None
 ;;
@@ -118,6 +205,13 @@ let read_block model uuid =
       ; created_at = int_attr model.db entity_ref "block/created-at" 0
       ; updated_at = int_attr model.db entity_ref "block/updated-at" 0
       ; sync_status = string_attr model.db entity_ref "block/sync-status" "synced"
+      ; tags = summaries_of_json (string_attr model.db entity_ref "block/tags-json" "[]")
+      ; references = summaries_of_json (string_attr model.db entity_ref "block/references-json" "[]")
+      ; status = Option.bind (option_string_attr model.db entity_ref "block/status-json") status_of_json
+      ; asset_type = option_string_attr model.db entity_ref "block/asset-type"
+      ; asset_size = Option.bind (entity_attr_value model.db entity_ref "block/asset-size") value_int
+      ; asset_checksum = option_string_attr model.db entity_ref "block/asset-checksum"
+      ; local_path = option_string_attr model.db entity_ref "block/local-path"
       })
 ;;
 
@@ -140,7 +234,7 @@ let journal_day_for_ms now =
 ;;
 
 let is_recent_feed_block model block =
-  String.equal block.kind "block"
+  not (String.equal block.kind "page")
   && not (String.equal (String.trim block.title) "")
   && block.page_id <> ""
   &&
@@ -204,7 +298,7 @@ let search model query =
   model.query <- query;
   all_blocks model
   |> List.filter (fun block ->
-    String.equal block.kind "block"
+    not (String.equal block.kind "page")
     && not (String.equal (String.trim block.title) ""))
   |> List.sort compare_recent
   |> List.filter (title_matches query)
@@ -252,7 +346,24 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
         ; Add (entity_ref, "block/created-at", Int created_at)
         ; Add (entity_ref, "block/updated-at", Int updated_at)
         ; Add (entity_ref, "block/sync-status", String block.sync_status)
+        ; Add (entity_ref, "block/tags-json", String (summaries_json block.tags))
+        ; Add (entity_ref, "block/references-json", String (summaries_json block.references))
         ]
+        @ (match block.status with
+           | Some status -> [ Add (entity_ref, "block/status-json", String (status_json status)) ]
+           | None -> [])
+        @ (match block.asset_type with
+           | Some value -> [ Add (entity_ref, "block/asset-type", String value) ]
+           | None -> [])
+        @ (match block.asset_size with
+           | Some value -> [ Add (entity_ref, "block/asset-size", Int value) ]
+           | None -> [])
+        @ (match block.asset_checksum with
+           | Some value -> [ Add (entity_ref, "block/asset-checksum", String value) ]
+           | None -> [])
+        @ (match block.local_path with
+           | Some value -> [ Add (entity_ref, "block/local-path", String value) ]
+           | None -> [])
         @
         match block.parent_id with
         | Some parent_id -> [ Add (entity_ref, "block/parent-id", String parent_id) ]
@@ -315,8 +426,37 @@ let cache_local_message model ~uuid ~title ~now =
       ; created_at = now
       ; updated_at = now
       ; sync_status = "pending"
+      ; tags = []
+      ; references = []
+      ; status = None
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
       }
     ]
+    ~refresh_time:now
+;;
+
+let cache_local_task model ~uuid ~title ~status ~now =
+  let page_id = journal_page_id_for_ms now in
+  upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
+  upsert_blocks model
+    [ { uuid; kind = "task"; title; page_id; parent_id = None; created_at = now
+      ; updated_at = now; sync_status = "pending"; tags = []; references = []
+      ; status = Some status; asset_type = None; asset_size = None
+      ; asset_checksum = None; local_path = None } ]
+    ~refresh_time:now
+;;
+
+let cache_local_asset model ~uuid ~title ~asset_type ~asset_size ~asset_checksum ~local_path ~now =
+  let page_id = journal_page_id_for_ms now in
+  upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
+  upsert_blocks model
+    [ { uuid; kind = "asset"; title; page_id; parent_id = None; created_at = now
+      ; updated_at = now; sync_status = "pending"; tags = []; references = []
+      ; status = None; asset_type = Some asset_type; asset_size = Some asset_size
+      ; asset_checksum = Some asset_checksum; local_path = Some local_path } ]
     ~refresh_time:now
 ;;
 

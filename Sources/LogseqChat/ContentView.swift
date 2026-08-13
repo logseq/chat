@@ -1,5 +1,9 @@
 import SwiftUI
 import LogseqChatModel
+#if !SKIP
+import CryptoKit
+import UniformTypeIdentifiers
+#endif
 
 struct ContentView: View {
     private static let blockListTopID = "block-list-top"
@@ -11,6 +15,8 @@ struct ContentView: View {
     @State private var searchExpanded = false
     @State private var settingsPresented = false
     @State private var detailBlock: LogseqBlock?
+    @State private var fileImporterPresented = false
+    @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var hasAutoScrolledInitially = false
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.token") private var token = ""
@@ -49,6 +55,15 @@ struct ContentView: View {
                 }
             )
         }
+        #if !SKIP
+        .fileImporter(
+            isPresented: $fileImporterPresented,
+            allowedContentTypes: [.image, .audio, .data],
+            allowsMultipleSelection: true
+        ) { result in
+            importAssets(result)
+        }
+        #endif
     }
 
     @ViewBuilder private var appShell: some View {
@@ -81,6 +96,9 @@ struct ContentView: View {
                     }
                     .navigationDestination(for: LogseqBlock.self) { block in
                         BlockDetailView(block: block, store: store)
+                    }
+                    .navigationDestination(for: LogseqEntitySummary.self) { entity in
+                        EntityDetailView(entity: entity, store: store)
                     }
             }
         #endif
@@ -439,13 +457,44 @@ struct ContentView: View {
                 .focused($composerFocused)
                 .accessibilityIdentifier("field.composer")
             HStack(spacing: 0) {
+                Menu {
+                    Button {
+                        fileImporterPresented = true
+                    } label: {
+                        HStack {
+                            IconImage(name: "paperclip")
+                            Text("Photo or file")
+                        }
+                    }
+                } label: {
+                    IconImage(name: "plus")
+                        .frame(width: 18, height: 18)
+                        .frame(width: 28, height: 28)
+                }
+                .accessibilityLabel("Add attachment")
+                .accessibilityIdentifier("button.attachment")
+                Menu {
+                    taskStatusButton(LogseqTaskStatus.todo)
+                    taskStatusButton(LogseqTaskStatus.doing)
+                    taskStatusButton(LogseqTaskStatus.done)
+                    if selectedTaskStatus != nil {
+                        Button("Clear task status") { selectedTaskStatus = nil }
+                    }
+                } label: {
+                    TaskStatusIcon(status: selectedTaskStatus ?? LogseqTaskStatus.todo)
+                        .opacity(selectedTaskStatus == nil ? 0.55 : 1)
+                        .frame(width: 18, height: 18)
+                        .frame(width: 30, height: 28)
+                }
+                .accessibilityLabel("Task status")
+                .accessibilityIdentifier("button.task-status")
                 Spacer()
                 Button {
                     sendDraft()
                 } label: {
                     IconImage(name: "arrow_upward")
-                        .frame(width: 10, height: 10)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 8, height: 8)
+                        .frame(width: 22, height: 22)
                 }
                 .platformGlassProminentButtonStyle()
                 .platformCircleButtonShape()
@@ -535,12 +584,87 @@ struct ContentView: View {
     }
 
     private func sendDraft() {
-        store.send(draft)
+        if let selectedTaskStatus {
+            store.sendTask(draft, status: selectedTaskStatus)
+        } else {
+            store.send(draft)
+        }
         draft = ""
         composerExpanded = true
         focusComposer()
     }
+
+    @ViewBuilder private func taskStatusButton(_ status: LogseqTaskStatus) -> some View {
+        Button {
+            selectedTaskStatus = status
+        } label: {
+            HStack {
+                TaskStatusIcon(status: status)
+                Text(verbatim: status.title)
+            }
+        }
+    }
+
+    #if !SKIP
+    private func importAssets(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else { return }
+        Task {
+            for url in urls {
+                do {
+                    let metadata = try await Self.persistImportedAsset(url)
+                    store.addAsset(
+                        title: metadata.title,
+                        assetType: metadata.assetType,
+                        assetSize: metadata.size,
+                        assetChecksum: metadata.checksum,
+                        localPath: metadata.path
+                    )
+                } catch {
+                    logger.error("Asset import failed: \(String(describing: error), privacy: .public)")
+                }
+            }
+        }
+    }
+
+    private nonisolated static func persistImportedAsset(_ sourceURL: URL) async throws -> ImportedAsset {
+        try await Task.detached(priority: .utility) {
+            let accessed = sourceURL.startAccessingSecurityScopedResource()
+            defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Assets", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent(UUID().uuidString + "-" + sourceURL.lastPathComponent)
+            try FileManager.default.copyItem(at: sourceURL, to: destination)
+            let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+            let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+            let handle = try FileHandle(forReadingFrom: destination)
+            defer { try? handle.close() }
+            var hash = SHA256()
+            while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
+                hash.update(data: chunk)
+            }
+            let checksum = hash.finalize().map { String(format: "%02x", $0) }.joined()
+            return ImportedAsset(
+                title: sourceURL.lastPathComponent,
+                assetType: destination.pathExtension.lowercased(),
+                size: size,
+                checksum: checksum,
+                path: destination.path
+            )
+        }.value
+    }
+    #endif
 }
+
+#if !SKIP
+private struct ImportedAsset: Sendable {
+    let title: String
+    let assetType: String
+    let size: Int
+    let checksum: String
+    let path: String
+}
+#endif
 
 private struct ConnectionSettingsView: View {
     @Binding var baseURL: String
@@ -775,11 +899,35 @@ private struct BlockRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
-                .font(.body)
-                .fontWeight(.medium)
-                .foregroundStyle(.primary)
-                .lineLimit(3)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let status = block.status {
+                    TaskStatusIcon(status: status)
+                }
+                if block.kind == "asset" {
+                    IconImage(name: block.assetType?.hasPrefix("m4") == true ? "audio" : "paperclip")
+                        .frame(width: 18, height: 18)
+                }
+                Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+            }
+            if !block.tags.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(block.tags) { tag in
+                        Text(verbatim: "#" + tag.title)
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                    }
+                }
+            }
+            if !block.references.isEmpty {
+                Text(verbatim: block.references.map { "[[\($0.title)]]" }.joined(separator: "  "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
             HStack(spacing: 6) {
                 Text(verbatim: block.timeTitle)
                     .font(.caption)
@@ -796,6 +944,26 @@ private struct BlockRow: View {
         .padding(14)
         .background(Color.white.opacity(0.72))
         .cornerRadius(18)
+    }
+}
+
+private struct TaskStatusIcon: View {
+    let status: LogseqTaskStatus
+
+    private var color: Color {
+        switch status.uuid.lowercased() {
+        case "done": return .green
+        case "doing": return .blue
+        case "canceled", "cancelled": return .red
+        default: return .secondary
+        }
+    }
+
+    var body: some View {
+        IconImage(name: status.icon?.id == "circle-check" ? "task_done" : "task_todo")
+            .frame(width: 18, height: 18)
+            .foregroundStyle(color)
+            .accessibilityLabel(status.title)
     }
 }
 
@@ -873,11 +1041,80 @@ private struct BlockDetailView: View {
                 }
                 DetailLine(label: "Created", value: "\(currentBlock.createdAt)")
                 DetailLine(label: "Updated", value: "\(currentBlock.updatedAt)")
+                if !currentBlock.tags.isEmpty {
+                    Text("Tags").font(.headline)
+                    ForEach(currentBlock.tags) { tag in
+                        NavigationLink(value: tag) {
+                            Text(verbatim: "#" + tag.title)
+                        }
+                    }
+                }
+                if !currentBlock.references.isEmpty {
+                    Text("References").font(.headline)
+                    ForEach(currentBlock.references) { reference in
+                        NavigationLink(value: reference) {
+                            Text(verbatim: "[[\(reference.title)]]")
+                        }
+                    }
+                }
+                RelatedBlocksList(blocks: store.snapshot.relatedBlocks ?? [])
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
         }
         .navigationTitle("Block")
+        .task {
+            store.loadBlockReferences(currentBlock.uuid)
+        }
+        .onDisappear {
+            store.clearRelated()
+        }
+    }
+}
+
+private struct EntityDetailView: View {
+    let entity: LogseqEntitySummary
+    let store: LogseqChatStore
+
+    var body: some View {
+        List {
+            Section {
+                Text(verbatim: entity.title)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+            }
+            Section(entity.kind == "tag" ? "Objects" : "References") {
+                RelatedBlocksList(blocks: store.snapshot.relatedBlocks ?? [])
+            }
+        }
+        .navigationTitle(entity.kind == "tag" ? "Tag" : "Reference")
+        .task {
+            switch entity.kind {
+            case "tag": store.loadTagObjects(entity.uuid)
+            case "page": store.loadPageReferences(entity.uuid)
+            default: store.loadBlockReferences(entity.uuid)
+            }
+        }
+        .onDisappear {
+            store.clearRelated()
+        }
+    }
+}
+
+private struct RelatedBlocksList: View {
+    let blocks: [LogseqBlock]
+
+    var body: some View {
+        ForEach(blocks) { block in
+            NavigationLink(value: block) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: block.title)
+                    Text(verbatim: block.timeTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 }
 

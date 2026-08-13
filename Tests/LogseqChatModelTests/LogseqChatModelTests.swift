@@ -2,6 +2,23 @@ import Testing
 import Foundation
 @testable import LogseqChatModel
 
+private let testEmptySnapshotJSON = """
+{
+  "apiVersion": 1,
+  "ok": true,
+  "result": {
+    "revision": 1,
+    "query": "",
+    "blocks": [],
+    "selectedBlock": null,
+    "lastRefreshAt": null,
+    "graphName": null,
+    "isSearching": false
+  },
+  "error": null
+}
+"""
+
 @Suite struct LogseqChatModelTests {
 
     @Test func logseqChatModel() throws {
@@ -41,6 +58,39 @@ import Foundation
         #expect(!failedBlock.isPendingSync)
         #expect(!pendingBlock.isFailedSync)
         #expect(pendingBlock.isPendingSync)
+    }
+
+    @Test func decodesTaskTagsReferencesAndAssetMetadata() throws {
+        let data = Data(#"{"uuid":"asset-1","kind":"asset","title":"photo.jpg","pageId":"journal-1","createdAt":1,"updatedAt":2,"tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock"}},"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}"#.utf8)
+        let block = try JSONDecoder().decode(LogseqBlock.self, from: data)
+        #expect(block.tags.first?.title == "Project")
+        #expect(block.references.first?.kind == "page")
+        #expect(block.status?.icon?.id == "clock")
+        #expect(block.assetType == "jpg")
+        #expect(block.assetSize == 2048)
+        #expect(block.localPath == "/documents/photo.jpg")
+    }
+
+    @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+        store.sendTask("Follow up", status: LogseqTaskStatus.todo)
+        store.addAsset(
+            title: "photo.jpg",
+            assetType: "jpg",
+            assetSize: 2048,
+            assetChecksum: "abc",
+            localPath: "/documents/photo.jpg"
+        )
+        #expect(store.snapshot.blocks.contains { $0.kind == "task" && $0.title == "Follow up" })
+        #expect(store.snapshot.blocks.contains { $0.kind == "asset" && $0.localPath == "/documents/photo.jpg" })
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"sendTask\"") }
+                && recorder.all.contains { $0.contains("\"action\":\"addAsset\"") }
+        }
     }
 
     @Test @MainActor func updateBlockTitleAppliesCoreSnapshot() async throws {

@@ -38,6 +38,39 @@ public final class LogseqChatCore {
     }
 }
 
+public struct LogseqEntitySummary: Codable, Hashable, Identifiable, Sendable {
+    public let uuid: String
+    public let kind: String
+    public let title: String
+    public var id: String { uuid }
+}
+
+public struct LogseqIcon: Codable, Hashable, Sendable {
+    public let type: String
+    public let id: String
+}
+
+public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
+    public let uuid: String
+    public let ident: String?
+    public let title: String
+    public let icon: LogseqIcon?
+    public var id: String { uuid }
+
+    public static let todo = LogseqTaskStatus(
+        uuid: "todo", ident: "logseq.property/status.todo", title: "Todo",
+        icon: LogseqIcon(type: "tabler-icon", id: "circle")
+    )
+    public static let doing = LogseqTaskStatus(
+        uuid: "doing", ident: "logseq.property/status.doing", title: "Doing",
+        icon: LogseqIcon(type: "tabler-icon", id: "progress")
+    )
+    public static let done = LogseqTaskStatus(
+        uuid: "done", ident: "logseq.property/status.done", title: "Done",
+        icon: LogseqIcon(type: "tabler-icon", id: "circle-check")
+    )
+}
+
 public struct LogseqBlock: Codable, Identifiable, Hashable {
     public let uuid: String
     public let kind: String
@@ -49,6 +82,13 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     public let syncStatus: String?
     public let journalTitle: String?
     public let journalDay: Int?
+    public let tags: [LogseqEntitySummary]
+    public let references: [LogseqEntitySummary]
+    public let status: LogseqTaskStatus?
+    public let assetType: String?
+    public let assetSize: Int?
+    public let assetChecksum: String?
+    public let localPath: String?
 
     public init(
         uuid: String,
@@ -60,7 +100,14 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         updatedAt: Int64,
         syncStatus: String?,
         journalTitle: String? = nil,
-        journalDay: Int? = nil
+        journalDay: Int? = nil,
+        tags: [LogseqEntitySummary] = [],
+        references: [LogseqEntitySummary] = [],
+        status: LogseqTaskStatus? = nil,
+        assetType: String? = nil,
+        assetSize: Int? = nil,
+        assetChecksum: String? = nil,
+        localPath: String? = nil
     ) {
         self.uuid = uuid
         self.kind = kind
@@ -72,6 +119,40 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         self.syncStatus = syncStatus
         self.journalTitle = journalTitle
         self.journalDay = journalDay
+        self.tags = tags
+        self.references = references
+        self.status = status
+        self.assetType = assetType
+        self.assetSize = assetSize
+        self.assetChecksum = assetChecksum
+        self.localPath = localPath
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case uuid, kind, title, pageId, parentId, createdAt, updatedAt, syncStatus
+        case journalTitle, journalDay, tags, references, status, assetType, assetSize
+        case assetChecksum, localPath
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        uuid = try values.decode(String.self, forKey: .uuid)
+        kind = try values.decode(String.self, forKey: .kind)
+        title = try values.decode(String.self, forKey: .title)
+        pageId = try values.decode(String.self, forKey: .pageId)
+        parentId = try values.decodeIfPresent(String.self, forKey: .parentId)
+        createdAt = try values.decode(Int64.self, forKey: .createdAt)
+        updatedAt = try values.decode(Int64.self, forKey: .updatedAt)
+        syncStatus = try values.decodeIfPresent(String.self, forKey: .syncStatus)
+        journalTitle = try values.decodeIfPresent(String.self, forKey: .journalTitle)
+        journalDay = try values.decodeIfPresent(Int.self, forKey: .journalDay)
+        tags = try values.decodeIfPresent([LogseqEntitySummary].self, forKey: .tags) ?? []
+        references = try values.decodeIfPresent([LogseqEntitySummary].self, forKey: .references) ?? []
+        status = try values.decodeIfPresent(LogseqTaskStatus.self, forKey: .status)
+        assetType = try values.decodeIfPresent(String.self, forKey: .assetType)
+        assetSize = try values.decodeIfPresent(Int.self, forKey: .assetSize)
+        assetChecksum = try values.decodeIfPresent(String.self, forKey: .assetChecksum)
+        localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
     }
 
     public var id: String { uuid }
@@ -126,6 +207,22 @@ public struct LogseqChatSnapshot: Codable {
     public let lastRefreshAt: Int64?
     public let graphName: String?
     public let isSearching: Bool
+    public let relatedBlocks: [LogseqBlock]?
+
+    public init(
+        revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
+        lastRefreshAt: Int64?, graphName: String?, isSearching: Bool,
+        relatedBlocks: [LogseqBlock]? = nil
+    ) {
+        self.revision = revision
+        self.query = query
+        self.blocks = blocks
+        self.selectedBlock = selectedBlock
+        self.lastRefreshAt = lastRefreshAt
+        self.graphName = graphName
+        self.isSearching = isSearching
+        self.relatedBlocks = relatedBlocks
+    }
 }
 
 public struct LogseqChatCoreError: Codable, Equatable {
@@ -175,6 +272,31 @@ private struct SendBlockPayload: Encodable {
     let now: Int64
 }
 
+private struct SendTaskPayload: Encodable {
+    let text: String
+    let uuid: String
+    let now: Int64
+    let status: TaskStatusPayload
+}
+
+private struct TaskStatusPayload: Encodable {
+    let uuid: String
+    let ident: String?
+    let title: String
+    let iconType: String?
+    let iconId: String?
+}
+
+private struct AddAssetPayload: Encodable {
+    let uuid: String
+    let title: String
+    let now: Int64
+    let assetType: String
+    let assetSize: Int
+    let assetChecksum: String
+    let localPath: String
+}
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -183,7 +305,8 @@ private struct SendBlockPayload: Encodable {
         selectedBlock: nil,
         lastRefreshAt: nil,
         graphName: nil,
-        isSearching: false
+        isSearching: false,
+        relatedBlocks: nil
     )
     public private(set) var lastError: LogseqChatCoreError?
     public private(set) var isRefreshing = false
@@ -305,7 +428,7 @@ private struct SendBlockPayload: Encodable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let now = Self.nowMilliseconds()
-        let uuid = "local-\(now)"
+        let uuid = UUID().uuidString.lowercased()
         applyOptimisticSend(title: trimmed, uuid: uuid, now: now)
         do {
             let payloadData = try JSONEncoder().encode(SendBlockPayload(text: trimmed, uuid: uuid, now: now))
@@ -319,6 +442,51 @@ private struct SendBlockPayload: Encodable {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
             logger.error("Core request encoding failed: send, message: \(String(describing: error), privacy: .public)")
             self.syncPending()
+        }
+    }
+
+    public func sendTask(_ text: String, status: LogseqTaskStatus) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let now = Self.nowMilliseconds()
+        let uuid = UUID().uuidString.lowercased()
+        applyOptimisticBlock(title: trimmed, uuid: uuid, kind: "task", now: now, status: status)
+        let statusPayload = TaskStatusPayload(
+            uuid: status.uuid, ident: status.ident, title: status.title,
+            iconType: status.icon?.type, iconId: status.icon?.id
+        )
+        dispatchEncoded("sendTask", SendTaskPayload(text: trimmed, uuid: uuid, now: now, status: statusPayload))
+    }
+
+    public func addAsset(
+        title: String, assetType: String, assetSize: Int,
+        assetChecksum: String, localPath: String
+    ) {
+        let now = Self.nowMilliseconds()
+        let uuid = UUID().uuidString.lowercased()
+        applyOptimisticBlock(
+            title: title, uuid: uuid, kind: "asset", now: now,
+            assetType: assetType, assetSize: assetSize,
+            assetChecksum: assetChecksum, localPath: localPath
+        )
+        dispatchEncoded(
+            "addAsset",
+            AddAssetPayload(
+                uuid: uuid, title: title, now: now, assetType: assetType,
+                assetSize: assetSize, assetChecksum: assetChecksum, localPath: localPath
+            )
+        )
+    }
+
+    private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
+        do {
+            let payload = String(decoding: try JSONEncoder().encode(payloadValue), as: UTF8.self)
+            performAsyncThenSyncPending(
+                LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: action, payload: payload))
+            )
+        } catch {
+            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+            logger.error("Core request encoding failed: \(action, privacy: .public)")
         }
     }
 
@@ -358,6 +526,31 @@ private struct SendBlockPayload: Encodable {
 
     public func clearSelection() {
         perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "clearSelection")))
+    }
+
+    public func loadBlockReferences(_ uuid: String) {
+        performAsync(LogseqChatRPCRequest(
+            method: "dispatch",
+            params: LogseqChatRPCParams(action: "loadBlockReferences", payload: uuid)
+        ))
+    }
+
+    public func loadPageReferences(_ uuid: String) {
+        performAsync(LogseqChatRPCRequest(
+            method: "dispatch",
+            params: LogseqChatRPCParams(action: "loadPageReferences", payload: uuid)
+        ))
+    }
+
+    public func loadTagObjects(_ uuid: String) {
+        performAsync(LogseqChatRPCRequest(
+            method: "dispatch",
+            params: LogseqChatRPCParams(action: "loadTagObjects", payload: uuid)
+        ))
+    }
+
+    public func clearRelated() {
+        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "clearRelated")))
     }
 
     @MainActor public func runRefreshLoop() async {
@@ -495,9 +688,17 @@ private struct SendBlockPayload: Encodable {
     }
 
     private func applyOptimisticSend(title: String, uuid: String, now: Int64) {
+        applyOptimisticBlock(title: title, uuid: uuid, kind: "block", now: now)
+    }
+
+    private func applyOptimisticBlock(
+        title: String, uuid: String, kind: String, now: Int64,
+        status: LogseqTaskStatus? = nil, assetType: String? = nil,
+        assetSize: Int? = nil, assetChecksum: String? = nil, localPath: String? = nil
+    ) {
         let block = LogseqBlock(
             uuid: uuid,
-            kind: "block",
+            kind: kind,
             title: title,
             pageId: Self.journalPageId(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
             parentId: nil,
@@ -505,7 +706,9 @@ private struct SendBlockPayload: Encodable {
             updatedAt: now,
             syncStatus: "pending",
             journalTitle: Self.dayTitle(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
-            journalDay: Self.journalDay(for: Date(timeIntervalSince1970: Double(now) / 1000.0))
+            journalDay: Self.journalDay(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
+            status: status, assetType: assetType, assetSize: assetSize,
+            assetChecksum: assetChecksum, localPath: localPath
         )
         optimisticBlocks[uuid] = block
         snapshot = LogseqChatSnapshot(
@@ -515,7 +718,8 @@ private struct SendBlockPayload: Encodable {
             selectedBlock: snapshot.selectedBlock,
             lastRefreshAt: now,
             graphName: snapshot.graphName,
-            isSearching: snapshot.isSearching
+            isSearching: snapshot.isSearching,
+            relatedBlocks: snapshot.relatedBlocks
         )
         lastError = nil
     }
@@ -567,7 +771,8 @@ private struct SendBlockPayload: Encodable {
             selectedBlock: result.selectedBlock,
             lastRefreshAt: result.lastRefreshAt,
             graphName: result.graphName,
-            isSearching: isSearching
+            isSearching: isSearching,
+            relatedBlocks: result.relatedBlocks
         )
     }
 

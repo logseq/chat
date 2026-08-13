@@ -25,6 +25,11 @@ let assert_equal label expected actual =
   then failwith (Printf.sprintf "%s: expected %S, got %S" label expected actual)
 ;;
 
+let assert_some_string label expected = function
+  | Some actual -> assert_equal label expected actual
+  | None -> failwith (label ^ ": expected a value")
+;;
+
 let () =
   let explicit =
     required_single_block
@@ -38,6 +43,18 @@ let () =
   in
   assert_int_equal "missing created-at is not fabricated" 0 missing.created_at;
   assert_int_equal "missing updated-at is not fabricated" 0 missing.updated_at;
+  let semantic =
+    required_single_block
+      {|{"results":[{"uuid":"semantic","title":"Review [[Project]]","kind":"asset","tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"logseq.property/status.todo","title":"Todo","icon":{"type":"tabler-icon","id":"circle"}},"asset-type":"jpg","asset-size":2048,"asset-checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}|}
+  in
+  assert_equal "tag title" "Project" (List.hd semantic.tags).title;
+  assert_equal "reference kind" "page" (List.hd semantic.references).kind;
+  assert_some_string "status title" "Todo"
+    (Option.map (fun (status : Logseq_chat_model.status) -> status.title) semantic.status);
+  assert_some_string "status icon" "circle"
+    (Option.bind semantic.status (fun (status : Logseq_chat_model.status) -> status.icon_id));
+  assert_some_string "asset type" "jpg" semantic.asset_type;
+  assert_int_equal "asset size" 2048 (Option.value semantic.asset_size ~default:0);
   let search_journals =
     Logseq_chat_api.journals_from_search_body
       {|{"results":[{"uuid":"block-search","title":"Search","kind":"block","page-id":"journal-search","journal-title":"Aug 13th, 2026","journal-day":20260813}]}|}
@@ -62,6 +79,50 @@ let () =
     "recent blocks URL"
     "https://api.example/api/v1/graphs/graph-1/blocks?journal-only=true&journal-day-at-most=20260813&sort=created-at-desc&limit=100"
     feed_request.url;
+  let search_request = Logseq_chat_api.search_request config "voice" in
+  if not (String.contains search_request.url ',')
+  then failwith "remote search must include block and asset resources";
+  assert_equal "block references URL"
+    "https://api.example/api/v1/graphs/graph-1/blocks/block-1/references?limit=100"
+    (Logseq_chat_api.block_references_request config "block-1").url;
+  assert_equal "tag objects URL"
+    "https://api.example/api/v1/graphs/graph-1/tags/tag-1/objects?limit=100"
+    (Logseq_chat_api.tag_objects_request config "tag-1").url;
+  assert_equal "page references URL"
+    "https://api.example/api/v1/graphs/graph-1/pages/page-1/references?limit=100"
+    (Logseq_chat_api.page_references_request config "page-1").url;
+  let related =
+    Logseq_chat_api.blocks_from_list_body "references"
+      {|{"references":[{"uuid":"backlink","kind":"block","title":"Uses Project"}]}|}
+  in
+  assert_equal "related block" "backlink" (List.hd related).uuid;
+  let capture = Logseq_chat_api.capture_request config ~uuid:"client-block" "Offline" in
+  assert_equal
+    "capture preserves client uuid"
+    {|{"blocks":[{"uuid":"client-block","title":"Offline"}]}|}
+    (Option.value capture.body ~default:"");
+  let task =
+    Logseq_chat_api.task_request config ~uuid:"client-task" ~status:"waiting" "Follow up"
+  in
+  assert_equal "task method" "POST" task.method_;
+  assert_equal
+    "task body"
+    {|{"uuid":"client-task","title":"Follow up","status":"waiting"}|}
+    (Option.value task.body ~default:"");
+  let upload =
+    Logseq_chat_api.asset_upload_request
+      config
+      ~uuid:"client-asset"
+      ~file_name:"photo.jpg"
+      ~size:2048
+      ~checksum:"abc123"
+      ~file_path:"/documents/photo.jpg"
+      ~content_type:"image/jpeg"
+  in
+  assert_equal "asset upload path" "/documents/photo.jpg" upload.file_path;
+  assert_equal "asset content type" "image/jpeg" upload.content_type;
+  if upload.request.body <> None then failwith "asset bytes must not be encoded in request JSON";
+  if not (String.contains upload.request.url '?') then failwith "asset metadata belongs in query params";
   let block, journal =
     required_feed
       {|{"blocks":[{"uuid":"block-1","title":"Message","kind":"block","page-id":"journal-new","created-at":1776000000000}],"journals":[{"uuid":"journal-new","title":"Aug 13th, 2026","kind":"page","journal-day":20260813}]}|}

@@ -19,6 +19,12 @@ type response =
   ; body : string
   }
 
+type file_upload =
+  { request : request
+  ; file_path : string
+  ; content_type : string
+  }
+
 type journal =
   { uuid : string
   ; title : string
@@ -90,7 +96,7 @@ let search_request config query =
   { method_ = "GET"
   ; url =
       Printf.sprintf
-        "%s/api/v1/graphs/%s/search?q=%s&types=blocks&limit=100"
+        "%s/api/v1/graphs/%s/search?q=%s&types=blocks,assets&limit=100"
         (api_root config)
         (url_encode config.graph_id)
         (url_encode query)
@@ -99,7 +105,20 @@ let search_request config query =
   }
 ;;
 
-let capture_request config text =
+let related_request config resource uuid collection =
+  { method_ = "GET"
+  ; url = Printf.sprintf "%s/api/v1/graphs/%s/%s/%s/%s?limit=100"
+      (api_root config) (url_encode config.graph_id) resource (url_encode uuid) collection
+  ; body = None
+  ; token = config.token
+  }
+;;
+
+let block_references_request config uuid = related_request config "blocks" uuid "references"
+let page_references_request config uuid = related_request config "pages" uuid "references"
+let tag_objects_request config uuid = related_request config "tags" uuid "objects"
+
+let capture_request config ~uuid text =
   { method_ = "POST"
   ; url =
       Printf.sprintf
@@ -109,9 +128,47 @@ let capture_request config text =
   ; body =
       Some
         (to_string
-           (`Assoc [ "blocks", `List [ `Assoc [ "title", `String text ] ] ]))
+           (`Assoc
+             [ "blocks",
+               `List [ `Assoc [ "uuid", `String uuid; "title", `String text ] ]
+             ]))
   ; token = config.token
   }
+;;
+
+let task_request config ~uuid ~status text =
+  { method_ = "POST"
+  ; url = Printf.sprintf "%s/api/v1/graphs/%s/tasks" (api_root config) (url_encode config.graph_id)
+  ; body = Some (to_string (`Assoc [ "uuid", `String uuid; "title", `String text; "status", `String status ]))
+  ; token = config.token
+  }
+;;
+
+let asset_upload_request config ~uuid ~file_name ~size ~checksum ~file_path ~content_type =
+  { request =
+      { method_ = "POST"
+      ; url =
+          Printf.sprintf
+            "%s/api/v1/graphs/%s/assets?uuid=%s&file-name=%s&size=%d&checksum=%s"
+            (api_root config) (url_encode config.graph_id) (url_encode uuid)
+            (url_encode file_name) size (url_encode checksum)
+      ; body = None
+      ; token = config.token
+      }
+  ; file_path
+  ; content_type
+  }
+;;
+
+let content_type_for_asset_type = function
+  | "jpg" | "jpeg" -> "image/jpeg"
+  | "png" -> "image/png"
+  | "gif" -> "image/gif"
+  | "heic" -> "image/heic"
+  | "m4a" -> "audio/mp4"
+  | "mp3" -> "audio/mpeg"
+  | "wav" -> "audio/wav"
+  | _ -> "application/octet-stream"
 ;;
 
 let update_block_request config ~uuid ~title =
@@ -145,6 +202,37 @@ let option_string_member name fields =
   | _ -> None
 ;;
 
+let summaries_member name fields =
+  match List.assoc_opt name fields with
+  | Some (`List values) ->
+    List.filter_map
+      (function
+        | `Assoc summary ->
+          let uuid = string_member "uuid" summary in
+          let kind = string_member "kind" summary in
+          let title = string_member "title" summary in
+          if uuid = "" || title = "" then None
+          else Some Logseq_chat_model.{ uuid; kind; title }
+        | _ -> None)
+      values
+  | _ -> []
+;;
+
+let status_member fields =
+  match List.assoc_opt "status" fields with
+  | Some (`Assoc status) ->
+    let uuid = string_member "uuid" status in
+    let title = string_member "title" status in
+    let icon_type, icon_id =
+      match List.assoc_opt "icon" status with
+      | Some (`Assoc icon) -> option_string_member "type" icon, option_string_member "id" icon
+      | _ -> None, None
+    in
+    if uuid = "" || title = "" then None
+    else Some Logseq_chat_model.{ uuid; ident = option_string_member "ident" status; title; icon_type; icon_id }
+  | _ -> None
+;;
+
 let block_of_json ?(fallback_time = 0) json =
   match json with
   | `Assoc fields ->
@@ -172,6 +260,13 @@ let block_of_json ?(fallback_time = 0) json =
 	               | 0 -> fallback_time
 	               | value -> value)
 	          ; sync_status = "synced"
+	          ; tags = summaries_member "tags" fields
+	          ; references = summaries_member "references" fields
+	          ; status = status_member fields
+	          ; asset_type = option_string_member "asset-type" fields
+	          ; asset_size = (match List.assoc_opt "asset-size" fields with Some (`Int value) -> Some value | _ -> None)
+	          ; asset_checksum = option_string_member "asset-checksum" fields
+	          ; local_path = None
 	          }
   | _ -> None
 ;;
@@ -183,6 +278,15 @@ let blocks_from_search_body body =
      | Some (`List results) ->
        results
        |> List.filter_map (block_of_json ~fallback_time:0)
+     | _ -> [])
+  | _ -> []
+;;
+
+let blocks_from_list_body key body =
+  match from_string body with
+  | `Assoc fields ->
+    (match List.assoc_opt key fields with
+     | Some (`List values) -> List.filter_map block_of_json values
      | _ -> [])
   | _ -> []
 ;;

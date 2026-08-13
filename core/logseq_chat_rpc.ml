@@ -7,6 +7,7 @@ module Http = Logseq_chat_http
 type t =
   { model : Model.t
   ; mutable config : Api.config option
+  ; mutable related_blocks : Model.block list
   }
 
 let debug format =
@@ -63,7 +64,37 @@ let send_payload payload =
   | exception _ -> Ok (String.trim raw, None, None)
 ;;
 
+let status_payload fields =
+  match assoc "status" fields with
+  | Some (`Assoc status) ->
+    (match required_string "uuid" status, required_string "title" status,
+           optional_string "ident" status, optional_string "iconType" status,
+           optional_string "iconId" status with
+     | Ok uuid, Ok title, Ok ident, Ok icon_type, Ok icon_id ->
+       Ok Model.{ uuid; ident; title; icon_type; icon_id }
+     | Error message, _, _, _, _ | _, Error message, _, _, _
+     | _, _, Error message, _, _ | _, _, _, Error message, _
+     | _, _, _, _, Error message -> Error message)
+  | _ -> Error "missing field: status"
+;;
+
 let block_json (block : Model.block) =
+  let summary_json (summary : Model.entity_summary) =
+    `Assoc [ "uuid", `String summary.uuid; "kind", `String summary.kind; "title", `String summary.title ]
+  in
+  let status_fields =
+    match block.status with
+    | None -> []
+    | Some status ->
+      [ "status",
+        `Assoc
+          ([ "uuid", `String status.uuid; "title", `String status.title ]
+           @ (match status.ident with Some value -> [ "ident", `String value ] | None -> [])
+           @ (match status.icon_type, status.icon_id with
+              | Some icon_type, Some icon_id ->
+                [ "icon", `Assoc [ "type", `String icon_type; "id", `String icon_id ] ]
+              | _ -> [])) ]
+  in
   `Assoc
     ([ "uuid", `String block.uuid
      ; "kind", `String block.kind
@@ -72,7 +103,14 @@ let block_json (block : Model.block) =
      ; "createdAt", `Int block.created_at
      ; "updatedAt", `Int block.updated_at
      ; "syncStatus", `String block.sync_status
+     ; "tags", `List (List.map summary_json block.tags)
+     ; "references", `List (List.map summary_json block.references)
      ]
+     @ status_fields
+     @ (match block.asset_type with Some value -> [ "assetType", `String value ] | None -> [])
+     @ (match block.asset_size with Some value -> [ "assetSize", `Int value ] | None -> [])
+     @ (match block.asset_checksum with Some value -> [ "assetChecksum", `String value ] | None -> [])
+     @ (match block.local_path with Some value -> [ "localPath", `String value ] | None -> [])
      @
      match block.parent_id with
      | Some parent_id -> [ "parentId", `String parent_id ]
@@ -102,6 +140,7 @@ let snapshot session blocks =
         (match Model.selected_block session.model with
          | Some block -> block_json block
          | None -> `Null)
+      ; "relatedBlocks", `List (List.map (block_json) session.related_blocks)
       ; "lastRefreshAt",
         (match session.model.last_refresh_at with
          | Some value -> `Int value
@@ -118,7 +157,7 @@ let snapshot_visible session = snapshot session (Model.visible_blocks session.mo
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
-let create ?storage () = { model = Model.create ?storage (); config = None }
+let create ?storage () = { model = Model.create ?storage (); config = None; related_blocks = [] }
 
 let cache_remote_blocks session response ~now =
   if response.Api.status >= 200 && response.Api.status < 300
@@ -231,7 +270,19 @@ let sync_pending session config =
   debug "sync pending started count=%d graph=%s" (List.length pending_blocks) config.Api.graph_id;
   List.iter
     (fun (block : Model.block) ->
-      match Http.send (Api.capture_request config block.title) with
+      let result =
+        match block.kind, block.status, block.local_path, block.asset_type,
+              block.asset_size, block.asset_checksum with
+        | "task", Some status, _, _, _, _ ->
+          Http.send (Api.task_request config ~uuid:block.uuid ~status:status.uuid block.title)
+        | "asset", _, Some file_path, Some asset_type, Some asset_size, Some checksum ->
+          Http.upload_file
+            (Api.asset_upload_request config ~uuid:block.uuid ~file_name:block.title
+               ~size:asset_size ~checksum ~file_path
+               ~content_type:(Api.content_type_for_asset_type asset_type))
+        | _ -> Http.send (Api.capture_request config ~uuid:block.uuid block.title)
+      in
+      match result with
       | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
         debug "sync pending block succeeded uuid=%s status=%d" block.uuid response.Api.status;
         ignore (Model.mark_block_synced session.model ~uuid:block.uuid)
@@ -243,6 +294,21 @@ let sync_pending session config =
         ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
     pending_blocks;
   snapshot_visible session
+;;
+
+let load_related session request key =
+  match Http.send request with
+  | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
+    session.related_blocks <- Api.blocks_from_list_body key response.body;
+    snapshot_visible session
+  | Ok response ->
+    debug "related blocks HTTP failed status=%d" response.Api.status;
+    session.related_blocks <- [];
+    snapshot_visible session
+  | Error message ->
+    debug "related blocks request failed message=%s" message;
+    session.related_blocks <- [];
+    snapshot_visible session
 ;;
 
 let dispatch session action payload =
@@ -298,13 +364,75 @@ let dispatch session action payload =
          let uuid = Option.value uuid ~default:("local-" ^ string_of_int now) in
          Model.cache_local_message session.model ~uuid ~title:text ~now;
          snapshot_visible session))
+  | "sendTask" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "text" fields, required_string "uuid" fields,
+                 optional_int "now" fields, status_payload fields with
+           | Ok text, Ok uuid, Ok now, Ok status ->
+             let text = String.trim text in
+             if text = "" then snapshot_visible session
+             else (
+               Model.cache_local_task session.model ~uuid ~title:text ~status
+                 ~now:(Option.value now ~default:(now_ms ()));
+               snapshot_visible session)
+           | Error message, _, _, _ | _, Error message, _, _
+           | _, _, Error message, _ | _, _, _, Error message ->
+             failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"sendTask payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"sendTask payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"sendTask requires a JSON payload")
+  | "addAsset" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields, required_string "title" fields,
+                 optional_int "now" fields, required_string "assetType" fields,
+                 optional_int "assetSize" fields, required_string "assetChecksum" fields,
+                 required_string "localPath" fields with
+           | Ok uuid, Ok title, Ok now, Ok asset_type, Ok (Some asset_size),
+             Ok asset_checksum, Ok local_path ->
+             Model.cache_local_asset session.model ~uuid ~title ~asset_type ~asset_size
+               ~asset_checksum ~local_path ~now:(Option.value now ~default:(now_ms ()));
+             snapshot_visible session
+           | _ -> failure ~code:"invalid_params" ~message:"addAsset requires complete file metadata")
+        | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"addAsset requires a JSON payload")
   | "syncPending" ->
     (match session.config with
      | None -> snapshot_visible session
      | Some config ->
        (match resolve_graph session config with
         | Ok config -> sync_pending session config
-        | Error _ -> snapshot_visible session))
+       | Error _ -> snapshot_visible session))
+  | "loadBlockReferences" ->
+    (match session.config, payload with
+     | Some config, Some uuid ->
+       (match resolve_graph session config with
+        | Ok config -> load_related session (Api.block_references_request config uuid) "references"
+        | Error _ -> snapshot_visible session)
+     | _ -> snapshot_visible session)
+  | "loadPageReferences" ->
+    (match session.config, payload with
+     | Some config, Some uuid ->
+       (match resolve_graph session config with
+        | Ok config -> load_related session (Api.page_references_request config uuid) "references"
+        | Error _ -> snapshot_visible session)
+     | _ -> snapshot_visible session)
+  | "loadTagObjects" ->
+    (match session.config, payload with
+     | Some config, Some uuid ->
+       (match resolve_graph session config with
+        | Ok config -> load_related session (Api.tag_objects_request config uuid) "objects"
+        | Error _ -> snapshot_visible session)
+     | _ -> snapshot_visible session)
+  | "clearRelated" ->
+    session.related_blocks <- [];
+    snapshot_visible session
   | "updateBlock" ->
     (match payload with
      | None -> failure ~code:"invalid_params" ~message:"updateBlock requires a JSON payload"

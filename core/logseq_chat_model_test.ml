@@ -12,6 +12,14 @@ let assert_int_equal label expected actual =
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
 ;;
 
+let block ~uuid ~kind ~title ~page_id ~created_at =
+  Logseq_chat_model.
+    { uuid; kind; title; page_id; parent_id = None; created_at
+    ; updated_at = created_at; sync_status = "synced"; tags = []; references = []
+    ; status = None; asset_type = None; asset_size = None; asset_checksum = None
+    ; local_path = None }
+;;
+
 let assert_recent_blocks_limit_and_order () =
   let model = Logseq_chat_model.create () in
   let base_time = 1_776_000_000_000 in
@@ -45,16 +53,8 @@ let assert_refresh_preserves_existing_created_at_when_remote_omits_it () =
     ~title:"Original"
     ~now:created_at;
   let remote_block =
-    Logseq_chat_model.
-      { uuid = "stable-created-at"
-      ; kind = "block"
-      ; title = "Updated remotely"
-      ; page_id = "page-1"
-      ; parent_id = None
-      ; created_at = 0
-      ; updated_at = 0
-      ; sync_status = "synced"
-      }
+    block ~uuid:"stable-created-at" ~kind:"block" ~title:"Updated remotely"
+      ~page_id:"page-1" ~created_at:0
   in
   Logseq_chat_model.upsert_blocks model [ remote_block ] ~refresh_time:(created_at + 10_000);
   match Logseq_chat_model.read_block model "stable-created-at" with
@@ -67,16 +67,7 @@ let assert_refresh_preserves_existing_created_at_when_remote_omits_it () =
 let assert_recent_blocks_excludes_pages_and_empty_blocks () =
   let model = Logseq_chat_model.create () in
   let block kind uuid title created_at =
-    Logseq_chat_model.
-      { uuid
-      ; kind
-      ; title
-      ; page_id = "journal-1"
-      ; parent_id = None
-      ; created_at
-      ; updated_at = created_at
-      ; sync_status = "synced"
-      }
+    block ~kind ~uuid ~title ~page_id:"journal-1" ~created_at
   in
   Logseq_chat_model.upsert_blocks
     model
@@ -94,16 +85,7 @@ let assert_recent_blocks_excludes_pages_and_empty_blocks () =
 let assert_recent_blocks_require_a_current_or_past_journal_page () =
   let model = Logseq_chat_model.create () in
   let block uuid page_id created_at =
-    Logseq_chat_model.
-      { uuid
-      ; kind = "block"
-      ; title = uuid
-      ; page_id
-      ; parent_id = None
-      ; created_at
-      ; updated_at = created_at
-      ; sync_status = "synced"
-      }
+    block ~uuid ~kind:"block" ~title:uuid ~page_id ~created_at
   in
   Logseq_chat_model.upsert_journal_page model ~uuid:"past-journal" ~journal_day:20260812;
   Logseq_chat_model.upsert_journal_page model ~uuid:"future-journal" ~journal_day:20990101;
@@ -122,16 +104,7 @@ let assert_recent_blocks_require_a_current_or_past_journal_page () =
 let assert_search_excludes_pages_and_empty_blocks () =
   let model = Logseq_chat_model.create () in
   let entity kind uuid title =
-    Logseq_chat_model.
-      { uuid
-      ; kind
-      ; title
-      ; page_id = "journal-1"
-      ; parent_id = None
-      ; created_at = 100
-      ; updated_at = 100
-      ; sync_status = "synced"
-      }
+    block ~kind ~uuid ~title ~page_id:"journal-1" ~created_at:100
   in
   Logseq_chat_model.upsert_journal_page model ~uuid:"journal-1" ~journal_day:20260813;
   Logseq_chat_model.upsert_blocks
@@ -149,16 +122,8 @@ let assert_search_excludes_pages_and_empty_blocks () =
 let assert_partial_search_result_preserves_journal_relation () =
   let model = Logseq_chat_model.create () in
   let block =
-    Logseq_chat_model.
-      { uuid = "search-block"
-      ; kind = "block"
-      ; title = "Before search"
-      ; page_id = "journal-1"
-      ; parent_id = None
-      ; created_at = 100
-      ; updated_at = 100
-      ; sync_status = "synced"
-      }
+    block ~uuid:"search-block" ~kind:"block" ~title:"Before search"
+      ~page_id:"journal-1" ~created_at:100
   in
   Logseq_chat_model.upsert_journal_page
     ~title:"Aug 13th, 2026"
@@ -175,6 +140,38 @@ let assert_partial_search_result_preserves_journal_relation () =
     assert_equal "search preserves journal page" "journal-1" preserved.page_id;
     assert_equal "search updates title" "Search result" preserved.title
   | blocks -> failwith (Printf.sprintf "expected preserved recent block, got %d" (List.length blocks))
+;;
+
+let assert_task_and_asset_metadata_persist () =
+  let model = Logseq_chat_model.create () in
+  let now = 1_776_000_000_000 in
+  let status =
+    Logseq_chat_model.
+      { uuid = "status-waiting"
+      ; ident = Some "user.status/waiting"
+      ; title = "Waiting"
+      ; icon_type = Some "tabler-icon"
+      ; icon_id = Some "clock"
+      }
+  in
+  Logseq_chat_model.cache_local_task
+    model ~uuid:"task-local" ~title:"Follow up" ~status ~now;
+  Logseq_chat_model.cache_local_asset
+    model
+    ~uuid:"asset-local"
+    ~title:"voice.m4a"
+    ~asset_type:"m4a"
+    ~asset_size:4096
+    ~asset_checksum:"checksum"
+    ~local_path:"/documents/voice.m4a"
+    ~now:(now + 1);
+  let task = Option.get (Logseq_chat_model.read_block model "task-local") in
+  assert_equal "task kind" "task" task.kind;
+  assert_equal "task status" "Waiting" (Option.get task.status).title;
+  let asset = Option.get (Logseq_chat_model.read_block model "asset-local") in
+  assert_equal "asset kind" "asset" asset.kind;
+  assert_equal "asset type" "m4a" (Option.get asset.asset_type);
+  assert_equal "asset local path" "/documents/voice.m4a" (Option.get asset.local_path)
 ;;
 
 let () =
@@ -219,5 +216,6 @@ let () =
   assert_recent_blocks_excludes_pages_and_empty_blocks ();
   assert_recent_blocks_require_a_current_or_past_journal_page ();
   assert_search_excludes_pages_and_empty_blocks ();
-  assert_partial_search_result_preserves_journal_relation ()
+  assert_partial_search_result_preserves_journal_relation ();
+  assert_task_and_asset_metadata_persist ()
 ;;

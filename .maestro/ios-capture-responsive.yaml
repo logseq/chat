@@ -23,6 +23,10 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - assertVisible:
     id: "field.composer"
+- assertVisible:
+    id: "button.attachment"
+- assertVisible:
+    id: "button.task-status"
 - inputText: "Clear me"
 - eraseText: 8
 - tapOn:

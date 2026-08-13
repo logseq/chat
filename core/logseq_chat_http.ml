@@ -33,12 +33,30 @@ external https_send_raw
   -> string
   = "logseq_chat_https_send"
 
+external https_upload_file_raw
+  :  string
+  -> string
+  -> string
+  -> string
+  -> string
+  -> string
+  = "logseq_chat_https_upload_file"
+
 let split_first_line value =
   match String.index_opt value '\n' with
   | None -> value, ""
   | Some index ->
     ( String.sub value 0 index
     , String.sub value (index + 1) (String.length value - index - 1) )
+;;
+
+let response_of_native raw =
+  let first, body = split_first_line raw in
+  if String.equal first "ERROR" then Error body
+  else
+    match int_of_string_opt first with
+    | Some status -> Ok Api.{ status; body }
+    | None -> Error "invalid native HTTP response"
 ;;
 
 let parse_url url =
@@ -304,4 +322,13 @@ let send request =
     if String.equal endpoint.scheme "https"
     then send_https request
     else send_http request endpoint
+;;
+
+let upload_file (upload : Api.file_upload) =
+  match parse_url upload.request.Api.url with
+  | Error message -> Error message
+  | Ok _ ->
+    https_upload_file_raw upload.request.method_ upload.request.url upload.file_path
+      upload.content_type upload.request.token
+    |> response_of_native
 ;;
