@@ -1,0 +1,4 @@
+# Skip configuration for LogseqChatModelTests module
+
+#build:
+#  contents:

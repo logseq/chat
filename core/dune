@@ -1,0 +1,16 @@
+(executable
+ (name logseq_chat_mobile_entry)
+ (modules
+  logseq_chat_api
+  logseq_chat_http
+  logseq_chat_mobile_entry
+  logseq_chat_model
+  logseq_chat_rpc
+  logseq_chat_sqlite)
+ (modes exe object shared_object)
+ (libraries datascript-ocaml-native datascript-ocaml-native.sqlite yojson unix)
+ (foreign_stubs
+  (language c)
+  (names logseq_chat_core_ffi))
+ (link_flags :standard -cclib -L/opt/homebrew/opt/sqlite/lib)
+ (flags :standard -linkall))
