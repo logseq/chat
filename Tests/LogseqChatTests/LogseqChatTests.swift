@@ -15,6 +15,411 @@ import Foundation
         #expect(testData.testModuleName == "LogseqChat")
     }
 
+    #if !SKIP
+    @Test func headerAndFooterDoNotDrawBackgroundChrome() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(!source.contains(".platformHeaderGlassBackground()"))
+        #expect(source.contains(".platformHeaderChrome()"))
+        #expect(!source.contains("Logseq chat app"))
+        #expect(source.contains("settingsControl"))
+        #expect(source.contains("IconImage(name: \"more_horiz\")"))
+        #expect(source.contains(".platformFloatingHeaderInset()"))
+    }
+
+    @Test func androidHeaderControlsKeepCapsuleShape() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("#else\n        self.background(Color.white.opacity(0.82))\n            .cornerRadius(26)\n        #endif"))
+    }
+
+    @Test func settingsControlUsesCircularGlassButton() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let controlStart = try #require(source.range(of: "private var settingsControl: some View"))
+        let remainingSource = source[controlStart.lowerBound...]
+        let controlEnd = try #require(remainingSource.range(of: "\n    private var searchBar: some View"))
+        let controlSource = remainingSource[..<controlEnd.lowerBound]
+
+        #expect(controlSource.contains(".frame(width: 52, height: 52)"))
+        #expect(controlSource.contains(".platformGlassButtonStyle()"))
+        #expect(controlSource.contains(".platformCircleButtonShape()"))
+        #expect(!controlSource.contains(".platformGlassCapsule()"))
+    }
+
+    @Test func iosDeclaresAndSchedulesBackgroundRefresh() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let plistData = try Data(contentsOf: root.appendingPathComponent("Darwin/Info.plist"))
+        let plistValue = try PropertyListSerialization.propertyList(from: plistData, format: nil)
+        let plist = try #require(plistValue as? [String: Any])
+        let permittedIdentifiers = try #require(plist["BGTaskSchedulerPermittedIdentifiers"] as? [String])
+        let backgroundModes = try #require(plist["UIBackgroundModes"] as? [String])
+        let appSource = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
+            encoding: .utf8
+        )
+        let mainSource = try String(
+            contentsOf: root.appendingPathComponent("Darwin/Sources/Main.swift"),
+            encoding: .utf8
+        )
+
+        #expect(permittedIdentifiers.contains("com.logseq.chat.refresh"))
+        #expect(backgroundModes.contains("fetch"))
+        #expect(appSource.contains("seconds: TimeInterval = 300"))
+        #expect(mainSource.contains("LogseqChatBackgroundRefresh.register()"))
+        #expect(mainSource.contains("LogseqChatBackgroundRefresh.schedule()"))
+        #expect(mainSource.contains("case .active:"))
+        #expect(mainSource.contains("AppDelegate.shared.onResume()"))
+    }
+
+    @Test func androidLaunchAvoidsNavigationStackFirstFrame() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("#if SKIP"))
+        #expect(source.contains("mainContent\n                .sheet(item: $detailBlock)"))
+        #expect(source.contains("#else\n            NavigationStack"))
+        #expect(source.contains(".navigationDestination(for: LogseqBlock.self)"))
+    }
+
+    @Test func composerSendKeepsEditingMode() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let sendDraft = try #require(source.range(of: "private func sendDraft()"))
+        let remainingSource = source[sendDraft.lowerBound...]
+        let end = try #require(remainingSource.range(of: "\n    }\n}", options: []))
+        let sendDraftSource = remainingSource[..<end.upperBound]
+
+        #expect(sendDraftSource.contains("store.send(draft)"))
+        #expect(sendDraftSource.contains("draft = \"\""))
+        #expect(sendDraftSource.contains("composerExpanded = true"))
+        #expect(sendDraftSource.contains("focusComposer()"))
+        #expect(!sendDraftSource.contains("composerFocused = true"))
+        #expect(!sendDraftSource.contains("composerExpanded = false"))
+        #expect(!sendDraftSource.contains("composerFocused = false"))
+    }
+
+    @Test func composerDraftIsPersistedUntilSend() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let sendDraft = try #require(source.range(of: "private func sendDraft()"))
+        let remainingSource = source[sendDraft.lowerBound...]
+        let end = try #require(remainingSource.range(of: "\n    }\n}", options: []))
+        let sendDraftSource = remainingSource[..<end.upperBound]
+
+        #expect(source.contains("@AppStorage(\"logseq.composerDraft\") private var draft = \"\""))
+        #expect(!source.contains("@State private var draft = \"\""))
+        #expect(sendDraftSource.contains("store.send(draft)"))
+        #expect(sendDraftSource.contains("draft = \"\""))
+    }
+
+    @Test func chronologicalBlockListOnlyAutoScrollsAfterDataArrives() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("hasAutoScrolledInitially"))
+        #expect(source.contains("autoScrollOnFirstAppear(proxy)"))
+        #expect(!source.contains(".onChange(of: store.snapshot.revision)"))
+        #expect(source.contains("guard !store.snapshot.blocks.isEmpty else { return }"))
+        #expect(source.contains("newBlocks.count > oldBlocks.count"))
+    }
+
+    @Test func chronologicalBlockListScrollsToBottomForNewContentAndTopForSearch() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("scrollToBottom(proxy)"))
+        #expect(source.contains("proxy.scrollTo(Self.blockListBottomID, anchor: .bottom)"))
+        #expect(source.contains("if oldQuery.isEmpty && !newQuery.isEmpty"))
+        #expect(source.contains("proxy.scrollTo(Self.blockListTopID, anchor: .top)"))
+        #expect(!source.contains("scrollToRelevantContent"))
+    }
+
+    @Test func blockListKeepsContentClearOfFloatingChrome() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("private var blockListContentTopPadding: CGFloat"))
+        #expect(source.contains(".frame(height: blockListContentTopPadding)"))
+        #expect(source.contains("private var blockListContentBottomPadding: CGFloat"))
+        #expect(source.contains("72.0"))
+        #expect(!source.contains("132.0"))
+        #expect(!source.contains(".padding(.top, 4)"))
+        #expect(!source.contains(".padding(.bottom, 20)"))
+    }
+
+    @Test func headerUsesCompactTopSpacing() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("private var blockListContentTopPadding: CGFloat"))
+        #expect(source.contains(".platformRootNavigationChromeHidden()"))
+        #expect(source.contains("self.toolbarVisibility(.hidden, for: .navigationBar)"))
+        #expect(source.contains("return searchExpanded ? 180.0 : 60.0"))
+        #expect(source.contains("return 60.0"))
+        #expect(!source.contains("return searchExpanded ? 96.0 : 60.0"))
+        #expect(!source.contains("return searchExpanded ? 150.0 : 104.0"))
+        #expect(!source.contains("return 104.0"))
+    }
+
+    @Test func searchUsesNativePresentationAndReplacesComposerOnIOS() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("@State private var searchPresented = false"))
+        #expect(source.contains(".searchable(text: $searchText, isPresented: $searchPresented"))
+        #expect(source.contains(".platformSearchFocused($searchFocused)"))
+        #expect(source.contains("self.searchFocused(binding)"))
+        #expect(source.contains(".searchToolbarBehavior(.minimize)"))
+        #expect(source.contains("private var shouldShowSearchToolbarItem: Bool"))
+        #expect(source.contains("return !composerExpanded"))
+        #expect(source.contains("showsSearch: shouldShowSearchToolbarItem"))
+        #expect(source.contains("DefaultToolbarItem(kind: .search, placement: .bottomBar)"))
+        #expect(source.contains("if shouldShowComposer"))
+    }
+
+    @Test func androidHasSearchAccessWhenComposerIsCollapsed() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let controlsRange = try #require(source.range(of: "private var androidFloatingControls: some View"))
+        let controlsSource = source[controlsRange.lowerBound...]
+        let nextView = try #require(controlsSource.range(of: "\n\n    private var floatingComposer"))
+        let controls = controlsSource[..<nextView.lowerBound]
+
+        #expect(source.contains(".overlay(alignment: .bottom) {\n                androidFloatingControls"))
+        #expect(controls.contains("collapsedComposer"))
+        #expect(controls.contains("IconImage(name: \"search\")"))
+        #expect(controls.contains("expandSearch()"))
+        #expect(controls.contains(".accessibilityIdentifier(\"button.search\")"))
+        #expect(controls.contains("if shouldShowComposer && !composerExpanded"))
+    }
+
+    @Test func captureUsesBottomToolbarInsteadOfOverlayOnIOS() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains(".platformBottomComposerToolbar("))
+        #expect(source.contains("showsComposer: shouldShowToolbarComposer"))
+        #expect(source.contains("showsSearch: shouldShowSearchToolbarItem"))
+        #expect(source.contains("private var shouldShowToolbarComposer: Bool"))
+        #expect(source.contains("return shouldShowComposer && !composerExpanded"))
+        #expect(source.contains("ToolbarItem(placement: .bottomBar)"))
+        #expect(source.contains("ToolbarSpacer(.flexible, placement: .bottomBar)"))
+        #expect(source.contains("DefaultToolbarItem(kind: .search, placement: .bottomBar)"))
+        #expect(source.contains("showsComposer: Bool,\n        showsSearch: Bool"))
+        #expect(source.contains("if showsSearch {\n                    ToolbarSpacer(.flexible, placement: .bottomBar)\n                    DefaultToolbarItem(kind: .search, placement: .bottomBar)\n                }"))
+        #expect(!source.contains("if !isEditing {"))
+        #expect(source.contains("bottomToolbarComposer"))
+        #expect(source.contains("public func platformBottomComposerWidth() -> some View"))
+        #expect(source.contains("UIScreen.main.bounds.width - 112.0"))
+        let composerRange = try #require(source.range(of: "ToolbarItem(placement: .bottomBar)"))
+        let searchRange = try #require(source.range(of: "DefaultToolbarItem(kind: .search, placement: .bottomBar)"))
+        #expect(composerRange.lowerBound < searchRange.lowerBound)
+        #expect(source.contains("#if SKIP\n        stackedContent"))
+        #expect(source.contains(".overlay(alignment: .bottom) {\n                androidFloatingControls"))
+        #expect(source.contains("#else\n        stackedContent\n            .overlay(alignment: .bottom)"))
+        #expect(!source.contains("composerDismissLayer"))
+        #expect(source.contains(".overlay(alignment: .bottom) {\n                if shouldShowExpandedComposer"))
+        #expect(source.contains(".platformFloatingComposerInset()"))
+    }
+
+    @Test func expandedCaptureUsesFloatingComposerOutsideToolbarOnIOS() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let toolbarComposerRange = try #require(source.range(of: "private var bottomToolbarComposer: some View"))
+        let toolbarComposerSource = source[toolbarComposerRange.lowerBound...]
+        let nextFunction = try #require(toolbarComposerSource.range(of: "\n    #endif\n\n    #if SKIP"))
+        let bottomToolbarComposer = toolbarComposerSource[..<nextFunction.lowerBound]
+        let expandedRange = try #require(source.range(of: "private var expandedComposer: some View"))
+        let expandedSource = source[expandedRange.lowerBound...]
+        let nextView = try #require(expandedSource.range(of: "\n\n    private var collapsedComposer: some View"))
+        let expandedComposer = expandedSource[..<nextView.lowerBound]
+
+        #expect(source.contains("bottomToolbarComposer\n                            .platformBottomComposerWidth()"))
+        #expect(source.contains("private var floatingComposer: some View"))
+        #expect(source.contains("if shouldShowExpandedComposer {\n                    floatingComposer"))
+        #expect(bottomToolbarComposer.contains("toolbarCollapsedComposer"))
+        #expect(!bottomToolbarComposer.contains("toolbarExpandedComposer"))
+        #expect(!source.contains("private var toolbarExpandedComposer: some View"))
+        #expect(!bottomToolbarComposer.contains(".platformGlassContainer()"))
+        #expect(!bottomToolbarComposer.contains(".padding(.horizontal, 16)"))
+        #expect(expandedComposer.contains("TextField(\"Capture\""))
+        #expect(expandedComposer.contains("IconImage(name: \"arrow_upward\")"))
+        #expect(expandedComposer.contains(".platformGlassProminentButtonStyle()"))
+    }
+
+    @Test func expandedCaptureCanRefocusAfterDeletingDraft() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let expandedRange = try #require(source.range(of: "private var expandedComposer: some View"))
+        let expandedSource = source[expandedRange.lowerBound...]
+        let nextView = try #require(expandedSource.range(of: "\n\n    private var collapsedComposer: some View"))
+        let expandedComposer = expandedSource[..<nextView.lowerBound]
+
+        #expect(expandedComposer.contains(".onTapGesture {\n            focusComposer()\n        }"))
+        #expect(expandedComposer.contains(".onChange(of: draft)"))
+        #expect(expandedComposer.contains("if composerExpanded && value.isEmpty {\n                focusComposer()\n            }"))
+    }
+
+    @Test func onlyFailedBlocksShowStatusIndicator() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let blockRowRange = try #require(source.range(of: "private struct BlockRow: View"))
+        let blockRowSource = source[blockRowRange.lowerBound...]
+        let nextView = try #require(blockRowSource.range(of: "\n\nprivate struct IconImage: View"))
+        let blockRow = blockRowSource[..<nextView.lowerBound]
+
+        #expect(blockRow.contains("if block.isFailedSync"))
+        #expect(blockRow.contains("ProgressView()"))
+        #expect(blockRow.contains(".accessibilityLabel(\"Sync failed\")"))
+        #expect(!blockRow.contains("isPendingSync ?"))
+        #expect(!blockRow.contains("check_circle"))
+        #expect(!blockRow.contains("upload"))
+        #expect(!blockRow.contains("Synced"))
+        #expect(!blockRow.contains("Pending upload"))
+    }
+
+    @Test func expandedComposerUsesEditorOverSendToolbar() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let expandedRange = try #require(source.range(of: "private var expandedComposer: some View"))
+        let expandedSource = source[expandedRange.lowerBound...]
+        let nextView = try #require(expandedSource.range(of: "\n\n    private var collapsedComposer: some View"))
+        let expandedComposer = expandedSource[..<nextView.lowerBound]
+
+        #expect(expandedComposer.contains("VStack(alignment: .leading, spacing: 8)"))
+        #expect(expandedComposer.contains("TextField(\"Capture\""))
+        #expect(expandedComposer.contains("HStack(spacing: 0) {\n                Spacer()"))
+        #expect(expandedComposer.contains("IconImage(name: \"arrow_upward\")"))
+        #expect(expandedComposer.contains(".frame(width: 10, height: 10)"))
+        #expect(expandedComposer.contains(".frame(width: 24, height: 24)"))
+        #expect(!expandedComposer.contains(".frame(width: 12, height: 12)"))
+        #expect(!expandedComposer.contains(".frame(width: 28, height: 28)"))
+        #expect(!expandedComposer.contains("HStack(alignment: .bottom, spacing: 10)"))
+        #expect(expandedComposer.contains(".platformGlassContainer(cornerRadius: 10)"))
+        #expect(expandedComposer.contains(".platformRoundedHitTarget(cornerRadius: 10)"))
+    }
+
+    @Test func composerGlassUsesTheRequestedCornerRadiusInsteadOfDefaultCapsule() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let helperRange = try #require(source.range(of: "public func platformGlassContainer(cornerRadius: CGFloat = 28)"))
+        let helperSource = source[helperRange.lowerBound...]
+        let nextHelper = try #require(helperSource.range(of: "\n\n    @ViewBuilder public func platformGlassCapsule"))
+        let glassContainer = helperSource[..<nextHelper.lowerBound]
+
+        #expect(glassContainer.contains(".glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))"))
+        #expect(!glassContainer.contains("self.glassEffect()\n                .clipShape"))
+    }
+
+    @Test func tappingOutsideComposerDismissesEditing() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let blockListRange = try #require(source.range(of: "private var blockList: some View"))
+        let blockListSource = source[blockListRange.lowerBound...]
+        let nextView = try #require(blockListSource.range(of: "\n\n    private func autoScrollOnFirstAppear"))
+        let blockList = blockListSource[..<nextView.lowerBound]
+
+        #expect(blockList.contains(".onTapGesture"))
+        #expect(blockList.contains("if composerExpanded {"))
+        #expect(blockList.contains("dismissComposerEditing()"))
+    }
+
+    @Test func tappingBlockWhileComposerIsExpandedOnlyDismissesEditing() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let blockListRange = try #require(source.range(of: "private var blockList: some View"))
+        let blockListSource = source[blockListRange.lowerBound...]
+        let nextView = try #require(blockListSource.range(of: "\n\n    private var blockListContentTopPadding"))
+        let blockList = blockListSource[..<nextView.lowerBound]
+
+        #expect(blockList.contains("if composerExpanded {"))
+        #expect(blockList.contains("Button {\n                                            dismissComposerEditing()"))
+        #expect(blockList.contains("} else {"))
+        #expect(blockList.contains("NavigationLink(value: block)"))
+    }
+
+    @Test func expandedComposerDoesNotOverlayAFullScreenGestureLayer() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(!source.contains("composerDismissLayer"))
+        #expect(source.contains("private var blockList: some View"))
+        #expect(source.contains(".onTapGesture"))
+        #expect(source.contains("dismissComposerEditing()"))
+    }
+
+    @Test func iosE2EUsesNativeSearchToolbarControl() throws {
+        let flowURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".maestro/ios-capture-responsive.yaml")
+        let flow = try String(contentsOf: flowURL, encoding: .utf8)
+
+        #expect(!flow.contains("button.search"))
+        #expect(flow.contains("tapOn: \"Search\""))
+        #expect(flow.contains("tapOn: \"close\""))
+        #expect(!flow.contains("tapOn: \"Cancel\""))
+        #expect(!flow.contains("pat test"))
+        #expect(flow.contains("eraseText: 8"))
+        #expect(flow.contains("inputText: \"After clear\""))
+        let sendButton = try #require(flow.range(of: "id: \"button.send\""))
+        let flowAfterSend = flow[sendButton.upperBound...]
+        #expect(!flowAfterSend.contains("tapOn: \"Search\""))
+    }
+
+    @Test func iosE2EScriptClearsPersistedConnectionStateBeforeInstall() throws {
+        let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("scripts/test-ios-e2e.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+        let uninstallRange = try #require(script.range(of: "xcrun simctl uninstall"))
+        let installRange = try #require(script.range(of: "xcrun simctl install"))
+        let resetSource = script[uninstallRange.lowerBound..<installRange.lowerBound]
+
+        #expect(resetSource.contains("defaults delete \"$app_id\" logseq.baseURL"))
+        #expect(resetSource.contains("defaults delete \"$app_id\" logseq.token"))
+        #expect(resetSource.contains("defaults delete \"$app_id\" logseq.composerDraft"))
+        #expect(script.contains("if [[ $pat != \"logseq_pat_e2e_invalid\" ]]; then"))
+    }
+
+    @Test func composerDismissesWhenLeavingHomeOrEnteringSearch() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let dismissComposer = try #require(source.range(of: "private func dismissComposerEditing()"))
+        let remainingSource = source[dismissComposer.lowerBound...]
+        let end = try #require(remainingSource.range(of: "\n    }\n\n    private func sendDraft()", options: []))
+        let dismissComposerSource = remainingSource[..<end.upperBound]
+
+        #expect(source.contains("dismissComposerEditing()\n        store.select(block)"))
+        #expect(source.contains("guard !presented else {\n            dismissComposerEditing()"))
+        #expect(dismissComposerSource.contains("composerExpanded = false"))
+        #expect(dismissComposerSource.contains("composerFocused = false"))
+    }
+
+    #endif
+
 }
 
 struct TestData : Codable, Hashable {

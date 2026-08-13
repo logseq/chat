@@ -1,6 +1,11 @@
 import Foundation
 import OSLog
 import SwiftUI
+import LogseqChatModel
+
+#if os(iOS) && !SKIP
+@preconcurrency import BackgroundTasks
+#endif
 
 /// A logger for the LogseqChat module.
 let logger: Logger = Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
@@ -13,11 +18,84 @@ public struct LogseqChatRootView : View {
     }
 
     public var body: some View {
-        ContentView()
+        ContentView(store: LogseqChatRuntime.shared.store)
             .task {
                 logger.info("Skip app logs are viewable in the Xcode console for iOS; Android logs can be viewed in Studio or using adb logcat")
             }
     }
+}
+
+@MainActor public final class LogseqChatRuntime {
+    public static let shared = LogseqChatRuntime()
+
+    public let store: LogseqChatStore
+
+    private init() {
+        self.store = LogseqChatStore { request in
+            LogseqChatCore.shared.logseq_chat_call(request)
+        }
+    }
+
+    public var databasePath: String {
+        URL.documentsDirectory
+            .appendingPathComponent("logseq-chat.sqlite")
+            .path
+    }
+
+    public func openStore() {
+        store.open(path: databasePath)
+    }
+
+    public func refreshFromStoredConnection() async {
+        openStore()
+        let defaults = UserDefaults.standard
+        let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
+        let token = defaults.string(forKey: "logseq.token") ?? ""
+        if token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            await store.refreshAndSyncForBackground()
+        } else {
+            await store.configureAndRefreshForBackground(baseURL: baseURL, token: token)
+        }
+    }
+}
+
+public enum LogseqChatBackgroundRefresh {
+    public static let identifier = "com.logseq.chat.refresh"
+
+    public static func register() {
+        #if os(iOS) && !SKIP
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+            handle(task)
+        }
+        #endif
+    }
+
+    public static func schedule(after seconds: TimeInterval = 300) {
+        #if os(iOS) && !SKIP
+        let request = BGAppRefreshTaskRequest(identifier: identifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: seconds)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.debug("Scheduled background refresh")
+        } catch {
+            logger.error("Could not schedule background refresh: \(String(describing: error), privacy: .public)")
+        }
+        #endif
+    }
+
+    #if os(iOS) && !SKIP
+    private static func handle(_ task: BGTask) {
+        schedule()
+        let refreshTask = Task {
+            await LogseqChatRuntime.shared.refreshFromStoredConnection()
+            task.setTaskCompleted(success: true)
+        }
+        task.expirationHandler = {
+            refreshTask.cancel()
+            task.setTaskCompleted(success: false)
+        }
+    }
+    #endif
 }
 
 /// Global application delegate functions.

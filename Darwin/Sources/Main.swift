@@ -21,6 +21,7 @@ private typealias AppDelegate = LogseqChatAppDelegate
                 AppDelegate.shared.onPause()
             case .background:
                 AppDelegate.shared.onStop()
+                LogseqChatBackgroundRefresh.schedule()
             @unknown default:
                 print("unknown app phase: \(newPhase)")
             }
@@ -49,6 +50,8 @@ typealias AppType = NSApplication
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         AppDelegate.shared.onLaunch()
+        LogseqChatBackgroundRefresh.register()
+        LogseqChatBackgroundRefresh.schedule()
         return true
     }
 

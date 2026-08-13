@@ -3,6 +3,7 @@ open Yojson.Basic
 type config =
   { base_url : string
   ; graph_id : string
+  ; graph_name : string option
   ; token : string
   }
 
@@ -16,6 +17,12 @@ type request =
 type response =
   { status : int
   ; body : string
+  }
+
+type journal =
+  { uuid : string
+  ; title : string
+  ; journal_day : int
   }
 
 let epoch_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
@@ -58,13 +65,14 @@ let url_encode value =
   Buffer.contents buffer
 ;;
 
-let recent_blocks_request config =
+let recent_blocks_request config ~journal_day =
   { method_ = "GET"
   ; url =
       Printf.sprintf
-        "%s/api/v1/graphs/%s/search?q=%%20&types=blocks&limit=100"
+        "%s/api/v1/graphs/%s/blocks?journal-only=true&journal-day-at-most=%d&sort=created-at-desc&limit=100"
         (api_root config)
         (url_encode config.graph_id)
+        journal_day
   ; body = None
   ; token = config.token
   }
@@ -159,32 +167,74 @@ let block_of_json ?(fallback_time = 0) json =
               (match int_member "created-at" fields with
                | 0 -> fallback_time
                | value -> value)
-          ; updated_at =
-              (match int_member "updated-at" fields with
-               | 0 -> fallback_time
-               | value -> value)
-          }
+	          ; updated_at =
+	              (match int_member "updated-at" fields with
+	               | 0 -> fallback_time
+	               | value -> value)
+	          ; sync_status = "synced"
+	          }
   | _ -> None
 ;;
 
 let blocks_from_search_body body =
-  let now = epoch_ms () in
   match from_string body with
   | `Assoc fields ->
     (match List.assoc_opt "results" fields with
      | Some (`List results) ->
        results
-       |> List.mapi (fun index json ->
-         (* The search endpoint does not currently expose created-at. Preserve
-            response order with synthetic timestamps so the UI can group and
-            scroll consistently while keeping server-owned UUID/title/page ids. *)
-         block_of_json ~fallback_time:(now + index) json)
-       |> List.filter_map Fun.id
+       |> List.filter_map (block_of_json ~fallback_time:0)
      | _ -> [])
   | _ -> []
 ;;
 
-let graph_id_from_graphs_body body =
+let journals_from_search_body body =
+  match from_string body with
+  | `Assoc fields ->
+    (match List.assoc_opt "results" fields with
+     | Some (`List results) ->
+       results
+       |> List.filter_map (function
+         | `Assoc result_fields ->
+           let uuid = string_member "page-id" result_fields in
+           let title = string_member "journal-title" result_fields in
+           let journal_day = int_member "journal-day" result_fields in
+           if String.equal uuid "" || journal_day <= 0
+           then None
+           else Some { uuid; title; journal_day }
+         | _ -> None)
+       |> List.sort_uniq (fun left right -> String.compare left.uuid right.uuid)
+     | _ -> [])
+  | _ -> []
+;;
+
+let feed_from_body body =
+  match from_string body with
+  | `Assoc fields ->
+    let blocks =
+      match List.assoc_opt "blocks" fields with
+      | Some (`List values) -> List.filter_map block_of_json values
+      | _ -> []
+    in
+    let journals =
+      match List.assoc_opt "journals" fields with
+      | Some (`List values) ->
+        values
+        |> List.filter_map (function
+         | `Assoc page_fields ->
+           let uuid = string_member "uuid" page_fields in
+           let title = string_member "title" page_fields in
+           let journal_day = int_member "journal-day" page_fields in
+           if String.equal uuid "" || journal_day <= 0
+           then None
+           else Some { uuid; title; journal_day }
+         | _ -> None)
+      | _ -> []
+    in
+    blocks, journals
+  | _ -> [], []
+;;
+
+let graph_from_graphs_body body =
   match from_string body with
   | `Assoc fields ->
     (match List.assoc_opt "graphs" fields with
@@ -193,7 +243,13 @@ let graph_id_from_graphs_body body =
        |> List.find_map (function
          | `Assoc graph_fields ->
            (match List.assoc_opt "graph-id" graph_fields with
-            | Some (`String graph_id) when not (String.equal graph_id "") -> Some graph_id
+            | Some (`String graph_id) when not (String.equal graph_id "") ->
+              let graph_name =
+                match List.assoc_opt "graph-name" graph_fields with
+                | Some (`String value) when not (String.equal value "") -> Some value
+                | _ -> None
+              in
+              Some (graph_id, graph_name)
             | _ -> None)
          | _ -> None)
      | _ -> None)

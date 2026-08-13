@@ -1,0 +1,15 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- assertVisible:
+    id: "button.search"
+- tapOn:
+    id: "button.search"
+- assertVisible:
+    id: "field.search"
+- inputText: "And"
+- assertVisible: "And"

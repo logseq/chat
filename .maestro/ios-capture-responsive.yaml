@@ -1,0 +1,54 @@
+appId: com.logseq.chat
+---
+- launchApp
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn: "Search"
+- assertVisible: "Search blocks"
+- tapOn: "close"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.connection"
+- assertVisible: "Connection"
+- assertVisible:
+    id: "field.base-url"
+- assertVisible:
+    id: "field.pat"
+- tapOn:
+    id: "button.connection.cancel"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "field.composer"
+- inputText: "Clear me"
+- eraseText: 8
+- tapOn:
+    id: "field.composer"
+- inputText: "After clear"
+- tapOn:
+    id: "button.send"
+- assertVisible:
+    id: "field.composer"
+- assertVisible: "After clear"
+- inputText: "E2E capture responsive"
+- tapOn:
+    id: "button.send"
+- assertVisible:
+    id: "field.composer"
+- assertVisible: "E2E capture responsive"
+- tapOn: "E2E capture responsive"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn: "E2E capture responsive"
+- assertVisible: "Block"
+- assertVisible: "E2E capture responsive"
+- tapOn:
+    id: "button.block.edit"
+- assertVisible:
+    id: "field.block.title"
+- tapOn:
+    id: "button.block.cancel"
+- assertVisible: "E2E capture responsive"

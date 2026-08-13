@@ -46,15 +46,51 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     public let parentId: String?
     public let createdAt: Int64
     public let updatedAt: Int64
+    public let syncStatus: String?
+    public let journalTitle: String?
+    public let journalDay: Int?
+
+    public init(
+        uuid: String,
+        kind: String,
+        title: String,
+        pageId: String,
+        parentId: String?,
+        createdAt: Int64,
+        updatedAt: Int64,
+        syncStatus: String?,
+        journalTitle: String? = nil,
+        journalDay: Int? = nil
+    ) {
+        self.uuid = uuid
+        self.kind = kind
+        self.title = title
+        self.pageId = pageId
+        self.parentId = parentId
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.syncStatus = syncStatus
+        self.journalTitle = journalTitle
+        self.journalDay = journalDay
+    }
 
     public var id: String { uuid }
+    public var isPendingSync: Bool { syncStatus == "pending" }
+    public var isFailedSync: Bool { syncStatus == "failed" }
 
     public var createdDate: Date {
         Date(timeIntervalSince1970: Double(createdAt) / 1000.0)
     }
 
     public var dayTitle: String {
-        Self.dayFormatter.string(from: createdDate)
+        if let journalTitle, !journalTitle.isEmpty {
+            return journalTitle
+        }
+        return Self.dayFormatter.string(from: createdDate)
+    }
+
+    public var journalSectionID: String {
+        journalDay.map(String.init) ?? dayTitle
     }
 
     public var timeTitle: String {
@@ -78,6 +114,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
 
 public struct LogseqBlockSection: Identifiable, Hashable {
     public let id: String
+    public let title: String
     public let blocks: [LogseqBlock]
 }
 
@@ -87,6 +124,7 @@ public struct LogseqChatSnapshot: Codable {
     public let blocks: [LogseqBlock]
     public let selectedBlock: LogseqBlock?
     public let lastRefreshAt: Int64?
+    public let graphName: String?
     public let isSearching: Bool
 }
 
@@ -131,70 +169,170 @@ private struct UpdateBlockPayload: Encodable {
     let title: String
 }
 
-@Observable public final class LogseqChatStore {
+private struct SendBlockPayload: Encodable {
+    let text: String
+    let uuid: String
+    let now: Int64
+}
+
+@MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
         query: "",
         blocks: [],
         selectedBlock: nil,
         lastRefreshAt: nil,
+        graphName: nil,
         isSearching: false
     )
     public private(set) var lastError: LogseqChatCoreError?
     public private(set) var isRefreshing = false
 
-    private let callCore: (String) -> String
+    private let callCore: @Sendable (String) -> String
+    private var searchGeneration = 0
+    private var optimisticBlocks: [String: LogseqBlock] = [:]
 
-    public init(call: @escaping (String) -> String) {
+    public init(call: @escaping @Sendable (String) -> String) {
         self.callCore = call
     }
 
     public var sections: [LogseqBlockSection] {
-        var grouped: [LogseqBlockSection] = []
-        let chronologicalBlocks = snapshot.blocks.sorted { left, right in
+        let newestFirstBlocks = snapshot.blocks.sorted { left, right in
             if left.createdAt == right.createdAt {
                 return left.uuid < right.uuid
             }
-            return left.createdAt < right.createdAt
+            return left.createdAt > right.createdAt
         }
-        for block in chronologicalBlocks {
-            if let last = grouped.last, last.id == block.dayTitle {
-                grouped[grouped.count - 1] = LogseqBlockSection(
-                    id: last.id,
-                    blocks: last.blocks + [block]
-                )
-            } else {
-                grouped.append(LogseqBlockSection(id: block.dayTitle, blocks: [block]))
+        var blocksByJournal: [String: [LogseqBlock]] = [:]
+        var titlesByJournal: [String: String] = [:]
+        for block in newestFirstBlocks {
+            blocksByJournal[block.journalSectionID, default: []].append(block)
+            titlesByJournal[block.journalSectionID] = block.dayTitle
+        }
+        return blocksByJournal.map { id, blocks in
+            let oldestFirstBlocks = blocks.sorted { left, right in
+                if left.createdAt == right.createdAt {
+                    return left.uuid < right.uuid
+                }
+                return left.createdAt < right.createdAt
             }
+            return LogseqBlockSection(id: id, title: titlesByJournal[id] ?? id, blocks: oldestFirstBlocks)
+        }.sorted { left, right in
+            let leftCreatedAt = left.blocks.isEmpty ? 0 : left.blocks[left.blocks.count - 1].createdAt
+            let rightCreatedAt = right.blocks.isEmpty ? 0 : right.blocks[right.blocks.count - 1].createdAt
+            if leftCreatedAt == rightCreatedAt {
+                return left.id < right.id
+            }
+            return leftCreatedAt < rightCreatedAt
         }
-        return grouped
     }
 
     public func open(path: String) {
         perform(LogseqChatRPCRequest(method: "open", params: LogseqChatRPCParams(action: nil, path: path)))
     }
 
-    public func configure(baseURL: String, token: String) {
+    public func configure(baseURL: String, token: String, refreshAfterApply: Bool = true) {
+        let baseURL = Self.normalizedBaseURL(baseURL)
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = """
         {"baseUrl":"\(Self.escape(baseURL))","token":"\(Self.escape(token))"}
         """
-        perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload)))
+        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload)), afterApply: {
+            if refreshAfterApply {
+                self.refreshSoon()
+            }
+        })
+    }
+
+    public func configureAndRefreshForBackground(baseURL: String, token: String) async {
+        let baseURL = Self.normalizedBaseURL(baseURL)
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let payload = """
+        {"baseUrl":"\(Self.escape(baseURL))","token":"\(Self.escape(token))"}
+        """
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload))
+        )
+        await refreshAndSyncForBackground()
     }
 
     public func refresh() {
+        refresh(afterApply: nil)
+    }
+
+    private func refresh(afterApply: (@MainActor () -> Void)?) {
         isRefreshing = true
-        perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh")))
-        isRefreshing = false
+        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh")), afterApply: {
+            self.isRefreshing = false
+            afterApply?()
+        })
+    }
+
+    public func refreshSoon() {
+        Task {
+            await Task.yield()
+            refresh(afterApply: {
+                if self.lastError == nil {
+                    self.syncPending()
+                }
+            })
+        }
     }
 
     public func search(_ query: String) {
-        perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "search", payload: query)))
+        searchGeneration += 1
+        let generation = searchGeneration
+        performAsync(
+            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "search", payload: query)),
+            shouldApply: {
+                self.searchGeneration == generation
+            }
+        )
+    }
+
+    public func searchLocal(_ query: String) {
+        searchGeneration += 1
+        let generation = searchGeneration
+        performAsync(
+            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "searchLocal", payload: query)),
+            shouldApply: {
+                self.searchGeneration == generation
+            }
+        )
     }
 
     public func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "send", payload: trimmed)))
+        let now = Self.nowMilliseconds()
+        let uuid = "local-\(now)"
+        applyOptimisticSend(title: trimmed, uuid: uuid, now: now)
+        do {
+            let payloadData = try JSONEncoder().encode(SendBlockPayload(text: trimmed, uuid: uuid, now: now))
+            guard let payload = String(data: payloadData, encoding: .utf8) else {
+                lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode send payload")
+                logger.error("Core request encoding failed: send payload was not UTF-8")
+                return
+            }
+            performAsyncThenSyncPending(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "send", payload: payload)))
+        } catch {
+            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+            logger.error("Core request encoding failed: send, message: \(String(describing: error), privacy: .public)")
+            self.syncPending()
+        }
+    }
+
+    public func syncPending() {
+        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
+    }
+
+    public func refreshAndSyncForBackground() async {
+        isRefreshing = true
+        await performAsyncAndWait(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh")))
+        isRefreshing = false
+        if lastError == nil {
+            await performAsyncAndWait(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
+        }
     }
 
     public func update(block: LogseqBlock, title: String) {
@@ -204,11 +342,13 @@ private struct UpdateBlockPayload: Encodable {
             let payloadData = try JSONEncoder().encode(UpdateBlockPayload(uuid: block.uuid, title: trimmed))
             guard let payload = String(data: payloadData, encoding: .utf8) else {
                 lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode update payload")
+                logger.error("Core request encoding failed: update payload was not UTF-8")
                 return
             }
-            perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "updateBlock", payload: payload)))
+            performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "updateBlock", payload: payload)))
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+            logger.error("Core request encoding failed: updateBlock, message: \(String(describing: error), privacy: .public)")
         }
     }
 
@@ -221,31 +361,118 @@ private struct UpdateBlockPayload: Encodable {
     }
 
     @MainActor public func runRefreshLoop() async {
-        refresh()
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 300_000_000_000)
             refresh()
+            syncPending()
         }
     }
 
-    private func perform(_ request: LogseqChatRPCRequest) {
+    private func performAsync(
+        _ request: LogseqChatRPCRequest,
+        shouldApply: (@MainActor () -> Bool)? = nil,
+        afterApply: (@MainActor () -> Void)? = nil
+    ) {
+        Task {
+            await performAsyncAndWait(request, shouldApply: shouldApply)
+            afterApply?()
+        }
+    }
+
+    private func performAsyncThenSyncPending(_ request: LogseqChatRPCRequest) {
+        Task {
+            await performAsyncAndWait(request)
+            await performAsyncAndWait(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
+        }
+    }
+
+    private func perform(
+        _ request: LogseqChatRPCRequest,
+        shouldApply: (@MainActor () -> Bool)? = nil
+    ) {
+        let actionName = request.params.action ?? request.method
+        guard let requestJSON = encode(request) else {
+            return
+        }
+        logger.info("Core action started: \(actionName, privacy: .public)")
+        let responseJSON = callCore(requestJSON)
+        logger.info("Core action returned: \(actionName, privacy: .public)")
+        if shouldApply?() ?? true {
+            apply(responseJSON: responseJSON, actionName: actionName)
+        }
+    }
+
+    private func performAsyncAndWait(
+        _ request: LogseqChatRPCRequest,
+        shouldApply: (@MainActor () -> Bool)? = nil
+    ) async {
+        let actionName = request.params.action ?? request.method
+        guard let requestJSON = encode(request) else {
+            return
+        }
+        let callCore = callCore
+        logger.info("Core action started: \(actionName, privacy: .public)")
+        let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
+        logger.info("Core action returned: \(actionName, privacy: .public)")
+        if shouldApply?() ?? true {
+            apply(responseJSON: responseJSON, actionName: actionName)
+        }
+    }
+
+    nonisolated private static func callInBackground(
+        _ callCore: @escaping @Sendable (String) -> String,
+        requestJSON: String,
+        actionName: String
+    ) async -> String {
+        #if !SKIP
+        await Task.detached(priority: .utility) {
+            callCore(requestJSON)
+        }.value
+        #else
+        callCore(requestJSON)
+        #endif
+    }
+
+    private func encode(_ request: LogseqChatRPCRequest) -> String? {
         do {
             let requestData = try JSONEncoder().encode(request)
             guard let requestJSON = String(data: requestData, encoding: .utf8) else {
                 lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode request")
-                return
+                logger.error("Core request encoding failed: request was not UTF-8")
+                return nil
             }
-            let responseJSON = callCore(requestJSON)
+            return requestJSON
+        } catch {
+            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+            logger.error("Core request encoding failed: message: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    private func apply(responseJSON: String, actionName: String = "sync") {
+        do {
             let responseData = Data(responseJSON.utf8)
             let response = try JSONDecoder().decode(LogseqChatRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {
-                snapshot = result
+                let mergedResult = mergedSnapshot(result, actionName: actionName)
+                logger.info(
+                    "Core action applied: \(actionName, privacy: .public), revision: \(mergedResult.revision, privacy: .public), blocks: \(mergedResult.blocks.count, privacy: .public), graph: \(mergedResult.graphName ?? "none", privacy: .public)"
+                )
+                snapshot = mergedResult
                 lastError = nil
             } else {
-                lastError = response.error ?? LogseqChatCoreError(code: "unknown_core_error", message: "The core returned no snapshot")
+                let error = response.error ?? LogseqChatCoreError(code: "unknown_core_error", message: "The core returned no snapshot")
+                logger.error(
+                    "Core action failed: \(actionName, privacy: .public), code: \(error.code, privacy: .public), message: \(error.message, privacy: .public)"
+                )
+                lastError = error
             }
         } catch {
-            lastError = LogseqChatCoreError(code: "response_decoding", message: "\(error)")
+            let coreError = LogseqChatCoreError(code: "response_decoding", message: "\(error)")
+            logger.error(
+                "Core response decoding failed: \(actionName, privacy: .public), message: \(coreError.message, privacy: .public)"
+            )
+            lastError = coreError
         }
     }
 
@@ -254,5 +481,125 @@ private struct UpdateBlockPayload: Encodable {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private static func normalizedBaseURL(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == "https://staging-api.logseq.io" {
+            return "https://api-staging.logseq.io"
+        }
+        if trimmed == "http://staging-api.logseq.io" {
+            return "https://api-staging.logseq.io"
+        }
+        return trimmed
+    }
+
+    private func applyOptimisticSend(title: String, uuid: String, now: Int64) {
+        let block = LogseqBlock(
+            uuid: uuid,
+            kind: "block",
+            title: title,
+            pageId: Self.journalPageId(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
+            parentId: nil,
+            createdAt: now,
+            updatedAt: now,
+            syncStatus: "pending",
+            journalTitle: Self.dayTitle(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
+            journalDay: Self.journalDay(for: Date(timeIntervalSince1970: Double(now) / 1000.0))
+        )
+        optimisticBlocks[uuid] = block
+        snapshot = LogseqChatSnapshot(
+            revision: snapshot.revision + 1,
+            query: snapshot.query,
+            blocks: mergedBlocks(from: snapshot.blocks, query: snapshot.query),
+            selectedBlock: snapshot.selectedBlock,
+            lastRefreshAt: now,
+            graphName: snapshot.graphName,
+            isSearching: snapshot.isSearching
+        )
+        lastError = nil
+    }
+
+    private static func nowMilliseconds() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000.0)
+    }
+
+    private static func journalPageId(for date: Date) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        let year = components.year ?? 1970
+        let month = components.month ?? 1
+        let day = components.day ?? 1
+        return "journal/\(pad(year, to: 4))-\(pad(month, to: 2))-\(pad(day, to: 2))"
+    }
+
+    private static func journalDay(for date: Date) -> Int {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return (components.year ?? 0) * 10_000 + (components.month ?? 0) * 100 + (components.day ?? 0)
+    }
+
+    private static func dayTitle(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
+    private static func pad(_ value: Int, to width: Int) -> String {
+        let string = "\(value)"
+        if string.count >= width {
+            return string
+        }
+        return String(repeating: "0", count: width - string.count) + string
+    }
+
+    private func mergedSnapshot(_ result: LogseqChatSnapshot, actionName: String) -> LogseqChatSnapshot {
+        for uuid in result.blocks.map(\.uuid) {
+            optimisticBlocks.removeValue(forKey: uuid)
+        }
+
+        let preservesCurrentSearch = actionName != "search" && actionName != "searchLocal" && snapshot.isSearching
+        let query = preservesCurrentSearch ? snapshot.query : result.query
+        let isSearching = preservesCurrentSearch ? snapshot.isSearching : result.isSearching
+        return LogseqChatSnapshot(
+            revision: result.revision,
+            query: query,
+            blocks: mergedBlocks(from: result.blocks, query: query),
+            selectedBlock: result.selectedBlock,
+            lastRefreshAt: result.lastRefreshAt,
+            graphName: result.graphName,
+            isSearching: isSearching
+        )
+    }
+
+    private func mergedBlocks(from blocks: [LogseqBlock], query: String) -> [LogseqBlock] {
+        let knownUUIDs = Set(blocks.map(\.uuid))
+        let visibleBlocks = blocks.filter { Self.block($0, matches: query) }
+        let pendingBlocks = optimisticBlocks.values
+            .filter { !knownUUIDs.contains($0.uuid) }
+            .filter { Self.block($0, matches: query) }
+            .sorted { left, right in
+                if left.createdAt == right.createdAt {
+                    return left.uuid < right.uuid
+                }
+                return left.createdAt > right.createdAt
+            }
+        return pendingBlocks + visibleBlocks
+    }
+
+    private static func block(_ block: LogseqBlock, matches query: String) -> Bool {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedQuery.isEmpty else {
+            return true
+        }
+        if block.title.lowercased().contains(normalizedQuery) {
+            return true
+        }
+        if block.pageId.lowercased().contains(normalizedQuery) {
+            return true
+        }
+        if block.uuid.lowercased().contains(normalizedQuery) {
+            return true
+        }
+        return block.parentId?.lowercased().contains(normalizedQuery) == true
     }
 }

@@ -1,0 +1,18 @@
+appId: com.logseq.chat
+---
+- launchApp
+- assertVisible:
+    id: "button.composer.expand"
+- extendedWaitUntil:
+    visible: "pat test"
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "field.composer"
+- swipe:
+    start: "50%,45%"
+    end: "50%,75%"
+    duration: 600
+- assertVisible:
+    id: "field.composer"

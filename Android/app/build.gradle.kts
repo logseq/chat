@@ -9,6 +9,17 @@ plugins {
 skip {
 }
 
+val repoRoot = rootProject.projectDir.parentFile
+
+tasks.register<Exec>("buildAndroidNativeCore") {
+    workingDir = repoRoot
+    commandLine("bash", "scripts/build-android-native.sh")
+}
+
+tasks.named("preBuild") {
+    dependsOn("buildAndroidNativeCore")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(libs.versions.jvm.get().toString())
