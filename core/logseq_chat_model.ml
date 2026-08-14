@@ -512,6 +512,32 @@ let mark_block_synced model ~uuid =
     Ok ())
 ;;
 
+let reconcile_created_block model ~local_uuid ~remote_uuid =
+  match read_block model local_uuid with
+  | None -> Error ("unknown block: " ^ local_uuid)
+  | Some _ when String.equal local_uuid remote_uuid -> mark_block_synced model ~uuid:local_uuid
+  | Some local ->
+    let remote = read_block model remote_uuid in
+    let base = Option.value remote ~default:local in
+    let prefer_local local_value remote_value =
+      match local_value with Some _ -> local_value | None -> remote_value
+    in
+    let reconciled =
+      { base with
+        uuid = remote_uuid
+      ; kind = local.kind
+      ; sync_status = "synced"
+      ; asset_type = prefer_local local.asset_type base.asset_type
+      ; asset_size = prefer_local local.asset_size base.asset_size
+      ; asset_checksum = prefer_local local.asset_checksum base.asset_checksum
+      ; local_path = prefer_local local.local_path base.local_path
+      }
+    in
+    upsert_blocks model [ reconciled ] ~refresh_time:(max local.updated_at base.updated_at);
+    commit model [ RetractEntity (block_ref local_uuid) ];
+    Ok ()
+;;
+
 let mark_block_sync_failed model ~uuid =
   if not (block_exists model uuid)
   then Error ("unknown block: " ^ uuid)

@@ -102,12 +102,18 @@ private let testEmptySnapshotJSON = """
             assetChecksum: "abc",
             localPath: "/documents/photo.jpg"
         )
+        let localAsset = try #require(store.snapshot.blocks.first { $0.kind == "asset" })
+        #expect(UUID(uuidString: localAsset.uuid) != nil)
         #expect(store.snapshot.blocks.contains { $0.kind == "task" && $0.title == "Follow up" })
         #expect(store.snapshot.blocks.contains { $0.kind == "asset" && $0.localPath == "/documents/photo.jpg" })
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"sendTask\"") }
                 && recorder.all.contains { $0.contains("\"action\":\"addAsset\"") }
         }
+        let assetRequest = try #require(
+            recorder.all.last { $0.contains("\"action\":\"addAsset\"") }
+        )
+        #expect(extractSendUUID(from: assetRequest) == localAsset.uuid)
     }
 
     @Test @MainActor func updateBlockTitleAppliesCoreSnapshot() async throws {

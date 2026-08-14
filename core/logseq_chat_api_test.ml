@@ -30,6 +30,16 @@ let assert_some_string label expected = function
   | None -> failwith (label ^ ": expected a value")
 ;;
 
+let contains text substring =
+  let text_length = String.length text in
+  let substring_length = String.length substring in
+  let rec loop index =
+    index + substring_length <= text_length
+    && (String.equal (String.sub text index substring_length) substring || loop (index + 1))
+  in
+  substring_length = 0 || loop 0
+;;
+
 let () =
   let explicit =
     required_single_block
@@ -134,7 +144,23 @@ let () =
   assert_equal "asset upload path" "/documents/photo.jpg" upload.file_path;
   assert_equal "asset content type" "image/jpeg" upload.content_type;
   if upload.request.body <> None then failwith "asset bytes must not be encoded in request JSON";
-  if not (String.contains upload.request.url '?') then failwith "asset metadata belongs in query params";
+  if not (contains upload.request.url "?uuid=client-asset&")
+  then failwith "asset upload must preserve the local block uuid in the query";
+  assert_equal
+    "asset upload response uuid"
+    "server-asset"
+    (Logseq_chat_api.created_block_uuid_from_body
+       {|{"uuid":"server-asset","title":"photo.jpg","type":"jpg","size":2048,"checksum":"abc123"}|});
+  assert_equal
+    "task response uuid"
+    "server-task"
+    (Logseq_chat_api.created_block_uuid_from_body
+       {|{"uuid":"server-task","title":"Follow up","status":{"title":"Todo"}}|});
+  assert_equal
+    "capture response uuid"
+    "server-block"
+    (Logseq_chat_api.created_block_uuid_from_body
+       {|{"page-id":"journal","blocks":[{"uuid":"server-block","title":"Offline"}]}|});
   let block, journal =
     required_feed
       {|{"blocks":[{"uuid":"block-1","title":"Message","kind":"block","page-id":"journal-new","created-at":1776000000000}],"journals":[{"uuid":"journal-new","title":"Aug 13th, 2026","kind":"page","journal-day":20260813}]}|}

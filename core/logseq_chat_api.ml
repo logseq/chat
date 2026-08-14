@@ -172,6 +172,21 @@ let asset_upload_request config ~uuid ~file_name ~size ~checksum ~file_path ~con
   }
 ;;
 
+let created_block_uuid_from_body body =
+  match from_string body with
+  | `Assoc fields ->
+    (match List.assoc_opt "uuid" fields with
+     | Some (`String uuid) when not (String.equal (String.trim uuid) "") -> uuid
+     | _ ->
+       (match List.assoc_opt "blocks" fields with
+        | Some (`List (`Assoc block_fields :: _)) ->
+          (match List.assoc_opt "uuid" block_fields with
+           | Some (`String uuid) when not (String.equal (String.trim uuid) "") -> uuid
+           | _ -> failwith "creation response block is missing uuid")
+        | _ -> failwith "creation response is missing uuid"))
+  | _ -> failwith "creation response must be an object"
+;;
+
 let content_type_for_asset_type = function
   | "jpg" | "jpeg" -> "image/jpeg"
   | "png" -> "image/png"

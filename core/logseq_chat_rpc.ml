@@ -308,8 +308,19 @@ let sync_pending session config =
       in
       match result with
       | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
-        debug "sync pending block succeeded uuid=%s status=%d" block.uuid response.Api.status;
-        ignore (Model.mark_block_synced session.model ~uuid:block.uuid)
+        (try
+           let remote_uuid = Api.created_block_uuid_from_body response.body in
+           debug
+             "sync pending creation succeeded kind=%s local_uuid=%s remote_uuid=%s status=%d"
+             block.kind block.uuid remote_uuid response.Api.status;
+           ignore
+             (Model.reconcile_created_block
+                session.model ~local_uuid:block.uuid ~remote_uuid)
+         with exn ->
+           debug
+             "sync pending creation response failed kind=%s uuid=%s message=%s"
+             block.kind block.uuid (Printexc.to_string exn);
+           ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
       | Ok response ->
         debug "sync pending block HTTP failed uuid=%s status=%d" block.uuid response.Api.status;
         ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid)

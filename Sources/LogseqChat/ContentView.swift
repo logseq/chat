@@ -505,7 +505,7 @@ struct ContentView: View {
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
                 .accessibilityIdentifier("field.composer")
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 Menu {
                     #if SKIP
                     Button {
@@ -588,8 +588,8 @@ struct ContentView: View {
                     #endif
                 } label: {
                     IconImage(name: "plus")
-                        .frame(width: 16, height: 16)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 22, height: 22)
+                        .frame(width: 32, height: 32)
                         .foregroundStyle(.primary)
                 }
                 .accessibilityLabel("Add attachment")
@@ -602,9 +602,12 @@ struct ContentView: View {
                         Button("Clear task status") { selectedTaskStatus = nil }
                     }
                 } label: {
-                    TaskStatusIcon(status: selectedTaskStatus ?? LogseqTaskStatus.todo)
+                    TaskStatusIcon(
+                        status: selectedTaskStatus ?? LogseqTaskStatus.todo,
+                        size: 22
+                    )
                         .opacity(selectedTaskStatus == nil ? 0.55 : 1.0)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 32, height: 32)
                 }
                 .accessibilityLabel("Task status")
                 .accessibilityIdentifier("button.task-status")
@@ -613,8 +616,8 @@ struct ContentView: View {
                     sendDraft()
                 } label: {
                     IconImage(name: "arrow_upward")
-                        .frame(width: 16, height: 16)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 18, height: 18)
+                        .frame(width: 40, height: 40)
                         .foregroundStyle(Color.white)
                         .background(Circle().fill(Color.black))
                 }
@@ -1235,6 +1238,12 @@ private struct AssetAudioPlayer: View {
 
 private struct TaskStatusIcon: View {
     let status: LogseqTaskStatus
+    let size: CGFloat
+
+    init(status: LogseqTaskStatus, size: CGFloat = 16) {
+        self.status = status
+        self.size = size
+    }
 
     private var kind: String {
         let value = (status.ident ?? status.icon?.id ?? status.title).lowercased()
@@ -1274,7 +1283,7 @@ private struct TaskStatusIcon: View {
 
     var body: some View {
         IconImage(name: iconName)
-            .frame(width: 16, height: 16)
+            .frame(width: size, height: size)
             .foregroundStyle(color)
             .accessibilityLabel(status.title)
     }

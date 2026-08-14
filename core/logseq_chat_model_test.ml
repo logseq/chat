@@ -175,6 +175,63 @@ let assert_task_and_asset_metadata_persist () =
   assert_equal "asset local path" "/documents/voice.m4a" (Option.get asset.local_path)
 ;;
 
+let assert_uploaded_asset_reconciles_server_uuid () =
+  let model = Logseq_chat_model.create () in
+  Logseq_chat_model.cache_local_asset
+    model
+    ~uuid:"local-asset"
+    ~title:"photo.jpg"
+    ~asset_type:"jpg"
+    ~asset_size:2048
+    ~asset_checksum:"checksum"
+    ~local_path:"/documents/photo.jpg"
+    ~now:1_776_000_000_000;
+  Logseq_chat_model.upsert_blocks
+    model
+    [ { uuid = "server-asset"; kind = "asset"; title = "photo"; page_id = "remote-journal"
+      ; parent_id = Some "remote-journal"; created_at = 1_776_000_000_100
+      ; updated_at = 1_776_000_000_100; sync_status = "synced"; tags = []; references = []
+      ; status = None; asset_type = None; asset_size = None; asset_checksum = None
+      ; local_path = None } ]
+    ~refresh_time:1_776_000_000_100;
+  (match
+  Logseq_chat_model.reconcile_created_block
+       model ~local_uuid:"local-asset" ~remote_uuid:"server-asset"
+   with
+   | Ok () -> ()
+   | Error message -> failwith message);
+  if Option.is_some (Logseq_chat_model.read_block model "local-asset")
+  then failwith "local asset should be removed after the server assigns a different uuid";
+  let asset = Option.get (Logseq_chat_model.read_block model "server-asset") in
+  assert_equal "reconciled asset kind" "asset" asset.kind;
+  assert_equal "reconciled local path" "/documents/photo.jpg" (Option.get asset.local_path);
+  assert_equal "reconciled checksum" "checksum" (Option.get asset.asset_checksum);
+  assert_equal "reconciled sync status" "synced" asset.sync_status;
+  assert_int_equal
+    "one asset remains after uuid reconciliation"
+    1
+    (Logseq_chat_model.all_blocks model
+     |> List.filter (fun (block : Logseq_chat_model.block) -> String.equal block.kind "asset")
+     |> List.length)
+;;
+
+let assert_created_block_reconciles_server_uuid () =
+  let model = Logseq_chat_model.create () in
+  Logseq_chat_model.cache_local_message
+    model ~uuid:"local-block" ~title:"Offline capture" ~now:1_776_000_000_000;
+  (match
+     Logseq_chat_model.reconcile_created_block
+       model ~local_uuid:"local-block" ~remote_uuid:"server-block"
+   with
+   | Ok () -> ()
+   | Error message -> failwith message);
+  if Option.is_some (Logseq_chat_model.read_block model "local-block")
+  then failwith "local block should be removed after uuid reconciliation";
+  let block = Option.get (Logseq_chat_model.read_block model "server-block") in
+  assert_equal "reconciled block title" "Offline capture" block.title;
+  assert_equal "reconciled block status" "synced" block.sync_status
+;;
+
 let () =
   let model = Logseq_chat_model.create () in
   let now = 1_776_000_000_000 in
@@ -218,5 +275,7 @@ let () =
   assert_recent_blocks_require_a_current_or_past_journal_page ();
   assert_search_excludes_pages_and_empty_blocks ();
   assert_partial_search_result_preserves_journal_relation ();
-  assert_task_and_asset_metadata_persist ()
+  assert_task_and_asset_metadata_persist ();
+  assert_uploaded_asset_reconciles_server_uuid ();
+  assert_created_block_reconciles_server_uuid ()
 ;;
