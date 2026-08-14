@@ -75,6 +75,31 @@ let () =
   | _ -> failwith "clearRelated should expose related blocks"
 ;;
 
+let () =
+  let imported = ref None in
+  let session =
+    Logseq_chat_rpc.create
+      ~import_snapshot:(fun payload ->
+        imported := Some payload;
+        Ok ())
+      ()
+  in
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"importSnapshot","payload":"snapshot-payload"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     (match assoc "ok" fields with
+      | Some (`Bool true) -> ()
+      | _ -> failwith "importSnapshot should return success")
+   | _ -> failwith "importSnapshot should return an RPC response");
+  if !imported <> Some "snapshot-payload"
+  then failwith "importSnapshot did not call the native importer"
+;;
+
 let assert_dispatch_block action payload expected_kind expected_uuid =
   let session = Logseq_chat_rpc.create () in
   let request =

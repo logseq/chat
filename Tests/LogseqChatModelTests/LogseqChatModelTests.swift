@@ -112,6 +112,16 @@ private let testEmptySnapshotJSON = """
         }
     }
 
+    @Test func snapshotMetadataRequestUsesSyncAPIAndOAuthBearerToken() throws {
+        let request = try LogseqGraphSyncHTTP.snapshotMetadataRequest(
+            baseURL: "http://127.0.0.1:8787/api",
+            graphID: "plain graph",
+            accessToken: "oauth-token"
+        )
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/snapshot/download")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
+    }
+
     @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

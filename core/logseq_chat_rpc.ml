@@ -9,6 +9,8 @@ type t =
   ; mutable config : Api.config option
   ; mutable available_graphs : Api.graph list
   ; mutable related_blocks : Model.block list
+  ; open_graph : (string -> (unit, string) result) option
+  ; import_snapshot : (string -> (unit, string) result) option
   }
 
 let debug format =
@@ -186,8 +188,14 @@ let snapshot_visible session = snapshot session (Model.visible_blocks session.mo
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
-let create ?storage () =
-  { model = Model.create ?storage (); config = None; available_graphs = []; related_blocks = [] }
+let create ?storage ?open_graph ?import_snapshot () =
+  { model = Model.create ?storage ()
+  ; config = None
+  ; available_graphs = []
+  ; related_blocks = []
+  ; open_graph
+  ; import_snapshot
+  }
 ;;
 
 let discover_graphs session config =
@@ -411,6 +419,22 @@ let dispatch session action payload =
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
           snapshot_visible session)
      | _ -> failure ~code:"invalid_params" ~message:"selectGraph requires a graph id")
+  | "importSnapshot" ->
+    (match session.import_snapshot, payload with
+     | Some import_snapshot, Some payload ->
+       (match import_snapshot payload with
+        | Ok () -> snapshot_visible session
+        | Error message -> failure ~code:"snapshot_import_failed" ~message)
+     | None, _ -> failure ~code:"snapshot_import_unavailable" ~message:"Snapshot import is unavailable"
+     | _, None -> failure ~code:"invalid_params" ~message:"importSnapshot requires a JSON payload")
+  | "openGraph" ->
+    (match session.open_graph, payload with
+     | Some open_graph, Some payload ->
+       (match open_graph payload with
+        | Ok () -> snapshot_visible session
+        | Error message -> failure ~code:"graph_open_failed" ~message)
+     | None, _ -> failure ~code:"graph_open_unavailable" ~message:"Graph storage is unavailable"
+     | _, None -> failure ~code:"invalid_params" ~message:"openGraph requires a JSON payload")
   | "search" ->
     let query = Option.value payload ~default:"" in
     (match session.config, String.equal (String.trim query) "" with

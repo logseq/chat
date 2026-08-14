@@ -328,6 +328,70 @@ public struct LogseqChatRPCRequest: Encodable {
     }
 }
 
+public struct LogseqGraphSnapshotArtifact: Sendable {
+    public let metadataBody: String
+    public let filePath: String
+}
+
+public enum LogseqGraphSyncHTTP {
+    public static func snapshotMetadataRequest(
+        baseURL: String, graphID: String, accessToken: String
+    ) throws -> URLRequest {
+        guard var root = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw URLError(.badURL)
+        }
+        if root.path.hasSuffix("/api") {
+            root.deleteLastPathComponent()
+        }
+        let url = root
+            .appendingPathComponent("sync")
+            .appendingPathComponent(graphID)
+            .appendingPathComponent("snapshot")
+            .appendingPathComponent("download")
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    #if !SKIP
+    public static func downloadSnapshot(
+        baseURL: String, graphID: String, accessToken: String
+    ) async throws -> LogseqGraphSnapshotArtifact {
+        let metadataRequest = try snapshotMetadataRequest(
+            baseURL: baseURL, graphID: graphID, accessToken: accessToken
+        )
+        let (metadataData, metadataResponse) = try await URLSession.shared.data(for: metadataRequest)
+        try requireSuccess(metadataResponse)
+        let metadata = try JSONDecoder().decode(SnapshotDownloadMetadata.self, from: metadataData)
+        guard metadata.ok, let downloadURL = URL(string: metadata.url, relativeTo: metadataRequest.url) else {
+            throw URLError(.cannotParseResponse)
+        }
+        var downloadRequest = URLRequest(url: downloadURL.absoluteURL)
+        downloadRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let (temporaryURL, downloadResponse) = try await URLSession.shared.download(for: downloadRequest)
+        try requireSuccess(downloadResponse)
+        let ownedTemporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logseq-graph-\(UUID().uuidString).snapshot")
+        try FileManager.default.moveItem(at: temporaryURL, to: ownedTemporaryURL)
+        guard let metadataBody = String(data: metadataData, encoding: .utf8) else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        return LogseqGraphSnapshotArtifact(metadataBody: metadataBody, filePath: ownedTemporaryURL.path)
+    }
+
+    private static func requireSuccess(_ response: URLResponse) throws {
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    private struct SnapshotDownloadMetadata: Decodable {
+        let ok: Bool
+        let url: String
+    }
+    #endif
+}
+
 private struct UpdateBlockPayload: Encodable {
     let uuid: String
     let title: String
@@ -371,6 +435,20 @@ private struct AddAssetPayload: Encodable {
     let localPath: String
 }
 
+private struct ImportSnapshotPayload: Encodable {
+    let graphId: String
+    let activePath: String
+    let checkpointPath: String
+    let metadataBody: String
+    let downloadPath: String
+}
+
+private struct OpenGraphPayload: Encodable {
+    let graphId: String
+    let activePath: String
+    let checkpointPath: String
+}
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -388,6 +466,7 @@ private struct AddAssetPayload: Encodable {
     private let callCore: @Sendable (String) -> String
     private var searchGeneration = 0
     private var optimisticBlocks: [String: LogseqBlock] = [:]
+    private var openedDatabasePath: String?
 
     public init(call: @escaping @Sendable (String) -> String) {
         self.callCore = call
@@ -425,14 +504,18 @@ private struct AddAssetPayload: Encodable {
     }
 
     public func open(path: String) {
+        openedDatabasePath = path
         perform(LogseqChatRPCRequest(method: "open", params: LogseqChatRPCParams(action: nil, path: path)))
     }
 
-    public func configure(baseURL: String, token: String, refreshAfterApply: Bool = true) {
+    public func configure(
+        baseURL: String, token: String, graphID: String? = nil,
+        refreshAfterApply: Bool = true
+    ) {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = """
-        {"baseUrl":"\(Self.escape(baseURL))","token":"\(Self.escape(token))"}
+        {"baseUrl":"\(Self.escape(baseURL))","graphId":"\(Self.escape(graphID ?? ""))","token":"\(Self.escape(token))"}
         """
         performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload)), afterApply: {
             if refreshAfterApply {
@@ -441,11 +524,13 @@ private struct AddAssetPayload: Encodable {
         })
     }
 
-    public func configureAndRefreshForBackground(baseURL: String, token: String) async {
+    public func configureAndRefreshForBackground(
+        baseURL: String, token: String, graphID: String? = nil
+    ) async {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = """
-        {"baseUrl":"\(Self.escape(baseURL))","token":"\(Self.escape(token))"}
+        {"baseUrl":"\(Self.escape(baseURL))","graphId":"\(Self.escape(graphID ?? ""))","token":"\(Self.escape(token))"}
         """
         await performAsyncAndWait(
             LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload))
@@ -463,12 +548,87 @@ private struct AddAssetPayload: Encodable {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "selectGraph", payload: graphID)
             ),
-            afterApply: {
-                if self.lastError == nil {
-                    self.refreshSoon()
+            afterApply: nil
+        )
+    }
+
+    public func bootstrapSelectedGraph(
+        graphID: String, baseURL: String, accessToken: String
+    ) async {
+        #if SKIP
+        lastError = LogseqChatCoreError(
+            code: "snapshot_transport_unavailable",
+            message: "Native Android snapshot transport is not connected yet"
+        )
+        #else
+        guard let openedDatabasePath else {
+            lastError = LogseqChatCoreError(code: "database_not_open", message: "Open local storage before syncing")
+            return
+        }
+        do {
+            let graphDirectoryName = graphID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? graphID
+            let graphDirectory = URL(fileURLWithPath: openedDatabasePath)
+                .deletingLastPathComponent()
+                .appendingPathComponent("graphs")
+                .appendingPathComponent(graphDirectoryName)
+            try FileManager.default.createDirectory(at: graphDirectory, withIntermediateDirectories: true)
+            let activeURL = graphDirectory.appendingPathComponent("graph.sqlite")
+            let checkpointURL = graphDirectory.appendingPathComponent("sync.checkpoint")
+            let openPayload = OpenGraphPayload(
+                graphId: graphID,
+                activePath: activeURL.path,
+                checkpointPath: checkpointURL.path
+            )
+            if FileManager.default.fileExists(atPath: activeURL.path),
+               FileManager.default.fileExists(atPath: checkpointURL.path) {
+                await dispatchEncodedAndWait("openGraph", openPayload)
+                if lastError == nil {
+                    return
                 }
             }
-        )
+
+            let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
+                baseURL: baseURL, graphID: graphID, accessToken: accessToken
+            )
+            defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
+            let payload = ImportSnapshotPayload(
+                graphId: graphID,
+                activePath: activeURL.path,
+                checkpointPath: checkpointURL.path,
+                metadataBody: artifact.metadataBody,
+                downloadPath: artifact.filePath
+            )
+            let payloadData = try JSONEncoder().encode(payload)
+            guard let payloadString = String(data: payloadData, encoding: .utf8) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            await performAsyncAndWait(
+                LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "importSnapshot", payload: payloadString)
+                )
+            )
+        } catch {
+            lastError = LogseqChatCoreError(code: "snapshot_download_failed", message: "\(error)")
+        }
+        #endif
+    }
+
+    private func dispatchEncodedAndWait<T: Encodable>(_ action: String, _ value: T) async {
+        do {
+            let data = try JSONEncoder().encode(value)
+            guard let payload = String(data: data, encoding: .utf8) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            await performAsyncAndWait(
+                LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: action, payload: payload)
+                )
+            )
+        } catch {
+            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+        }
     }
 
     private func refresh(afterApply: (@MainActor () -> Void)?) {

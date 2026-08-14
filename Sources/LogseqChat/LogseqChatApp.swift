@@ -67,8 +67,9 @@ public struct LogseqChatRootView : View {
         openStore()
         let defaults = UserDefaults.standard
         let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
+        let graphID = defaults.string(forKey: "logseq.selectedGraphId")
         guard let token = try? await authentication.accessToken() else { return }
-        await store.configureAndRefreshForBackground(baseURL: baseURL, token: token)
+        await store.configureAndRefreshForBackground(baseURL: baseURL, token: token, graphID: graphID)
     }
 }
 

@@ -34,6 +34,7 @@ struct ContentView: View {
     #endif
     @State private var hasAutoScrolledInitially = false
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
+    @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
     @AppStorage("logseq.composerDraft") private var draft = ""
     @FocusState private var composerFocused: Bool
     @FocusState private var searchFocused: Bool
@@ -69,6 +70,18 @@ struct ContentView: View {
                 store.refreshSoon()
             }
         }
+        .onChange(of: store.snapshot.selectedGraphId) { _, graphID in
+            guard let graphID, !graphID.isEmpty else { return }
+            selectedGraphID = graphID
+            Task {
+                guard let accessToken = try? await authentication.accessToken() else { return }
+                await store.bootstrapSelectedGraph(
+                    graphID: graphID,
+                    baseURL: baseURL,
+                    accessToken: accessToken
+                )
+            }
+        }
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
                 baseURL: $baseURL,
@@ -80,6 +93,7 @@ struct ContentView: View {
                     settingsPresented = false
                     Task {
                         await authentication.signOut()
+                        selectedGraphID = ""
                         store.configure(baseURL: baseURL, token: "", refreshAfterApply: false)
                     }
                 }
@@ -139,6 +153,7 @@ struct ContentView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(graphs) { graph in
                             Button {
+                                selectedGraphID = graph.id
                                 store.selectGraph(graph.id)
                             } label: {
                                 HStack {
@@ -284,7 +299,11 @@ struct ContentView: View {
     private func connectWithCurrentAccessToken() {
         Task {
             guard let accessToken = try? await authentication.accessToken() else { return }
-            store.configure(baseURL: baseURL, token: accessToken)
+            store.configure(
+                baseURL: baseURL,
+                token: accessToken,
+                graphID: selectedGraphID.isEmpty ? nil : selectedGraphID
+            )
         }
     }
 
