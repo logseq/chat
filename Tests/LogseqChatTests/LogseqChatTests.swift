@@ -77,15 +77,20 @@ import Foundation
         #expect(mainSource.contains("AppDelegate.shared.onResume()"))
     }
 
-    @Test func androidLaunchAvoidsNavigationStackFirstFrame() throws {
+    @Test func appDoesNotExposeDetailPages() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         #expect(source.contains("#if SKIP"))
-        #expect(source.contains("mainContent\n                .sheet(item: $detailBlock)"))
+        #expect(!source.contains("detailBlock"))
+        #expect(!source.contains(".sheet(item:"))
         #expect(source.contains("#else\n            NavigationStack"))
-        #expect(source.contains(".navigationDestination(for: LogseqBlock.self)"))
+        #expect(!source.contains(".navigationDestination"))
+        #expect(!source.contains("BlockDetailView"))
+        #expect(!source.contains("EntityDetailView"))
+        #expect(!source.contains("RelatedBlocksList"))
+        #expect(!source.contains("DetailLine"))
     }
 
     @Test func composerSendKeepsEditingMode() throws {

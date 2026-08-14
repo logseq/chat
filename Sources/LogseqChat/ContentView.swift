@@ -20,7 +20,6 @@ struct ContentView: View {
     @State private var composerExpanded = false
     @State private var searchExpanded = false
     @State private var settingsPresented = false
-    @State private var detailBlock: LogseqBlock?
     @State private var fileImporterPresented = false
     @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var editingBlock: LogseqBlock?
@@ -105,9 +104,6 @@ struct ContentView: View {
     @ViewBuilder private var appShell: some View {
         #if SKIP
             mainContent
-                .sheet(item: $detailBlock) { block in
-                    BlockDetailView(block: block, store: store)
-                }
             #else
             NavigationStack {
                 mainContent
@@ -129,12 +125,6 @@ struct ContentView: View {
                     ) {
                         bottomToolbarComposer
                             .platformBottomComposerWidth()
-                    }
-                    .navigationDestination(for: LogseqBlock.self) { block in
-                        BlockDetailView(block: block, store: store)
-                    }
-                    .navigationDestination(for: LogseqEntitySummary.self) { entity in
-                        EntityDetailView(entity: entity, store: store)
                     }
             }
         #endif
@@ -1403,160 +1393,6 @@ private struct IconImage: View {
             .scaledToFit()
             .frame(width: 20, height: 20)
             .accessibilityHidden(true)
-    }
-}
-
-private struct BlockDetailView: View {
-    let block: LogseqBlock
-    let store: LogseqChatStore
-    @State private var editedTitle: String
-    @State private var isEditing = false
-
-    init(block: LogseqBlock, store: LogseqChatStore) {
-        self.block = block
-        self.store = store
-        _editedTitle = State(initialValue: block.title)
-    }
-
-    private var currentBlock: LogseqBlock {
-        store.snapshot.blocks.first { value in
-            value.uuid == block.uuid
-        } ?? block
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if isEditing {
-                    TextField("Block text", text: $editedTitle, axis: .vertical)
-                        .lineLimit(8)
-                        .textFieldStyle(.roundedBorder)
-                        .submitLabel(.done)
-                        .accessibilityIdentifier("field.block.title")
-                } else {
-                    Text(verbatim: currentBlock.title.isEmpty ? "Untitled block" : currentBlock.title)
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                }
-                HStack(spacing: 10) {
-                    Button(isEditing ? "Save" : "Edit") {
-                        if isEditing {
-                            store.update(block: currentBlock, title: editedTitle)
-                            isEditing = false
-                        } else {
-                            editedTitle = currentBlock.title
-                            isEditing = true
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isEditing && editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("button.block.edit")
-                    if isEditing {
-                        Button("Cancel") {
-                            editedTitle = currentBlock.title
-                            isEditing = false
-                        }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("button.block.cancel")
-                    }
-                }
-                DetailLine(label: "Type", value: currentBlock.kind)
-                DetailLine(label: "Block", value: currentBlock.uuid)
-                DetailLine(label: "Page", value: currentBlock.pageId)
-                if let parentId = currentBlock.parentId {
-                    DetailLine(label: "Parent", value: parentId)
-                }
-                DetailLine(label: "Created", value: "\(currentBlock.createdAt)")
-                DetailLine(label: "Updated", value: "\(currentBlock.updatedAt)")
-                if !currentBlock.tags.isEmpty {
-                    Text("Tags").font(.headline)
-                    ForEach(currentBlock.tags) { tag in
-                        NavigationLink(value: tag) {
-                            Text(verbatim: "#" + tag.title)
-                        }
-                    }
-                }
-                if !currentBlock.references.isEmpty {
-                    Text("References").font(.headline)
-                    ForEach(currentBlock.references) { reference in
-                        NavigationLink(value: reference) {
-                            Text(verbatim: "[[\(reference.title)]]")
-                        }
-                    }
-                }
-                RelatedBlocksList(blocks: store.snapshot.relatedBlocks ?? [])
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
-        }
-        .navigationTitle("Block")
-        .task {
-            store.loadBlockReferences(currentBlock.uuid)
-        }
-        .onDisappear {
-            store.clearRelated()
-        }
-    }
-}
-
-private struct EntityDetailView: View {
-    let entity: LogseqEntitySummary
-    let store: LogseqChatStore
-
-    var body: some View {
-        List {
-            Section {
-                Text(verbatim: entity.title)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-            }
-            Section(entity.kind == "tag" ? "Objects" : "References") {
-                RelatedBlocksList(blocks: store.snapshot.relatedBlocks ?? [])
-            }
-        }
-        .navigationTitle(entity.kind == "tag" ? "Tag" : "Reference")
-        .task {
-            switch entity.kind {
-            case "tag": store.loadTagObjects(entity.uuid)
-            case "page": store.loadPageReferences(entity.uuid)
-            default: store.loadBlockReferences(entity.uuid)
-            }
-        }
-        .onDisappear {
-            store.clearRelated()
-        }
-    }
-}
-
-private struct RelatedBlocksList: View {
-    let blocks: [LogseqBlock]
-
-    var body: some View {
-        ForEach(blocks) { block in
-            NavigationLink(value: block) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: block.title)
-                    Text(verbatim: block.timeTitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-}
-
-private struct DetailLine: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(verbatim: value)
-                .font(.callout)
-        }
     }
 }
 
