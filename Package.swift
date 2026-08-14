@@ -62,7 +62,8 @@ let package = Package(
         .target(
             name: "LogseqChatCoreABI",
             path: "Sources/LogseqChatCoreABI",
-            publicHeadersPath: "include"
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedLibrary("z")]
         ),
         .testTarget(name: "LogseqChatModelTests", dependencies: [
             "LogseqChatModel",

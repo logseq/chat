@@ -122,6 +122,28 @@ private let testEmptySnapshotJSON = """
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
     }
 
+    #if !SKIP
+    @Test func gzipSnapshotIsDecodedBeforeNativeImport() throws {
+        let compressed = try #require(Data(base64Encoded: "H4sIAAAAAAAC/2NgYGB2dHIGAMqqG9MHAAAA"))
+        let compressedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logseq-snapshot-\(UUID().uuidString).gz")
+        try compressed.write(to: compressedURL)
+        defer { try? FileManager.default.removeItem(at: compressedURL) }
+
+        let decodedURL = try LogseqGraphSyncHTTP.decodeSnapshotFile(
+            at: compressedURL,
+            contentEncoding: "gzip"
+        )
+        defer {
+            if decodedURL != compressedURL {
+                try? FileManager.default.removeItem(at: decodedURL)
+            }
+        }
+
+        #expect(try Data(contentsOf: decodedURL) == Data([0, 0, 0, 3, 65, 66, 67]))
+    }
+    #endif
+
     @Test func graphEventsRequestResumesFromAuthoritativeCursor() throws {
         let request = try LogseqGraphSyncHTTP.eventsRequest(
             baseURL: "http://127.0.0.1:8787",
@@ -132,6 +154,46 @@ private let testEmptySnapshotJSON = """
         #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain-1/events?since=48192")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
         #expect(request.value(forHTTPHeaderField: "Accept") == "text/event-stream")
+    }
+
+    #if !SKIP
+    @Test func sseTransportPreservesBlankLineFrameBoundary() throws {
+        var buffer = LogseqGraphSSETransportBuffer()
+        let first = try buffer.append(Data("id: 39\nevent: graph-changes\ndata: payload\n".utf8))
+        let second = try buffer.append(Data("\n".utf8))
+
+        #expect(first.isEmpty)
+        #expect(second == ["id: 39\nevent: graph-changes\ndata: payload\n\n"])
+    }
+    #endif
+
+    @Test @MainActor func restoredGraphDiscoveryRecoversItsNameBeforeSelection() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            let result: String
+            if request.contains("\"action\":\"refresh\"") {
+                result = #"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"selectedGraphId":null,"graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"isSearching":false}"#
+            } else if request.contains("\"action\":\"selectGraph\"") {
+                result = #"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"isSearching":false}"#
+            } else {
+                result = #"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"selectedGraphId":null,"graphs":[],"isSearching":false}"#
+            }
+            return #"{"apiVersion":1,"ok":true,"result":\#(result),"error":null}"#
+        }
+
+        await store.configureAndSelectGraph(
+            baseURL: "http://127.0.0.1:8787",
+            token: "oauth-token",
+            selectedGraphID: "plain-1"
+        )
+
+        #expect(recorder.all.count == 3)
+        #expect(recorder.all[0].contains("\"action\":\"configure\""))
+        #expect(recorder.all[0].contains("\\\"graphId\\\":\\\"\\\""))
+        #expect(recorder.all[1].contains("\"action\":\"refresh\""))
+        #expect(recorder.all[2].contains("\"action\":\"selectGraph\""))
+        #expect(store.snapshot.graphName == "Sync 2")
     }
 
     @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {

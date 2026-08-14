@@ -46,6 +46,8 @@ let () =
   let tag_uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4eca" in
   let new_uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4ecb" in
   let doomed_uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4ecc" in
+  let remote_parent_uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4ecd" in
+  let remote_child_uuid = "018f7850-c6aa-7da0-8b3f-6dbb64aa4ece" in
   let conn = create_conn ~schema () in
   ignore
     (transact_conn
@@ -71,6 +73,11 @@ let () =
                  , Value.Map [ Value.Keyword "priority", Value.Keyword "A" ] )
                ])
         ; entity new_uuid (block new_uuid "Created")
+        ; entity
+            remote_child_uuid
+            (block remote_child_uuid "Remote child"
+             @ [ Value.Keyword "block/parent", identity remote_parent_uuid ])
+        ; entity remote_parent_uuid (block remote_parent_uuid "Remote parent")
         ]
     ; deleted = [ identity doomed_uuid ]
     }
@@ -96,6 +103,19 @@ let () =
    | _ -> fail "nested property value changed type");
   if Option.is_none (entid db "block/uuid" (Uuid new_uuid))
   then fail "new entity was not created";
+  let remote_child_eid =
+    Option.get (entid db "block/uuid" (Uuid remote_child_uuid))
+  in
+  let remote_parent_eid =
+    Option.get (entid db "block/uuid" (Uuid remote_parent_uuid))
+  in
+  (match
+     datoms db Eavt ~e:remote_child_eid ~a:"block/parent" ()
+     |> List.of_seq
+     |> List.map (fun datom -> datom.v)
+   with
+   | [ Ref eid ] when eid = remote_parent_eid -> ()
+   | _ -> fail "same-batch reference did not resolve through a shared temp id");
   if Option.is_some (entid db "block/uuid" (Uuid doomed_uuid))
   then fail "authoritative remote deletion was not applied"
 ;;

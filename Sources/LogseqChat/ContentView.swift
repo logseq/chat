@@ -327,10 +327,10 @@ struct ContentView: View {
                 print("LogseqChat debug: access token acquired; configuring \(baseURL)")
                 #endif
                 logger.info("Configuring graph sync connection")
-                store.configure(
+                await store.configureAndSelectGraph(
                     baseURL: baseURL,
                     token: accessToken,
-                    graphID: selectedGraphID.isEmpty ? nil : selectedGraphID
+                    selectedGraphID: selectedGraphID.isEmpty ? nil : selectedGraphID
                 )
             } catch {
                 #if DEBUG
@@ -354,11 +354,11 @@ struct ContentView: View {
         let generation = graphSyncGeneration
         Task {
             guard let accessToken = try? await authentication.accessToken() else { return }
-            await store.bootstrapSelectedGraph(
+            guard await store.bootstrapSelectedGraph(
                 graphID: graphID,
                 baseURL: baseURL,
                 accessToken: accessToken
-            )
+            ) else { return }
             while generation == graphSyncGeneration && authentication.state == .signedIn {
                 guard let freshAccessToken = try? await authentication.accessToken() else { return }
                 let snapshotRequired = await store.runGraphEventsOnce(
@@ -368,12 +368,12 @@ struct ContentView: View {
                 )
                 if snapshotRequired {
                     guard let refreshedToken = try? await authentication.accessToken() else { return }
-                    await store.bootstrapSelectedGraph(
+                    guard await store.bootstrapSelectedGraph(
                         graphID: graphID,
                         baseURL: baseURL,
                         accessToken: refreshedToken,
                         forceSnapshot: true
-                    )
+                    ) else { return }
                 }
                 if generation == graphSyncGeneration {
                     try? await Task.sleep(for: .seconds(1))

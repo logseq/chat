@@ -338,6 +338,43 @@ public struct LogseqGraphSnapshotArtifact: Sendable {
     public let filePath: String
 }
 
+#if !SKIP
+struct LogseqGraphSSETransportBuffer {
+    private static let maximumFrameBytes = 64 * 1024 * 1024
+    private static let lineFeedBoundary = Data([0x0a, 0x0a])
+    private static let carriageReturnBoundary = Data([0x0d, 0x0a, 0x0d, 0x0a])
+    private var bytes = Data()
+
+    mutating func append(_ chunk: Data) throws -> [String] {
+        bytes.append(chunk)
+        guard bytes.count <= Self.maximumFrameBytes else {
+            throw URLError(.dataLengthExceedsMaximum)
+        }
+
+        var frames: [String] = []
+        while let boundary = nextBoundary() {
+            let frameData = bytes[..<boundary]
+            guard let frame = String(data: frameData, encoding: .utf8) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            frames.append(frame)
+            bytes.removeSubrange(..<boundary)
+        }
+        return frames
+    }
+
+    private func nextBoundary() -> Data.Index? {
+        let lineFeed = bytes.range(of: Self.lineFeedBoundary)?.upperBound
+        let carriageReturn = bytes.range(of: Self.carriageReturnBoundary)?.upperBound
+        switch (lineFeed, carriageReturn) {
+        case (let left?, let right?): return min(left, right)
+        case (let boundary?, nil), (nil, let boundary?): return boundary
+        case (nil, nil): return nil
+        }
+    }
+}
+#endif
+
 public enum LogseqGraphSyncHTTP {
     private static func apiRoot(_ baseURL: String) throws -> URL {
         guard var root = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
@@ -398,13 +435,48 @@ public enum LogseqGraphSyncHTTP {
         downloadRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (temporaryURL, downloadResponse) = try await URLSession.shared.download(for: downloadRequest)
         try requireSuccess(downloadResponse)
-        let ownedTemporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("logseq-graph-\(UUID().uuidString).snapshot")
-        try FileManager.default.moveItem(at: temporaryURL, to: ownedTemporaryURL)
-        guard let metadataBody = String(data: metadataData, encoding: .utf8) else {
-            throw URLError(.cannotDecodeContentData)
+        let ownedDownloadURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logseq-graph-\(UUID().uuidString).download")
+        try FileManager.default.moveItem(at: temporaryURL, to: ownedDownloadURL)
+        do {
+            let snapshotURL = try decodeSnapshotFile(
+                at: ownedDownloadURL,
+                contentEncoding: metadata.contentEncoding
+            )
+            if snapshotURL != ownedDownloadURL {
+                try? FileManager.default.removeItem(at: ownedDownloadURL)
+            }
+            guard let metadataBody = String(data: metadataData, encoding: .utf8) else {
+                try? FileManager.default.removeItem(at: snapshotURL)
+                throw URLError(.cannotDecodeContentData)
+            }
+            return LogseqGraphSnapshotArtifact(metadataBody: metadataBody, filePath: snapshotURL.path)
+        } catch {
+            try? FileManager.default.removeItem(at: ownedDownloadURL)
+            throw error
         }
-        return LogseqGraphSnapshotArtifact(metadataBody: metadataBody, filePath: ownedTemporaryURL.path)
+    }
+
+    static func decodeSnapshotFile(at inputURL: URL, contentEncoding: String?) throws -> URL {
+        guard let contentEncoding else { return inputURL }
+        let normalizedEncoding = contentEncoding.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalizedEncoding != "identity" else { return inputURL }
+        guard normalizedEncoding == "gzip" else {
+            throw SnapshotDecodingError.unsupportedEncoding(contentEncoding)
+        }
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logseq-graph-\(UUID().uuidString).snapshot")
+        let result = inputURL.path.withCString { inputPath in
+            outputURL.path.withCString { outputPath in
+                logseq_chat_gunzip_file(inputPath, outputPath)
+            }
+        }
+        guard result == 0 else {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw SnapshotDecodingError.gzipFailed(result)
+        }
+        return outputURL
     }
 
     private static func requireSuccess(_ response: URLResponse) throws {
@@ -416,6 +488,27 @@ public enum LogseqGraphSyncHTTP {
     private struct SnapshotDownloadMetadata: Decodable {
         let ok: Bool
         let url: String
+        let contentEncoding: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case ok
+            case url
+            case contentEncoding = "content-encoding"
+        }
+    }
+
+    private enum SnapshotDecodingError: LocalizedError {
+        case unsupportedEncoding(String)
+        case gzipFailed(Int32)
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedEncoding(let encoding):
+                return "Unsupported snapshot content encoding: \(encoding)"
+            case .gzipFailed(let code):
+                return "Could not decompress gzip snapshot (zlib error \(code))"
+            }
+        }
     }
     #endif
 }
@@ -568,6 +661,37 @@ private struct OpenGraphPayload: Encodable {
         await refreshAndSyncForBackground()
     }
 
+    public func configureAndSelectGraph(
+        baseURL: String, token: String, selectedGraphID: String?
+    ) async {
+        let baseURL = Self.normalizedBaseURL(baseURL)
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let payload = """
+        {"baseUrl":"\(Self.escape(baseURL))","graphId":"","token":"\(Self.escape(token))"}
+        """
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "configure", payload: payload)
+            )
+        )
+        guard lastError == nil else { return }
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh"))
+        )
+        guard
+            lastError == nil,
+            let selectedGraphID,
+            snapshot.graphs?.contains(where: { $0.id == selectedGraphID }) == true
+        else { return }
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "selectGraph", payload: selectedGraphID)
+            )
+        )
+    }
+
     public func refresh() {
         refresh(afterApply: nil)
     }
@@ -584,16 +708,17 @@ private struct OpenGraphPayload: Encodable {
 
     public func bootstrapSelectedGraph(
         graphID: String, baseURL: String, accessToken: String, forceSnapshot: Bool = false
-    ) async {
+    ) async -> Bool {
         #if SKIP
         lastError = LogseqChatCoreError(
             code: "snapshot_transport_unavailable",
             message: "Native Android snapshot transport is not connected yet"
         )
+        return false
         #else
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(code: "database_not_open", message: "Open local storage before syncing")
-            return
+            return false
         }
         do {
             let graphDirectoryName = graphID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? graphID
@@ -614,7 +739,7 @@ private struct OpenGraphPayload: Encodable {
                FileManager.default.fileExists(atPath: checkpointURL.path) {
                 await dispatchEncodedAndWait("openGraph", openPayload)
                 if lastError == nil {
-                    return
+                    return true
                 }
             }
 
@@ -639,8 +764,10 @@ private struct OpenGraphPayload: Encodable {
                     params: LogseqChatRPCParams(action: "importSnapshot", payload: payloadString)
                 )
             )
+            return lastError == nil
         } catch {
             lastError = LogseqChatCoreError(code: "snapshot_download_failed", message: "\(error)")
+            return false
         }
         #endif
     }
@@ -668,10 +795,21 @@ private struct OpenGraphPayload: Encodable {
             }
             await dispatchRawAndWait("startSSE")
             guard lastError == nil else { return false }
-            for try await line in bytes.lines {
+            var transportBuffer = LogseqGraphSSETransportBuffer()
+            var networkChunk = Data()
+            networkChunk.reserveCapacity(16 * 1024)
+            for try await byte in bytes {
                 if Task.isCancelled { break }
-                await dispatchRawAndWait("feedSSE", payload: line + "\n")
-                if lastError != nil { break }
+                networkChunk.append(byte)
+                if byte == 0x0a || networkChunk.count == 16 * 1024 {
+                    let frames = try transportBuffer.append(networkChunk)
+                    networkChunk.removeAll(keepingCapacity: true)
+                    for frame in frames {
+                        await dispatchRawAndWait("feedSSE", payload: frame)
+                        if lastError != nil { break }
+                    }
+                    if lastError != nil { break }
+                }
             }
             let streamError = lastError
             await dispatchRawAndWait("stopSSE")

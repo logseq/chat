@@ -47,10 +47,24 @@ let rec generic_value = function
 
 let schema_attr db attr = List.assoc_opt attr (Datascript.schema db)
 
-let value_for_attr db attr value =
+let temp_id identity_attr identity_value =
+  let suffix =
+    match identity_value with
+    | Uuid value | String value | Keyword value -> value
+    | _ -> string_of_int (Hashtbl.hash identity_value)
+  in
+  Temp_id ("remote:" ^ identity_attr ^ ":" ^ suffix)
+;;
+
+let value_for_attr db pending_temp_ids attr value =
   match schema_attr db attr with
   | Some { value_type = Some RefType; _ } ->
-    bind (identity_parts value) (fun (_identity_attr, _identity_value, entity_ref) ->
+    bind (identity_parts value) (fun (identity_attr, identity_value, entity_ref) ->
+      let entity_ref =
+        match List.assoc_opt (identity_attr, identity_value) pending_temp_ids with
+        | Some entity_ref -> entity_ref
+        | None -> entity_ref
+      in
       Ok (Ref_to entity_ref))
   | Some { value_type = Some TupleType; _ } ->
     (match value with
@@ -66,7 +80,7 @@ let value_for_attr db attr value =
   | Some _ | None -> Ok (generic_value value)
 ;;
 
-let values_for_attr db attr value =
+let values_for_attr db pending_temp_ids attr value =
   match schema_attr db attr with
   | Some { cardinality = Many; _ } ->
     let values =
@@ -77,37 +91,46 @@ let values_for_attr db attr value =
     let rec convert converted = function
       | [] -> Ok (List.rev converted)
       | value :: rest ->
-        bind (value_for_attr db attr value) (fun value ->
+        bind (value_for_attr db pending_temp_ids attr value) (fun value ->
           convert (value :: converted) rest)
     in
     convert [] values
   | Some { cardinality = One; _ } | None ->
-    bind (value_for_attr db attr value) (fun value -> Ok [ value ])
+    bind (value_for_attr db pending_temp_ids attr value) (fun value -> Ok [ value ])
 ;;
 
-let decoded_attrs db attrs =
+let decoded_attrs db pending_temp_ids attrs =
   let rec decode decoded = function
     | [] -> Ok (List.rev decoded)
     | (Value.Keyword attr, value) :: rest ->
-      bind (values_for_attr db attr value) (fun values ->
+      bind (values_for_attr db pending_temp_ids attr value) (fun values ->
         decode ((attr, values) :: decoded) rest)
     | _ -> Error "server entity attribute name is not a keyword"
   in
   decode [] attrs
 ;;
 
-let temp_id identity_attr identity_value =
-  let suffix =
-    match identity_value with
-    | Uuid value | String value | Keyword value -> value
-    | _ -> string_of_int (Hashtbl.hash identity_value)
+let pending_temp_ids db entities =
+  let rec collect pending = function
+    | [] -> Ok pending
+    | (entity : Protocol.entity) :: rest ->
+      bind (identity_parts entity.id) (fun (identity_attr, identity_value, identity_ref) ->
+        let pending =
+          match Datascript.entid_ref db identity_ref with
+          | Some _ -> pending
+          | None ->
+            ( (identity_attr, identity_value)
+            , temp_id identity_attr identity_value )
+            :: pending
+        in
+        collect pending rest)
   in
-  Temp_id ("remote:" ^ identity_attr ^ ":" ^ suffix)
+  collect [] entities
 ;;
 
-let upsert_ops db (entity : Protocol.entity) =
+let upsert_ops db pending_temp_ids (entity : Protocol.entity) =
   bind (identity_parts entity.id) (fun (identity_attr, identity_value, identity_ref) ->
-    bind (decoded_attrs db entity.attrs) (fun attrs ->
+    bind (decoded_attrs db pending_temp_ids entity.attrs) (fun attrs ->
       match Datascript.entid_ref db identity_ref with
       | Some eid ->
         let retractions =
@@ -157,17 +180,18 @@ let delete_ops db identities =
 let apply_change_set conn (change : Protocol.change_set) =
   try
     let db = Datascript.conn_db conn in
-    let rec collect_upserts operations = function
-      | [] -> Ok (List.rev operations |> List.concat)
-      | entity :: rest ->
-        bind (upsert_ops db entity) (fun entity_operations ->
-          collect_upserts (entity_operations :: operations) rest)
-    in
-    bind (collect_upserts [] change.upserts) (fun upserts ->
-      bind (delete_ops db change.deleted) (fun deletions ->
-        if upserts <> [] || deletions <> []
-        then ignore (Datascript.transact_conn conn (upserts @ deletions));
-        Ok ()))
+    bind (pending_temp_ids db change.upserts) (fun pending_temp_ids ->
+      let rec collect_upserts operations = function
+        | [] -> Ok (List.rev operations |> List.concat)
+        | entity :: rest ->
+          bind (upsert_ops db pending_temp_ids entity) (fun entity_operations ->
+            collect_upserts (entity_operations :: operations) rest)
+      in
+      bind (collect_upserts [] change.upserts) (fun upserts ->
+        bind (delete_ops db change.deleted) (fun deletions ->
+          if upserts <> [] || deletions <> []
+          then ignore (Datascript.transact_conn conn (upserts @ deletions));
+          Ok ())))
   with
   | error -> Error (Printexc.to_string error)
 ;;

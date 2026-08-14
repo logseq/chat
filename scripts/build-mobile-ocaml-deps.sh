@@ -21,7 +21,7 @@ yojson_source="$source_root/yojson"
 datascript_revision=3e9bee227686ba8608fc3fb027c4ebe30961360f
 persistent_set_revision=f95398e77a1a003f65ecf201c4aede961e52e929
 melange_edn_revision=a1410a31b57b5e42f152357d0303635685501bc6
-melange_transit_revision=99fb9f1c5bebf4ba5fa6d2378cfc97dbf14b5378
+melange_transit_revision=898bc1418e8e6405f53d659209d932cddc6e3070
 ptime_revision=fc8e8dab8f417558d882e6989b080d9f2100f8b6
 yojson_revision=b2193e8e0c88c6501710d08b836b3219673383f3
 ocamlopt="$target_prefix/bin/ocamlopt.opt"
@@ -37,6 +37,7 @@ clone_revision() {
   if [[ ! -d $destination/.git ]]; then
     git clone "$url" "$destination"
   fi
+  git -C "$destination" remote set-url origin "$url"
   git -C "$destination" fetch origin "$revision"
   git -C "$destination" checkout --detach "$revision"
 }
@@ -54,7 +55,7 @@ clone_revision \
   "$melange_edn_revision" \
   "$melange_edn_source"
 clone_revision \
-  https://github.com/RCmerci/melange-transit.git \
+  https://github.com/tiensonqin/melange-transit.git \
   "$melange_transit_revision" \
   "$melange_transit_source"
 clone_revision \
