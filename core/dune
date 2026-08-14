@@ -4,6 +4,7 @@
  (modules
   logseq_chat_api
   logseq_chat_edn
+  logseq_chat_entity_sync
   logseq_chat_graph_store
   logseq_chat_http
   logseq_chat_logseq_storage_codec
@@ -107,3 +108,8 @@
  (name logseq_chat_sync_session_test)
  (modules logseq_chat_sync_session_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
+
+(test
+ (name logseq_chat_entity_sync_test)
+ (modules logseq_chat_entity_sync_test)
+ (libraries logseq_chat_core melange-transit-core))
