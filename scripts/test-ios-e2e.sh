@@ -45,10 +45,15 @@ xcrun simctl spawn "$device" defaults write "$app_id" logseq.baseURL "$base_url"
 mkdir -p "$screenshots_dir"
 rendered_flow=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-ios-e2e.XXXXXX.yaml")
 trap 'rm -f "$rendered_flow"' EXIT
+if [[ $flow = /* ]]; then
+  flow_path=$flow
+else
+  flow_path="$repo_root/$flow"
+fi
 sed \
   -e "s|__LOGSEQ_CHAT_E2E_USERNAME__|$username|g" \
   -e "s|__LOGSEQ_CHAT_E2E_PASSWORD__|$password|g" \
-  "$repo_root/$flow" > "$rendered_flow"
+  "$flow_path" > "$rendered_flow"
 MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_flow"
 xcrun simctl io "$device" screenshot "$screenshots_dir/ios-e2e-final.png" >/dev/null
 

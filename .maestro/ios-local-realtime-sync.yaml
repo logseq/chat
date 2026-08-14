@@ -1,0 +1,44 @@
+appId: com.logseq.chat
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "field.email"
+- tapOn:
+    id: "field.email"
+- inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+- tapOn:
+    id: "field.password"
+- inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+- tapOn:
+    id: "button.sign-in"
+- extendedWaitUntil:
+    visible:
+      id: "screen.graph-picker"
+    timeout: 30000
+- tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+- extendedWaitUntil:
+    visible: "__LOGSEQ_CHAT_E2E_DESKTOP_BLOCK__"
+    timeout: 30000
+- assertVisible:
+    id: "sync.connected"
+- tapOn:
+    id: "button.composer.expand"
+- tapOn:
+    id: "field.composer"
+- inputText: "__LOGSEQ_CHAT_E2E_MOBILE_BLOCK__"
+- tapOn:
+    id: "button.send"
+- extendedWaitUntil:
+    visible:
+      id: "sync.cursor-advanced"
+    timeout: 30000
+- assertVisible: "__LOGSEQ_CHAT_E2E_MOBILE_BLOCK__"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "__LOGSEQ_CHAT_E2E_DESKTOP_BLOCK__"
+    timeout: 30000
+- assertVisible: "__LOGSEQ_CHAT_E2E_MOBILE_BLOCK__"
+- assertVisible:
+    id: "sync.connected"
