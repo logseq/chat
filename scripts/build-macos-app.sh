@@ -17,6 +17,7 @@ core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
 https_object="$core_build_dir/logseq_chat_https_darwin.o"
 sqlite_object="$core_build_dir/datascript_sqlite_stubs.o"
+graph_store_object="$core_build_dir/logseq_chat_graph_store_stubs.o"
 app_dir="$repo_root/.build/macos/LogseqChat.app"
 contents_dir="$app_dir/Contents"
 frameworks_dir="$contents_dir/Frameworks"
@@ -28,11 +29,7 @@ die() {
 }
 
 case "$configuration" in
-  debug)
-    swift_shell_flags=(-Onone -g)
-    ;;
-  release)
-    swift_shell_flags=(-O)
+  debug | release)
     ;;
   *)
     die "unsupported macOS build configuration: $configuration"
@@ -74,12 +71,36 @@ cd "$core_build_dir"
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_edn.cmx \
+  "$repo_root/core/logseq_chat_edn.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_protocol.cmx \
+  "$repo_root/core/logseq_chat_sync_protocol.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_state.cmx \
+  "$repo_root/core/logseq_chat_sync_state.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_checkpoint.cmx \
+  "$repo_root/core/logseq_chat_sync_checkpoint.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_snapshot.cmx \
+  "$repo_root/core/logseq_chat_snapshot.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_entity_sync.cmx \
+  "$repo_root/core/logseq_chat_entity_sync.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_mutation.cmx \
+  "$repo_root/core/logseq_chat_graph_mutation.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_read.cmx \
+  "$repo_root/core/logseq_chat_graph_read.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sse.cmx \
+  "$repo_root/core/logseq_chat_sse.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_api.cmx \
   "$repo_root/core/logseq_chat_api.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_http.cmx \
   "$repo_root/core/logseq_chat_http.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
   "$repo_root/core/logseq_chat_rpc.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
+  "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_store.cmx \
+  "$repo_root/core/logseq_chat_graph_store.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_session.cmx \
+  "$repo_root/core/logseq_chat_sync_session.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sqlite.cmx \
   "$repo_root/core/logseq_chat_sqlite.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_mobile_entry.cmx \
@@ -98,9 +119,21 @@ cd "$core_build_dir"
   threads.cmxa \
   "${dependency_objects[@]}" \
   logseq_chat_model.cmx \
+  logseq_chat_edn.cmx \
+  logseq_chat_sync_protocol.cmx \
+  logseq_chat_sync_state.cmx \
+  logseq_chat_sync_checkpoint.cmx \
+  logseq_chat_snapshot.cmx \
+  logseq_chat_entity_sync.cmx \
+  logseq_chat_graph_mutation.cmx \
+  logseq_chat_graph_read.cmx \
+  logseq_chat_sse.cmx \
   logseq_chat_api.cmx \
   logseq_chat_http.cmx \
   logseq_chat_rpc.cmx \
+  logseq_chat_logseq_storage_codec.cmx \
+  logseq_chat_graph_store.cmx \
+  logseq_chat_sync_session.cmx \
   logseq_chat_sqlite.cmx \
   logseq_chat_mobile_entry.cmx
 
@@ -119,6 +152,11 @@ cd "$core_build_dir"
   -c "$sqlite_stub_source" \
   -o "$sqlite_object"
 
+"$clang" -target "$triple" -isysroot "$sdk_path" -fPIC \
+  -I "$ocaml_lib" \
+  -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
+  -o "$graph_store_object"
+
 cd "$repo_root"
 swift build \
   -c "$configuration" \
@@ -130,6 +168,7 @@ swift build \
   -Xlinker "$ffi_object" \
   -Xlinker "$https_object" \
   -Xlinker "$sqlite_object" \
+  -Xlinker "$graph_store_object" \
   -Xlinker "$ocaml_lib/libthreadsnat.a" \
   -Xlinker -framework \
   -Xlinker Foundation \
@@ -193,23 +232,7 @@ xcrun actool \
 [[ -f $logseq_chat_bundle_resources/Assets.car ]] \
   || die "failed to compile the macOS icon asset catalog"
 
-xcrun --sdk macosx swiftc \
-  "${swift_shell_flags[@]}" \
-  -parse-as-library \
-  -module-name LogseqChatShell \
-  -target "$triple" \
-  -sdk "$sdk_path" \
-  -I "$swift_build_dir/Modules" \
-  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
-  -Xcc "-I$repo_root/Sources/LogseqChatCoreABI/include" \
-  -L "$swift_build_dir" \
-  -lLogseqChat \
-  -framework SwiftUI \
-  -framework AppKit \
-  -Xlinker -rpath \
-  -Xlinker @executable_path/../Frameworks \
-  "$repo_root/Darwin/Sources/Main.swift" \
-  -o "$contents_dir/MacOS/LogseqChat"
+cp "$swift_build_dir/LogseqChatShell" "$contents_dir/MacOS/LogseqChat"
 
 codesign --force --sign - --timestamp=none "$frameworks_dir/libLogseqChat.dylib"
 codesign --force --sign - --timestamp=none "$app_dir"

@@ -71,6 +71,30 @@ check_rejects \
     LOGSEQ_CHAT_MACOS_PRINT_BUILD_SETTINGS=1 \
     "$build_script"
 
+for module in \
+  logseq_chat_edn \
+  logseq_chat_entity_sync \
+  logseq_chat_graph_mutation \
+  logseq_chat_graph_read \
+  logseq_chat_graph_store \
+  logseq_chat_logseq_storage_codec \
+  logseq_chat_snapshot \
+  logseq_chat_sse \
+  logseq_chat_sync_checkpoint \
+  logseq_chat_sync_protocol \
+  logseq_chat_sync_session \
+  logseq_chat_sync_state; do
+  if ! grep -q "core/$module.ml" "$build_script"; then
+    echo "not ok - macOS build omits OCaml module: $module" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+if ! grep -q 'logseq_chat_graph_store_stubs.c' "$build_script"; then
+  echo "not ok - macOS build omits native graph storage stubs" >&2
+  failures=$((failures + 1))
+fi
+
 check_succeeds \
   "macOS app bundle links the native OCaml core" \
   "ok - native OCaml core is linked" \
