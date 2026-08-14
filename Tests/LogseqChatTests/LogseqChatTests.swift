@@ -185,7 +185,8 @@ import Foundation
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         #expect(source.contains("@State private var searchPresented = false"))
-        #expect(source.contains(".searchable(text: $searchText, isPresented: $searchPresented"))
+        #expect(source.contains(".platformSearchable(\n                        enabled: !composerExpanded"))
+        #expect(source.contains("self.searchable(\n                text: text,\n                isPresented: isPresented"))
         #expect(source.contains(".platformSearchFocused($searchFocused)"))
         #expect(source.contains("self.searchFocused(binding)"))
         #expect(source.contains(".searchToolbarBehavior(.minimize)"))

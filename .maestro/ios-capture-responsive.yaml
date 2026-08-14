@@ -23,6 +23,7 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - assertVisible:
     id: "field.composer"
+- assertNotVisible: "Search blocks"
 - assertVisible:
     id: "button.attachment"
 - assertVisible:

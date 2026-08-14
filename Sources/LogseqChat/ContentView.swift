@@ -107,7 +107,12 @@ struct ContentView: View {
             #else
             NavigationStack {
                 mainContent
-                    .searchable(text: $searchText, isPresented: $searchPresented, placement: .automatic, prompt: "Search blocks")
+                    .platformSearchable(
+                        enabled: !composerExpanded,
+                        text: $searchText,
+                        isPresented: $searchPresented,
+                        prompt: "Search blocks"
+                    )
                     .platformSearchFocused($searchFocused)
                     .onSubmit(of: .search) {
                         store.search(searchText)
@@ -962,6 +967,24 @@ extension View {
     }
 
     #if !SKIP
+    @ViewBuilder public func platformSearchable(
+        enabled: Bool,
+        text: Binding<String>,
+        isPresented: Binding<Bool>,
+        prompt: String
+    ) -> some View {
+        if enabled {
+            self.searchable(
+                text: text,
+                isPresented: isPresented,
+                placement: .automatic,
+                prompt: Text(verbatim: prompt)
+            )
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder public func platformRootNavigationChromeHidden() -> some View {
         #if os(iOS)
         if #available(iOS 18.0, *) {
