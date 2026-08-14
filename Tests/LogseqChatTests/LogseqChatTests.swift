@@ -450,6 +450,19 @@ import Foundation
         #expect(blockList.contains("handleBlockTap(block)"))
     }
 
+    @Test func journalBlocksRemainDirectLazyStackChildren() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let sectionsStart = try #require(source.range(of: "ForEach(store.sections) { section in"))
+        let sectionsSource = source[sectionsStart.lowerBound...]
+        let listEnd = try #require(sectionsSource.range(of: "\n                    Color.clear"))
+        let sectionRows = sectionsSource[..<listEnd.lowerBound]
+
+        #expect(sectionRows.contains("ForEach(section.blocks) { block in"))
+        #expect(!sectionRows.contains("VStack(alignment: .leading"))
+    }
+
     @Test func tappingBlockDismissesAnOpenComposerOtherwiseLoadsTheBlock() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")

@@ -305,28 +305,27 @@ struct ContentView: View {
                         EmptyBlocksView()
                     } else {
                         ForEach(store.sections) { section in
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(verbatim: section.title)
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 4)
-                                ForEach(section.blocks) { block in
-                                    if block.kind == "asset" {
-                                        BlockRow(
-                                            block: block,
-                                            onOpenAsset: { openAsset(block) }
-                                        )
-                                    } else {
-                                        BlockRow(
-                                            block: block,
-                                            statuses: availableTaskStatuses,
-                                            onEdit: { handleBlockTap(block) },
-                                            onStatusChange: { status in
-                                                store.updateStatus(block: block, status: status)
-                                            }
-                                        )
-                                    }
+                            Text(verbatim: section.title)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 8)
+                            ForEach(section.blocks) { block in
+                                if block.kind == "asset" {
+                                    BlockRow(
+                                        block: block,
+                                        onOpenAsset: { openAsset(block) }
+                                    )
+                                } else {
+                                    BlockRow(
+                                        block: block,
+                                        statuses: availableTaskStatuses,
+                                        onEdit: { handleBlockTap(block) },
+                                        onStatusChange: { status in
+                                            store.updateStatus(block: block, status: status)
+                                        }
+                                    )
                                 }
                             }
                         }
