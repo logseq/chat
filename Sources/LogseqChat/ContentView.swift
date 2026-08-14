@@ -33,6 +33,7 @@ struct ContentView: View {
     #endif
     #endif
     @State private var hasAutoScrolledInitially = false
+    @State private var graphSyncGeneration = 0
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
     @AppStorage("logseq.composerDraft") private var draft = ""
@@ -73,14 +74,7 @@ struct ContentView: View {
         .onChange(of: store.snapshot.selectedGraphId) { _, graphID in
             guard let graphID, !graphID.isEmpty else { return }
             selectedGraphID = graphID
-            Task {
-                guard let accessToken = try? await authentication.accessToken() else { return }
-                await store.bootstrapSelectedGraph(
-                    graphID: graphID,
-                    baseURL: baseURL,
-                    accessToken: accessToken
-                )
-            }
+            startGraphSync(graphID)
         }
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
@@ -93,6 +87,7 @@ struct ContentView: View {
                     settingsPresented = false
                     Task {
                         await authentication.signOut()
+                        graphSyncGeneration += 1
                         selectedGraphID = ""
                         store.configure(baseURL: baseURL, token: "", refreshAfterApply: false)
                     }
@@ -307,6 +302,39 @@ struct ContentView: View {
         }
     }
 
+    private func startGraphSync(_ graphID: String) {
+        graphSyncGeneration += 1
+        let generation = graphSyncGeneration
+        Task {
+            guard let accessToken = try? await authentication.accessToken() else { return }
+            await store.bootstrapSelectedGraph(
+                graphID: graphID,
+                baseURL: baseURL,
+                accessToken: accessToken
+            )
+            while generation == graphSyncGeneration && authentication.state == .signedIn {
+                guard let freshAccessToken = try? await authentication.accessToken() else { return }
+                let snapshotRequired = await store.runGraphEventsOnce(
+                    graphID: graphID,
+                    baseURL: baseURL,
+                    accessToken: freshAccessToken
+                )
+                if snapshotRequired {
+                    guard let refreshedToken = try? await authentication.accessToken() else { return }
+                    await store.bootstrapSelectedGraph(
+                        graphID: graphID,
+                        baseURL: baseURL,
+                        accessToken: refreshedToken,
+                        forceSnapshot: true
+                    )
+                }
+                if generation == graphSyncGeneration {
+                    try? await Task.sleep(for: .seconds(1))
+                }
+            }
+        }
+    }
+
     private var appBackground: some View {
         platformAppBackground
             .ignoresSafeArea()
@@ -343,6 +371,18 @@ struct ContentView: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            if store.snapshot.syncConnected == true {
+                Text(verbatim: "Connected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("sync.connected")
+            }
+            if store.cursorAdvancedAfterMutation {
+                Text(verbatim: "Synced")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("sync.cursor-advanced")
+            }
             Spacer()
             settingsControl
         }

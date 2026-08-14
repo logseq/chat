@@ -267,6 +267,8 @@ public struct LogseqChatSnapshot: Codable {
     public let graphName: String?
     public let selectedGraphId: String?
     public let graphs: [LogseqGraph]?
+    public let appliedServerT: Int?
+    public let syncConnected: Bool?
     public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
     public let taskStatuses: [LogseqTaskStatus]?
@@ -275,6 +277,7 @@ public struct LogseqChatSnapshot: Codable {
         revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
         lastRefreshAt: Int64?, graphName: String?, isSearching: Bool,
         selectedGraphId: String? = nil, graphs: [LogseqGraph]? = nil,
+        appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
         taskStatuses: [LogseqTaskStatus]? = nil
     ) {
@@ -286,6 +289,8 @@ public struct LogseqChatSnapshot: Codable {
         self.graphName = graphName
         self.selectedGraphId = selectedGraphId
         self.graphs = graphs
+        self.appliedServerT = appliedServerT
+        self.syncConnected = syncConnected
         self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
         self.taskStatuses = taskStatuses
@@ -334,15 +339,20 @@ public struct LogseqGraphSnapshotArtifact: Sendable {
 }
 
 public enum LogseqGraphSyncHTTP {
-    public static func snapshotMetadataRequest(
-        baseURL: String, graphID: String, accessToken: String
-    ) throws -> URLRequest {
+    private static func apiRoot(_ baseURL: String) throws -> URL {
         guard var root = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw URLError(.badURL)
         }
         if root.path.hasSuffix("/api") {
             root.deleteLastPathComponent()
         }
+        return root
+    }
+
+    public static func snapshotMetadataRequest(
+        baseURL: String, graphID: String, accessToken: String
+    ) throws -> URLRequest {
+        let root = try apiRoot(baseURL)
         let url = root
             .appendingPathComponent("sync")
             .appendingPathComponent(graphID)
@@ -350,6 +360,24 @@ public enum LogseqGraphSyncHTTP {
             .appendingPathComponent("download")
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    public static func eventsRequest(
+        baseURL: String, graphID: String, appliedServerT: Int, accessToken: String
+    ) throws -> URLRequest {
+        let eventsURL = try apiRoot(baseURL)
+            .appendingPathComponent("sync")
+            .appendingPathComponent(graphID)
+            .appendingPathComponent("events")
+        guard var components = URLComponents(url: eventsURL, resolvingAgainstBaseURL: false) else {
+            throw URLError(.badURL)
+        }
+        components.queryItems = [URLQueryItem(name: "since", value: "\(appliedServerT)")]
+        guard let url = components.url else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         return request
     }
 
@@ -462,11 +490,13 @@ private struct OpenGraphPayload: Encodable {
     )
     public private(set) var lastError: LogseqChatCoreError?
     public private(set) var isRefreshing = false
+    public private(set) var cursorAdvancedAfterMutation = false
 
     private let callCore: @Sendable (String) -> String
     private var searchGeneration = 0
     private var optimisticBlocks: [String: LogseqBlock] = [:]
     private var openedDatabasePath: String?
+    private var mutationServerT: Int?
 
     public init(call: @escaping @Sendable (String) -> String) {
         self.callCore = call
@@ -553,7 +583,7 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func bootstrapSelectedGraph(
-        graphID: String, baseURL: String, accessToken: String
+        graphID: String, baseURL: String, accessToken: String, forceSnapshot: Bool = false
     ) async {
         #if SKIP
         lastError = LogseqChatCoreError(
@@ -579,7 +609,8 @@ private struct OpenGraphPayload: Encodable {
                 activePath: activeURL.path,
                 checkpointPath: checkpointURL.path
             )
-            if FileManager.default.fileExists(atPath: activeURL.path),
+            if !forceSnapshot,
+               FileManager.default.fileExists(atPath: activeURL.path),
                FileManager.default.fileExists(atPath: checkpointURL.path) {
                 await dispatchEncodedAndWait("openGraph", openPayload)
                 if lastError == nil {
@@ -614,6 +645,50 @@ private struct OpenGraphPayload: Encodable {
         #endif
     }
 
+    public func runGraphEventsOnce(
+        graphID: String, baseURL: String, accessToken: String
+    ) async -> Bool {
+        #if SKIP
+        return false
+        #else
+        guard let cursor = snapshot.appliedServerT else {
+            lastError = LogseqChatCoreError(code: "sync_cursor_missing", message: "Graph checkpoint is not open")
+            return false
+        }
+        do {
+            let request = try LogseqGraphSyncHTTP.eventsRequest(
+                baseURL: baseURL,
+                graphID: graphID,
+                appliedServerT: cursor,
+                accessToken: accessToken
+            )
+            let (bytes, response) = try await URLSession.shared.bytes(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
+            await dispatchRawAndWait("startSSE")
+            guard lastError == nil else { return false }
+            for try await line in bytes.lines {
+                if Task.isCancelled { break }
+                await dispatchRawAndWait("feedSSE", payload: line + "\n")
+                if lastError != nil { break }
+            }
+            let streamError = lastError
+            await dispatchRawAndWait("stopSSE")
+            if let streamError {
+                lastError = streamError
+                return streamError.code == "snapshot_required"
+            }
+        } catch is CancellationError {
+            await dispatchRawAndWait("stopSSE")
+        } catch {
+            await dispatchRawAndWait("stopSSE")
+            lastError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
+        }
+        return false
+        #endif
+    }
+
     private func dispatchEncodedAndWait<T: Encodable>(_ action: String, _ value: T) async {
         do {
             let data = try JSONEncoder().encode(value)
@@ -629,6 +704,15 @@ private struct OpenGraphPayload: Encodable {
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
         }
+    }
+
+    private func dispatchRawAndWait(_ action: String, payload: String? = nil) async {
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: action, payload: payload)
+            )
+        )
     }
 
     private func refresh(afterApply: (@MainActor () -> Void)?) {
@@ -677,6 +761,8 @@ private struct OpenGraphPayload: Encodable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let now = Self.nowMilliseconds()
+        mutationServerT = snapshot.appliedServerT
+        cursorAdvancedAfterMutation = false
         let uuid = UUID().uuidString.lowercased()
         applyOptimisticSend(title: trimmed, uuid: uuid, now: now)
         do {
@@ -1005,6 +1091,8 @@ private struct OpenGraphPayload: Encodable {
             isSearching: snapshot.isSearching,
             selectedGraphId: snapshot.selectedGraphId,
             graphs: snapshot.graphs,
+            appliedServerT: snapshot.appliedServerT,
+            syncConnected: snapshot.syncConnected,
             relatedBlocks: snapshot.relatedBlocks,
             taskStatuses: snapshot.taskStatuses
         )
@@ -1041,6 +1129,8 @@ private struct OpenGraphPayload: Encodable {
             isSearching: snapshot.isSearching,
             selectedGraphId: snapshot.selectedGraphId,
             graphs: snapshot.graphs,
+            appliedServerT: snapshot.appliedServerT,
+            syncConnected: snapshot.syncConnected,
             relatedBlocks: snapshot.relatedBlocks,
             taskStatuses: snapshot.taskStatuses
         )
@@ -1087,6 +1177,11 @@ private struct OpenGraphPayload: Encodable {
         let preservesCurrentSearch = actionName != "search" && actionName != "searchLocal" && snapshot.isSearching
         let query = preservesCurrentSearch ? snapshot.query : result.query
         let isSearching = preservesCurrentSearch ? snapshot.isSearching : result.isSearching
+        if let mutationServerT, let appliedServerT = result.appliedServerT,
+           appliedServerT > mutationServerT {
+            cursorAdvancedAfterMutation = true
+            self.mutationServerT = nil
+        }
         return LogseqChatSnapshot(
             revision: result.revision,
             query: query,
@@ -1097,6 +1192,8 @@ private struct OpenGraphPayload: Encodable {
             isSearching: isSearching,
             selectedGraphId: result.selectedGraphId,
             graphs: result.graphs ?? snapshot.graphs,
+            appliedServerT: result.appliedServerT,
+            syncConnected: result.syncConnected,
             relatedBlocks: result.relatedBlocks,
             taskStatuses: result.taskStatuses ?? snapshot.taskStatuses
         )

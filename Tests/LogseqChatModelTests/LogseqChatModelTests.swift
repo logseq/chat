@@ -122,6 +122,18 @@ private let testEmptySnapshotJSON = """
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
     }
 
+    @Test func graphEventsRequestResumesFromAuthoritativeCursor() throws {
+        let request = try LogseqGraphSyncHTTP.eventsRequest(
+            baseURL: "http://127.0.0.1:8787",
+            graphID: "plain-1",
+            appliedServerT: 48192,
+            accessToken: "fresh-token"
+        )
+        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain-1/events?since=48192")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "text/event-stream")
+    }
+
     @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

@@ -4,6 +4,7 @@ module Checkpoint = Logseq_chat_sync_checkpoint
 type graph_runtime = Datascript.conn * Logseq_chat_sync_state.t * string
 
 let graph_runtime : graph_runtime option ref = ref None
+let sse_parser = ref (Logseq_chat_sse.create ())
 
 let required_string fields name =
   match List.assoc_opt name fields with
@@ -73,8 +74,70 @@ let import_snapshot payload =
   | error -> Error (Printexc.to_string error)
 ;;
 
+let start_sse () = sse_parser := Logseq_chat_sse.create ()
+
+let feed_sse chunk =
+  let bind result f = match result with Ok value -> f value | Error _ as error -> error in
+  let rec apply_frames = function
+    | [] -> Ok ()
+    | (frame : Logseq_chat_sse.frame) :: rest ->
+      bind
+        (Logseq_chat_sync_protocol.decode_event ~event_name:frame.event frame.data)
+        (function
+          | Logseq_chat_sync_protocol.Reset reset ->
+            Error ("snapshot required: " ^ reset.reason)
+          | Graph_changes change ->
+            (match !graph_runtime with
+             | None -> Error "graph runtime is not open"
+             | Some (conn, state, checkpoint_path) ->
+               bind
+                 (Sync_session.apply_change_set ~conn ~checkpoint_path state change)
+                 (fun () -> apply_frames rest)))
+  in
+  apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
+;;
+
+let sync_cursor () =
+  match !graph_runtime with
+  | Some (_conn, state, _checkpoint_path) ->
+    Some (Logseq_chat_sync_state.applied_server_t state)
+  | None -> None
+;;
+
+let insert_block_tx ~uuid ~title ~now =
+  match !graph_runtime with
+  | Some (conn, _state, _checkpoint_path) ->
+    Logseq_chat_graph_mutation.insert_block_tx
+      (Datascript.conn_db conn)
+      ~uuid
+      ~title
+      ~now
+  | None -> Error "graph runtime is not open"
+;;
+
+let save_block_tx ~uuid ~title ~status_ident =
+  Logseq_chat_graph_mutation.save_block_tx ~uuid ~title ~status_ident
+;;
+
+let graph_blocks () =
+  match !graph_runtime with
+  | Some (conn, _state, _checkpoint_path) ->
+    Some (Logseq_chat_graph_read.blocks (Datascript.conn_db conn))
+  | None -> None
+;;
+
 let create_session ?storage () =
-  Logseq_chat_rpc.create ?storage ~open_graph ~import_snapshot ()
+  Logseq_chat_rpc.create
+    ?storage
+    ~open_graph
+    ~import_snapshot
+    ~start_sse
+    ~feed_sse
+    ~sync_cursor
+    ~insert_block_tx
+    ~save_block_tx
+    ~graph_blocks
+    ()
 ;;
 let session = ref (create_session ())
 let sqlite_session : Logseq_chat_sqlite.session option ref = ref None
