@@ -326,7 +326,7 @@ struct ContentView: View {
                                         BlockRow(
                                             block: block,
                                             statuses: availableTaskStatuses,
-                                            onEdit: { editBlock(block) },
+                                            onEdit: { handleBlockTap(block) },
                                             onStatusChange: { status in
                                                 store.updateStatus(block: block, status: status)
                                             }
@@ -375,6 +375,14 @@ struct ContentView: View {
 
     private var blockListContentBottomPadding: CGFloat {
         72.0
+    }
+
+    private func handleBlockTap(_ block: LogseqBlock) {
+        guard !composerExpanded else {
+            dismissComposerEditing()
+            return
+        }
+        editBlock(block)
     }
 
     private func editBlock(_ block: LogseqBlock) {

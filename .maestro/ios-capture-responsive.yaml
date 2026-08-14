@@ -47,12 +47,10 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.composer.expand"
 - tapOn: "E2E capture responsive"
-- assertVisible: "Block"
-- assertVisible: "E2E capture responsive"
-- tapOn:
-    id: "button.block.edit"
 - assertVisible:
-    id: "field.block.title"
+    id: "field.composer"
+- eraseText: 22
+- inputText: "E2E block edited"
 - tapOn:
-    id: "button.block.cancel"
-- assertVisible: "E2E capture responsive"
+    id: "button.send"
+- assertVisible: "E2E block edited"

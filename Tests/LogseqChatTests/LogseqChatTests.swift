@@ -431,7 +431,7 @@ import Foundation
         #expect(blockList.contains("dismissComposerEditing()"))
     }
 
-    @Test func tappingBlockLoadsItIntoComposerInsteadOfNavigating() throws {
+    @Test func tappingBlockDismissesAnOpenComposerOtherwiseLoadsTheBlock() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
@@ -440,9 +440,11 @@ import Foundation
         let nextView = try #require(blockListSource.range(of: "\n\n    private var blockListContentTopPadding"))
         let blockList = blockListSource[..<nextView.lowerBound]
 
-        #expect(blockList.contains("editBlock(block)"))
+        #expect(blockList.contains("handleBlockTap(block)"))
         #expect(!blockList.contains("NavigationLink(value: block)"))
         #expect(!blockList.contains("openBlock(block)"))
+        #expect(source.contains("private func handleBlockTap(_ block: LogseqBlock)"))
+        #expect(source.contains("guard !composerExpanded else {\n            dismissComposerEditing()\n            return\n        }"))
         #expect(source.contains("private func editBlock(_ block: LogseqBlock)"))
         #expect(source.contains("editingBlock = block"))
         #expect(source.contains("draft = block.title"))
