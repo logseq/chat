@@ -208,6 +208,7 @@ cd "$core_build_dir"
   -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
   -o "$graph_store_object"
 
+rm -f "$swift_build_dir/LogseqChatShell"
 LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$core_object:$ffi_object:$https_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a" \
 swift build \
   -c "$build_configuration" \

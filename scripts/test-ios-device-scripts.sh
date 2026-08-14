@@ -71,6 +71,12 @@ if ! grep -q 'NSLocalNetworkUsageDescription' \
   failures=$((failures + 1))
 fi
 
+if ! grep -q 'rm -f "$swift_build_dir/LogseqChatShell"' \
+  "$repo_root/scripts/build-mobile-ios-device.sh"; then
+  echo "not ok - device build does not relink after native core changes" >&2
+  failures=$((failures + 1))
+fi
+
 check_rejects() {
   local name=$1
   local expected=$2

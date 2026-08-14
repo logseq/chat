@@ -101,6 +101,10 @@ let () =
     "task statuses URL"
     "https://api.example/api/v1/graphs/graph-1/search?q=Status&types=properties&limit=100"
     (Logseq_chat_api.task_statuses_request config).url;
+  assert_equal
+    "graph discovery uses the authenticated db-sync graph index"
+    "https://api.example/graphs"
+    (Logseq_chat_api.graphs_request config).url;
   let search_request = Logseq_chat_api.search_request config "voice" in
   if not (String.contains search_request.url ',')
   then failwith "remote search must include block and asset resources";

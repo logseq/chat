@@ -105,7 +105,7 @@ let task_statuses_request config =
 
 let graphs_request config =
   { method_ = "GET"
-  ; url = Printf.sprintf "%s/api/v1/graphs" (api_root config)
+  ; url = Printf.sprintf "%s/graphs" (api_root config)
   ; body = None
   ; token = config.token
   }
