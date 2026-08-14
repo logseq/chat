@@ -6,6 +6,7 @@
   logseq_chat_edn
   logseq_chat_graph_store
   logseq_chat_http
+  logseq_chat_logseq_storage_codec
   logseq_chat_model
   logseq_chat_rpc
   logseq_chat_snapshot

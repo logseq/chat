@@ -9,6 +9,9 @@ external read_stored_row
   -> (string * string option) option
   = "logseq_chat_graph_store_read_row"
 
+external list_stored_addresses : string -> int list = "logseq_chat_graph_store_list_addresses"
+external delete_stored_addresses : string -> int list -> unit = "logseq_chat_graph_store_delete"
+
 let staging_path active_path = active_path ^ ".import"
 
 let protect operation f =
@@ -41,4 +44,51 @@ let activate ~active_path =
 let read_row ~path ~addr =
   try Ok (read_stored_row path addr) with
   | error -> Error ("read graph snapshot row: " ^ Printexc.to_string error)
+;;
+
+let int_of_address address =
+  match int_of_string_opt address with
+  | Some address -> address
+  | None -> invalid_arg ("Logseq graph storage address is not an integer: " ^ address)
+;;
+
+let storage ~path : Datascript.storage =
+  let storage_store entries =
+    entries
+    |> List.map (fun (address, payload) ->
+      let content, addresses = Logseq_chat_logseq_storage_codec.encode payload in
+      { Logseq_chat_snapshot.addr = int_of_address address; content; addresses })
+    |> append_staging path
+  in
+  { storage_store
+  ; storage_restore =
+      (fun address ->
+        match read_stored_row path (int_of_address address) with
+        | None -> None
+        | Some (content, addresses) ->
+          Some (Logseq_chat_logseq_storage_codec.decode ?addresses content))
+  ; storage_list_addresses =
+      (fun () -> List.map string_of_int (list_stored_addresses path))
+  ; storage_delete =
+      (fun addresses ->
+        delete_stored_addresses path (List.map int_of_address addresses))
+  }
+;;
+
+let restore_db ~path =
+  try
+    match Datascript.restore (storage ~path) with
+    | Some db -> Ok db
+    | None -> Error "graph storage has no DataScript root"
+  with
+  | error -> Error ("restore graph DataScript db: " ^ Printexc.to_string error)
+;;
+
+let restore_conn ~path =
+  try
+    match Datascript.restore_conn (storage ~path) with
+    | Some conn -> Ok conn
+    | None -> Error "graph storage has no DataScript root"
+  with
+  | error -> Error ("restore graph DataScript connection: " ^ Printexc.to_string error)
 ;;

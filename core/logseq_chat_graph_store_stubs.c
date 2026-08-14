@@ -55,7 +55,9 @@ CAMLprim value logseq_chat_graph_store_append(value raw_path, value raw_rows)
   sqlite3 *db = open_database(String_val(raw_path));
   sqlite3_stmt *statement = NULL;
   const char *sql =
-    "insert into kvs (addr, content, addresses) values (?, ?, ?)";
+    "insert into kvs (addr, content, addresses) values (?, ?, ?) "
+    "on conflict(addr) do update set content = excluded.content, "
+    "addresses = excluded.addresses";
 
   execute(db, "begin immediate transaction", "starting graph row transaction");
   if (sqlite3_prepare_v2(db, sql, -1, &statement, NULL) != SQLITE_OK) {
@@ -108,6 +110,64 @@ CAMLprim value logseq_chat_graph_store_append(value raw_path, value raw_rows)
 
   sqlite3_finalize(statement);
   execute(db, "commit transaction", "committing graph row transaction");
+  sqlite3_close(db);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value logseq_chat_graph_store_list_addresses(value raw_path)
+{
+  CAMLparam1(raw_path);
+  CAMLlocal2(result, cell);
+  sqlite3 *db = open_database(String_val(raw_path));
+  sqlite3_stmt *statement = NULL;
+  const char *sql = "select addr from kvs order by addr desc";
+  result = Val_emptylist;
+
+  if (sqlite3_prepare_v2(db, sql, -1, &statement, NULL) != SQLITE_OK) {
+    fail_sqlite(db, "preparing graph address list");
+  }
+  int rc = SQLITE_OK;
+  while ((rc = sqlite3_step(statement)) == SQLITE_ROW) {
+    cell = caml_alloc(2, 0);
+    Store_field(cell, 0, Val_long(sqlite3_column_int64(statement, 0)));
+    Store_field(cell, 1, result);
+    result = cell;
+  }
+  if (rc != SQLITE_DONE) {
+    sqlite3_finalize(statement);
+    fail_sqlite(db, "reading graph address list");
+  }
+  sqlite3_finalize(statement);
+  sqlite3_close(db);
+  CAMLreturn(result);
+}
+
+CAMLprim value logseq_chat_graph_store_delete(value raw_path, value raw_addresses)
+{
+  CAMLparam2(raw_path, raw_addresses);
+  sqlite3 *db = open_database(String_val(raw_path));
+  sqlite3_stmt *statement = NULL;
+  const char *sql = "delete from kvs where addr = ?";
+
+  execute(db, "begin immediate transaction", "starting graph row deletion");
+  if (sqlite3_prepare_v2(db, sql, -1, &statement, NULL) != SQLITE_OK) {
+    execute(db, "rollback transaction", "rolling back graph row deletion");
+    fail_sqlite(db, "preparing graph row deletion");
+  }
+  for (value cursor = raw_addresses;
+       cursor != Val_emptylist;
+       cursor = Field(cursor, 1)) {
+    sqlite3_reset(statement);
+    sqlite3_clear_bindings(statement);
+    if (sqlite3_bind_int64(statement, 1, Long_val(Field(cursor, 0))) != SQLITE_OK
+        || sqlite3_step(statement) != SQLITE_DONE) {
+      sqlite3_finalize(statement);
+      execute(db, "rollback transaction", "rolling back graph row deletion");
+      fail_sqlite(db, "deleting graph row");
+    }
+  }
+  sqlite3_finalize(statement);
+  execute(db, "commit transaction", "committing graph row deletion");
   sqlite3_close(db);
   CAMLreturn(Val_unit);
 }
