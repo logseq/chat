@@ -12,6 +12,7 @@ type status =
   ; title : string
   ; icon_type : string option
   ; icon_id : string option
+  ; icon_color : string option
   }
 
 type block =
@@ -163,7 +164,8 @@ let status_json (status : status) =
     ([ "uuid", `String status.uuid; "title", `String status.title ]
      @ optional "ident" status.ident
      @ optional "icon-type" status.icon_type
-     @ optional "icon-id" status.icon_id)
+     @ optional "icon-id" status.icon_id
+     @ optional "icon-color" status.icon_color)
   |> Yojson.Basic.to_string
 ;;
 
@@ -181,6 +183,7 @@ let status_of_json value =
          ; title
          ; icon_type = string fields "icon-type"
          ; icon_id = string fields "icon-id"
+         ; icon_color = string fields "icon-color"
          }
      | _ -> None)
   | _ -> None
@@ -225,6 +228,18 @@ let all_block_uuids model =
 
 let all_blocks model =
   all_block_uuids model |> List.filter_map (read_block model)
+;;
+
+let all_statuses model =
+  let prefix = "status-catalog/" in
+  datoms model.db Aevt ~a:"block/uuid" () |> List.of_seq
+  |> List.filter_map (fun datom ->
+    match datom.v with
+    | String uuid when
+        String.length uuid > String.length prefix
+        && String.equal (String.sub uuid 0 (String.length prefix)) prefix ->
+      Option.bind (read_block model uuid) (fun block -> block.status)
+    | _ -> None)
 ;;
 
 let journal_day_for_ms now =
@@ -312,6 +327,28 @@ let commit model transactions =
   match storage model.db with
   | Some storage -> store ~storage model.db
   | None -> ()
+;;
+
+let upsert_statuses model statuses =
+  let transactions =
+    List.concat_map
+      (fun (status : status) ->
+        let uuid = "status-catalog/" ^ status.uuid in
+        let entity_ref =
+          if block_exists model uuid then block_ref uuid else Temp_id ("status-" ^ status.uuid)
+        in
+        [ Add (entity_ref, "block/uuid", String uuid)
+        ; Add (entity_ref, "block/kind", String "page")
+        ; Add (entity_ref, "block/title", String "")
+        ; Add (entity_ref, "block/page-id", String "")
+        ; Add (entity_ref, "block/created-at", Int 0)
+        ; Add (entity_ref, "block/updated-at", Int 0)
+        ; Add (entity_ref, "block/sync-status", String "synced")
+        ; Add (entity_ref, "block/status-json", String (status_json status))
+        ])
+      statuses
+  in
+  if transactions <> [] then commit model transactions
 ;;
 
 let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =

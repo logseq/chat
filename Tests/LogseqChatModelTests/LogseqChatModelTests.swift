@@ -61,14 +61,31 @@ private let testEmptySnapshotJSON = """
     }
 
     @Test func decodesTaskTagsReferencesAndAssetMetadata() throws {
-        let data = Data(#"{"uuid":"asset-1","kind":"asset","title":"photo.jpg","pageId":"journal-1","createdAt":1,"updatedAt":2,"tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock"}},"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}"#.utf8)
+        let data = Data(##"{"uuid":"asset-1","kind":"asset","title":"photo.jpg","pageId":"journal-1","createdAt":1,"updatedAt":2,"tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}},"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}"##.utf8)
         let block = try JSONDecoder().decode(LogseqBlock.self, from: data)
         #expect(block.tags.first?.title == "Project")
         #expect(block.references.first?.kind == "page")
         #expect(block.status?.icon?.id == "clock")
+        #expect(block.status?.icon?.color == "#7c3aed")
         #expect(block.assetType == "jpg")
         #expect(block.assetSize == 2048)
         #expect(block.localPath == "/documents/photo.jpg")
+    }
+
+    @Test func builtInTaskStatusesMatchLogseq() {
+        #expect(LogseqTaskStatus.builtIn.map(\.title) == [
+            "Backlog", "Todo", "Doing", "In Review", "Done", "Canceled"
+        ])
+        #expect(LogseqTaskStatus.builtIn.compactMap { $0.icon?.id } == [
+            "Backlog", "Todo", "InProgress50", "InReview", "Done", "Cancelled"
+        ])
+    }
+
+    @Test func snapshotDecodesCustomTaskStatusCatalog() throws {
+        let data = Data(##"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Test","isSearching":false,"taskStatuses":[{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}]}"##.utf8)
+        let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
+        #expect(snapshot.taskStatuses?.first?.title == "Waiting")
+        #expect(snapshot.taskStatuses?.first?.icon?.color == "#7c3aed")
     }
 
     @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {

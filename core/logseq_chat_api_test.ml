@@ -53,6 +53,14 @@ let () =
     (Option.map (fun (status : Logseq_chat_model.status) -> status.title) semantic.status);
   assert_some_string "status icon" "circle"
     (Option.bind semantic.status (fun (status : Logseq_chat_model.status) -> status.icon_id));
+  let statuses =
+    Logseq_chat_api.statuses_from_property_body
+      {|{"results":[{"uuid":"property-status","ident":"logseq.property/status","title":"Status","choices":[{"uuid":"status-waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}]}]}|}
+  in
+  assert_int_equal "status choice count" 1 (List.length statuses);
+  let custom_status = List.hd statuses in
+  assert_equal "status choice title" "Waiting" custom_status.title;
+  assert_some_string "status choice color" "#7c3aed" custom_status.icon_color;
   assert_some_string "asset type" "jpg" semantic.asset_type;
   assert_int_equal "asset size" 2048 (Option.value semantic.asset_size ~default:0);
   let search_journals =
@@ -79,6 +87,10 @@ let () =
     "recent blocks URL"
     "https://api.example/api/v1/graphs/graph-1/blocks?journal-only=true&journal-day-at-most=20260813&sort=created-at-desc&limit=100"
     feed_request.url;
+  assert_equal
+    "task statuses URL"
+    "https://api.example/api/v1/graphs/graph-1/search?q=Status&types=properties&limit=100"
+    (Logseq_chat_api.task_statuses_request config).url;
   let search_request = Logseq_chat_api.search_request config "voice" in
   if not (String.contains search_request.url ',')
   then failwith "remote search must include block and asset resources";

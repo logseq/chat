@@ -69,13 +69,27 @@ let status_payload fields =
   | Some (`Assoc status) ->
     (match required_string "uuid" status, required_string "title" status,
            optional_string "ident" status, optional_string "iconType" status,
-           optional_string "iconId" status with
-     | Ok uuid, Ok title, Ok ident, Ok icon_type, Ok icon_id ->
-       Ok Model.{ uuid; ident; title; icon_type; icon_id }
-     | Error message, _, _, _, _ | _, Error message, _, _, _
-     | _, _, Error message, _, _ | _, _, _, Error message, _
-     | _, _, _, _, Error message -> Error message)
+           optional_string "iconId" status, optional_string "iconColor" status with
+     | Ok uuid, Ok title, Ok ident, Ok icon_type, Ok icon_id, Ok icon_color ->
+       Ok Model.{ uuid; ident; title; icon_type; icon_id; icon_color }
+     | Error message, _, _, _, _, _ | _, Error message, _, _, _, _
+     | _, _, Error message, _, _, _ | _, _, _, Error message, _, _
+     | _, _, _, _, Error message, _ | _, _, _, _, _, Error message -> Error message)
   | _ -> Error "missing field: status"
+;;
+
+let status_response_json (status : Model.status) =
+  `Assoc
+    ([ "uuid", `String status.uuid; "title", `String status.title ]
+     @ (match status.ident with Some value -> [ "ident", `String value ] | None -> [])
+     @ (match status.icon_type, status.icon_id with
+        | Some icon_type, Some icon_id ->
+          [ "icon", `Assoc
+              ([ "type", `String icon_type; "id", `String icon_id ]
+               @ (match status.icon_color with
+                  | Some color -> [ "color", `String color ]
+                  | None -> [])) ]
+        | _ -> []))
 ;;
 
 let block_json (block : Model.block) =
@@ -86,14 +100,7 @@ let block_json (block : Model.block) =
     match block.status with
     | None -> []
     | Some status ->
-      [ "status",
-        `Assoc
-          ([ "uuid", `String status.uuid; "title", `String status.title ]
-           @ (match status.ident with Some value -> [ "ident", `String value ] | None -> [])
-           @ (match status.icon_type, status.icon_id with
-              | Some icon_type, Some icon_id ->
-                [ "icon", `Assoc [ "type", `String icon_type; "id", `String icon_id ] ]
-              | _ -> [])) ]
+      [ "status", status_response_json status ]
   in
   `Assoc
     ([ "uuid", `String block.uuid
@@ -150,6 +157,7 @@ let snapshot session blocks =
          | Some { Api.graph_name = Some graph_name; _ } -> `String graph_name
          | _ -> `Null)
       ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
+      ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ])
 ;;
 
@@ -204,6 +212,16 @@ let cache_search_blocks session response ~now =
   else Error ("Logseq API returned HTTP " ^ string_of_int response.Api.status)
 ;;
 
+let cache_task_statuses session response =
+  if response.Api.status >= 200 && response.Api.status < 300
+  then (
+    let statuses = Api.statuses_from_property_body response.body in
+    debug "remote task statuses parsed count=%d" (List.length statuses);
+    Model.upsert_statuses session.model statuses;
+    Ok ())
+  else Error ("Logseq status property returned HTTP " ^ string_of_int response.Api.status)
+;;
+
 let refresh_from_remote session config =
   let now = now_ms () in
   debug "remote refresh started graph=%s" config.Api.graph_id;
@@ -211,7 +229,13 @@ let refresh_from_remote session config =
   match Http.send (Api.recent_blocks_request config ~journal_day) with
   | Ok response ->
     (match cache_remote_blocks session response ~now with
-     | Ok () -> snapshot_visible session
+     | Ok () ->
+       (match Http.send (Api.task_statuses_request config) with
+        | Ok status_response ->
+          (match cache_task_statuses session status_response with
+           | Ok () -> snapshot_visible session
+           | Error message -> failure ~code:"remote_statuses_failed" ~message)
+        | Error message -> failure ~code:"remote_statuses_failed" ~message)
      | Error message -> failure ~code:"remote_refresh_failed" ~message)
   | Error message ->
     debug "remote refresh request failed: %s" message;

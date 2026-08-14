@@ -39,6 +39,7 @@ open class AndroidAppMain: Application {
 
     override fun onCreate() {
         super.onCreate()
+        System.loadLibrary("logseq_chat_core")
         logger.info("starting app")
         ProcessInfo.launch(applicationContext)
         AppDelegate.shared.onInit()
@@ -57,6 +58,7 @@ open class MainActivity: AppCompatActivity {
         super.onCreate(savedInstanceState)
         logger.info("starting activity")
         UIApplication.launch(this)
+        AndroidAssetImporter.initialize(this)
         enableEdgeToEdge()
 
         setContent {

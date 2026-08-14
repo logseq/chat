@@ -84,6 +84,18 @@ let recent_blocks_request config ~journal_day =
   }
 ;;
 
+let task_statuses_request config =
+  { method_ = "GET"
+  ; url =
+      Printf.sprintf
+        "%s/api/v1/graphs/%s/search?q=Status&types=properties&limit=100"
+        (api_root config)
+        (url_encode config.graph_id)
+  ; body = None
+  ; token = config.token
+  }
+;;
+
 let graphs_request config =
   { method_ = "GET"
   ; url = Printf.sprintf "%s/api/v1/graphs" (api_root config)
@@ -218,19 +230,49 @@ let summaries_member name fields =
   | _ -> []
 ;;
 
-let status_member fields =
-  match List.assoc_opt "status" fields with
-  | Some (`Assoc status) ->
+let status_from_fields status =
     let uuid = string_member "uuid" status in
     let title = string_member "title" status in
-    let icon_type, icon_id =
+    let icon_type, icon_id, icon_color =
       match List.assoc_opt "icon" status with
-      | Some (`Assoc icon) -> option_string_member "type" icon, option_string_member "id" icon
-      | _ -> None, None
+      | Some (`Assoc icon) ->
+        option_string_member "type" icon,
+        option_string_member "id" icon,
+        option_string_member "color" icon
+      | _ -> None, None, None
     in
     if uuid = "" || title = "" then None
-    else Some Logseq_chat_model.{ uuid; ident = option_string_member "ident" status; title; icon_type; icon_id }
+    else Some Logseq_chat_model.{
+      uuid; ident = option_string_member "ident" status; title; icon_type; icon_id; icon_color
+    }
+;;
+
+let status_member fields =
+  match List.assoc_opt "status" fields with
+  | Some (`Assoc status) -> status_from_fields status
   | _ -> None
+;;
+
+let statuses_from_property_body body =
+  let choices fields =
+    match List.assoc_opt "choices" fields with
+    | Some (`List values) ->
+      List.filter_map (function `Assoc status -> status_from_fields status | _ -> None) values
+    | _ -> []
+  in
+  match from_string body with
+  | `Assoc fields ->
+    (match List.assoc_opt "results" fields with
+     | Some (`List properties) ->
+       properties
+       |> List.find_map (function
+         | `Assoc property when
+             String.equal (string_member "ident" property) "logseq.property/status" ->
+           Some (choices property)
+         | _ -> None)
+       |> Option.value ~default:[]
+     | _ -> choices fields)
+  | _ -> []
 ;;
 
 let block_of_json ?(fallback_time = 0) json =

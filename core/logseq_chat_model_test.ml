@@ -152,6 +152,7 @@ let assert_task_and_asset_metadata_persist () =
       ; title = "Waiting"
       ; icon_type = Some "tabler-icon"
       ; icon_id = Some "clock"
+      ; icon_color = Some "#7c3aed"
       }
   in
   Logseq_chat_model.cache_local_task

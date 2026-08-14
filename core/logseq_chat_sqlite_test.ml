@@ -27,6 +27,16 @@ let () =
       ~uuid:"local-persisted"
       ~title:"Persisted offline capture"
       ~now:1_776_000_000_000;
+    Logseq_chat_model.upsert_statuses
+      first_model
+      [ { uuid = "status-waiting"
+        ; ident = Some "user.status/waiting"
+        ; title = "Waiting"
+        ; icon_type = Some "tabler-icon"
+        ; icon_id = Some "clock"
+        ; icon_color = Some "#7c3aed"
+        }
+      ];
     Logseq_chat_sqlite.close first_session;
 
     let second_session = Logseq_chat_sqlite.open_session path in
@@ -44,5 +54,15 @@ let () =
           assert_bool
             "journal page id should be persisted"
             (String.length block.page_id >= 8
-             && String.equal (String.sub block.page_id 0 8) "journal/")))
+             && String.equal (String.sub block.page_id 0 8) "journal/");
+          (match Logseq_chat_model.all_statuses restored_model with
+           | [ status ] ->
+             assert_equal "custom status title" "Waiting" status.title;
+             assert_equal
+               "custom status color"
+               "#7c3aed"
+               (Option.value status.icon_color ~default:"")
+           | statuses ->
+             failwith
+               (Printf.sprintf "expected one persisted custom status, got %d" (List.length statuses)))))
 ;;

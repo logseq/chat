@@ -1,0 +1,20 @@
+appId: com.logseq.chat
+---
+- launchApp
+- tapOn:
+    id: "button.connection"
+- assertVisible: "Connection"
+- tapOn:
+    id: "field.base-url"
+- eraseText
+- inputText: ${BASE_URL}
+- tapOn:
+    id: "field.pat"
+- inputText: ${PAT}
+- tapOn:
+    id: "button.connection.apply"
+- extendedWaitUntil:
+    visible: "pat test"
+    timeout: 30000
+- assertVisible:
+    id: "button.composer.expand"

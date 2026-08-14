@@ -2,7 +2,13 @@ import SwiftUI
 import LogseqChatModel
 #if !SKIP
 import CryptoKit
+import PhotosUI
 import UniformTypeIdentifiers
+#if os(iOS)
+import AVKit
+import QuickLook
+import UIKit
+#endif
 #endif
 
 struct ContentView: View {
@@ -17,6 +23,14 @@ struct ContentView: View {
     @State private var detailBlock: LogseqBlock?
     @State private var fileImporterPresented = false
     @State private var selectedTaskStatus: LogseqTaskStatus?
+    #if !SKIP
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var photoPickerPresented = false
+    #if os(iOS)
+    @State private var cameraPresented = false
+    @State private var previewAssetURL: URL?
+    #endif
+    #endif
     @State private var hasAutoScrolledInitially = false
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.token") private var token = ""
@@ -62,6 +76,27 @@ struct ContentView: View {
             allowsMultipleSelection: true
         ) { result in
             importAssets(result)
+        }
+        .photosPicker(
+            isPresented: $photoPickerPresented,
+            selection: $selectedPhotoItems,
+            maxSelectionCount: 20,
+            matching: .images
+        )
+        #if os(iOS)
+        .fullScreenCover(isPresented: $cameraPresented) {
+            CameraPicker { image in
+                cameraPresented = false
+                importCapturedPhoto(image)
+            } onCancel: {
+                cameraPresented = false
+            }
+            .ignoresSafeArea()
+        }
+        .quickLookPreview($previewAssetURL)
+        #endif
+        .onChange(of: selectedPhotoItems) { _, items in
+            importPhotos(items)
         }
         #endif
     }
@@ -288,6 +323,10 @@ struct ContentView: View {
                                             BlockRow(block: block)
                                         }
                                         .buttonStyle(.plain)
+                                    } else if block.kind == "asset" {
+                                        BlockRow(block: block) {
+                                            openAsset(block)
+                                        }
                                     } else {
                                     #if SKIP
                                         Button {
@@ -356,6 +395,16 @@ struct ContentView: View {
         store.select(block)
         #if SKIP
         detailBlock = block
+        #endif
+    }
+
+    private func openAsset(_ block: LogseqBlock) {
+        dismissComposerEditing()
+        guard let path = block.localPath, !path.isEmpty else { return }
+        #if !SKIP && os(iOS)
+        previewAssetURL = URL(fileURLWithPath: path)
+        #elseif SKIP
+        AndroidAssetImporter.openFile(path: path, contentType: block.assetType ?? "application/octet-stream")
         #endif
     }
 
@@ -456,35 +505,106 @@ struct ContentView: View {
                 .textFieldStyle(.plain)
                 .focused($composerFocused)
                 .accessibilityIdentifier("field.composer")
-            HStack(spacing: 0) {
+            HStack(spacing: 8) {
                 Menu {
+                    #if SKIP
+                    Button {
+                        AndroidAssetImporter.pickPhotos { title, assetType, size, checksum, path in
+                            store.addAsset(
+                                title: title,
+                                assetType: assetType,
+                                assetSize: size,
+                                assetChecksum: checksum,
+                                localPath: path
+                            )
+                        }
+                    } label: {
+                        HStack {
+                            IconImage(name: "photo")
+                            Text("Photo")
+                        }
+                    }
+                    Button {
+                        AndroidAssetImporter.takePhoto { title, assetType, size, checksum, path in
+                            store.addAsset(
+                                title: title,
+                                assetType: assetType,
+                                assetSize: size,
+                                assetChecksum: checksum,
+                                localPath: path
+                            )
+                        }
+                    } label: {
+                        HStack {
+                            IconImage(name: "camera")
+                            Text("Camera")
+                        }
+                    }
+                    Button {
+                        AndroidAssetImporter.pickFiles { title, assetType, size, checksum, path in
+                            store.addAsset(
+                                title: title,
+                                assetType: assetType,
+                                assetSize: size,
+                                assetChecksum: checksum,
+                                localPath: path
+                            )
+                        }
+                    } label: {
+                        HStack {
+                            IconImage(name: "paperclip")
+                            Text("File")
+                        }
+                    }
+                    #else
+                    // Bottom-anchored iOS menus place the first action nearest the trigger.
                     Button {
                         fileImporterPresented = true
                     } label: {
                         HStack {
-                            IconImage(name: "paperclip")
-                            Text("Photo or file")
+                            Image(systemName: "paperclip")
+                            Text("File")
                         }
                     }
+                    #if os(iOS)
+                    Button {
+                        cameraPresented = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "camera")
+                            Text("Camera")
+                        }
+                    }
+                    .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                    #endif
+                    Button {
+                        photoPickerPresented = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle.angled")
+                            Text("Photo")
+                        }
+                    }
+                    #endif
                 } label: {
                     IconImage(name: "plus")
-                        .frame(width: 18, height: 18)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 16, height: 16)
+                        .frame(width: 24, height: 24)
+                        .foregroundStyle(.primary)
                 }
                 .accessibilityLabel("Add attachment")
                 .accessibilityIdentifier("button.attachment")
                 Menu {
-                    taskStatusButton(LogseqTaskStatus.todo)
-                    taskStatusButton(LogseqTaskStatus.doing)
-                    taskStatusButton(LogseqTaskStatus.done)
+                    ForEach(taskStatusMenuStatuses) { status in
+                        taskStatusButton(status)
+                    }
                     if selectedTaskStatus != nil {
                         Button("Clear task status") { selectedTaskStatus = nil }
                     }
                 } label: {
                     TaskStatusIcon(status: selectedTaskStatus ?? LogseqTaskStatus.todo)
-                        .opacity(selectedTaskStatus == nil ? 0.55 : 1)
-                        .frame(width: 18, height: 18)
-                        .frame(width: 30, height: 28)
+                        .opacity(selectedTaskStatus == nil ? 0.55 : 1.0)
+                        .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel("Task status")
                 .accessibilityIdentifier("button.task-status")
@@ -493,12 +613,12 @@ struct ContentView: View {
                     sendDraft()
                 } label: {
                     IconImage(name: "arrow_upward")
-                        .frame(width: 8, height: 8)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 16, height: 16)
+                        .frame(width: 24, height: 24)
+                        .foregroundStyle(Color.white)
+                        .background(Circle().fill(Color.black))
                 }
-                .platformGlassProminentButtonStyle()
-                .platformCircleButtonShape()
-                .platformSmallControl()
+                .buttonStyle(.plain)
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Send")
                 .accessibilityIdentifier("button.send")
@@ -605,20 +725,85 @@ struct ContentView: View {
         }
     }
 
+    private var availableTaskStatuses: [LogseqTaskStatus] {
+        var result = LogseqTaskStatus.builtIn
+        var identities = Set(result.map { $0.ident ?? $0.uuid })
+        let remoteStatuses = store.snapshot.taskStatuses ?? []
+        for status in remoteStatuses + store.snapshot.blocks.compactMap(\.status) {
+            let identity = status.ident ?? status.uuid
+            if identities.insert(identity).inserted {
+                result.append(status)
+            }
+        }
+        return result
+    }
+
+    private var taskStatusMenuStatuses: [LogseqTaskStatus] {
+        #if SKIP
+        return availableTaskStatuses
+        #else
+        return Array(availableTaskStatuses.reversed())
+        #endif
+    }
+
     #if !SKIP
+    private func importPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        selectedPhotoItems = []
+        Task {
+            for item in items {
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else { continue }
+                    let fileExtension = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
+                    let metadata = try await Self.persistImportedData(
+                        data,
+                        title: "Photo-\(UUID().uuidString).\(fileExtension)"
+                    )
+                    addImportedAsset(metadata)
+                } catch {
+                    logger.error("Photo import failed: \(String(describing: error), privacy: .public)")
+                }
+            }
+        }
+    }
+
+    #if os(iOS)
+    private func importCapturedPhoto(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.9) else {
+            logger.error("Camera import failed: JPEG encoding returned no data")
+            return
+        }
+        Task {
+            do {
+                let metadata = try await Self.persistImportedData(
+                    data,
+                    title: "Camera-\(UUID().uuidString).jpg"
+                )
+                addImportedAsset(metadata)
+            } catch {
+                logger.error("Camera import failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+    #endif
+
+    private func addImportedAsset(_ metadata: ImportedAsset) {
+        store.addAsset(
+            title: metadata.title,
+            assetType: metadata.assetType,
+            assetSize: metadata.size,
+            assetChecksum: metadata.checksum,
+            localPath: metadata.path
+        )
+    }
+
     private func importAssets(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result else { return }
         Task {
             for url in urls {
                 do {
                     let metadata = try await Self.persistImportedAsset(url)
-                    store.addAsset(
-                        title: metadata.title,
-                        assetType: metadata.assetType,
-                        assetSize: metadata.size,
-                        assetChecksum: metadata.checksum,
-                        localPath: metadata.path
-                    )
+                    addImportedAsset(metadata)
                 } catch {
                     logger.error("Asset import failed: \(String(describing: error), privacy: .public)")
                 }
@@ -648,6 +833,24 @@ struct ContentView: View {
                 title: sourceURL.lastPathComponent,
                 assetType: destination.pathExtension.lowercased(),
                 size: size,
+                checksum: checksum,
+                path: destination.path
+            )
+        }.value
+    }
+
+    private nonisolated static func persistImportedData(_ data: Data, title: String) async throws -> ImportedAsset {
+        try await Task.detached(priority: .utility) {
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("Assets", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent(title)
+            try data.write(to: destination, options: .atomic)
+            let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            return ImportedAsset(
+                title: title,
+                assetType: destination.pathExtension.lowercased(),
+                size: data.count,
                 checksum: checksum,
                 path: destination.path
             )
@@ -896,22 +1099,23 @@ extension View {
 
 private struct BlockRow: View {
     let block: LogseqBlock
+    var onOpenAsset: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if let status = block.status {
-                    TaskStatusIcon(status: status)
+            if block.kind == "asset" {
+                AssetPreview(block: block, onOpen: onOpenAsset)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let status = block.status {
+                        TaskStatusIcon(status: status)
+                    }
+                    Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                        .lineLimit(3)
                 }
-                if block.kind == "asset" {
-                    IconImage(name: block.assetType?.hasPrefix("m4") == true ? "audio" : "paperclip")
-                        .frame(width: 18, height: 18)
-                }
-                Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
             }
             if !block.tags.isEmpty {
                 HStack(spacing: 6) {
@@ -947,25 +1151,191 @@ private struct BlockRow: View {
     }
 }
 
+private struct AssetPreview: View {
+    let block: LogseqBlock
+    let onOpen: (() -> Void)?
+
+    var body: some View {
+        #if !SKIP && os(iOS)
+        if let path = block.localPath, isImage, let image = UIImage(contentsOfFile: path) {
+            Button { onOpen?() } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 280)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    assetTitle
+                }
+            }
+            .buttonStyle(.plain)
+        } else if let path = block.localPath, isAudio {
+            VStack(alignment: .leading, spacing: 8) {
+                assetTitle
+                AssetAudioPlayer(path: path)
+                    .frame(height: 44)
+            }
+        } else {
+            fileButton
+        }
+        #else
+        fileButton
+        #endif
+    }
+
+    private var normalizedType: String {
+        let pathExtension = block.localPath.map { URL(fileURLWithPath: $0).pathExtension }
+        return (block.assetType ?? pathExtension ?? "").lowercased()
+    }
+
+    private var isImage: Bool {
+        normalizedType.hasPrefix("image/")
+            || ["jpg", "jpeg", "png", "gif", "heic", "webp"].contains(normalizedType)
+    }
+
+    private var isAudio: Bool {
+        normalizedType.hasPrefix("audio/")
+            || ["m4a", "mp3", "wav", "aac", "caf"].contains(normalizedType)
+    }
+
+    private var assetTitle: some View {
+        Text(verbatim: block.title.isEmpty ? "Untitled file" : block.title)
+            .font(.body)
+            .fontWeight(.medium)
+            .foregroundStyle(.primary)
+            .lineLimit(3)
+    }
+
+    private var fileButton: some View {
+        Button { onOpen?() } label: {
+            HStack(spacing: 8) {
+                IconImage(name: isAudio ? "audio" : "paperclip")
+                    .frame(width: 18, height: 18)
+                assetTitle
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#if !SKIP && os(iOS)
+private struct AssetAudioPlayer: View {
+    @State private var player: AVPlayer
+
+    init(path: String) {
+        _player = State(initialValue: AVPlayer(url: URL(fileURLWithPath: path)))
+    }
+
+    var body: some View {
+        VideoPlayer(player: player)
+            .onDisappear { player.pause() }
+    }
+}
+#endif
+
 private struct TaskStatusIcon: View {
     let status: LogseqTaskStatus
 
+    private var kind: String {
+        let value = (status.ident ?? status.icon?.id ?? status.title).lowercased()
+        if value.contains("backlog") { return "backlog" }
+        if value.contains("in-review") || value.contains("inreview") { return "in-review" }
+        if value.contains("doing") || value.contains("inprogress") || value.contains("progress") { return "doing" }
+        if value.contains("done") || value.contains("circle-check") { return "done" }
+        if value.contains("cancel") || value.contains("circle-x") { return "canceled" }
+        return "todo"
+    }
+
     private var color: Color {
-        switch status.uuid.lowercased() {
-        case "done": return .green
-        case "doing": return .blue
-        case "canceled", "cancelled": return .red
+        if let customColor = status.icon?.color, let color = taskStatusColor(hex: customColor) {
+            return color
+        }
+        switch kind {
+        case "backlog": return Color(red: 0.66, green: 0.64, blue: 0.62)
+        case "todo": return Color(red: 0.47, green: 0.44, blue: 0.42)
+        case "doing": return Color(red: 0.79, green: 0.54, blue: 0.02)
+        case "in-review": return Color(red: 0.11, green: 0.31, blue: 0.85)
+        case "done": return Color(red: 0.09, green: 0.64, blue: 0.29)
+        case "canceled": return Color(red: 0.86, green: 0.15, blue: 0.15)
         default: return .secondary
         }
     }
 
+    private var iconName: String {
+        switch kind {
+        case "backlog": return "task_backlog"
+        case "doing": return "task_doing"
+        case "in-review": return "task_review"
+        case "done": return "task_done"
+        case "canceled": return "task_canceled"
+        default: return "task_todo"
+        }
+    }
+
     var body: some View {
-        IconImage(name: status.icon?.id == "circle-check" ? "task_done" : "task_todo")
-            .frame(width: 18, height: 18)
+        IconImage(name: iconName)
+            .frame(width: 16, height: 16)
             .foregroundStyle(color)
             .accessibilityLabel(status.title)
     }
 }
+
+private func taskStatusColor(hex: String) -> Color? {
+    let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+    guard value.count == 6, let rgb = UInt64(value, radix: 16) else { return nil }
+    return Color(
+        red: Double((rgb >> 16) & 0xff) / 255.0,
+        green: Double((rgb >> 8) & 0xff) / 255.0,
+        blue: Double(rgb & 0xff) / 255.0
+    )
+}
+
+#if !SKIP && os(iOS)
+private struct CameraPicker: UIViewControllerRepresentable {
+    let onCapture: (UIImage) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCapture: onCapture, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let controller = UIImagePickerController()
+        controller.sourceType = .camera
+        controller.cameraCaptureMode = .photo
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {
+    }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onCapture: (UIImage) -> Void
+        let onCancel: () -> Void
+
+        init(onCapture: @escaping (UIImage) -> Void, onCancel: @escaping () -> Void) {
+            self.onCapture = onCapture
+            self.onCancel = onCancel
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            guard let image = info[.originalImage] as? UIImage else {
+                onCancel()
+                return
+            }
+            onCapture(image)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onCancel()
+        }
+    }
+}
+#endif
 
 private struct IconImage: View {
     let name: String

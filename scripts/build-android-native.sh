@@ -117,8 +117,9 @@ cd "$build_dir"
   --target="$target" \
   -fPIC \
   -I "$ocaml_lib" \
-  -c "$repo_root/core/logseq_chat_https_stub.c" \
-  -o logseq_chat_https_stub.o
+  -I "$ndk_root/toolchains/llvm/prebuilt/$ndk_host/sysroot/usr/include" \
+  -c "$repo_root/core/logseq_chat_https_android.c" \
+  -o logseq_chat_https_android.o
 
 "$ndk_bin/clang" \
   --target="$target" \
@@ -146,11 +147,12 @@ cd "$build_dir"
   -o "$library" \
   logseq_chat_runtime.o \
   logseq_chat_core_ffi.o \
-  logseq_chat_https_stub.o \
+  logseq_chat_https_android.o \
   datascript_sqlite_stubs.o \
   sqlite3.o \
   -lm \
   -ldl \
+  -llog \
   -pthread
 
 "$ndk_bin/llvm-strip" --strip-unneeded "$library"

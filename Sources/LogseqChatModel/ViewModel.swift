@@ -1,6 +1,10 @@
 import Foundation
 import Observation
 import OSLog
+#if SKIP
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+#endif
 import SkipFFI
 #if !SKIP
 import LogseqChatCoreABI
@@ -48,6 +52,13 @@ public struct LogseqEntitySummary: Codable, Hashable, Identifiable, Sendable {
 public struct LogseqIcon: Codable, Hashable, Sendable {
     public let type: String
     public let id: String
+    public let color: String?
+
+    public init(type: String, id: String, color: String? = nil) {
+        self.type = type
+        self.id = id
+        self.color = color
+    }
 }
 
 public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
@@ -57,18 +68,32 @@ public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
     public let icon: LogseqIcon?
     public var id: String { uuid }
 
+    public static let backlog = LogseqTaskStatus(
+        uuid: "backlog", ident: "logseq.property/status.backlog", title: "Backlog",
+        icon: LogseqIcon(type: "tabler-icon", id: "Backlog")
+    )
     public static let todo = LogseqTaskStatus(
         uuid: "todo", ident: "logseq.property/status.todo", title: "Todo",
-        icon: LogseqIcon(type: "tabler-icon", id: "circle")
+        icon: LogseqIcon(type: "tabler-icon", id: "Todo")
     )
     public static let doing = LogseqTaskStatus(
         uuid: "doing", ident: "logseq.property/status.doing", title: "Doing",
-        icon: LogseqIcon(type: "tabler-icon", id: "progress")
+        icon: LogseqIcon(type: "tabler-icon", id: "InProgress50")
+    )
+    public static let inReview = LogseqTaskStatus(
+        uuid: "in-review", ident: "logseq.property/status.in-review", title: "In Review",
+        icon: LogseqIcon(type: "tabler-icon", id: "InReview")
     )
     public static let done = LogseqTaskStatus(
         uuid: "done", ident: "logseq.property/status.done", title: "Done",
-        icon: LogseqIcon(type: "tabler-icon", id: "circle-check")
+        icon: LogseqIcon(type: "tabler-icon", id: "Done")
     )
+    public static let canceled = LogseqTaskStatus(
+        uuid: "canceled", ident: "logseq.property/status.canceled", title: "Canceled",
+        icon: LogseqIcon(type: "tabler-icon", id: "Cancelled")
+    )
+
+    public static let builtIn = [backlog, todo, doing, inReview, done, canceled]
 }
 
 public struct LogseqBlock: Codable, Identifiable, Hashable {
@@ -171,7 +196,10 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     }
 
     public var journalSectionID: String {
-        journalDay.map(String.init) ?? dayTitle
+        if let journalDay {
+            return String(journalDay)
+        }
+        return dayTitle
     }
 
     public var timeTitle: String {
@@ -208,11 +236,13 @@ public struct LogseqChatSnapshot: Codable {
     public let graphName: String?
     public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
+    public let taskStatuses: [LogseqTaskStatus]?
 
     public init(
         revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
         lastRefreshAt: Int64?, graphName: String?, isSearching: Bool,
-        relatedBlocks: [LogseqBlock]? = nil
+        relatedBlocks: [LogseqBlock]? = nil,
+        taskStatuses: [LogseqTaskStatus]? = nil
     ) {
         self.revision = revision
         self.query = query
@@ -222,6 +252,7 @@ public struct LogseqChatSnapshot: Codable {
         self.graphName = graphName
         self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
+        self.taskStatuses = taskStatuses
     }
 }
 
@@ -285,6 +316,7 @@ private struct TaskStatusPayload: Encodable {
     let title: String
     let iconType: String?
     let iconId: String?
+    let iconColor: String?
 }
 
 private struct AddAssetPayload: Encodable {
@@ -453,7 +485,7 @@ private struct AddAssetPayload: Encodable {
         applyOptimisticBlock(title: trimmed, uuid: uuid, kind: "task", now: now, status: status)
         let statusPayload = TaskStatusPayload(
             uuid: status.uuid, ident: status.ident, title: status.title,
-            iconType: status.icon?.type, iconId: status.icon?.id
+            iconType: status.icon?.type, iconId: status.icon?.id, iconColor: status.icon?.color
         )
         dispatchEncoded("sendTask", SendTaskPayload(text: trimmed, uuid: uuid, now: now, status: statusPayload))
     }
@@ -480,7 +512,12 @@ private struct AddAssetPayload: Encodable {
 
     private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
         do {
-            let payload = String(decoding: try JSONEncoder().encode(payloadValue), as: UTF8.self)
+            let payloadData = try JSONEncoder().encode(payloadValue)
+            guard let payload = String(data: payloadData, encoding: .utf8) else {
+                lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode \(action) payload")
+                logger.error("Core request encoding failed: \(action, privacy: .public) payload was not UTF-8")
+                return
+            }
             performAsyncThenSyncPending(
                 LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: action, payload: payload))
             )
@@ -622,7 +659,9 @@ private struct AddAssetPayload: Encodable {
             callCore(requestJSON)
         }.value
         #else
-        callCore(requestJSON)
+        return await withContext(Dispatchers.IO) {
+            callCore(requestJSON)
+        }
         #endif
     }
 
@@ -719,7 +758,8 @@ private struct AddAssetPayload: Encodable {
             lastRefreshAt: now,
             graphName: snapshot.graphName,
             isSearching: snapshot.isSearching,
-            relatedBlocks: snapshot.relatedBlocks
+            relatedBlocks: snapshot.relatedBlocks,
+            taskStatuses: snapshot.taskStatuses
         )
         lastError = nil
     }
@@ -772,7 +812,8 @@ private struct AddAssetPayload: Encodable {
             lastRefreshAt: result.lastRefreshAt,
             graphName: result.graphName,
             isSearching: isSearching,
-            relatedBlocks: result.relatedBlocks
+            relatedBlocks: result.relatedBlocks,
+            taskStatuses: result.taskStatuses ?? snapshot.taskStatuses
         )
     }
 

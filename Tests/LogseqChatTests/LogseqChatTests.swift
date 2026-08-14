@@ -208,6 +208,27 @@ import Foundation
         #expect(controls.contains("if shouldShowComposer && !composerExpanded"))
     }
 
+    @Test func androidAttachmentControlUsesSystemDocumentPicker() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"), encoding: .utf8)
+        let importer = try String(contentsOf: root.appendingPathComponent("Sources/LogseqChat/Skip/AndroidAssetImporter.kt"), encoding: .utf8)
+
+        #expect(source.contains("AndroidAssetImporter.pick"))
+        #expect(source.contains("store.addAsset("))
+        #expect(importer.contains("OpenMultipleDocuments"))
+        #expect(importer.contains("contentResolver.openInputStream"))
+    }
+
+    @Test func androidCoreCallsLeaveTheMainDispatcher() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("import kotlinx.coroutines.Dispatchers"))
+        #expect(source.contains("import kotlinx.coroutines.withContext"))
+        #expect(source.contains("withContext(Dispatchers.IO)"))
+    }
+
     @Test func captureUsesBottomToolbarInsteadOfOverlayOnIOS() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
@@ -311,13 +332,59 @@ import Foundation
         #expect(expandedComposer.contains("accessibilityIdentifier(\"button.attachment\")"))
         #expect(expandedComposer.contains("accessibilityIdentifier(\"button.task-status\")"))
         #expect(expandedComposer.contains("IconImage(name: \"arrow_upward\")"))
-        #expect(expandedComposer.contains(".frame(width: 8, height: 8)"))
-        #expect(expandedComposer.contains(".frame(width: 22, height: 22)"))
-        #expect(!expandedComposer.contains(".frame(width: 12, height: 12)"))
-        #expect(expandedComposer.contains(".frame(width: 28, height: 28)"))
+        #expect(expandedComposer.contains(".frame(width: 24, height: 24)"))
+        #expect(expandedComposer.contains(".background(Circle().fill(Color.black))"))
+        #expect(!expandedComposer.contains(".platformGlassProminentButtonStyle()"))
+        #expect(!expandedComposer.contains(".frame(width: 28, height: 28)"))
+        #expect(!expandedComposer.contains(".frame(width: 30, height: 28)"))
         #expect(!expandedComposer.contains("HStack(alignment: .bottom, spacing: 10)"))
         #expect(expandedComposer.contains(".platformGlassContainer(cornerRadius: 10)"))
         #expect(expandedComposer.contains(".platformRoundedHitTarget(cornerRadius: 10)"))
+    }
+
+    @Test func attachmentMenuUsesDistinctPhotoCameraAndFileActions() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let infoURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Darwin/Info.plist")
+        let info = try String(contentsOf: infoURL, encoding: .utf8)
+
+        let nativeStart = try #require(source.range(of: "// Bottom-anchored iOS menus"))
+        let nativeBranch = source[nativeStart.lowerBound...]
+        let file = try #require(nativeBranch.range(of: "Text(\"File\")"))
+        let camera = try #require(nativeBranch.range(of: "Text(\"Camera\")"))
+        let photo = try #require(nativeBranch.range(of: "Text(\"Photo\")"))
+        #expect(file.lowerBound < camera.lowerBound)
+        #expect(camera.lowerBound < photo.lowerBound)
+        #expect(source.contains("photoPickerPresented = true"))
+        #expect(source.contains(".photosPicker("))
+        #expect(source.contains("cameraPresented = true"))
+        #expect(source.contains("fileImporterPresented = true"))
+        #expect(info.contains("NSCameraUsageDescription"))
+    }
+
+    @Test func taskStatusMenuIncludesEveryLogseqBuiltInStatus() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("ForEach(taskStatusMenuStatuses)"))
+        #expect(source.contains("Array(availableTaskStatuses.reversed())"))
+        for iconName in ["task_backlog", "task_todo", "task_doing", "task_review", "task_done", "task_canceled"] {
+            #expect(source.contains("\"\(iconName)\""))
+        }
+    }
+
+    @Test func localAssetsUseNativeInlinePreviewAndSystemOpen() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("Image(uiImage:"))
+        #expect(source.contains("VideoPlayer(player:"))
+        #expect(source.contains(".quickLookPreview($previewAssetURL)"))
+        #expect(source.contains("private struct AssetPreview"))
     }
 
     @Test func composerGlassUsesTheRequestedCornerRadiusInsteadOfDefaultCapsule() throws {

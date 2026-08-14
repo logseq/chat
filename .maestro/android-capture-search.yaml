@@ -8,6 +8,23 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.search"
 - tapOn:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "field.composer"
+- assertVisible:
+    id: "button.attachment"
+- assertVisible:
+    id: "button.task-status"
+- inputText: "Android E2E capture"
+- tapOn:
+    id: "button.send"
+- assertVisible:
+    id: "field.composer"
+- assertVisible: "Android E2E capture"
+- tapOn: "Android E2E capture"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
     id: "button.search"
 - assertVisible:
     id: "field.search"

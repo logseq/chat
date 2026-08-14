@@ -8,6 +8,8 @@
     </array>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>NSCameraUsageDescription</key>
+    <string>Capture photos to add to your Logseq journal.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>
