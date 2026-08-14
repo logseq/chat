@@ -1,12 +1,12 @@
 # ADR 001: Real-time Logseq graph sync
 
-- Status: Accepted
+- Status: Accepted; implementation in progress
 - Date: 2026-08-14
 - Owners: Logseq Chat and db-sync teams
 
 ## Context
 
-Logseq Chat currently reads and writes a small, chat-specific projection through the
+At the time of this decision, Logseq Chat read and wrote a small, chat-specific projection through the
 Graph API and authenticates those requests with a personal access token (PAT). Its
 local database also defines a reduced schema whose property types do not always
 match the graph database on the server. Refreshing is periodic, so a change made by
@@ -43,16 +43,32 @@ server complexity as possible.
   adapters; sync protocol, codecs, state transitions, encryption orchestration,
   persistence, and graph mutations are implemented in the OCaml core.
 
+## Implementation state
+
+This ADR defines the target architecture. The implementation is deliberately being
+rolled out in stages, so target behavior must not be mistaken for current platform
+support:
+
+| Area | Current state |
+| --- | --- |
+| Apple authentication | Amplify UI Swift `Authenticator` with `AWSCognitoAuthPlugin`; access-token session refresh is owned by Amplify |
+| Android authentication | Cognito SDK adapter exists, but the Amplify Authenticator UI and challenge parity are not complete |
+| Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
+| Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
+| Unencrypted Apple sync | Full snapshot import, SSE latest-entity changes, offline-first local writes, self-echo reconciliation, and durable cursor are implemented and device-verified |
+| Android sync transport | OCaml core is shared, but native snapshot and SSE transport adapters are not connected |
+| Encrypted graph sync | Graphs are discoverable but opening them is explicitly rejected until the E2EE milestone is implemented and verified |
+
 ## Decision
 
 ### 1. Authenticate inside the app with Amazon Cognito
 
-Logseq Chat will provide its own native username, password, challenge, and sign-out
-screens. It will use Cognito User Pool authentication through Amplify Auth with the
-AWS Cognito Auth plugin. On Apple platforms this is Amplify Swift; Android uses the
-corresponding native Amplify Android adapter behind the same app-level auth
-interface. The app will not open Cognito Managed Login, Hosted UI, an embedded web
-view, or the system browser.
+Logseq Chat will use the native Amplify Authenticator component rather than
+implementing username, password, challenge, and account-recovery screens itself.
+On Apple platforms this is Amplify UI Swift's `Authenticator` with Amplify Swift
+and `AWSCognitoAuthPlugin`. Android will use the corresponding native Amplify UI
+Authenticator behind the same app-level auth interface. The app will not open
+Cognito Managed Login, Hosted UI, an embedded web view, or the system browser.
 
 Logseq Chat is a Skip application, so authentication is exposed to shared app code
 through a small platform service: Amplify Swift on Apple and Amplify Android in the
@@ -62,9 +78,9 @@ core requests an authenticated transport operation.
 
 The preferred password flow is SRP (`ALLOW_USER_SRP_AUTH`) so the password itself
 is not sent to Cognito. The Cognito app client is a public native client with no
-client secret and allows refresh-token authentication. The UI must handle every
-`signIn` next step enabled for the user pool, including new-password, SMS MFA, TOTP,
-and account-confirmation challenges, by continuing with `confirmSignIn`.
+client secret and allows refresh-token authentication. Enabled sign-in challenges,
+including new-password, SMS MFA, TOTP, account confirmation, and recovery, are
+rendered and continued by Amplify Authenticator rather than duplicated in Chat UI.
 
 Amplify Auth owns session persistence and refresh. Logseq Chat obtains the Cognito
 User Pool access JWT from `fetchAuthSession` when it needs to call an API. Every
@@ -74,11 +90,12 @@ Graph API, db-sync, asset, and key-management request will use:
 Authorization: Bearer <cognito-access-token>
 ```
 
-The db-sync HTTP layer will validate the JWT issuer, signature, expiry,
+The db-sync HTTP layer validates the JWT issuer, signature, expiry,
 `token_use=access`, and Cognito `client_id`, then apply the same graph membership and
 permission checks used by existing sync clients. A token identifies a user, not a graph. Graph
-selection therefore happens only after the app calls the authenticated graph-list
-operation.
+selection therefore happens only after the app calls the authenticated db-sync
+`GET /graphs` operation. Semantic reads and writes remain under `/api/v1/graphs/...`;
+graph discovery does not use the semantic graph-list route.
 
 PAT configuration and the PAT input screen will be removed after Cognito login is
 available. PATs may remain supported by existing APIs during migration, but Logseq
@@ -104,12 +121,12 @@ snapshot or change set when a value does not conform to the shared schema instea
 of coercing it.
 
 The existing chat cache may be removed or retained as a rebuildable UI projection,
-but it is not the graph mirror and is never a sync source of truth. Local-only state
-belongs in a separate SQLite metadata store, including:
-
-- graph id, schema version, and applied server `t`;
-- snapshot import state;
-- pending local requests and UI state.
+but it is not the graph mirror and is never a sync source of truth. Each selected
+graph currently has `graph.sqlite` for the Logseq-layout KVS graph and an atomically
+replaced Transit `sync.checkpoint` sidecar containing graph id, schema version, and
+applied server `t`. The separate app metadata store persists the discovered graph
+catalog, last selected graph, pending local requests, and UI state. Those records
+are not graph attributes and are not a second graph cursor.
 
 No local-only attributes such as sync status or cached JSON projections will be
 added to the graph database. This prevents the chat app from changing the meaning
@@ -148,8 +165,10 @@ results to OCaml. They do not parse or rewrite graph values.
 
 The SSE adapter opens and owns the platform network task, then feeds bounded byte
 chunks and terminal results into short, serialized OCaml FFI calls. It must not hold
-the existing global core-call mutex or the OCaml runtime lock for the lifetime of a
-connection. Snapshot downloads likewise stream to a file or bounded OCaml decoder;
+an OCaml runtime lock for the lifetime of a connection. Blocking native REST
+transport releases the OCaml runtime while waiting, so an unreachable server cannot
+serialize unrelated local graph operations behind its timeout. Snapshot downloads
+likewise stream to a file or bounded OCaml decoder;
 they are not materialized as one JSON RPC string.
 
 The existing JSON RPC across the Swift/Kotlin-to-OCaml FFI remains a small control
@@ -172,8 +191,8 @@ runtime dependencies of the mobile app, but their cross-backend test suites are
 useful compatibility evidence for payloads also produced by ClojureScript.
 
 Transit remains the sync wire format. EDN is not an intermediate representation for
-Transit payloads. The dependencies will be pinned through the repository's
-opam/Dune lock so Apple and Android builds use the same codec version. Cross-codec
+Transit payloads. The dependencies are pinned to exact Git revisions by the native
+dependency build script so Apple and Android builds use the same codec version. Cross-codec
 fixtures copied from `logseq-1` must prove byte-level decoding compatibility before
 the old JSON projection path is removed.
 
@@ -349,6 +368,11 @@ Logseq Chat may submit only these mutations through authenticated server APIs:
 - add a new block;
 - modify properties of an existing block.
 
+Writes use the existing semantic REST resources under `/api/v1/graphs/:graph-id`.
+Block creation uses `capture` (and the corresponding task or asset operation), and
+property changes use the block property update resource. Logseq Chat does not call
+the db-sync tx-batch endpoint and does not submit raw DataScript transactions.
+
 The client will not expose or call entity-delete, page-delete, block-delete,
 retract-entity, arbitrary transaction, move, or asset-delete operations. The server
 must enforce this allowlist; hiding controls in the UI is not sufficient. For an
@@ -366,6 +390,15 @@ authoritative entity upsert through SSE as other clients. Optimistic UI state ma
 shown separately, but only the SSE event advances the graph cursor and replaces the
 local graph value. Existing server conflict and permission rules remain
 authoritative.
+
+Every supported mutation is local-first. The OCaml core commits it to the app's
+durable pending store before the UI publishes the result. A single serialized sync
+pump sends queued operations when transport is available. An HTTP failure
+leaves the operation retryable; it must not roll back the local edit, hide the graph,
+or block subsequent create, edit, search, and navigation operations. A remote read
+or refresh cannot overwrite an unsynchronized local value. On successful REST
+submission the operation enters a submitted state and remains overlaid on the graph
+mirror until the matching SSE upsert confirms the authoritative value.
 
 ## End-to-end flow
 
@@ -415,12 +448,16 @@ authoritative.
 - Replace the reduced local schema with the exact `logseq-1` graph schema for the
   server-reported schema version and reuse the current snapshot row import design.
 - Store the applied server `t` and snapshot import state outside the graph database.
+- Persist the full graph discovery catalog and last selected graph in the app
+  metadata store so an existing graph opens without authentication or network.
 - Add an SSE client with reconnect, replay, atomic event application, and reset
   handling.
 - Add byte-stream platform adapters and short serialized FFI entry points so the
   current blocking JSON RPC mutex is never held by a live stream.
 - Query the local full graph for chat views and expose only add-block and
   modify-block-properties mutations.
+- Persist every mutation before presentation, send queued writes only through the
+  semantic REST API, and retain optimistic values until authoritative SSE echo.
 - Reuse Logseq's E2EE key and value codecs and keep decrypted graph storage within
   the platform's protected application data.
 
@@ -465,8 +502,8 @@ a reliable contiguous cursor.
 ### Use Cognito Managed Login or Hosted UI
 
 Browser-based login supports federation well, but it violates the requirement that
-authentication be built into Logseq Chat. The app uses Cognito SDK authentication
-and owns the native screens instead.
+authentication be built into Logseq Chat. The app embeds Amplify's native
+Authenticator component and uses Cognito SDK authentication instead.
 
 ### Add a new full-snapshot endpoint
 
@@ -531,6 +568,9 @@ The implementation is complete when automated integration tests demonstrate:
   arbitrary transaction requests are rejected by the server;
 - duplicate and replayed events are idempotent and cursor gaps trigger reset;
 - disconnect/reconnect does not lose committed changes;
+- while the API is unreachable, repeated creates and property edits remain
+  responsive, survive process termination, preserve their latest state, and synchronize after
+  reconnect without duplicate server entities;
 - schema changes force atomic re-bootstrap;
 - encrypted and unencrypted snapshots converge to the same logical graph data;
 - encrypted changes and assets are never plaintext in server logs or wire captures;
