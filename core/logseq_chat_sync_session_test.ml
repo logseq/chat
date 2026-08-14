@@ -119,7 +119,33 @@ let () =
       in
       if root_after_failure <> original_root
       then fail "atomic import" "failed import replaced the active graph";
-      match expect_ok "checkpoint after failure" (Checkpoint.load checkpoint_path) with
-      | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
-      | _ -> fail "atomic checkpoint" "failed import changed the cursor")
+      (match expect_ok "checkpoint after failure" (Checkpoint.load checkpoint_path) with
+       | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
+       | _ -> fail "atomic checkpoint" "failed import changed the cursor");
+
+      let conn = expect_ok "restore sync connection" (Logseq_chat_graph_store.restore_conn ~path:active_path) in
+      let state =
+        Logseq_chat_sync_state.create
+          ~graph_id:"graph-1"
+          ~schema_version:"65.33"
+          ~applied_server_t:48192
+      in
+      let change : Logseq_chat_sync_protocol.change_set =
+        { format_version = 1
+        ; graph_id = "graph-1"
+        ; schema_version = "65.33"
+        ; t_before = 48192
+        ; t = 48193
+        ; upserts = []
+        ; deleted = []
+        }
+      in
+      expect_ok
+        "apply authoritative event"
+        (Session.apply_change_set ~conn ~checkpoint_path state change);
+      if Logseq_chat_sync_state.applied_server_t state <> 48193
+      then fail "event cursor" "successful SSE event did not advance state";
+      match expect_ok "event checkpoint" (Checkpoint.load checkpoint_path) with
+      | Some checkpoint when checkpoint.applied_server_t = 48193 -> ()
+      | _ -> fail "event checkpoint" "successful SSE event did not persist cursor")
 ;;

@@ -118,3 +118,25 @@ let import_snapshot_file
     cleanup_staging active_path;
     Error ("import graph snapshot: " ^ Printexc.to_string error)
 ;;
+
+let apply_change_set ~conn ~checkpoint_path state change =
+  Logseq_chat_sync_state.apply_change_set
+    state
+    change
+    ~apply:(fun change ->
+      bind (Logseq_chat_entity_sync.apply_change_set conn change) (fun () ->
+        let checkpoint =
+          Checkpoint.create
+            ~graph_id:change.Logseq_chat_sync_protocol.graph_id
+            ~schema_version:change.schema_version
+            ~applied_server_t:change.t
+        in
+        Checkpoint.save_atomic checkpoint_path checkpoint))
+  |> Result.map_error (function
+    | Logseq_chat_sync_state.Unsupported_format -> "unsupported sync format"
+    | Graph_mismatch -> "sync graph mismatch"
+    | Schema_mismatch -> "sync schema mismatch"
+    | Cursor_mismatch -> "sync cursor mismatch"
+    | Invalid_cursor -> "invalid sync cursor"
+    | Apply_failed message -> message)
+;;
