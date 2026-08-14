@@ -6,6 +6,71 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 failures=0
 
+if grep -Eq 'opam exec --switch=(simulator|ios|android)-|5\.4\.1' \
+  "$repo_root/scripts/build-mobile-ocaml-deps.sh"; then
+  echo "not ok - mobile dependency build references a legacy cross switch" >&2
+  failures=$((failures + 1))
+fi
+
+for module in \
+  logseq_chat_edn \
+  logseq_chat_entity_sync \
+  logseq_chat_graph_mutation \
+  logseq_chat_graph_read \
+  logseq_chat_graph_store \
+  logseq_chat_logseq_storage_codec \
+  logseq_chat_snapshot \
+  logseq_chat_sse \
+  logseq_chat_sync_checkpoint \
+  logseq_chat_sync_protocol \
+  logseq_chat_sync_session \
+  logseq_chat_sync_state; do
+  if ! grep -q "core/$module.ml" "$repo_root/scripts/build-mobile-ios-device.sh"; then
+    echo "not ok - device build omits OCaml module: $module" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+for framework in \
+  AWSCore.framework \
+  AWSCognitoIdentityProviderASF.framework \
+  AWSCognitoIdentityProvider.framework; do
+  if grep -q "$framework" "$repo_root/scripts/build-mobile-ios-device.sh"; then
+    echo "not ok - device build embeds legacy Cognito framework: $framework" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+if ! grep -q 'LOGSEQ_CHAT_IOS_KEYCHAIN' \
+  "$repo_root/scripts/build-mobile-ios-device.sh"; then
+  echo "not ok - device build cannot select an isolated signing keychain" >&2
+  failures=$((failures + 1))
+fi
+
+if ! grep -q 'restore_keychain_search_list' \
+  "$repo_root/scripts/build-mobile-ios-device.sh"; then
+  echo "not ok - device build does not restore the signing keychain search list" >&2
+  failures=$((failures + 1))
+fi
+
+if ! grep -q 'security list-keychains -d user -s' \
+  "$repo_root/scripts/build-mobile-ios-device.sh"; then
+  echo "not ok - device build does not add its signing keychain to the search list" >&2
+  failures=$((failures + 1))
+fi
+
+if ! grep -q 'NSAllowsLocalNetworking' \
+  "$repo_root/scripts/configure-ios-info-plist.sh"; then
+  echo "not ok - iOS app does not allow an explicitly configured local API" >&2
+  failures=$((failures + 1))
+fi
+
+if ! grep -q 'NSLocalNetworkUsageDescription' \
+  "$repo_root/scripts/configure-ios-info-plist.sh"; then
+  echo "not ok - iOS app does not explain local network access" >&2
+  failures=$((failures + 1))
+fi
+
 check_rejects() {
   local name=$1
   local expected=$2

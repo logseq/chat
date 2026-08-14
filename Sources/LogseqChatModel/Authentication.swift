@@ -97,13 +97,22 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
     }
 
     public func accessToken() async throws -> String {
-        guard let token = try await provider.accessToken(), !token.isEmpty else {
+        do {
+            guard let token = try await provider.accessToken(), !token.isEmpty else {
+                state = .signedOut
+                errorMessage = LogseqAuthenticationError.notSignedIn.localizedDescription
+                onAccessToken(nil)
+                throw LogseqAuthenticationError.notSignedIn
+            }
+            state = .signedIn
+            errorMessage = nil
+            onAccessToken(token)
+            return token
+        } catch {
             state = .signedOut
+            errorMessage = error.localizedDescription
             onAccessToken(nil)
-            throw LogseqAuthenticationError.notSignedIn
+            throw error
         }
-        state = .signedIn
-        onAccessToken(token)
-        return token
     }
 }

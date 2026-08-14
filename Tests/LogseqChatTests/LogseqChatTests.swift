@@ -8,10 +8,14 @@ import Foundation
         #expect(1 + 2 == 3, "basic test")
     }
 
-    @Test func appUsesBuiltInCognitoLoginInsteadOfPAT() throws {
+    @Test func appleAppUsesAmplifyAuthenticatorInsteadOfCustomLoginUI() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+        let app = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
             encoding: .utf8
         )
         let provider = try String(
@@ -27,16 +31,72 @@ import Foundation
             encoding: .utf8
         )
 
+        #expect(app.contains("import Authenticator"))
+        #expect(app.contains("Authenticator {"))
+        #expect(content.contains("#if SKIP"))
         #expect(content.contains("LogseqLoginView"))
-        #expect(content.contains("field.email"))
-        #expect(content.contains("field.password"))
+        #expect(!content.contains("#if !SKIP\n                LogseqLoginView"))
         #expect(!content.contains("field.pat"))
-        #expect(provider.contains("AWSCognitoIdentityUserPool"))
-        #expect(provider.contains("session.accessToken?.tokenString"))
+        #expect(provider.contains("import Amplify"))
+        #expect(provider.contains("AuthCognitoTokensProvider"))
+        #expect(provider.contains("Amplify.Auth.fetchAuthSession()"))
+        #expect(provider.contains("tokens.accessToken"))
+        #expect(!provider.contains("AWSCognitoIdentityUserPool"))
         #expect(androidProvider.contains("CognitoUserPool"))
         #expect(androidProvider.contains("session.accessToken?.jwtToken"))
         #expect(skipConfiguration.contains("aws-android-sdk-cognitoidentityprovider"))
         #expect(!skipConfiguration.contains("com.amplifyframework"))
+    }
+
+    @Test func appleAuthDependsOnlyOnAmplifyCognitoAndAuthenticatorProducts() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let package = try String(
+            contentsOf: root.appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/CognitoAuthProvider.swift"),
+            encoding: .utf8
+        )
+
+        #expect(package.contains("https://github.com/aws-amplify/amplify-swift"))
+        #expect(package.contains("https://github.com/aws-amplify/amplify-ui-swift-authenticator"))
+        #expect(package.contains(".product(name: \"Amplify\""))
+        #expect(package.contains(".product(name: \"AWSPluginsCore\""))
+        #expect(package.contains(".product(name: \"AWSCognitoAuthPlugin\""))
+        #expect(package.contains(".product(name: \"Authenticator\""))
+        #expect(!package.contains("Vendor/LogseqCognitoSDK"))
+        #expect(!package.contains("AWSAPIPlugin"))
+        #expect(!package.contains("AWSS3StoragePlugin"))
+        #expect(!package.contains("AWSDataStorePlugin"))
+        #expect(!provider.contains("refreshToken"))
+    }
+
+    @Test func amplifyAuthUsesTheExistingUserPoolAndManagedSessionLifecycle() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let app = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
+            encoding: .utf8
+        )
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/CognitoAuthProvider.swift"),
+            encoding: .utf8
+        )
+
+        #expect(app.contains("AmplifyOutputsData"))
+        #expect(app.contains("AWSCognitoAuthPlugin()"))
+        #expect(app.contains("userPoolId:"))
+        #expect(app.contains("userPoolClientId:"))
+        #expect(app.contains("passwordPolicy: .init("))
+        #expect(app.contains("minLength: 8"))
+        #expect(app.contains("requireNumbers: true"))
+        #expect(app.contains("requireLowercase: true"))
+        #expect(app.contains("requireUppercase: true"))
+        #expect(app.contains("requireSymbols: true"))
+        #expect(app.contains("try Amplify.configure"))
+        #expect(provider.contains("Amplify.Auth.signOut()"))
+        #expect(provider.contains("Amplify.Auth.signIn"))
+        #expect(!provider.contains("Keychain"))
     }
 
     @Test func signedInAppRequiresExplicitUnencryptedGraphSelection() throws {
@@ -50,6 +110,38 @@ import Foundation
         #expect(content.contains("store.snapshot.selectedGraphId == nil"))
         #expect(content.contains("store.selectGraph(graph.id)"))
         #expect(content.contains("graph.isEncrypted || !graph.isReady"))
+    }
+
+    @Test func graphPickerExposesConnectionSettingsBeforeGraphSelection() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+        let pickerStart = try #require(content.range(of: "private var graphPicker: some View"))
+        let remaining = content[pickerStart.lowerBound...]
+        let pickerEnd = try #require(remaining.range(of: "\n\n    @ViewBuilder private var appShell"))
+        let picker = remaining[..<pickerEnd.lowerBound]
+        let connectStart = try #require(content.range(of: "private func connectWithCurrentAccessToken()"))
+        let connectRemaining = content[connectStart.lowerBound...]
+        let connectEnd = try #require(connectRemaining.range(of: "\n\n    @ViewBuilder private var authenticatedContent"))
+        let connect = connectRemaining[..<connectEnd.lowerBound]
+
+        #expect(picker.contains("settingsControl"))
+        #expect(picker.contains("authentication.errorMessage"))
+        #expect(picker.contains("store.lastError"))
+        #expect(picker.contains("ErrorBanner(error: error)"))
+        #expect(!connect.contains("try? await authentication.accessToken()"))
+        #expect(connect.contains("logger.error"))
+        #expect(connect.contains("#if DEBUG"))
+        #expect(connect.contains("print("))
+
+        let model = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift"),
+            encoding: .utf8
+        )
+        #expect(model.contains("LogseqChat debug: core action failed"))
+        #expect(model.contains("LogseqChat debug: core action applied"))
     }
 
     @Test func decodeType() throws {
@@ -593,8 +685,12 @@ import Foundation
         #expect(flow.contains("tapOn: \"close\""))
         #expect(!flow.contains("tapOn: \"Cancel\""))
         #expect(!flow.contains("field.pat"))
-        #expect(flow.contains("field.email"))
-        #expect(flow.contains("field.password"))
+        #expect(flow.contains("text: \"Enter your email\""))
+        #expect(flow.contains("text: \"Enter your password\""))
+        #expect(flow.contains("text: \"Sign In\""))
+        #expect(flow.contains("index: 1"))
+        #expect(!flow.contains("field.email"))
+        #expect(!flow.contains("field.password"))
         #expect(flow.contains("eraseText: 8"))
         #expect(flow.contains("inputText: \"After clear\""))
         let sendButton = try #require(flow.range(of: "id: \"button.send\""))
@@ -617,15 +713,117 @@ import Foundation
         #expect(script.contains("LOGSEQ_CHAT_E2E_PASSWORD"))
     }
 
-    @Test func iosBuildEmbedsOnlyTheRequiredCognitoFrameworks() throws {
-        let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent("scripts/build-mobile-ios-simulator.sh")
-        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+    @Test func iosBuildUsesStaticAmplifyProductsWithoutLegacyCognitoFrameworks() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let device = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-device.sh"),
+            encoding: .utf8
+        )
+        let simulator = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-simulator.sh"),
+            encoding: .utf8
+        )
 
-        #expect(script.contains("AWSCore.framework"))
-        #expect(script.contains("AWSCognitoIdentityProvider.framework"))
-        #expect(script.contains("AWSCognitoIdentityProviderASF.framework"))
-        #expect(script.contains("codesign --force --sign - --timestamp=none \"$framework\""))
+        for script in [device, simulator] {
+            #expect(!script.contains("AWSCore.framework"))
+            #expect(!script.contains("AWSCognitoIdentityProvider.framework"))
+            #expect(!script.contains("AWSCognitoIdentityProviderASF.framework"))
+            #expect(!script.contains("cognito_frameworks"))
+            #expect(script.contains("*.bundle"))
+        }
+    }
+
+    @Test func iosNativeObjectsOnlyLinkIntoTheAppTarget() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let package = try String(
+            contentsOf: root.appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
+        let device = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-device.sh"),
+            encoding: .utf8
+        )
+
+        #expect(package.contains("LOGSEQ_CHAT_NATIVE_LINK_INPUTS"))
+        #expect(package.contains("linkerSettings: logseqChatLinkerSettings"))
+        #expect(device.contains("LOGSEQ_CHAT_NATIVE_LINK_INPUTS="))
+        #expect(!device.contains("-Xlinker \"$core_object\""))
+        #expect(!device.contains("-Xlinker \"$ffi_object\""))
+    }
+
+    @Test func iosNativeCoreFlagIsDefinedForTheModelTargetThatCallsIt() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let package = try String(
+            contentsOf: root.appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
+        let modelTargetStart = try #require(package.range(of: ".target(name: \"LogseqChatModel\""))
+        let modelTargetAndFollowing = package[modelTargetStart.lowerBound...]
+        let coreTargetStart = try #require(
+            modelTargetAndFollowing.range(of: "\n        .target(\n            name: \"LogseqChatCoreABI\"")
+        )
+        let modelTarget = modelTargetAndFollowing[..<coreTargetStart.lowerBound]
+
+        #expect(modelTarget.contains(".define(\"LOGSEQ_CHAT_CORE\", .when(platforms: [.iOS]))"))
+    }
+
+    @Test func iosSimulatorBuildUsesTheSameSyncCoreAsDevice() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let simulator = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-simulator.sh"),
+            encoding: .utf8
+        )
+
+        for module in [
+            "logseq_chat_edn",
+            "logseq_chat_sync_protocol",
+            "logseq_chat_sync_state",
+            "logseq_chat_sync_checkpoint",
+            "logseq_chat_snapshot",
+            "logseq_chat_entity_sync",
+            "logseq_chat_graph_mutation",
+            "logseq_chat_graph_read",
+            "logseq_chat_sse",
+            "logseq_chat_logseq_storage_codec",
+            "logseq_chat_graph_store",
+            "logseq_chat_sync_session"
+        ] {
+            #expect(simulator.contains("\(module).cmx"))
+        }
+        #expect(simulator.contains("logseq_chat_graph_store_stubs.c"))
+        #expect(simulator.contains("$graph_store_object"))
+    }
+
+    @Test func iosShellBuildUsesSwiftPMDependencyGraph() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let package = try String(
+            contentsOf: root.appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
+        let device = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-device.sh"),
+            encoding: .utf8
+        )
+
+        #expect(package.contains(".executable(name: \"LogseqChatShell\""))
+        #expect(package.contains(".executableTarget("))
+        #expect(package.contains("path: \"Darwin/Sources\""))
+        #expect(device.contains("--product LogseqChatShell"))
+        #expect(device.contains("cp \"$swift_build_dir/LogseqChatShell\" \"$app_dir/LogseqChat\""))
+        #expect(!device.contains("xcrun --sdk iphoneos swiftc"))
+    }
+
+    @Test func iosPackagingRecreatesTheGeneratedAppBundle() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        for name in ["build-mobile-ios-device.sh", "build-mobile-ios-simulator.sh"] {
+            let script = try String(
+                contentsOf: root.appendingPathComponent("scripts/\(name)"),
+                encoding: .utf8
+            )
+            let remove = try #require(script.range(of: "rm -rf \"$app_dir\""))
+            let copy = try #require(script.range(of: "cp \"$repo_root/Darwin/Info.plist\""))
+            #expect(remove.lowerBound < copy.lowerBound)
+        }
     }
 
     @Test func composerDismissesWhenLeavingHomeOrEnteringSearch() throws {

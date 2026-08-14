@@ -3,15 +3,16 @@ appId: com.logseq.chat
 - launchApp:
     clearState: true
 - assertVisible:
-    id: "field.email"
+    text: "Enter your email"
 - tapOn:
-    id: "field.email"
+    text: "Enter your email"
 - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
 - tapOn:
-    id: "field.password"
+    text: "Enter your password"
 - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
 - tapOn:
-    id: "button.sign-in"
+    text: "Sign In"
+    index: 1
 - extendedWaitUntil:
     visible:
       id: "screen.graph-picker"

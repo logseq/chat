@@ -3,19 +3,19 @@
 import Foundation
 import LogseqChatModel
 
-#if os(iOS)
-@preconcurrency import AWSCore
-@preconcurrency import AWSCognitoIdentityProvider
+#if !SKIP
+import Amplify
+import AWSPluginsCore
 #endif
 
 enum CognitoAuthProviderError: Error, LocalizedError {
-    case missingConfiguration
+    case incompleteSignIn
     case missingAccessToken
 
     var errorDescription: String? {
         switch self {
-        case .missingConfiguration:
-            return "The native Cognito app client is not configured."
+        case .incompleteSignIn:
+            return "Cognito requires another authentication step."
         case .missingAccessToken:
             return "Cognito did not return an access token."
         }
@@ -23,79 +23,43 @@ enum CognitoAuthProviderError: Error, LocalizedError {
 }
 
 actor CognitoAuthProvider: LogseqCognitoProviding {
-    #if os(iOS)
-    private let userPool: AWSCognitoIdentityUserPool?
-
     init(region: String, userPoolId: String, appClientId: String) {
-        guard !region.isEmpty, !userPoolId.isEmpty, !appClientId.isEmpty else {
-            self.userPool = nil
-            return
-        }
-        let configuration = AWSCognitoIdentityUserPoolConfiguration(
-            clientId: appClientId,
-            clientSecret: nil,
-            poolId: userPoolId
-        )
-        let key = "logseq-chat-\(region)-\(userPoolId)-\(appClientId)"
-        AWSCognitoIdentityUserPool.registerCognitoIdentityUserPool(
-            with: configuration,
-            forKey: key
-        )
-        self.userPool = AWSCognitoIdentityUserPool(forKey: key)
     }
 
     func accessToken() async throws -> String? {
-        guard let userPool else { throw CognitoAuthProviderError.missingConfiguration }
-        guard let user = userPool.currentUser() else { return nil }
-        let session: AWSCognitoIdentityUserSession = try await value(from: user.getSession())
-        return session.accessToken?.tokenString
+        let session = try await Amplify.Auth.fetchAuthSession()
+        #if DEBUG
+        print("LogseqChat debug: Amplify session fetched signedIn=\(session.isSignedIn)")
+        #endif
+        guard session.isSignedIn else { return nil }
+        guard let tokenProvider = session as? AuthCognitoTokensProvider else {
+            #if DEBUG
+            print("LogseqChat debug: Amplify session has no Cognito token provider")
+            #endif
+            throw CognitoAuthProviderError.missingAccessToken
+        }
+        let tokens = try tokenProvider.getCognitoTokens().get()
+        guard !tokens.accessToken.isEmpty else {
+            throw CognitoAuthProviderError.missingAccessToken
+        }
+        #if DEBUG
+        print("LogseqChat debug: Cognito access token is available")
+        #endif
+        return tokens.accessToken
     }
 
     func signIn(username: String, password: String) async throws -> String {
-        guard let userPool else { throw CognitoAuthProviderError.missingConfiguration }
-        let user = userPool.getUser(username)
-        let session: AWSCognitoIdentityUserSession = try await value(
-            from: user.getSession(username, password: password, validationData: nil)
-        )
-        guard let token = session.accessToken?.tokenString, !token.isEmpty else {
+        let result = try await Amplify.Auth.signIn(username: username, password: password)
+        guard result.isSignedIn else {
+            throw CognitoAuthProviderError.incompleteSignIn
+        }
+        guard let token = try await accessToken() else {
             throw CognitoAuthProviderError.missingAccessToken
         }
         return token
     }
 
     func signOut() async throws {
-        guard let userPool else { throw CognitoAuthProviderError.missingConfiguration }
-        userPool.currentUser()?.signOutAndClearLastKnownUser()
+        _ = await Amplify.Auth.signOut()
     }
-
-    private func value<Result>(from task: AWSTask<Result>) async throws -> Result {
-        try await withCheckedThrowingContinuation { continuation in
-            task.continueWith { completedTask in
-                if let error = completedTask.error {
-                    continuation.resume(throwing: error)
-                } else if let result = completedTask.result {
-                    continuation.resume(returning: result)
-                } else {
-                    continuation.resume(throwing: CognitoAuthProviderError.missingAccessToken)
-                }
-                return nil
-            }
-        }
-    }
-    #else
-    init(region: String, userPoolId: String, appClientId: String) {
-    }
-
-    func accessToken() async throws -> String? {
-        throw CognitoAuthProviderError.missingConfiguration
-    }
-
-    func signIn(username: String, password: String) async throws -> String {
-        throw CognitoAuthProviderError.missingConfiguration
-    }
-
-    func signOut() async throws {
-        throw CognitoAuthProviderError.missingConfiguration
-    }
-    #endif
 }

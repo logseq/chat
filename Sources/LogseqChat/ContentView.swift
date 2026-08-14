@@ -47,22 +47,19 @@ struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            if authentication.state == .signedIn {
-                if store.snapshot.selectedGraphId == nil {
-                    graphPicker
-                } else {
-                    appShell
-                }
-            } else {
-                LogseqLoginView(authentication: authentication) {
-                    connectWithCurrentAccessToken()
-                }
-            }
-        }
+        rootContent
         .task {
+            #if DEBUG
+            print("LogseqChat debug: content task started")
+            #endif
             store.open(path: databasePath)
+            #if DEBUG
+            print("LogseqChat debug: local store opened")
+            #endif
             await authentication.restore()
+            #if DEBUG
+            print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
+            #endif
             connectWithCurrentAccessToken()
             await store.runRefreshLoop()
         }
@@ -126,13 +123,41 @@ struct ContentView: View {
         #endif
     }
 
+    @ViewBuilder
+    private var rootContent: some View {
+        #if SKIP
+        Group {
+            if authentication.state == .signedIn {
+                authenticatedContent
+            } else {
+                LogseqLoginView(authentication: authentication) {
+                    connectWithCurrentAccessToken()
+                }
+            }
+        }
+        #else
+        authenticatedContent
+        #endif
+    }
+
     private var graphPicker: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text(verbatim: "Choose a graph")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+            HStack {
+                Text(verbatim: "Choose a graph")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                Spacer()
+                settingsControl
+            }
             Text(verbatim: "Select an unencrypted Logseq graph to download and sync on this device.")
                 .foregroundStyle(.secondary)
+            if let message = authentication.errorMessage {
+                Text(verbatim: message)
+                    .foregroundStyle(.red)
+            }
+            if let error = store.lastError {
+                ErrorBanner(error: error)
+            }
 
             let graphs = store.snapshot.graphs ?? []
             if graphs.isEmpty {
@@ -293,12 +318,34 @@ struct ContentView: View {
 
     private func connectWithCurrentAccessToken() {
         Task {
-            guard let accessToken = try? await authentication.accessToken() else { return }
-            store.configure(
-                baseURL: baseURL,
-                token: accessToken,
-                graphID: selectedGraphID.isEmpty ? nil : selectedGraphID
-            )
+            do {
+                #if DEBUG
+                print("LogseqChat debug: requesting Cognito access token")
+                #endif
+                let accessToken = try await authentication.accessToken()
+                #if DEBUG
+                print("LogseqChat debug: access token acquired; configuring \(baseURL)")
+                #endif
+                logger.info("Configuring graph sync connection")
+                store.configure(
+                    baseURL: baseURL,
+                    token: accessToken,
+                    graphID: selectedGraphID.isEmpty ? nil : selectedGraphID
+                )
+            } catch {
+                #if DEBUG
+                print("LogseqChat debug: access token request failed: \(error.localizedDescription)")
+                #endif
+                logger.error("Could not acquire Cognito access token: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    @ViewBuilder private var authenticatedContent: some View {
+        if store.snapshot.selectedGraphId == nil {
+            graphPicker
+        } else {
+            appShell
         }
     }
 

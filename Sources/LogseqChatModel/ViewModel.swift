@@ -952,8 +952,14 @@ private struct OpenGraphPayload: Encodable {
         guard let requestJSON = encode(request) else {
             return
         }
+        #if DEBUG
+        print("LogseqChat debug: core action started \(actionName)")
+        #endif
         logger.info("Core action started: \(actionName)")
         let responseJSON = callCore(requestJSON)
+        #if DEBUG
+        print("LogseqChat debug: core action returned \(actionName)")
+        #endif
         logger.info("Core action returned: \(actionName)")
         if shouldApply?() ?? true {
             apply(responseJSON: responseJSON, actionName: actionName)
@@ -969,8 +975,14 @@ private struct OpenGraphPayload: Encodable {
             return
         }
         let callCore = callCore
+        #if DEBUG
+        print("LogseqChat debug: async core action started \(actionName)")
+        #endif
         logger.info("Core action started: \(actionName)")
         let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
+        #if DEBUG
+        print("LogseqChat debug: async core action returned \(actionName)")
+        #endif
         logger.info("Core action returned: \(actionName)")
         if shouldApply?() ?? true {
             apply(responseJSON: responseJSON, actionName: actionName)
@@ -1015,6 +1027,12 @@ private struct OpenGraphPayload: Encodable {
             let response = try JSONDecoder().decode(LogseqChatRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {
                 let mergedResult = mergedSnapshot(result, actionName: actionName)
+                #if DEBUG
+                print(
+                    "LogseqChat debug: core action applied \(actionName) "
+                        + "revision=\(mergedResult.revision) graphs=\(mergedResult.graphs?.count ?? 0)"
+                )
+                #endif
                 logger.info(
                     "Core action applied: \(actionName), revision: \(mergedResult.revision), blocks: \(mergedResult.blocks.count), graph: \(mergedResult.graphName ?? "none")"
                 )
@@ -1022,6 +1040,12 @@ private struct OpenGraphPayload: Encodable {
                 lastError = nil
             } else {
                 let error = response.error ?? LogseqChatCoreError(code: "unknown_core_error", message: "The core returned no snapshot")
+                #if DEBUG
+                print(
+                    "LogseqChat debug: core action failed \(actionName) "
+                        + "code=\(error.code) message=\(error.message)"
+                )
+                #endif
                 logger.error(
                     "Core action failed: \(actionName), code: \(error.code), message: \(error.message)"
                 )

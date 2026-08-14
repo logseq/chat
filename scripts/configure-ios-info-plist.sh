@@ -40,6 +40,11 @@ set_bool "LSRequiresIPhoneOS" "true"
 set_string "MinimumOSVersion" "$deployment_target"
 set_bool "UIApplicationSupportsIndirectInputEvents" "true"
 set_string "UIStatusBarStyle" "UIStatusBarStyleDefault"
+set_string "NSLocalNetworkUsageDescription" "Connect to a Logseq graph sync server on your local network."
+
+reset_key "NSAppTransportSecurity"
+"$plistbuddy" -c "Add :NSAppTransportSecurity dict" "$info_plist"
+"$plistbuddy" -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$info_plist"
 
 reset_key "CFBundleSupportedPlatforms"
 "$plistbuddy" -c "Add :CFBundleSupportedPlatforms array" "$info_plist"

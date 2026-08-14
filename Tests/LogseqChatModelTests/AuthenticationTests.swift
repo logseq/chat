@@ -33,6 +33,23 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
     }
 }
 
+private struct FailingCognitoProvider: LogseqCognitoProviding {
+    struct SessionError: Error, LocalizedError {
+        var errorDescription: String? { "Could not restore the Cognito session." }
+    }
+
+    func accessToken() async throws -> String? {
+        throw SessionError()
+    }
+
+    func signIn(username: String, password: String) async throws -> String {
+        throw SessionError()
+    }
+
+    func signOut() async throws {
+    }
+}
+
 @Suite struct AuthenticationTests {
     @Test @MainActor func restoresAndRefreshesAnExistingAccessToken() async throws {
         let provider = FakeCognitoProvider(token: "restored-access-token")
@@ -73,5 +90,21 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
         #expect(auth.state == .signedOut)
         #expect(published == ["access-token", nil])
         #expect(await provider.recordedSignOutCount() == 1)
+    }
+
+    @Test @MainActor func accessTokenFailureUpdatesObservableAuthenticationState() async {
+        var published: [String?] = []
+        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider()) { token in
+            published.append(token)
+        }
+
+        do {
+            _ = try await auth.accessToken()
+            Issue.record("Expected access token restoration to fail")
+        } catch {
+            #expect(auth.state == .signedOut)
+            #expect(auth.errorMessage == "Could not restore the Cognito session.")
+            #expect(published == [nil])
+        }
     }
 }

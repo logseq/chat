@@ -3,21 +3,41 @@ import OSLog
 import SwiftUI
 import LogseqChatModel
 
+#if !SKIP
+import Amplify
+import Authenticator
+import AWSCognitoAuthPlugin
+#endif
+
 #if os(iOS) && !SKIP
 @preconcurrency import BackgroundTasks
 #endif
 
 /// A logger for the LogseqChat module.
-let logger: Logger = Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
+let logger: os.Logger = os.Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
 
 /// The shared top-level view for the app, loaded from the platform-specific App delegates below.
 ///
 /// The default implementation merely loads the `ContentView` for the app and logs a message.
 public struct LogseqChatRootView : View {
     public init() {
+        #if !SKIP
+        LogseqAmplifyAuth.configure()
+        #endif
     }
 
     public var body: some View {
+        #if !SKIP
+        Authenticator { _ in
+            appContent
+        }
+        .hidesSignUpButton()
+        #else
+        appContent
+        #endif
+    }
+
+    private var appContent: some View {
         ContentView(
             store: LogseqChatRuntime.shared.store,
             authentication: LogseqChatRuntime.shared.authentication
@@ -32,6 +52,41 @@ public struct LogseqChatRootView : View {
             }
     }
 }
+
+#if !SKIP
+private enum LogseqAmplifyAuth {
+    private static let configureOnce: Void = {
+        let configuration = LogseqCognitoConfiguration.load()
+        let outputs = AmplifyOutputsData(
+            auth: .init(
+                awsRegion: configuration.region,
+                userPoolId: configuration.userPoolId,
+                userPoolClientId: configuration.appClientId,
+                passwordPolicy: .init(
+                    minLength: 8,
+                    requireNumbers: true,
+                    requireLowercase: true,
+                    requireUppercase: true,
+                    requireSymbols: true
+                ),
+                standardRequiredAttributes: [.email],
+                usernameAttributes: [.email],
+                userVerificationTypes: [.email]
+            )
+        )
+        do {
+            try Amplify.add(plugin: AWSCognitoAuthPlugin())
+            try Amplify.configure(outputs)
+        } catch {
+            logger.error("Could not configure Amplify Auth: \(String(describing: error), privacy: .public)")
+        }
+    }()
+
+    static func configure() {
+        _ = configureOnce
+    }
+}
+#endif
 
 @MainActor public final class LogseqChatRuntime {
     public static let shared = LogseqChatRuntime()
@@ -73,7 +128,7 @@ public struct LogseqChatRootView : View {
     }
 }
 
-private struct LogseqCognitoConfiguration: Decodable {
+struct LogseqCognitoConfiguration: Decodable {
     let region: String
     let userPoolId: String
     let appClientId: String

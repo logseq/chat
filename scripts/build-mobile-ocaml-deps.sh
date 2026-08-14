@@ -14,8 +14,16 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_root="$repo_root/_build/mobile-dependency-sources"
 datascript_source="$source_root/datascript-ocaml"
 persistent_set_source="$source_root/persistent-sorted-set-ocaml"
+melange_edn_source="$source_root/melange-edn"
+melange_transit_source="$source_root/melange-transit"
+ptime_source="$source_root/ptime"
+yojson_source="$source_root/yojson"
 datascript_revision=3e9bee227686ba8608fc3fb027c4ebe30961360f
 persistent_set_revision=f95398e77a1a003f65ecf201c4aede961e52e929
+melange_edn_revision=a1410a31b57b5e42f152357d0303635685501bc6
+melange_transit_revision=99fb9f1c5bebf4ba5fa6d2378cfc97dbf14b5378
+ptime_revision=fc8e8dab8f417558d882e6989b080d9f2100f8b6
+yojson_revision=b2193e8e0c88c6501710d08b836b3219673383f3
 ocamlopt="$target_prefix/bin/ocamlopt.opt"
 ocamldep="$target_prefix/bin/ocamldep.opt"
 source_dir="$build_dir/mobile-ocaml-deps-source"
@@ -33,16 +41,6 @@ clone_revision() {
   git -C "$destination" checkout --detach "$revision"
 }
 
-query_yojson_lib() {
-  if command -v opam >/dev/null 2>&1; then
-    if opam exec --switch=simulator-5.4.1 -- ocamlfind query yojson >/dev/null 2>&1; then
-      opam exec --switch=simulator-5.4.1 -- ocamlfind query yojson
-      return
-    fi
-  fi
-  ocamlfind query yojson
-}
-
 clone_revision \
   https://github.com/logseq/datascript-ocaml.git \
   "$datascript_revision" \
@@ -51,6 +49,22 @@ clone_revision \
   https://github.com/logseq/persistent-sorted-set-ocaml.git \
   "$persistent_set_revision" \
   "$persistent_set_source"
+clone_revision \
+  https://github.com/RCmerci/melange-edn.git \
+  "$melange_edn_revision" \
+  "$melange_edn_source"
+clone_revision \
+  https://github.com/RCmerci/melange-transit.git \
+  "$melange_transit_revision" \
+  "$melange_transit_source"
+clone_revision \
+  https://github.com/dbuenzli/ptime.git \
+  "$ptime_revision" \
+  "$ptime_source"
+clone_revision \
+  https://github.com/ocaml-community/yojson.git \
+  "$yojson_revision" \
+  "$yojson_source"
 
 mkdir -p "$source_dir" "$object_dir"
 
@@ -99,9 +113,11 @@ for source in $ordered_sources; do
   esac
 done
 
-yojson_lib=$(query_yojson_lib)
+dune build --root "$yojson_source" lib/yojson.cmxa
+yojson_lib="$yojson_source/_build/default/lib"
+ln -sf "$yojson_lib/yojson__.ml-gen" "$source_dir/yojson__.ml"
 "$ocamlopt" -I "$object_dir" -no-alias-deps -w -49 -c \
-  -o yojson__.cmx "$yojson_lib/yojson__.ml"
+  -o yojson__.cmx "$source_dir/yojson__.ml"
 "$ocamlopt" -I "$object_dir" -open Yojson__ -c \
   -o yojson__Codec.cmi "$yojson_lib/codec.mli"
 "$ocamlopt" -I "$object_dir" -open Yojson__ -c \
@@ -133,9 +149,47 @@ yojson_lib=$(query_yojson_lib)
 "$ocamlopt" -I "$object_dir" -open Yojson__ -c \
   -o yojson.cmx "$yojson_lib/yojson.ml"
 
+"$ocamlopt" -I "$object_dir" -c \
+  -o ptime.cmi "$ptime_source/src/ptime.mli"
+"$ocamlopt" -I "$object_dir" -c \
+  -o ptime.cmx "$ptime_source/src/ptime.ml"
+
+"$ocamlopt" -I "$object_dir" -c \
+  -o melange_edn.cmi "$melange_edn_source/lib/melange_edn.mli"
+"$ocamlopt" -I "$object_dir" -c \
+  -o melange_edn.cmx "$melange_edn_source/lib/melange_edn.ml"
+"$ocamlopt" -I "$object_dir" -c \
+  -o melange_edn_native.cmi \
+  "$melange_edn_source/lib_native/melange_edn_native.mli"
+"$ocamlopt" -I "$object_dir" -c \
+  -o melange_edn_native.cmx \
+  "$melange_edn_source/lib_native/melange_edn_native.ml"
+
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit_core.cmi "$melange_transit_source/lib/common/transit_core.mli"
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit_core.cmx "$melange_transit_source/lib/common/transit_core.ml"
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit_edn.cmi "$melange_transit_source/lib/shared/transit_edn.mli"
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit_edn.cmx "$melange_transit_source/lib/shared/transit_edn.ml"
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit.cmi "$melange_transit_source/lib/native/transit.mli"
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit.cmx "$melange_transit_source/lib/native/transit.ml"
+printf '%s\n' \
+  'module Transit = Transit' \
+  'module Transit_edn = Transit_edn' \
+  >"$source_dir/transit_native.ml"
+"$ocamlopt" -I "$object_dir" -c \
+  -o transit_native.cmx "$source_dir/transit_native.ml"
+
 cmx_list=$("$ocamldep" -sort "$source_dir"/*.ml)
 : >"$object_dir/link-objects.txt"
 for source in $cmx_list; do
+  case "$source" in
+    */yojson__.ml | */transit_native.ml) continue ;;
+  esac
   printf '%s\n' "$object_dir/$(basename "${source%.ml}.cmx")" \
     >>"$object_dir/link-objects.txt"
 done
@@ -148,7 +202,14 @@ for object in \
   yojson__Basic.cmx \
   yojson__Raw.cmx \
   yojson__Safe.cmx \
-  yojson.cmx; do
+  yojson.cmx \
+  ptime.cmx \
+  melange_edn.cmx \
+  melange_edn_native.cmx \
+  transit_core.cmx \
+  transit_edn.cmx \
+  transit.cmx \
+  transit_native.cmx; do
   printf '%s\n' "$object_dir/$object" >>"$object_dir/link-objects.txt"
 done
 

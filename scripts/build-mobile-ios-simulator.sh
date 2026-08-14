@@ -20,8 +20,8 @@ core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
 https_object="$core_build_dir/logseq_chat_https_darwin.o"
 sqlite_object="$core_build_dir/datascript_sqlite_stubs.o"
+graph_store_object="$core_build_dir/logseq_chat_graph_store_stubs.o"
 app_dir="$repo_root/.build/LogseqChat.app"
-frameworks_dir="$app_dir/Frameworks"
 xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/Debug-iphonesimulator/LogseqChat.app"
 
 if [[ ! -x $target_prefix/bin/ocamlopt.opt ]]; then
@@ -47,12 +47,36 @@ cd "$core_build_dir"
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_edn.cmx \
+  "$repo_root/core/logseq_chat_edn.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_protocol.cmx \
+  "$repo_root/core/logseq_chat_sync_protocol.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_state.cmx \
+  "$repo_root/core/logseq_chat_sync_state.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_checkpoint.cmx \
+  "$repo_root/core/logseq_chat_sync_checkpoint.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_snapshot.cmx \
+  "$repo_root/core/logseq_chat_snapshot.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_entity_sync.cmx \
+  "$repo_root/core/logseq_chat_entity_sync.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_mutation.cmx \
+  "$repo_root/core/logseq_chat_graph_mutation.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_read.cmx \
+  "$repo_root/core/logseq_chat_graph_read.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sse.cmx \
+  "$repo_root/core/logseq_chat_sse.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_api.cmx \
   "$repo_root/core/logseq_chat_api.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_http.cmx \
   "$repo_root/core/logseq_chat_http.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
   "$repo_root/core/logseq_chat_rpc.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
+  "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_store.cmx \
+  "$repo_root/core/logseq_chat_graph_store.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_session.cmx \
+  "$repo_root/core/logseq_chat_sync_session.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sqlite.cmx \
   "$repo_root/core/logseq_chat_sqlite.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_mobile_entry.cmx \
@@ -71,9 +95,21 @@ cd "$core_build_dir"
   threads.cmxa \
   "${dependency_objects[@]}" \
   logseq_chat_model.cmx \
+  logseq_chat_edn.cmx \
+  logseq_chat_sync_protocol.cmx \
+  logseq_chat_sync_state.cmx \
+  logseq_chat_sync_checkpoint.cmx \
+  logseq_chat_snapshot.cmx \
+  logseq_chat_entity_sync.cmx \
+  logseq_chat_graph_mutation.cmx \
+  logseq_chat_graph_read.cmx \
+  logseq_chat_sse.cmx \
   logseq_chat_api.cmx \
   logseq_chat_http.cmx \
   logseq_chat_rpc.cmx \
+  logseq_chat_logseq_storage_codec.cmx \
+  logseq_chat_graph_store.cmx \
+  logseq_chat_sync_session.cmx \
   logseq_chat_sqlite.cmx \
   logseq_chat_mobile_entry.cmx
 
@@ -102,40 +138,34 @@ cd "$core_build_dir"
   -c "$sqlite_stub_source" \
   -o "$sqlite_object"
 
+"$clang" \
+  -target "$triple" \
+  -isysroot "$sdk_path" \
+  -fPIC \
+  -I "$ocaml_lib" \
+  -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
+  -o "$graph_store_object"
+
+LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$core_object:$ffi_object:$https_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a" \
 swift build \
   --disable-keychain \
   --package-path "$repo_root" \
+  --product LogseqChatShell \
   --triple "$triple" \
-  --sdk "$sdk_path" \
-  -Xswiftc -DLOGSEQ_CHAT_CORE \
-  -Xlinker "$core_object" \
-  -Xlinker "$ffi_object" \
-  -Xlinker "$https_object" \
-  -Xlinker "$sqlite_object" \
-  -Xlinker "$ocaml_lib/libthreadsnat.a" \
-  -Xlinker -framework \
-  -Xlinker Foundation \
-  -Xlinker -lsqlite3
+  --sdk "$sdk_path"
 
-mkdir -p "$frameworks_dir"
+if [[ -d $app_dir ]]; then
+  chmod -R u+w "$app_dir"
+  rm -rf "$app_dir"
+fi
+mkdir -p "$app_dir"
 if [[ -f "$xcode_app_dir/Info.plist" ]]; then
   cp "$xcode_app_dir/Info.plist" "$app_dir/Info.plist"
 else
   cp "$repo_root/Darwin/Info.plist" "$app_dir/Info.plist"
   "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "com.logseq.chat" "$deployment_target" "iPhoneSimulator"
 fi
-cp "$swift_build_dir/libLogseqChat.dylib" "$frameworks_dir/libLogseqChat.dylib"
-
-cognito_frameworks=(
-  AWSCore.framework
-  AWSCognitoIdentityProviderASF.framework
-  AWSCognitoIdentityProvider.framework
-)
-for framework_name in "${cognito_frameworks[@]}"; do
-  framework_source="$swift_build_dir/$framework_name"
-  [[ -d $framework_source ]] || die "missing Cognito framework: $framework_source"
-  cp -R "$framework_source" "$frameworks_dir/"
-done
+cp "$swift_build_dir/LogseqChatShell" "$app_dir/LogseqChat"
 
 for bundle in "$swift_build_dir"/*.bundle; do
   [[ -d "$bundle" ]] || continue
@@ -154,29 +184,6 @@ if [[ -d "$logseq_resource_bundle" ]]; then
     "$repo_root/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
 fi
 
-xcrun --sdk iphonesimulator swiftc \
-  -parse-as-library \
-  -module-name LogseqChatShell \
-  -target "$triple" \
-  -sdk "$sdk_path" \
-  -I "$swift_build_dir/Modules" \
-  -F "$swift_build_dir" \
-  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
-  -Xcc "-I$repo_root/Sources/LogseqChatCoreABI/include" \
-  -L "$swift_build_dir" \
-  -lLogseqChat \
-  -framework SwiftUI \
-  -framework UIKit \
-  -Xlinker -rpath \
-  -Xlinker @executable_path/Frameworks \
-  "$repo_root/Darwin/Sources/Main.swift" \
-  -o "$app_dir/LogseqChat"
-
-codesign --force --sign - --timestamp=none "$frameworks_dir/libLogseqChat.dylib"
-for framework_name in "${cognito_frameworks[@]}"; do
-  framework="$frameworks_dir/$framework_name"
-  codesign --force --sign - --timestamp=none "$framework"
-done
 codesign --force --sign - --timestamp=none "$app_dir"
 
 echo "$app_dir"
