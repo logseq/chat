@@ -40,6 +40,18 @@ Logging output for the iOS app can be viewed in the Xcode console, and in
 Android Studio's logcat tab for the transpiled Kotlin app, or
 using `adb logcat` from a terminal.
 
+### macOS
+
+Build the native macOS Release app, including the OCaml 5.5 DataScript core:
+
+```sh
+./scripts/build-macos-app.sh
+open .build/macos/LogseqChat.app
+```
+
+The first build creates a deployment-targeted OCaml toolchain under the
+configured `ocaml-demo` workspace. Later builds reuse it.
+
 ## Testing
 
 The module can be tested using the standard `swift test` command

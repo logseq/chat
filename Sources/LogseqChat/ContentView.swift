@@ -141,6 +141,14 @@ struct ContentView: View {
             .overlay(alignment: .bottom) {
                 androidFloatingControls
             }
+        #elseif os(macOS)
+        stackedContent
+            .overlay(alignment: .bottom) {
+                if shouldShowComposer {
+                    floatingComposer
+                        .platformFloatingComposerInset()
+                }
+            }
         #else
         stackedContent
             .overlay(alignment: .bottom) {
@@ -578,6 +586,7 @@ struct ContentView: View {
                 }
                 .accessibilityLabel("Add attachment")
                 .accessibilityIdentifier("button.attachment")
+                .platformIconMenuStyle()
                 Menu {
                     ForEach(taskStatusMenuStatuses) { status in
                         taskStatusButton(status)
@@ -595,6 +604,7 @@ struct ContentView: View {
                 }
                 .accessibilityLabel("Task status")
                 .accessibilityIdentifier("button.task-status")
+                .platformIconMenuStyle()
                 Spacer()
                 Button {
                     sendDraft()
@@ -951,6 +961,16 @@ extension View {
         #endif
     }
 
+    @ViewBuilder public func platformIconMenuStyle() -> some View {
+        #if os(macOS) && !SKIP
+        self.menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        #else
+        self
+        #endif
+    }
+
     @ViewBuilder public func platformRectangularHitTarget() -> some View {
         #if !SKIP
         self.contentShape(Rectangle())
@@ -1150,6 +1170,7 @@ private struct BlockRow: View {
                                 .frame(width: 24, height: 24)
                         }
                         .accessibilityLabel("Task status")
+                        .platformIconMenuStyle()
                     }
                     Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
                         .font(.body)
@@ -1414,8 +1435,19 @@ private struct CameraPicker: UIViewControllerRepresentable {
 private struct IconImage: View {
     let name: String
 
+    private static let assetBundle: Bundle = {
+        #if os(macOS) && !SKIP
+        if let bundleURL = Bundle.main.resourceURL?
+                .appendingPathComponent("logseq-chat_LogseqChat.bundle"),
+           let bundle = Bundle(url: bundleURL) {
+            return bundle
+        }
+        #endif
+        return Bundle.module
+    }()
+
     var body: some View {
-        Image(name, bundle: .module)
+        Image(name, bundle: Self.assetBundle)
             .resizable()
             .scaledToFit()
             .frame(width: 20, height: 20)

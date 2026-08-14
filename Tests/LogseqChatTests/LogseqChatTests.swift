@@ -265,6 +265,21 @@ import Foundation
         #expect(source.contains(".platformFloatingComposerInset()"))
     }
 
+    @Test func macOSShowsCollapsedAndExpandedComposerOutsideTheIOSBottomToolbar() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("#elseif os(macOS)\n        stackedContent"))
+        #expect(source.contains("if shouldShowComposer {\n                    floatingComposer"))
+        #expect(source.contains(".platformIconMenuStyle()"))
+        #expect(source.contains("public func platformIconMenuStyle() -> some View"))
+        #expect(source.contains("self.menuStyle(.borderlessButton)\n            .menuIndicator(.hidden)"))
+        #expect(source.contains("private static let assetBundle: Bundle"))
+        #expect(source.contains("Bundle.main.resourceURL?\n                .appendingPathComponent(\"logseq-chat_LogseqChat.bundle\")"))
+        #expect(source.contains("Image(name, bundle: Self.assetBundle)"))
+    }
+
     @Test func expandedCaptureUsesFloatingComposerOutsideToolbarOnIOS() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
