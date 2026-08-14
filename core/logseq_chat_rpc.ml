@@ -7,6 +7,7 @@ module Http = Logseq_chat_http
 type t =
   { model : Model.t
   ; mutable config : Api.config option
+  ; mutable available_graphs : Api.graph list
   ; mutable related_blocks : Model.block list
   }
 
@@ -143,6 +144,15 @@ let visible_block_json model (block : Model.block) =
   | None -> block_json block
 ;;
 
+let graph_json (graph : Api.graph) =
+  `Assoc
+    [ "id", `String graph.id
+    ; "name", `String graph.name
+    ; "isEncrypted", `Bool graph.e2ee
+    ; "isReady", `Bool graph.ready
+    ]
+;;
+
 let snapshot session blocks =
   success
     (`Assoc
@@ -162,6 +172,11 @@ let snapshot session blocks =
         (match session.config with
          | Some { Api.graph_name = Some graph_name; _ } -> `String graph_name
          | _ -> `Null)
+      ; "selectedGraphId",
+        (match session.config with
+         | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
+         | _ -> `Null)
+      ; "graphs", `List (List.map graph_json session.available_graphs)
       ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ])
@@ -171,7 +186,22 @@ let snapshot_visible session = snapshot session (Model.visible_blocks session.mo
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
-let create ?storage () = { model = Model.create ?storage (); config = None; related_blocks = [] }
+let create ?storage () =
+  { model = Model.create ?storage (); config = None; available_graphs = []; related_blocks = [] }
+;;
+
+let discover_graphs session config =
+  debug "graph discovery started";
+  match Http.send (Api.graphs_request config) with
+  | Error message -> Error message
+  | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
+    Error ("Logseq graphs API returned HTTP " ^ string_of_int response.Api.status)
+  | Ok response ->
+    (try
+       session.available_graphs <- Api.graphs_from_graphs_body response.body;
+       Ok ()
+     with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
+;;
 
 let cache_remote_blocks session response ~now =
   if response.Api.status >= 200 && response.Api.status < 300
@@ -248,41 +278,12 @@ let refresh_from_remote session config =
     failure ~code:"remote_refresh_failed" ~message
 ;;
 
-let resolve_graph session config =
+let resolve_graph _session config =
   if not (String.equal (String.trim config.Api.graph_id) "")
   then (
     debug "graph discovery skipped graph=%s" config.Api.graph_id;
     Ok config)
-  else (
-    debug "graph discovery started";
-    match Http.send (Api.graphs_request config) with
-    | Error message ->
-      debug "graph discovery request failed: %s" message;
-      Error message
-    | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
-      debug "graph discovery HTTP failed status=%d" response.Api.status;
-      Error ("Logseq graphs API returned HTTP " ^ string_of_int response.Api.status)
-    | Ok response ->
-      (match
-         try Ok (Api.graph_from_graphs_body response.body) with
-         | exn -> Error (Printexc.to_string exn)
-       with
-       | Error message ->
-         debug "graph discovery parse failed: %s" message;
-         Error ("Could not parse Logseq graphs response: " ^ message)
-       | Ok graph ->
-         (match graph with
-          | Some (graph_id, graph_name) ->
-            let config = { config with graph_id; graph_name } in
-            session.config <- Some config;
-            debug
-              "graph discovery resolved graph=%s name=%s"
-              graph_id
-              (Option.value graph_name ~default:"<none>");
-            Ok config
-          | None ->
-            debug "graph discovery found no graphs";
-            Error "PAT does not expose any Logseq graphs")))
+  else Error "Select a Logseq graph before syncing"
 ;;
 
 let update_remote_block_status session config ~uuid (status : Model.status) =
@@ -392,10 +393,24 @@ let dispatch session action payload =
   | "refresh" ->
     (match session.config with
      | None -> snapshot_visible session
-     | Some config ->
-       (match resolve_graph session config with
-        | Ok config -> refresh_from_remote session config
-        | Error message -> failure ~code:"graph_discovery_failed" ~message))
+     | Some config when String.equal (String.trim config.Api.graph_id) "" ->
+       (match discover_graphs session config with
+        | Ok () -> snapshot_visible session
+        | Error message -> failure ~code:"graph_discovery_failed" ~message)
+     | Some config -> refresh_from_remote session config)
+  | "selectGraph" ->
+    (match session.config, payload with
+     | Some config, Some graph_id ->
+       (match List.find_opt (fun (graph : Api.graph) -> String.equal graph.id graph_id) session.available_graphs with
+        | None -> failure ~code:"unknown_graph" ~message:"The selected graph is not available"
+        | Some graph when graph.e2ee ->
+          failure ~code:"encrypted_graph_unsupported" ~message:"Encrypted graph sync is not enabled yet"
+        | Some graph when not graph.ready ->
+          failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
+        | Some graph ->
+          session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
+          snapshot_visible session)
+     | _ -> failure ~code:"invalid_params" ~message:"selectGraph requires a graph id")
   | "search" ->
     let query = Option.value payload ~default:"" in
     (match session.config, String.equal (String.trim query) "" with

@@ -39,6 +39,19 @@ import Foundation
         #expect(!skipConfiguration.contains("com.amplifyframework"))
     }
 
+    @Test func signedInAppRequiresExplicitUnencryptedGraphSelection() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+
+        #expect(content.contains("screen.graph-picker"))
+        #expect(content.contains("store.snapshot.selectedGraphId == nil"))
+        #expect(content.contains("store.selectGraph(graph.id)"))
+        #expect(content.contains("graph.isEncrypted || !graph.isReady"))
+    }
+
     @Test func decodeType() throws {
         // load the TestData.json file from the Resources folder and decode it into a struct
         let resourceURL: URL = try #require(Bundle.module.url(forResource: "TestData", withExtension: "json"))

@@ -251,6 +251,13 @@ public struct LogseqBlockSection: Identifiable, Hashable {
     public let blocks: [LogseqBlock]
 }
 
+public struct LogseqGraph: Codable, Hashable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let isEncrypted: Bool
+    public let isReady: Bool
+}
+
 public struct LogseqChatSnapshot: Codable {
     public let revision: Int
     public let query: String
@@ -258,6 +265,8 @@ public struct LogseqChatSnapshot: Codable {
     public let selectedBlock: LogseqBlock?
     public let lastRefreshAt: Int64?
     public let graphName: String?
+    public let selectedGraphId: String?
+    public let graphs: [LogseqGraph]?
     public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
     public let taskStatuses: [LogseqTaskStatus]?
@@ -265,6 +274,7 @@ public struct LogseqChatSnapshot: Codable {
     public init(
         revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
         lastRefreshAt: Int64?, graphName: String?, isSearching: Bool,
+        selectedGraphId: String? = nil, graphs: [LogseqGraph]? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
         taskStatuses: [LogseqTaskStatus]? = nil
     ) {
@@ -274,6 +284,8 @@ public struct LogseqChatSnapshot: Codable {
         self.selectedBlock = selectedBlock
         self.lastRefreshAt = lastRefreshAt
         self.graphName = graphName
+        self.selectedGraphId = selectedGraphId
+        self.graphs = graphs
         self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
         self.taskStatuses = taskStatuses
@@ -443,6 +455,20 @@ private struct AddAssetPayload: Encodable {
 
     public func refresh() {
         refresh(afterApply: nil)
+    }
+
+    public func selectGraph(_ graphID: String) {
+        performAsync(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "selectGraph", payload: graphID)
+            ),
+            afterApply: {
+                if self.lastError == nil {
+                    self.refreshSoon()
+                }
+            }
+        )
     }
 
     private func refresh(afterApply: (@MainActor () -> Void)?) {
@@ -817,6 +843,8 @@ private struct AddAssetPayload: Encodable {
             lastRefreshAt: snapshot.lastRefreshAt,
             graphName: snapshot.graphName,
             isSearching: snapshot.isSearching,
+            selectedGraphId: snapshot.selectedGraphId,
+            graphs: snapshot.graphs,
             relatedBlocks: snapshot.relatedBlocks,
             taskStatuses: snapshot.taskStatuses
         )
@@ -851,6 +879,8 @@ private struct AddAssetPayload: Encodable {
             lastRefreshAt: now,
             graphName: snapshot.graphName,
             isSearching: snapshot.isSearching,
+            selectedGraphId: snapshot.selectedGraphId,
+            graphs: snapshot.graphs,
             relatedBlocks: snapshot.relatedBlocks,
             taskStatuses: snapshot.taskStatuses
         )
@@ -905,6 +935,8 @@ private struct AddAssetPayload: Encodable {
             lastRefreshAt: result.lastRefreshAt,
             graphName: result.graphName,
             isSearching: isSearching,
+            selectedGraphId: result.selectedGraphId,
+            graphs: result.graphs ?? snapshot.graphs,
             relatedBlocks: result.relatedBlocks,
             taskStatuses: result.taskStatuses ?? snapshot.taskStatuses
         )

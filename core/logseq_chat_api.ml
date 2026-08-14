@@ -31,6 +31,13 @@ type journal =
   ; journal_day : int
   }
 
+type graph =
+  { id : string
+  ; name : string
+  ; e2ee : bool
+  ; ready : bool
+  }
+
 let epoch_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
 let trim_slash value =
@@ -408,24 +415,40 @@ let feed_from_body body =
   | _ -> [], []
 ;;
 
-let graph_from_graphs_body body =
+let graphs_from_graphs_body body =
   match from_string body with
   | `Assoc fields ->
     (match List.assoc_opt "graphs" fields with
      | Some (`List graphs) ->
        graphs
-       |> List.find_map (function
+       |> List.filter_map (function
          | `Assoc graph_fields ->
            (match List.assoc_opt "graph-id" graph_fields with
             | Some (`String graph_id) when not (String.equal graph_id "") ->
               let graph_name =
                 match List.assoc_opt "graph-name" graph_fields with
-                | Some (`String value) when not (String.equal value "") -> Some value
-                | _ -> None
+                | Some (`String value) when not (String.equal value "") -> value
+                | _ -> graph_id
               in
-              Some (graph_id, graph_name)
+              let bool_field ~safe_default name =
+                match List.assoc_opt name graph_fields with
+                | Some (`Bool value) -> value
+                | _ -> safe_default
+              in
+              Some
+                { id = graph_id
+                ; name = graph_name
+                ; e2ee = bool_field ~safe_default:true "graph-e2ee?"
+                ; ready = bool_field ~safe_default:false "graph-ready-for-use?"
+                }
             | _ -> None)
          | _ -> None)
-     | _ -> None)
-  | _ -> None
+     | _ -> [])
+  | _ -> []
+;;
+
+let graph_from_graphs_body body =
+  match graphs_from_graphs_body body with
+  | graph :: _ -> Some (graph.id, Some graph.name)
+  | [] -> None
 ;;

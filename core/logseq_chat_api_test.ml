@@ -185,3 +185,20 @@ let () =
   assert_equal "feed journal title" "Aug 13th, 2026" journal.title;
   assert_int_equal "feed journal day" 20_260_813 journal.journal_day
 ;;
+
+let () =
+  let graphs =
+    Logseq_chat_api.graphs_from_graphs_body
+      {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"encrypted-1","graph-name":"Encrypted","graph-e2ee?":true,"graph-ready-for-use?":false}]}|}
+  in
+  match graphs with
+  | [ plain; encrypted ] ->
+    assert_equal "plain graph id" "plain-1" plain.Logseq_chat_api.id;
+    assert_equal "plain graph name" "Plain" plain.name;
+    if plain.e2ee then failwith "plain graph must remain unencrypted";
+    if not plain.ready then failwith "plain graph must remain ready";
+    assert_equal "encrypted graph id" "encrypted-1" encrypted.id;
+    if not encrypted.e2ee then failwith "encrypted graph must remain encrypted";
+    if encrypted.ready then failwith "encrypted graph must remain not ready"
+  | _ -> failwith "graph discovery must preserve every valid graph"
+;;

@@ -47,7 +47,11 @@ struct ContentView: View {
     var body: some View {
         Group {
             if authentication.state == .signedIn {
-                appShell
+                if store.snapshot.selectedGraphId == nil {
+                    graphPicker
+                } else {
+                    appShell
+                }
             } else {
                 LogseqLoginView(authentication: authentication) {
                     connectWithCurrentAccessToken()
@@ -111,6 +115,64 @@ struct ContentView: View {
             importPhotos(items)
         }
         #endif
+    }
+
+    private var graphPicker: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text(verbatim: "Choose a graph")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+            Text(verbatim: "Select an unencrypted Logseq graph to download and sync on this device.")
+                .foregroundStyle(.secondary)
+
+            let graphs = store.snapshot.graphs ?? []
+            if graphs.isEmpty {
+                if store.isRefreshing {
+                    ProgressView()
+                } else {
+                    Button("Refresh graphs") {
+                        store.refresh()
+                    }
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(graphs) { graph in
+                            Button {
+                                store.selectGraph(graph.id)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(verbatim: graph.name)
+                                            .fontWeight(.semibold)
+                                        if graph.isEncrypted {
+                                            Text(verbatim: "Encrypted graphs will be supported after unencrypted sync is verified.")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        } else if !graph.isReady {
+                                            Text(verbatim: "Graph is not ready for sync.")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.white.opacity(0.7))
+                                .cornerRadius(16)
+                            }
+                            .disabled(graph.isEncrypted || !graph.isReady)
+                            .accessibilityIdentifier("graph.\(graph.id)")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(appBackground)
+        .accessibilityIdentifier("screen.graph-picker")
     }
 
     @ViewBuilder private var appShell: some View {

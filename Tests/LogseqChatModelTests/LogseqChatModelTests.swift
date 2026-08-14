@@ -88,6 +88,30 @@ private let testEmptySnapshotJSON = """
         #expect(snapshot.taskStatuses?.first?.icon?.color == "#7c3aed")
     }
 
+    @Test func snapshotPreservesGraphEncryptionAndReadiness() throws {
+        let data = Data(#"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"selectedGraphId":null,"graphs":[{"id":"plain-1","name":"Plain","isEncrypted":false,"isReady":true},{"id":"encrypted-1","name":"Encrypted","isEncrypted":true,"isReady":true}],"isSearching":false}"#.utf8)
+        let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
+        #expect(snapshot.graphs?.map(\.id) == ["plain-1", "encrypted-1"])
+        #expect(snapshot.graphs?.first?.isEncrypted == false)
+        #expect(snapshot.graphs?.last?.isEncrypted == true)
+        #expect(snapshot.graphs?.allSatisfy(\.isReady) == true)
+    }
+
+    @Test @MainActor func selectingGraphUsesExplicitGraphID() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+        store.selectGraph("plain-1")
+        try await waitUntil {
+            recorder.all.contains {
+                $0.contains("\"action\":\"selectGraph\"")
+                    && $0.contains("\"payload\":\"plain-1\"")
+            }
+        }
+    }
+
     @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
