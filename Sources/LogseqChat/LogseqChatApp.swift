@@ -19,6 +19,11 @@ public struct LogseqChatRootView : View {
 
     public var body: some View {
         ContentView(store: LogseqChatRuntime.shared.store)
+            .onAppear {
+                DispatchQueue.main.async {
+                    LogseqChatAppDelegate.shared.onFirstUIRendered()
+                }
+            }
             .task {
                 logger.info("Skip app logs are viewable in the Xcode console for iOS; Android logs can be viewed in Studio or using adb logcat")
             }
@@ -107,12 +112,28 @@ public final class LogseqChatAppDelegate : Sendable {
     private init() {
     }
 
+    private nonisolated(unsafe) var launchStartedAt: TimeInterval?
+
     public func onInit() {
+        let now = Date().timeIntervalSince1970
+        launchStartedAt = now
+        print(String(format: "LOGSEQ_LAUNCH_METRIC start=%.6f", now))
         logger.debug("onInit")
     }
 
     public func onLaunch() {
+        reportLaunchMetric("did_finish_launching")
         logger.debug("onLaunch")
+    }
+
+    public func onFirstUIRendered() {
+        reportLaunchMetric("first_ui_rendered")
+    }
+
+    private func reportLaunchMetric(_ name: String) {
+        guard let launchStartedAt else { return }
+        let elapsedMilliseconds = (Date().timeIntervalSince1970 - launchStartedAt) * 1_000.0
+        print(String(format: "LOGSEQ_LAUNCH_METRIC %@_ms=%.3f", name, elapsedMilliseconds))
     }
 
     public func onResume() {

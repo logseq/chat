@@ -645,16 +645,26 @@ struct ContentView: View {
     }
 
     private func expandComposer() {
+        #if SKIP
+        composerExpanded = true
+        #else
         withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
             composerExpanded = true
         }
+        #endif
         focusComposer()
     }
 
     private func focusComposer() {
+        #if SKIP
+        DispatchQueue.main.async {
+            composerFocused = true
+        }
+        #else
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             composerFocused = true
         }
+        #endif
     }
 
     private func focusSearch() {

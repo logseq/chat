@@ -637,6 +637,28 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.first?.title == "Remote background block")
     }
 
+    @Test @MainActor func concurrentRefreshCallsAreCoalesced() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"refresh\"") {
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return testEmptySnapshotJSON
+        }
+
+        store.refresh()
+        store.refresh()
+
+        try await waitUntil(timeout: 1.0) {
+            recorder.all.contains { $0.contains("\"action\":\"refresh\"") }
+                && store.isRefreshing == false
+        }
+
+        let refreshCount = recorder.all.filter { $0.contains("\"action\":\"refresh\"") }.count
+        #expect(refreshCount == 1)
+    }
+
     @Test @MainActor func searchLocalKeepsOptimisticCaptureVisibleBeforeCoreSettles() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

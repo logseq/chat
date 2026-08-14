@@ -7,12 +7,13 @@ ocaml_demo_root=${LOGSEQ_CHAT_OCAML_DEMO_ROOT:-/Users/tiensonqin/Codes/projects/
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
 bundle_id=${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}
+build_configuration=${LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION:-debug}
 profile=${LOGSEQ_CHAT_IOS_PROFILE:-}
 signing_identity=${LOGSEQ_CHAT_IOS_SIGNING_IDENTITY:-Apple Development}
 sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}"
 target_prefix="$ocaml_demo_root/_build/ios-toolchain/$triple-$ocaml_version"
-swift_build_dir="$repo_root/.build/arm64-apple-ios/debug"
+swift_build_dir="$repo_root/.build/arm64-apple-ios/$build_configuration"
 core_build_dir="$repo_root/_build/ios-core/device"
 core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
@@ -27,6 +28,23 @@ die() {
   echo "error: $*" >&2
   exit 1
 }
+
+case "$build_configuration" in
+  debug)
+    swift_shell_flags=(-Onone -g)
+    ;;
+  release)
+    swift_shell_flags=(-O)
+    ;;
+  *)
+    die "unsupported iOS build configuration: $build_configuration"
+    ;;
+esac
+
+if [[ ${LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
+  echo "configuration=$build_configuration swift-build-dir=$swift_build_dir"
+  exit 0
+fi
 
 [[ $bundle_id != "com.logseq.logseq" ]] || die "refusing to build the production Logseq bundle id"
 [[ -n $profile ]] || die "set LOGSEQ_CHAT_IOS_PROFILE to a development provisioning profile for $bundle_id"
@@ -119,6 +137,7 @@ cd "$core_build_dir"
   -o "$sqlite_object"
 
 swift build \
+  -c "$build_configuration" \
   --disable-keychain \
   --package-path "$repo_root" \
   --triple "$triple" \
@@ -157,6 +176,7 @@ if [[ -d "$logseq_resource_bundle" ]]; then
 fi
 
 xcrun --sdk iphoneos swiftc \
+  "${swift_shell_flags[@]}" \
   -parse-as-library \
   -module-name LogseqChatShell \
   -target "$triple" \

@@ -305,6 +305,20 @@ import Foundation
         #expect(expandedComposer.contains("if composerExpanded && value.isEmpty {\n                focusComposer()\n            }"))
     }
 
+    @Test func androidComposerExpandsAndFocusesWithoutArtificialDelay() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let expandStart = try #require(source.range(of: "private func expandComposer()"))
+        let focusEnd = try #require(source.range(of: "\n    private func focusSearch()", range: expandStart.lowerBound..<source.endIndex))
+        let composerFocusSource = source[expandStart.lowerBound..<focusEnd.lowerBound]
+
+        #expect(composerFocusSource.contains("#if SKIP\n        composerExpanded = true\n        #else"))
+        #expect(composerFocusSource.contains("#if SKIP\n        DispatchQueue.main.async {\n            composerFocused = true\n        }\n        #else"))
+        #expect(!composerFocusSource.contains("#if SKIP\n        withAnimation"))
+        #expect(!composerFocusSource.contains("#if SKIP\n        DispatchQueue.main.asyncAfter"))
+    }
+
     @Test func onlyFailedBlocksShowStatusIndicator() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")

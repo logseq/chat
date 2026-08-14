@@ -422,6 +422,7 @@ private struct AddAssetPayload: Encodable {
     }
 
     private func refresh(afterApply: (@MainActor () -> Void)?) {
+        guard !isRefreshing else { return }
         isRefreshing = true
         performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh")), afterApply: {
             self.isRefreshing = false

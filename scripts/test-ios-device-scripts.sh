@@ -79,6 +79,27 @@ check_rejects \
   env -u LOGSEQ_CHAT_IOS_PROFILE \
     "$repo_root/scripts/build-mobile-ios-device.sh"
 
+check_succeeds \
+  "device build selects release configuration" \
+  "configuration=release swift-build-dir=$repo_root/.build/arm64-apple-ios/release" \
+  env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=release \
+    LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
+    "$repo_root/scripts/build-mobile-ios-device.sh"
+
+check_succeeds \
+  "device build keeps debug configuration available" \
+  "configuration=debug swift-build-dir=$repo_root/.build/arm64-apple-ios/debug" \
+  env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=debug \
+    LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
+    "$repo_root/scripts/build-mobile-ios-device.sh"
+
+check_rejects \
+  "device build rejects unsupported configuration" \
+  "unsupported iOS build configuration: profile" \
+  env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=profile \
+    LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
+    "$repo_root/scripts/build-mobile-ios-device.sh"
+
 check_rejects \
   "device install requires a provisioning profile" \
   "set LOGSEQ_CHAT_IOS_PROFILE to a development provisioning profile for com.logseq.chat" \
