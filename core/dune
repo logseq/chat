@@ -13,6 +13,7 @@
   logseq_chat_sse
   logseq_chat_sync_checkpoint
   logseq_chat_sync_protocol
+  logseq_chat_sync_session
   logseq_chat_sync_state)
  (libraries
   datascript-ocaml-native
@@ -101,3 +102,8 @@
  (name logseq_chat_graph_store_test)
  (modules logseq_chat_graph_store_test)
  (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_sync_session_test)
+ (modules logseq_chat_sync_session_test)
+ (libraries logseq_chat_core melange-transit-core melange-transit-native))
