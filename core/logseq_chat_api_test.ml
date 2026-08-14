@@ -127,23 +127,6 @@ let () =
     "capture preserves client uuid"
     {|{"blocks":[{"uuid":"client-block","title":"Offline"}]}|}
     (Option.value capture.body ~default:"");
-  let chat_insert =
-    Logseq_chat_api.chat_tx_batch_request
-      config
-      ~client_revision:"chat-client-block"
-      ~t_before:48192
-      ~outliner_op:"insert-blocks"
-      ~tx:"transit-tx"
-  in
-  assert_equal "chat mutation method" "POST" chat_insert.method_;
-  assert_equal
-    "chat mutation URL"
-    "https://api.example/sync/graph-1/chat/tx/batch"
-    chat_insert.url;
-  assert_equal
-    "chat mutation body"
-    {|{"client-revision":"chat-client-block","t-before":48192,"txs":[{"tx":"transit-tx","outliner-op":"insert-blocks"}]}|}
-    (Option.value chat_insert.body ~default:"");
   let task =
     Logseq_chat_api.task_request config ~uuid:"client-task" ~status:"waiting" "Follow up"
   in

@@ -15,6 +15,13 @@ type status =
   ; icon_color : string option
   }
 
+type cached_graph =
+  { id : string
+  ; name : string
+  ; e2ee : bool
+  ; ready : bool
+  }
+
 type block =
   { uuid : string
   ; kind : string
@@ -190,6 +197,30 @@ let status_of_json value =
   | exception _ -> None
 ;;
 
+let cached_graph_prefix = "graph-catalog/"
+
+let cached_graph_json (graph : cached_graph) =
+  `Assoc
+    [ "id", `String graph.id
+    ; "name", `String graph.name
+    ; "e2ee", `Bool graph.e2ee
+    ; "ready", `Bool graph.ready
+    ]
+  |> Yojson.Basic.to_string
+;;
+
+let cached_graph_of_json value =
+  match Yojson.Basic.from_string value with
+  | `Assoc fields ->
+    (match List.assoc_opt "id" fields, List.assoc_opt "name" fields,
+           List.assoc_opt "e2ee" fields, List.assoc_opt "ready" fields with
+     | Some (`String id), Some (`String name), Some (`Bool e2ee), Some (`Bool ready) ->
+       Some { id; name; e2ee; ready }
+     | _ -> None)
+  | _ -> None
+  | exception _ -> None
+;;
+
 let block_exists model uuid =
   entity_attr_value model.db (block_ref uuid) "block/uuid" <> None
 ;;
@@ -240,6 +271,21 @@ let all_statuses model =
         && String.equal (String.sub uuid 0 (String.length prefix)) prefix ->
       Option.bind (read_block model uuid) (fun block -> block.status)
     | _ -> None)
+;;
+
+let cached_graphs model =
+  let prefix_length = String.length cached_graph_prefix in
+  datoms model.db Aevt ~a:"block/uuid" () |> List.of_seq
+  |> List.filter_map (fun datom ->
+    match datom.v with
+    | String uuid when
+        String.length uuid > prefix_length
+        && String.equal (String.sub uuid 0 prefix_length) cached_graph_prefix ->
+      Option.bind
+        (option_string_attr model.db (block_ref uuid) "block/status-json")
+        cached_graph_of_json
+    | _ -> None)
+  |> List.sort (fun left right -> String.compare left.id right.id)
 ;;
 
 let journal_day_for_ms now =
@@ -329,6 +375,30 @@ let commit model transactions =
   | None -> ()
 ;;
 
+let cache_graphs model graphs =
+  let existing = cached_graphs model in
+  let transactions =
+    List.map
+      (fun (graph : cached_graph) ->
+        RetractEntity (block_ref (cached_graph_prefix ^ graph.id)))
+      existing
+    @ List.concat_map
+        (fun (graph : cached_graph) ->
+          let uuid = cached_graph_prefix ^ graph.id in
+          [ Add (Temp_id uuid, "block/uuid", String uuid)
+          ; Add (Temp_id uuid, "block/kind", String "page")
+          ; Add (Temp_id uuid, "block/title", String "")
+          ; Add (Temp_id uuid, "block/page-id", String "")
+          ; Add (Temp_id uuid, "block/created-at", Int 0)
+          ; Add (Temp_id uuid, "block/updated-at", Int 0)
+          ; Add (Temp_id uuid, "block/sync-status", String "synced")
+          ; Add (Temp_id uuid, "block/status-json", String (cached_graph_json graph))
+          ])
+        graphs
+  in
+  if transactions <> [] then commit model transactions
+;;
+
 let upsert_statuses model statuses =
   let transactions =
     List.concat_map
@@ -356,6 +426,14 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
     List.concat_map
       (fun block ->
         let existing_block = read_block model block.uuid in
+        let block =
+          match existing_block with
+          | Some existing when
+              not (String.equal existing.sync_status "synced")
+              && String.equal block.sync_status "synced" ->
+            existing
+          | Some _ | None -> block
+        in
         let entity_ref =
           match existing_block with
           | Some _ -> block_ref block.uuid
@@ -504,6 +582,12 @@ let pending_blocks model =
   |> List.sort compare_recent
 ;;
 
+let unsynced_blocks model =
+  all_blocks model
+  |> List.filter (fun block -> not (String.equal block.sync_status "synced"))
+  |> List.sort compare_recent
+;;
+
 let mark_block_synced model ~uuid =
   if not (block_exists model uuid)
   then Error ("unknown block: " ^ uuid)
@@ -512,10 +596,18 @@ let mark_block_synced model ~uuid =
     Ok ())
 ;;
 
+let mark_block_submitted model ~uuid =
+  if not (block_exists model uuid)
+  then Error ("unknown block: " ^ uuid)
+  else (
+    commit model [ Add (block_ref uuid, "block/sync-status", String "submitted") ];
+    Ok ())
+;;
+
 let reconcile_created_block model ~local_uuid ~remote_uuid =
   match read_block model local_uuid with
   | None -> Error ("unknown block: " ^ local_uuid)
-  | Some _ when String.equal local_uuid remote_uuid -> mark_block_synced model ~uuid:local_uuid
+  | Some _ when String.equal local_uuid remote_uuid -> mark_block_submitted model ~uuid:local_uuid
   | Some local ->
     let remote = read_block model remote_uuid in
     let base = Option.value remote ~default:local in
@@ -526,7 +618,7 @@ let reconcile_created_block model ~local_uuid ~remote_uuid =
       { base with
         uuid = remote_uuid
       ; kind = local.kind
-      ; sync_status = "synced"
+      ; sync_status = "submitted"
       ; asset_type = prefer_local local.asset_type base.asset_type
       ; asset_size = prefer_local local.asset_size base.asset_size
       ; asset_checksum = prefer_local local.asset_checksum base.asset_checksum
@@ -554,6 +646,7 @@ let update_block_title model ~uuid ~title ~now =
       model
       [ Add (block_ref uuid, "block/title", String title)
       ; Add (block_ref uuid, "block/updated-at", Int now)
+      ; Add (block_ref uuid, "block/sync-status", String "pending")
       ];
     Ok ())
 ;;
@@ -567,6 +660,7 @@ let update_block_status model ~uuid ~status ~now =
       [ Add (block_ref uuid, "block/kind", String "task")
       ; Add (block_ref uuid, "block/status-json", String (status_json status))
       ; Add (block_ref uuid, "block/updated-at", Int now)
+      ; Add (block_ref uuid, "block/sync-status", String "pending")
       ];
     Ok ())
 ;;

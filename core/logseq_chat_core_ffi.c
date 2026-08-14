@@ -9,20 +9,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-static pthread_mutex_t logseq_chat_call_mutex = PTHREAD_MUTEX_INITIALIZER;
-static int logseq_chat_runtime_started = 0;
+static pthread_once_t logseq_chat_runtime_once = PTHREAD_ONCE_INIT;
 static pthread_t logseq_chat_runtime_thread;
-static char *logseq_chat_response = NULL;
+static _Thread_local char *logseq_chat_response = NULL;
+
+static void start_ocaml_runtime(void) {
+  static char program_name[] = "logseq_chat_mobile";
+  char *argv[] = {program_name, NULL};
+  caml_startup(argv);
+  logseq_chat_runtime_thread = pthread_self();
+  caml_release_runtime_system();
+}
 
 static void ensure_ocaml_runtime(void) {
-  if (!logseq_chat_runtime_started) {
-    static char program_name[] = "logseq_chat_mobile";
-    char *argv[] = {program_name, NULL};
-    caml_startup(argv);
-    logseq_chat_runtime_thread = pthread_self();
-    logseq_chat_runtime_started = 1;
-    caml_release_runtime_system();
-  }
+  pthread_once(&logseq_chat_runtime_once, start_ocaml_runtime);
 }
 
 static const char *replace_response(const char *value) {
@@ -66,7 +66,6 @@ const char *logseq_chat_call(const char *request_json) {
   const char *response;
   int needs_unregister = 0;
 
-  pthread_mutex_lock(&logseq_chat_call_mutex);
   ensure_ocaml_runtime();
 
   if (!pthread_equal(pthread_self(), logseq_chat_runtime_thread)) {
@@ -74,7 +73,6 @@ const char *logseq_chat_call(const char *request_json) {
       response = replace_response(
         "{\"apiVersion\":1,\"ok\":false,\"result\":null,\"error\":{\"code\":"
         "\"ocaml_thread_registration_failed\",\"message\":\"Could not register the calling thread with the OCaml runtime\"}}");
-      pthread_mutex_unlock(&logseq_chat_call_mutex);
       return response;
     }
     needs_unregister = 1;
@@ -87,6 +85,5 @@ const char *logseq_chat_call(const char *request_json) {
   if (needs_unregister) {
     caml_c_thread_unregister();
   }
-  pthread_mutex_unlock(&logseq_chat_call_mutex);
   return response;
 }

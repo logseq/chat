@@ -167,7 +167,7 @@ private let testEmptySnapshotJSON = """
     }
     #endif
 
-    @Test @MainActor func restoredGraphDiscoveryRecoversItsNameBeforeSelection() async throws {
+    @Test @MainActor func graphDiscoveryRunsWhenThereIsNoCachedSelection() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
@@ -185,18 +185,62 @@ private let testEmptySnapshotJSON = """
         await store.configureAndSelectGraph(
             baseURL: "http://127.0.0.1:8787",
             token: "oauth-token",
-            selectedGraphID: "plain-1"
+            selectedGraphID: nil
         )
 
-        #expect(recorder.all.count == 3)
+        #expect(recorder.all.count == 2)
         #expect(recorder.all[0].contains("\"action\":\"configure\""))
         #expect(recorder.all[0].contains("\\\"graphId\\\":\\\"\\\""))
         #expect(recorder.all[1].contains("\"action\":\"refresh\""))
-        #expect(recorder.all[2].contains("\"action\":\"selectGraph\""))
+        #expect(store.snapshot.graphs?.first?.name == "Sync 2")
+    }
+
+    @Test @MainActor func selectedGraphRefreshesThePersistedCatalogWhenOnline() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"configure\"") {
+                return #"{"apiVersion":1,"ok":true,"result":{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"isSearching":false},"error":null}"#
+            }
+            if request.contains("\"action\":\"refreshGraphCatalog\"") {
+                return #"{"apiVersion":1,"ok":true,"result":{"revision":2,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"isSearching":false},"error":null}"#
+            }
+            return #"{"apiVersion":1,"ok":false,"result":null,"error":{"code":"offline","message":"Network unavailable"}}"#
+        }
+
+        await store.configureAndSelectGraph(
+            baseURL: "http://192.168.10.116:8787",
+            token: "cached-token",
+            selectedGraphID: "plain-1"
+        )
+
+        #expect(recorder.all.count == 2)
+        #expect(recorder.all[0].contains("\\\"graphId\\\":\\\"plain-1\\\""))
+        #expect(recorder.all[1].contains("\"action\":\"refreshGraphCatalog\""))
+        #expect(store.snapshot.selectedGraphId == "plain-1")
+        #expect(store.snapshot.graphName == "Sync 2")
+        #expect(store.lastError == nil)
+    }
+
+    @Test @MainActor func cachedGraphRestoresWithoutNetworkWhenOffline() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return #"{"apiVersion":1,"ok":true,"result":{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"isSearching":false},"error":null}"#
+        }
+
+        await store.configureAndSelectGraph(
+            baseURL: "http://192.168.10.116:8787",
+            token: "",
+            selectedGraphID: "plain-1"
+        )
+
+        #expect(recorder.all.count == 1)
+        #expect(recorder.all[0].contains("\"action\":\"configure\""))
         #expect(store.snapshot.graphName == "Sync 2")
     }
 
-    @Test @MainActor func taskAndAssetCreationAreOptimistic() async throws {
+    @Test @MainActor func taskAndAssetCreationDispatchDurableCoreWrites() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
@@ -210,10 +254,7 @@ private let testEmptySnapshotJSON = """
             assetChecksum: "abc",
             localPath: "/documents/photo.jpg"
         )
-        let localAsset = try #require(store.snapshot.blocks.first { $0.kind == "asset" })
-        #expect(UUID(uuidString: localAsset.uuid) != nil)
-        #expect(store.snapshot.blocks.contains { $0.kind == "task" && $0.title == "Follow up" })
-        #expect(store.snapshot.blocks.contains { $0.kind == "asset" && $0.localPath == "/documents/photo.jpg" })
+        #expect(store.snapshot.blocks.isEmpty)
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"sendTask\"") }
                 && recorder.all.contains { $0.contains("\"action\":\"addAsset\"") }
@@ -221,7 +262,7 @@ private let testEmptySnapshotJSON = """
         let assetRequest = try #require(
             recorder.all.last { $0.contains("\"action\":\"addAsset\"") }
         )
-        #expect(extractSendUUID(from: assetRequest) == localAsset.uuid)
+        #expect(UUID(uuidString: try #require(extractSendUUID(from: assetRequest))) != nil)
     }
 
     @Test @MainActor func updateBlockTitleAppliesCoreSnapshot() async throws {
@@ -503,7 +544,7 @@ private let testEmptySnapshotJSON = """
         }
     }
 
-    @Test @MainActor func sendOptimisticallyPublishesPendingBlockBeforeSyncing() async throws {
+    @Test @MainActor func sendPublishesCoreResultBeforeSyncing() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
@@ -564,10 +605,6 @@ private let testEmptySnapshotJSON = """
 
         store.send("Offline capture")
 
-        #expect(store.snapshot.blocks.count == 1)
-        #expect(store.snapshot.blocks.first?.title == "Offline capture")
-        #expect(store.snapshot.blocks.first?.isPendingSync == true)
-
         try await waitUntil {
             recorder.first?.contains("\"action\":\"send\"") == true
         }
@@ -621,10 +658,57 @@ private let testEmptySnapshotJSON = """
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(elapsed < 0.1)
-        #expect(store.snapshot.blocks.first?.title == "Slow local capture")
-        #expect(store.snapshot.blocks.first?.isPendingSync == true)
+        #expect(store.snapshot.blocks.isEmpty)
         try await waitUntil {
             recorder.first?.contains("\"action\":\"send\"") == true
+                && store.snapshot.blocks.first?.title == "Slow local capture"
+        }
+        #expect(store.snapshot.blocks.first?.isPendingSync == true)
+    }
+
+    @Test @MainActor func sendPublishesOnlyAfterTheLocalWriteIsDurable() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"send\"") {
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            let uuid = latestSendUUID(in: recorder) ?? "local-durable"
+            return """
+            {
+              "apiVersion": 1,
+              "ok": true,
+              "result": {
+                "revision": 1,
+                "query": "",
+                "blocks": [
+                  {
+                    "uuid": "\(uuid)",
+                    "kind": "block",
+                    "title": "Durable capture",
+                    "pageId": "journal/2026-08-13",
+                    "createdAt": 1776000000000,
+                    "updatedAt": 1776000000000,
+                    "syncStatus": "pending"
+                  }
+                ],
+                "selectedBlock": null,
+                "lastRefreshAt": 1776000000000,
+                "isSearching": false
+              },
+              "error": null
+            }
+            """
+        }
+
+        let start = Date()
+        store.send("Durable capture")
+
+        #expect(Date().timeIntervalSince(start) < 0.1)
+        #expect(store.snapshot.blocks.isEmpty)
+        try await waitUntil {
+            store.snapshot.blocks.first?.title == "Durable capture"
+                && store.snapshot.blocks.first?.isPendingSync == true
         }
     }
 
@@ -767,11 +851,12 @@ private let testEmptySnapshotJSON = """
         #expect(refreshCount == 1)
     }
 
-    @Test @MainActor func searchLocalKeepsOptimisticCaptureVisibleBeforeCoreSettles() async throws {
+    @Test @MainActor func searchLocalKeepsDurableCaptureVisible() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
             if request.contains("\"action\":\"searchLocal\"") {
+                let uuid = latestSendUUID(in: recorder) ?? "local-search"
                 return """
                 {
                   "apiVersion": 1,
@@ -779,7 +864,15 @@ private let testEmptySnapshotJSON = """
                   "result": {
                     "revision": 1,
                     "query": "E2E capture",
-                    "blocks": [],
+                    "blocks": [{
+                      "uuid": "\(uuid)",
+                      "kind": "block",
+                      "title": "E2E capture responsive",
+                      "pageId": "journal/2026-08-13",
+                      "createdAt": 1776000000000,
+                      "updatedAt": 1776000000000,
+                      "syncStatus": "pending"
+                    }],
                     "selectedBlock": null,
                     "lastRefreshAt": null,
                     "graphName": "pat test",
@@ -792,6 +885,7 @@ private let testEmptySnapshotJSON = """
             if request.contains("\"action\":\"send\"") {
                 Thread.sleep(forTimeInterval: 0.25)
             }
+            let uuid = latestSendUUID(in: recorder) ?? "local-search"
             return """
             {
               "apiVersion": 1,
@@ -799,7 +893,15 @@ private let testEmptySnapshotJSON = """
               "result": {
                 "revision": 1,
                 "query": "",
-                "blocks": [],
+                "blocks": [{
+                  "uuid": "\(uuid)",
+                  "kind": "block",
+                  "title": "E2E capture responsive",
+                  "pageId": "journal/2026-08-13",
+                  "createdAt": 1776000000000,
+                  "updatedAt": 1776000000000,
+                  "syncStatus": "pending"
+                }],
                 "selectedBlock": null,
                 "lastRefreshAt": null,
                 "graphName": "pat test",
@@ -811,7 +913,9 @@ private let testEmptySnapshotJSON = """
         }
 
         store.send("E2E capture responsive")
-        #expect(store.snapshot.blocks.first?.title == "E2E capture responsive")
+        try await waitUntil {
+            store.snapshot.blocks.first?.title == "E2E capture responsive"
+        }
 
         store.searchLocal("E2E capture")
 
@@ -827,9 +931,12 @@ private let testEmptySnapshotJSON = """
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
-            if request.contains("\"action\":\"send\"") {
-                Thread.sleep(forTimeInterval: 0.15)
-                recorder.append("send-returned")
+            if request.contains("\"action\":\"send\"")
+                || request.contains("\"action\":\"syncPending\"") {
+                if request.contains("\"action\":\"send\"") {
+                    Thread.sleep(forTimeInterval: 0.15)
+                    recorder.append("send-returned")
+                }
                 return """
                 {
                   "apiVersion": 1,

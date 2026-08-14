@@ -155,31 +155,6 @@ let capture_request config ~uuid text =
   }
 ;;
 
-let chat_tx_batch_request config ~client_revision ~t_before ~outliner_op ~tx =
-  { method_ = "POST"
-  ; url =
-      Printf.sprintf
-        "%s/sync/%s/chat/tx/batch"
-        (api_root config)
-        (url_encode config.graph_id)
-  ; body =
-      Some
-        (to_string
-           (`Assoc
-             [ "client-revision", `String client_revision
-             ; "t-before", `Int t_before
-             ; ( "txs"
-               , `List
-                   [ `Assoc
-                       [ "tx", `String tx
-                       ; "outliner-op", `String outliner_op
-                       ]
-                   ] )
-             ]))
-  ; token = config.token
-  }
-;;
-
 let task_request config ~uuid ~status text =
   { method_ = "POST"
   ; url = Printf.sprintf "%s/api/v1/graphs/%s/tasks" (api_root config) (url_encode config.graph_id)

@@ -4,6 +4,7 @@
 #include <caml/alloc.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
+#include <caml/threads.h>
 
 static const NSTimeInterval LogseqChatRequestTimeout = 30.0;
 
@@ -66,7 +67,10 @@ CAMLprim value logseq_chat_https_send(value method, value url, value body, value
 
   dispatch_time_t timeout =
       dispatch_time(DISPATCH_TIME_NOW, (int64_t)(LogseqChatRequestTimeout * NSEC_PER_SEC));
-  if (dispatch_semaphore_wait(semaphore, timeout) != 0) {
+  caml_enter_blocking_section();
+  long waitResult = dispatch_semaphore_wait(semaphore, timeout);
+  caml_leave_blocking_section();
+  if (waitResult != 0) {
     [task cancel];
     NSLog(@"LogseqChat HTTPS request timed out after %.0fs: %@ %@",
           LogseqChatRequestTimeout, methodString, redactedURL);
@@ -135,7 +139,10 @@ CAMLprim value logseq_chat_https_upload_file(value method, value url, value file
 
   dispatch_time_t timeout =
       dispatch_time(DISPATCH_TIME_NOW, (int64_t)(LogseqChatRequestTimeout * NSEC_PER_SEC));
-  if (dispatch_semaphore_wait(semaphore, timeout) != 0) {
+  caml_enter_blocking_section();
+  long waitResult = dispatch_semaphore_wait(semaphore, timeout);
+  caml_leave_blocking_section();
+  if (waitResult != 0) {
     [task cancel];
     CAMLreturn(caml_copy_string("ERROR\nHTTPS upload timed out after 30s"));
   }

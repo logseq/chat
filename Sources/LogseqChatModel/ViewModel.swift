@@ -587,7 +587,6 @@ private struct OpenGraphPayload: Encodable {
 
     private let callCore: @Sendable (String) -> String
     private var searchGeneration = 0
-    private var optimisticBlocks: [String: LogseqBlock] = [:]
     private var openedDatabasePath: String?
     private var mutationServerT: Int?
 
@@ -667,7 +666,7 @@ private struct OpenGraphPayload: Encodable {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload = """
-        {"baseUrl":"\(Self.escape(baseURL))","graphId":"","token":"\(Self.escape(token))"}
+        {"baseUrl":"\(Self.escape(baseURL))","graphId":"\(Self.escape(selectedGraphID ?? ""))","token":"\(Self.escape(token))"}
         """
         await performAsyncAndWait(
             LogseqChatRPCRequest(
@@ -676,6 +675,17 @@ private struct OpenGraphPayload: Encodable {
             )
         )
         guard lastError == nil else { return }
+        if selectedGraphID != nil {
+            if !token.isEmpty {
+                await performAsyncAndWait(
+                    LogseqChatRPCRequest(
+                        method: "dispatch",
+                        params: LogseqChatRPCParams(action: "refreshGraphCatalog")
+                    )
+                )
+            }
+            return
+        }
         await performAsyncAndWait(
             LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh"))
         )
@@ -707,7 +717,8 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func bootstrapSelectedGraph(
-        graphID: String, baseURL: String, accessToken: String, forceSnapshot: Bool = false
+        graphID: String, baseURL: String, accessToken: String, forceSnapshot: Bool = false,
+        allowSnapshotDownload: Bool = true
     ) async -> Bool {
         #if SKIP
         lastError = LogseqChatCoreError(
@@ -742,6 +753,8 @@ private struct OpenGraphPayload: Encodable {
                     return true
                 }
             }
+
+            guard allowSnapshotDownload else { return false }
 
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL, graphID: graphID, accessToken: accessToken
@@ -806,6 +819,13 @@ private struct OpenGraphPayload: Encodable {
                     networkChunk.removeAll(keepingCapacity: true)
                     for frame in frames {
                         await dispatchRawAndWait("feedSSE", payload: frame)
+                        if lastError != nil { break }
+                        await performAsyncAndWait(
+                            LogseqChatRPCRequest(
+                                method: "dispatch",
+                                params: LogseqChatRPCParams(action: "syncPending")
+                            )
+                        )
                         if lastError != nil { break }
                     }
                     if lastError != nil { break }
@@ -902,7 +922,6 @@ private struct OpenGraphPayload: Encodable {
         mutationServerT = snapshot.appliedServerT
         cursorAdvancedAfterMutation = false
         let uuid = UUID().uuidString.lowercased()
-        applyOptimisticSend(title: trimmed, uuid: uuid, now: now)
         do {
             let payloadData = try JSONEncoder().encode(SendBlockPayload(text: trimmed, uuid: uuid, now: now))
             guard let payload = String(data: payloadData, encoding: .utf8) else {
@@ -923,7 +942,6 @@ private struct OpenGraphPayload: Encodable {
         guard !trimmed.isEmpty else { return }
         let now = Self.nowMilliseconds()
         let uuid = UUID().uuidString.lowercased()
-        applyOptimisticBlock(title: trimmed, uuid: uuid, kind: "task", now: now, status: status)
         let statusPayload = TaskStatusPayload(
             uuid: status.uuid, ident: status.ident, title: status.title,
             iconType: status.icon?.type, iconId: status.icon?.id, iconColor: status.icon?.color
@@ -937,11 +955,6 @@ private struct OpenGraphPayload: Encodable {
     ) {
         let now = Self.nowMilliseconds()
         let uuid = UUID().uuidString.lowercased()
-        applyOptimisticBlock(
-            title: title, uuid: uuid, kind: "asset", now: now,
-            assetType: assetType, assetSize: assetSize,
-            assetChecksum: assetChecksum, localPath: localPath
-        )
         dispatchEncoded(
             "addAsset",
             AddAssetPayload(
@@ -951,9 +964,7 @@ private struct OpenGraphPayload: Encodable {
         )
     }
 
-    private func dispatchEncoded<T: Encodable>(
-        _ action: String, _ payloadValue: T, syncPendingAfter: Bool = true
-    ) {
+    private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
         do {
             let payloadData = try JSONEncoder().encode(payloadValue)
             guard let payload = String(data: payloadData, encoding: .utf8) else {
@@ -965,11 +976,7 @@ private struct OpenGraphPayload: Encodable {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: action, payload: payload)
             )
-            if syncPendingAfter {
-                performAsyncThenSyncPending(request)
-            } else {
-                performAsync(request)
-            }
+            performAsyncThenSyncPending(request)
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
             logger.error("Core request encoding failed: \(action)")
@@ -1005,8 +1012,7 @@ private struct OpenGraphPayload: Encodable {
         applyOptimisticUpdate(block: block, title: trimmed, status: status)
         dispatchEncoded(
             "updateBlock",
-            UpdateBlockPayload(uuid: block.uuid, title: trimmed, status: statusPayload),
-            syncPendingAfter: false
+            UpdateBlockPayload(uuid: block.uuid, title: trimmed, status: statusPayload)
         )
     }
 
@@ -1018,8 +1024,7 @@ private struct OpenGraphPayload: Encodable {
         applyOptimisticUpdate(block: block, title: block.title, status: status)
         dispatchEncoded(
             "updateBlockStatus",
-            UpdateBlockStatusPayload(uuid: block.uuid, status: statusPayload),
-            syncPendingAfter: false
+            UpdateBlockStatusPayload(uuid: block.uuid, status: statusPayload)
         )
     }
 
@@ -1216,10 +1221,6 @@ private struct OpenGraphPayload: Encodable {
         return trimmed
     }
 
-    private func applyOptimisticSend(title: String, uuid: String, now: Int64) {
-        applyOptimisticBlock(title: title, uuid: uuid, kind: "block", now: now)
-    }
-
     private func applyOptimisticUpdate(
         block: LogseqBlock, title: String, status: LogseqTaskStatus?
     ) {
@@ -1261,81 +1262,11 @@ private struct OpenGraphPayload: Encodable {
         lastError = nil
     }
 
-    private func applyOptimisticBlock(
-        title: String, uuid: String, kind: String, now: Int64,
-        status: LogseqTaskStatus? = nil, assetType: String? = nil,
-        assetSize: Int? = nil, assetChecksum: String? = nil, localPath: String? = nil
-    ) {
-        let block = LogseqBlock(
-            uuid: uuid,
-            kind: kind,
-            title: title,
-            pageId: Self.journalPageId(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
-            parentId: nil,
-            createdAt: now,
-            updatedAt: now,
-            syncStatus: "pending",
-            journalTitle: Self.dayTitle(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
-            journalDay: Self.journalDay(for: Date(timeIntervalSince1970: Double(now) / 1000.0)),
-            status: status, assetType: assetType, assetSize: assetSize,
-            assetChecksum: assetChecksum, localPath: localPath
-        )
-        optimisticBlocks[uuid] = block
-        snapshot = LogseqChatSnapshot(
-            revision: snapshot.revision + 1,
-            query: snapshot.query,
-            blocks: mergedBlocks(from: snapshot.blocks, query: snapshot.query),
-            selectedBlock: snapshot.selectedBlock,
-            lastRefreshAt: now,
-            graphName: snapshot.graphName,
-            isSearching: snapshot.isSearching,
-            selectedGraphId: snapshot.selectedGraphId,
-            graphs: snapshot.graphs,
-            appliedServerT: snapshot.appliedServerT,
-            syncConnected: snapshot.syncConnected,
-            relatedBlocks: snapshot.relatedBlocks,
-            taskStatuses: snapshot.taskStatuses
-        )
-        lastError = nil
-    }
-
     private static func nowMilliseconds() -> Int64 {
         Int64(Date().timeIntervalSince1970 * 1000.0)
     }
 
-    private static func journalPageId(for date: Date) -> String {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        let year = components.year ?? 1970
-        let month = components.month ?? 1
-        let day = components.day ?? 1
-        return "journal/\(pad(year, to: 4))-\(pad(month, to: 2))-\(pad(day, to: 2))"
-    }
-
-    private static func journalDay(for date: Date) -> Int {
-        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        return (components.year ?? 0) * 10_000 + (components.month ?? 0) * 100 + (components.day ?? 0)
-    }
-
-    private static func dayTitle(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
-        return formatter.string(from: date)
-    }
-
-    private static func pad(_ value: Int, to width: Int) -> String {
-        let string = "\(value)"
-        if string.count >= width {
-            return string
-        }
-        return String(repeating: "0", count: width - string.count) + string
-    }
-
     private func mergedSnapshot(_ result: LogseqChatSnapshot, actionName: String) -> LogseqChatSnapshot {
-        for uuid in result.blocks.map(\.uuid) {
-            optimisticBlocks.removeValue(forKey: uuid)
-        }
-
         let preservesCurrentSearch = actionName != "search" && actionName != "searchLocal" && snapshot.isSearching
         let query = preservesCurrentSearch ? snapshot.query : result.query
         let isSearching = preservesCurrentSearch ? snapshot.isSearching : result.isSearching
@@ -1362,18 +1293,7 @@ private struct OpenGraphPayload: Encodable {
     }
 
     private func mergedBlocks(from blocks: [LogseqBlock], query: String) -> [LogseqBlock] {
-        let knownUUIDs = Set(blocks.map(\.uuid))
-        let visibleBlocks = blocks.filter { Self.block($0, matches: query) }
-        let pendingBlocks = optimisticBlocks.values
-            .filter { !knownUUIDs.contains($0.uuid) }
-            .filter { Self.block($0, matches: query) }
-            .sorted { left, right in
-                if left.createdAt == right.createdAt {
-                    return left.uuid < right.uuid
-                }
-                return left.createdAt > right.createdAt
-            }
-        return pendingBlocks + visibleBlocks
+        blocks.filter { Self.block($0, matches: query) }
     }
 
     private static func block(_ block: LogseqBlock, matches query: String) -> Bool {

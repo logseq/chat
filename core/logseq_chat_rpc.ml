@@ -14,10 +14,9 @@ type t =
   ; start_sse : (unit -> unit) option
   ; feed_sse : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
-  ; insert_block_tx : (uuid:string -> title:string -> now:int -> (string, string) result) option
-  ; save_block_tx : (uuid:string -> title:string -> status_ident:string option -> string) option
   ; graph_blocks : (unit -> Model.block list option) option
   ; mutable sync_connected : bool
+  ; mutable sync_in_progress : bool
   }
 
 let debug format =
@@ -162,6 +161,14 @@ let graph_json (graph : Api.graph) =
     ]
 ;;
 
+let api_graph_of_cached (graph : Model.cached_graph) : Api.graph =
+  { id = graph.id; name = graph.name; e2ee = graph.e2ee; ready = graph.ready }
+;;
+
+let cached_graph_of_api (graph : Api.graph) : Model.cached_graph =
+  { id = graph.id; name = graph.name; e2ee = graph.e2ee; ready = graph.ready }
+;;
+
 let snapshot session blocks =
   success
     (`Assoc
@@ -201,23 +208,75 @@ let snapshot_visible session =
     match session.graph_blocks with
     | Some graph_blocks ->
       (match graph_blocks () with
-       | Some blocks ->
-         let query = String.trim session.model.query |> String.lowercase_ascii in
-         if String.equal query ""
-         then blocks
-         else
-           List.filter
-             (fun (block : Model.block) ->
-               let title = String.lowercase_ascii block.title in
-               try
-                 ignore (Str.search_forward (Str.regexp_string query) title 0);
-                 true
-               with Not_found -> false)
-             blocks
+     | Some blocks ->
+       let graph_uuids = Hashtbl.create (List.length blocks) in
+       List.iter
+         (fun (block : Model.block) -> Hashtbl.replace graph_uuids block.uuid ())
+         blocks;
+       let unsynced = Model.unsynced_blocks session.model in
+       let local_by_uuid = Hashtbl.create (List.length unsynced) in
+       List.iter
+         (fun (block : Model.block) -> Hashtbl.replace local_by_uuid block.uuid block)
+         unsynced;
+       let merged_graph_blocks =
+         List.map
+           (fun (block : Model.block) ->
+             Option.value (Hashtbl.find_opt local_by_uuid block.uuid) ~default:block)
+           blocks
+       in
+       let local_only =
+         List.filter
+           (fun (block : Model.block) -> not (Hashtbl.mem graph_uuids block.uuid))
+           unsynced
+       in
+       merged_graph_blocks @ local_only
        | None -> Model.visible_blocks session.model)
     | None -> Model.visible_blocks session.model
   in
+  let query = String.trim session.model.query |> String.lowercase_ascii in
+  let blocks =
+    if String.equal query ""
+    then blocks
+    else
+      List.filter
+        (fun (block : Model.block) ->
+          let title = String.lowercase_ascii block.title in
+          try
+            ignore (Str.search_forward (Str.regexp_string query) title 0);
+            true
+          with Not_found -> false)
+        blocks
+  in
   snapshot session blocks
+;;
+
+let reconcile_authoritative_blocks session =
+  match session.graph_blocks with
+  | None -> ()
+  | Some graph_blocks ->
+    (match graph_blocks () with
+     | None -> ()
+     | Some blocks ->
+       let authoritative_by_uuid = Hashtbl.create (List.length blocks) in
+       List.iter
+         (fun (block : Model.block) -> Hashtbl.replace authoritative_by_uuid block.uuid block)
+         blocks;
+       let same_status left right =
+         match left, right with
+         | None, None -> true
+         | Some (left : Model.status), Some (right : Model.status) ->
+           String.equal left.uuid right.uuid
+         | _ -> false
+       in
+       Model.unsynced_blocks session.model
+       |> List.iter (fun (block : Model.block) ->
+         match Hashtbl.find_opt authoritative_by_uuid block.uuid with
+         | Some authoritative when
+             String.equal block.sync_status "submitted"
+             || (String.equal block.title authoritative.title
+                 && same_status block.status authoritative.status) ->
+           ignore (Model.mark_block_synced session.model ~uuid:block.uuid)
+         | Some _ | None -> ()))
 ;;
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
@@ -229,24 +288,22 @@ let create
       ?start_sse
       ?feed_sse
       ?sync_cursor
-      ?insert_block_tx
-      ?save_block_tx
       ?graph_blocks
       ()
   =
-  { model = Model.create ?storage ()
+  let model = Model.create ?storage () in
+  { model
   ; config = None
-  ; available_graphs = []
+  ; available_graphs = Model.cached_graphs model |> List.map api_graph_of_cached
   ; related_blocks = []
   ; open_graph
   ; import_snapshot
   ; start_sse
   ; feed_sse
   ; sync_cursor
-  ; insert_block_tx
-  ; save_block_tx
   ; graph_blocks
   ; sync_connected = false
+  ; sync_in_progress = false
   }
 ;;
 
@@ -259,6 +316,9 @@ let discover_graphs session config =
   | Ok response ->
     (try
        session.available_graphs <- Api.graphs_from_graphs_body response.body;
+       Model.cache_graphs
+         session.model
+         (List.map cached_graph_of_api session.available_graphs);
        Ok ()
      with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
 ;;
@@ -348,38 +408,27 @@ let resolve_graph _session config =
 
 let update_remote_block_status session config ~uuid (status : Model.status) =
   match resolve_graph session config with
-  | Error message ->
-    debug "update block status graph resolution failed uuid=%s message=%s" uuid message
+  | Error message -> Error message
   | Ok config ->
     (match Http.send (Api.update_block_status_request config ~uuid ~status:status.uuid) with
-     | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> ()
+     | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> Ok ()
      | Ok response ->
        debug "update block status HTTP failed uuid=%s status=%d" uuid response.Api.status
+       ; Error ("Logseq status API returned HTTP " ^ string_of_int response.Api.status)
      | Error message ->
-       debug "update block status request failed uuid=%s message=%s" uuid message)
+       debug "update block status request failed uuid=%s message=%s" uuid message;
+       Error message)
 ;;
 
 let save_remote_block session config (block : Model.block) =
-  match session.save_block_tx, session.sync_cursor with
-  | Some save_block_tx, Some sync_cursor ->
-    (match sync_cursor () with
-     | None -> ()
-     | Some t_before ->
-       let status_ident = Option.bind block.status (fun status -> status.Model.ident) in
-       let tx = save_block_tx ~uuid:block.uuid ~title:block.title ~status_ident in
-       ignore
-         (Http.send
-            (Api.chat_tx_batch_request
-               config
-               ~client_revision:("chat-save-" ^ block.uuid)
-               ~t_before
-               ~outliner_op:"save-block"
-               ~tx)))
-  | _ ->
-    ignore (Http.send (Api.update_block_request config ~uuid:block.uuid ~title:block.title));
-    Option.iter
-      (fun status -> update_remote_block_status session config ~uuid:block.uuid status)
-      block.status
+  match Http.send (Api.update_block_request config ~uuid:block.uuid ~title:block.title) with
+  | Error message -> Error message
+  | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
+    Error ("Logseq block API returned HTTP " ^ string_of_int response.Api.status)
+  | Ok _ ->
+    (match block.status with
+     | None -> Ok ()
+     | Some status -> update_remote_block_status session config ~uuid:block.uuid status)
 ;;
 
 let search_remote session config query =
@@ -392,36 +441,33 @@ let search_remote session config query =
   | Error _ -> snapshot session (Model.search session.model query)
 ;;
 
-let sync_pending session config =
+let sync_pending_unlocked session config =
   let pending_blocks = Model.pending_blocks session.model in
+  let authoritative_uuids = Hashtbl.create 64 in
+  Option.iter
+    (fun blocks ->
+      List.iter
+        (fun (block : Model.block) -> Hashtbl.replace authoritative_uuids block.uuid ())
+        blocks)
+    (Option.bind session.graph_blocks (fun graph_blocks -> graph_blocks ()));
   debug "sync pending started count=%d graph=%s" (List.length pending_blocks) config.Api.graph_id;
   List.iter
     (fun (block : Model.block) ->
-      let result =
+      if Hashtbl.mem authoritative_uuids block.uuid
+      then (
+        match save_remote_block session config block with
+        | Ok () ->
+          debug "sync pending update succeeded uuid=%s" block.uuid;
+          ignore (Model.mark_block_submitted session.model ~uuid:block.uuid)
+        | Error message ->
+          debug "sync pending update failed uuid=%s message=%s" block.uuid message;
+          ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
+      else (
+        let result =
         match block.kind, block.status, block.local_path, block.asset_type,
               block.asset_size, block.asset_checksum with
         | "block", _, _, _, _, _ ->
-          (match session.insert_block_tx, session.sync_cursor with
-           | Some insert_block_tx, Some sync_cursor ->
-             (match sync_cursor () with
-              | None -> Error "graph sync cursor is unavailable"
-              | Some t_before ->
-                (match
-                   insert_block_tx
-                     ~uuid:block.uuid
-                     ~title:block.title
-                     ~now:block.created_at
-                 with
-                 | Error _ as error -> error
-                 | Ok tx ->
-                   Http.send
-                     (Api.chat_tx_batch_request
-                        config
-                        ~client_revision:("chat-" ^ block.uuid)
-                        ~t_before
-                        ~outliner_op:"insert-blocks"
-                        ~tx)))
-           | _ -> Http.send (Api.capture_request config ~uuid:block.uuid block.title))
+          Http.send (Api.capture_request config ~uuid:block.uuid block.title)
         | "task", Some status, _, _, _, _ ->
           Http.send (Api.task_request config ~uuid:block.uuid ~status:status.uuid block.title)
         | "asset", _, Some file_path, Some asset_type, Some asset_size, Some checksum ->
@@ -429,15 +475,10 @@ let sync_pending session config =
             (Api.asset_upload_request config ~uuid:block.uuid ~file_name:block.title
                ~size:asset_size ~checksum ~file_path
                ~content_type:(Api.content_type_for_asset_type asset_type))
-        | _ -> Http.send (Api.capture_request config ~uuid:block.uuid block.title)
+        | _ ->
+          Http.send (Api.capture_request config ~uuid:block.uuid block.title)
       in
       match result with
-      | Ok response when response.Api.status >= 200 && response.Api.status < 300
-                         && Option.is_some session.insert_block_tx ->
-        debug
-          "sync pending accepted; waiting for authoritative SSE uuid=%s status=%d"
-          block.uuid
-          response.Api.status
       | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
         (try
            let remote_uuid = Api.created_block_uuid_from_body response.body in
@@ -458,8 +499,19 @@ let sync_pending session config =
       | Error message ->
         debug "sync pending block request failed uuid=%s message=%s" block.uuid message;
         ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
+    )
     pending_blocks;
   snapshot_visible session
+;;
+
+let sync_pending session config =
+  if session.sync_in_progress
+  then snapshot_visible session
+  else (
+    session.sync_in_progress <- true;
+    Fun.protect
+      ~finally:(fun () -> session.sync_in_progress <- false)
+      (fun () -> sync_pending_unlocked session config))
 ;;
 
 let load_related session request key =
@@ -493,7 +545,16 @@ let dispatch session action payload =
           (match field "baseUrl", field "graphId", field "token" with
            | Some base_url, graph_id, Some token ->
              let graph_id = Option.value graph_id ~default:"" in
-             session.config <- Some { Api.base_url; graph_id; graph_name = None; token };
+             let graph_name =
+               match Option.map String.trim (field "graphName") with
+               | Some value when not (String.equal value "") -> Some value
+               | Some _ | None ->
+                 List.find_opt
+                   (fun (graph : Api.graph) -> String.equal graph.id graph_id)
+                   session.available_graphs
+                 |> Option.map (fun (graph : Api.graph) -> graph.name)
+             in
+             session.config <- Some { Api.base_url; graph_id; graph_name; token };
              snapshot_visible session
            | _ ->
              failure
@@ -509,6 +570,23 @@ let dispatch session action payload =
         | Ok () -> snapshot_visible session
         | Error message -> failure ~code:"graph_discovery_failed" ~message)
      | Some config -> refresh_from_remote session config)
+  | "refreshGraphCatalog" ->
+    (match session.config with
+     | None -> snapshot_visible session
+     | Some config ->
+       (match discover_graphs session config with
+        | Ok () ->
+          let graph_name =
+            List.find_opt
+              (fun (graph : Api.graph) -> String.equal graph.id config.graph_id)
+              session.available_graphs
+            |> Option.map (fun (graph : Api.graph) -> graph.name)
+          in
+          session.config <- Some { config with graph_name };
+          snapshot_visible session
+        | Error message ->
+          debug "graph catalog refresh failed: %s" message;
+          snapshot_visible session))
   | "selectGraph" ->
     (match session.config, payload with
      | Some config, Some graph_id ->
@@ -549,7 +627,9 @@ let dispatch session action payload =
     (match session.feed_sse, payload with
      | Some feed_sse, Some chunk ->
        (match feed_sse chunk with
-        | Ok () -> snapshot_visible session
+        | Ok () ->
+          reconcile_authoritative_blocks session;
+          snapshot_visible session
         | Error message ->
           let code =
             if String.starts_with ~prefix:"snapshot required:" message
@@ -662,11 +742,8 @@ let dispatch session action payload =
           (match required_string "uuid" fields, status_payload fields with
            | Ok uuid, Ok status ->
              (match Model.update_block_status session.model ~uuid ~status ~now:(now_ms ()) with
-              | Error message -> failure ~code:"unknown_block" ~message
+             | Error message -> failure ~code:"unknown_block" ~message
              | Ok () ->
-                (match session.config, Model.read_block session.model uuid with
-                 | Some config, Some block -> save_remote_block session config block
-                 | _ -> ());
                 snapshot_visible session)
            | Error message, _ | _, Error message ->
              failure ~code:"invalid_params" ~message)
@@ -697,9 +774,6 @@ let dispatch session action payload =
                        (Model.update_block_status
                           session.model ~uuid ~status ~now:(now_ms ())))
                    status;
-                 (match session.config, Model.read_block session.model uuid with
-                  | Some config, Some block -> save_remote_block session config block
-                  | _ -> ());
                  snapshot_visible session
                | Error message -> failure ~code:"unknown_block" ~message)
            | Error message, _, _ | _, Error message, _ | _, _, Error message ->

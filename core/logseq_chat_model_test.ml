@@ -206,7 +206,7 @@ let assert_uploaded_asset_reconciles_server_uuid () =
   assert_equal "reconciled asset kind" "asset" asset.kind;
   assert_equal "reconciled local path" "/documents/photo.jpg" (Option.get asset.local_path);
   assert_equal "reconciled checksum" "checksum" (Option.get asset.asset_checksum);
-  assert_equal "reconciled sync status" "synced" asset.sync_status;
+  assert_equal "reconciled sync status" "submitted" asset.sync_status;
   assert_int_equal
     "one asset remains after uuid reconciliation"
     1
@@ -229,7 +229,31 @@ let assert_created_block_reconciles_server_uuid () =
   then failwith "local block should be removed after uuid reconciliation";
   let block = Option.get (Logseq_chat_model.read_block model "server-block") in
   assert_equal "reconciled block title" "Offline capture" block.title;
-  assert_equal "reconciled block status" "synced" block.sync_status
+  assert_equal "reconciled block status" "submitted" block.sync_status
+;;
+
+let assert_remote_refresh_preserves_offline_edit () =
+  let model = Logseq_chat_model.create () in
+  let original =
+    block
+      ~uuid:"offline-edit"
+      ~kind:"block"
+      ~title:"Server title"
+      ~page_id:"journal/2026-08-15"
+      ~created_at:1_776_000_000_000
+  in
+  Logseq_chat_model.upsert_blocks model [ original ] ~refresh_time:1_776_000_000_000;
+  (match
+     Logseq_chat_model.update_block_title
+       model ~uuid:"offline-edit" ~title:"Edited offline" ~now:1_776_000_000_100
+   with
+   | Ok () -> ()
+   | Error message -> failwith message);
+  Logseq_chat_model.upsert_blocks
+    model [ original ] ~refresh_time:1_776_000_000_200;
+  let restored = Option.get (Logseq_chat_model.read_block model "offline-edit") in
+  assert_equal "offline edit survives remote refresh" "Edited offline" restored.title;
+  assert_equal "offline edit remains queued" "pending" restored.sync_status
 ;;
 
 let () =
@@ -277,5 +301,6 @@ let () =
   assert_partial_search_result_preserves_journal_relation ();
   assert_task_and_asset_metadata_persist ();
   assert_uploaded_asset_reconciles_server_uuid ();
-  assert_created_block_reconciles_server_uuid ()
+  assert_created_block_reconciles_server_uuid ();
+  assert_remote_refresh_preserves_offline_edit ()
 ;;

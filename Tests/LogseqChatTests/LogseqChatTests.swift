@@ -316,6 +316,34 @@ import Foundation
         #expect(!source.contains("scrollToRelevantContent"))
     }
 
+    @Test func expandingComposerDoesNotReplaceTheSearchModifiedListTree() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let modifierStart = try #require(source.range(of: "@ViewBuilder public func platformSearchable("))
+        let modifierSource = source[modifierStart.lowerBound...]
+        let modifierEnd = try #require(modifierSource.range(of: "\n\n    @ViewBuilder public func platformRootNavigationChromeHidden"))
+        let platformSearchable = modifierSource[..<modifierEnd.lowerBound]
+
+        #expect(platformSearchable.contains("let presentation = Binding("))
+        #expect(platformSearchable.contains("enabled && isPresented.wrappedValue"))
+        #expect(!platformSearchable.contains("if enabled {"))
+    }
+
+    @Test func expandedComposerReservesScrollableSpaceAtTheBottom() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let mainContentStart = try #require(source.range(of: "@ViewBuilder private var mainContent: some View"))
+        let mainContentSource = source[mainContentStart.lowerBound...]
+        let mainContentEnd = try #require(mainContentSource.range(of: "\n\n    private var stackedContent"))
+        let mainContent = mainContentSource[..<mainContentEnd.lowerBound]
+
+        #expect(mainContent.contains(".safeAreaInset(edge: .bottom, spacing: 0)"))
+        #expect(mainContent.contains("if shouldShowExpandedComposer"))
+        #expect(!mainContent.contains("#else\n        stackedContent\n            .overlay(alignment: .bottom)"))
+    }
+
     @Test func blockListKeepsContentClearOfFloatingChrome() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
@@ -352,7 +380,7 @@ import Foundation
 
         #expect(source.contains("@State private var searchPresented = false"))
         #expect(source.contains(".platformSearchable(\n                        enabled: !composerExpanded"))
-        #expect(source.contains("self.searchable(\n                text: text,\n                isPresented: isPresented"))
+        #expect(source.contains("self.searchable(\n            text: text,\n            isPresented: presentation"))
         #expect(source.contains(".platformSearchFocused($searchFocused)"))
         #expect(source.contains("self.searchFocused(binding)"))
         #expect(source.contains(".searchToolbarBehavior(.minimize)"))
@@ -425,9 +453,9 @@ import Foundation
         #expect(composerRange.lowerBound < searchRange.lowerBound)
         #expect(source.contains("#if SKIP\n        stackedContent"))
         #expect(source.contains(".overlay(alignment: .bottom) {\n                androidFloatingControls"))
-        #expect(source.contains("#else\n        stackedContent\n            .overlay(alignment: .bottom)"))
+        #expect(source.contains("#else\n        stackedContent\n            .safeAreaInset(edge: .bottom, spacing: 0)"))
         #expect(!source.contains("composerDismissLayer"))
-        #expect(source.contains(".overlay(alignment: .bottom) {\n                if shouldShowExpandedComposer"))
+        #expect(source.contains(".safeAreaInset(edge: .bottom, spacing: 0) {\n                if shouldShowExpandedComposer"))
         #expect(source.contains(".platformFloatingComposerInset()"))
     }
 
@@ -811,7 +839,6 @@ import Foundation
             "logseq_chat_sync_checkpoint",
             "logseq_chat_snapshot",
             "logseq_chat_entity_sync",
-            "logseq_chat_graph_mutation",
             "logseq_chat_graph_read",
             "logseq_chat_sse",
             "logseq_chat_logseq_storage_codec",
@@ -822,6 +849,95 @@ import Foundation
         }
         #expect(simulator.contains("logseq_chat_graph_store_stubs.c"))
         #expect(simulator.contains("$graph_store_object"))
+    }
+
+    @Test func clientWritesUseSemanticRESTWithoutTxBatch() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let api = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_api.ml"),
+            encoding: .utf8
+        )
+        let rpc = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_rpc.ml"),
+            encoding: .utf8
+        )
+
+        #expect(api.contains("/api/v1/graphs/%s/capture"))
+        #expect(api.contains("/api/v1/graphs/%s/blocks/%s"))
+        #expect(!api.contains("/chat/tx/batch"))
+        #expect(!rpc.contains("chat_tx_batch_request"))
+    }
+
+    @Test func headerFallsBackToTheCachedGraphIdentity() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+
+        #expect(content.contains("store.snapshot.selectedGraphId ?? selectedGraphID"))
+        #expect(!content.contains("return \"Not connected\""))
+    }
+
+    @Test func cachedGraphOpensBeforeAuthenticationRestore() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+        let localRestore = try #require(content.range(of: "await restoreCachedGraphIfAvailable()"))
+        let authRestore = try #require(content.range(of: "await authentication.restore()"))
+
+        #expect(localRestore.lowerBound < authRestore.lowerBound)
+    }
+
+    @Test func cachedGraphDoesNotStartNetworkSyncWhileAuthenticationIsRestoring() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+        let handlerStart = try #require(
+            content.range(of: ".onChange(of: store.snapshot.selectedGraphId)")
+        )
+        let following = content[handlerStart.lowerBound...]
+        let handlerEnd = try #require(following.range(of: "\n        .sheet("))
+        let handler = following[..<handlerEnd.lowerBound]
+
+        #expect(handler.contains("guard authentication.state == .signedIn else { return }"))
+    }
+
+    @Test func nativeHTTPReleasesTheOCamlRuntimeWhileOfflineRequestsWait() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let transport = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_https_darwin.m"),
+            encoding: .utf8
+        )
+        let ffi = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_core_ffi.c"),
+            encoding: .utf8
+        )
+
+        #expect(transport.contains("caml_enter_blocking_section();"))
+        #expect(transport.contains("caml_leave_blocking_section();"))
+        #expect(!ffi.contains("pthread_mutex_lock(&logseq_chat_call_mutex)"))
+    }
+
+    @Test func blockEditsQueueLocallyBeforeAnyRESTRequest() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let rpc = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_rpc.ml"),
+            encoding: .utf8
+        )
+        let updateStart = try #require(rpc.range(of: "| \"updateBlockStatus\" ->"))
+        let following = rpc[updateStart.lowerBound...]
+        let updateEnd = try #require(following.range(of: "\n  | \"select\" ->"))
+        let updateHandlers = following[..<updateEnd.lowerBound]
+
+        #expect(!updateHandlers.contains("Http.send"))
+        #expect(!updateHandlers.contains("save_remote_block"))
+        #expect(rpc.contains("save_remote_block session config block"))
+        #expect(rpc.contains("if session.sync_in_progress"))
     }
 
     @Test func iosShellBuildUsesSwiftPMDependencyGraph() throws {

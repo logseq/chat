@@ -64,6 +64,22 @@ let () =
 let () =
   let session = Logseq_chat_rpc.create () in
   let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"cached-graph\",\"graphName\":\"Sync 2\",\"token\":\"\"}"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let result = required_assoc "result" fields in
+    assert_equal "cached graph id" "cached-graph" (required_string "selectedGraphId" result);
+    assert_equal "cached graph name" "Sync 2" (required_string "graphName" result)
+  | _ -> failwith "configure should restore a cached graph name"
+;;
+
+let () =
+  let session = Logseq_chat_rpc.create () in
+  let response =
     Logseq_chat_rpc.call session
       {|{"apiVersion":1,"method":"dispatch","params":{"action":"clearRelated"}}|}
     |> from_string
@@ -133,6 +149,48 @@ let () =
 ;;
 
 let () =
+  let authoritative_blocks = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~feed_sse:(fun _chunk ->
+        authoritative_blocks :=
+          [ Logseq_chat_model.
+              { uuid = "local-self-echo"
+              ; kind = "block"
+              ; title = "Synced capture"
+              ; page_id = "journal/2026-08-15"
+              ; parent_id = None
+              ; created_at = 1_776_000_000_000
+              ; updated_at = 1_776_000_000_000
+              ; sync_status = "synced"
+              ; tags = []
+              ; references = []
+              ; status = None
+              ; asset_type = None
+              ; asset_size = None
+              ; asset_checksum = None
+              ; local_path = None
+              }
+          ];
+        Ok ())
+      ~graph_blocks:(fun () -> Some !authoritative_blocks)
+      ()
+  in
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Synced capture\",\"uuid\":\"local-self-echo\",\"now\":1776000000000}"}}|});
+  if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
+  then failwith "local capture should start pending";
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"self-echo"}}|});
+  if Logseq_chat_model.pending_blocks session.model <> []
+  then failwith "authoritative SSE self-echo should clear local pending state"
+;;
+
+let () =
   let session = Logseq_chat_rpc.create () in
   ignore
     (Logseq_chat_rpc.call
@@ -156,4 +214,46 @@ let () =
          (required_string "color" (required_assoc "icon" status))
      | _ -> failwith "updateBlockStatus should return the updated task")
   | _ -> failwith "updateBlockStatus should return an RPC response"
+;;
+
+let () =
+  let authoritative =
+    Logseq_chat_model.
+      { uuid = "offline-edit"
+      ; kind = "block"
+      ; title = "Server title"
+      ; page_id = "journal/2026-08-15"
+      ; parent_id = None
+      ; created_at = 1_776_000_000_000
+      ; updated_at = 1_776_000_000_000
+      ; sync_status = "synced"
+      ; tags = []
+      ; references = []
+      ; status = None
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create ~graph_blocks:(fun () -> Some [ authoritative ]) ()
+  in
+  Logseq_chat_model.upsert_blocks
+    session.model [ authoritative ] ~refresh_time:1_776_000_000_000;
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"offline-edit\",\"title\":\"Edited offline\",\"status\":null}"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let blocks = required_assoc "result" fields |> required_list "blocks" in
+    (match blocks with
+     | [ `Assoc block ] ->
+       assert_equal "offline edited title" "Edited offline" (required_string "title" block);
+       assert_equal "offline edited sync status" "pending" (required_string "syncStatus" block)
+     | _ -> failwith "offline edit should remain visible over the authoritative block")
+  | _ -> failwith "offline edit should return an RPC response"
 ;;

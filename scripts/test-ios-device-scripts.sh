@@ -15,7 +15,6 @@ fi
 for module in \
   logseq_chat_edn \
   logseq_chat_entity_sync \
-  logseq_chat_graph_mutation \
   logseq_chat_graph_read \
   logseq_chat_graph_store \
   logseq_chat_logseq_storage_codec \

@@ -56,6 +56,7 @@ struct ContentView: View {
             #if DEBUG
             print("LogseqChat debug: local store opened")
             #endif
+            await restoreCachedGraphIfAvailable()
             await authentication.restore()
             #if DEBUG
             print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
@@ -71,6 +72,7 @@ struct ContentView: View {
         .onChange(of: store.snapshot.selectedGraphId) { _, graphID in
             guard let graphID, !graphID.isEmpty else { return }
             selectedGraphID = graphID
+            guard authentication.state == .signedIn else { return }
             startGraphSync(graphID)
         }
         .sheet(isPresented: $settingsPresented) {
@@ -260,7 +262,7 @@ struct ContentView: View {
             }
         #else
         stackedContent
-            .overlay(alignment: .bottom) {
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 if shouldShowExpandedComposer {
                     floatingComposer
                         .platformFloatingComposerInset()
@@ -309,7 +311,8 @@ struct ContentView: View {
         if let graphName = store.snapshot.graphName, !graphName.isEmpty {
             return graphName
         }
-        return "Not connected"
+        let graphID = store.snapshot.selectedGraphId ?? selectedGraphID
+        return graphID.isEmpty ? "Choose a graph" : graphID
     }
 
     private var databasePath: String {
@@ -332,6 +335,9 @@ struct ContentView: View {
                     token: accessToken,
                     selectedGraphID: selectedGraphID.isEmpty ? nil : selectedGraphID
                 )
+                if !selectedGraphID.isEmpty {
+                    startGraphSync(selectedGraphID)
+                }
             } catch {
                 #if DEBUG
                 print("LogseqChat debug: access token request failed: \(error.localizedDescription)")
@@ -339,6 +345,21 @@ struct ContentView: View {
                 logger.error("Could not acquire Cognito access token: \(error.localizedDescription, privacy: .public)")
             }
         }
+    }
+
+    private func restoreCachedGraphIfAvailable() async {
+        guard !selectedGraphID.isEmpty else { return }
+        await store.configureAndSelectGraph(
+            baseURL: baseURL,
+            token: "",
+            selectedGraphID: selectedGraphID
+        )
+        _ = await store.bootstrapSelectedGraph(
+            graphID: selectedGraphID,
+            baseURL: baseURL,
+            accessToken: "",
+            allowSnapshotDownload: false
+        )
     }
 
     @ViewBuilder private var authenticatedContent: some View {
@@ -1239,16 +1260,20 @@ extension View {
         isPresented: Binding<Bool>,
         prompt: String
     ) -> some View {
-        if enabled {
-            self.searchable(
-                text: text,
-                isPresented: isPresented,
-                placement: .automatic,
-                prompt: Text(verbatim: prompt)
-            )
-        } else {
-            self
-        }
+        let presentation = Binding(
+            get: { enabled && isPresented.wrappedValue },
+            set: { value in
+                if enabled || !value {
+                    isPresented.wrappedValue = value
+                }
+            }
+        )
+        self.searchable(
+            text: text,
+            isPresented: presentation,
+            placement: .automatic,
+            prompt: Text(verbatim: prompt)
+        )
     }
 
     @ViewBuilder public func platformRootNavigationChromeHidden() -> some View {

@@ -104,21 +104,6 @@ let sync_cursor () =
   | None -> None
 ;;
 
-let insert_block_tx ~uuid ~title ~now =
-  match !graph_runtime with
-  | Some (conn, _state, _checkpoint_path) ->
-    Logseq_chat_graph_mutation.insert_block_tx
-      (Datascript.conn_db conn)
-      ~uuid
-      ~title
-      ~now
-  | None -> Error "graph runtime is not open"
-;;
-
-let save_block_tx ~uuid ~title ~status_ident =
-  Logseq_chat_graph_mutation.save_block_tx ~uuid ~title ~status_ident
-;;
-
 let graph_blocks () =
   match !graph_runtime with
   | Some (conn, _state, _checkpoint_path) ->
@@ -134,8 +119,6 @@ let create_session ?storage () =
     ~start_sse
     ~feed_sse
     ~sync_cursor
-    ~insert_block_tx
-    ~save_block_tx
     ~graph_blocks
     ()
 ;;

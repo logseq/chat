@@ -66,3 +66,149 @@ let () =
              failwith
                (Printf.sprintf "expected one persisted custom status, got %d" (List.length statuses)))))
 ;;
+
+let () =
+  with_temp_db (fun path ->
+    let first_store = Logseq_chat_sqlite.open_session path in
+    let first_rpc =
+      Logseq_chat_rpc.create ~storage:(Logseq_chat_sqlite.storage first_store) ()
+    in
+    ignore
+      (Logseq_chat_rpc.call
+         first_rpc
+         {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Survives restart\",\"uuid\":\"local-restart\",\"now\":1776000000000}"}}|});
+    Logseq_chat_sqlite.close first_store;
+
+    let remote_block =
+      Logseq_chat_model.
+        { uuid = "remote-existing"
+        ; kind = "block"
+        ; title = "Existing server block"
+        ; page_id = "journal/2026-04-13"
+        ; parent_id = None
+        ; created_at = 1_776_000_000_001
+        ; updated_at = 1_776_000_000_001
+        ; sync_status = "synced"
+        ; tags = []
+        ; references = []
+        ; status = None
+        ; asset_type = None
+        ; asset_size = None
+        ; asset_checksum = None
+        ; local_path = None
+        }
+    in
+    let second_store = Logseq_chat_sqlite.open_session path in
+    Fun.protect
+      ~finally:(fun () -> Logseq_chat_sqlite.close second_store)
+      (fun () ->
+        let second_rpc =
+          Logseq_chat_rpc.create
+            ~storage:(Logseq_chat_sqlite.storage second_store)
+            ~graph_blocks:(fun () -> Some [ remote_block ])
+            ()
+        in
+        let response =
+          Logseq_chat_rpc.call
+            second_rpc
+            {|{"apiVersion":1,"method":"snapshot","params":{}}|}
+          |> Yojson.Basic.from_string
+        in
+        let blocks =
+          match response with
+          | `Assoc fields ->
+            (match List.assoc_opt "result" fields with
+             | Some (`Assoc result) ->
+               (match List.assoc_opt "blocks" result with
+                | Some (`List blocks) -> blocks
+                | _ -> failwith "restart snapshot is missing blocks")
+             | _ -> failwith "restart snapshot is missing result")
+          | _ -> failwith "restart snapshot is not an object"
+        in
+        let uuids =
+          List.filter_map
+            (function
+              | `Assoc fields ->
+                (match List.assoc_opt "uuid" fields with
+                 | Some (`String uuid) -> Some uuid
+                 | _ -> None)
+              | _ -> None)
+            blocks
+        in
+        assert_bool
+          "persisted pending block should remain visible with an open graph"
+          (List.mem "local-restart" uuids);
+        assert_bool
+          "server graph block should remain visible"
+          (List.mem "remote-existing" uuids)))
+;;
+
+let () =
+  with_temp_db (fun path ->
+    let first_session = Logseq_chat_sqlite.open_session path in
+    let first_model =
+      Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage first_session) ()
+    in
+    Logseq_chat_model.cache_graphs
+      first_model
+      [ { id = "plain-graph"; name = "Sync 2"; e2ee = false; ready = true }
+      ; { id = "encrypted-graph"; name = "Private"; e2ee = true; ready = false }
+      ];
+    Logseq_chat_sqlite.close first_session;
+
+    let second_session = Logseq_chat_sqlite.open_session path in
+    Fun.protect
+      ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
+      (fun () ->
+        let restored_model =
+          Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage second_session) ()
+        in
+        match Logseq_chat_model.cached_graphs restored_model with
+        | [ encrypted; plain ] ->
+          assert_equal "encrypted graph id" "encrypted-graph" encrypted.id;
+          assert_equal "encrypted graph name" "Private" encrypted.name;
+          assert_bool "encrypted graph flag" encrypted.e2ee;
+          assert_bool "encrypted graph ready flag" (not encrypted.ready);
+          assert_equal "plain graph id" "plain-graph" plain.id;
+          assert_equal "plain graph name" "Sync 2" plain.name;
+          assert_bool "plain graph encryption flag" (not plain.e2ee);
+          assert_bool "plain graph ready flag" plain.ready
+        | graphs ->
+          failwith
+            (Printf.sprintf "expected two persisted cached graphs, got %d" (List.length graphs))))
+;;
+
+let () =
+  with_temp_db (fun path ->
+    let first_session = Logseq_chat_sqlite.open_session path in
+    let first_model =
+      Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage first_session) ()
+    in
+    Logseq_chat_model.cache_graphs
+      first_model
+      [ { id = "plain-graph"; name = "Sync 2"; e2ee = false; ready = true } ];
+    Logseq_chat_sqlite.close first_session;
+
+    let second_session = Logseq_chat_sqlite.open_session path in
+    Fun.protect
+      ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
+      (fun () ->
+        let rpc =
+          Logseq_chat_rpc.create ~storage:(Logseq_chat_sqlite.storage second_session) ()
+        in
+        let response =
+          Logseq_chat_rpc.call
+            rpc
+            {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-graph\",\"token\":\"\"}"}}|}
+          |> Yojson.Basic.from_string
+        in
+        match response with
+        | `Assoc fields ->
+          (match List.assoc_opt "result" fields with
+           | Some (`Assoc result) ->
+             (match List.assoc_opt "graphName" result, List.assoc_opt "graphs" result with
+              | Some (`String "Sync 2"), Some (`List [ _ ]) -> ()
+              | _ -> failwith "RPC did not restore the selected graph from the cached catalog")
+           | _ -> failwith "cached graph RPC response is missing result")
+        | _ -> failwith "cached graph RPC response is not an object"))
+;;
