@@ -10,3 +10,9 @@
 # this is a transpiled Skip Lite module
 skip:
   mode: 'transpiled'
+
+build:
+  contents:
+    - block: 'dependencies'
+      contents:
+        - 'implementation("com.amazonaws:aws-android-sdk-cognitoidentityprovider:2.81.1")'

@@ -8,6 +8,37 @@ import Foundation
         #expect(1 + 2 == 3, "basic test")
     }
 
+    @Test func appUsesBuiltInCognitoLoginInsteadOfPAT() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/CognitoAuthProvider.swift"),
+            encoding: .utf8
+        )
+        let androidProvider = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/Skip/CognitoAuthProvider.kt"),
+            encoding: .utf8
+        )
+        let skipConfiguration = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/Skip/skip.yml"),
+            encoding: .utf8
+        )
+
+        #expect(content.contains("LogseqLoginView"))
+        #expect(content.contains("field.email"))
+        #expect(content.contains("field.password"))
+        #expect(!content.contains("field.pat"))
+        #expect(provider.contains("AWSCognitoIdentityUserPool"))
+        #expect(provider.contains("session.accessToken?.tokenString"))
+        #expect(androidProvider.contains("CognitoUserPool"))
+        #expect(androidProvider.contains("session.accessToken?.jwtToken"))
+        #expect(skipConfiguration.contains("aws-android-sdk-cognitoidentityprovider"))
+        #expect(!skipConfiguration.contains("com.amplifyframework"))
+    }
+
     @Test func decodeType() throws {
         // load the TestData.json file from the Resources folder and decode it into a struct
         let resourceURL: URL = try #require(Bundle.module.url(forResource: "TestData", withExtension: "json"))
@@ -548,7 +579,9 @@ import Foundation
         #expect(flow.contains("tapOn: \"Search\""))
         #expect(flow.contains("tapOn: \"close\""))
         #expect(!flow.contains("tapOn: \"Cancel\""))
-        #expect(!flow.contains("pat test"))
+        #expect(!flow.contains("field.pat"))
+        #expect(flow.contains("field.email"))
+        #expect(flow.contains("field.password"))
         #expect(flow.contains("eraseText: 8"))
         #expect(flow.contains("inputText: \"After clear\""))
         let sendButton = try #require(flow.range(of: "id: \"button.send\""))
@@ -565,9 +598,21 @@ import Foundation
         let resetSource = script[uninstallRange.lowerBound..<installRange.lowerBound]
 
         #expect(resetSource.contains("defaults delete \"$app_id\" logseq.baseURL"))
-        #expect(resetSource.contains("defaults delete \"$app_id\" logseq.token"))
         #expect(resetSource.contains("defaults delete \"$app_id\" logseq.composerDraft"))
-        #expect(script.contains("if [[ $pat != \"logseq_pat_e2e_invalid\" ]]; then"))
+        #expect(!script.contains("LOGSEQ_CHAT_E2E_PAT"))
+        #expect(script.contains("LOGSEQ_CHAT_E2E_USERNAME"))
+        #expect(script.contains("LOGSEQ_CHAT_E2E_PASSWORD"))
+    }
+
+    @Test func iosBuildEmbedsOnlyTheRequiredCognitoFrameworks() throws {
+        let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("scripts/build-mobile-ios-simulator.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        #expect(script.contains("AWSCore.framework"))
+        #expect(script.contains("AWSCognitoIdentityProvider.framework"))
+        #expect(script.contains("AWSCognitoIdentityProviderASF.framework"))
+        #expect(script.contains("codesign --force --sign - --timestamp=none \"$framework\""))
     }
 
     @Test func composerDismissesWhenLeavingHomeOrEnteringSearch() throws {

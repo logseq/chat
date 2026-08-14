@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ocaml_demo_root=${LOGSEQ_CHAT_OCAML_DEMO_ROOT:-/Users/tiensonqin/Codes/projects/ocaml-demo}
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
@@ -121,6 +126,17 @@ else
 fi
 cp "$swift_build_dir/libLogseqChat.dylib" "$frameworks_dir/libLogseqChat.dylib"
 
+cognito_frameworks=(
+  AWSCore.framework
+  AWSCognitoIdentityProviderASF.framework
+  AWSCognitoIdentityProvider.framework
+)
+for framework_name in "${cognito_frameworks[@]}"; do
+  framework_source="$swift_build_dir/$framework_name"
+  [[ -d $framework_source ]] || die "missing Cognito framework: $framework_source"
+  cp -R "$framework_source" "$frameworks_dir/"
+done
+
 for bundle in "$swift_build_dir"/*.bundle; do
   [[ -d "$bundle" ]] || continue
   cp -R "$bundle" "$app_dir/"
@@ -144,6 +160,7 @@ xcrun --sdk iphonesimulator swiftc \
   -target "$triple" \
   -sdk "$sdk_path" \
   -I "$swift_build_dir/Modules" \
+  -F "$swift_build_dir" \
   -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
   -Xcc "-I$repo_root/Sources/LogseqChatCoreABI/include" \
   -L "$swift_build_dir" \
@@ -156,6 +173,10 @@ xcrun --sdk iphonesimulator swiftc \
   -o "$app_dir/LogseqChat"
 
 codesign --force --sign - --timestamp=none "$frameworks_dir/libLogseqChat.dylib"
+for framework_name in "${cognito_frameworks[@]}"; do
+  framework="$frameworks_dir/$framework_name"
+  codesign --force --sign - --timestamp=none "$framework"
+done
 codesign --force --sign - --timestamp=none "$app_dir"
 
 echo "$app_dir"

@@ -2,6 +2,18 @@ appId: com.logseq.chat
 ---
 - launchApp
 - tapOn:
+    id: "field.email"
+- inputText: ${USERNAME}
+- tapOn:
+    id: "field.password"
+- inputText: ${PASSWORD}
+- tapOn:
+    id: "button.sign-in"
+- extendedWaitUntil:
+    visible:
+      id: "button.connection"
+    timeout: 30000
+- tapOn:
     id: "button.connection"
 - assertVisible: "Connection"
 - tapOn:
@@ -9,12 +21,6 @@ appId: com.logseq.chat
 - eraseText
 - inputText: ${BASE_URL}
 - tapOn:
-    id: "field.pat"
-- inputText: ${PAT}
-- tapOn:
     id: "button.connection.apply"
-- extendedWaitUntil:
-    visible: "pat test"
-    timeout: 30000
 - assertVisible:
     id: "button.composer.expand"

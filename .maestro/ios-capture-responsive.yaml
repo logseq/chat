@@ -2,6 +2,20 @@ appId: com.logseq.chat
 ---
 - launchApp
 - assertVisible:
+    id: "field.email"
+- tapOn:
+    id: "field.email"
+- inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+- tapOn:
+    id: "field.password"
+- inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+- tapOn:
+    id: "button.sign-in"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- assertVisible:
     id: "button.composer.expand"
 - tapOn: "Search"
 - assertVisible: "Search blocks"
@@ -13,8 +27,6 @@ appId: com.logseq.chat
 - assertVisible: "Connection"
 - assertVisible:
     id: "field.base-url"
-- assertVisible:
-    id: "field.pat"
 - tapOn:
     id: "button.connection.cancel"
 - assertVisible:

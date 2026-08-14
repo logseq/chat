@@ -42,6 +42,7 @@ open class AndroidAppMain: Application {
         System.loadLibrary("logseq_chat_core")
         logger.info("starting app")
         ProcessInfo.launch(applicationContext)
+        CognitoAuthProvider.initialize(applicationContext)
         AppDelegate.shared.onInit()
     }
 

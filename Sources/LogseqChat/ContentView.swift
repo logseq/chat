@@ -15,6 +15,7 @@ struct ContentView: View {
     private static let blockListTopID = "block-list-top"
     private static let blockListBottomID = "block-list-bottom"
     @State private var store: LogseqChatStore
+    @State private var authentication: LogseqAuthenticationStore
     @State private var searchText = ""
     @State private var searchPresented = false
     @State private var composerExpanded = false
@@ -33,25 +34,30 @@ struct ContentView: View {
     #endif
     @State private var hasAutoScrolledInitially = false
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
-    @AppStorage("logseq.token") private var token = ""
     @AppStorage("logseq.composerDraft") private var draft = ""
     @FocusState private var composerFocused: Bool
     @FocusState private var searchFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
-    init(store: LogseqChatStore) {
+    init(store: LogseqChatStore, authentication: LogseqAuthenticationStore) {
         _store = State(initialValue: store)
+        _authentication = State(initialValue: authentication)
     }
 
     var body: some View {
-        appShell
+        Group {
+            if authentication.state == .signedIn {
+                appShell
+            } else {
+                LogseqLoginView(authentication: authentication) {
+                    connectWithCurrentAccessToken()
+                }
+            }
+        }
         .task {
             store.open(path: databasePath)
-            if !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                store.configure(baseURL: baseURL, token: token)
-            } else {
-                store.refreshSoon()
-            }
+            await authentication.restore()
+            connectWithCurrentAccessToken()
             await store.runRefreshLoop()
         }
         .onChange(of: scenePhase) { _, phase in
@@ -62,10 +68,16 @@ struct ContentView: View {
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
                 baseURL: $baseURL,
-                token: $token,
                 apply: {
                     settingsPresented = false
-                    store.configure(baseURL: baseURL, token: token)
+                    connectWithCurrentAccessToken()
+                },
+                signOut: {
+                    settingsPresented = false
+                    Task {
+                        await authentication.signOut()
+                        store.configure(baseURL: baseURL, token: "", refreshAfterApply: false)
+                    }
                 }
             )
         }
@@ -205,6 +217,13 @@ struct ContentView: View {
 
     private var databasePath: String {
         LogseqChatRuntime.shared.databasePath
+    }
+
+    private func connectWithCurrentAccessToken() {
+        Task {
+            guard let accessToken = try? await authentication.accessToken() else { return }
+            store.configure(baseURL: baseURL, token: accessToken)
+        }
     }
 
     private var appBackground: some View {
@@ -886,8 +905,8 @@ private struct ImportedAsset: Sendable {
 
 private struct ConnectionSettingsView: View {
     @Binding var baseURL: String
-    @Binding var token: String
     let apply: () -> Void
+    let signOut: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -896,8 +915,12 @@ private struct ConnectionSettingsView: View {
                 Section("Logseq API") {
                     TextField("Base URL", text: $baseURL)
                         .accessibilityIdentifier("field.base-url")
-                    SecureField("PAT", text: $token)
-                        .accessibilityIdentifier("field.pat")
+                }
+                Section {
+                    Button("Sign Out", role: .destructive) {
+                        signOut()
+                    }
+                    .accessibilityIdentifier("button.sign-out")
                 }
             }
             .navigationTitle("Connection")
@@ -912,7 +935,7 @@ private struct ConnectionSettingsView: View {
                     Button("Apply") {
                         apply()
                     }
-                    .disabled(baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("button.connection.apply")
                 }
             }
@@ -920,7 +943,53 @@ private struct ConnectionSettingsView: View {
     }
 }
 
+private struct LogseqLoginView: View {
+    let authentication: LogseqAuthenticationStore
+    let onSignedIn: () -> Void
+    @State private var username = ""
+    @State private var password = ""
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Sign in to Logseq")
+                .font(.title2.weight(.semibold))
+            TextField("Email", text: $username)
+                .platformLoginTextInput()
+                .accessibilityIdentifier("field.email")
+            SecureField("Password", text: $password)
+                .accessibilityIdentifier("field.password")
+            if let message = authentication.errorMessage {
+                Text(message)
+                    .foregroundStyle(.red)
+            }
+            Button(authentication.state == .signingIn ? "Signing In…" : "Sign In") {
+                Task {
+                    await authentication.signIn(username: username, password: password)
+                    if authentication.state == .signedIn {
+                        password = ""
+                        onSignedIn()
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(authentication.state == .signingIn)
+            .accessibilityIdentifier("button.sign-in")
+        }
+        .padding(32)
+    }
+}
+
 extension View {
+    @ViewBuilder public func platformLoginTextInput() -> some View {
+        #if os(iOS) || SKIP
+        self
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+        #else
+        self
+        #endif
+    }
+
     @ViewBuilder public func platformGlassButtonStyle() -> some View {
         #if !SKIP
         if #available(iOS 26.0, macOS 26.0, *) {

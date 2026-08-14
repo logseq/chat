@@ -18,7 +18,10 @@ public struct LogseqChatRootView : View {
     }
 
     public var body: some View {
-        ContentView(store: LogseqChatRuntime.shared.store)
+        ContentView(
+            store: LogseqChatRuntime.shared.store,
+            authentication: LogseqChatRuntime.shared.authentication
+        )
             .onAppear {
                 DispatchQueue.main.async {
                     LogseqChatAppDelegate.shared.onFirstUIRendered()
@@ -34,11 +37,20 @@ public struct LogseqChatRootView : View {
     public static let shared = LogseqChatRuntime()
 
     public let store: LogseqChatStore
+    public let authentication: LogseqAuthenticationStore
 
     private init() {
         self.store = LogseqChatStore { request in
             LogseqChatCore.shared.logseq_chat_call(request)
         }
+        let configuration = LogseqCognitoConfiguration.load()
+        self.authentication = LogseqAuthenticationStore(
+            provider: CognitoAuthProvider(
+                region: configuration.region,
+                userPoolId: configuration.userPoolId,
+                appClientId: configuration.appClientId
+            )
+        )
     }
 
     public var databasePath: String {
@@ -55,12 +67,25 @@ public struct LogseqChatRootView : View {
         openStore()
         let defaults = UserDefaults.standard
         let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
-        let token = defaults.string(forKey: "logseq.token") ?? ""
-        if token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            await store.refreshAndSyncForBackground()
-        } else {
-            await store.configureAndRefreshForBackground(baseURL: baseURL, token: token)
+        guard let token = try? await authentication.accessToken() else { return }
+        await store.configureAndRefreshForBackground(baseURL: baseURL, token: token)
+    }
+}
+
+private struct LogseqCognitoConfiguration: Decodable {
+    let region: String
+    let userPoolId: String
+    let appClientId: String
+
+    static func load() -> LogseqCognitoConfiguration {
+        guard
+            let url = Bundle.module.url(forResource: "logseq-auth", withExtension: "json"),
+            let data = try? Data(contentsOf: url),
+            let configuration = try? JSONDecoder().decode(LogseqCognitoConfiguration.self, from: data)
+        else {
+            return LogseqCognitoConfiguration(region: "", userPoolId: "", appClientId: "")
         }
+        return configuration
     }
 }
 

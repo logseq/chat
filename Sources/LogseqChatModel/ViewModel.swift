@@ -1,6 +1,8 @@
 import Foundation
 import Observation
+#if !os(Android)
 import OSLog
+#endif
 #if SKIP
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -10,7 +12,29 @@ import SkipFFI
 import LogseqChatCoreABI
 #endif
 
-let logger: Logger = Logger(subsystem: "logseq.chat.model", category: "LogseqChatModel")
+private struct LogseqModelLogger {
+    #if !os(Android)
+    private let logger = Logger(subsystem: "logseq.chat.model", category: "LogseqChatModel")
+    #endif
+
+    func info(_ message: String) {
+        #if os(Android)
+        print(message)
+        #else
+        logger.info("\(message, privacy: .public)")
+        #endif
+    }
+
+    func error(_ message: String) {
+        #if os(Android)
+        print(message)
+        #else
+        logger.error("\(message, privacy: .public)")
+        #endif
+    }
+}
+
+private let logger = LogseqModelLogger()
 
 public final class LogseqChatCore {
     nonisolated(unsafe) public static let shared = registerNatives(
@@ -479,7 +503,7 @@ private struct AddAssetPayload: Encodable {
             performAsyncThenSyncPending(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "send", payload: payload)))
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
-            logger.error("Core request encoding failed: send, message: \(String(describing: error), privacy: .public)")
+            logger.error("Core request encoding failed: send, message: \(String(describing: error))")
             self.syncPending()
         }
     }
@@ -524,7 +548,7 @@ private struct AddAssetPayload: Encodable {
             let payloadData = try JSONEncoder().encode(payloadValue)
             guard let payload = String(data: payloadData, encoding: .utf8) else {
                 lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode \(action) payload")
-                logger.error("Core request encoding failed: \(action, privacy: .public) payload was not UTF-8")
+                logger.error("Core request encoding failed: \(action) payload was not UTF-8")
                 return
             }
             let request = LogseqChatRPCRequest(
@@ -538,7 +562,7 @@ private struct AddAssetPayload: Encodable {
             }
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
-            logger.error("Core request encoding failed: \(action, privacy: .public)")
+            logger.error("Core request encoding failed: \(action)")
         }
     }
 
@@ -656,9 +680,9 @@ private struct AddAssetPayload: Encodable {
         guard let requestJSON = encode(request) else {
             return
         }
-        logger.info("Core action started: \(actionName, privacy: .public)")
+        logger.info("Core action started: \(actionName)")
         let responseJSON = callCore(requestJSON)
-        logger.info("Core action returned: \(actionName, privacy: .public)")
+        logger.info("Core action returned: \(actionName)")
         if shouldApply?() ?? true {
             apply(responseJSON: responseJSON, actionName: actionName)
         }
@@ -673,9 +697,9 @@ private struct AddAssetPayload: Encodable {
             return
         }
         let callCore = callCore
-        logger.info("Core action started: \(actionName, privacy: .public)")
+        logger.info("Core action started: \(actionName)")
         let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
-        logger.info("Core action returned: \(actionName, privacy: .public)")
+        logger.info("Core action returned: \(actionName)")
         if shouldApply?() ?? true {
             apply(responseJSON: responseJSON, actionName: actionName)
         }
@@ -708,7 +732,7 @@ private struct AddAssetPayload: Encodable {
             return requestJSON
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
-            logger.error("Core request encoding failed: message: \(String(describing: error), privacy: .public)")
+            logger.error("Core request encoding failed: message: \(String(describing: error))")
             return nil
         }
     }
@@ -720,21 +744,21 @@ private struct AddAssetPayload: Encodable {
             if response.ok, let result = response.result {
                 let mergedResult = mergedSnapshot(result, actionName: actionName)
                 logger.info(
-                    "Core action applied: \(actionName, privacy: .public), revision: \(mergedResult.revision, privacy: .public), blocks: \(mergedResult.blocks.count, privacy: .public), graph: \(mergedResult.graphName ?? "none", privacy: .public)"
+                    "Core action applied: \(actionName), revision: \(mergedResult.revision), blocks: \(mergedResult.blocks.count), graph: \(mergedResult.graphName ?? "none")"
                 )
                 snapshot = mergedResult
                 lastError = nil
             } else {
                 let error = response.error ?? LogseqChatCoreError(code: "unknown_core_error", message: "The core returned no snapshot")
                 logger.error(
-                    "Core action failed: \(actionName, privacy: .public), code: \(error.code, privacy: .public), message: \(error.message, privacy: .public)"
+                    "Core action failed: \(actionName), code: \(error.code), message: \(error.message)"
                 )
                 lastError = error
             }
         } catch {
             let coreError = LogseqChatCoreError(code: "response_decoding", message: "\(error)")
             logger.error(
-                "Core response decoding failed: \(actionName, privacy: .public), message: \(coreError.message, privacy: .public)"
+                "Core response decoding failed: \(actionName), message: \(coreError.message)"
             )
             lastError = coreError
         }
