@@ -11,4 +11,6 @@
   dune
   datascript_ocaml
   datascript-ocaml-native
+  melange-edn-native
+  melange-transit-native
   yojson))

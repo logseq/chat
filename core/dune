@@ -3,10 +3,20 @@
  (wrapped false)
  (modules
   logseq_chat_api
+  logseq_chat_edn
   logseq_chat_http
   logseq_chat_model
-  logseq_chat_rpc)
- (libraries datascript-ocaml-native yojson unix)
+  logseq_chat_rpc
+  logseq_chat_sse
+  logseq_chat_sync_protocol
+  logseq_chat_sync_state)
+ (libraries
+  datascript-ocaml-native
+  melange-edn-native
+  melange-transit-core
+  melange-transit-native
+  yojson
+  unix)
  (foreign_stubs
   (language c)
   (names logseq_chat_https_stub)))
@@ -50,3 +60,23 @@
   logseq_chat_sqlite_test
   logseq_chat_sqlite)
  (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix))
+
+(test
+ (name logseq_chat_sse_test)
+ (modules logseq_chat_sse_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_sync_protocol_test)
+ (modules logseq_chat_sync_protocol_test)
+ (libraries logseq_chat_core melange-transit-core melange-transit-native))
+
+(test
+ (name logseq_chat_sync_state_test)
+ (modules logseq_chat_sync_state_test)
+ (libraries logseq_chat_core melange-transit-core melange-transit-native))
+
+(test
+ (name logseq_chat_edn_test)
+ (modules logseq_chat_edn_test)
+ (libraries logseq_chat_core melange-edn-native))
