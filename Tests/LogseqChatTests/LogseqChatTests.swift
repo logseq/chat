@@ -422,7 +422,7 @@ import Foundation
         #expect(!glassContainer.contains("self.glassEffect()\n                .clipShape"))
     }
 
-    @Test func tappingOutsideComposerDismissesEditing() throws {
+    @Test func blockListDoesNotCompeteWithBlockTapHandling() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
@@ -431,9 +431,8 @@ import Foundation
         let nextView = try #require(blockListSource.range(of: "\n\n    private func autoScrollOnFirstAppear"))
         let blockList = blockListSource[..<nextView.lowerBound]
 
-        #expect(blockList.contains(".onTapGesture"))
-        #expect(blockList.contains("if composerExpanded {"))
-        #expect(blockList.contains("dismissComposerEditing()"))
+        #expect(!blockList.contains(".onTapGesture"))
+        #expect(blockList.contains("handleBlockTap(block)"))
     }
 
     @Test func tappingBlockDismissesAnOpenComposerOtherwiseLoadsTheBlock() throws {
@@ -493,7 +492,7 @@ import Foundation
 
         #expect(!source.contains("composerDismissLayer"))
         #expect(source.contains("private var blockList: some View"))
-        #expect(source.contains(".onTapGesture"))
+        #expect(source.contains("private func handleBlockTap(_ block: LogseqBlock)"))
         #expect(source.contains("dismissComposerEditing()"))
     }
 

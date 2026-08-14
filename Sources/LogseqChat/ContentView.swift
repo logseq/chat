@@ -335,11 +335,6 @@ struct ContentView: View {
             .onAppear {
                 autoScrollOnFirstAppear(proxy)
             }
-            .onTapGesture {
-                if composerExpanded {
-                    dismissComposerEditing()
-                }
-            }
             .onChange(of: store.snapshot.blocks) { oldBlocks, newBlocks in
                 if !hasAutoScrolledInitially {
                     autoScrollOnFirstAppear(proxy)
