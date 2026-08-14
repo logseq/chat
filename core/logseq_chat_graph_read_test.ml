@@ -22,6 +22,7 @@ let () =
     ; "block/title", one ~value_type:StringType ()
     ; "block/page", one ~value_type:RefType ()
     ; "block/parent", one ~value_type:RefType ()
+    ; "block/order", one ~value_type:StringType ()
     ; "block/created-at", one ~value_type:InstantType ()
     ; "block/updated-at", one ~value_type:InstantType ()
     ]
@@ -45,6 +46,7 @@ let () =
                ; "block/title", One_value (String "Desktop seed")
                ; "block/page", One_value (Ref_to (Temp_id "page"))
                ; "block/parent", One_value (Ref_to (Temp_id "page"))
+               ; "block/order", One_value (String "a1")
                ; "block/created-at", One_value (Instant 1_776_000_000_000)
                ; "block/updated-at", One_value (Instant 1_776_000_000_001)
                ]
@@ -58,6 +60,8 @@ let () =
     then failwith "graph block title changed";
     if not (String.equal block.page_id page_uuid)
     then failwith "graph page reference was not projected";
+    if block.order <> Some "a1"
+    then failwith "graph outliner order was not projected";
     if block.created_at <> 1_776_000_000_000
     then failwith "graph instant timestamp changed"
   | _ -> failwith "graph reader must return non-page blocks only"

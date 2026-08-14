@@ -1017,7 +1017,7 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.map(\.title).contains("E2E capture responsive"))
     }
 
-    @Test @MainActor func sectionsDisplayJournalBlocksOldestFirst() async throws {
+    @Test @MainActor func sectionsDisplayJournalsByDayAndBlocksByOutlinerOrder() async throws {
         let store = LogseqChatStore { _ in
             return """
             {
@@ -1031,25 +1031,37 @@ private let testEmptySnapshotJSON = """
                     "uuid": "new",
                     "kind": "block",
                     "title": "Newer",
-                    "pageId": "page-1",
+                    "pageId": "journal-today",
+                    "parentId": "journal-today",
+                    "order": "a2",
                     "createdAt": 1776000200000,
-                    "updatedAt": 1776000200000
+                    "updatedAt": 1776000200000,
+                    "journalTitle": "Apr 13th, 2026",
+                    "journalDay": 20260413
                   },
                   {
                     "uuid": "yesterday",
                     "kind": "block",
                     "title": "Yesterday",
-                    "pageId": "page-1",
+                    "pageId": "journal-yesterday",
+                    "parentId": "journal-yesterday",
+                    "order": "a0",
                     "createdAt": 1775910000000,
-                    "updatedAt": 1775910000000
+                    "updatedAt": 1775910000000,
+                    "journalTitle": "Apr 12th, 2026",
+                    "journalDay": 20260412
                   },
                   {
                     "uuid": "old",
                     "kind": "block",
                     "title": "Older",
-                    "pageId": "page-1",
+                    "pageId": "journal-today",
+                    "parentId": "journal-today",
+                    "order": "a1",
                     "createdAt": 1776000000000,
-                    "updatedAt": 1776000000000
+                    "updatedAt": 1776000000000,
+                    "journalTitle": "Apr 13th, 2026",
+                    "journalDay": 20260413
                   }
                 ],
                 "selectedBlock": null,
@@ -1138,6 +1150,81 @@ private let testEmptySnapshotJSON = """
         #expect(store.sections[1].title == "Aug 13th, 2026")
         #expect(store.sections[1].blocks.map(\.uuid) == ["today-old", "today-new"])
         #expect(store.sections.flatMap(\.blocks).allSatisfy { $0.kind == "block" })
+    }
+
+    @Test @MainActor func journalSectionsUsePageMembershipAndOutlinerPreorder() async throws {
+        let store = LogseqChatStore { _ in
+            return """
+            {
+              "apiVersion": 1,
+              "ok": true,
+              "result": {
+                "revision": 1,
+                "query": "",
+                "blocks": [
+                  {
+                    "uuid": "second-root",
+                    "kind": "block",
+                    "title": "Second root",
+                    "pageId": "journal-today",
+                    "parentId": "journal-today",
+                    "order": "a2",
+                    "createdAt": 100,
+                    "updatedAt": 100,
+                    "journalTitle": "Aug 15th, 2026",
+                    "journalDay": 20260815
+                  },
+                  {
+                    "uuid": "other-page",
+                    "kind": "block",
+                    "title": "Other page",
+                    "pageId": "project-page",
+                    "parentId": "project-page",
+                    "order": "a0",
+                    "createdAt": 500,
+                    "updatedAt": 500
+                  },
+                  {
+                    "uuid": "child",
+                    "kind": "block",
+                    "title": "Child",
+                    "pageId": "journal-today",
+                    "parentId": "first-root",
+                    "order": "a0",
+                    "createdAt": 300,
+                    "updatedAt": 300,
+                    "journalTitle": "Aug 15th, 2026",
+                    "journalDay": 20260815
+                  },
+                  {
+                    "uuid": "first-root",
+                    "kind": "block",
+                    "title": "First root",
+                    "pageId": "journal-today",
+                    "parentId": "journal-today",
+                    "order": "a1",
+                    "createdAt": 400,
+                    "updatedAt": 400,
+                    "journalTitle": "Aug 15th, 2026",
+                    "journalDay": 20260815
+                  }
+                ],
+                "selectedBlock": null,
+                "lastRefreshAt": 500,
+                "graphName": "sync 2",
+                "isSearching": false
+              },
+              "error": null
+            }
+            """
+        }
+
+        store.search("")
+        try await waitUntil { store.snapshot.blocks.count == 4 }
+
+        #expect(store.sections.count == 1)
+        #expect(store.sections[0].blocks.map(\.uuid) == ["first-root", "child", "second-root"])
+        #expect(store.sections[0].blocks.map(\.order) == ["a1", "a0", "a2"])
     }
 
 }

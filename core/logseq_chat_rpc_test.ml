@@ -160,6 +160,7 @@ let () =
               ; title = "Synced capture"
               ; page_id = "journal/2026-08-15"
               ; parent_id = None
+              ; order = None
               ; created_at = 1_776_000_000_000
               ; updated_at = 1_776_000_000_000
               ; sync_status = "synced"
@@ -224,6 +225,7 @@ let () =
       ; title = "Server title"
       ; page_id = "journal/2026-08-15"
       ; parent_id = None
+      ; order = None
       ; created_at = 1_776_000_000_000
       ; updated_at = 1_776_000_000_000
       ; sync_status = "synced"
@@ -239,6 +241,8 @@ let () =
   let session =
     Logseq_chat_rpc.create ~graph_blocks:(fun () -> Some [ authoritative ]) ()
   in
+  Logseq_chat_model.upsert_journal_page
+    session.model ~uuid:"journal/2026-08-15" ~journal_day:20260815;
   Logseq_chat_model.upsert_blocks
     session.model [ authoritative ] ~refresh_time:1_776_000_000_000;
   let response =

@@ -128,6 +128,7 @@ let block_json (block : Model.block) =
      ; "tags", `List (List.map summary_json block.tags)
      ; "references", `List (List.map summary_json block.references)
      ]
+     @ (match block.order with Some value -> [ "order", `String value ] | None -> [])
      @ status_fields
      @ (match block.asset_type with Some value -> [ "assetType", `String value ] | None -> [])
      @ (match block.asset_size with Some value -> [ "assetSize", `Int value ] | None -> [])
@@ -236,7 +237,7 @@ let snapshot_visible session =
   let query = String.trim session.model.query |> String.lowercase_ascii in
   let blocks =
     if String.equal query ""
-    then blocks
+    then Model.visible_from session.model blocks
     else
       List.filter
         (fun (block : Model.block) ->

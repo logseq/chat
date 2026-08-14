@@ -66,6 +66,7 @@ let block db eid =
     in
     let page_id = Option.value (referenced_uuid "block/page") ~default:"" in
     let parent_id = referenced_uuid "block/parent" in
+    let order = string_value (value db eid "block/order") in
     let created_at = Option.value (int_value (value db eid "block/created-at")) ~default:0 in
     let updated_at =
       Option.value (int_value (value db eid "block/updated-at")) ~default:created_at
@@ -85,6 +86,7 @@ let block db eid =
         ; title
         ; page_id
         ; parent_id
+        ; order
         ; created_at
         ; updated_at
         ; sync_status = "synced"

@@ -78,6 +78,7 @@ struct ContentView: View {
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
                 baseURL: $baseURL,
+                graphDatabasePath: selectedGraphDatabasePath,
                 apply: {
                     settingsPresented = false
                     connectWithCurrentAccessToken()
@@ -317,6 +318,22 @@ struct ContentView: View {
 
     private var databasePath: String {
         LogseqChatRuntime.shared.databasePath
+    }
+
+    private var selectedGraphDatabasePath: String? {
+        #if !SKIP
+        let graphID = store.snapshot.selectedGraphId ?? selectedGraphID
+        guard !graphID.isEmpty else { return nil }
+        let directoryName = graphID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? graphID
+        let databaseURL = URL(fileURLWithPath: databasePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("graphs")
+            .appendingPathComponent(directoryName)
+            .appendingPathComponent("graph.sqlite")
+        return FileManager.default.fileExists(atPath: databaseURL.path) ? databaseURL.path : nil
+        #else
+        return nil
+        #endif
     }
 
     private func connectWithCurrentAccessToken() {
@@ -916,10 +933,9 @@ struct ContentView: View {
     private func dismissComposerEditing() {
         composerExpanded = false
         composerFocused = false
-        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            selectedTaskStatus = nil
-            editingBlock = nil
-        }
+        draft = ""
+        selectedTaskStatus = nil
+        editingBlock = nil
     }
 
     private func sendDraft() {
@@ -1094,6 +1110,7 @@ private struct ImportedAsset: Sendable {
 
 private struct ConnectionSettingsView: View {
     @Binding var baseURL: String
+    let graphDatabasePath: String?
     let apply: () -> Void
     let signOut: () -> Void
     @Environment(\.dismiss) private var dismiss
@@ -1105,6 +1122,17 @@ private struct ConnectionSettingsView: View {
                     TextField("Base URL", text: $baseURL)
                         .accessibilityIdentifier("field.base-url")
                 }
+                #if !SKIP
+                if let graphDatabasePath {
+                    let graphDatabaseURL = URL(fileURLWithPath: graphDatabasePath)
+                    Section("Graph Data") {
+                        ShareLink(item: graphDatabaseURL) {
+                            Text("Export Graph SQLite DB")
+                        }
+                        .accessibilityIdentifier("button.export-graph-database")
+                    }
+                }
+                #endif
                 Section {
                     Button("Sign Out", role: .destructive) {
                         signOut()

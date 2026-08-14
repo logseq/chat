@@ -86,6 +86,7 @@ let () =
         ; title = "Existing server block"
         ; page_id = "journal/2026-04-13"
         ; parent_id = None
+        ; order = None
         ; created_at = 1_776_000_000_001
         ; updated_at = 1_776_000_000_001
         ; sync_status = "synced"
@@ -108,6 +109,8 @@ let () =
             ~graph_blocks:(fun () -> Some [ remote_block ])
             ()
         in
+        Logseq_chat_model.upsert_journal_page
+          second_rpc.model ~uuid:"journal/2026-04-13" ~journal_day:20260413;
         let response =
           Logseq_chat_rpc.call
             second_rpc

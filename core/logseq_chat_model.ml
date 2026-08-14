@@ -28,6 +28,7 @@ type block =
   ; title : string
   ; page_id : string
   ; parent_id : string option
+  ; order : string option
   ; created_at : int
   ; updated_at : int
   ; sync_status : string
@@ -67,6 +68,7 @@ let schema =
   ; "block/title", one ~value_type:StringType ()
   ; "block/page-id", one ~value_type:StringType ~indexed:true ()
   ; "block/parent-id", one ~value_type:StringType ()
+  ; "block/order", one ~value_type:StringType ~indexed:true ()
   ; "block/created-at", one ~value_type:NumberType ~indexed:true ()
   ; "block/updated-at", one ~value_type:NumberType ~indexed:true ()
   ; "block/sync-status", one ~value_type:StringType ~indexed:true ()
@@ -236,6 +238,7 @@ let read_block model uuid =
       ; title = string_attr model.db entity_ref "block/title" ""
       ; page_id = string_attr model.db entity_ref "block/page-id" ""
       ; parent_id = option_string_attr model.db entity_ref "block/parent-id"
+      ; order = option_string_attr model.db entity_ref "block/order"
       ; created_at = int_attr model.db entity_ref "block/created-at" 0
       ; updated_at = int_attr model.db entity_ref "block/updated-at" 0
       ; sync_status = string_attr model.db entity_ref "block/sync-status" "synced"
@@ -312,6 +315,75 @@ let compare_recent left right =
   | value -> value
 ;;
 
+let compare_outliner left right =
+  match left.order, right.order with
+  | Some left_order, Some right_order ->
+    (match String.compare left_order right_order with
+     | 0 -> String.compare left.uuid right.uuid
+     | value -> value)
+  | Some _, None -> -1
+  | None, Some _ -> 1
+  | None, None ->
+    (match Int.compare left.created_at right.created_at with
+     | 0 -> String.compare left.uuid right.uuid
+     | value -> value)
+;;
+
+let outliner_preorder ~page_id blocks =
+  let by_uuid = Hashtbl.create (List.length blocks) in
+  let children = Hashtbl.create (List.length blocks) in
+  List.iter (fun block -> Hashtbl.replace by_uuid block.uuid block) blocks;
+  List.iter
+    (fun block ->
+      let parent =
+        match block.parent_id with
+        | Some parent_id when Hashtbl.mem by_uuid parent_id -> parent_id
+        | Some parent_id when String.equal parent_id page_id -> page_id
+        | Some _ | None -> page_id
+      in
+      let siblings = Option.value (Hashtbl.find_opt children parent) ~default:[] in
+      Hashtbl.replace children parent (block :: siblings))
+    blocks;
+  let visited = Hashtbl.create (List.length blocks) in
+  let rec walk parent =
+    Option.value (Hashtbl.find_opt children parent) ~default:[]
+    |> List.sort compare_outliner
+    |> List.concat_map (fun block ->
+      if Hashtbl.mem visited block.uuid
+      then []
+      else (
+        Hashtbl.replace visited block.uuid ();
+        block :: walk block.uuid))
+  in
+  let ordered = walk page_id in
+  let remaining =
+    blocks
+    |> List.filter (fun block -> not (Hashtbl.mem visited block.uuid))
+    |> List.sort compare_outliner
+  in
+  ordered @ remaining
+;;
+
+let journal_blocks model blocks =
+  let by_page = Hashtbl.create 8 in
+  List.iter
+    (fun block ->
+      if is_recent_feed_block model block
+      then (
+        let page_blocks = Option.value (Hashtbl.find_opt by_page block.page_id) ~default:[] in
+        Hashtbl.replace by_page block.page_id (block :: page_blocks)))
+    blocks;
+  Hashtbl.to_seq by_page
+  |> List.of_seq
+  |> List.sort (fun (left_page, _) (right_page, _) ->
+    let left_day = int_attr model.db (block_ref left_page) "page/journal-day" 0 in
+    let right_day = int_attr model.db (block_ref right_page) "page/journal-day" 0 in
+    match Int.compare left_day right_day with
+    | 0 -> String.compare left_page right_page
+    | value -> value)
+  |> List.concat_map (fun (page_id, page_blocks) -> outliner_preorder ~page_id page_blocks)
+;;
+
 let take count values =
   let rec loop remaining acc = function
     | _ when remaining <= 0 -> List.rev acc
@@ -322,7 +394,11 @@ let take count values =
 ;;
 
 let recent_blocks model =
-  all_blocks model |> List.filter (is_recent_feed_block model) |> List.sort compare_recent |> take 100
+  all_blocks model
+  |> List.filter (is_recent_feed_block model)
+  |> List.sort compare_recent
+  |> take 100
+  |> journal_blocks model
 ;;
 
 let selected_block model =
@@ -454,6 +530,11 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
           then block.page_id
           else Option.fold ~none:"" ~some:(fun existing -> existing.page_id) existing_block
         in
+        let order =
+          match block.order with
+          | Some _ -> block.order
+          | None -> Option.bind existing_block (fun existing -> existing.order)
+        in
         [ Add (entity_ref, "block/uuid", String block.uuid)
         ; Add (entity_ref, "block/kind", String block.kind)
         ; Add (entity_ref, "block/title", String block.title)
@@ -478,6 +559,9 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
            | None -> [])
         @ (match block.local_path with
            | Some value -> [ Add (entity_ref, "block/local-path", String value) ]
+           | None -> [])
+        @ (match order with
+           | Some value -> [ Add (entity_ref, "block/order", String value) ]
            | None -> [])
         @
         match block.parent_id with
@@ -538,6 +622,7 @@ let cache_local_message model ~uuid ~title ~now =
       ; title
       ; page_id
       ; parent_id = None
+      ; order = None
       ; created_at = now
       ; updated_at = now
       ; sync_status = "pending"
@@ -557,7 +642,7 @@ let cache_local_task model ~uuid ~title ~status ~now =
   let page_id = journal_page_id_for_ms now in
   upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
   upsert_blocks model
-    [ { uuid; kind = "task"; title; page_id; parent_id = None; created_at = now
+    [ { uuid; kind = "task"; title; page_id; parent_id = None; order = None; created_at = now
       ; updated_at = now; sync_status = "pending"; tags = []; references = []
       ; status = Some status; asset_type = None; asset_size = None
       ; asset_checksum = None; local_path = None } ]
@@ -568,7 +653,7 @@ let cache_local_asset model ~uuid ~title ~asset_type ~asset_size ~asset_checksum
   let page_id = journal_page_id_for_ms now in
   upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
   upsert_blocks model
-    [ { uuid; kind = "asset"; title; page_id; parent_id = None; created_at = now
+    [ { uuid; kind = "asset"; title; page_id; parent_id = None; order = None; created_at = now
       ; updated_at = now; sync_status = "pending"; tags = []; references = []
       ; status = None; asset_type = Some asset_type; asset_size = Some asset_size
       ; asset_checksum = Some asset_checksum; local_path = Some local_path } ]
@@ -667,4 +752,22 @@ let update_block_status model ~uuid ~status ~now =
 
 let visible_blocks model =
   if String.equal (String.trim model.query) "" then recent_blocks model else search model model.query
+;;
+
+let visible_from model blocks =
+  if String.equal (String.trim model.query) ""
+  then
+    blocks
+    |> List.filter (is_recent_feed_block model)
+    |> List.sort compare_recent
+    |> take 100
+    |> journal_blocks model
+  else
+    blocks
+    |> List.filter (fun block ->
+      not (String.equal block.kind "page")
+      && not (String.equal (String.trim block.title) "")
+      && title_matches model.query block)
+    |> List.sort compare_recent
+    |> take 100
 ;;

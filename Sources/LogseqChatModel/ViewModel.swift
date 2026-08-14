@@ -126,6 +126,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     public let title: String
     public let pageId: String
     public let parentId: String?
+    public let order: String?
     public let createdAt: Int64
     public let updatedAt: Int64
     public let syncStatus: String?
@@ -145,6 +146,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         title: String,
         pageId: String,
         parentId: String?,
+        order: String? = nil,
         createdAt: Int64,
         updatedAt: Int64,
         syncStatus: String?,
@@ -163,6 +165,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         self.title = title
         self.pageId = pageId
         self.parentId = parentId
+        self.order = order
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.syncStatus = syncStatus
@@ -178,7 +181,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, kind, title, pageId, parentId, createdAt, updatedAt, syncStatus
+        case uuid, kind, title, pageId, parentId, order, createdAt, updatedAt, syncStatus
         case journalTitle, journalDay, tags, references, status, assetType, assetSize
         case assetChecksum, localPath
     }
@@ -190,6 +193,7 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         title = try values.decode(String.self, forKey: .title)
         pageId = try values.decode(String.self, forKey: .pageId)
         parentId = try values.decodeIfPresent(String.self, forKey: .parentId)
+        order = try values.decodeIfPresent(String.self, forKey: .order)
         createdAt = try values.decode(Int64.self, forKey: .createdAt)
         updatedAt = try values.decode(Int64.self, forKey: .updatedAt)
         syncStatus = try values.decodeIfPresent(String.self, forKey: .syncStatus)
@@ -595,34 +599,63 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public var sections: [LogseqBlockSection] {
-        let newestFirstBlocks = snapshot.blocks.sorted { left, right in
-            if left.createdAt == right.createdAt {
-                return left.uuid < right.uuid
-            }
-            return left.createdAt > right.createdAt
-        }
+        let visibleBlocks = snapshot.isSearching
+            ? snapshot.blocks
+            : snapshot.blocks.filter { $0.journalDay != nil }
         var blocksByJournal: [String: [LogseqBlock]] = [:]
         var titlesByJournal: [String: String] = [:]
-        for block in newestFirstBlocks {
+        for block in visibleBlocks {
             blocksByJournal[block.journalSectionID, default: []].append(block)
             titlesByJournal[block.journalSectionID] = block.dayTitle
         }
         return blocksByJournal.map { id, blocks in
-            let oldestFirstBlocks = blocks.sorted { left, right in
-                if left.createdAt == right.createdAt {
-                    return left.uuid < right.uuid
-                }
-                return left.createdAt < right.createdAt
-            }
-            return LogseqBlockSection(id: id, title: titlesByJournal[id] ?? id, blocks: oldestFirstBlocks)
+            let orderedBlocks = Self.outlinerPreorder(blocks, pageId: blocks.first?.pageId ?? "")
+            return LogseqBlockSection(id: id, title: titlesByJournal[id] ?? id, blocks: orderedBlocks)
         }.sorted { left, right in
-            let leftCreatedAt = left.blocks.isEmpty ? 0 : left.blocks[left.blocks.count - 1].createdAt
-            let rightCreatedAt = right.blocks.isEmpty ? 0 : right.blocks[right.blocks.count - 1].createdAt
-            if leftCreatedAt == rightCreatedAt {
-                return left.id < right.id
+            if let leftDay = Int(left.id), let rightDay = Int(right.id), leftDay != rightDay {
+                return leftDay < rightDay
             }
-            return leftCreatedAt < rightCreatedAt
+            return left.id < right.id
         }
+    }
+
+    private static func outlinerPreorder(_ blocks: [LogseqBlock], pageId: String) -> [LogseqBlock] {
+        let blockIds = Set(blocks.map(\.uuid))
+        var children: [String: [LogseqBlock]] = [:]
+        for block in blocks {
+            let parentId = block.parentId.flatMap { blockIds.contains($0) ? $0 : nil } ?? pageId
+            children[parentId, default: []].append(block)
+        }
+        func sorted(_ siblings: [LogseqBlock]) -> [LogseqBlock] {
+            siblings.sorted { left, right in
+                if let leftOrder = left.order {
+                    if let rightOrder = right.order, leftOrder != rightOrder {
+                        return leftOrder < rightOrder
+                    }
+                    if right.order == nil {
+                        return true
+                    }
+                } else if right.order != nil {
+                    return false
+                }
+                if left.createdAt != right.createdAt {
+                    return left.createdAt < right.createdAt
+                }
+                return left.uuid < right.uuid
+            }
+        }
+        var visited = Set<String>()
+        var result: [LogseqBlock] = []
+        func appendChildren(of parentId: String) {
+            for block in sorted(children[parentId] ?? []) where !visited.contains(block.uuid) {
+                visited.insert(block.uuid)
+                result.append(block)
+                appendChildren(of: block.uuid)
+            }
+        }
+        appendChildren(of: pageId)
+        result.append(contentsOf: sorted(blocks.filter { !visited.contains($0.uuid) }))
+        return result
     }
 
     public func open(path: String) {
@@ -1231,6 +1264,7 @@ private struct OpenGraphPayload: Encodable {
             title: title,
             pageId: block.pageId,
             parentId: block.parentId,
+            order: block.order,
             createdAt: block.createdAt,
             updatedAt: now,
             syncStatus: block.syncStatus,

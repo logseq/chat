@@ -14,7 +14,7 @@ let assert_int_equal label expected actual =
 
 let block ~uuid ~kind ~title ~page_id ~created_at =
   Logseq_chat_model.
-    { uuid; kind; title; page_id; parent_id = None; created_at
+    { uuid; kind; title; page_id; parent_id = None; order = None; created_at
     ; updated_at = created_at; sync_status = "synced"; tags = []; references = []
     ; status = None; asset_type = None; asset_size = None; asset_checksum = None
     ; local_path = None }
@@ -33,14 +33,14 @@ let assert_recent_blocks_limit_and_order () =
   let recent_blocks = Logseq_chat_model.recent_blocks model in
   assert_int_equal "recent block count" 100 (List.length recent_blocks);
   (match recent_blocks with
-   | newest :: _ ->
-     assert_equal "newest block uuid" "local-104" newest.uuid;
-     assert_equal "newest block title" "Capture 104" newest.title
-   | [] -> failwith "expected recent blocks");
-  (match List.rev recent_blocks with
    | oldest_kept :: _ ->
      assert_equal "oldest kept block uuid" "local-005" oldest_kept.uuid;
      assert_equal "oldest kept block title" "Capture 005" oldest_kept.title
+   | [] -> failwith "expected recent blocks");
+  (match List.rev recent_blocks with
+   | newest :: _ ->
+     assert_equal "newest block uuid" "local-104" newest.uuid;
+     assert_equal "newest block title" "Capture 104" newest.title
    | [] -> failwith "expected recent blocks")
 ;;
 
@@ -99,6 +99,38 @@ let assert_recent_blocks_require_a_current_or_past_journal_page () =
   match Logseq_chat_model.recent_blocks model with
   | [ recent ] -> assert_equal "only past journal block is recent" "past-block" recent.uuid
   | blocks -> failwith (Printf.sprintf "expected one past journal block, got %d" (List.length blocks))
+;;
+
+let assert_journal_blocks_follow_page_tree_and_outliner_order () =
+  let model = Logseq_chat_model.create () in
+  Logseq_chat_model.upsert_journal_page model ~uuid:"journal-today" ~journal_day:20260815;
+  let journal_block uuid parent_id order created_at =
+    { (block ~uuid ~kind:"block" ~title:uuid ~page_id:"journal-today" ~created_at) with
+      parent_id = Some parent_id
+    ; order = Some order
+    }
+  in
+  let other_page =
+    { (block ~uuid:"other-page" ~kind:"block" ~title:"Other" ~page_id:"project" ~created_at:500) with
+      parent_id = Some "project"
+    ; order = Some "a0"
+    }
+  in
+  Logseq_chat_model.upsert_blocks
+    model
+    [ journal_block "second-root" "journal-today" "a2" 100
+    ; other_page
+    ; journal_block "child" "first-root" "a0" 300
+    ; journal_block "first-root" "journal-today" "a1" 400
+    ]
+    ~refresh_time:500;
+  let uuids =
+    Logseq_chat_model.recent_blocks model
+    |> List.map (fun (block : Logseq_chat_model.block) -> block.uuid)
+  in
+  match uuids with
+  | [ "first-root"; "child"; "second-root" ] -> ()
+  | _ -> failwith ("unexpected journal outliner order: " ^ String.concat ", " uuids)
 ;;
 
 let assert_search_excludes_pages_and_empty_blocks () =
@@ -189,7 +221,7 @@ let assert_uploaded_asset_reconciles_server_uuid () =
   Logseq_chat_model.upsert_blocks
     model
     [ { uuid = "server-asset"; kind = "asset"; title = "photo"; page_id = "remote-journal"
-      ; parent_id = Some "remote-journal"; created_at = 1_776_000_000_100
+      ; parent_id = Some "remote-journal"; order = None; created_at = 1_776_000_000_100
       ; updated_at = 1_776_000_000_100; sync_status = "synced"; tags = []; references = []
       ; status = None; asset_type = None; asset_size = None; asset_checksum = None
       ; local_path = None } ]
@@ -297,6 +329,7 @@ let () =
   assert_refresh_preserves_existing_created_at_when_remote_omits_it ();
   assert_recent_blocks_excludes_pages_and_empty_blocks ();
   assert_recent_blocks_require_a_current_or_past_journal_page ();
+  assert_journal_blocks_follow_page_tree_and_outliner_order ();
   assert_search_excludes_pages_and_empty_blocks ();
   assert_partial_search_result_preserves_journal_relation ();
   assert_task_and_asset_metadata_persist ();

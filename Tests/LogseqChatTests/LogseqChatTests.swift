@@ -218,6 +218,19 @@ import Foundation
         #expect(!controlSource.contains(".platformGlassCapsule()"))
     }
 
+    @Test func settingsExportsTheSelectedGraphSQLiteDatabase() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("graphDatabasePath: selectedGraphDatabasePath"))
+        #expect(source.contains("private var selectedGraphDatabasePath: String?"))
+        #expect(source.contains("appendingPathComponent(\"graphs\")"))
+        #expect(source.contains("appendingPathComponent(\"graph.sqlite\")"))
+        #expect(source.contains("ShareLink(item: graphDatabaseURL)"))
+        #expect(source.contains("Text(\"Export Graph SQLite DB\")"))
+    }
+
     @Test func iosDeclaresAndSchedulesBackgroundRefresh() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let plistData = try Data(contentsOf: root.appendingPathComponent("Darwin/Info.plist"))
@@ -693,7 +706,7 @@ import Foundation
         #expect(source.contains("store.update(block: editingBlock, title: draft, status: selectedTaskStatus)"))
     }
 
-    @Test func dismissingAnEmptyComposerForgetsTaskStatusAndEditTarget() throws {
+    @Test func dismissingComposerClearsDraftTaskStatusAndEditTarget() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
@@ -702,7 +715,8 @@ import Foundation
         let dismissEnd = try #require(remainingSource.range(of: "\n    }\n\n    private func sendDraft()"))
         let dismissSource = remainingSource[..<dismissEnd.upperBound]
 
-        #expect(dismissSource.contains("if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty"))
+        #expect(!dismissSource.contains("if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty"))
+        #expect(dismissSource.contains("draft = \"\""))
         #expect(dismissSource.contains("selectedTaskStatus = nil"))
         #expect(dismissSource.contains("editingBlock = nil"))
     }

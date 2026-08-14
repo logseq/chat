@@ -328,6 +328,7 @@ let block_of_json ?(fallback_time = 0) json =
           ; title
           ; page_id = string_member "page-id" fields
           ; parent_id = option_string_member "parent-id" fields
+          ; order = option_string_member "order" fields
           ; created_at =
               (match int_member "created-at" fields with
                | 0 -> fallback_time

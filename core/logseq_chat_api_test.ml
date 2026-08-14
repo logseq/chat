@@ -43,8 +43,9 @@ let contains text substring =
 let () =
   let explicit =
     required_single_block
-      {|{"results":[{"uuid":"block-explicit","title":"Explicit","kind":"block","created-at":1776000000000,"updated-at":1776000100000}]}|}
+      {|{"results":[{"uuid":"block-explicit","title":"Explicit","kind":"block","order":"a1","created-at":1776000000000,"updated-at":1776000100000}]}|}
   in
+  assert_some_string "explicit outliner order" "a1" explicit.order;
   assert_int_equal "explicit created-at" 1_776_000_000_000 explicit.created_at;
   assert_int_equal "explicit updated-at" 1_776_000_100_000 explicit.updated_at;
   let missing =
