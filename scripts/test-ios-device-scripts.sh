@@ -182,11 +182,12 @@ fake_bin=$(mktemp -d /tmp/logseq-chat-fake-bin.XXXXXX)
 cat >"$fake_bin/xcrun" <<'SH'
 #!/usr/bin/env bash
 if [[ "$*" == "devicectl list devices" ]]; then
+  device_state=${FAKE_DEVICE_STATE:-unavailable}
   cat <<'DEVICES'
 Name        Hostname                           Identifier                             State                Model
 ---------   --------------------------------   ------------------------------------   ------------------   ---------------------------
-iPhone      iPhone.coredevice.local            ACC1F5DA-71E4-560F-9818-FC6B1517D6A0   unavailable          iPhone 15 (iPhone15,4)
 DEVICES
+  printf 'iPhone      iPhone.coredevice.local            ACC1F5DA-71E4-560F-9818-FC6B1517D6A0   %s          iPhone 15 (iPhone15,4)\n' "$device_state"
   exit 0
 fi
 
@@ -199,6 +200,24 @@ check_rejects \
   "device install reports unavailable target before build" \
   "target iOS device 'iPhone' is unavailable" \
   env PATH="$fake_bin:$PATH" \
+    LOGSEQ_CHAT_IOS_PROFILE="$fake_profile" \
+    LOGSEQ_CHAT_IOS_DEVICE=iPhone \
+    "$repo_root/scripts/install-mobile-ios-device.sh"
+
+check_rejects \
+  "device install accepts connected target" \
+  "unexpected xcrun invocation: --sdk iphoneos --show-sdk-path" \
+  env PATH="$fake_bin:$PATH" \
+    FAKE_DEVICE_STATE=connected \
+    LOGSEQ_CHAT_IOS_PROFILE="$fake_profile" \
+    LOGSEQ_CHAT_IOS_DEVICE=iPhone \
+    "$repo_root/scripts/install-mobile-ios-device.sh"
+
+check_rejects \
+  "device install accepts available target" \
+  "unexpected xcrun invocation: --sdk iphoneos --show-sdk-path" \
+  env PATH="$fake_bin:$PATH" \
+    FAKE_DEVICE_STATE=available \
     LOGSEQ_CHAT_IOS_PROFILE="$fake_profile" \
     LOGSEQ_CHAT_IOS_DEVICE=iPhone \
     "$repo_root/scripts/install-mobile-ios-device.sh"

@@ -28,7 +28,7 @@ device_state=$(
 )
 [[ -n $device_state ]] || die "target iOS device '$device' was not found
 $devices"
-[[ $device_state == "available" ]] || die "target iOS device '$device' is $device_state
+[[ $device_state == "available" || $device_state == "connected" ]] || die "target iOS device '$device' is $device_state
 $devices"
 
 build_log=$(mktemp /tmp/logseq-chat-ios-device-build.XXXXXX)
