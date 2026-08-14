@@ -171,6 +171,61 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.first?.updatedAt == 1_776_000_100_000)
     }
 
+    @Test @MainActor func taskStatusUpdatesOptimisticallyAndPersistsCustomChoice() async throws {
+        let recorder = RequestRecorder()
+        let waiting = LogseqTaskStatus(
+            uuid: "custom-waiting",
+            ident: "user.status/waiting",
+            title: "Waiting",
+            icon: LogseqIcon(type: "tabler-icon", id: "clock", color: "#7c3aed")
+        )
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            let status = request.contains("\"action\":\"updateBlockStatus\"")
+                ? ##"{"uuid":"custom-waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}"##
+                : ##"{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo"}"##
+            return """
+            {
+              "apiVersion": 1,
+              "ok": true,
+              "result": {
+                "revision": 2,
+                "query": "",
+                "blocks": [{
+                  "uuid": "task-1",
+                  "kind": "task",
+                  "title": "Follow up",
+                  "pageId": "journal-1",
+                  "createdAt": 1776000000000,
+                  "updatedAt": 1776000100000,
+                  "status": \(status)
+                }],
+                "selectedBlock": null,
+                "lastRefreshAt": 1776000100000,
+                "isSearching": false
+              },
+              "error": null
+            }
+            """
+        }
+        store.open(path: "/tmp/status-test.sqlite")
+        let block = try #require(store.snapshot.blocks.first)
+
+        store.updateStatus(block: block, status: waiting)
+
+        #expect(store.snapshot.blocks.first?.status?.uuid == "custom-waiting")
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"updateBlockStatus\"") }
+        }
+        #expect(store.snapshot.blocks.first?.status?.uuid == "custom-waiting")
+        let request = try #require(
+            recorder.all.last { $0.contains("\"action\":\"updateBlockStatus\"") }
+        )
+        #expect(request.contains("\\\"uuid\\\":\\\"task-1\\\""))
+        #expect(request.contains("\\\"uuid\\\":\\\"custom-waiting\\\""))
+        #expect(request.contains("\\\"iconColor\\\":\\\"#7c3aed\\\""))
+    }
+
     @Test @MainActor func configureDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

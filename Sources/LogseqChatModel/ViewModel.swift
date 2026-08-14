@@ -295,6 +295,12 @@ public struct LogseqChatRPCRequest: Encodable {
 private struct UpdateBlockPayload: Encodable {
     let uuid: String
     let title: String
+    let status: TaskStatusPayload?
+}
+
+private struct UpdateBlockStatusPayload: Encodable {
+    let uuid: String
+    let status: TaskStatusPayload
 }
 
 private struct SendBlockPayload: Encodable {
@@ -510,7 +516,9 @@ private struct AddAssetPayload: Encodable {
         )
     }
 
-    private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
+    private func dispatchEncoded<T: Encodable>(
+        _ action: String, _ payloadValue: T, syncPendingAfter: Bool = true
+    ) {
         do {
             let payloadData = try JSONEncoder().encode(payloadValue)
             guard let payload = String(data: payloadData, encoding: .utf8) else {
@@ -518,9 +526,15 @@ private struct AddAssetPayload: Encodable {
                 logger.error("Core request encoding failed: \(action, privacy: .public) payload was not UTF-8")
                 return
             }
-            performAsyncThenSyncPending(
-                LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: action, payload: payload))
+            let request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: action, payload: payload)
             )
+            if syncPendingAfter {
+                performAsyncThenSyncPending(request)
+            } else {
+                performAsync(request)
+            }
         } catch {
             lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
             logger.error("Core request encoding failed: \(action, privacy: .public)")
@@ -541,20 +555,37 @@ private struct AddAssetPayload: Encodable {
     }
 
     public func update(block: LogseqBlock, title: String) {
+        update(block: block, title: title, status: block.status)
+    }
+
+    public func update(block: LogseqBlock, title: String, status: LogseqTaskStatus?) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        do {
-            let payloadData = try JSONEncoder().encode(UpdateBlockPayload(uuid: block.uuid, title: trimmed))
-            guard let payload = String(data: payloadData, encoding: .utf8) else {
-                lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode update payload")
-                logger.error("Core request encoding failed: update payload was not UTF-8")
-                return
-            }
-            performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "updateBlock", payload: payload)))
-        } catch {
-            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
-            logger.error("Core request encoding failed: updateBlock, message: \(String(describing: error), privacy: .public)")
+        let statusPayload = status.map {
+            TaskStatusPayload(
+                uuid: $0.uuid, ident: $0.ident, title: $0.title,
+                iconType: $0.icon?.type, iconId: $0.icon?.id, iconColor: $0.icon?.color
+            )
         }
+        applyOptimisticUpdate(block: block, title: trimmed, status: status)
+        dispatchEncoded(
+            "updateBlock",
+            UpdateBlockPayload(uuid: block.uuid, title: trimmed, status: statusPayload),
+            syncPendingAfter: false
+        )
+    }
+
+    public func updateStatus(block: LogseqBlock, status: LogseqTaskStatus) {
+        let statusPayload = TaskStatusPayload(
+            uuid: status.uuid, ident: status.ident, title: status.title,
+            iconType: status.icon?.type, iconId: status.icon?.id, iconColor: status.icon?.color
+        )
+        applyOptimisticUpdate(block: block, title: block.title, status: status)
+        dispatchEncoded(
+            "updateBlockStatus",
+            UpdateBlockStatusPayload(uuid: block.uuid, status: statusPayload),
+            syncPendingAfter: false
+        )
     }
 
     public func select(_ block: LogseqBlock) {
@@ -728,6 +759,43 @@ private struct AddAssetPayload: Encodable {
 
     private func applyOptimisticSend(title: String, uuid: String, now: Int64) {
         applyOptimisticBlock(title: title, uuid: uuid, kind: "block", now: now)
+    }
+
+    private func applyOptimisticUpdate(
+        block: LogseqBlock, title: String, status: LogseqTaskStatus?
+    ) {
+        let now = Self.nowMilliseconds()
+        let updatedBlock = LogseqBlock(
+            uuid: block.uuid,
+            kind: status == nil ? block.kind : "task",
+            title: title,
+            pageId: block.pageId,
+            parentId: block.parentId,
+            createdAt: block.createdAt,
+            updatedAt: now,
+            syncStatus: block.syncStatus,
+            journalTitle: block.journalTitle,
+            journalDay: block.journalDay,
+            tags: block.tags,
+            references: block.references,
+            status: status,
+            assetType: block.assetType,
+            assetSize: block.assetSize,
+            assetChecksum: block.assetChecksum,
+            localPath: block.localPath
+        )
+        snapshot = LogseqChatSnapshot(
+            revision: snapshot.revision + 1,
+            query: snapshot.query,
+            blocks: snapshot.blocks.map { $0.uuid == block.uuid ? updatedBlock : $0 },
+            selectedBlock: snapshot.selectedBlock,
+            lastRefreshAt: snapshot.lastRefreshAt,
+            graphName: snapshot.graphName,
+            isSearching: snapshot.isSearching,
+            relatedBlocks: snapshot.relatedBlocks,
+            taskStatuses: snapshot.taskStatuses
+        )
+        lastError = nil
     }
 
     private func applyOptimisticBlock(

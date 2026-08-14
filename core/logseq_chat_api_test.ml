@@ -131,6 +131,21 @@ let () =
     "task body"
     {|{"uuid":"client-task","title":"Follow up","status":"waiting"}|}
     (Option.value task.body ~default:"");
+  let status_update =
+    Logseq_chat_api.update_block_status_request
+      config
+      ~uuid:"task-1"
+      ~status:"custom-waiting"
+  in
+  assert_equal "status update method" "PUT" status_update.method_;
+  assert_equal
+    "status update URL"
+    "https://api.example/api/v1/graphs/graph-1/blocks/task-1/properties/Status"
+    status_update.url;
+  assert_equal
+    "status update body"
+    {|{"value":"custom-waiting"}|}
+    (Option.value status_update.body ~default:"");
   let upload =
     Logseq_chat_api.asset_upload_request
       config

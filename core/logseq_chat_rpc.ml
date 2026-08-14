@@ -78,6 +78,12 @@ let status_payload fields =
   | _ -> Error "missing field: status"
 ;;
 
+let optional_status_payload fields =
+  match assoc "status" fields with
+  | None | Some `Null -> Ok None
+  | Some _ -> Result.map Option.some (status_payload fields)
+;;
+
 let status_response_json (status : Model.status) =
   `Assoc
     ([ "uuid", `String status.uuid; "title", `String status.title ]
@@ -279,6 +285,19 @@ let resolve_graph session config =
             Error "PAT does not expose any Logseq graphs")))
 ;;
 
+let update_remote_block_status session config ~uuid (status : Model.status) =
+  match resolve_graph session config with
+  | Error message ->
+    debug "update block status graph resolution failed uuid=%s message=%s" uuid message
+  | Ok config ->
+    (match Http.send (Api.update_block_status_request config ~uuid ~status:status.uuid) with
+     | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> ()
+     | Ok response ->
+       debug "update block status HTTP failed uuid=%s status=%d" uuid response.Api.status
+     | Error message ->
+       debug "update block status request failed uuid=%s message=%s" uuid message)
+;;
+
 let search_remote session config query =
   let now = now_ms () in
   match Http.send (Api.search_request config query) with
@@ -468,33 +487,68 @@ let dispatch session action payload =
   | "clearRelated" ->
     session.related_blocks <- [];
     snapshot_visible session
+  | "updateBlockStatus" ->
+    (match payload with
+     | None -> failure ~code:"invalid_params" ~message:"updateBlockStatus requires a JSON payload"
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields, status_payload fields with
+           | Ok uuid, Ok status ->
+             (match Model.update_block_status session.model ~uuid ~status ~now:(now_ms ()) with
+              | Error message -> failure ~code:"unknown_block" ~message
+              | Ok () ->
+                Option.iter
+                  (fun config -> update_remote_block_status session config ~uuid status)
+                  session.config;
+                snapshot_visible session)
+           | Error message, _ | _, Error message ->
+             failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"updateBlockStatus payload must be an object"
+        | exception _ ->
+          failure ~code:"invalid_json" ~message:"updateBlockStatus payload must be valid JSON"))
   | "updateBlock" ->
     (match payload with
      | None -> failure ~code:"invalid_params" ~message:"updateBlock requires a JSON payload"
      | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
-          (match required_string "uuid" fields, required_string "title" fields with
-           | Ok uuid, Ok title ->
+          (match
+             required_string "uuid" fields,
+             required_string "title" fields,
+             optional_status_payload fields
+           with
+           | Ok uuid, Ok title, Ok status ->
              let title = String.trim title in
              if String.equal title ""
              then failure ~code:"invalid_params" ~message:"updateBlock title must not be empty"
              else (
                match Model.update_block_title session.model ~uuid ~title ~now:(now_ms ()) with
                | Ok () ->
+                 Option.iter
+                   (fun status ->
+                     ignore
+                       (Model.update_block_status
+                          session.model ~uuid ~status ~now:(now_ms ())))
+                   status;
                  (match session.config with
                   | Some config ->
                     (match resolve_graph session config with
                      | Error _ -> ()
                      | Ok config ->
-                    (match Http.send (Api.update_block_request config ~uuid ~title) with
-                     | Ok response when response.Api.status >= 200 && response.Api.status < 300
-                       -> ()
-                     | Ok _ | Error _ -> ()))
+                       (match Http.send (Api.update_block_request config ~uuid ~title) with
+                        | Ok response when response.Api.status >= 200 && response.Api.status < 300
+                          -> ()
+                       | Ok _ | Error _ -> ());
+                       Option.iter
+                         (fun (status : Model.status) ->
+                           update_remote_block_status session config ~uuid status)
+                         status)
                   | None -> ());
                  snapshot_visible session
                | Error message -> failure ~code:"unknown_block" ~message)
-           | Error message, _ | _, Error message -> failure ~code:"invalid_params" ~message)
+           | Error message, _, _ | _, Error message, _ | _, _, Error message ->
+             failure ~code:"invalid_params" ~message)
         | _ -> failure ~code:"invalid_params" ~message:"updateBlock payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"updateBlock payload must be valid JSON"))
   | "select" ->

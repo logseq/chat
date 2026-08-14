@@ -211,6 +211,19 @@ let update_block_request config ~uuid ~title =
   }
 ;;
 
+let update_block_status_request config ~uuid ~status =
+  { method_ = "PUT"
+  ; url =
+      Printf.sprintf
+        "%s/api/v1/graphs/%s/blocks/%s/properties/Status"
+        (api_root config)
+        (url_encode config.graph_id)
+        (url_encode uuid)
+  ; body = Some (to_string (`Assoc [ "value", `String status ]))
+  ; token = config.token
+  }
+;;
+
 let int_member name fields =
   match List.assoc_opt name fields with
   | Some (`Int value) -> value

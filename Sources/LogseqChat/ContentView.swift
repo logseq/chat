@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var detailBlock: LogseqBlock?
     @State private var fileImporterPresented = false
     @State private var selectedTaskStatus: LogseqTaskStatus?
+    @State private var editingBlock: LogseqBlock?
     #if !SKIP
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var photoPickerPresented = false
@@ -316,34 +317,20 @@ struct ContentView: View {
                                     .foregroundStyle(.secondary)
                                     .padding(.horizontal, 4)
                                 ForEach(section.blocks) { block in
-                                    if composerExpanded {
-                                        Button {
-                                            dismissComposerEditing()
-                                        } label: {
-                                            BlockRow(block: block)
-                                        }
-                                        .buttonStyle(.plain)
-                                    } else if block.kind == "asset" {
-                                        BlockRow(block: block) {
-                                            openAsset(block)
-                                        }
+                                    if block.kind == "asset" {
+                                        BlockRow(
+                                            block: block,
+                                            onOpenAsset: { openAsset(block) }
+                                        )
                                     } else {
-                                    #if SKIP
-                                        Button {
-                                            openBlock(block)
-                                        } label: {
-                                            BlockRow(block: block)
-                                        }
-                                        .buttonStyle(.plain)
-                                    #else
-                                        NavigationLink(value: block) {
-                                            BlockRow(block: block)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .simultaneousGesture(TapGesture().onEnded {
-                                            openBlock(block)
-                                        })
-                                    #endif
+                                        BlockRow(
+                                            block: block,
+                                            statuses: availableTaskStatuses,
+                                            onEdit: { editBlock(block) },
+                                            onStatusChange: { status in
+                                                store.updateStatus(block: block, status: status)
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -390,12 +377,12 @@ struct ContentView: View {
         72.0
     }
 
-    private func openBlock(_ block: LogseqBlock) {
-        dismissComposerEditing()
-        store.select(block)
-        #if SKIP
-        detailBlock = block
-        #endif
+    private func editBlock(_ block: LogseqBlock) {
+        editingBlock = block
+        draft = block.title
+        selectedTaskStatus = block.status
+        composerExpanded = true
+        focusComposer()
     }
 
     private func openAsset(_ block: LogseqBlock) {
@@ -704,10 +691,18 @@ struct ContentView: View {
     private func dismissComposerEditing() {
         composerExpanded = false
         composerFocused = false
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            selectedTaskStatus = nil
+            editingBlock = nil
+        }
     }
 
     private func sendDraft() {
-        if let selectedTaskStatus {
+        if let editingBlock {
+            store.update(block: editingBlock, title: draft, status: selectedTaskStatus)
+            self.editingBlock = nil
+            selectedTaskStatus = nil
+        } else if let selectedTaskStatus {
             store.sendTask(draft, status: selectedTaskStatus)
         } else {
             store.send(draft)
@@ -1102,7 +1097,10 @@ extension View {
 
 private struct BlockRow: View {
     let block: LogseqBlock
+    var statuses: [LogseqTaskStatus] = []
     var onOpenAsset: (() -> Void)? = nil
+    var onEdit: (() -> Void)? = nil
+    var onStatusChange: ((LogseqTaskStatus) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1111,7 +1109,22 @@ private struct BlockRow: View {
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if let status = block.status {
-                        TaskStatusIcon(status: status)
+                        Menu {
+                            ForEach(statuses) { option in
+                                Button {
+                                    onStatusChange?(option)
+                                } label: {
+                                    HStack {
+                                        TaskStatusIcon(status: option)
+                                        Text(verbatim: option.title)
+                                    }
+                                }
+                            }
+                        } label: {
+                            TaskStatusIcon(status: status)
+                                .frame(width: 24, height: 24)
+                        }
+                        .accessibilityLabel("Task status")
                     }
                     Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
                         .font(.body)
@@ -1151,6 +1164,9 @@ private struct BlockRow: View {
         .padding(14)
         .background(Color.white.opacity(0.72))
         .cornerRadius(18)
+        .onTapGesture {
+            onEdit?()
+        }
     }
 }
 
@@ -1168,7 +1184,6 @@ private struct AssetPreview: View {
                         .scaledToFit()
                         .frame(maxWidth: .infinity, maxHeight: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    assetTitle
                 }
             }
             .buttonStyle(.plain)
@@ -1291,11 +1306,36 @@ private struct TaskStatusIcon: View {
 
 private func taskStatusColor(hex: String) -> Color? {
     let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-    guard value.count == 6, let rgb = UInt64(value, radix: 16) else { return nil }
+    guard value.count == 6 else { return nil }
+    var rgb = 0
+    for character in value {
+        let digit: Int
+        switch character {
+        case "0": digit = 0
+        case "1": digit = 1
+        case "2": digit = 2
+        case "3": digit = 3
+        case "4": digit = 4
+        case "5": digit = 5
+        case "6": digit = 6
+        case "7": digit = 7
+        case "8": digit = 8
+        case "9": digit = 9
+        case "a", "A": digit = 10
+        case "b", "B": digit = 11
+        case "c", "C": digit = 12
+        case "d", "D": digit = 13
+        case "e", "E": digit = 14
+        case "f", "F": digit = 15
+        default: return nil
+        }
+        rgb = rgb * 16 + digit
+    }
+    let radix = 256
     return Color(
-        red: Double((rgb >> 16) & 0xff) / 255.0,
-        green: Double((rgb >> 8) & 0xff) / 255.0,
-        blue: Double(rgb & 0xff) / 255.0
+        red: Double(rgb / radix / radix) / 255.0,
+        green: Double((rgb / radix) % radix) / 255.0,
+        blue: Double(rgb % radix) / 255.0
     )
 }
 

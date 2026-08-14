@@ -106,3 +106,29 @@ let () =
     {|{"uuid":"asset-local","title":"photo.jpg","now":1776000000001,"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}|}
     "asset" "asset-local"
 ;;
+
+let () =
+  let session = Logseq_chat_rpc.create () in
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"sendTask","payload":"{\"text\":\"Follow up\",\"uuid\":\"task-status-local\",\"now\":1776000000000,\"status\":{\"uuid\":\"todo\",\"ident\":\"logseq.property/status.todo\",\"title\":\"Todo\"}}"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlockStatus","payload":"{\"uuid\":\"task-status-local\",\"status\":{\"uuid\":\"custom-waiting\",\"ident\":\"user.status/waiting\",\"title\":\"Waiting\",\"iconType\":\"tabler-icon\",\"iconId\":\"clock\",\"iconColor\":\"#7c3aed\"}}"}}|}
+  in
+  match from_string response with
+  | `Assoc fields ->
+    let result = required_assoc "result" fields in
+    (match required_list "blocks" result with
+     | [ `Assoc block ] ->
+       let status = required_assoc "status" block in
+       assert_equal "updated task status uuid" "custom-waiting" (required_string "uuid" status);
+       assert_equal
+         "updated task status color"
+         "#7c3aed"
+         (required_string "color" (required_assoc "icon" status))
+     | _ -> failwith "updateBlockStatus should return the updated task")
+  | _ -> failwith "updateBlockStatus should return an RPC response"
+;;

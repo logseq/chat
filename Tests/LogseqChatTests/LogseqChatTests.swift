@@ -282,7 +282,7 @@ import Foundation
         #expect(!bottomToolbarComposer.contains(".padding(.horizontal, 16)"))
         #expect(expandedComposer.contains("TextField(\"Capture\""))
         #expect(expandedComposer.contains("IconImage(name: \"arrow_upward\")"))
-        #expect(expandedComposer.contains(".platformGlassProminentButtonStyle()"))
+        #expect(!expandedComposer.contains(".platformGlassProminentButtonStyle()"))
     }
 
     @Test func expandedCaptureCanRefocusAfterDeletingDraft() throws {
@@ -391,6 +391,19 @@ import Foundation
         #expect(source.contains("private struct AssetPreview"))
     }
 
+    @Test func imageAssetPreviewDoesNotRenderItsTitle() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let imageStart = try #require(source.range(of: "if let path = block.localPath, isImage"))
+        let imageBranch = source[imageStart.lowerBound...]
+        let audioStart = try #require(imageBranch.range(of: "} else if let path = block.localPath, isAudio"))
+        let imageSource = imageBranch[..<audioStart.lowerBound]
+
+        #expect(imageSource.contains("Image(uiImage: image)"))
+        #expect(!imageSource.contains("assetTitle"))
+    }
+
     @Test func composerGlassUsesTheRequestedCornerRadiusInsteadOfDefaultCapsule() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
@@ -418,7 +431,7 @@ import Foundation
         #expect(blockList.contains("dismissComposerEditing()"))
     }
 
-    @Test func tappingBlockWhileComposerIsExpandedOnlyDismissesEditing() throws {
+    @Test func tappingBlockLoadsItIntoComposerInsteadOfNavigating() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
@@ -427,10 +440,43 @@ import Foundation
         let nextView = try #require(blockListSource.range(of: "\n\n    private var blockListContentTopPadding"))
         let blockList = blockListSource[..<nextView.lowerBound]
 
-        #expect(blockList.contains("if composerExpanded {"))
-        #expect(blockList.contains("Button {\n                                            dismissComposerEditing()"))
-        #expect(blockList.contains("} else {"))
-        #expect(blockList.contains("NavigationLink(value: block)"))
+        #expect(blockList.contains("editBlock(block)"))
+        #expect(!blockList.contains("NavigationLink(value: block)"))
+        #expect(!blockList.contains("openBlock(block)"))
+        #expect(source.contains("private func editBlock(_ block: LogseqBlock)"))
+        #expect(source.contains("editingBlock = block"))
+        #expect(source.contains("draft = block.title"))
+        #expect(source.contains("selectedTaskStatus = block.status"))
+        #expect(source.contains("store.update(block: editingBlock, title: draft, status: selectedTaskStatus)"))
+    }
+
+    @Test func dismissingAnEmptyComposerForgetsTaskStatusAndEditTarget() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let dismissStart = try #require(source.range(of: "private func dismissComposerEditing()"))
+        let remainingSource = source[dismissStart.lowerBound...]
+        let dismissEnd = try #require(remainingSource.range(of: "\n    }\n\n    private func sendDraft()"))
+        let dismissSource = remainingSource[..<dismissEnd.upperBound]
+
+        #expect(dismissSource.contains("if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty"))
+        #expect(dismissSource.contains("selectedTaskStatus = nil"))
+        #expect(dismissSource.contains("editingBlock = nil"))
+    }
+
+    @Test func taskStatusCanBePickedDirectlyFromTaskBlock() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let rowStart = try #require(source.range(of: "private struct BlockRow: View"))
+        let remainingSource = source[rowStart.lowerBound...]
+        let rowEnd = try #require(remainingSource.range(of: "\n\nprivate struct AssetPreview: View"))
+        let rowSource = remainingSource[..<rowEnd.lowerBound]
+
+        #expect(rowSource.contains("Menu"))
+        #expect(rowSource.contains("onStatusChange"))
+        #expect(rowSource.contains("TaskStatusIcon(status: status)"))
+        #expect(source.contains("store.updateStatus(block: block, status: status)"))
     }
 
     @Test func expandedComposerDoesNotOverlayAFullScreenGestureLayer() throws {
@@ -484,7 +530,7 @@ import Foundation
         let end = try #require(remainingSource.range(of: "\n    }\n\n    private func sendDraft()", options: []))
         let dismissComposerSource = remainingSource[..<end.upperBound]
 
-        #expect(source.contains("dismissComposerEditing()\n        store.select(block)"))
+        #expect(source.contains("private func editBlock(_ block: LogseqBlock)"))
         #expect(source.contains("guard !presented else {\n            dismissComposerEditing()"))
         #expect(dismissComposerSource.contains("composerExpanded = false"))
         #expect(dismissComposerSource.contains("composerFocused = false"))

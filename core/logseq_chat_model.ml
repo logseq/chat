@@ -558,6 +558,19 @@ let update_block_title model ~uuid ~title ~now =
     Ok ())
 ;;
 
+let update_block_status model ~uuid ~status ~now =
+  if not (block_exists model uuid)
+  then Error ("unknown block: " ^ uuid)
+  else (
+    commit
+      model
+      [ Add (block_ref uuid, "block/kind", String "task")
+      ; Add (block_ref uuid, "block/status-json", String (status_json status))
+      ; Add (block_ref uuid, "block/updated-at", Int now)
+      ];
+    Ok ())
+;;
+
 let visible_blocks model =
   if String.equal (String.trim model.query) "" then recent_blocks model else search model model.query
 ;;
