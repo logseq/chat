@@ -2,7 +2,7 @@
 
 - Status: Accepted; implementation in progress
 - Date: 2026-08-14
-- Last updated: 2026-08-15
+- Last updated: 2026-08-16
 - Owners: Logseq Chat and db-sync teams
 
 ## Context
@@ -13,11 +13,11 @@ local database also defines a reduced schema whose property types do not always
 match the graph database on the server. Refreshing is periodic, so a change made by
 another Logseq client is not visible immediately.
 
-The current native persistence path is also not a db-sync graph store. It serializes
+Before this work, the native persistence path was not a db-sync graph store. It serialized
 OCaml values with `Marshal` into a two-column `kvs(address, payload)` table. db-sync
 snapshots contain ClojureScript Transit values in Logseq's
 `kvs(addr, content, addresses)` layout. Those formats must not be treated as
-interchangeable. The current platform-to-core call and HTTP adapter also buffer one
+interchangeable. The earlier platform-to-core call and HTTP adapter also buffered one
 complete JSON response, so a long-lived SSE connection needs a new byte-stream
 adapter rather than extending the blocking request call.
 
@@ -58,6 +58,9 @@ support:
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client SSE, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
+| Sync ownership | One coordinator owns the selected graph's foreground SSE or bounded background replay, never both. Native code owns HTTP task lifecycle; OCaml owns framing, Transit decoding, validation, cursor advancement, idempotency, and graph application. |
+| Local metadata | Graph catalog, selection, pending writes, and checkpoints use versioned Transit records. Legacy `Marshal` metadata is intentionally treated as a cache miss; no old-cache migration is required. |
+| Local journal reads | OCaml maintains an incremental recent-journal projection and re-queries only affected blocks, rebuilding only when journal-page membership changes. |
 | iOS background sync | Background entry starts an immediate, bounded sync under a UIKit background assertion; `BGAppRefresh` is also registered for later catch-up. Each execution opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without graph-catalog or semantic refresh |
 | Android sync transport | OCaml core, full-snapshot download/import, and native SSE entity-change streaming are connected; device E2E remains pending |
 | Encrypted graph sync | iOS Simulator E2E against local db-sync verifies encrypted first-open snapshot import, local key unlock and Keychain restore, semantic REST journal/block creation, authoritative SSE confirmation, ciphertext-only server storage, and kill/relaunch persistence |
@@ -132,13 +135,18 @@ strings. Cardinality-many values retain set semantics. The client will reject a
 snapshot or change set when a value does not conform to the shared schema instead
 of coercing it.
 
-The existing chat cache may be removed or retained as a rebuildable UI projection,
+The chat cache is retained as a rebuildable UI projection,
 but it is not the graph mirror and is never a sync source of truth. Each selected
 graph currently has `graph.sqlite` for the Logseq-layout KVS graph and an atomically
 replaced Transit `sync.checkpoint` sidecar containing graph id, schema version, and
 applied server `t`. The separate app metadata store persists the discovered graph
 catalog, last selected graph, pending local requests, and UI state. Those records
 are not graph attributes and are not a second graph cursor.
+
+Metadata records are encoded as versioned Transit. Compatibility with the earlier
+`Marshal` cache is intentionally out of scope: an old record is a cache miss and is
+rebuilt from the selected graph or server. This does not change the graph SQLite
+layout, server schema, or the type of any graph property.
 
 No local-only attributes such as sync status or cached JSON projections will be
 added to the graph database. This prevents the chat app from changing the meaning
@@ -504,7 +512,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 - Add pinned `melange-transit-native` and `melange-edn-native` dependencies to the
   OCaml build.
 - Promote and reuse `datascript-ocaml`'s tested Logseq KVS Transit reader; do not
-  feed server snapshot rows to the current `Marshal`-based SQLite adapter.
+  feed server snapshot rows to the historical `Marshal`-based SQLite adapter.
 - Implement protocol codecs, snapshot import, SSE state, entity application, E2EE
   orchestration, and mutation validation as OCaml modules behind narrow signatures.
 - Keep Swift and Kotlin adapters byte-oriented and free of graph-schema or sync-state
