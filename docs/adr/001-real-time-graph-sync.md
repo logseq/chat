@@ -2,6 +2,7 @@
 
 - Status: Accepted; implementation in progress
 - Date: 2026-08-14
+- Last updated: 2026-08-15
 - Owners: Logseq Chat and db-sync teams
 
 ## Context
@@ -57,8 +58,9 @@ support:
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client SSE, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
+| iOS background sync | `BGAppRefresh` is registered at launch and rescheduled on background entry; each granted execution window opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without a semantic refresh |
 | Android sync transport | OCaml core, full-snapshot download/import, and native SSE entity-change streaming are connected; device E2E remains pending |
-| Encrypted graph sync | Graphs are discoverable but opening them is explicitly rejected until the E2EE milestone is implemented and verified |
+| Encrypted graph sync | iOS can select and unlock encrypted graphs, cache the graph key in Keychain, keep an exact ciphertext graph mirror, decrypt the UI projection, and encrypt block, task, and asset writes in the OCaml core; native tests and Simulator build pass, while full encrypted Simulator E2E remains pending |
 
 ## Decision
 
@@ -262,13 +264,15 @@ fields remain available to db-sync so it can authorize access, identify affected
 entities, and produce change sets.
 
 The existing snapshot format and the new entity-change format each work for both
-encrypted and unencrypted graphs. For encrypted graphs, protected values are
-ciphertext on the wire and are decrypted by the existing
-`frontend.worker.sync.crypt` rules before local transaction. The schema-aware
-encryption codec must round-trip the original property type; encryption is not
-allowed to permanently turn a keyword, number, UUID, instant, reference, or
-collection into a string in the local graph. Existing Logseq encryption metadata
-and algorithms will be reused rather than introducing a chat-specific format.
+encrypted and unencrypted graphs. For encrypted graphs, the local DataScript graph
+is an exact ciphertext mirror of the server graph. Protected datoms are not replaced
+with plaintext during snapshot import or SSE application. Local queries build a
+separate decrypted UI projection on demand. This avoids a second persisted graph
+shape and ensures restart, replay, and export preserve the same values the server
+stores. Existing Logseq encryption metadata, Transit value envelopes, and algorithms
+are reused rather than introducing a chat-specific format. Non-protected values keep
+their original DataScript types; encrypted values keep the server's existing E2EE
+representation unchanged in the mirror.
 
 If the key is missing, access was revoked, or decryption fails, the app stops import
 or event application and locks the graph. It does not store a partly decrypted graph
@@ -387,6 +391,15 @@ must enforce this allowlist; hiding controls in the UI is not sufficient. For an
 encrypted graph, the client encrypts protected property values with the graph AES
 key before upload, using the existing E2EE codec.
 
+If a journal page for a pending encrypted create does not yet exist, the client first
+calls the existing semantic page-create resource. It supplies Logseq's deterministic
+journal UUID, encrypted `:block/title` and `:block/name` values, and the integer
+`:block/journal-day`. The server creates only that explicitly described journal page,
+keeps the existing attribute types, and treats a retry with the same identity as
+idempotent. The pending block is then sent through capture, task, or asset REST using
+that page UUID. This avoids both raw tx submission and server-side plaintext
+generation.
+
 This restriction applies to mutations initiated by Logseq Chat. The local database
 is still a mirror, so it must apply deletions received over SSE when another
 authorized Logseq client or server process deletes an entity. A remote deletion is
@@ -408,6 +421,32 @@ or refresh cannot overwrite an unsynchronized local value. On successful REST
 submission the operation enters a submitted state and remains overlaid on the graph
 mirror until the matching SSE upsert confirms the authoritative value.
 
+### 8. Use cursor replay during iOS background execution
+
+iOS does not guarantee a continuously running network connection after the app is
+backgrounded. The app therefore keeps the long-lived SSE task for foreground use and
+registers a `BGAppRefresh` task as an opportunistic background catch-up mechanism.
+The task is registered and initially scheduled during app launch, then rescheduled
+whenever the scene enters the background and whenever a background execution begins.
+
+During each execution window the app:
+
+1. opens the app metadata database and the last selected graph's local SQLite mirror;
+2. obtains a current Cognito access token through Amplify, allowing Amplify to refresh
+   the session when necessary;
+3. restores the persisted graph catalog, selection, schema, and `appliedServerT`
+   checkpoint without downloading a new snapshot;
+4. submits durable pending writes through the semantic REST allowlist;
+5. opens the graph event endpoint from `appliedServerT`, applies the available latest
+   entity changes, and commits the new cursor atomically.
+
+The background path never calls the semantic recent-block refresh API. If the graph
+has no valid local baseline, the task exits and leaves first-open snapshot download to
+foreground execution. If an encrypted graph cannot restore its cached key, the task
+leaves its pending operations intact and exits without applying ciphertext as user
+content. `BGAppRefresh` timing remains controlled by iOS; strict push-time background
+delivery would require a later APNs silent-push capability and is not part of this ADR.
+
 ## End-to-end flow
 
 1. Log in inside the app through Amplify Auth and the Cognito User Pool.
@@ -423,6 +462,8 @@ mirror until the matching SSE upsert confirms the authoritative value.
 8. On disconnect, refresh the Cognito session if necessary and resume from the
    committed cursor.
 9. On `reset`, build a new local database from a fresh full snapshot.
+10. When iOS grants background time, reopen the last graph, submit pending writes,
+    and run one cursor-based event replay without semantic polling.
 
 ## Required server changes
 
@@ -440,6 +481,9 @@ mirror until the matching SSE upsert confirms the authoritative value.
   do not introduce a second change database, cursor, or an `as-of` query.
 - Use the Cognito `client_id` claim to enforce that Logseq Chat may call only
   block-create and block-property-update mutations.
+- Allow encrypted semantic writes only for the explicit Chat operations. Encrypted
+  journal creation requires a deterministic UUID, encrypted title and name, and the
+  existing integer journal-day attribute; it does not accept arbitrary tx-data.
 - Emit metrics for connected streams, replay lag, event size, reset reason,
   authorization failure, and snapshot duration.
 
@@ -469,8 +513,11 @@ mirror until the matching SSE upsert confirms the authoritative value.
   modify-block-properties mutations.
 - Persist every mutation before presentation, send queued writes only through the
   semantic REST API, and retain optimistic values until authoritative SSE echo.
-- Reuse Logseq's E2EE key and value codecs and keep decrypted graph storage within
-  the platform's protected application data.
+- Reuse Logseq's E2EE key and value codecs, persist the exact ciphertext mirror, and
+  expose plaintext only through an in-memory decrypted query/UI projection.
+- Register and schedule iOS background refresh, restore the last selected local
+  graph, submit pending writes, and replay graph events from the durable cursor
+  without calling semantic refresh.
 
 ## Consequences
 
@@ -496,7 +543,8 @@ mirror until the matching SSE upsert confirms the authoritative value.
 - The server must retain enough cursor history for useful reconnects or force a new
   snapshot.
 - Mobile lifecycle limits mean real-time delivery is guaranteed only while the app
-  can maintain the stream; background refresh remains a best-effort fallback.
+  can maintain the stream; cursor-based `BGAppRefresh` remains a best-effort fallback
+  whose timing is controlled by iOS.
 - E2EE password and key recovery add user-visible failure states.
 - Built-in Cognito authentication requires native UI for all enabled challenge
   states on both Apple and Android platforms.
@@ -585,7 +633,10 @@ The implementation is complete when automated integration tests demonstrate:
 - schema changes force atomic re-bootstrap;
 - encrypted and unencrypted snapshots converge to the same logical graph data;
 - encrypted changes and assets are never plaintext in server logs or wire captures;
-- revoked graph access terminates the stream and prevents reconnect.
+- revoked graph access terminates the stream and prevents reconnect;
+- iOS background execution never performs semantic polling, preserves pending writes
+  when offline or locked, and resumes entity replay from the last committed server
+  transaction number.
 
 ## References
 
