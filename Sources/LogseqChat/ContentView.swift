@@ -16,6 +16,7 @@ struct ContentView: View {
     private static let blockListBottomID = "block-list-bottom"
     @State private var store: LogseqChatStore
     @State private var authentication: LogseqAuthenticationStore
+    private let syncCoordinator: GraphSyncCoordinator
     @State private var searchText = ""
     @State private var searchPresented = false
     @State private var composerExpanded = false
@@ -37,7 +38,6 @@ struct ContentView: View {
     #endif
     #endif
     @State private var hasAutoScrolledInitially = false
-    @State private var graphSyncGeneration = 0
     @State private var draft = ""
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
@@ -46,9 +46,14 @@ struct ContentView: View {
     @FocusState private var searchFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
-    init(store: LogseqChatStore, authentication: LogseqAuthenticationStore) {
+    init(
+        store: LogseqChatStore,
+        authentication: LogseqAuthenticationStore,
+        syncCoordinator: GraphSyncCoordinator
+    ) {
         _store = State(initialValue: store)
         _authentication = State(initialValue: authentication)
+        self.syncCoordinator = syncCoordinator
     }
 
     var body: some View {
@@ -73,6 +78,9 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 store.syncPending()
+                if authentication.state == .signedIn, !selectedGraphID.isEmpty {
+                    beginGraphAccess(selectedGraphID)
+                }
             }
         }
         .onChange(of: store.snapshot.selectedGraphId) { _, graphID in
@@ -92,8 +100,8 @@ struct ContentView: View {
                 signOut: {
                     settingsPresented = false
                     Task {
+                        await syncCoordinator.stopForeground()
                         await authentication.signOut()
-                        graphSyncGeneration += 1
                         selectedGraphID = ""
                         store.configure(baseURL: baseURL, token: "", refreshAfterApply: false)
                     }
@@ -413,36 +421,36 @@ struct ContentView: View {
     }
 
     private func startGraphSync(_ graphID: String) {
-        graphSyncGeneration += 1
-        let generation = graphSyncGeneration
         Task {
-            guard let accessToken = try? await authentication.accessToken() else { return }
-            let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
-            guard await store.bootstrapSelectedGraph(
-                graphID: graphID,
-                baseURL: baseURL,
-                accessToken: accessToken,
-                isEncrypted: isEncrypted
-            ) else { return }
-            while generation == graphSyncGeneration && authentication.state == .signedIn {
-                guard let freshAccessToken = try? await authentication.accessToken() else { return }
-                let snapshotRequired = await store.runGraphEventsOnce(
+            await syncCoordinator.startForeground(graphID: graphID) { graphID in
+                guard let accessToken = try? await authentication.accessToken() else { return }
+                let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
+                guard await store.bootstrapSelectedGraph(
                     graphID: graphID,
                     baseURL: baseURL,
-                    accessToken: freshAccessToken
-                )
-                if snapshotRequired {
-                    guard let refreshedToken = try? await authentication.accessToken() else { return }
-                    guard await store.bootstrapSelectedGraph(
+                    accessToken: accessToken,
+                    isEncrypted: isEncrypted
+                ) else { return }
+                while !Task.isCancelled && authentication.state == .signedIn {
+                    guard let freshAccessToken = try? await authentication.accessToken() else { return }
+                    let snapshotRequired = await store.runGraphEventsOnce(
                         graphID: graphID,
                         baseURL: baseURL,
-                        accessToken: refreshedToken,
-                        forceSnapshot: true,
-                        isEncrypted: isEncrypted
-                    ) else { return }
-                }
-                if generation == graphSyncGeneration {
-                    try? await Task.sleep(for: .seconds(1))
+                        accessToken: freshAccessToken
+                    )
+                    if snapshotRequired {
+                        guard let refreshedToken = try? await authentication.accessToken() else { return }
+                        guard await store.bootstrapSelectedGraph(
+                            graphID: graphID,
+                            baseURL: baseURL,
+                            accessToken: refreshedToken,
+                            forceSnapshot: true,
+                            isEncrypted: isEncrypted
+                        ) else { return }
+                    }
+                    if !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(1))
+                    }
                 }
             }
         }

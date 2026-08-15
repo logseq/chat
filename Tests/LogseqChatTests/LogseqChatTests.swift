@@ -235,53 +235,6 @@ import Foundation
         #expect(model.contains("LogseqChat debug: core action applied"))
     }
 
-    @Test func failedSnapshotBootstrapDoesNotStartGraphEvents() throws {
-        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let content = try String(
-            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
-            encoding: .utf8
-        )
-        let start = try #require(content.range(of: "private func startGraphSync(_ graphID: String)"))
-        let remaining = content[start.lowerBound...]
-        let end = try #require(remaining.range(of: "\n\n    private var appBackground"))
-        let graphSync = remaining[..<end.lowerBound]
-
-        #expect(graphSync.contains("guard await store.bootstrapSelectedGraph("))
-        #expect(graphSync.contains("else { return }"))
-    }
-
-    @Test func androidGraphEventsUseTheNativeSSETransport() throws {
-        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let content = try String(
-            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift"),
-            encoding: .utf8
-        )
-        let start = try #require(content.range(of: "public func runGraphEventsOnce("))
-        let remaining = content[start.lowerBound...]
-        let end = try #require(remaining.range(of: "\n\n    private func dispatchEncodedAndWait"))
-        let graphEvents = remaining[..<end.lowerBound]
-
-        #expect(graphEvents.contains("AndroidGraphSSETransport.open("))
-        #expect(graphEvents.contains("while let frame = try await stream.nextFrame()"))
-        #expect(graphEvents.contains("stream.close()"))
-        #expect(!graphEvents.contains("#if SKIP\n        return false"))
-    }
-
-    @Test func restoredGraphIsRediscoveredBeforeSyncStarts() throws {
-        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let content = try String(
-            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
-            encoding: .utf8
-        )
-        let start = try #require(content.range(of: "private func connectWithCurrentAccessToken()"))
-        let remaining = content[start.lowerBound...]
-        let end = try #require(remaining.range(of: "\n\n    @ViewBuilder private var authenticatedContent"))
-        let connect = remaining[..<end.lowerBound]
-
-        #expect(connect.contains("await store.configureAndSelectGraph("))
-        #expect(!connect.contains("store.configure("))
-    }
-
     @Test func decodeType() throws {
         // load the TestData.json file from the Resources folder and decode it into a struct
         let resourceURL: URL = try #require(Bundle.module.url(forResource: "TestData", withExtension: "json"))

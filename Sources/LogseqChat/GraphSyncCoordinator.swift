@@ -1,0 +1,79 @@
+import Foundation
+
+actor GraphSyncCoordinator {
+    typealias ForegroundOperation = @MainActor @Sendable (String) async -> Void
+    typealias BackgroundOperation = @MainActor @Sendable () async -> Bool
+
+    private var foregroundTask: Task<Void, Never>?
+    private var backgroundTask: Task<Bool, Never>?
+    private var backgroundGeneration = UUID()
+
+    func startForeground(
+        graphID: String,
+        operation: @escaping ForegroundOperation
+    ) async {
+        let previousForeground = foregroundTask
+        let activeBackground = backgroundTask
+        previousForeground?.cancel()
+        foregroundTask = Task {
+            if let activeBackground {
+                _ = await activeBackground.value
+            }
+            if let previousForeground {
+                await previousForeground.value
+            }
+            guard !Task.isCancelled else { return }
+            await operation(graphID)
+        }
+    }
+
+    func stopForeground() async {
+        guard let foregroundTask else { return }
+        self.foregroundTask = nil
+        foregroundTask.cancel()
+        await foregroundTask.value
+    }
+
+    func runBackground(operation: @escaping BackgroundOperation) async -> Bool {
+        if let backgroundTask {
+            return await backgroundTask.value
+        }
+
+        let previousForeground = foregroundTask
+        foregroundTask = nil
+        previousForeground?.cancel()
+        let generation = UUID()
+        backgroundGeneration = generation
+        let task = Task {
+            if let previousForeground {
+                await previousForeground.value
+            }
+            guard !Task.isCancelled else { return false }
+            return await operation()
+        }
+        backgroundTask = task
+        let result = await task.value
+        if backgroundGeneration == generation {
+            backgroundTask = nil
+        }
+        return result
+    }
+
+    func cancelBackground() async {
+        guard let backgroundTask else { return }
+        self.backgroundTask = nil
+        backgroundGeneration = UUID()
+        backgroundTask.cancel()
+        _ = await backgroundTask.value
+    }
+}
+
+@MainActor final class BackgroundTaskCompletion {
+    private var finished = false
+
+    func finish(success: Bool, completion: (Bool) -> Void) {
+        guard !finished else { return }
+        finished = true
+        completion(success)
+    }
+}

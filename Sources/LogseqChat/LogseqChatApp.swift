@@ -41,7 +41,8 @@ public struct LogseqChatRootView : View {
     private var appContent: some View {
         ContentView(
             store: LogseqChatRuntime.shared.store,
-            authentication: LogseqChatRuntime.shared.authentication
+            authentication: LogseqChatRuntime.shared.authentication,
+            syncCoordinator: LogseqChatRuntime.shared.syncCoordinator
         )
             .onAppear {
                 DispatchQueue.main.async {
@@ -93,6 +94,7 @@ private enum LogseqAmplifyAuth {
 
     public let store: LogseqChatStore
     public let authentication: LogseqAuthenticationStore
+    let syncCoordinator = GraphSyncCoordinator()
 
     private init() {
         self.store = LogseqChatStore { request in
@@ -118,38 +120,49 @@ private enum LogseqAmplifyAuth {
         store.open(path: databasePath)
     }
 
-    public func syncFromStoredConnection() async {
+    public func syncFromStoredConnection() async -> Bool {
         openStore()
         let defaults = UserDefaults.standard
         let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
         guard let graphID = defaults.string(forKey: "logseq.selectedGraphId"), !graphID.isEmpty else {
-            return
+            return false
         }
-        guard let token = try? await authentication.accessToken() else { return }
+        guard let token = try? await authentication.accessToken() else { return false }
         await store.configureAndSelectGraph(
             baseURL: baseURL,
             token: token,
             selectedGraphID: graphID,
             refreshGraphCatalog: false
         )
-        guard store.lastError == nil else { return }
+        guard store.lastError == nil else { return false }
         let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
-        if isEncrypted && store.snapshot.isGraphUnlocked != true { return }
+        if isEncrypted && store.snapshot.isGraphUnlocked != true { return false }
         guard await store.bootstrapSelectedGraph(
             graphID: graphID,
             baseURL: baseURL,
             accessToken: token,
             allowSnapshotDownload: false,
             isEncrypted: isEncrypted
-        ) else { return }
+        ) else { return false }
         await store.syncPendingForBackground()
-        guard store.lastError == nil else { return }
+        guard store.lastError == nil else { return false }
         _ = await store.runGraphEventsOnce(
             graphID: graphID,
             baseURL: baseURL,
             accessToken: token,
             stopAfterFirstFrame: true
         )
+        return store.lastError == nil
+    }
+
+    public func runExclusiveBackgroundSync() async -> Bool {
+        await syncCoordinator.runBackground {
+            await LogseqChatRuntime.shared.syncFromStoredConnection()
+        }
+    }
+
+    public func cancelBackgroundSync() async {
+        await syncCoordinator.cancelBackground()
     }
 }
 
@@ -179,6 +192,10 @@ public enum LogseqChatBackgroundRefresh {
         #endif
     }
 
+    @MainActor private static func runOnce() async -> Bool {
+        await LogseqChatRuntime.shared.runExclusiveBackgroundSync()
+    }
+
     public static func register() {
         #if os(iOS) && !SKIP
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
@@ -203,13 +220,21 @@ public enum LogseqChatBackgroundRefresh {
     #if os(iOS) && !SKIP
     private static func handle(_ task: BGTask) {
         schedule()
+        let completion = BackgroundTaskCompletion()
         let refreshTask = Task {
-            await LogseqChatRuntime.shared.syncFromStoredConnection()
-            task.setTaskCompleted(success: true)
+            let success = await runOnce()
+            await completion.finish(success: success) { result in
+                task.setTaskCompleted(success: result)
+            }
         }
         task.expirationHandler = {
-            refreshTask.cancel()
-            task.setTaskCompleted(success: false)
+            Task { @MainActor in
+                refreshTask.cancel()
+                await LogseqChatRuntime.shared.cancelBackgroundSync()
+                completion.finish(success: false) { result in
+                    task.setTaskCompleted(success: result)
+                }
+            }
         }
     }
     #endif
@@ -225,14 +250,17 @@ public enum LogseqChatBackgroundRefresh {
             self?.expire()
         }
         syncTask = Task { [self] in
-            await LogseqChatRuntime.shared.syncFromStoredConnection()
+            _ = await LogseqChatRuntime.shared.runExclusiveBackgroundSync()
             finish()
         }
     }
 
     private func expire() {
         syncTask?.cancel()
-        finish()
+        Task { [self] in
+            await LogseqChatRuntime.shared.cancelBackgroundSync()
+            finish()
+        }
     }
 
     private func finish() {
