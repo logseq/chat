@@ -384,7 +384,7 @@ import Foundation
         #expect(sendDraftSource.contains("persistedDraft = \"\""))
     }
 
-    @Test func composerStartsANewEditorSessionBeforeDispatchingSubmittedText() throws {
+    @Test func composerKeepsTheFocusedEditorSessionAfterDispatchingSubmittedText() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
@@ -392,11 +392,10 @@ import Foundation
         let remainingSource = source[sendStart.lowerBound...]
         let sendEnd = try #require(remainingSource.range(of: "\n    }\n}", options: []))
         let sendSource = remainingSource[..<sendEnd.upperBound]
-        let reset = try #require(sendSource.range(of: "composerInputGeneration += 1"))
-        let firstDispatch = try #require(sendSource.range(of: "store.update"))
 
-        #expect(source.contains(".id(composerInputGeneration)"))
-        #expect(reset.lowerBound < firstDispatch.lowerBound)
+        #expect(!source.contains("composerInputGeneration"))
+        #expect(!sendSource.contains("composerFocused = false"))
+        #expect(sendSource.contains("focusComposer()"))
     }
 
     @Test func composerClearsBeforeEveryStoreMutation() throws {
