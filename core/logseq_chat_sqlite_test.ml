@@ -16,6 +16,78 @@ let with_temp_db f =
     (fun () -> f path)
 ;;
 
+let transit_field key entries =
+  List.assoc_opt (Transit_core.Json.Keyword key) entries
+;;
+
+let () =
+  with_temp_db (fun path ->
+    let session = Logseq_chat_sqlite.open_session path in
+    Fun.protect
+      ~finally:(fun () -> Logseq_chat_sqlite.close session)
+      (fun () ->
+        Logseq_chat_sqlite.store_string session ~address:"metadata" "value";
+        let encoded =
+          match Logseq_chat_sqlite.sqlite_restore path "metadata" with
+          | Some encoded -> encoded
+          | None -> failwith "versioned metadata value was not stored"
+        in
+        match Transit_native.Transit.Json.of_string encoded with
+        | Transit_core.Json.Map entries ->
+          (match transit_field "format-version" entries, transit_field "value-type" entries with
+           | Some (Transit_core.Json.Int 1), Some (Transit_core.Json.Keyword "string") -> ()
+           | _ -> failwith "metadata value is missing its versioned Transit envelope")
+        | _ -> failwith "metadata value is not a Transit map"))
+;;
+
+let () =
+  with_temp_db (fun path ->
+    let session = Logseq_chat_sqlite.open_session path in
+    Fun.protect
+      ~finally:(fun () -> Logseq_chat_sqlite.close session)
+      (fun () ->
+        Logseq_chat_sqlite.sqlite_store path [ "legacy", Marshal.to_string "old" [] ];
+        Logseq_chat_sqlite.sqlite_store
+          path
+          [ ( "future"
+            , {|["^ ","~:format-version",2,"~:value-type","~:string","~:value","future"]|} )
+          ];
+        assert_bool
+          "legacy Marshal metadata should be treated as a cache miss"
+          (Option.is_none (Logseq_chat_sqlite.restore_string session ~address:"legacy"));
+        assert_bool
+          "unknown metadata versions should be treated as a cache miss"
+          (Option.is_none (Logseq_chat_sqlite.restore_string session ~address:"future"))))
+;;
+
+let () =
+  with_temp_db (fun path ->
+    let session = Logseq_chat_sqlite.open_session path in
+    Fun.protect
+      ~finally:(fun () -> Logseq_chat_sqlite.close session)
+      (fun () ->
+        let storage = Logseq_chat_sqlite.storage session in
+        storage.storage_store [ "tail", Datascript.Storage_tail [] ];
+        let encoded =
+          match Logseq_chat_sqlite.sqlite_restore path "tail" with
+          | Some encoded -> encoded
+          | None -> failwith "DataScript storage value was not stored"
+        in
+        (match Transit_native.Transit.Json.of_string encoded with
+         | Transit_core.Json.Map entries ->
+           (match transit_field "format-version" entries, transit_field "value-type" entries with
+            | Some (Transit_core.Json.Int 1),
+              Some (Transit_core.Json.Keyword "datascript-storage") -> ()
+            | _ -> failwith "DataScript value is missing its versioned Transit envelope")
+         | _ -> failwith "DataScript value is not a Transit map");
+        Logseq_chat_sqlite.sqlite_store
+          path
+          [ "legacy-tail", Marshal.to_string (Datascript.Storage_tail []) [] ];
+        assert_bool
+          "legacy Marshal DataScript values should be treated as a cache miss"
+          (Option.is_none (storage.storage_restore "legacy-tail"))))
+;;
+
 let () =
   with_temp_db (fun path ->
     let first_session = Logseq_chat_sqlite.open_session path in

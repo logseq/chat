@@ -1,4 +1,6 @@
 module Ds = Datascript
+module Value = Transit_core.Json
+module Codec = Transit_native.Transit.Json
 
 type session =
   { path : string
@@ -28,17 +30,61 @@ let close session =
     session.closed <- true)
 ;;
 
-let encode payload = Marshal.to_string payload [ Marshal.No_sharing ]
-let decode payload = Marshal.from_string payload 0
+let envelope ~value_type value =
+  Codec.to_string
+    (Value.Map
+       [ Value.Keyword "format-version", Value.Int 1
+       ; Value.Keyword "value-type", Value.Keyword value_type
+       ; Value.Keyword "value", Value.String value
+       ])
+;;
+
+let field key entries = List.assoc_opt (Value.Keyword key) entries
+
+let decode_envelope ~value_type source =
+  let decoded =
+    try Some (Codec.of_string source) with
+    | Value.Decode_error _
+    | Yojson.Json_error _
+    | Failure _
+    | Invalid_argument _ -> None
+  in
+  match decoded with
+  | Some (Value.Map entries) ->
+    (match field "format-version" entries, field "value-type" entries, field "value" entries with
+     | Some (Value.Int 1), Some (Value.Keyword actual_type), Some (Value.String value)
+       when String.equal actual_type value_type -> Some value
+     | _ -> None)
+  | Some _ | None -> None
+;;
+
+let encode payload =
+  payload
+  |> Datascript_sqlite_codec.encode
+  |> envelope ~value_type:"datascript-storage"
+;;
+
+let decode payload =
+  match decode_envelope ~value_type:"datascript-storage" payload with
+  | None -> None
+  | Some encoded ->
+    (try Some (Datascript_sqlite_codec.decode encoded) with
+     | Value.Decode_error _
+     | Yojson.Json_error _
+     | Failure _
+     | Invalid_argument _ -> None)
+;;
 
 let store_string session ~address value =
   ensure_open session;
-  sqlite_store session.path [ address, value ]
+  sqlite_store session.path [ address, envelope ~value_type:"string" value ]
 ;;
 
 let restore_string session ~address =
   ensure_open session;
-  sqlite_restore session.path address
+  Option.bind
+    (sqlite_restore session.path address)
+    (decode_envelope ~value_type:"string")
 ;;
 
 let storage session : Ds.storage =
@@ -50,7 +96,7 @@ let storage session : Ds.storage =
   ; storage_restore =
       (fun address ->
         ensure_open session;
-        sqlite_restore session.path address |> Option.map decode)
+        Option.bind (sqlite_restore session.path address) decode)
   ; storage_list_addresses =
       (fun () ->
         ensure_open session;

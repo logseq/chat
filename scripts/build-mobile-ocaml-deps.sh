@@ -208,6 +208,9 @@ printf '%s\n' \
   >"$source_dir/transit_native.ml"
 "$ocamlopt" -I "$object_dir" -c \
   -o transit_native.cmx "$source_dir/transit_native.ml"
+"$ocamlopt" -I "$object_dir" -c \
+  -o datascript_sqlite_codec.cmx \
+  "$datascript_source/sqlite/datascript_sqlite_codec.ml"
 
 cmx_list=$("$ocamldep" -sort "$source_dir"/*.ml)
 : >"$object_dir/link-objects.txt"
@@ -234,7 +237,8 @@ for object in \
   transit_core.cmx \
   transit_edn.cmx \
   transit.cmx \
-  transit_native.cmx; do
+  transit_native.cmx \
+  datascript_sqlite_codec.cmx; do
   printf '%s\n' "$object_dir/$object" >>"$object_dir/link-objects.txt"
 done
 
