@@ -653,7 +653,11 @@ struct ContentView: View {
     private func openAsset(_ block: LogseqBlock) {
         dismissComposerEditing()
         #if !SKIP && os(iOS)
-        guard let path = block.localPath, let url = LocalAssetPath.resolve(path) else { return }
+        guard let url = LocalAssetPath.resolve(
+            block.localPath,
+            title: block.title,
+            assetType: block.assetType
+        ) else { return }
         previewAssetURL = url
         #elseif SKIP
         guard let path = block.localPath, !path.isEmpty else { return }
@@ -1607,8 +1611,11 @@ private struct AssetPreview: View {
 
     var body: some View {
         #if !SKIP && os(iOS)
-        if let path = block.localPath,
-           let url = LocalAssetPath.resolve(path),
+        if let url = LocalAssetPath.resolve(
+            block.localPath,
+            title: block.title,
+            assetType: block.assetType
+        ),
            isImage,
            let image = UIImage(contentsOfFile: url.path) {
             Button { onOpen?() } label: {
@@ -1621,8 +1628,11 @@ private struct AssetPreview: View {
                 }
             }
             .buttonStyle(.plain)
-        } else if let path = block.localPath,
-                  let url = LocalAssetPath.resolve(path),
+        } else if let url = LocalAssetPath.resolve(
+            block.localPath,
+            title: block.title,
+            assetType: block.assetType
+        ),
                   isAudio {
             VStack(alignment: .leading, spacing: 8) {
                 assetTitle

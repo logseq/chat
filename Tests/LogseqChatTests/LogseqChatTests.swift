@@ -785,12 +785,14 @@ import Foundation
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         let previewStart = try #require(source.range(of: "private struct AssetPreview"))
         let previewSource = source[previewStart.lowerBound...]
-        let imageStart = try #require(previewSource.range(of: "if let path = block.localPath,"))
+        let imageStart = try #require(previewSource.range(of: "if let url = LocalAssetPath.resolve("))
         let imageBranch = previewSource[imageStart.lowerBound...]
-        let audioStart = try #require(imageBranch.range(of: "} else if let path = block.localPath,"))
+        let audioStart = try #require(imageBranch.range(of: "} else if let url = LocalAssetPath.resolve("))
         let imageSource = imageBranch[..<audioStart.lowerBound]
 
-        #expect(imageSource.contains("LocalAssetPath.resolve(path)"))
+        #expect(imageSource.contains("block.localPath"))
+        #expect(imageSource.contains("title: block.title"))
+        #expect(imageSource.contains("assetType: block.assetType"))
         #expect(imageSource.contains("Image(uiImage: image)"))
         #expect(!imageSource.contains("assetTitle"))
     }
@@ -819,6 +821,17 @@ import Foundation
         #expect(
             LocalAssetPath.resolve("Assets/Photo-example.png", documentsDirectory: documentsDirectory)?.path
                 == currentAsset.path
+        )
+
+        let recoveredAsset = assetsDirectory.appendingPathComponent("Photo-recovered.png")
+        try Data([0x89, 0x50, 0x4e, 0x47]).write(to: recoveredAsset)
+        #expect(
+            LocalAssetPath.resolve(
+                nil,
+                title: "Photo-recovered",
+                assetType: "png",
+                documentsDirectory: documentsDirectory
+            )?.path == recoveredAsset.path
         )
     }
     #endif
