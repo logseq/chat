@@ -331,7 +331,7 @@ private let testEmptySnapshotJSON = """
         let store = LogseqChatStore { request in
             recorder.append(request)
             let status = request.contains("\"action\":\"updateBlockStatus\"")
-                || request.contains("\"action\":\"syncPending\"")
+                || request.contains("\"action\":\"beginPendingSync\"")
                 ? ##"{"uuid":"custom-waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}"##
                 : ##"{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo"}"##
             return """
@@ -487,7 +487,7 @@ private let testEmptySnapshotJSON = """
             let requests = recorder.all
             return requests.contains { $0.contains("\"action\":\"configure\"") }
                 && requests.contains { $0.contains("\"action\":\"refresh\"") }
-                && requests.contains { $0.contains("\"action\":\"syncPending\"") }
+                && requests.contains { $0.contains("\"action\":\"beginPendingSync\"") }
         }
 
         #expect(store.snapshot.graphName == "pat test")
@@ -550,62 +550,30 @@ private let testEmptySnapshotJSON = """
 
     @Test @MainActor func sendPublishesCoreResultBeforeSyncing() async throws {
         let recorder = RequestRecorder()
-        let store = LogseqChatStore { request in
-            recorder.append(request)
-            let uuid = latestSendUUID(in: recorder) ?? "local-1"
-            if request.contains("\"action\":\"syncPending\"") {
-                return """
-                {
-                  "apiVersion": 1,
-                  "ok": true,
-                  "result": {
-                    "revision": 2,
-                    "query": "",
-                    "blocks": [
-                      {
-                        "uuid": "\(uuid)",
-                        "kind": "block",
-                        "title": "Offline capture",
-                        "pageId": "journal/2026-08-13",
-                        "createdAt": 1776000000000,
-                        "updatedAt": 1776000000000,
-                        "syncStatus": "synced"
-                      }
-                    ],
-                    "selectedBlock": null,
-                    "lastRefreshAt": 1776000000000,
-                    "isSearching": false
-                  },
-                  "error": null
+        let request = LogseqPendingSyncRequest(
+            id: 1,
+            method: "POST",
+            url: "https://api.example/capture",
+            body: "{}",
+            token: "access-token",
+            filePath: nil,
+            contentType: "application/json"
+        )
+        let store = LogseqChatStore(
+            call: { call in
+                recorder.append(call)
+                if call.contains("\"action\":\"beginPendingSync\"") {
+                    return pendingPumpSnapshot(query: "", syncStatus: "pending", request: request)
                 }
-                """
+                if call.contains("\"action\":\"completePendingSync\"") {
+                    return pendingPumpSnapshot(query: "", syncStatus: "submitted", request: nil)
+                }
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: nil)
+            },
+            pendingTransport: { _ in
+                LogseqPendingSyncResult(status: 201, body: #"{"uuid":"local-1"}"#, error: nil)
             }
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "\(uuid)",
-                    "kind": "block",
-                    "title": "Offline capture",
-                    "pageId": "journal/2026-08-13",
-                    "createdAt": 1776000000000,
-                    "updatedAt": 1776000000000,
-                    "syncStatus": "pending"
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 1776000000000,
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
+        )
 
         store.send("Offline capture")
 
@@ -614,12 +582,13 @@ private let testEmptySnapshotJSON = """
         }
 
         try await waitUntil {
-            recorder.all.contains { $0.contains("\"action\":\"syncPending\"") }
+            recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
                 && store.snapshot.blocks.first?.isPendingSync == false
         }
 
         let requests = recorder.all
-        #expect(requests.contains { $0.contains("\"action\":\"syncPending\"") })
+        #expect(requests.contains { $0.contains("\"action\":\"beginPendingSync\"") })
+        #expect(requests.contains { $0.contains("\"action\":\"completePendingSync\"") })
         #expect(store.snapshot.blocks.first?.isPendingSync == false)
     }
 
@@ -668,6 +637,93 @@ private let testEmptySnapshotJSON = """
                 && store.snapshot.blocks.first?.title == "Slow local capture"
         }
         #expect(store.snapshot.blocks.first?.isPendingSync == true)
+    }
+
+    @Test @MainActor func pendingHTTPDoesNotBlockUnrelatedLocalCoreActions() async throws {
+        let recorder = RequestRecorder()
+        let transport = SuspendedPendingTransport()
+        let store = LogseqChatStore(
+            call: { request in
+                recorder.append(request)
+                if request.contains("\"action\":\"beginPendingSync\"") {
+                    return pendingPumpSnapshot(
+                        query: "",
+                        syncStatus: "pending",
+                        request: LogseqPendingSyncRequest(
+                            id: 1,
+                            method: "POST",
+                            url: "https://api.example/api/v1/graphs/graph-1/capture",
+                            body: #"{"blocks":[{"uuid":"local-1","title":"Offline capture"}]}"#,
+                            token: "access-token",
+                            filePath: nil,
+                            contentType: "application/json"
+                        )
+                    )
+                }
+                if request.contains("\"action\":\"completePendingSync\"") {
+                    return pendingPumpSnapshot(query: "local", syncStatus: "submitted", request: nil)
+                }
+                if request.contains("\"action\":\"searchLocal\"") {
+                    return pendingPumpSnapshot(query: "local", syncStatus: "pending", request: nil)
+                }
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: nil)
+            },
+            pendingTransport: { request in
+                await transport.send(request)
+            }
+        )
+
+        store.send("Offline capture")
+        try await waitUntilAsync { await transport.hasStarted }
+
+        store.searchLocal("local")
+        try await waitUntil { store.snapshot.query == "local" }
+        #expect(await transport.isWaiting)
+
+        await transport.resume()
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
+                && store.snapshot.blocks.first?.syncStatus == "submitted"
+        }
+    }
+
+    @Test @MainActor func cancelingBackgroundPendingSyncCancelsTheHTTPTransport() async throws {
+        let recorder = RequestRecorder()
+        let transport = SuspendedPendingTransport()
+        let store = LogseqChatStore(
+            call: { request in
+                recorder.append(request)
+                if request.contains("\"action\":\"beginPendingSync\"") {
+                    return pendingPumpSnapshot(
+                        query: "",
+                        syncStatus: "pending",
+                        request: LogseqPendingSyncRequest(
+                            id: 1,
+                            method: "POST",
+                            url: "https://api.example/capture",
+                            body: "{}",
+                            token: "access-token",
+                            filePath: nil,
+                            contentType: "application/json"
+                        )
+                    )
+                }
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: nil)
+            },
+            pendingTransport: { request in
+                await transport.send(request)
+            }
+        )
+
+        let background = Task { await store.syncPendingForBackground() }
+        try await waitUntilAsync { await transport.hasStarted }
+
+        background.cancel()
+        await background.value
+
+        #expect(await transport.wasCancelled)
+        #expect(recorder.all.contains { $0.contains("\"action\":\"cancelPendingSync\"") })
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") })
     }
 
     @Test @MainActor func sendPublishesOnlyAfterTheLocalWriteIsDurable() async throws {
@@ -790,38 +846,28 @@ private let testEmptySnapshotJSON = """
 
     @Test @MainActor func backgroundSyncOnlySubmitsPendingWrites() async throws {
         let recorder = RequestRecorder()
-        let store = LogseqChatStore { request in
-            recorder.append(request)
-            if request.contains("\"action\":\"syncPending\"") {
-                Thread.sleep(forTimeInterval: 0.15)
+        let pendingRequest = LogseqPendingSyncRequest(
+            id: 1,
+            method: "POST",
+            url: "https://api.example/capture",
+            body: "{}",
+            token: "access-token",
+            filePath: nil,
+            contentType: "application/json"
+        )
+        let store = LogseqChatStore(
+            call: { request in
+                recorder.append(request)
+                if request.contains("\"action\":\"beginPendingSync\"") {
+                    return pendingPumpSnapshot(query: "", syncStatus: "pending", request: pendingRequest)
+                }
+                return pendingPumpSnapshot(query: "", syncStatus: "submitted", request: nil)
+            },
+            pendingTransport: { _ in
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                return LogseqPendingSyncResult(status: 201, body: #"{"uuid":"local-1"}"#, error: nil)
             }
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [
-                  {
-                    "uuid": "remote-1",
-                    "kind": "block",
-                    "title": "Remote background block",
-                    "pageId": "page-1",
-                    "createdAt": 1776000000000,
-                    "updatedAt": 1776000000000,
-                    "syncStatus": "synced"
-                  }
-                ],
-                "selectedBlock": null,
-                "lastRefreshAt": 1776000000000,
-                "graphName": "pat test",
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
+        )
 
         let start = Date()
         await store.syncPendingForBackground()
@@ -829,8 +875,9 @@ private let testEmptySnapshotJSON = """
 
         #expect(elapsed >= 0.15)
         #expect(!recorder.all.contains { $0.contains("\"action\":\"refresh\"") })
-        #expect(recorder.all.contains { $0.contains("\"action\":\"syncPending\"") })
-        #expect(store.snapshot.blocks.first?.title == "Remote background block")
+        #expect(recorder.all.contains { $0.contains("\"action\":\"beginPendingSync\"") })
+        #expect(recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") })
+        #expect(store.snapshot.blocks.first?.syncStatus == "submitted")
     }
 
     @Test @MainActor func backgroundConfigurationUsesTheCachedGraphCatalog() async {
@@ -1075,7 +1122,7 @@ private let testEmptySnapshotJSON = """
         let store = LogseqChatStore { request in
             recorder.append(request)
             if request.contains("\"action\":\"send\"")
-                || request.contains("\"action\":\"syncPending\"") {
+                || request.contains("\"action\":\"beginPendingSync\"") {
                 if request.contains("\"action\":\"send\"") {
                     Thread.sleep(forTimeInterval: 0.15)
                     recorder.append("send-returned")
@@ -1375,6 +1422,80 @@ private let testEmptySnapshotJSON = """
 
 }
 
+private actor SuspendedPendingTransport {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var cancelled = false
+
+    var hasStarted: Bool { continuation != nil }
+    var isWaiting: Bool { continuation != nil }
+    var wasCancelled: Bool { cancelled }
+
+    func send(_ request: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+            }
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+        if cancelled {
+            return LogseqPendingSyncResult(status: nil, body: nil, error: "cancelled")
+        }
+        return LogseqPendingSyncResult(status: 201, body: #"{"uuid":"local-1"}"#, error: nil)
+    }
+
+    func resume() {
+        let continuation = continuation
+        self.continuation = nil
+        continuation?.resume(returning: ())
+    }
+
+    private func cancel() {
+        cancelled = true
+        resume()
+    }
+}
+
+private func pendingPumpSnapshot(
+    query: String,
+    syncStatus: String,
+    request: LogseqPendingSyncRequest?
+) -> String {
+    let requestJSON: String
+    if let request,
+       let data = try? JSONEncoder().encode(request),
+       let json = String(data: data, encoding: .utf8) {
+        requestJSON = json
+    } else {
+        requestJSON = "null"
+    }
+    return """
+    {
+      "apiVersion": 1,
+      "ok": true,
+      "result": {
+        "revision": 1,
+        "query": "\(query)",
+        "blocks": [{
+          "uuid": "local-1",
+          "kind": "block",
+          "title": "Offline capture",
+          "pageId": "journal/2026-08-13",
+          "createdAt": 1776000000000,
+          "updatedAt": 1776000000000,
+          "syncStatus": "\(syncStatus)"
+        }],
+        "selectedBlock": null,
+        "lastRefreshAt": 1776000000000,
+        "graphName": "Test",
+        "isSearching": \(!query.isEmpty),
+        "pendingSyncRequest": \(requestJSON)
+      },
+      "error": null
+    }
+    """
+}
+
 private final class RequestRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String] = []
@@ -1547,6 +1668,20 @@ private func extractValue(from text: String, after marker: String, before termin
         try await Task.sleep(nanoseconds: 10_000_000)
     }
     #expect(predicate())
+}
+
+private func waitUntilAsync(
+    timeout: TimeInterval = 1.0,
+    _ predicate: @escaping @Sendable () async -> Bool
+) async throws {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if await predicate() {
+            return
+        }
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(await predicate())
 }
 
 struct TestData : Codable, Hashable {

@@ -651,10 +651,12 @@ let mark_block_submitted model ~uuid =
     Ok ())
 ;;
 
-let reconcile_created_block model ~local_uuid ~remote_uuid =
+let reconcile_created_block ?(sync_status = "submitted") model ~local_uuid ~remote_uuid =
   match read_block model local_uuid with
   | None -> Error ("unknown block: " ^ local_uuid)
-  | Some _ when String.equal local_uuid remote_uuid -> mark_block_submitted model ~uuid:local_uuid
+  | Some _ when String.equal local_uuid remote_uuid ->
+    commit model [ Add (block_ref local_uuid, "block/sync-status", String sync_status) ];
+    Ok ()
   | Some local ->
     let remote = read_block model remote_uuid in
     let base = Option.value remote ~default:local in
@@ -665,7 +667,7 @@ let reconcile_created_block model ~local_uuid ~remote_uuid =
       { base with
         uuid = remote_uuid
       ; kind = local.kind
-      ; sync_status = "submitted"
+      ; sync_status
       ; asset_type = prefer_local local.asset_type base.asset_type
       ; asset_size = prefer_local local.asset_size base.asset_size
       ; asset_checksum = prefer_local local.asset_checksum base.asset_checksum

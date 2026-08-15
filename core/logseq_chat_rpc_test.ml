@@ -46,8 +46,26 @@ let assert_int_equal label expected actual =
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
 ;;
 
+let contains text fragment =
+  try
+    ignore (Str.search_forward (Str.regexp_string fragment) text 0);
+    true
+  with Not_found -> false
+;;
+
 let encrypted_graph_catalog =
   {|{"graphs":[{"graph-id":"encrypted-1","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}
+;;
+
+let plain_graph_catalog =
+  {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","graph-e2ee?":false,"graph-ready-for-use?":true}]}|}
+;;
+
+let configure_plain_graph session =
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}"}}|})
 ;;
 
 let configure_encrypted_graph session =
@@ -55,6 +73,255 @@ let configure_encrypted_graph session =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"\",\"token\":\"access\"}"}}|})
+;;
+
+let pending_request response =
+  match from_string response with
+  | `Assoc fields ->
+    let result = required_assoc "result" fields in
+    (match assoc "pendingSyncRequest" result with
+     | Some (`Assoc request) -> Some request
+     | Some `Null | None -> None
+     | Some _ -> failwith "pendingSyncRequest must be an object or null")
+  | _ -> failwith "pending sync should return an RPC response"
+;;
+
+let () =
+  let legacy_send_count = ref 0 in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~send:(fun _request ->
+        incr legacy_send_count;
+        failwith "the asynchronous pending pump must not call the legacy transport")
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"First title\",\"uuid\":\"async-local\",\"now\":1776000000000}"}}|});
+  let request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal "pending method" "POST" (required_string "method" request);
+  assert_equal
+    "pending URL"
+    "http://127.0.0.1:8787/api/v1/graphs/plain-1/capture"
+    (required_string "url" request);
+  assert_int_equal "pending request id" 1 (required_int "id" request);
+  if !legacy_send_count <> 0 then failwith "beginPendingSync performed blocking I/O";
+
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"async-local\",\"title\":\"Edited while sending\",\"status\":null}"}}|});
+  let completion =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"async-local\\\"}\",\"error\":null}"}}|}
+  in
+  if Option.is_some (pending_request completion)
+  then failwith "one-item pending pump should finish after completion";
+  match Logseq_chat_model.read_block session.model "async-local" with
+  | Some block ->
+    assert_equal "concurrent edit title" "Edited while sending" block.title;
+    assert_equal "concurrent edit remains pending" "pending" block.sync_status
+  | None -> failwith "completed pending block disappeared"
+;;
+
+let () =
+  let authoritative =
+    Logseq_chat_model.
+      { uuid = "remote-task"
+      ; kind = "task"
+      ; title = "Old title"
+      ; page_id = "journal-page"
+      ; parent_id = None
+      ; order = None
+      ; created_at = 1_776_000_000_000
+      ; updated_at = 1_776_000_000_000
+      ; sync_status = "synced"
+      ; tags = []
+      ; references = []
+      ; status = Some { uuid = "todo"; ident = None; title = "Todo"; icon_type = None; icon_id = None; icon_color = None }
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      ; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~graph_blocks:(fun () -> Some [ authoritative ])
+      ()
+  in
+  configure_plain_graph session;
+  Logseq_chat_model.upsert_blocks session.model [ authoritative ] ~refresh_time:authoritative.updated_at;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote-task\",\"title\":\"New title\",\"status\":{\"uuid\":\"doing\",\"title\":\"Doing\"}}"}}|});
+  let title_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal "update title method" "PATCH" (required_string "method" title_request);
+  let status_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{}\",\"error\":null}"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal "update status method" "PUT" (required_string "method" status_request);
+  if not (String.ends_with ~suffix:"/properties/Status" (required_string "url" status_request))
+  then failwith "task update must follow title PATCH with status PUT";
+  let finished =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":2,\"status\":200,\"body\":\"{}\",\"error\":null}"}}|}
+  in
+  if Option.is_some (pending_request finished) then failwith "task update pump did not finish";
+  match Logseq_chat_model.read_block session.model "remote-task" with
+  | Some block -> assert_equal "updated task submitted" "submitted" block.sync_status
+  | None -> failwith "updated task disappeared"
+;;
+
+let () =
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
+      ~graph_unlocked:(fun ~graph_id:_ -> true)
+      ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
+      ~journal_page_id:(fun ~journal_day:_ -> None)
+      ()
+  in
+  configure_encrypted_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"sendTask","payload":"{\"text\":\"Secret task\",\"uuid\":\"encrypted-async\",\"now\":1776000000000,\"status\":{\"uuid\":\"todo\",\"title\":\"Todo\"}}"}}|});
+  let page_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  if not (String.ends_with ~suffix:"/pages" (required_string "url" page_request))
+  then failwith "encrypted pending pump must create a missing journal first";
+  let task_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{}\",\"error\":null}"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  if not (String.ends_with ~suffix:"/tasks" (required_string "url" task_request))
+  then failwith "encrypted pending pump must continue with semantic task REST";
+  let body = required_string "body" task_request in
+  if
+    not (contains body {|"title":"cipher(Secret task)"|})
+    || not (contains body {|"page-id":"00000001-2026-0412-0000-000000000000"|})
+  then failwith "encrypted pending task must contain ciphertext and its journal page";
+  let finished =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":2,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"encrypted-async\\\"}\",\"error\":null}"}}|}
+  in
+  if Option.is_some (pending_request finished) then failwith "encrypted task pump did not finish"
+;;
+
+let () =
+  let cleaned = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
+      ~graph_unlocked:(fun ~graph_id:_ -> true)
+      ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
+      ~encrypt_asset_file:(fun ~graph_id:_ ~source_path ->
+        assert_equal "asset encryption source" "/documents/photo.jpg" source_path;
+        Ok ("/tmp/photo.transit", 4096))
+      ~journal_page_id:(fun ~journal_day:_ -> Some "real-journal-page")
+      ~cleanup_file:(fun path -> cleaned := path :: !cleaned)
+      ()
+  in
+  configure_encrypted_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"asset-async\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"localPath\":\"/documents/photo.jpg\"}"}}|});
+  let request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal "encrypted asset method" "POST" (required_string "method" request);
+  assert_equal "encrypted asset path" "/tmp/photo.transit" (required_string "filePath" request);
+  assert_equal "encrypted asset content type" "text/plain" (required_string "contentType" request);
+  let url = required_string "url" request in
+  if not (contains url "size=2048&upload-size=4096")
+  then failwith "encrypted asset must preserve logical and encoded sizes";
+  if not (contains url "title=cipher%28photo.jpg%29&page-id=real-journal-page")
+  then failwith "encrypted asset must use ciphertext title and real journal page";
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"cancelPendingSync"}}|});
+  if !cleaned <> [ "/tmp/photo.transit" ]
+  then failwith "cancelPendingSync must remove the temporary encrypted asset"
+;;
+
+let () =
+  let session =
+    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Retry later\",\"uuid\":\"failed-async\",\"now\":1776000000000}"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
+  let stale =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":99,\"status\":201,\"body\":\"{}\",\"error\":null}"}}|}
+    |> from_string
+  in
+  (match stale with
+   | `Assoc fields ->
+     (match assoc "ok" fields with Some (`Bool false) -> () | _ -> failwith "stale completion must fail")
+   | _ -> failwith "stale completion must return an RPC error");
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|});
+  match Logseq_chat_model.read_block session.model "failed-async" with
+  | Some block -> assert_equal "transport failure status" "failed" block.sync_status
+  | None -> failwith "failed pending block disappeared"
 ;;
 
 let () =

@@ -4,6 +4,36 @@ module Model = Logseq_chat_model
 module Api = Logseq_chat_api
 module Http = Logseq_chat_http
 
+type pending_transport =
+  | Json_request of Api.request
+  | File_upload of Api.file_upload
+
+type pending_operation =
+  | Create_block of Model.block
+  | Update_title of Model.block
+  | Update_status of Model.block
+  | Create_journal of
+      { block : Model.block
+      ; encrypted_title : string
+      ; page_id : string
+      ; journal_day : int
+      }
+
+type pending_active =
+  { id : int
+  ; transport : pending_transport
+  ; operation : pending_operation
+  ; cleanup_path : string option
+  }
+
+type pending_sync =
+  { config : Api.config
+  ; mutable remaining : Model.block list
+  ; authoritative : (string, unit) Hashtbl.t
+  ; resolved_journal_pages : (int, string) Hashtbl.t
+  ; mutable active : pending_active option
+  }
+
 type t =
   { model : Model.t
   ; mutable config : Api.config option
@@ -26,6 +56,8 @@ type t =
   ; cleanup_file : string -> unit
   ; mutable sync_connected : bool
   ; mutable sync_in_progress : bool
+  ; mutable pending_sync : pending_sync option
+  ; mutable next_pending_request_id : int
   ; save_graph_catalog : (string -> unit) option
   }
 
@@ -177,6 +209,27 @@ let graph_json (graph : Api.graph) =
     ]
 ;;
 
+let pending_request_json session =
+  let request_json id request file_path content_type =
+    `Assoc
+      ([ "id", `Int id
+       ; "method", `String request.Api.method_
+       ; "url", `String request.url
+       ; "token", `String request.token
+       ; "contentType", `String content_type
+       ]
+       @ (match request.body with Some body -> [ "body", `String body ] | None -> [])
+       @ (match file_path with Some path -> [ "filePath", `String path ] | None -> []))
+  in
+  match session.pending_sync with
+  | Some { active = Some active; _ } ->
+    (match active.transport with
+     | Json_request request -> request_json active.id request None "application/json"
+     | File_upload upload ->
+       request_json active.id upload.request (Some upload.file_path) upload.content_type)
+  | Some _ | None -> `Null
+;;
+
 let selected_graph session =
   match session.config with
   | Some config ->
@@ -234,6 +287,7 @@ let snapshot session blocks =
       ; "syncConnected", `Bool session.sync_connected
       ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
+      ; "pendingSyncRequest", pending_request_json session
       ])
 ;;
 
@@ -381,6 +435,8 @@ let create
   ; cleanup_file
   ; sync_connected = false
   ; sync_in_progress = false
+  ; pending_sync = None
+  ; next_pending_request_id = 0
   ; save_graph_catalog
   }
 ;;
@@ -489,8 +545,8 @@ let update_remote_block_status session config ~uuid (status : Model.status) =
     (match session.send (Api.update_block_status_request config ~uuid ~status:status.uuid) with
      | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> Ok ()
      | Ok response ->
-       debug "update block status HTTP failed uuid=%s status=%d" uuid response.Api.status
-       ; Error ("Logseq status API returned HTTP " ^ string_of_int response.Api.status)
+       debug "update block status HTTP failed uuid=%s status=%d" uuid response.Api.status;
+       Error ("Logseq status API returned HTTP " ^ string_of_int response.Api.status)
      | Error message ->
        debug "update block status request failed uuid=%s message=%s" uuid message;
        Error message)
@@ -508,14 +564,14 @@ let save_remote_block session config (block : Model.block) =
   match title with
   | Error _ as error -> error
   | Ok title ->
-  match session.send (Api.update_block_request config ~uuid:block.uuid ~title) with
-  | Error message -> Error message
-  | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
-    Error ("Logseq block API returned HTTP " ^ string_of_int response.Api.status)
-  | Ok _ ->
-    (match block.status with
-     | None -> Ok ()
-     | Some status -> update_remote_block_status session config ~uuid:block.uuid status)
+    (match session.send (Api.update_block_request config ~uuid:block.uuid ~title) with
+     | Error message -> Error message
+     | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
+       Error ("Logseq block API returned HTTP " ^ string_of_int response.Api.status)
+     | Ok _ ->
+       (match block.status with
+        | None -> Ok ()
+        | Some status -> update_remote_block_status session config ~uuid:block.uuid status))
 ;;
 
 let search_remote session config query =
@@ -588,6 +644,331 @@ let create_encrypted_journal_page session config ~journal_day =
             ("Logseq encrypted journal page API returned HTTP "
              ^ string_of_int response.Api.status)
         | Error _ as error -> error))
+;;
+
+let same_status left right =
+  match left, right with
+  | None, None -> true
+  | Some (left : Model.status), Some (right : Model.status) ->
+    String.equal left.uuid right.uuid
+  | _ -> false
+;;
+
+let same_pending_version (left : Model.block) (right : Model.block) =
+  String.equal left.uuid right.uuid
+  && String.equal left.kind right.kind
+  && String.equal left.title right.title
+  && left.updated_at = right.updated_at
+  && same_status left.status right.status
+  && left.asset_size = right.asset_size
+  && left.asset_checksum = right.asset_checksum
+  && left.local_path = right.local_path
+;;
+
+let pending_block_unchanged session sent =
+  Option.fold
+    ~none:false
+    ~some:(same_pending_version sent)
+    (Model.read_block session.model sent.Model.uuid)
+;;
+
+let mark_pending_failed_if_unchanged session block =
+  if pending_block_unchanged session block
+  then ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid)
+;;
+
+let set_pending_active session pump ~transport ~operation ?cleanup_path () =
+  session.next_pending_request_id <- session.next_pending_request_id + 1;
+  pump.active <-
+    Some
+      { id = session.next_pending_request_id
+      ; transport
+      ; operation
+      ; cleanup_path
+      }
+;;
+
+let encrypted_title session config title =
+  match session.encrypt_title with
+  | Some encrypt -> encrypt ~graph_id:config.Api.graph_id title
+  | None -> Error "encrypted graph title encryption is unavailable"
+;;
+
+let rec prepare_pending_next session pump =
+  match pump.remaining with
+  | [] ->
+    pump.active <- None;
+    session.pending_sync <- None
+  | block :: rest ->
+    pump.remaining <- rest;
+    (match prepare_pending_block session pump block with
+     | Ok () -> ()
+     | Error message ->
+       debug "prepare pending block failed uuid=%s message=%s" block.Model.uuid message;
+       mark_pending_failed_if_unchanged session block;
+       prepare_pending_next session pump)
+
+and prepare_pending_block session pump (block : Model.block) =
+  if Hashtbl.mem pump.authoritative block.uuid
+  then
+    let title =
+      if selected_graph_is_encrypted session
+      then encrypted_title session pump.config block.title
+      else Ok block.title
+    in
+    Result.map
+      (fun title ->
+        set_pending_active
+          session
+          pump
+          ~transport:(Json_request (Api.update_block_request pump.config ~uuid:block.uuid ~title))
+          ~operation:(Update_title block)
+          ())
+      title
+  else prepare_pending_creation session pump block
+
+and prepare_pending_creation session pump (block : Model.block) =
+  if selected_graph_is_encrypted session
+  then
+    match encrypted_title session pump.config block.title with
+    | Error _ as error -> error
+    | Ok title ->
+      let journal_day = Model.journal_day_for_ms block.created_at in
+      let cached_page = Hashtbl.find_opt pump.resolved_journal_pages journal_day in
+      let graph_page =
+        match cached_page, session.journal_page_id with
+        | Some page_id, _ -> Some page_id
+        | None, Some find -> find ~journal_day
+        | None, None -> None
+      in
+      (match graph_page with
+       | Some page_id -> prepare_pending_create_request session pump block ~title ~page_id:(Some page_id)
+       | None ->
+         let page_id = journal_page_uuid journal_day in
+         let journal_title = journal_day_title journal_day in
+         (match
+            encrypted_title session pump.config journal_title,
+            encrypted_title session pump.config (String.lowercase_ascii journal_title)
+          with
+          | Error message, _ | _, Error message -> Error message
+          | Ok encrypted_journal_title, Ok encrypted_name ->
+            let request =
+              Api.encrypted_journal_page_request
+                pump.config
+                ~uuid:page_id
+                ~title:encrypted_journal_title
+                ~name:encrypted_name
+                ~journal_day
+            in
+            set_pending_active
+              session
+              pump
+              ~transport:(Json_request request)
+              ~operation:(Create_journal { block; encrypted_title = title; page_id; journal_day })
+              ();
+            Ok ()))
+  else prepare_pending_create_request session pump block ~title:block.title ~page_id:None
+
+and prepare_pending_create_request session pump (block : Model.block) ~title ~page_id =
+  match block.kind, block.status, block.local_path, block.asset_type,
+        block.asset_size, block.asset_checksum with
+  | "block", _, _, _, _, _ ->
+    set_pending_active
+      session
+      pump
+      ~transport:(Json_request (Api.capture_request ?page_id pump.config ~uuid:block.uuid title))
+      ~operation:(Create_block block)
+      ();
+    Ok ()
+  | "task", Some status, _, _, _, _ ->
+    set_pending_active
+      session
+      pump
+      ~transport:(Json_request (Api.task_request ?page_id pump.config ~uuid:block.uuid ~status:status.uuid title))
+      ~operation:(Create_block block)
+      ();
+    Ok ()
+  | "asset", _, Some source_path, Some asset_type, Some asset_size, Some checksum ->
+    if selected_graph_is_encrypted session
+    then
+      (match page_id, session.encrypt_asset_file with
+       | None, _ -> Error "encrypted asset requires a journal page"
+       | _, None -> Error "encrypted asset encryption is unavailable"
+       | Some page_id, Some encrypt_asset_file ->
+         (match encrypt_asset_file ~graph_id:pump.config.graph_id ~source_path with
+          | Error _ as error -> error
+          | Ok (file_path, upload_size) ->
+            let upload =
+              Api.encrypted_asset_upload_request
+                pump.config
+                ~uuid:block.uuid
+                ~file_name:block.title
+                ~title
+                ~page_id
+                ~size:asset_size
+                ~upload_size
+                ~checksum
+                ~file_path
+            in
+            set_pending_active
+              session
+              pump
+              ~transport:(File_upload upload)
+              ~operation:(Create_block block)
+              ~cleanup_path:file_path
+              ();
+            Ok ()))
+    else (
+      let upload =
+        Api.asset_upload_request
+          pump.config
+          ~uuid:block.uuid
+          ~file_name:block.title
+          ~size:asset_size
+          ~checksum
+          ~file_path:source_path
+          ~content_type:(Api.content_type_for_asset_type asset_type)
+      in
+      set_pending_active
+        session
+        pump
+        ~transport:(File_upload upload)
+        ~operation:(Create_block block)
+        ();
+      Ok ())
+  | _ -> Error "pending block has incomplete semantic REST metadata"
+;;
+
+let begin_pending_sync session config =
+  match session.pending_sync with
+  | Some _ -> ()
+  | None ->
+    let authoritative = Hashtbl.create 64 in
+    Option.iter
+      (fun blocks ->
+        List.iter
+          (fun (block : Model.block) -> Hashtbl.replace authoritative block.uuid ())
+          blocks)
+      (Option.bind session.graph_blocks (fun graph_blocks -> graph_blocks ()));
+    let pump =
+      { config
+      ; remaining = Model.pending_blocks session.model
+      ; authoritative
+      ; resolved_journal_pages = Hashtbl.create 8
+      ; active = None
+      }
+    in
+    session.pending_sync <- Some pump;
+    prepare_pending_next session pump
+;;
+
+let cleanup_pending_active session active =
+  Option.iter session.cleanup_file active.cleanup_path
+;;
+
+let finish_pending_block session pump block ~succeeded =
+  if succeeded
+  then (
+    if pending_block_unchanged session block
+    then ignore (Model.mark_block_submitted session.model ~uuid:block.uuid))
+  else mark_pending_failed_if_unchanged session block;
+  pump.active <- None;
+  prepare_pending_next session pump
+;;
+
+let complete_pending_active session pump active response =
+  let succeeded = response.Api.status >= 200 && response.status < 300 in
+  match active.operation with
+  | Update_title block when succeeded ->
+    (match block.status with
+     | Some status ->
+       set_pending_active
+         session
+         pump
+         ~transport:(Json_request (Api.update_block_status_request pump.config ~uuid:block.uuid ~status:status.uuid))
+         ~operation:(Update_status block)
+         ()
+     | None -> finish_pending_block session pump block ~succeeded:true)
+  | Update_title block | Update_status block ->
+    finish_pending_block session pump block ~succeeded
+  | Create_journal { block; encrypted_title; page_id; journal_day } when succeeded ->
+    Hashtbl.replace pump.resolved_journal_pages journal_day page_id;
+    pump.active <- None;
+    (match prepare_pending_create_request session pump block ~title:encrypted_title ~page_id:(Some page_id) with
+     | Ok () -> ()
+     | Error message ->
+       debug "prepare pending create after journal failed uuid=%s message=%s" block.uuid message;
+       mark_pending_failed_if_unchanged session block;
+       prepare_pending_next session pump)
+  | Create_journal { block; _ } -> finish_pending_block session pump block ~succeeded:false
+  | Create_block block when succeeded ->
+    let remote_uuid =
+      try Ok (Api.created_block_uuid_from_body response.body)
+      with error -> Error (Printexc.to_string error)
+    in
+    (match remote_uuid with
+     | Error message ->
+       debug "pending creation response failed uuid=%s message=%s" block.uuid message;
+       finish_pending_block session pump block ~succeeded:false
+     | Ok remote_uuid ->
+       let sync_status =
+         if pending_block_unchanged session block then "submitted" else "pending"
+       in
+       ignore
+         (Model.reconcile_created_block
+            ~sync_status
+            session.model
+            ~local_uuid:block.uuid
+            ~remote_uuid);
+       pump.active <- None;
+       prepare_pending_next session pump)
+  | Create_block block -> finish_pending_block session pump block ~succeeded:false
+;;
+
+let complete_pending_sync session payload =
+  let invalid message = Error message in
+  match session.pending_sync with
+  | None -> invalid "pending sync is not active"
+  | Some pump ->
+    (match pump.active with
+     | None -> invalid "pending sync has no active request"
+     | Some active ->
+       (try
+          match from_string payload with
+          | `Assoc fields ->
+            (match assoc "id" fields with
+             | Some (`Int id) when id = active.id ->
+               let response =
+                 match assoc "error" fields, assoc "status" fields with
+                 | Some (`String message), _ when not (String.equal message "") -> Error message
+                 | _, Some (`Int status) ->
+                   let body =
+                     match assoc "body" fields with Some (`String body) -> body | _ -> ""
+                   in
+                   Ok Api.{ status; body }
+                 | _ -> Error "pending transport returned no HTTP status"
+               in
+               cleanup_pending_active session active;
+               (match response with
+                | Ok response -> complete_pending_active session pump active response
+                | Error message ->
+                  debug "pending transport failed id=%d message=%s" active.id message;
+                  (match active.operation with
+                   | Create_block block | Update_title block | Update_status block
+                   | Create_journal { block; _ } ->
+                     finish_pending_block session pump block ~succeeded:false));
+               Ok ()
+             | Some (`Int _) -> invalid "pending sync request id does not match"
+             | _ -> invalid "pending sync completion requires id")
+          | _ -> invalid "pending sync completion must be an object"
+        with error -> invalid ("invalid pending sync completion: " ^ Printexc.to_string error)))
+;;
+
+let cancel_pending_sync session =
+  Option.iter
+    (fun pump -> Option.iter (cleanup_pending_active session) pump.active)
+    session.pending_sync;
+  session.pending_sync <- None
 ;;
 
 let sync_pending_unlocked session config =
@@ -942,13 +1323,35 @@ let dispatch session action payload =
         | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
      | None -> failure ~code:"invalid_params" ~message:"addAsset requires a JSON payload")
+  | "beginPendingSync" ->
+    (match session.config with
+     | None -> snapshot_visible session
+     | Some config ->
+       (match resolve_graph session config with
+        | Ok config ->
+          begin_pending_sync session config;
+          snapshot_visible session
+        | Error _ -> snapshot_visible session))
+  | "completePendingSync" ->
+    (match payload with
+     | Some payload ->
+       (match complete_pending_sync session payload with
+        | Ok () -> snapshot_visible session
+        | Error message -> failure ~code:"invalid_pending_sync_completion" ~message)
+     | None ->
+       failure
+         ~code:"invalid_params"
+         ~message:"completePendingSync requires a JSON payload")
+  | "cancelPendingSync" ->
+    cancel_pending_sync session;
+    snapshot_visible session
   | "syncPending" ->
     (match session.config with
      | None -> snapshot_visible session
      | Some config ->
        (match resolve_graph session config with
         | Ok config -> sync_pending session config
-       | Error _ -> snapshot_visible session))
+        | Error _ -> snapshot_visible session))
   | "loadBlockReferences" ->
     (match session.config, payload with
      | Some config, Some uuid ->

@@ -268,6 +268,53 @@ public struct LogseqGraph: Codable, Hashable, Identifiable, Sendable {
     public let isReady: Bool
 }
 
+public struct LogseqPendingSyncRequest: Codable, Sendable {
+    public let id: Int
+    public let method: String
+    public let url: String
+    public let body: String?
+    public let token: String
+    public let filePath: String?
+    public let contentType: String
+
+    public init(
+        id: Int,
+        method: String,
+        url: String,
+        body: String?,
+        token: String,
+        filePath: String?,
+        contentType: String
+    ) {
+        self.id = id
+        self.method = method
+        self.url = url
+        self.body = body
+        self.token = token
+        self.filePath = filePath
+        self.contentType = contentType
+    }
+}
+
+public struct LogseqPendingSyncResult: Codable, Sendable {
+    public let status: Int?
+    public let body: String?
+    public let error: String?
+
+    public init(status: Int?, body: String?, error: String?) {
+        self.status = status
+        self.body = body
+        self.error = error
+    }
+}
+
+private struct LogseqPendingSyncCompletion: Encodable {
+    let id: Int
+    let status: Int?
+    let body: String?
+    let error: String?
+}
+
 public struct LogseqChatSnapshot: Codable {
     public let revision: Int
     public let query: String
@@ -284,6 +331,7 @@ public struct LogseqChatSnapshot: Codable {
     public let taskStatuses: [LogseqTaskStatus]?
     public let isGraphEncrypted: Bool?
     public let isGraphUnlocked: Bool?
+    public let pendingSyncRequest: LogseqPendingSyncRequest?
 
     public init(
         revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
@@ -293,7 +341,8 @@ public struct LogseqChatSnapshot: Codable {
         relatedBlocks: [LogseqBlock]? = nil,
         taskStatuses: [LogseqTaskStatus]? = nil,
         isGraphEncrypted: Bool? = nil,
-        isGraphUnlocked: Bool? = nil
+        isGraphUnlocked: Bool? = nil,
+        pendingSyncRequest: LogseqPendingSyncRequest? = nil
     ) {
         self.revision = revision
         self.query = query
@@ -310,6 +359,7 @@ public struct LogseqChatSnapshot: Codable {
         self.taskStatuses = taskStatuses
         self.isGraphEncrypted = isGraphEncrypted
         self.isGraphUnlocked = isGraphUnlocked
+        self.pendingSyncRequest = pendingSyncRequest
     }
 }
 
@@ -588,6 +638,46 @@ private struct OpenGraphPayload: Encodable {
     let isEncrypted: Bool
 }
 
+private enum LogseqPendingSyncHTTPTransport {
+    static func send(_ pending: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
+        #if SKIP
+        return await AndroidPendingSyncTransport.send(request: pending)
+        #else
+        do {
+            guard let url = URL(string: pending.url) else {
+                return LogseqPendingSyncResult(status: nil, body: nil, error: "Invalid pending sync URL")
+            }
+            var request = URLRequest(url: url, timeoutInterval: 30)
+            request.httpMethod = pending.method
+            request.setValue("Bearer \(pending.token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            request.setValue(pending.contentType, forHTTPHeaderField: "Content-Type")
+            let data: Data
+            let response: URLResponse
+            if let filePath = pending.filePath {
+                (data, response) = try await URLSession.shared.upload(
+                    for: request,
+                    fromFile: URL(fileURLWithPath: filePath)
+                )
+            } else {
+                request.httpBody = pending.body.map { Data($0.utf8) }
+                (data, response) = try await URLSession.shared.data(for: request)
+            }
+            guard let http = response as? HTTPURLResponse else {
+                return LogseqPendingSyncResult(status: nil, body: nil, error: "Pending sync response was not HTTP")
+            }
+            return LogseqPendingSyncResult(
+                status: http.statusCode,
+                body: String(data: data, encoding: .utf8) ?? "",
+                error: nil
+            )
+        } catch {
+            return LogseqPendingSyncResult(status: nil, body: nil, error: "\(error)")
+        }
+        #endif
+    }
+}
+
 #if !SKIP
 private final class LogseqChatCoreExecutor: @unchecked Sendable {
     static let shared = LogseqChatCoreExecutor()
@@ -669,12 +759,25 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
     public private(set) var cursorAdvancedAfterMutation = false
 
     private let callCore: @Sendable (String) -> String
+    private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
     private var searchGeneration = 0
     private var openedDatabasePath: String?
     private var mutationServerT: Int?
+    private var pendingSyncTask: Task<Void, Never>?
+    private var pendingSyncRequested = false
 
-    public init(call: @escaping @Sendable (String) -> String) {
+    public convenience init(call: @escaping @Sendable (String) -> String) {
+        self.init(call: call) { request in
+            await LogseqPendingSyncHTTPTransport.send(request)
+        }
+    }
+
+    public init(
+        call: @escaping @Sendable (String) -> String,
+        pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
+    ) {
         self.callCore = call
+        self.pendingTransport = pendingTransport
     }
 
     public var sections: [LogseqBlockSection] {
@@ -922,12 +1025,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             while let frame = try await stream.nextFrame() {
                 await dispatchRawAndWait("feedSSE", payload: frame)
                 if lastError != nil { break }
-                await performAsyncAndWait(
-                    LogseqChatRPCRequest(
-                        method: "dispatch",
-                        params: LogseqChatRPCParams(action: "syncPending")
-                    )
-                )
+                syncPending()
                 if lastError != nil { break }
                 if stopAfterFirstFrame { break }
             }
@@ -968,12 +1066,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
                     for frame in frames {
                         await dispatchRawAndWait("feedSSE", payload: frame)
                         if lastError != nil { break }
-                        await performAsyncAndWait(
-                            LogseqChatRPCRequest(
-                                method: "dispatch",
-                                params: LogseqChatRPCParams(action: "syncPending")
-                            )
-                        )
+                        syncPending()
                         if lastError != nil { break }
                         if stopAfterFirstFrame { break eventStream }
                     }
@@ -1133,13 +1226,22 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
     }
 
     public func syncPending() {
-        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
+        pendingSyncRequested = true
+        guard pendingSyncTask == nil else { return }
+        pendingSyncTask = Task { [weak self] in
+            await self?.runPendingSyncPump()
+            self?.pendingSyncTask = nil
+        }
     }
 
     public func syncPendingForBackground() async {
-        await performAsyncAndWait(
-            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending"))
-        )
+        syncPending()
+        guard let task = pendingSyncTask else { return }
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     public func update(block: LogseqBlock, title: String) {
@@ -1228,8 +1330,36 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
     private func performAsyncThenSyncPending(_ request: LogseqChatRPCRequest) {
         Task {
             await performAsyncAndWait(request)
-            await performAsyncAndWait(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
+            syncPending()
         }
+    }
+
+    private func runPendingSyncPump() async {
+        repeat {
+            pendingSyncRequested = false
+            await performAsyncAndWait(
+                LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "beginPendingSync")
+                )
+            )
+            var pending = snapshot.pendingSyncRequest
+            while let request = pending, !Task.isCancelled {
+                let result = await pendingTransport(request)
+                if Task.isCancelled { break }
+                let completion = LogseqPendingSyncCompletion(
+                    id: request.id,
+                    status: result.status,
+                    body: result.body,
+                    error: result.error
+                )
+                await dispatchEncodedAndWait("completePendingSync", completion)
+                pending = snapshot.pendingSyncRequest
+            }
+            if Task.isCancelled {
+                await dispatchRawAndWait("cancelPendingSync")
+            }
+        } while pendingSyncRequested && !Task.isCancelled
     }
 
     private func performAsyncAndWait(
@@ -1391,7 +1521,8 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             relatedBlocks: snapshot.relatedBlocks,
             taskStatuses: snapshot.taskStatuses,
             isGraphEncrypted: snapshot.isGraphEncrypted,
-            isGraphUnlocked: snapshot.isGraphUnlocked
+            isGraphUnlocked: snapshot.isGraphUnlocked,
+            pendingSyncRequest: snapshot.pendingSyncRequest
         )
         lastError = nil
     }
@@ -1424,7 +1555,8 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             relatedBlocks: result.relatedBlocks,
             taskStatuses: result.taskStatuses ?? snapshot.taskStatuses,
             isGraphEncrypted: result.isGraphEncrypted,
-            isGraphUnlocked: result.isGraphUnlocked
+            isGraphUnlocked: result.isGraphUnlocked,
+            pendingSyncRequest: result.pendingSyncRequest
         )
     }
 
