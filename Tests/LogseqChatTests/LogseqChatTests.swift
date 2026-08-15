@@ -225,6 +225,8 @@ import Foundation
         #expect(!source.contains("Logseq chat app"))
         #expect(source.contains("settingsControl"))
         #expect(source.contains("IconImage(name: \"more_horiz\")"))
+        #expect(source.contains("Spacer()\n            settingsControl"))
+        #expect(source.contains("accessibilityIdentifier(\"button.connection\")"))
         #expect(source.contains(".platformFloatingHeaderInset()"))
     }
 
@@ -607,8 +609,9 @@ import Foundation
         #expect(expandedComposer.contains("accessibilityIdentifier(\"button.attachment\")"))
         #expect(expandedComposer.contains("accessibilityIdentifier(\"button.task-status\")"))
         #expect(expandedComposer.contains("IconImage(name: \"arrow_upward\")"))
-        #expect(expandedComposer.contains("size: 22"))
-        #expect(expandedComposer.contains(".frame(width: 22, height: 22)"))
+        #expect(expandedComposer.contains("IconImage(name: \"plus\", size: 24)"))
+        #expect(expandedComposer.contains("size: 24"))
+        #expect(expandedComposer.contains("accessibilityIdentifier(\"button.attachment\")\n                .tint(Color.primary)"))
         #expect(expandedComposer.contains(".frame(width: 32, height: 32)"))
         #expect(expandedComposer.contains(".frame(width: 40, height: 40)"))
         #expect(expandedComposer.contains(".background(Circle().fill(Color.black))"))
@@ -619,6 +622,10 @@ import Foundation
         #expect(expandedComposer.contains("HStack(alignment: .center, spacing: 8)"))
         #expect(expandedComposer.contains(".platformGlassContainer(cornerRadius: 10)"))
         #expect(expandedComposer.contains(".platformRoundedHitTarget(cornerRadius: 10)"))
+
+        let statusIconRange = try #require(source.range(of: "private struct TaskStatusIcon: View"))
+        let statusIconSource = source[statusIconRange.lowerBound...]
+        #expect(statusIconSource.contains("IconImage(name: iconName, size: size)"))
     }
 
     @Test func attachmentMenuUsesDistinctPhotoCameraAndFileActions() throws {

@@ -804,13 +804,13 @@ struct ContentView: View {
                     }
                     #endif
                 } label: {
-                    IconImage(name: "plus")
-                        .frame(width: 22, height: 22)
+                    IconImage(name: "plus", size: 24)
                         .frame(width: 32, height: 32)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                 }
                 .accessibilityLabel("Add attachment")
                 .accessibilityIdentifier("button.attachment")
+                .tint(Color.primary)
                 .platformIconMenuStyle()
                 Menu {
                     ForEach(taskStatusMenuStatuses) { status in
@@ -822,7 +822,7 @@ struct ContentView: View {
                 } label: {
                     TaskStatusIcon(
                         status: selectedTaskStatus ?? LogseqTaskStatus.todo,
-                        size: 22
+                        size: 24
                     )
                         .opacity(selectedTaskStatus == nil ? 0.55 : 1.0)
                         .frame(width: 32, height: 32)
@@ -1633,8 +1633,7 @@ private struct TaskStatusIcon: View {
     }
 
     var body: some View {
-        IconImage(name: iconName)
-            .frame(width: size, height: size)
+        IconImage(name: iconName, size: size)
             .foregroundStyle(color)
             .accessibilityLabel(status.title)
     }
@@ -1724,6 +1723,12 @@ private struct CameraPicker: UIViewControllerRepresentable {
 
 private struct IconImage: View {
     let name: String
+    let size: CGFloat
+
+    init(name: String, size: CGFloat = 20) {
+        self.name = name
+        self.size = size
+    }
 
     private static let assetBundle: Bundle = {
         #if os(macOS) && !SKIP
@@ -1740,7 +1745,7 @@ private struct IconImage: View {
         Image(name, bundle: Self.assetBundle)
             .resizable()
             .scaledToFit()
-            .frame(width: 20, height: 20)
+            .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 }
