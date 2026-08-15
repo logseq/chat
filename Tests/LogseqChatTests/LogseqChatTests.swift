@@ -373,12 +373,30 @@ import Foundation
         let end = try #require(remainingSource.range(of: "\n    }\n}", options: []))
         let sendDraftSource = remainingSource[..<end.upperBound]
 
-        #expect(source.contains("@AppStorage(\"logseq.composerDraft\") private var draft = \"\""))
-        #expect(!source.contains("@State private var draft = \"\""))
+        #expect(source.contains("@State private var draft = \"\""))
+        #expect(source.contains("@AppStorage(\"logseq.composerDraft\") private var persistedDraft = \"\""))
+        #expect(source.contains("draft = persistedDraft"))
+        #expect(source.contains("persistedDraft = value"))
         #expect(sendDraftSource.contains("let submittedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)"))
         #expect(sendDraftSource.contains("guard !submittedDraft.isEmpty else { return }"))
         #expect(sendDraftSource.contains("store.send(submittedDraft)"))
         #expect(sendDraftSource.contains("draft = \"\""))
+        #expect(sendDraftSource.contains("persistedDraft = \"\""))
+    }
+
+    @Test func composerStartsANewEditorSessionBeforeDispatchingSubmittedText() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let sendStart = try #require(source.range(of: "private func sendDraft()"))
+        let remainingSource = source[sendStart.lowerBound...]
+        let sendEnd = try #require(remainingSource.range(of: "\n    }\n}", options: []))
+        let sendSource = remainingSource[..<sendEnd.upperBound]
+        let reset = try #require(sendSource.range(of: "composerInputGeneration += 1"))
+        let firstDispatch = try #require(sendSource.range(of: "store.update"))
+
+        #expect(source.contains(".id(composerInputGeneration)"))
+        #expect(reset.lowerBound < firstDispatch.lowerBound)
     }
 
     @Test func composerClearsBeforeEveryStoreMutation() throws {

@@ -35,9 +35,11 @@ struct ContentView: View {
     #endif
     @State private var hasAutoScrolledInitially = false
     @State private var graphSyncGeneration = 0
+    @State private var composerInputGeneration = 0
+    @State private var draft = ""
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
-    @AppStorage("logseq.composerDraft") private var draft = ""
+    @AppStorage("logseq.composerDraft") private var persistedDraft = ""
     @FocusState private var composerFocused: Bool
     @FocusState private var searchFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -50,6 +52,7 @@ struct ContentView: View {
     var body: some View {
         rootContent
         .task {
+            draft = persistedDraft
             #if DEBUG
             print("LogseqChat debug: content task started")
             #endif
@@ -749,6 +752,7 @@ struct ContentView: View {
     private var expandedComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Capture", text: $draft, axis: .vertical)
+                .id(composerInputGeneration)
                 .platformComposerLineLimit()
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(minHeight: 36, alignment: .topLeading)
@@ -871,6 +875,7 @@ struct ContentView: View {
             focusComposer()
         }
         .onChange(of: draft) { _, value in
+            persistedDraft = value
             if composerExpanded && value.isEmpty {
                 focusComposer()
             }
@@ -1022,6 +1027,8 @@ struct ContentView: View {
         composerExpanded = false
         composerFocused = false
         draft = ""
+        persistedDraft = ""
+        composerInputGeneration += 1
         selectedTaskStatus = nil
         editingBlock = nil
     }
@@ -1032,6 +1039,8 @@ struct ContentView: View {
         let editingBlock = editingBlock
         let selectedTaskStatus = selectedTaskStatus
         draft = ""
+        persistedDraft = ""
+        composerInputGeneration += 1
         if let editingBlock {
             store.update(block: editingBlock, title: submittedDraft, status: selectedTaskStatus)
             self.editingBlock = nil
