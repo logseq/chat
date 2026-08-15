@@ -25,6 +25,7 @@ struct ContentView: View {
     @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var editingBlock: LogseqBlock?
     #if !SKIP
+    @State private var taskStatusPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var photoPickerPresented = false
     #if os(iOS)
@@ -844,24 +845,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("button.attachment")
                 .tint(Color.primary)
                 .platformIconMenuStyle()
-                Menu {
-                    ForEach(taskStatusMenuStatuses) { status in
-                        taskStatusButton(status)
-                    }
-                    if selectedTaskStatus != nil {
-                        Button("Clear task status") { selectedTaskStatus = nil }
-                    }
-                } label: {
-                    TaskStatusIcon(
-                        status: selectedTaskStatus ?? LogseqTaskStatus.todo,
-                        size: 24
-                    )
-                        .opacity(selectedTaskStatus == nil ? 0.55 : 1.0)
-                        .frame(width: 32, height: 32)
-                }
-                .accessibilityLabel("Task status")
-                .accessibilityIdentifier("button.task-status")
-                .platformIconMenuStyle()
+                composerTaskStatusControl
                 Spacer()
                 Button {
                     sendDraft()
@@ -892,6 +876,78 @@ struct ContentView: View {
             }
         }
     }
+
+    @ViewBuilder private var composerTaskStatusControl: some View {
+        #if SKIP
+        Menu {
+            ForEach(taskStatusMenuStatuses) { status in
+                taskStatusButton(status)
+            }
+            if selectedTaskStatus != nil {
+                Button("Clear task status") { selectedTaskStatus = nil }
+            }
+        } label: {
+            composerTaskStatusLabel
+        }
+        .platformIconMenuStyle()
+        #else
+        Button {
+            taskStatusPickerPresented = true
+        } label: {
+            composerTaskStatusLabel
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $taskStatusPickerPresented, arrowEdge: .bottom) {
+            composerTaskStatusChoices
+                .presentationCompactAdaptation(.popover)
+        }
+        #endif
+    }
+
+    private var composerTaskStatusLabel: some View {
+        TaskStatusIcon(
+            status: selectedTaskStatus ?? LogseqTaskStatus.todo,
+            size: 24
+        )
+        .opacity(selectedTaskStatus == nil ? 0.55 : 1.0)
+        .frame(width: 32, height: 32)
+        .accessibilityLabel("Task status")
+        .accessibilityIdentifier("button.task-status")
+    }
+
+    #if !SKIP
+    private var composerTaskStatusChoices: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(taskStatusMenuStatuses) { status in
+                Button {
+                    selectedTaskStatus = status
+                    taskStatusPickerPresented = false
+                } label: {
+                    HStack(spacing: 12) {
+                        TaskStatusIcon(status: status, size: 24)
+                        Text(verbatim: status.title)
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 16)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if selectedTaskStatus != nil {
+                Divider()
+                Button("Clear task status") {
+                    selectedTaskStatus = nil
+                    taskStatusPickerPresented = false
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: 40, alignment: .leading)
+            }
+        }
+        .padding(12)
+        .frame(minWidth: 220)
+    }
+    #endif
 
     private var collapsedComposer: some View {
         Button {
@@ -971,16 +1027,20 @@ struct ContentView: View {
     }
 
     private func sendDraft() {
-        if let editingBlock {
-            store.update(block: editingBlock, title: draft, status: selectedTaskStatus)
-            self.editingBlock = nil
-            selectedTaskStatus = nil
-        } else if let selectedTaskStatus {
-            store.sendTask(draft, status: selectedTaskStatus)
-        } else {
-            store.send(draft)
-        }
+        let submittedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !submittedDraft.isEmpty else { return }
+        let editingBlock = editingBlock
+        let selectedTaskStatus = selectedTaskStatus
         draft = ""
+        if let editingBlock {
+            store.update(block: editingBlock, title: submittedDraft, status: selectedTaskStatus)
+            self.editingBlock = nil
+            self.selectedTaskStatus = nil
+        } else if let selectedTaskStatus {
+            store.sendTask(submittedDraft, status: selectedTaskStatus)
+        } else {
+            store.send(submittedDraft)
+        }
         composerExpanded = true
         focusComposer()
     }
@@ -1474,7 +1534,7 @@ private struct BlockRow: View {
             if block.kind == "asset" {
                 AssetPreview(block: block, onOpen: onOpenAsset)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
                     if let status = block.status {
                         Menu {
                             ForEach(statuses) { option in
@@ -1488,7 +1548,7 @@ private struct BlockRow: View {
                                 }
                             }
                         } label: {
-                            TaskStatusIcon(status: status)
+                            TaskStatusIcon(status: status, size: 24)
                                 .frame(width: 24, height: 24)
                         }
                         .accessibilityLabel("Task status")
@@ -1499,6 +1559,7 @@ private struct BlockRow: View {
                         .fontWeight(.medium)
                         .foregroundStyle(.primary)
                         .lineLimit(3)
+                        .padding(.top, 2)
                 }
             }
             if !block.tags.isEmpty {

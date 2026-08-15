@@ -348,8 +348,15 @@ import Foundation
         let end = try #require(remainingSource.range(of: "\n    }\n}", options: []))
         let sendDraftSource = remainingSource[..<end.upperBound]
 
-        #expect(sendDraftSource.contains("store.send(draft)"))
+        #expect(sendDraftSource.contains("let submittedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)"))
+        #expect(sendDraftSource.contains("guard !submittedDraft.isEmpty else { return }"))
         #expect(sendDraftSource.contains("draft = \"\""))
+        #expect(sendDraftSource.contains("store.send(submittedDraft)"))
+        #expect(sendDraftSource.contains("store.sendTask(submittedDraft, status: selectedTaskStatus)"))
+        #expect(sendDraftSource.contains("store.update(block: editingBlock, title: submittedDraft, status: selectedTaskStatus)"))
+        let clear = try #require(sendDraftSource.range(of: "draft = \"\""))
+        let firstDispatch = try #require(sendDraftSource.range(of: "store.update"))
+        #expect(clear.lowerBound < firstDispatch.lowerBound)
         #expect(sendDraftSource.contains("composerExpanded = true"))
         #expect(sendDraftSource.contains("focusComposer()"))
         #expect(!sendDraftSource.contains("composerFocused = true"))
@@ -368,8 +375,26 @@ import Foundation
 
         #expect(source.contains("@AppStorage(\"logseq.composerDraft\") private var draft = \"\""))
         #expect(!source.contains("@State private var draft = \"\""))
-        #expect(sendDraftSource.contains("store.send(draft)"))
+        #expect(sendDraftSource.contains("let submittedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)"))
+        #expect(sendDraftSource.contains("guard !submittedDraft.isEmpty else { return }"))
+        #expect(sendDraftSource.contains("store.send(submittedDraft)"))
         #expect(sendDraftSource.contains("draft = \"\""))
+    }
+
+    @Test func composerClearsBeforeEveryStoreMutation() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let sendStart = try #require(source.range(of: "private func sendDraft()"))
+        let remainingSource = source[sendStart.lowerBound...]
+        let sendEnd = try #require(remainingSource.range(of: "\n    }\n}", options: []))
+        let sendSource = remainingSource[..<sendEnd.upperBound]
+        let clear = try #require(sendSource.range(of: "draft = \"\""))
+
+        for mutation in ["store.update", "store.sendTask", "store.send("] {
+            let dispatch = try #require(sendSource.range(of: mutation))
+            #expect(clear.lowerBound < dispatch.lowerBound)
+        }
     }
 
     @Test func chronologicalBlockListOnlyAutoScrollsAfterDataArrives() throws {
@@ -775,7 +800,7 @@ import Foundation
         #expect(source.contains("editingBlock = block"))
         #expect(source.contains("draft = block.title"))
         #expect(source.contains("selectedTaskStatus = block.status"))
-        #expect(source.contains("store.update(block: editingBlock, title: draft, status: selectedTaskStatus)"))
+        #expect(source.contains("store.update(block: editingBlock, title: submittedDraft, status: selectedTaskStatus)"))
     }
 
     @Test func dismissingComposerClearsDraftTaskStatusAndEditTarget() throws {
@@ -804,8 +829,41 @@ import Foundation
 
         #expect(rowSource.contains("Menu"))
         #expect(rowSource.contains("onStatusChange"))
-        #expect(rowSource.contains("TaskStatusIcon(status: status)"))
+        #expect(rowSource.contains("TaskStatusIcon(status: status, size: 24)"))
         #expect(source.contains("store.updateStatus(block: block, status: status)"))
+    }
+
+    @Test func blockTaskStatusIconIs24PointsAndCenteredOnTheFirstLine() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let rowStart = try #require(source.range(of: "private struct BlockRow: View"))
+        let remainingSource = source[rowStart.lowerBound...]
+        let rowEnd = try #require(remainingSource.range(of: "\n\nprivate struct AssetPreview: View"))
+        let rowSource = remainingSource[..<rowEnd.lowerBound]
+
+        #expect(rowSource.contains("HStack(alignment: .top, spacing: 8)"))
+        #expect(rowSource.contains("TaskStatusIcon(status: status, size: 24)"))
+        #expect(!rowSource.contains("HStack(alignment: .firstTextBaseline, spacing: 8)"))
+    }
+
+    @Test func nativeComposerStatusChoicesPreserveTheirStatusColors() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let controlStart = try #require(source.range(of: "private var composerTaskStatusControl: some View"))
+        let remainingSource = source[controlStart.lowerBound...]
+        let controlEnd = try #require(remainingSource.range(of: "\n\n    private var collapsedComposer: some View"))
+        let controlSource = remainingSource[..<controlEnd.lowerBound]
+
+        #expect(controlSource.contains("#if SKIP"))
+        #expect(controlSource.contains("Menu"))
+        #expect(controlSource.contains("Button"))
+        #expect(controlSource.contains(".popover(isPresented: $taskStatusPickerPresented"))
+        #expect(controlSource.contains(".presentationCompactAdaptation(.popover)"))
+        #expect(controlSource.contains("TaskStatusIcon(status: status, size: 24)"))
+        #expect(controlSource.contains("Text(verbatim: status.title)"))
+        #expect(controlSource.contains(".foregroundStyle(.primary)"))
     }
 
     @Test func expandedComposerDoesNotOverlayAFullScreenGestureLayer() throws {
