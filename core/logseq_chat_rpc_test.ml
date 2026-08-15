@@ -87,6 +87,21 @@ let pending_request response =
 ;;
 
 let () =
+  let response =
+    Logseq_chat_rpc.call
+      (Logseq_chat_rpc.create ())
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"syncPending"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    if required_bool "ok" fields then failwith "legacy syncPending action must be rejected";
+    let error = required_assoc "error" fields in
+    assert_equal "legacy syncPending error" "unknown_action" (required_string "code" error)
+  | _ -> failwith "legacy syncPending rejection should return an RPC response"
+;;
+
+let () =
   let legacy_send_count = ref 0 in
   let session =
     Logseq_chat_rpc.create
@@ -356,158 +371,6 @@ let () =
     if !loaded <> [ "encrypted-1" ]
     then failwith "encrypted graph selection must try the offline key cache"
   | _ -> failwith "selectGraph should return an RPC response"
-;;
-
-let () =
-  let requests = ref [] in
-  let uploads = ref [] in
-  let send (request : Logseq_chat_api.request) =
-    requests := request :: !requests;
-    Ok Logseq_chat_api.{ status = 201; body = {|{"uuid":"encrypted-created"}|} }
-  in
-  let upload (request : Logseq_chat_api.file_upload) =
-    uploads := request :: !uploads;
-    Ok Logseq_chat_api.{ status = 201; body = {|{"uuid":"encrypted-asset"}|} }
-  in
-  let session =
-    Logseq_chat_rpc.create
-      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
-      ~graph_unlocked:(fun ~graph_id:_ -> true)
-      ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
-      ~encrypt_asset_file:(fun ~graph_id:_ ~source_path:_ ->
-        Ok ("/tmp/encrypted-asset.transit", 4096))
-      ~journal_page_id:(fun ~journal_day ->
-        if journal_day = 20260412 then Some "real-journal-page" else None)
-      ~send
-      ~upload_file:upload
-      ()
-  in
-  configure_encrypted_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Secret block\",\"uuid\":\"encrypted-local\",\"now\":1776000000000}"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"syncPending"}}|});
-  match !requests with
-  | request :: _ ->
-    assert_equal "encrypted capture method" "POST" request.method_;
-    assert_equal
-      "encrypted capture body"
-      {|{"page-id":"real-journal-page","blocks":[{"uuid":"encrypted-local","title":"cipher(Secret block)"}]}|}
-      (Option.value request.body ~default:"")
-  | [] -> failwith "encrypted capture should use semantic REST"
-;;
-
-let () =
-  let uploaded = ref None in
-  let session =
-    Logseq_chat_rpc.create
-      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
-      ~graph_unlocked:(fun ~graph_id:_ -> true)
-      ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
-      ~encrypt_asset_file:(fun ~graph_id:_ ~source_path ->
-        assert_equal "asset encryption source" "/documents/photo.jpg" source_path;
-        Ok ("/tmp/photo.transit", 4096))
-      ~journal_page_id:(fun ~journal_day:_ -> Some "real-journal-page")
-      ~send:(fun _ -> Error "unexpected plain request")
-      ~upload_file:(fun request ->
-        uploaded := Some request;
-        Ok Logseq_chat_api.{ status = 201; body = {|{"uuid":"asset-local"}|} })
-      ()
-  in
-  configure_encrypted_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"asset-local\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"localPath\":\"/documents/photo.jpg\"}"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"syncPending"}}|});
-  match !uploaded with
-  | Some upload ->
-    assert_equal "encrypted upload path" "/tmp/photo.transit" upload.file_path;
-    if not (String.contains upload.request.url '?')
-    then failwith "encrypted asset request must include metadata";
-    let contains fragment =
-      try
-        ignore (Str.search_forward (Str.regexp_string fragment) upload.request.url 0);
-        true
-      with Not_found -> false
-    in
-    if not (contains "size=2048&upload-size=4096")
-    then failwith "encrypted asset must preserve logical and encoded sizes";
-    if not (contains "title=cipher%28photo.jpg%29&page-id=real-journal-page")
-    then failwith "encrypted asset must use ciphertext title and real journal page"
-  | None -> failwith "encrypted asset should upload its encrypted payload"
-;;
-
-let () =
-  let requests = ref [] in
-  let send (request : Logseq_chat_api.request) =
-    requests := !requests @ [ request ];
-    if String.ends_with ~suffix:"/pages" request.url
-    then
-      Ok
-        Logseq_chat_api.
-          { status = 201
-          ; body = {|{"uuid":"00000001-2026-0412-0000-000000000000"}|}
-          }
-    else Ok Logseq_chat_api.{ status = 201; body = {|{"uuid":"encrypted-missing-day"}|} }
-  in
-  let session =
-    Logseq_chat_rpc.create
-      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
-      ~graph_unlocked:(fun ~graph_id:_ -> true)
-      ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
-      ~journal_page_id:(fun ~journal_day:_ -> None)
-      ~send
-      ()
-  in
-  configure_encrypted_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"First block of the day\",\"uuid\":\"encrypted-missing-day\",\"now\":1776000000000}"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"syncPending"}}|});
-  match !requests with
-  | [ page_request; capture_request ] ->
-    assert_equal "encrypted journal create method" "POST" page_request.method_;
-    assert_equal
-      "encrypted journal create URL"
-      "http://127.0.0.1:8787/api/v1/graphs/encrypted-1/pages"
-      page_request.url;
-    assert_equal
-      "encrypted journal create body"
-      {|{"uuid":"00000001-2026-0412-0000-000000000000","title":"cipher(Apr 12th, 2026)","name":"cipher(apr 12th, 2026)","journal-day":20260412}|}
-      (Option.value page_request.body ~default:"");
-    assert_equal
-      "capture after encrypted journal creation"
-      {|{"page-id":"00000001-2026-0412-0000-000000000000","blocks":[{"uuid":"encrypted-missing-day","title":"cipher(First block of the day)"}]}|}
-      (Option.value capture_request.body ~default:"")
-  | requests ->
-    failwith
-      (Printf.sprintf
-         "encrypted missing journal sync expected two semantic requests, got %d"
-         (List.length requests))
 ;;
 
 let () =

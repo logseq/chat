@@ -55,7 +55,6 @@ type t =
   ; upload_file : Api.file_upload -> (Api.response, string) result
   ; cleanup_file : string -> unit
   ; mutable sync_connected : bool
-  ; mutable sync_in_progress : bool
   ; mutable pending_sync : pending_sync option
   ; mutable next_pending_request_id : int
   ; save_graph_catalog : (string -> unit) option
@@ -434,7 +433,6 @@ let create
   ; upload_file
   ; cleanup_file
   ; sync_connected = false
-  ; sync_in_progress = false
   ; pending_sync = None
   ; next_pending_request_id = 0
   ; save_graph_catalog
@@ -538,42 +536,6 @@ let resolve_graph _session config =
   else Error "Select a Logseq graph before syncing"
 ;;
 
-let update_remote_block_status session config ~uuid (status : Model.status) =
-  match resolve_graph session config with
-  | Error message -> Error message
-  | Ok config ->
-    (match session.send (Api.update_block_status_request config ~uuid ~status:status.uuid) with
-     | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> Ok ()
-     | Ok response ->
-       debug "update block status HTTP failed uuid=%s status=%d" uuid response.Api.status;
-       Error ("Logseq status API returned HTTP " ^ string_of_int response.Api.status)
-     | Error message ->
-       debug "update block status request failed uuid=%s message=%s" uuid message;
-       Error message)
-;;
-
-let save_remote_block session config (block : Model.block) =
-  let title =
-    if selected_graph_is_encrypted session
-    then
-      (match session.encrypt_title with
-       | Some encrypt -> encrypt ~graph_id:config.Api.graph_id block.title
-       | None -> Error "encrypted graph title encryption is unavailable")
-    else Ok block.title
-  in
-  match title with
-  | Error _ as error -> error
-  | Ok title ->
-    (match session.send (Api.update_block_request config ~uuid:block.uuid ~title) with
-     | Error message -> Error message
-     | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
-       Error ("Logseq block API returned HTTP " ^ string_of_int response.Api.status)
-     | Ok _ ->
-       (match block.status with
-        | None -> Ok ()
-        | Some status -> update_remote_block_status session config ~uuid:block.uuid status))
-;;
-
 let search_remote session config query =
   let now = now_ms () in
   match session.send (Api.search_request config query) with
@@ -615,35 +577,6 @@ let journal_day_title journal_day =
     else invalid_arg "invalid journal month"
   in
   Printf.sprintf "%s %d%s, %04d" month_name day suffix year
-;;
-
-let create_encrypted_journal_page session config ~journal_day =
-  match session.encrypt_title with
-  | None -> Error "encrypted graph title encryption is unavailable"
-  | Some encrypt_title ->
-    let page_id = journal_page_uuid journal_day in
-    let title = journal_day_title journal_day in
-    (match
-       encrypt_title ~graph_id:config.Api.graph_id title,
-       encrypt_title ~graph_id:config.Api.graph_id (String.lowercase_ascii title)
-     with
-     | Error message, _ | _, Error message -> Error message
-     | Ok encrypted_title, Ok encrypted_name ->
-       (match
-          session.send
-            (Api.encrypted_journal_page_request
-               config
-               ~uuid:page_id
-               ~title:encrypted_title
-               ~name:encrypted_name
-               ~journal_day)
-        with
-        | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> Ok page_id
-        | Ok response ->
-          Error
-            ("Logseq encrypted journal page API returned HTTP "
-             ^ string_of_int response.Api.status)
-        | Error _ as error -> error))
 ;;
 
 let same_status left right =
@@ -971,144 +904,6 @@ let cancel_pending_sync session =
   session.pending_sync <- None
 ;;
 
-let sync_pending_unlocked session config =
-  let pending_blocks = Model.pending_blocks session.model in
-  let resolved_journal_pages = Hashtbl.create 8 in
-  let resolve_journal_page journal_day =
-    match Hashtbl.find_opt resolved_journal_pages journal_day with
-    | Some page_id -> Ok page_id
-    | None ->
-      let result =
-        match session.journal_page_id with
-        | None -> Error "encrypted graph journal lookup is unavailable"
-        | Some journal_page_id ->
-          (match journal_page_id ~journal_day with
-           | Some page_id -> Ok page_id
-           | None -> create_encrypted_journal_page session config ~journal_day)
-      in
-      (match result with
-       | Ok page_id -> Hashtbl.replace resolved_journal_pages journal_day page_id
-       | Error _ -> ());
-      result
-  in
-  let authoritative_uuids = Hashtbl.create 64 in
-  Option.iter
-    (fun blocks ->
-      List.iter
-        (fun (block : Model.block) -> Hashtbl.replace authoritative_uuids block.uuid ())
-        blocks)
-    (Option.bind session.graph_blocks (fun graph_blocks -> graph_blocks ()));
-  debug "sync pending started count=%d graph=%s" (List.length pending_blocks) config.Api.graph_id;
-  List.iter
-    (fun (block : Model.block) ->
-      if Hashtbl.mem authoritative_uuids block.uuid
-      then (
-        match save_remote_block session config block with
-        | Ok () ->
-          debug "sync pending update succeeded uuid=%s" block.uuid;
-          ignore (Model.mark_block_submitted session.model ~uuid:block.uuid)
-        | Error message ->
-          debug "sync pending update failed uuid=%s message=%s" block.uuid message;
-          ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
-      else (
-        let result =
-          if selected_graph_is_encrypted session
-          then (
-            let journal_day = Model.journal_day_for_ms block.created_at in
-            match session.encrypt_title with
-            | Some encrypt_title ->
-              (match encrypt_title ~graph_id:config.Api.graph_id block.title with
-               | Error message -> Error message
-               | Ok title ->
-                 (match resolve_journal_page journal_day with
-                  | Error message -> Error message
-                  | Ok page_id ->
-                 (match block.kind, block.status, block.local_path, block.asset_type,
-                        block.asset_size, block.asset_checksum with
-                  | "block", _, _, _, _, _ ->
-                    session.send
-                      (Api.capture_request ~page_id config ~uuid:block.uuid title)
-                  | "task", Some status, _, _, _, _ ->
-                    session.send
-                      (Api.task_request ~page_id config ~uuid:block.uuid
-                         ~status:status.uuid title)
-                  | "asset", _, Some source_path, Some _asset_type, Some asset_size,
-                    Some checksum ->
-                    (match session.encrypt_asset_file with
-                     | None -> Error "encrypted asset encryption is unavailable"
-                     | Some encrypt_asset_file ->
-                       (match encrypt_asset_file ~graph_id:config.graph_id ~source_path with
-                        | Error _ as error -> error
-                        | Ok (file_path, upload_size) ->
-                          Fun.protect
-                            ~finally:(fun () -> session.cleanup_file file_path)
-                            (fun () ->
-                              session.upload_file
-                                (Api.encrypted_asset_upload_request
-                                   config
-                                   ~uuid:block.uuid
-                                   ~file_name:block.title
-                                   ~title
-                                   ~page_id
-                                   ~size:asset_size
-                                   ~upload_size
-                                   ~checksum
-                                   ~file_path))))
-                  | _ ->
-                    session.send
-                      (Api.capture_request ~page_id config ~uuid:block.uuid title))))
-            | None -> Error "encrypted graph write support is unavailable")
-          else
-            match block.kind, block.status, block.local_path, block.asset_type,
-                  block.asset_size, block.asset_checksum with
-            | "block", _, _, _, _, _ ->
-              session.send (Api.capture_request config ~uuid:block.uuid block.title)
-            | "task", Some status, _, _, _, _ ->
-              session.send (Api.task_request config ~uuid:block.uuid ~status:status.uuid block.title)
-            | "asset", _, Some file_path, Some asset_type, Some asset_size, Some checksum ->
-              session.upload_file
-                (Api.asset_upload_request config ~uuid:block.uuid ~file_name:block.title
-                   ~size:asset_size ~checksum ~file_path
-                   ~content_type:(Api.content_type_for_asset_type asset_type))
-            | _ ->
-              session.send (Api.capture_request config ~uuid:block.uuid block.title)
-      in
-      match result with
-      | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
-        (try
-           let remote_uuid = Api.created_block_uuid_from_body response.body in
-           debug
-             "sync pending creation succeeded kind=%s local_uuid=%s remote_uuid=%s status=%d"
-             block.kind block.uuid remote_uuid response.Api.status;
-           ignore
-             (Model.reconcile_created_block
-                session.model ~local_uuid:block.uuid ~remote_uuid)
-         with exn ->
-           debug
-             "sync pending creation response failed kind=%s uuid=%s message=%s"
-             block.kind block.uuid (Printexc.to_string exn);
-           ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
-      | Ok response ->
-        debug "sync pending block HTTP failed uuid=%s status=%d" block.uuid response.Api.status;
-        ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid)
-      | Error message ->
-        debug "sync pending block request failed uuid=%s message=%s" block.uuid message;
-        ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
-    )
-    pending_blocks;
-  snapshot_visible session
-;;
-
-let sync_pending session config =
-  if session.sync_in_progress
-  then snapshot_visible session
-  else (
-    session.sync_in_progress <- true;
-    Fun.protect
-      ~finally:(fun () -> session.sync_in_progress <- false)
-      (fun () -> sync_pending_unlocked session config))
-;;
-
 let load_related session request key =
   match session.send request with
   | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
@@ -1345,13 +1140,6 @@ let dispatch session action payload =
   | "cancelPendingSync" ->
     cancel_pending_sync session;
     snapshot_visible session
-  | "syncPending" ->
-    (match session.config with
-     | None -> snapshot_visible session
-     | Some config ->
-       (match resolve_graph session config with
-        | Ok config -> sync_pending session config
-        | Error _ -> snapshot_visible session))
   | "loadBlockReferences" ->
     (match session.config, payload with
      | Some config, Some uuid ->
