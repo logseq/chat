@@ -1145,6 +1145,51 @@ import Foundation
         #expect(simulator.contains("$graph_store_object"))
     }
 
+    @Test func iosE2EECryptoKeepsProtocolLogicInOCamlAndPrimitivesOnDevice() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let package = try String(
+            contentsOf: root.appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
+        let simulator = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-simulator.sh"),
+            encoding: .utf8
+        )
+        let device = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-device.sh"),
+            encoding: .utf8
+        )
+        let crypto = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/E2EECrypto.swift"),
+            encoding: .utf8
+        )
+        let bridge = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_crypto_darwin.m"),
+            encoding: .utf8
+        )
+        let platform = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_platform_crypto.ml"),
+            encoding: .utf8
+        )
+
+        #expect(package.contains(".linkedFramework(\"Security\""))
+        for script in [simulator, device] {
+            #expect(script.contains("logseq_chat_e2ee.cmx"))
+            #expect(script.contains("logseq_chat_e2ee_keyring.cmx"))
+            #expect(script.contains("logseq_chat_platform_crypto.cmx"))
+            #expect(script.contains("logseq_chat_crypto_darwin.m"))
+            #expect(script.contains("$crypto_object"))
+        }
+        #expect(crypto.contains("import CryptoKit"))
+        #expect(crypto.contains("AES.GCM"))
+        #expect(crypto.contains("SecKeyCreateDecryptedData"))
+        #expect(crypto.contains("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"))
+        #expect(bridge.contains("logseq_chat_crypto_call"))
+        #expect(platform.contains("Logseq_chat_e2ee.crypto"))
+        #expect(!crypto.contains("/e2ee/"))
+        #expect(!crypto.contains("graph-e2ee"))
+    }
+
     @Test func iosSimulatorRelinksWhenTheNativeCoreChanges() throws {
         let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("scripts/build-mobile-ios-simulator.sh")

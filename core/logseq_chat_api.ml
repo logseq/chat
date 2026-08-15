@@ -38,6 +38,11 @@ type graph =
   ; ready : bool
   }
 
+type user_keys =
+  { public_key : string
+  ; encrypted_private_key : string
+  }
+
 let epoch_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
 let trim_slash value =
@@ -111,6 +116,26 @@ let graphs_request config =
   }
 ;;
 
+let user_keys_request config =
+  { method_ = "GET"
+  ; url = Printf.sprintf "%s/e2ee/user-keys" (api_root config)
+  ; body = None
+  ; token = config.token
+  }
+;;
+
+let graph_key_request config =
+  { method_ = "GET"
+  ; url =
+      Printf.sprintf
+        "%s/e2ee/graphs/%s/aes-key"
+        (api_root config)
+        (url_encode config.graph_id)
+  ; body = None
+  ; token = config.token
+  }
+;;
+
 let search_request config query =
   { method_ = "GET"
   ; url =
@@ -137,7 +162,7 @@ let block_references_request config uuid = related_request config "blocks" uuid 
 let page_references_request config uuid = related_request config "pages" uuid "references"
 let tag_objects_request config uuid = related_request config "tags" uuid "objects"
 
-let capture_request config ~uuid text =
+let capture_request ?page_id config ~uuid text =
   { method_ = "POST"
   ; url =
       Printf.sprintf
@@ -148,17 +173,28 @@ let capture_request config ~uuid text =
       Some
         (to_string
            (`Assoc
-             [ "blocks",
-               `List [ `Assoc [ "uuid", `String uuid; "title", `String text ] ]
-             ]))
+             ((match page_id with
+               | Some page_id -> [ "page-id", `String page_id ]
+               | None -> [])
+              @ [ "blocks",
+                  `List [ `Assoc [ "uuid", `String uuid; "title", `String text ] ]
+                ])))
   ; token = config.token
   }
 ;;
 
-let task_request config ~uuid ~status text =
+let task_request ?page_id config ~uuid ~status text =
   { method_ = "POST"
   ; url = Printf.sprintf "%s/api/v1/graphs/%s/tasks" (api_root config) (url_encode config.graph_id)
-  ; body = Some (to_string (`Assoc [ "uuid", `String uuid; "title", `String text; "status", `String status ]))
+  ; body =
+      Some
+        (to_string
+           (`Assoc
+             ([ "uuid", `String uuid; "title", `String text; "status", `String status ]
+              @
+              match page_id with
+              | Some page_id -> [ "page-id", `String page_id ]
+              | None -> [])))
   ; token = config.token
   }
 ;;
@@ -176,6 +212,39 @@ let asset_upload_request config ~uuid ~file_name ~size ~checksum ~file_path ~con
       }
   ; file_path
   ; content_type
+  }
+;;
+
+let encrypted_asset_upload_request
+      config
+      ~uuid
+      ~file_name
+      ~title
+      ~page_id
+      ~size
+      ~upload_size
+      ~checksum
+      ~file_path
+  =
+  { request =
+      { method_ = "POST"
+      ; url =
+          Printf.sprintf
+            "%s/api/v1/graphs/%s/assets?uuid=%s&file-name=%s&size=%d&upload-size=%d&checksum=%s&title=%s&page-id=%s"
+            (api_root config)
+            (url_encode config.graph_id)
+            (url_encode uuid)
+            (url_encode file_name)
+            size
+            upload_size
+            (url_encode checksum)
+            (url_encode title)
+            (url_encode page_id)
+      ; body = None
+      ; token = config.token
+      }
+  ; file_path
+  ; content_type = "text/plain"
   }
 ;;
 
@@ -453,4 +522,27 @@ let graph_from_graphs_body body =
   match graphs_from_graphs_body body with
   | graph :: _ -> Some (graph.id, Some graph.name)
   | [] -> None
+;;
+
+let user_keys_from_body body =
+  match from_string body with
+  | `Assoc fields ->
+    let required name =
+      match List.assoc_opt name fields with
+      | Some (`String value) when not (String.equal value "") -> value
+      | _ -> failwith ("user keys response is missing " ^ name)
+    in
+    { public_key = required "public-key"
+    ; encrypted_private_key = required "encrypted-private-key"
+    }
+  | _ -> failwith "user keys response must be an object"
+;;
+
+let graph_key_from_body body =
+  match from_string body with
+  | `Assoc fields ->
+    (match List.assoc_opt "encrypted-aes-key" fields with
+     | Some (`String value) when not (String.equal value "") -> value
+     | _ -> failwith "graph key response is missing encrypted-aes-key")
+  | _ -> failwith "graph key response must be an object"
 ;;

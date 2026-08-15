@@ -54,7 +54,7 @@ let () =
                ]
            }
        ]);
-  match Logseq_chat_graph_read.blocks (conn_db conn) with
+  (match Logseq_chat_graph_read.blocks (conn_db conn) with
   | [ block ] ->
     if not (String.equal block.Logseq_chat_model.uuid block_uuid)
     then failwith "graph block UUID changed";
@@ -68,5 +68,23 @@ let () =
     then failwith "graph instant timestamp changed";
     if block.journal <> Some ("Page", 20260815)
     then failwith "graph journal metadata was not projected"
-  | _ -> failwith "graph reader must return non-page blocks only"
+  | _ -> failwith "graph reader must return non-page blocks only");
+  ignore
+    (transact_conn
+       conn
+       [ Add (Lookup_ref ("block/uuid", Uuid block_uuid), "block/title", String "cipher-block")
+       ; Add (Lookup_ref ("block/uuid", Uuid page_uuid), "block/title", String "cipher-page")
+       ]);
+  let decrypt_title = function
+    | "cipher-block" -> Ok "Decrypted block"
+    | "cipher-page" -> Ok "Decrypted journal"
+    | value -> Ok value
+  in
+  match Logseq_chat_graph_read.blocks ~decrypt_title (conn_db conn) with
+  | [ block ] ->
+    if not (String.equal block.Logseq_chat_model.title "Decrypted block")
+    then failwith "encrypted block title was not decrypted for the projection";
+    if block.journal <> Some ("Decrypted journal", 20260815)
+    then failwith "encrypted journal title was not decrypted for the projection"
+  | _ -> failwith "encrypted graph reader must return non-page blocks only"
 ;;

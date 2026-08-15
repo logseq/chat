@@ -1,0 +1,269 @@
+#if LOGSEQ_CHAT_CORE && os(iOS)
+import CryptoKit
+import Foundation
+import Security
+
+private enum E2EECryptoError: Error {
+    case invalidRequest(String)
+    case crypto(String)
+}
+
+private struct DERReader {
+    let bytes: [UInt8]
+    var offset = 0
+
+    mutating func element(tag expectedTag: UInt8) throws -> Data {
+        guard offset < bytes.count, bytes[offset] == expectedTag else {
+            throw E2EECryptoError.crypto("invalid PKCS8 DER tag")
+        }
+        offset += 1
+        let length = try readLength()
+        guard length >= 0, offset + length <= bytes.count else {
+            throw E2EECryptoError.crypto("invalid PKCS8 DER length")
+        }
+        let result = Data(bytes[offset..<(offset + length)])
+        offset += length
+        return result
+    }
+
+    private mutating func readLength() throws -> Int {
+        guard offset < bytes.count else {
+            throw E2EECryptoError.crypto("missing PKCS8 DER length")
+        }
+        let first = bytes[offset]
+        offset += 1
+        if first & 0x80 == 0 { return Int(first) }
+        let count = Int(first & 0x7f)
+        guard count > 0, count <= MemoryLayout<Int>.size, offset + count <= bytes.count else {
+            throw E2EECryptoError.crypto("invalid PKCS8 DER long length")
+        }
+        var result = 0
+        for _ in 0..<count {
+            result = (result << 8) | Int(bytes[offset])
+            offset += 1
+        }
+        return result
+    }
+}
+
+private enum E2EECrypto {
+    static let keychainService = "com.logseq.chat.e2ee.graph-key"
+
+    static func hexData(_ value: Any?, field: String) throws -> Data {
+        guard let text = value as? String, text.count.isMultiple(of: 2) else {
+            throw E2EECryptoError.invalidRequest("invalid \(field)")
+        }
+        var result = Data(capacity: text.count / 2)
+        var index = text.startIndex
+        while index < text.endIndex {
+            let end = text.index(index, offsetBy: 2)
+            guard let byte = UInt8(text[index..<end], radix: 16) else {
+                throw E2EECryptoError.invalidRequest("invalid \(field)")
+            }
+            result.append(byte)
+            index = end
+        }
+        return result
+    }
+
+    static func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func pbkdf2SHA256(password: Data, salt: Data, iterations: Int) throws -> Data {
+        guard iterations > 0 else { throw E2EECryptoError.invalidRequest("invalid iterations") }
+        let key = SymmetricKey(data: password)
+        var firstInput = Data(salt)
+        firstInput.append(contentsOf: [0, 0, 0, 1])
+        var previous = Data(HMAC<SHA256>.authenticationCode(for: firstInput, using: key))
+        var result = [UInt8](previous)
+        if iterations > 1 {
+            for _ in 2...iterations {
+                previous = Data(HMAC<SHA256>.authenticationCode(for: previous, using: key))
+                for index in result.indices { result[index] ^= previous[index] }
+            }
+        }
+        return Data(result)
+    }
+
+    static func aesOpen(key: Data, iv: Data, ciphertextAndTag: Data) throws -> Data {
+        guard key.count == 32, iv.count == 12, ciphertextAndTag.count >= 16 else {
+            throw E2EECryptoError.crypto("invalid AES-GCM input")
+        }
+        let ciphertext = ciphertextAndTag.dropLast(16)
+        let tag = ciphertextAndTag.suffix(16)
+        let box = try AES.GCM.SealedBox(
+            nonce: AES.GCM.Nonce(data: iv),
+            ciphertext: ciphertext,
+            tag: tag
+        )
+        return try AES.GCM.open(box, using: SymmetricKey(data: key))
+    }
+
+    static func aesSeal(key: Data, plaintext: Data) throws -> (Data, Data) {
+        guard key.count == 32 else { throw E2EECryptoError.crypto("invalid AES-GCM key") }
+        let sealed = try AES.GCM.seal(plaintext, using: SymmetricKey(data: key))
+        let nonce = sealed.nonce.withUnsafeBytes { Data($0) }
+        return (nonce, sealed.ciphertext + sealed.tag)
+    }
+
+    static func unwrapPKCS8(_ data: Data) throws -> Data {
+        var outer = DERReader(bytes: [UInt8](data))
+        let sequence = try outer.element(tag: 0x30)
+        var contents = DERReader(bytes: [UInt8](sequence))
+        _ = try contents.element(tag: 0x02)
+        _ = try contents.element(tag: 0x30)
+        return try contents.element(tag: 0x04)
+    }
+
+    static func rsaOAEPDecrypt(privateKeyData: Data, ciphertext: Data) throws -> Data {
+        let attributes: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+            kSecAttrKeySizeInBits: 4096,
+        ]
+        var error: Unmanaged<CFError>?
+        var key = SecKeyCreateWithData(privateKeyData as CFData, attributes as CFDictionary, &error)
+        if key == nil {
+            let pkcs1 = try unwrapPKCS8(privateKeyData)
+            error = nil
+            key = SecKeyCreateWithData(pkcs1 as CFData, attributes as CFDictionary, &error)
+        }
+        guard let key else {
+            if let error { throw error.takeRetainedValue() }
+            throw E2EECryptoError.crypto("invalid RSA private key")
+        }
+        error = nil
+        guard let plaintext = SecKeyCreateDecryptedData(
+            key,
+            .rsaEncryptionOAEPSHA256,
+            ciphertext as CFData,
+            &error
+        ) else {
+            if let error { throw error.takeRetainedValue() }
+            throw E2EECryptoError.crypto("RSA-OAEP decrypt failed")
+        }
+        return plaintext as Data
+    }
+
+    static func keychainQuery(graphID: String) -> [CFString: Any] {
+        [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: graphID,
+            kSecUseDataProtectionKeychain: true,
+        ]
+    }
+
+    static func saveKey(graphID: String, key: Data) throws {
+        var query = keychainQuery(graphID: graphID)
+        let update = [kSecValueData: key] as CFDictionary
+        let status = SecItemUpdate(query as CFDictionary, update)
+        if status == errSecItemNotFound {
+            query[kSecValueData] = key
+            query[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let addStatus = SecItemAdd(query as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw E2EECryptoError.crypto("Keychain save failed: \(addStatus)")
+            }
+        } else if status != errSecSuccess {
+            throw E2EECryptoError.crypto("Keychain update failed: \(status)")
+        }
+    }
+
+    static func loadKey(graphID: String) throws -> Data? {
+        var query = keychainQuery(graphID: graphID)
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw E2EECryptoError.crypto("Keychain load failed: \(status)")
+        }
+        return data
+    }
+
+    static func handle(_ request: [String: Any]) throws -> [String: Any] {
+        guard let operation = request["operation"] as? String else {
+            throw E2EECryptoError.invalidRequest("missing operation")
+        }
+        switch operation {
+        case "decryptPrivateKey":
+            guard let password = request["password"] as? String,
+                  let iterations = request["iterations"] as? Int
+            else { throw E2EECryptoError.invalidRequest("invalid private key request") }
+            let derived = try pbkdf2SHA256(
+                password: Data(password.utf8),
+                salt: try hexData(request["salt"], field: "salt"),
+                iterations: iterations
+            )
+            let plaintext = try aesOpen(
+                key: derived,
+                iv: try hexData(request["iv"], field: "iv"),
+                ciphertextAndTag: try hexData(request["ciphertext"], field: "ciphertext")
+            )
+            return ["ok": true, "value": hex(plaintext)]
+
+        case "decryptGraphKey":
+            let plaintext = try rsaOAEPDecrypt(
+                privateKeyData: try hexData(request["privateKey"], field: "privateKey"),
+                ciphertext: try hexData(request["ciphertext"], field: "ciphertext")
+            )
+            return ["ok": true, "value": hex(plaintext)]
+
+        case "encryptAES":
+            let (iv, ciphertext) = try aesSeal(
+                key: try hexData(request["key"], field: "key"),
+                plaintext: try hexData(request["plaintext"], field: "plaintext")
+            )
+            return ["ok": true, "iv": hex(iv), "ciphertext": hex(ciphertext)]
+
+        case "decryptAES":
+            let plaintext = try aesOpen(
+                key: try hexData(request["key"], field: "key"),
+                iv: try hexData(request["iv"], field: "iv"),
+                ciphertextAndTag: try hexData(request["ciphertext"], field: "ciphertext")
+            )
+            return ["ok": true, "value": hex(plaintext)]
+
+        case "saveGraphKey":
+            guard let graphID = request["graphID"] as? String else {
+                throw E2EECryptoError.invalidRequest("missing graphID")
+            }
+            try saveKey(graphID: graphID, key: try hexData(request["key"], field: "key"))
+            return ["ok": true]
+
+        case "loadGraphKey":
+            guard let graphID = request["graphID"] as? String else {
+                throw E2EECryptoError.invalidRequest("missing graphID")
+            }
+            if let key = try loadKey(graphID: graphID) {
+                return ["ok": true, "value": hex(key)]
+            }
+            return ["ok": true, "value": NSNull()]
+
+        default:
+            throw E2EECryptoError.invalidRequest("unsupported operation")
+        }
+    }
+}
+
+@_cdecl("logseq_chat_crypto_json")
+public func logseqChatCryptoJSON(_ requestPointer: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
+    let response: [String: Any]
+    do {
+        guard let requestPointer,
+              let data = String(cString: requestPointer).data(using: .utf8),
+              let request = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw E2EECryptoError.invalidRequest("invalid JSON request") }
+        response = try E2EECrypto.handle(request)
+    } catch {
+        response = ["ok": false, "error": String(describing: error)]
+    }
+    guard let data = try? JSONSerialization.data(withJSONObject: response),
+          let string = String(data: data, encoding: .utf8)
+    else { return strdup("{\"ok\":false,\"error\":\"response encoding failed\"}") }
+    return strdup(string)
+}
+#endif

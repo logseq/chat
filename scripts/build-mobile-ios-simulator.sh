@@ -20,6 +20,7 @@ core_build_dir="$repo_root/_build/ios-core/simulator"
 core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
 https_object="$core_build_dir/logseq_chat_https_darwin.o"
+crypto_object="$core_build_dir/logseq_chat_crypto_darwin.o"
 sqlite_object="$core_build_dir/datascript_sqlite_stubs.o"
 graph_store_object="$core_build_dir/logseq_chat_graph_store_stubs.o"
 simulator_entitlements="$core_build_dir/simulator-entitlements.plist"
@@ -56,6 +57,8 @@ cd "$core_build_dir"
   "$repo_root/core/logseq_chat_model.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_edn.cmx \
   "$repo_root/core/logseq_chat_edn.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_e2ee.cmx \
+  "$repo_root/core/logseq_chat_e2ee.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_protocol.cmx \
   "$repo_root/core/logseq_chat_sync_protocol.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_state.cmx \
@@ -72,6 +75,10 @@ cd "$core_build_dir"
   "$repo_root/core/logseq_chat_sse.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_api.cmx \
   "$repo_root/core/logseq_chat_api.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_e2ee_keyring.cmx \
+  "$repo_root/core/logseq_chat_e2ee_keyring.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_platform_crypto.cmx \
+  "$repo_root/core/logseq_chat_platform_crypto.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_http.cmx \
   "$repo_root/core/logseq_chat_http.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
@@ -101,6 +108,7 @@ cd "$core_build_dir"
   "${dependency_objects[@]}" \
   logseq_chat_model.cmx \
   logseq_chat_edn.cmx \
+  logseq_chat_e2ee.cmx \
   logseq_chat_sync_protocol.cmx \
   logseq_chat_sync_state.cmx \
   logseq_chat_sync_checkpoint.cmx \
@@ -109,6 +117,8 @@ cd "$core_build_dir"
   logseq_chat_graph_read.cmx \
   logseq_chat_sse.cmx \
   logseq_chat_api.cmx \
+  logseq_chat_e2ee_keyring.cmx \
+  logseq_chat_platform_crypto.cmx \
   logseq_chat_http.cmx \
   logseq_chat_rpc.cmx \
   logseq_chat_logseq_storage_codec.cmx \
@@ -137,6 +147,15 @@ cd "$core_build_dir"
 "$clang" \
   -target "$triple" \
   -isysroot "$sdk_path" \
+  -fobjc-arc \
+  -fPIC \
+  -I "$ocaml_lib" \
+  -c "$repo_root/core/logseq_chat_crypto_darwin.m" \
+  -o "$crypto_object"
+
+"$clang" \
+  -target "$triple" \
+  -isysroot "$sdk_path" \
   -fPIC \
   -I "$ocaml_lib" \
   -c "$sqlite_stub_source" \
@@ -155,6 +174,7 @@ native_link_fingerprint=$(
     "$core_object" \
     "$ffi_object" \
     "$https_object" \
+    "$crypto_object" \
     "$sqlite_object" \
     "$graph_store_object" \
     | shasum -a 256 \
@@ -163,7 +183,7 @@ native_link_fingerprint=$(
 native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
 mkdir -p "$native_link_dir"
 cp "$core_object" "$native_link_dir/logseq_chat_runtime.o"
-fingerprinted_native_link_inputs="$native_link_dir/logseq_chat_runtime.o:$ffi_object:$https_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a"
+fingerprinted_native_link_inputs="$native_link_dir/logseq_chat_runtime.o:$ffi_object:$https_object:$crypto_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a"
 
 LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$fingerprinted_native_link_inputs" \
 LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \

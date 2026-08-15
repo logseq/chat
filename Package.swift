@@ -10,6 +10,7 @@ let logseqChatSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSE
 let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
     .unsafeFlags(logseqChatNativeLinkInputs, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
+    .linkedFramework("Security", .when(platforms: [.iOS])),
     .linkedLibrary("sqlite3", .when(platforms: [.iOS]))
 ]
 let logseqChatCoreSwiftSettings: [SwiftSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [

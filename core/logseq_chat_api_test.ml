@@ -128,6 +128,17 @@ let () =
     "capture preserves client uuid"
     {|{"blocks":[{"uuid":"client-block","title":"Offline"}]}|}
     (Option.value capture.body ~default:"");
+  let encrypted_capture =
+    Logseq_chat_api.capture_request
+      config
+      ~page_id:"journal-1"
+      ~uuid:"encrypted-block"
+      "encrypted-title"
+  in
+  assert_equal
+    "encrypted capture includes its existing journal page"
+    {|{"page-id":"journal-1","blocks":[{"uuid":"encrypted-block","title":"encrypted-title"}]}|}
+    (Option.value encrypted_capture.body ~default:"");
   let task =
     Logseq_chat_api.task_request config ~uuid:"client-task" ~status:"waiting" "Follow up"
   in
@@ -136,6 +147,18 @@ let () =
     "task body"
     {|{"uuid":"client-task","title":"Follow up","status":"waiting"}|}
     (Option.value task.body ~default:"");
+  let encrypted_task =
+    Logseq_chat_api.task_request
+      config
+      ~page_id:"journal-1"
+      ~uuid:"encrypted-task"
+      ~status:"waiting"
+      "encrypted-title"
+  in
+  assert_equal
+    "encrypted task includes its existing journal page"
+    {|{"uuid":"encrypted-task","title":"encrypted-title","status":"waiting","page-id":"journal-1"}|}
+    (Option.value encrypted_task.body ~default:"");
   let status_update =
     Logseq_chat_api.update_block_status_request
       config
@@ -166,6 +189,23 @@ let () =
   if upload.request.body <> None then failwith "asset bytes must not be encoded in request JSON";
   if not (contains upload.request.url "?uuid=client-asset&")
   then failwith "asset upload must preserve the local block uuid in the query";
+  let encrypted_upload =
+    Logseq_chat_api.encrypted_asset_upload_request
+      config
+      ~uuid:"encrypted-asset"
+      ~file_name:"photo.jpg"
+      ~title:"encrypted-title"
+      ~page_id:"journal-1"
+      ~size:2048
+      ~upload_size:4096
+      ~checksum:"abc123"
+      ~file_path:"/documents/encrypted-photo.transit"
+  in
+  if not (contains encrypted_upload.request.url "upload-size=4096")
+  then failwith "encrypted asset upload must declare its encrypted payload size";
+  if not (contains encrypted_upload.request.url "title=encrypted-title")
+  then failwith "encrypted asset upload must send its ciphertext title";
+  assert_equal "encrypted asset content type" "text/plain" encrypted_upload.content_type;
   assert_equal
     "asset upload response uuid"
     "server-asset"
@@ -188,7 +228,24 @@ let () =
   assert_equal "feed block" "block-1" block.uuid;
   assert_equal "feed journal" "journal-new" journal.uuid;
   assert_equal "feed journal title" "Aug 13th, 2026" journal.title;
-  assert_int_equal "feed journal day" 20_260_813 journal.journal_day
+  assert_int_equal "feed journal day" 20_260_813 journal.journal_day;
+  assert_equal
+    "user key endpoint"
+    "https://api.example/e2ee/user-keys"
+    (Logseq_chat_api.user_keys_request config).url;
+  assert_equal
+    "graph key endpoint"
+    "https://api.example/e2ee/graphs/graph-1/aes-key"
+    (Logseq_chat_api.graph_key_request config).url;
+  let key_pair =
+    Logseq_chat_api.user_keys_from_body
+      {|{"public-key":"public","encrypted-private-key":"private-package"}|}
+  in
+  assert_equal "encrypted private key package" "private-package" key_pair.encrypted_private_key;
+  assert_equal
+    "encrypted graph key package"
+    "graph-package"
+    (Logseq_chat_api.graph_key_from_body {|{"encrypted-aes-key":"graph-package"}|})
 ;;
 
 let () =

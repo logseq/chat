@@ -14,6 +14,15 @@ let string_value = function
   | _ -> None
 ;;
 
+let protected_string decrypt_title value =
+  match string_value value with
+  | None -> None
+  | Some value ->
+    (match decrypt_title value with
+     | Ok decrypted -> Some decrypted
+     | Error message -> failwith ("decrypt graph title: " ^ message))
+;;
+
 let uuid_value = function
   | Some (Uuid value) | Some (String value) -> Some value
   | _ -> None
@@ -31,7 +40,7 @@ let ref_value = function
 
 let uuid_for_eid db eid = uuid_value (value db eid "block/uuid")
 
-let status_for_eid db eid =
+let status_for_eid decrypt_title db eid =
   match ref_value (value db eid "logseq.property/status") with
   | None -> None
   | Some status_eid ->
@@ -41,7 +50,9 @@ let status_for_eid db eid =
       | _ -> None
     in
     let uuid = Option.value (uuid_for_eid db status_eid) ~default:(Option.value ident ~default:"") in
-    let title = Option.value (string_value (value db status_eid "block/title")) ~default:uuid in
+    let title =
+      Option.value (protected_string decrypt_title (value db status_eid "block/title")) ~default:uuid
+    in
     if String.equal uuid ""
     then None
     else
@@ -56,9 +67,9 @@ let status_for_eid db eid =
           }
 ;;
 
-let block db eid =
+let block decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
-  let title = string_value (value db eid "block/title") in
+  let title = protected_string decrypt_title (value db eid "block/title") in
   let name = value db eid "block/name" in
   match uuid, title with
   | Some uuid, Some title when Option.is_none name ->
@@ -72,7 +83,7 @@ let block db eid =
     let journal =
       Option.bind page_eid (fun page_eid ->
         match
-          string_value (value db page_eid "block/title"),
+          protected_string decrypt_title (value db page_eid "block/title"),
           int_value (value db page_eid "block/journal-day")
         with
         | Some title, Some day -> Some (title, day)
@@ -84,7 +95,7 @@ let block db eid =
     let updated_at =
       Option.value (int_value (value db eid "block/updated-at")) ~default:created_at
     in
-    let status = status_for_eid db eid in
+    let status = status_for_eid decrypt_title db eid in
     let asset_type = string_value (value db eid "logseq.property.asset/type") in
     let kind =
       match asset_type, status with
@@ -136,7 +147,7 @@ let recent_journal_page_ids db =
     |> List.map snd
 ;;
 
-let blocks db =
+let blocks ?(decrypt_title = fun value -> Ok value) db =
   let entity_ids =
     recent_journal_page_ids db
     |> List.fold_left
@@ -148,7 +159,7 @@ let blocks db =
   in
   entity_ids
   |> Int_set.to_seq
-  |> Seq.filter_map (block db)
+  |> Seq.filter_map (block decrypt_title db)
   |> List.of_seq
   |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
 ;;

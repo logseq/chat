@@ -4,6 +4,8 @@
  (modules
   logseq_chat_api
   logseq_chat_edn
+  logseq_chat_e2ee
+  logseq_chat_e2ee_keyring
   logseq_chat_entity_sync
   logseq_chat_graph_store
   logseq_chat_graph_read
@@ -120,3 +122,13 @@
  (name logseq_chat_graph_read_test)
  (modules logseq_chat_graph_read_test)
  (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_e2ee_test)
+ (modules logseq_chat_e2ee_test)
+ (libraries logseq_chat_core melange-transit-core melange-transit-native))
+
+(test
+ (name logseq_chat_e2ee_keyring_test)
+ (modules logseq_chat_e2ee_keyring_test)
+ (libraries logseq_chat_core melange-transit-core melange-transit-native))
