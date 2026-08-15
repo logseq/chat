@@ -1234,6 +1234,10 @@ import Foundation
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
             encoding: .utf8
         )
+        let entry = try String(
+            contentsOf: root.appendingPathComponent("Darwin/Sources/Main.swift"),
+            encoding: .utf8
+        )
         let content = try String(
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
             encoding: .utf8
@@ -1241,6 +1245,9 @@ import Foundation
 
         #expect(app.contains("runGraphEventsOnce"))
         #expect(app.contains("syncPendingForBackground"))
+        #expect(app.contains("stopAfterFirstFrame: true"))
+        #expect(app.contains("beginBackgroundTask"))
+        #expect(entry.contains("LogseqChatBackgroundRefresh.syncNow()"))
         #expect(!app.contains("configureAndRefreshForBackground"))
         #expect(!content.contains("store.refreshSoon()"))
         #expect(!content.contains("runRefreshLoop"))

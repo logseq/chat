@@ -11,6 +11,7 @@ import AWSCognitoAuthPlugin
 
 #if os(iOS) && !SKIP
 @preconcurrency import BackgroundTasks
+import UIKit
 #endif
 
 /// A logger for the LogseqChat module.
@@ -128,7 +129,8 @@ private enum LogseqAmplifyAuth {
         await store.configureAndSelectGraph(
             baseURL: baseURL,
             token: token,
-            selectedGraphID: graphID
+            selectedGraphID: graphID,
+            refreshGraphCatalog: false
         )
         guard store.lastError == nil else { return }
         let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
@@ -145,7 +147,8 @@ private enum LogseqAmplifyAuth {
         _ = await store.runGraphEventsOnce(
             graphID: graphID,
             baseURL: baseURL,
-            accessToken: token
+            accessToken: token,
+            stopAfterFirstFrame: true
         )
     }
 }
@@ -169,6 +172,12 @@ struct LogseqCognitoConfiguration: Decodable {
 
 public enum LogseqChatBackgroundRefresh {
     public static let identifier = "com.logseq.chat.refresh"
+
+    @MainActor public static func syncNow() {
+        #if os(iOS) && !SKIP
+        BackgroundSyncExecution().start()
+        #endif
+    }
 
     public static func register() {
         #if os(iOS) && !SKIP
@@ -205,6 +214,35 @@ public enum LogseqChatBackgroundRefresh {
     }
     #endif
 }
+
+#if os(iOS) && !SKIP
+@MainActor private final class BackgroundSyncExecution {
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+    private var syncTask: Task<Void, Never>?
+
+    func start() {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: "Logseq graph sync") { [weak self] in
+            self?.expire()
+        }
+        syncTask = Task { [self] in
+            await LogseqChatRuntime.shared.syncFromStoredConnection()
+            finish()
+        }
+    }
+
+    private func expire() {
+        syncTask?.cancel()
+        finish()
+    }
+
+    private func finish() {
+        syncTask = nil
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
+    }
+}
+#endif
 
 /// Global application delegate functions.
 ///

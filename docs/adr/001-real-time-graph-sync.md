@@ -58,7 +58,7 @@ support:
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client SSE, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
-| iOS background sync | `BGAppRefresh` is registered at launch and rescheduled on background entry; each granted execution window opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without a semantic refresh |
+| iOS background sync | Background entry starts an immediate, bounded sync under a UIKit background assertion; `BGAppRefresh` is also registered for later catch-up. Each execution opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without graph-catalog or semantic refresh |
 | Android sync transport | OCaml core, full-snapshot download/import, and native SSE entity-change streaming are connected; device E2E remains pending |
 | Encrypted graph sync | iOS can select and unlock encrypted graphs, cache the graph key in Keychain, keep an exact ciphertext graph mirror, decrypt the UI projection, and encrypt block, task, and asset writes in the OCaml core; native tests and Simulator build pass, while full encrypted Simulator E2E remains pending |
 
@@ -424,10 +424,12 @@ mirror until the matching SSE upsert confirms the authoritative value.
 ### 8. Use cursor replay during iOS background execution
 
 iOS does not guarantee a continuously running network connection after the app is
-backgrounded. The app therefore keeps the long-lived SSE task for foreground use and
-registers a `BGAppRefresh` task as an opportunistic background catch-up mechanism.
-The task is registered and initially scheduled during app launch, then rescheduled
-whenever the scene enters the background and whenever a background execution begins.
+backgrounded. The app therefore keeps the long-lived SSE task for foreground use,
+starts an immediate bounded sync under a UIKit background assertion when the scene
+enters the background, and registers a `BGAppRefresh` task as an opportunistic later
+catch-up mechanism. The refresh task is registered and initially scheduled during app
+launch, then rescheduled whenever the scene enters the background and whenever a
+background execution begins.
 
 During each execution window the app:
 
@@ -435,10 +437,11 @@ During each execution window the app:
 2. obtains a current Cognito access token through Amplify, allowing Amplify to refresh
    the session when necessary;
 3. restores the persisted graph catalog, selection, schema, and `appliedServerT`
-   checkpoint without downloading a new snapshot;
+   checkpoint without refreshing the graph catalog or downloading a new snapshot;
 4. submits durable pending writes through the semantic REST allowlist;
-5. opens the graph event endpoint from `appliedServerT`, applies the available latest
-   entity changes, and commits the new cursor atomically.
+5. opens the graph event endpoint from `appliedServerT`, consumes the first complete
+   replay frame, applies the available latest entity changes, commits the new cursor
+   atomically, and closes the stream rather than holding background execution open.
 
 The background path never calls the semantic recent-block refresh API. If the graph
 has no valid local baseline, the task exits and leaves first-open snapshot download to

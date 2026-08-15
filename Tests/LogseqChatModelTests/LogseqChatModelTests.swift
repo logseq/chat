@@ -833,6 +833,25 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.first?.title == "Remote background block")
     }
 
+    @Test @MainActor func backgroundConfigurationUsesTheCachedGraphCatalog() async {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+
+        await store.configureAndSelectGraph(
+            baseURL: "http://127.0.0.1:8787",
+            token: "access-token",
+            selectedGraphID: "graph-1",
+            refreshGraphCatalog: false
+        )
+
+        #expect(recorder.all.contains { $0.contains("\"action\":\"configure\"") })
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"refreshGraphCatalog\"") })
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"refresh\"") })
+    }
+
     @Test @MainActor func concurrentRefreshCallsAreCoalesced() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

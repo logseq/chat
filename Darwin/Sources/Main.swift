@@ -21,6 +21,7 @@ private typealias AppDelegate = LogseqChatAppDelegate
                 AppDelegate.shared.onPause()
             case .background:
                 AppDelegate.shared.onStop()
+                LogseqChatBackgroundRefresh.syncNow()
                 LogseqChatBackgroundRefresh.schedule()
             @unknown default:
                 print("unknown app phase: \(newPhase)")

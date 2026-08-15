@@ -759,7 +759,8 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
     }
 
     public func configureAndSelectGraph(
-        baseURL: String, token: String, selectedGraphID: String?
+        baseURL: String, token: String, selectedGraphID: String?,
+        refreshGraphCatalog: Bool = true
     ) async {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -774,7 +775,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
         )
         guard lastError == nil else { return }
         if selectedGraphID != nil {
-            if !token.isEmpty {
+            if refreshGraphCatalog && !token.isEmpty {
                 await performAsyncAndWait(
                     LogseqChatRPCRequest(
                         method: "dispatch",
@@ -900,7 +901,8 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
     }
 
     public func runGraphEventsOnce(
-        graphID: String, baseURL: String, accessToken: String
+        graphID: String, baseURL: String, accessToken: String,
+        stopAfterFirstFrame: Bool = false
     ) async -> Bool {
         guard let cursor = snapshot.appliedServerT else {
             lastError = LogseqChatCoreError(code: "sync_cursor_missing", message: "Graph checkpoint is not open")
@@ -927,6 +929,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
                     )
                 )
                 if lastError != nil { break }
+                if stopAfterFirstFrame { break }
             }
             let streamError = lastError
             await dispatchRawAndWait("stopSSE")
@@ -956,7 +959,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             var transportBuffer = LogseqGraphSSETransportBuffer()
             var networkChunk = Data()
             networkChunk.reserveCapacity(16 * 1024)
-            for try await byte in bytes {
+            eventStream: for try await byte in bytes {
                 if Task.isCancelled { break }
                 networkChunk.append(byte)
                 if byte == 0x0a || networkChunk.count == 16 * 1024 {
@@ -972,6 +975,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
                             )
                         )
                         if lastError != nil { break }
+                        if stopAfterFirstFrame { break eventStream }
                     }
                     if lastError != nil { break }
                 }
