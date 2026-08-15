@@ -16,7 +16,7 @@ type graph_runtime =
   ; checkpoint_path : string
   ; graph_id : string
   ; e2ee : bool
-  ; mutable recent_blocks : Logseq_chat_model.block list
+  ; projection : Logseq_chat_graph_read.projection
   }
 
 let graph_runtime : graph_runtime option ref = ref None
@@ -35,13 +35,13 @@ let optional_bool fields name =
   | Some _ -> Error ("graph sync payload requires a boolean " ^ name)
 ;;
 
-let graph_blocks ~graph_id ~e2ee conn =
+let graph_projection ~graph_id ~e2ee conn =
   if e2ee
   then
-    Logseq_chat_graph_read.blocks
+    Logseq_chat_graph_read.create_projection
       ~decrypt_title:(E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
       (Datascript.conn_db conn)
-  else Logseq_chat_graph_read.blocks (Datascript.conn_db conn)
+  else Logseq_chat_graph_read.create_projection (Datascript.conn_db conn)
 ;;
 
 let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
@@ -66,8 +66,8 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
       ~schema_version:checkpoint.schema_version
       ~applied_server_t:checkpoint.applied_server_t
   in
-  let recent_blocks = graph_blocks ~graph_id ~e2ee conn in
-  graph_runtime := Some { conn; state; checkpoint_path; graph_id; e2ee; recent_blocks };
+  let projection = graph_projection ~graph_id ~e2ee conn in
+  graph_runtime := Some { conn; state; checkpoint_path; graph_id; e2ee; projection };
   Ok ()
 ;;
 
@@ -137,8 +137,10 @@ let feed_sse chunk =
                     runtime.state
                     change)
                  (fun () ->
-                   runtime.recent_blocks <-
-                     graph_blocks ~graph_id:runtime.graph_id ~e2ee:runtime.e2ee runtime.conn;
+                   Logseq_chat_graph_read.update_projection
+                     runtime.projection
+                     (Datascript.conn_db runtime.conn)
+                     change;
                    apply_frames rest)))
   in
   apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
@@ -152,7 +154,7 @@ let sync_cursor () =
 
 let graph_blocks () =
   match !graph_runtime with
-  | Some runtime -> Some runtime.recent_blocks
+  | Some runtime -> Some (Logseq_chat_graph_read.projection_blocks runtime.projection)
   | None -> None
 ;;
 

@@ -1,4 +1,6 @@
 open Datascript
+module Protocol = Logseq_chat_sync_protocol
+module Transit = Transit_core.Json
 
 let one ?value_type ?(unique = None) () =
   { cardinality = One
@@ -11,6 +13,180 @@ let one ?value_type ?(unique = None) () =
   ; tuple_attrs = None
   ; tuple_types = None
   }
+;;
+
+let identity uuid =
+  Transit.Array [ Transit.Keyword "block/uuid"; Transit.Uuid uuid ]
+;;
+
+let change ?(upserts = []) ?(deleted = []) t : Protocol.change_set =
+  { format_version = 1
+  ; graph_id = "graph-1"
+  ; schema_version = "65.33"
+  ; t_before = t - 1
+  ; t
+  ; upserts
+  ; deleted
+  }
+;;
+
+let () =
+  let page_uuid = "028f7850-c6aa-7da0-8b3f-6dbb64aa4ec8" in
+  let first_uuid = "028f7850-c6aa-7da0-8b3f-6dbb64aa4ec9" in
+  let second_uuid = "028f7850-c6aa-7da0-8b3f-6dbb64aa4eca" in
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/parent", one ~value_type:RefType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "block/journal-day", one ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "incremental-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid page_uuid)
+               ; "block/name", One_value (String "incremental-page")
+               ; "block/title", One_value (String "Journal")
+               ; "block/journal-day", One_value (Int 20260816)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid first_uuid)
+               ; "block/title", One_value (String "First")
+               ; "block/page", One_value (Ref_to (Temp_id "incremental-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "incremental-page"))
+               ; "block/created-at", One_value (Instant 1)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid second_uuid)
+               ; "block/title", One_value (String "Second")
+               ; "block/page", One_value (Ref_to (Temp_id "incremental-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "incremental-page"))
+               ; "block/created-at", One_value (Instant 2)
+               ]
+           }
+       ]);
+  let decrypted_titles = ref 0 in
+  let decrypt_title title =
+    incr decrypted_titles;
+    Ok title
+  in
+  let projection =
+    Logseq_chat_graph_read.create_projection ~decrypt_title (conn_db conn)
+  in
+  decrypted_titles := 0;
+  ignore
+    (transact_conn
+       conn
+       [ Add
+           ( Lookup_ref ("block/uuid", Uuid first_uuid)
+           , "block/title"
+           , String "First updated" )
+       ]);
+  let first_change =
+    change
+      ~upserts:
+        [ { Protocol.id = identity first_uuid
+          ; attrs = [ Transit.Keyword "block/title", Transit.String "First updated" ]
+          }
+        ]
+      2
+  in
+  Logseq_chat_graph_read.update_projection projection (conn_db conn) first_change;
+  if !decrypted_titles > 2
+  then failwith "a block update rebuilt unrelated journal blocks";
+  (match Logseq_chat_graph_read.projection_blocks projection with
+   | [ first; second ] ->
+     if first.title <> "First updated" || second.title <> "Second"
+     then failwith "incremental block projection returned stale titles"
+   | _ -> failwith "incremental projection lost a journal block");
+  decrypted_titles := 0;
+  ignore
+    (transact_conn
+       conn
+       [ Add
+           ( Lookup_ref ("block/uuid", Uuid page_uuid)
+           , "block/title"
+           , String "Journal updated" )
+       ]);
+  Logseq_chat_graph_read.update_projection
+    projection
+    (conn_db conn)
+    (change
+       ~upserts:
+         [ { Protocol.id = identity page_uuid
+           ; attrs = [ Transit.Keyword "block/title", Transit.String "Journal updated" ]
+           }
+         ]
+       3);
+  if !decrypted_titles > 4
+  then failwith "a page title update rebuilt the journal projection";
+  (match Logseq_chat_graph_read.projection_blocks projection with
+   | [ first; second ] ->
+     if first.journal <> Some ("Journal updated", 20260816)
+        || second.journal <> Some ("Journal updated", 20260816)
+     then failwith "page metadata was not refreshed for dependent blocks"
+   | _ -> failwith "page metadata refresh lost a journal block");
+  let first_eid = Option.get (entid (conn_db conn) "block/uuid" (Uuid first_uuid)) in
+  ignore (transact_conn conn [ RetractEntity (Entity_id first_eid) ]);
+  Logseq_chat_graph_read.update_projection
+    projection
+    (conn_db conn)
+    (change ~deleted:[ identity first_uuid ] 4);
+  (match Logseq_chat_graph_read.projection_blocks projection with
+   | [ remaining ] when remaining.uuid = second_uuid -> ()
+   | _ -> failwith "incremental projection did not remove a deleted block");
+  let next_page_uuid = "028f7850-c6aa-7da0-8b3f-6dbb64aa4ecb" in
+  let next_block_uuid = "028f7850-c6aa-7da0-8b3f-6dbb64aa4ecc" in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "next-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid next_page_uuid)
+               ; "block/name", One_value (String "next-page")
+               ; "block/title", One_value (String "Next journal")
+               ; "block/journal-day", One_value (Int 20260817)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid next_block_uuid)
+               ; "block/title", One_value (String "Next block")
+               ; "block/page", One_value (Ref_to (Temp_id "next-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "next-page"))
+               ; "block/created-at", One_value (Instant 3)
+               ]
+           }
+       ]);
+  Logseq_chat_graph_read.update_projection
+    projection
+    (conn_db conn)
+    (change
+       ~upserts:
+         [ { Protocol.id = identity next_page_uuid
+           ; attrs = [ Transit.Keyword "block/journal-day", Transit.Int 20260817 ]
+           }
+         ]
+       5);
+  match Logseq_chat_graph_read.projection_blocks projection with
+  | [ old_block; new_block ]
+    when old_block.uuid = second_uuid && new_block.uuid = next_block_uuid -> ()
+  | _ -> failwith "a journal-page change did not rebuild the projection"
 ;;
 
 let () =

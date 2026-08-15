@@ -2,6 +2,7 @@ open Datascript
 module Model = Logseq_chat_model
 
 module Int_set = Set.Make (Int)
+module String_set = Set.Make (String)
 
 let value db eid attr =
   Datascript.datoms db Eavt ~e:eid ~a:attr ()
@@ -170,4 +171,128 @@ let blocks ?(decrypt_title = fun value -> Ok value) db =
   |> Seq.filter_map (block decrypt_title db)
   |> List.of_seq
   |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
+;;
+
+type projection =
+  { decrypt_title : string -> (string, string) result
+  ; mutable recent_pages : Int_set.t
+  ; blocks_by_uuid : (string, Model.block) Hashtbl.t
+  }
+
+let recent_pages db =
+  recent_journal_page_ids db
+  |> List.fold_left (fun pages eid -> Int_set.add eid pages) Int_set.empty
+;;
+
+let rebuild_projection projection db =
+  projection.recent_pages <- recent_pages db;
+  Hashtbl.clear projection.blocks_by_uuid;
+  blocks ~decrypt_title:projection.decrypt_title db
+  |> List.iter (fun (block : Model.block) ->
+    Hashtbl.replace projection.blocks_by_uuid block.uuid block)
+;;
+
+let create_projection ?(decrypt_title = fun value -> Ok value) db =
+  let projection =
+    { decrypt_title; recent_pages = Int_set.empty; blocks_by_uuid = Hashtbl.create 128 }
+  in
+  rebuild_projection projection db;
+  projection
+;;
+
+let projection_blocks projection =
+  Hashtbl.to_seq_values projection.blocks_by_uuid
+  |> List.of_seq
+  |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
+;;
+
+let identity = function
+  | Transit_core.Json.Array
+      [ Transit_core.Json.Keyword "block/uuid"; Transit_core.Json.Uuid uuid ] ->
+    Some (`Uuid uuid)
+  | Transit_core.Json.Array
+      [ Transit_core.Json.Keyword "db/ident"; Transit_core.Json.Keyword ident ] ->
+    Some (`Ident ident)
+  | _ -> None
+;;
+
+let has_journal_day (entity : Logseq_chat_sync_protocol.entity) =
+  List.exists
+    (function
+      | Transit_core.Json.Keyword "block/journal-day", _ -> true
+      | _ -> false)
+    entity.attrs
+;;
+
+let refresh_block projection db uuid =
+  match Datascript.entid db "block/uuid" (Uuid uuid) with
+  | None -> Hashtbl.remove projection.blocks_by_uuid uuid
+  | Some eid ->
+    let page_is_recent =
+      match ref_value (value db eid "block/page") with
+      | Some page_eid -> Int_set.mem page_eid projection.recent_pages
+      | None -> false
+    in
+    if page_is_recent
+    then
+      (match block projection.decrypt_title db eid with
+       | Some block -> Hashtbl.replace projection.blocks_by_uuid uuid block
+       | None -> Hashtbl.remove projection.blocks_by_uuid uuid)
+    else Hashtbl.remove projection.blocks_by_uuid uuid
+;;
+
+let update_projection projection db (change : Logseq_chat_sync_protocol.change_set) =
+  let deleted_uuids =
+    List.fold_left
+      (fun uuids identity_value ->
+        match identity identity_value with
+        | Some (`Uuid uuid) -> String_set.add uuid uuids
+        | Some (`Ident _) | None -> uuids)
+      String_set.empty
+      change.deleted
+  in
+  let changed_uuids, changed_idents =
+    List.fold_left
+      (fun (uuids, idents) (entity : Logseq_chat_sync_protocol.entity) ->
+        match identity entity.id with
+        | Some (`Uuid uuid) -> String_set.add uuid uuids, idents
+        | Some (`Ident ident) -> uuids, String_set.add ident idents
+        | None -> uuids, idents)
+      (String_set.empty, String_set.empty)
+      change.upserts
+  in
+  let changed_uuids, changed_idents =
+    List.fold_left
+      (fun (uuids, idents) identity_value ->
+        match identity identity_value with
+        | Some (`Uuid uuid) -> String_set.add uuid uuids, idents
+        | Some (`Ident ident) -> uuids, String_set.add ident idents
+        | None -> uuids, idents)
+      (changed_uuids, changed_idents)
+      change.deleted
+  in
+  let current_journal_deleted =
+    Hashtbl.to_seq_values projection.blocks_by_uuid
+    |> Seq.exists (fun (block : Model.block) -> String_set.mem block.page_id deleted_uuids)
+  in
+  if List.exists has_journal_day change.upserts || current_journal_deleted
+  then rebuild_projection projection db
+  else (
+    let affected = ref changed_uuids in
+    Hashtbl.iter
+      (fun uuid (block : Model.block) ->
+        let status_changed =
+          match block.status with
+          | None -> false
+          | Some status ->
+            String_set.mem status.uuid changed_uuids
+            || Option.fold
+                 ~none:false
+                 ~some:(fun ident -> String_set.mem ident changed_idents)
+                 status.ident
+        in
+        if String_set.mem block.page_id changed_uuids || status_changed
+        then affected := String_set.add uuid !affected)
+      projection.blocks_by_uuid;
+    String_set.iter (refresh_block projection db) !affected)
 ;;
