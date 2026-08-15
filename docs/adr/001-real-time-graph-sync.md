@@ -56,6 +56,7 @@ support:
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted Apple sync | Full snapshot import, SSE latest-entity changes, offline-first local writes, self-echo reconciliation, and durable cursor are implemented and device-verified |
+| Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
 | Android sync transport | OCaml core is shared, but native snapshot and SSE transport adapters are not connected |
 | Encrypted graph sync | Graphs are discoverable but opening them is explicitly rejected until the E2EE milestone is implemented and verified |
 
@@ -207,27 +208,32 @@ not be used to decode it.
 ### 4. Bootstrap with the existing db-sync snapshot download
 
 When a user opens a graph that has no completed local copy for its graph id and
-schema version, the client will follow the current `logseq-1` download flow:
+schema version, the client will follow the existing db-sync snapshot contract used
+by Logseq Chat:
 
-1. `GET /sync/:graph-id/pull` to read the current server transaction number `t` as
-   the baseline.
-2. `GET /sync/:graph-id/snapshot/download` to obtain the existing snapshot stream
-   URL.
-3. Download the gzip-capable framed Transit stream of SQLite `kvs` rows
+1. `GET /sync/:graph-id/snapshot/download` to obtain the existing snapshot stream
+   URL together with the current server transaction number `t`, schema version,
+   row count, and content encoding. That `t` is the pre-stream replay baseline.
+2. Download the gzip-capable framed Transit stream of SQLite `kvs` rows
    `[addr, content, addresses]`.
-4. Stage those rows unchanged in a temporary Logseq-layout SQLite database.
-5. Use the promoted native `Logseq_sqlite_storage` Transit decoder to load the
+3. Stage those rows unchanged in a temporary Logseq-layout SQLite database.
+4. Use the promoted native `Logseq_sqlite_storage` Transit decoder to load the
    snapshot schema and datoms, then reconstruct the app's local DataScript graph in
    schema-first import order, as the current `frontend.worker.sync.download`
    implementation does.
+
+The platform adapter may inspect the stream URL and content encoding to perform the
+download, but passes the original metadata response to OCaml. The OCaml sync session
+validates `t`, schema version, and row count and owns the import checkpoint.
 
 No new snapshot envelope or parallel Graph API snapshot route will be introduced.
 The existing snapshot preserves all `kvs` graph storage; both server and client open
 it with the same version of `db-schema/schema`. Asset bytes remain in the existing
 asset API; asset entities and metadata are in the graph snapshot.
 
-The baseline `t` is read before the snapshot. After import, SSE starts from that
-`t`, so every transaction concurrent with snapshot creation is considered again.
+The snapshot-download handler reads baseline `t` before the client consumes the
+separate snapshot stream. After import, SSE starts from that `t`, so every
+transaction concurrent with snapshot streaming is considered again.
 Complete entity upserts are idempotent, making an entity already present in the
 snapshot safe to replay. db-sync must not garbage-collect tx-log entries newer than
 the baseline while the download is active; if it cannot serve the range, it sends a
@@ -406,8 +412,9 @@ mirror until the matching SSE upsert confirms the authoritative value.
 2. List authorized graphs and select one.
 3. Resolve the graph's schema version and encryption flag.
 4. If encrypted, unlock the graph key locally.
-5. If no valid local copy exists, read baseline `t`, call the existing
-   `snapshot/download` API, and atomically import its framed `kvs` row stream.
+5. If no valid local copy exists, call the existing `snapshot/download` API, retain
+   its metadata `t` as the pre-stream baseline, and atomically import its framed
+   `kvs` row stream.
 6. Open SSE from the baseline server transaction number `t`.
 7. Apply ordered entity upserts and deletions transactionally and persist each
    cursor.
@@ -421,7 +428,9 @@ mirror until the matching SSE upsert confirms the authoritative value.
   Logseq Chat Cognito app client id to the allowed client ids.
 - Expose graph encryption and schema-version metadata in the graph list.
 - Keep `GET /sync/:graph-id/snapshot/download` and its framed Transit `kvs` stream as
-  the only full-download path.
+  the only full-download path. Its metadata response includes the pre-stream `t`,
+  schema version, row count, stream URL, and content encoding; bootstrap does not
+  add a separate `/pull` request.
 - Add `GET /sync/:graph-id/events?since=<t>` to the existing per-graph Durable
   Object, with replay, heartbeat, and explicit reset behavior.
 - Use `storage/fetch-tx-since` and `storage/get-t` to find affected stable entity
