@@ -63,6 +63,16 @@ import Foundation
         #expect(!skipConfiguration.contains("aws-android-sdk-cognitoidentityprovider"))
     }
 
+    @Test func androidAllowsUserConfiguredLocalHTTPServers() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let manifest = try String(
+            contentsOf: root.appendingPathComponent("Android/app/src/main/AndroidManifest.xml"),
+            encoding: .utf8
+        )
+
+        #expect(manifest.contains("android:usesCleartextTraffic=\"true\""))
+    }
+
     @Test func appleAuthDependsOnlyOnAmplifyCognitoAndAuthenticatorProducts() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let package = try String(
