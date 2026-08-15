@@ -99,6 +99,28 @@ import Foundation
         #expect(!provider.contains("Keychain"))
     }
 
+    @Test func amplifyAuthAndE2EUseTheCognitoUsername() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let app = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
+            encoding: .utf8
+        )
+        let captureFlow = try String(
+            contentsOf: root.appendingPathComponent(".maestro/ios-capture-responsive.yaml"),
+            encoding: .utf8
+        )
+        let realtimeFlow = try String(
+            contentsOf: root.appendingPathComponent(".maestro/ios-local-realtime-sync.yaml"),
+            encoding: .utf8
+        )
+
+        #expect(!app.contains("usernameAttributes: [.email]"))
+        for flow in [captureFlow, realtimeFlow] {
+            #expect(flow.contains("Enter your username"))
+            #expect(!flow.contains("Enter your email"))
+        }
+    }
+
     @Test func signedInAppRequiresExplicitUnencryptedGraphSelection() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(
@@ -757,7 +779,7 @@ import Foundation
         #expect(flow.contains("tapOn: \"close\""))
         #expect(!flow.contains("tapOn: \"Cancel\""))
         #expect(!flow.contains("field.pat"))
-        #expect(flow.contains("text: \"Enter your email\""))
+        #expect(flow.contains("text: \"Enter your username\""))
         #expect(flow.contains("text: \"Enter your password\""))
         #expect(flow.contains("text: \"Sign In\""))
         #expect(flow.contains("index: 1"))

@@ -3,9 +3,9 @@ appId: com.logseq.chat
 - launchApp:
     clearState: true
 - assertVisible:
-    text: "Enter your email"
+    text: "Enter your username"
 - tapOn:
-    text: "Enter your email"
+    text: "Enter your username"
 - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
 - tapOn:
     text: "Enter your password"

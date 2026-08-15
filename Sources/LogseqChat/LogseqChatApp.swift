@@ -70,7 +70,6 @@ private enum LogseqAmplifyAuth {
                     requireSymbols: true
                 ),
                 standardRequiredAttributes: [.email],
-                usernameAttributes: [.email],
                 userVerificationTypes: [.email]
             )
         )
