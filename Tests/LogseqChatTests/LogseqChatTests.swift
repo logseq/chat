@@ -225,9 +225,41 @@ import Foundation
         #expect(!source.contains("Logseq chat app"))
         #expect(source.contains("settingsControl"))
         #expect(source.contains("IconImage(name: \"more_horiz\")"))
-        #expect(source.contains("Spacer()\n            settingsControl"))
+        #expect(source.contains("Spacer()\n            syncIndicatorControl\n            settingsControl"))
         #expect(source.contains("accessibilityIdentifier(\"button.connection\")"))
         #expect(source.contains(".platformFloatingHeaderInset()"))
+    }
+
+    @Test func headerUsesSyncStatusDotInsteadOfStatusText() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let controlStart = try #require(source.range(of: "private var syncIndicatorControl: some View"))
+        let remainingSource = source[controlStart.lowerBound...]
+        let controlEnd = try #require(remainingSource.range(of: "\n    private var settingsControl: some View"))
+        let controlSource = remainingSource[..<controlEnd.lowerBound]
+
+        #expect(!source.contains("Text(verbatim: \"Connected\")"))
+        #expect(!source.contains("Text(verbatim: \"Synced\")"))
+        #expect(controlSource.contains("Button"))
+        #expect(controlSource.contains("settingsPresented = true"))
+        #expect(controlSource.contains("Circle()"))
+        #expect(controlSource.contains(".fill(syncIndicatorColor)"))
+        #expect(controlSource.contains(".accessibilityLabel(syncIndicatorLabel)"))
+        #expect(controlSource.contains(".accessibilityIdentifier(syncIndicatorAccessibilityIdentifier)"))
+    }
+
+    @Test func syncStatusDotIsGreenOnlyWhenConnectedWithoutUnconfirmedChanges() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains("store.snapshot.syncConnected == true && !hasUnconfirmedSyncChanges"))
+        #expect(source.contains("block.syncStatus == \"pending\""))
+        #expect(source.contains("block.syncStatus == \"submitted\""))
+        #expect(source.contains("block.syncStatus == \"failed\""))
+        #expect(source.contains("return .green"))
+        #expect(source.contains("return .yellow"))
     }
 
     @Test func androidHeaderControlsKeepCapsuleShape() throws {

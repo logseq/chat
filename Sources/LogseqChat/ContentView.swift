@@ -456,24 +456,56 @@ struct ContentView: View {
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            if store.snapshot.syncConnected == true {
-                Text(verbatim: "Connected")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("sync.connected")
-            }
-            if store.cursorAdvancedAfterMutation {
-                Text(verbatim: "Synced")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("sync.cursor-advanced")
-            }
             Spacer()
+            syncIndicatorControl
             settingsControl
         }
         .padding(.horizontal, 20)
         .padding(.top, 0)
         .padding(.bottom, 8)
+    }
+
+    private var hasUnconfirmedSyncChanges: Bool {
+        store.snapshot.blocks.contains { block in
+            block.syncStatus == "pending"
+                || block.syncStatus == "submitted"
+                || block.syncStatus == "failed"
+        }
+    }
+
+    private var syncIndicatorColor: Color {
+        if store.snapshot.syncConnected == true && !hasUnconfirmedSyncChanges {
+            return .green
+        }
+        return .yellow
+    }
+
+    private var syncIndicatorLabel: String {
+        if hasUnconfirmedSyncChanges {
+            return "Sync pending"
+        }
+        return store.snapshot.syncConnected == true ? "Synced" : "Not connected"
+    }
+
+    private var syncIndicatorAccessibilityIdentifier: String {
+        if store.cursorAdvancedAfterMutation {
+            return "sync.cursor-advanced"
+        }
+        return store.snapshot.syncConnected == true ? "sync.connected" : "sync.disconnected"
+    }
+
+    private var syncIndicatorControl: some View {
+        Button {
+            settingsPresented = true
+        } label: {
+            Circle()
+                .fill(syncIndicatorColor)
+                .frame(width: 10, height: 10)
+        }
+        .frame(width: 44, height: 44)
+        .buttonStyle(.plain)
+        .accessibilityLabel(syncIndicatorLabel)
+        .accessibilityIdentifier(syncIndicatorAccessibilityIdentifier)
     }
 
     private var settingsControl: some View {
