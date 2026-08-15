@@ -216,11 +216,27 @@ let snapshot_visible session =
        let local_by_uuid = Hashtbl.create (List.length unsynced) in
        List.iter
          (fun (block : Model.block) -> Hashtbl.replace local_by_uuid block.uuid block)
+         (Model.all_blocks session.model);
+       let unsynced_by_uuid = Hashtbl.create (List.length unsynced) in
+       List.iter
+         (fun (block : Model.block) -> Hashtbl.replace unsynced_by_uuid block.uuid block)
          unsynced;
        let merged_graph_blocks =
          List.map
            (fun (block : Model.block) ->
-             Option.value (Hashtbl.find_opt local_by_uuid block.uuid) ~default:block)
+             match Hashtbl.find_opt unsynced_by_uuid block.uuid with
+             | Some local -> local
+             | None ->
+               (match Hashtbl.find_opt local_by_uuid block.uuid with
+                | Some local when Option.is_some local.local_path ->
+                  { block with
+                    kind = local.kind
+                  ; asset_type = local.asset_type
+                  ; asset_size = local.asset_size
+                  ; asset_checksum = local.asset_checksum
+                  ; local_path = local.local_path
+                  }
+                | _ -> block))
            blocks
        in
        let local_only =

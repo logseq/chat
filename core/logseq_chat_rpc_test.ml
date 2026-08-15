@@ -241,6 +241,58 @@ let () =
 ;;
 
 let () =
+  let authoritative_blocks = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_blocks:(fun () -> Some !authoritative_blocks)
+      ()
+  in
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"synced-asset\",\"title\":\"photo.png\",\"now\":1776000000001,\"assetType\":\"png\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/photo.png\"}"}}|});
+  ignore (Logseq_chat_model.mark_block_synced session.model ~uuid:"synced-asset");
+  authoritative_blocks :=
+    [ Logseq_chat_model.
+        { uuid = "synced-asset"
+        ; kind = "block"
+        ; title = "photo.png"
+        ; page_id = "journal/2026-08-15"
+        ; parent_id = None
+        ; order = None
+        ; created_at = 1_776_000_000_001
+        ; updated_at = 1_776_000_000_001
+        ; sync_status = "synced"
+        ; tags = []
+        ; references = []
+        ; status = None
+        ; asset_type = None
+        ; asset_size = None
+        ; asset_checksum = None
+        ; local_path = None
+        ; journal = Some ("Aug 15th, 2026", 20260815)
+        }
+    ];
+  let response =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"clearRelated"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let blocks = required_assoc "result" fields |> required_list "blocks" in
+    (match blocks with
+     | [ `Assoc block ] ->
+       assert_equal "synced asset kind" "asset" (required_string "kind" block);
+       assert_equal
+         "synced asset local path"
+         "/documents/photo.png"
+         (required_string "localPath" block)
+     | _ -> failwith "authoritative asset should remain visible with local metadata")
+  | _ -> failwith "snapshot should return an RPC response"
+;;
+
+let () =
   let session = Logseq_chat_rpc.create () in
   ignore
     (Logseq_chat_rpc.call
