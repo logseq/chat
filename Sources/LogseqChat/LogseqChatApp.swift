@@ -3,7 +3,7 @@ import OSLog
 import SwiftUI
 import LogseqChatModel
 
-#if !SKIP
+#if !SKIP && AppleAuth
 import Amplify
 import Authenticator
 import AWSCognitoAuthPlugin
@@ -22,13 +22,13 @@ let logger: os.Logger = os.Logger(subsystem: "com.logseq.chat", category: "Logse
 /// The default implementation merely loads the `ContentView` for the app and logs a message.
 public struct LogseqChatRootView : View {
     public init() {
-        #if !SKIP
+        #if !SKIP && AppleAuth
         LogseqAmplifyAuth.configure()
         #endif
     }
 
     public var body: some View {
-        #if !SKIP
+        #if !SKIP && AppleAuth
         Authenticator { _ in
             appContent
         }
@@ -55,7 +55,7 @@ public struct LogseqChatRootView : View {
     }
 }
 
-#if !SKIP
+#if !SKIP && AppleAuth
 private enum LogseqAmplifyAuth {
     private static let configureOnce: Void = {
         let configuration = LogseqCognitoConfiguration.load()

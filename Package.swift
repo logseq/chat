@@ -33,6 +33,10 @@ let package = Package(
         .library(name: "LogseqChat", type: .dynamic, targets: ["LogseqChat"]),
         .library(name: "LogseqChatModel", type: .dynamic, targets: ["LogseqChatModel"]),
     ],
+    traits: [
+        .trait(name: "AppleAuth"),
+        .default(enabledTraits: ["AppleAuth"]),
+    ],
     dependencies: [
         .package(url: "https://source.skip.tools/skip.git", from: "1.9.5"),
         .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
@@ -52,10 +56,18 @@ let package = Package(
         .target(name: "LogseqChat", dependencies: [
             "LogseqChatModel",
             .product(name: "SkipUI", package: "skip-ui"),
-            .product(name: "Amplify", package: "amplify-swift", condition: .when(platforms: [.iOS, .macOS])),
-            .product(name: "AWSPluginsCore", package: "amplify-swift", condition: .when(platforms: [.iOS, .macOS])),
-            .product(name: "AWSCognitoAuthPlugin", package: "amplify-swift", condition: .when(platforms: [.iOS, .macOS])),
-            .product(name: "Authenticator", package: "amplify-ui-swift-authenticator", condition: .when(platforms: [.iOS, .macOS]))
+            .product(
+                name: "Amplify", package: "amplify-swift",
+                condition: .when(platforms: [.iOS, .macOS], traits: ["AppleAuth"])
+            ),
+            .product(
+                name: "AWSCognitoAuthPlugin", package: "amplify-swift",
+                condition: .when(platforms: [.iOS, .macOS], traits: ["AppleAuth"])
+            ),
+            .product(
+                name: "Authenticator", package: "amplify-ui-swift-authenticator",
+                condition: .when(platforms: [.iOS, .macOS], traits: ["AppleAuth"])
+            )
         ],
         resources: [.process("Resources")],
         linkerSettings: logseqChatLinkerSettings,

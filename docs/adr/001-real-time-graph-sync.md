@@ -52,7 +52,7 @@ support:
 
 | Area | Current state |
 | --- | --- |
-| Apple authentication | Amplify UI Swift `Authenticator` with `AWSCognitoAuthPlugin`; access-token session refresh is owned by Amplify |
+| Apple authentication | Amplify UI Swift `Authenticator` with `AWSCognitoAuthPlugin`; access-token session refresh is owned by Amplify. The default `AppleAuth` SwiftPM trait keeps Auth in app builds while core/model-only builds can omit its dependency graph. |
 | Android authentication | Amplify UI Android `Authenticator` 1.9.2 with `AWSCognitoAuthPlugin`; built-in challenge flows, access-token retrieval, persisted session restore, and system-inset layout are emulator-verified |
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
@@ -101,6 +101,13 @@ permission checks used by existing sync clients. A token identifies a user, not 
 selection therefore happens only after the app calls the authenticated db-sync
 `GET /graphs` operation. Semantic reads and writes remain under `/api/v1/graphs/...`;
 graph discovery does not use the semantic graph-list route.
+
+The Apple target depends only on `Amplify`, `AWSCognitoAuthPlugin`, and
+`Authenticator`. `AWSPluginsCore` remains an internal transitive dependency of the
+Cognito plugin and is not an app product dependency. The pinned upstream releases
+do not publish official XCFramework assets, so this ADR does not substitute an
+unverified AWS SDK for Amplify Auth. The `AppleAuth` package trait is enabled by
+default for app builds and may be disabled for core/model-only build and test jobs.
 
 PAT configuration and the PAT input screen will be removed after Cognito login is
 available. PATs may remain supported by existing APIs during migration, but Logseq

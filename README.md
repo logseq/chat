@@ -63,5 +63,18 @@ or by running the test target for the macOS destination in Xcode,
 which will run the Swift tests as well as the transpiled
 Kotlin JUnit tests in the Robolectric Android simulation environment.
 
+Apple Auth is a default SwiftPM trait because app builds embed Amplify's native
+Authenticator. Core/model development can omit the large Cognito dependency graph:
+
+```sh
+swift build --target LogseqChatModel --disable-default-traits
+swift test --disable-default-traits --filter LogseqChatModelTests
+```
+
+Production and iOS Simulator builds use the default `AppleAuth` trait. Amplify Swift
+2.60.1 and Amplify UI Authenticator 1.3.1 do not publish official precompiled binary
+artifacts, so the app continues to use their source SwiftPM products rather than an
+unverified XCFramework.
+
 Parity testing can be performed with `skip test`,
 which will output a table of the test results for both platforms.

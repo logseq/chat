@@ -3,9 +3,9 @@
 import Foundation
 import LogseqChatModel
 
-#if !SKIP
+#if !SKIP && AppleAuth
 import Amplify
-import AWSPluginsCore
+import AWSCognitoAuthPlugin
 #endif
 
 enum CognitoAuthProviderError: Error, LocalizedError {
@@ -27,18 +27,19 @@ actor CognitoAuthProvider: LogseqCognitoProviding {
     }
 
     func accessToken() async throws -> String? {
+        #if !SKIP && AppleAuth
         let session = try await Amplify.Auth.fetchAuthSession()
         #if DEBUG
         print("LogseqChat debug: Amplify session fetched signedIn=\(session.isSignedIn)")
         #endif
         guard session.isSignedIn else { return nil }
-        guard let tokenProvider = session as? AuthCognitoTokensProvider else {
+        guard let cognitoSession = session as? AWSAuthCognitoSession else {
             #if DEBUG
             print("LogseqChat debug: Amplify session has no Cognito token provider")
             #endif
             throw CognitoAuthProviderError.missingAccessToken
         }
-        let tokens = try tokenProvider.getCognitoTokens().get()
+        let tokens = try cognitoSession.userPoolTokensResult.get()
         guard !tokens.accessToken.isEmpty else {
             throw CognitoAuthProviderError.missingAccessToken
         }
@@ -46,9 +47,13 @@ actor CognitoAuthProvider: LogseqCognitoProviding {
         print("LogseqChat debug: Cognito access token is available")
         #endif
         return tokens.accessToken
+        #else
+        throw CognitoAuthProviderError.missingAccessToken
+        #endif
     }
 
     func signIn(username: String, password: String) async throws -> String {
+        #if !SKIP && AppleAuth
         let result = try await Amplify.Auth.signIn(username: username, password: password)
         guard result.isSignedIn else {
             throw CognitoAuthProviderError.incompleteSignIn
@@ -57,9 +62,14 @@ actor CognitoAuthProvider: LogseqCognitoProviding {
             throw CognitoAuthProviderError.missingAccessToken
         }
         return token
+        #else
+        throw CognitoAuthProviderError.missingAccessToken
+        #endif
     }
 
     func signOut() async throws {
+        #if !SKIP && AppleAuth
         _ = await Amplify.Auth.signOut()
+        #endif
     }
 }
