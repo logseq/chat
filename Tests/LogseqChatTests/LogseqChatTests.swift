@@ -187,7 +187,7 @@ import Foundation
         #expect(!script.contains("simctl uninstall"))
     }
 
-    @Test func signedInAppRequiresExplicitUnencryptedGraphSelection() throws {
+    @Test func signedInAppRequiresExplicitGraphSelectionAndListsEncryption() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
@@ -197,7 +197,8 @@ import Foundation
         #expect(content.contains("screen.graph-picker"))
         #expect(content.contains("store.snapshot.selectedGraphId == nil"))
         #expect(content.contains("store.selectGraph(graph.id)"))
-        #expect(content.contains("graph.isEncrypted || !graph.isReady"))
+        #expect(content.contains("if graph.isEncrypted"))
+        #expect(content.contains(".disabled(!graph.isReady)"))
     }
 
     @Test func graphPickerExposesConnectionSettingsBeforeGraphSelection() throws {
@@ -206,14 +207,16 @@ import Foundation
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
             encoding: .utf8
         )
-        let pickerStart = try #require(content.range(of: "private var graphPicker: some View"))
-        let remaining = content[pickerStart.lowerBound...]
-        let pickerEnd = try #require(remaining.range(of: "\n\n    @ViewBuilder private var appShell"))
-        let picker = remaining[..<pickerEnd.lowerBound]
-        let connectStart = try #require(content.range(of: "private func connectWithCurrentAccessToken()"))
-        let connectRemaining = content[connectStart.lowerBound...]
-        let connectEnd = try #require(connectRemaining.range(of: "\n\n    @ViewBuilder private var authenticatedContent"))
-        let connect = connectRemaining[..<connectEnd.lowerBound]
+        let pickerParts = content.components(separatedBy: "private var graphPicker: some View")
+        #expect(pickerParts.count == 2)
+        let picker = try #require(
+            pickerParts.last?.components(separatedBy: "\n\n    @ViewBuilder private var appShell").first
+        )
+        let connectParts = content.components(separatedBy: "private func connectWithCurrentAccessToken()")
+        #expect(connectParts.count == 2)
+        let connect = try #require(
+            connectParts.last?.components(separatedBy: "\n\n    @ViewBuilder private var authenticatedContent").first
+        )
 
         #expect(picker.contains("settingsControl"))
         #expect(picker.contains("authentication.errorMessage"))

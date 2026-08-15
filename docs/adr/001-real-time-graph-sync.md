@@ -60,7 +60,7 @@ support:
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
 | iOS background sync | Background entry starts an immediate, bounded sync under a UIKit background assertion; `BGAppRefresh` is also registered for later catch-up. Each execution opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without graph-catalog or semantic refresh |
 | Android sync transport | OCaml core, full-snapshot download/import, and native SSE entity-change streaming are connected; device E2E remains pending |
-| Encrypted graph sync | iOS can select and unlock encrypted graphs, cache the graph key in Keychain, keep an exact ciphertext graph mirror, decrypt the UI projection, and encrypt block, task, and asset writes in the OCaml core; native tests and Simulator build pass, while full encrypted Simulator E2E remains pending |
+| Encrypted graph sync | iOS Simulator E2E against local db-sync verifies encrypted first-open snapshot import, local key unlock and Keychain restore, semantic REST journal/block creation, authoritative SSE confirmation, ciphertext-only server storage, and kill/relaunch persistence |
 
 ## Decision
 
