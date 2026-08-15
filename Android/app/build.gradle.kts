@@ -9,6 +9,11 @@ plugins {
 skip {
 }
 
+dependencies {
+    testImplementation(kotlin("test-junit"))
+    testImplementation("org.json:json:20251224")
+}
+
 val repoRoot = rootProject.projectDir.parentFile
 
 tasks.register<Exec>("buildAndroidNativeCore") {

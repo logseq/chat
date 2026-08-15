@@ -12,6 +12,9 @@ let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmp
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
     .linkedLibrary("sqlite3", .when(platforms: [.iOS]))
 ]
+let logseqChatCoreSwiftSettings: [SwiftSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
+    .define("LOGSEQ_CHAT_CORE", .when(platforms: [.iOS]))
+]
 let logseqChatShellLinkerSettings: [LinkerSetting] = logseqChatSimulatorEntitlements.map {
     [.unsafeFlags([
         "-Xlinker", "-sectcreate",
@@ -66,7 +69,7 @@ let package = Package(
             .product(name: "SkipModel", package: "skip-model"),
             .product(name: "SkipFFI", package: "skip-ffi")
         ], resources: [.process("Resources")],
-        swiftSettings: [.define("LOGSEQ_CHAT_CORE", .when(platforms: [.iOS]))],
+        swiftSettings: logseqChatCoreSwiftSettings,
         plugins: [.plugin(name: "skipstone", package: "skip")]),
         .target(
             name: "LogseqChatCoreABI",

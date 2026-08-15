@@ -136,9 +136,9 @@ struct ContentView: View {
             if authentication.state == .signedIn {
                 authenticatedContent
             } else {
-                LogseqLoginView(authentication: authentication) {
+                LogseqLoginView(authentication: authentication, onSignedIn: {
                     connectWithCurrentAccessToken()
-                }
+                })
             }
         }
         #else

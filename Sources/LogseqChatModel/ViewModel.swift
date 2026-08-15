@@ -824,19 +824,16 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
         graphID: String, baseURL: String, accessToken: String, forceSnapshot: Bool = false,
         allowSnapshotDownload: Bool = true
     ) async -> Bool {
-        #if SKIP
-        lastError = LogseqChatCoreError(
-            code: "snapshot_transport_unavailable",
-            message: "Native Android snapshot transport is not connected yet"
-        )
-        return false
-        #else
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(code: "database_not_open", message: "Open local storage before syncing")
             return false
         }
         do {
+            #if SKIP
+            let graphDirectoryName = graphID
+            #else
             let graphDirectoryName = graphID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? graphID
+            #endif
             let graphDirectory = URL(fileURLWithPath: openedDatabasePath)
                 .deletingLastPathComponent()
                 .appendingPathComponent("graphs")
@@ -860,9 +857,18 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
 
             guard allowSnapshotDownload else { return false }
 
+            #if SKIP
+            let artifact = try await AndroidGraphSnapshotTransport.downloadSnapshot(
+                baseURL: baseURL,
+                graphID: graphID,
+                accessToken: accessToken,
+                workingDirectory: graphDirectory.path
+            )
+            #else
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL, graphID: graphID, accessToken: accessToken
             )
+            #endif
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
             let payload = ImportSnapshotPayload(
                 graphId: graphID,
@@ -886,7 +892,6 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             lastError = LogseqChatCoreError(code: "snapshot_download_failed", message: "\(error)")
             return false
         }
-        #endif
     }
 
     public func runGraphEventsOnce(

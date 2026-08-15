@@ -985,7 +985,7 @@ import Foundation
         #expect(!device.contains("-Xlinker \"$ffi_object\""))
     }
 
-    @Test func iosNativeCoreFlagIsDefinedForTheModelTargetThatCallsIt() throws {
+    @Test func iosNativeCoreFlagIsDefinedOnlyWhenNativeLinkInputsAreAvailable() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let package = try String(
             contentsOf: root.appendingPathComponent("Package.swift"),
@@ -998,7 +998,9 @@ import Foundation
         )
         let modelTarget = modelTargetAndFollowing[..<coreTargetStart.lowerBound]
 
-        #expect(modelTarget.contains(".define(\"LOGSEQ_CHAT_CORE\", .when(platforms: [.iOS]))"))
+        #expect(package.contains("let logseqChatCoreSwiftSettings: [SwiftSetting] = logseqChatNativeLinkInputs.isEmpty ? []"))
+        #expect(package.contains(".define(\"LOGSEQ_CHAT_CORE\", .when(platforms: [.iOS]))"))
+        #expect(modelTarget.contains("swiftSettings: logseqChatCoreSwiftSettings"))
     }
 
     @Test func iosSimulatorBuildUsesTheSameSyncCoreAsDevice() throws {

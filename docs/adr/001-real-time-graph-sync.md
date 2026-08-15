@@ -57,7 +57,7 @@ support:
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted Apple sync | Full snapshot import, SSE latest-entity changes, offline-first local writes, self-echo reconciliation, and durable cursor are implemented and device-verified |
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
-| Android sync transport | OCaml core is shared, but native snapshot and SSE transport adapters are not connected |
+| Android sync transport | OCaml core and full-snapshot download/import are connected; native SSE transport is not connected yet |
 | Encrypted graph sync | Graphs are discoverable but opening them is explicitly rejected until the E2EE milestone is implemented and verified |
 
 ## Decision
