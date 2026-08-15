@@ -192,6 +192,23 @@ import Foundation
         #expect(graphSync.contains("else { return }"))
     }
 
+    @Test func androidGraphEventsUseTheNativeSSETransport() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift"),
+            encoding: .utf8
+        )
+        let start = try #require(content.range(of: "public func runGraphEventsOnce("))
+        let remaining = content[start.lowerBound...]
+        let end = try #require(remaining.range(of: "\n\n    private func dispatchEncodedAndWait"))
+        let graphEvents = remaining[..<end.lowerBound]
+
+        #expect(graphEvents.contains("AndroidGraphSSETransport.open("))
+        #expect(graphEvents.contains("while let frame = try await stream.nextFrame()"))
+        #expect(graphEvents.contains("stream.close()"))
+        #expect(!graphEvents.contains("#if SKIP\n        return false"))
+    }
+
     @Test func restoredGraphIsRediscoveredBeforeSyncStarts() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(

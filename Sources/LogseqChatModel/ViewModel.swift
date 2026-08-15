@@ -897,13 +897,44 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
     public func runGraphEventsOnce(
         graphID: String, baseURL: String, accessToken: String
     ) async -> Bool {
-        #if SKIP
-        return false
-        #else
         guard let cursor = snapshot.appliedServerT else {
             lastError = LogseqChatCoreError(code: "sync_cursor_missing", message: "Graph checkpoint is not open")
             return false
         }
+        #if SKIP
+        do {
+            let stream = try await AndroidGraphSSETransport.open(
+                baseURL: baseURL,
+                graphID: graphID,
+                appliedServerT: cursor,
+                accessToken: accessToken
+            )
+            defer { stream.close() }
+            await dispatchRawAndWait("startSSE")
+            guard lastError == nil else { return false }
+            while let frame = try await stream.nextFrame() {
+                await dispatchRawAndWait("feedSSE", payload: frame)
+                if lastError != nil { break }
+                await performAsyncAndWait(
+                    LogseqChatRPCRequest(
+                        method: "dispatch",
+                        params: LogseqChatRPCParams(action: "syncPending")
+                    )
+                )
+                if lastError != nil { break }
+            }
+            let streamError = lastError
+            await dispatchRawAndWait("stopSSE")
+            if let streamError {
+                lastError = streamError
+                return streamError.code == "snapshot_required"
+            }
+        } catch {
+            await dispatchRawAndWait("stopSSE")
+            lastError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
+        }
+        return false
+        #else
         do {
             let request = try LogseqGraphSyncHTTP.eventsRequest(
                 baseURL: baseURL,
