@@ -6,11 +6,19 @@ import Foundation
 let logseqChatNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_NATIVE_LINK_INPUTS"]?
     .split(separator: ":")
     .map(String.init) ?? []
+let logseqChatSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS"]
 let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
     .unsafeFlags(logseqChatNativeLinkInputs, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
     .linkedLibrary("sqlite3", .when(platforms: [.iOS]))
 ]
+let logseqChatShellLinkerSettings: [LinkerSetting] = logseqChatSimulatorEntitlements.map {
+    [.unsafeFlags([
+        "-Xlinker", "-sectcreate",
+        "-Xlinker", "__TEXT", "-Xlinker", "__entitlements",
+        "-Xlinker", $0
+    ], .when(platforms: [.iOS]))]
+} ?? []
 
 let package = Package(
     name: "logseq-chat",
@@ -34,7 +42,8 @@ let package = Package(
         .executableTarget(
             name: "LogseqChatShell",
             dependencies: ["LogseqChat"],
-            path: "Darwin/Sources"
+            path: "Darwin/Sources",
+            linkerSettings: logseqChatShellLinkerSettings
         ),
         .target(name: "LogseqChat", dependencies: [
             "LogseqChatModel",

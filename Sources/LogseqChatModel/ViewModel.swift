@@ -1261,7 +1261,9 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
                 #if DEBUG
                 print(
                     "LogseqChat debug: core action applied \(actionName) "
-                        + "revision=\(mergedResult.revision) graphs=\(mergedResult.graphs?.count ?? 0)"
+                        + "revision=\(mergedResult.revision) blocks=\(mergedResult.blocks.count) "
+                        + "journals=\(mergedResult.blocks.filter { $0.journalDay != nil }.count) "
+                        + "graphs=\(mergedResult.graphs?.count ?? 0)"
                 )
                 #endif
                 logger.info(

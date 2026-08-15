@@ -11,6 +11,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ocaml_demo_root=${LOGSEQ_CHAT_OCAML_DEMO_ROOT:-/Users/tiensonqin/Codes/projects/ocaml-demo}
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
+team_id=${LOGSEQ_CHAT_SIMULATOR_TEAM_ID:-3K44EUN829}
 sdk_path=$(xcrun --sdk iphonesimulator --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}-simulator"
 target_prefix="$ocaml_demo_root/_build/ios-toolchain/$triple-$ocaml_version"
@@ -21,6 +22,8 @@ ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
 https_object="$core_build_dir/logseq_chat_https_darwin.o"
 sqlite_object="$core_build_dir/datascript_sqlite_stubs.o"
 graph_store_object="$core_build_dir/logseq_chat_graph_store_stubs.o"
+simulator_entitlements="$core_build_dir/simulator-entitlements.plist"
+signature_entitlements="$core_build_dir/simulator-signature-entitlements.plist"
 app_dir="$repo_root/.build/LogseqChat.app"
 xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/Debug-iphonesimulator/LogseqChat.app"
 
@@ -33,6 +36,10 @@ ocaml_lib="$target_prefix/lib/ocaml"
 clang=$(xcrun --sdk iphonesimulator --find clang)
 
 mkdir -p "$core_build_dir"
+plutil -create xml1 "$simulator_entitlements"
+plutil -insert application-identifier -string "${team_id}.com.logseq.chat" "$simulator_entitlements"
+plutil -insert keychain-access-groups -json "[\"${team_id}.com.logseq.chat\"]" "$simulator_entitlements"
+plutil -create xml1 "$signature_entitlements"
 "$repo_root/scripts/build-mobile-ocaml-deps.sh" \
   "$target_prefix" \
   "$core_build_dir"
@@ -143,7 +150,23 @@ cd "$core_build_dir"
   -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
   -o "$graph_store_object"
 
-LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$core_object:$ffi_object:$https_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a" \
+native_link_fingerprint=$(
+  shasum -a 256 \
+    "$core_object" \
+    "$ffi_object" \
+    "$https_object" \
+    "$sqlite_object" \
+    "$graph_store_object" \
+    | shasum -a 256 \
+    | cut -d ' ' -f 1
+)
+native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
+mkdir -p "$native_link_dir"
+cp "$core_object" "$native_link_dir/logseq_chat_runtime.o"
+fingerprinted_native_link_inputs="$native_link_dir/logseq_chat_runtime.o:$ffi_object:$https_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a"
+
+LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$fingerprinted_native_link_inputs" \
+LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
 swift build \
   --disable-keychain \
   --package-path "$repo_root" \
@@ -181,6 +204,6 @@ if [[ -d "$logseq_resource_bundle" ]]; then
     "$repo_root/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
 fi
 
-codesign --force --sign - --timestamp=none "$app_dir"
+codesign --force --sign - --entitlements "$signature_entitlements" --timestamp=none --generate-entitlement-der "$app_dir"
 
 echo "$app_dir"

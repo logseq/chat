@@ -2,27 +2,33 @@ appId: com.logseq.chat
 ---
 - launchApp:
     clearState: true
-- assertVisible:
-    text: "Enter your username"
-- tapOn:
-    text: "Enter your username"
-- inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
-- tapOn:
-    text: "Enter your password"
-- inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
-- tapOn:
-    text: "Sign In"
-    index: 1
+- runFlow:
+    when:
+      visible: "Enter your username"
+    commands:
+      - tapOn:
+          text: "Enter your username"
+      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - tapOn:
+          text: "Enter your password"
+      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - tapOn:
+          text: "Sign In"
+          index: 1
 - extendedWaitUntil:
     visible:
       id: "screen.graph-picker"
     timeout: 30000
 - tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
 - extendedWaitUntil:
-    visible: "__LOGSEQ_CHAT_E2E_DESKTOP_BLOCK__"
+    visible:
+      id: "sync.connected"
     timeout: 30000
-- assertVisible:
-    id: "sync.connected"
+- scrollUntilVisible:
+    element:
+      text: "__LOGSEQ_CHAT_E2E_DESKTOP_BLOCK__"
+    direction: DOWN
+    timeout: 30000
 - tapOn:
     id: "button.composer.expand"
 - tapOn:

@@ -345,6 +345,7 @@ let block_of_json ?(fallback_time = 0) json =
 	          ; asset_size = (match List.assoc_opt "asset-size" fields with Some (`Int value) -> Some value | _ -> None)
 	          ; asset_checksum = option_string_member "asset-checksum" fields
 	          ; local_path = None
+	          ; journal = None
 	          }
   | _ -> None
 ;;

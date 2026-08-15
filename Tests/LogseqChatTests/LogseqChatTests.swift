@@ -121,6 +121,17 @@ import Foundation
         }
     }
 
+    @Test func realtimeE2EAllowsAnExistingAmplifySession() throws {
+        let flowURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent(".maestro/ios-local-realtime-sync.yaml")
+        let flow = try String(contentsOf: flowURL, encoding: .utf8)
+
+        #expect(flow.contains("runFlow:"))
+        #expect(flow.contains("when:"))
+        #expect(flow.contains("visible: \"Enter your username\""))
+        #expect(flow.contains("id: \"screen.graph-picker\""))
+    }
+
     @Test func signedInAppRequiresExplicitUnencryptedGraphSelection() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(
@@ -885,6 +896,36 @@ import Foundation
         }
         #expect(simulator.contains("logseq_chat_graph_store_stubs.c"))
         #expect(simulator.contains("$graph_store_object"))
+    }
+
+    @Test func iosSimulatorRelinksWhenTheNativeCoreChanges() throws {
+        let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("scripts/build-mobile-ios-simulator.sh")
+        let simulator = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        #expect(simulator.contains("native_link_fingerprint="))
+        #expect(simulator.contains("native-link-inputs/$native_link_fingerprint"))
+        #expect(simulator.contains("LOGSEQ_CHAT_NATIVE_LINK_INPUTS=\"$fingerprinted_native_link_inputs\""))
+    }
+
+    @Test func iosSimulatorEmbedsKeychainEntitlementsAtLinkTime() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let package = try String(
+            contentsOf: root.appendingPathComponent("Package.swift"),
+            encoding: .utf8
+        )
+        let simulator = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-mobile-ios-simulator.sh"),
+            encoding: .utf8
+        )
+
+        #expect(package.contains("LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS"))
+        #expect(package.contains("\"__TEXT\", \"-Xlinker\", \"__entitlements\""))
+        #expect(simulator.contains("application-identifier"))
+        #expect(simulator.contains("keychain-access-groups"))
+        #expect(simulator.contains("LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS=\"$simulator_entitlements\""))
+        #expect(simulator.contains("codesign --force --sign - --entitlements \"$signature_entitlements\""))
+        #expect(simulator.contains("--generate-entitlement-der"))
     }
 
     @Test func clientWritesUseSemanticRESTWithoutTxBatch() throws {

@@ -32,6 +32,7 @@ type block =
   ; asset_size : int option
   ; asset_checksum : string option
   ; local_path : string option
+  ; journal : (string * int) option
   }
 
 type t =
@@ -218,6 +219,7 @@ let read_block model uuid =
       ; asset_size = Option.bind (entity_attr_value model.db entity_ref "block/asset-size") value_int
       ; asset_checksum = option_string_attr model.db entity_ref "block/asset-checksum"
       ; local_path = option_string_attr model.db entity_ref "block/local-path"
+      ; journal = None
       })
 ;;
 
@@ -251,16 +253,25 @@ let journal_day_for_ms now =
   ((tm.tm_year + 1900) * 10000) + ((tm.tm_mon + 1) * 100) + tm.tm_mday
 ;;
 
+let block_journal_metadata model block =
+  match block.journal with
+  | Some _ as journal -> journal
+  | None ->
+    let journal_day = int_attr model.db (block_ref block.page_id) "page/journal-day" 0 in
+    if journal_day <= 0
+    then None
+    else Some (string_attr model.db (block_ref block.page_id) "page/title" "", journal_day)
+;;
+
 let is_recent_feed_block model block =
   not (String.equal block.kind "page")
   && not (String.equal (String.trim block.title) "")
   && block.page_id <> ""
   &&
-  let journal_day =
-    int_attr model.db (block_ref block.page_id) "page/journal-day" 0
-  in
-  journal_day > 0
-  && journal_day <= journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.0))
+  match block_journal_metadata model block with
+  | Some (_, journal_day) ->
+    journal_day <= journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.0))
+  | None -> false
 ;;
 
 let compare_recent left right =
@@ -329,9 +340,17 @@ let journal_blocks model blocks =
     blocks;
   Hashtbl.to_seq by_page
   |> List.of_seq
-  |> List.sort (fun (left_page, _) (right_page, _) ->
-    let left_day = int_attr model.db (block_ref left_page) "page/journal-day" 0 in
-    let right_day = int_attr model.db (block_ref right_page) "page/journal-day" 0 in
+  |> List.sort (fun (left_page, left_blocks) (right_page, right_blocks) ->
+    let journal_day page_id = function
+      | block :: _ ->
+        Option.fold
+          ~none:0
+          ~some:snd
+          (block_journal_metadata model block)
+      | [] -> int_attr model.db (block_ref page_id) "page/journal-day" 0
+    in
+    let left_day = journal_day left_page left_blocks in
+    let right_day = journal_day right_page right_blocks in
     match Int.compare left_day right_day with
     | 0 -> String.compare left_page right_page
     | value -> value)
@@ -563,6 +582,7 @@ let cache_local_message model ~uuid ~title ~now =
       ; asset_size = None
       ; asset_checksum = None
       ; local_path = None
+      ; journal = None
       }
     ]
     ~refresh_time:now
@@ -575,7 +595,7 @@ let cache_local_task model ~uuid ~title ~status ~now =
     [ { uuid; kind = "task"; title; page_id; parent_id = None; order = None; created_at = now
       ; updated_at = now; sync_status = "pending"; tags = []; references = []
       ; status = Some status; asset_type = None; asset_size = None
-      ; asset_checksum = None; local_path = None } ]
+      ; asset_checksum = None; local_path = None; journal = None } ]
     ~refresh_time:now
 ;;
 
@@ -586,7 +606,7 @@ let cache_local_asset model ~uuid ~title ~asset_type ~asset_size ~asset_checksum
     [ { uuid; kind = "asset"; title; page_id; parent_id = None; order = None; created_at = now
       ; updated_at = now; sync_status = "pending"; tags = []; references = []
       ; status = None; asset_type = Some asset_type; asset_size = Some asset_size
-      ; asset_checksum = Some asset_checksum; local_path = Some local_path } ]
+      ; asset_checksum = Some asset_checksum; local_path = Some local_path; journal = None } ]
     ~refresh_time:now
 ;;
 

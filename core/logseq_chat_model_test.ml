@@ -17,7 +17,7 @@ let block ~uuid ~kind ~title ~page_id ~created_at =
     { uuid; kind; title; page_id; parent_id = None; order = None; created_at
     ; updated_at = created_at; sync_status = "synced"; tags = []; references = []
     ; status = None; asset_type = None; asset_size = None; asset_checksum = None
-    ; local_path = None }
+    ; local_path = None; journal = None }
 ;;
 
 let assert_recent_blocks_limit_and_order () =
@@ -224,7 +224,7 @@ let assert_uploaded_asset_reconciles_server_uuid () =
       ; parent_id = Some "remote-journal"; order = None; created_at = 1_776_000_000_100
       ; updated_at = 1_776_000_000_100; sync_status = "synced"; tags = []; references = []
       ; status = None; asset_type = None; asset_size = None; asset_checksum = None
-      ; local_path = None } ]
+      ; local_path = None; journal = None } ]
     ~refresh_time:1_776_000_000_100;
   (match
   Logseq_chat_model.reconcile_created_block

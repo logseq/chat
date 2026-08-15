@@ -35,7 +35,9 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no booted iOS simulator was found"
 
-"$repo_root/scripts/build-mobile-ios-simulator.sh" >/dev/null
+if [[ ${LOGSEQ_CHAT_IOS_SKIP_BUILD:-0} != 1 ]]; then
+  "$repo_root/scripts/build-mobile-ios-simulator.sh" >/dev/null
+fi
 xcrun simctl uninstall "$device" "$app_id" >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.baseURL >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.composerDraft >/dev/null 2>&1 || true
@@ -43,8 +45,9 @@ xcrun simctl install "$device" "$repo_root/.build/LogseqChat.app"
 xcrun simctl spawn "$device" defaults write "$app_id" logseq.baseURL "$base_url"
 
 mkdir -p "$screenshots_dir"
-rendered_flow=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-ios-e2e.XXXXXX.yaml")
-trap 'rm -f "$rendered_flow"' EXIT
+temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-ios-e2e.XXXXXX")
+rendered_flow="$temporary_directory/flow.yaml"
+trap 'rm -rf "$temporary_directory"' EXIT
 if [[ $flow = /* ]]; then
   flow_path=$flow
 else

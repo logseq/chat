@@ -25,6 +25,7 @@ let () =
     ; "block/order", one ~value_type:StringType ()
     ; "block/created-at", one ~value_type:InstantType ()
     ; "block/updated-at", one ~value_type:InstantType ()
+    ; "block/journal-day", one ()
     ]
   in
   let conn = create_conn ~schema () in
@@ -37,6 +38,7 @@ let () =
                [ "block/uuid", One_value (Uuid page_uuid)
                ; "block/name", One_value (String "page")
                ; "block/title", One_value (String "Page")
+               ; "block/journal-day", One_value (Int 20260815)
                ]
            }
        ; Entity
@@ -63,6 +65,8 @@ let () =
     if block.order <> Some "a1"
     then failwith "graph outliner order was not projected";
     if block.created_at <> 1_776_000_000_000
-    then failwith "graph instant timestamp changed"
+    then failwith "graph instant timestamp changed";
+    if block.journal <> Some ("Page", 20260815)
+    then failwith "graph journal metadata was not projected"
   | _ -> failwith "graph reader must return non-page blocks only"
 ;;

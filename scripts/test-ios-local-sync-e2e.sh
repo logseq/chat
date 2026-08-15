@@ -10,8 +10,9 @@ graph_name=${LOGSEQ_CHAT_E2E_GRAPH_NAME:?set LOGSEQ_CHAT_E2E_GRAPH_NAME to the g
 desktop_block=${LOGSEQ_CHAT_E2E_DESKTOP_BLOCK:?set LOGSEQ_CHAT_E2E_DESKTOP_BLOCK to the block created by the desktop test}
 mobile_block=${LOGSEQ_CHAT_E2E_MOBILE_BLOCK:-"Mobile SSE $(date +%s)"}
 
-rendered_flow=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-local-sync.XXXXXX.yaml")
-trap 'rm -f "$rendered_flow"' EXIT
+temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-local-sync.XXXXXX")
+rendered_flow="$temporary_directory/flow.yaml"
+trap 'rm -rf "$temporary_directory"' EXIT
 
 sed \
   -e "s|__LOGSEQ_CHAT_E2E_USERNAME__|$username|g" \

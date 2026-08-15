@@ -116,6 +116,54 @@ let () =
   then failwith "importSnapshot did not call the native importer"
 ;;
 
+let () =
+  let authoritative =
+    Logseq_chat_model.
+      { uuid = "restored-journal-block"
+      ; kind = "block"
+      ; title = "Restored from the graph snapshot"
+      ; page_id = "journal-page"
+      ; parent_id = Some "journal-page"
+      ; order = Some "a0"
+      ; created_at = 1_776_000_000_000
+      ; updated_at = 1_776_000_000_000
+      ; sync_status = "synced"
+      ; tags = []
+      ; references = []
+      ; status = None
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      ; journal = Some ("Aug 15th, 2026", 20260815)
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~open_graph:(fun _payload -> Ok ())
+      ~graph_blocks:(fun () -> Some [ authoritative ])
+      ()
+  in
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openGraph","payload":"{}"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let blocks = required_assoc "result" fields |> required_list "blocks" in
+    (match blocks with
+     | [ `Assoc block ] ->
+       assert_equal
+         "restored graph block uuid"
+         "restored-journal-block"
+         (required_string "uuid" block);
+       assert_int_equal "restored graph journal day" 20260815 (required_int "journalDay" block)
+     | _ -> failwith "openGraph should expose restored journal blocks without a local model copy")
+  | _ -> failwith "openGraph should return an RPC response"
+;;
+
 let assert_dispatch_block action payload expected_kind expected_uuid =
   let session = Logseq_chat_rpc.create () in
   let request =
@@ -171,6 +219,7 @@ let () =
               ; asset_size = None
               ; asset_checksum = None
               ; local_path = None
+              ; journal = None
               }
           ];
         Ok ())
@@ -236,6 +285,7 @@ let () =
       ; asset_size = None
       ; asset_checksum = None
       ; local_path = None
+      ; journal = None
       }
   in
   let session =

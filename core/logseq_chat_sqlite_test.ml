@@ -97,6 +97,7 @@ let () =
         ; asset_size = None
         ; asset_checksum = None
         ; local_path = None
+        ; journal = None
         }
     in
     let second_store = Logseq_chat_sqlite.open_session path in

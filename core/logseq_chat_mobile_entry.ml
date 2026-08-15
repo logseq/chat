@@ -1,7 +1,12 @@
 module Sync_session = Logseq_chat_sync_session
 module Checkpoint = Logseq_chat_sync_checkpoint
 
-type graph_runtime = Datascript.conn * Logseq_chat_sync_state.t * string
+type graph_runtime =
+  { conn : Datascript.conn
+  ; state : Logseq_chat_sync_state.t
+  ; checkpoint_path : string
+  ; mutable recent_blocks : Logseq_chat_model.block list
+  }
 
 let graph_runtime : graph_runtime option ref = ref None
 let sse_parser = ref (Logseq_chat_sse.create ())
@@ -29,7 +34,8 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path =
       ~schema_version:checkpoint.schema_version
       ~applied_server_t:checkpoint.applied_server_t
   in
-  graph_runtime := Some (conn, state, checkpoint_path);
+  let recent_blocks = Logseq_chat_graph_read.blocks (Datascript.conn_db conn) in
+  graph_runtime := Some { conn; state; checkpoint_path; recent_blocks };
   Ok ()
 ;;
 
@@ -89,25 +95,30 @@ let feed_sse chunk =
           | Graph_changes change ->
             (match !graph_runtime with
              | None -> Error "graph runtime is not open"
-             | Some (conn, state, checkpoint_path) ->
+             | Some runtime ->
                bind
-                 (Sync_session.apply_change_set ~conn ~checkpoint_path state change)
-                 (fun () -> apply_frames rest)))
+                 (Sync_session.apply_change_set
+                    ~conn:runtime.conn
+                    ~checkpoint_path:runtime.checkpoint_path
+                    runtime.state
+                    change)
+                 (fun () ->
+                   runtime.recent_blocks <-
+                     Logseq_chat_graph_read.blocks (Datascript.conn_db runtime.conn);
+                   apply_frames rest)))
   in
   apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
 ;;
 
 let sync_cursor () =
   match !graph_runtime with
-  | Some (_conn, state, _checkpoint_path) ->
-    Some (Logseq_chat_sync_state.applied_server_t state)
+  | Some runtime -> Some (Logseq_chat_sync_state.applied_server_t runtime.state)
   | None -> None
 ;;
 
 let graph_blocks () =
   match !graph_runtime with
-  | Some (conn, _state, _checkpoint_path) ->
-    Some (Logseq_chat_graph_read.blocks (Datascript.conn_db conn))
+  | Some runtime -> Some runtime.recent_blocks
   | None -> None
 ;;
 

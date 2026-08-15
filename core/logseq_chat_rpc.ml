@@ -142,7 +142,12 @@ let block_json (block : Model.block) =
 ;;
 
 let visible_block_json model (block : Model.block) =
-  match Model.journal_metadata model block.page_id with
+  let journal =
+    match block.journal with
+    | Some _ as journal -> journal
+    | None -> Model.journal_metadata model block.page_id
+  in
+  match journal with
   | Some (journal_title, journal_day) ->
     (match block_json block with
      | `Assoc fields ->
