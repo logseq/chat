@@ -713,10 +713,25 @@ import Foundation
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         #expect(source.contains("ForEach(taskStatusMenuStatuses)"))
-        #expect(source.contains("Array(availableTaskStatuses.reversed())"))
+        #expect(source.contains("return availableTaskStatuses"))
+        #expect(!source.contains("Array(availableTaskStatuses.reversed())"))
         for iconName in ["task_backlog", "task_todo", "task_doing", "task_review", "task_done", "task_canceled"] {
             #expect(source.contains("\"\(iconName)\""))
         }
+    }
+
+    @Test func composerTaskStatusChoicesKeepClearStatusAtTheBottom() throws {
+        let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let choicesStart = try #require(source.range(of: "private var composerTaskStatusChoices: some View"))
+        let remainingSource = source[choicesStart.lowerBound...]
+        let choicesEnd = try #require(remainingSource.range(of: "\n    #endif"))
+        let choicesSource = remainingSource[..<choicesEnd.lowerBound]
+        let statuses = try #require(choicesSource.range(of: "ForEach(taskStatusMenuStatuses)"))
+        let clear = try #require(choicesSource.range(of: "Button(\"Clear task status\")"))
+
+        #expect(statuses.lowerBound < clear.lowerBound)
     }
 
     @Test func localAssetsUseNativeInlinePreviewAndSystemOpen() throws {

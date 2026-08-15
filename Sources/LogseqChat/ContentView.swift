@@ -1070,11 +1070,7 @@ struct ContentView: View {
     }
 
     private var taskStatusMenuStatuses: [LogseqTaskStatus] {
-        #if SKIP
         return availableTaskStatuses
-        #else
-        return Array(availableTaskStatuses.reversed())
-        #endif
     }
 
     #if !SKIP
