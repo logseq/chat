@@ -54,6 +54,12 @@ let () =
                ]
            }
        ]);
+  if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260815
+     <> Some page_uuid
+  then failwith "journal day must resolve to the graph page UUID";
+  if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260816
+     <> None
+  then failwith "missing journal day must not resolve to a placeholder";
   (match Logseq_chat_graph_read.blocks (conn_db conn) with
   | [ block ] ->
     if not (String.equal block.Logseq_chat_model.uuid block_uuid)

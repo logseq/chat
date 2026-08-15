@@ -136,6 +136,26 @@ let graph_key_request config =
   }
 ;;
 
+let encrypted_journal_page_request config ~uuid ~title ~name ~journal_day =
+  { method_ = "POST"
+  ; url =
+      Printf.sprintf
+        "%s/api/v1/graphs/%s/pages"
+        (api_root config)
+        (url_encode config.graph_id)
+  ; body =
+      Some
+        (to_string
+           (`Assoc
+             [ "uuid", `String uuid
+             ; "title", `String title
+             ; "name", `String name
+             ; "journal-day", `Int journal_day
+             ]))
+  ; token = config.token
+  }
+;;
+
 let search_request config query =
   { method_ = "GET"
   ; url =

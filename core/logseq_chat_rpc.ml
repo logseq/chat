@@ -18,6 +18,12 @@ type t =
   ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
   ; unlock_graph : (Api.config -> password:string -> (unit, string) result) option
   ; graph_unlocked : (graph_id:string -> bool) option
+  ; encrypt_title : (graph_id:string -> string -> (string, string) result) option
+  ; encrypt_asset_file : (graph_id:string -> source_path:string -> (string * int, string) result) option
+  ; journal_page_id : (journal_day:int -> string option) option
+  ; send : Api.request -> (Api.response, string) result
+  ; upload_file : Api.file_upload -> (Api.response, string) result
+  ; cleanup_file : string -> unit
   ; mutable sync_connected : bool
   ; mutable sync_in_progress : bool
   ; save_graph_catalog : (string -> unit) option
@@ -336,6 +342,12 @@ let create
       ?load_cached_graph_key
       ?unlock_graph
       ?graph_unlocked
+      ?encrypt_title
+      ?encrypt_asset_file
+      ?journal_page_id
+      ?(send = Http.send)
+      ?(upload_file = Http.upload_file)
+      ?(cleanup_file = fun path -> try Sys.remove path with _ -> ())
       ?load_graph_catalog
       ?save_graph_catalog
       ()
@@ -361,6 +373,12 @@ let create
   ; load_cached_graph_key
   ; unlock_graph
   ; graph_unlocked
+  ; encrypt_title
+  ; encrypt_asset_file
+  ; journal_page_id
+  ; send
+  ; upload_file
+  ; cleanup_file
   ; sync_connected = false
   ; sync_in_progress = false
   ; save_graph_catalog
@@ -369,7 +387,7 @@ let create
 
 let discover_graphs session config =
   debug "graph discovery started";
-  match Http.send (Api.graphs_request config) with
+  match session.send (Api.graphs_request config) with
   | Error message -> Error message
   | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
     Error ("Logseq graphs API returned HTTP " ^ string_of_int response.Api.status)
@@ -440,11 +458,11 @@ let refresh_from_remote session config =
   let now = now_ms () in
   debug "remote refresh started graph=%s" config.Api.graph_id;
   let journal_day = Model.journal_day_for_ms now in
-  match Http.send (Api.recent_blocks_request config ~journal_day) with
+  match session.send (Api.recent_blocks_request config ~journal_day) with
   | Ok response ->
     (match cache_remote_blocks session response ~now with
      | Ok () ->
-       (match Http.send (Api.task_statuses_request config) with
+       (match session.send (Api.task_statuses_request config) with
         | Ok status_response ->
           (match cache_task_statuses session status_response with
            | Ok () -> snapshot_visible session
@@ -468,7 +486,7 @@ let update_remote_block_status session config ~uuid (status : Model.status) =
   match resolve_graph session config with
   | Error message -> Error message
   | Ok config ->
-    (match Http.send (Api.update_block_status_request config ~uuid ~status:status.uuid) with
+    (match session.send (Api.update_block_status_request config ~uuid ~status:status.uuid) with
      | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> Ok ()
      | Ok response ->
        debug "update block status HTTP failed uuid=%s status=%d" uuid response.Api.status
@@ -479,7 +497,18 @@ let update_remote_block_status session config ~uuid (status : Model.status) =
 ;;
 
 let save_remote_block session config (block : Model.block) =
-  match Http.send (Api.update_block_request config ~uuid:block.uuid ~title:block.title) with
+  let title =
+    if selected_graph_is_encrypted session
+    then
+      (match session.encrypt_title with
+       | Some encrypt -> encrypt ~graph_id:config.Api.graph_id block.title
+       | None -> Error "encrypted graph title encryption is unavailable")
+    else Ok block.title
+  in
+  match title with
+  | Error _ as error -> error
+  | Ok title ->
+  match session.send (Api.update_block_request config ~uuid:block.uuid ~title) with
   | Error message -> Error message
   | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
     Error ("Logseq block API returned HTTP " ^ string_of_int response.Api.status)
@@ -491,7 +520,7 @@ let save_remote_block session config (block : Model.block) =
 
 let search_remote session config query =
   let now = now_ms () in
-  match Http.send (Api.search_request config query) with
+  match session.send (Api.search_request config query) with
   | Ok response ->
     (match cache_search_blocks session response ~now with
      | Ok () -> snapshot session (Model.search session.model query)
@@ -499,8 +528,88 @@ let search_remote session config query =
   | Error _ -> snapshot session (Model.search session.model query)
 ;;
 
+let journal_page_uuid journal_day =
+  let year = journal_day / 10_000 in
+  let month_and_day = journal_day mod 10_000 in
+  Printf.sprintf "00000001-%04d-%04d-0000-000000000000" year month_and_day
+;;
+
+let journal_day_title journal_day =
+  let month_names =
+    [| "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"
+     ; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"
+    |]
+  in
+  let year = journal_day / 10_000 in
+  let month = (journal_day / 100) mod 100 in
+  let day = journal_day mod 100 in
+  let suffix =
+    if day mod 100 >= 11 && day mod 100 <= 13
+    then "th"
+    else
+      match day mod 10 with
+      | 1 -> "st"
+      | 2 -> "nd"
+      | 3 -> "rd"
+      | _ -> "th"
+  in
+  let month_name =
+    if month >= 1 && month <= Array.length month_names
+    then month_names.(month - 1)
+    else invalid_arg "invalid journal month"
+  in
+  Printf.sprintf "%s %d%s, %04d" month_name day suffix year
+;;
+
+let create_encrypted_journal_page session config ~journal_day =
+  match session.encrypt_title with
+  | None -> Error "encrypted graph title encryption is unavailable"
+  | Some encrypt_title ->
+    let page_id = journal_page_uuid journal_day in
+    let title = journal_day_title journal_day in
+    (match
+       encrypt_title ~graph_id:config.Api.graph_id title,
+       encrypt_title ~graph_id:config.Api.graph_id (String.lowercase_ascii title)
+     with
+     | Error message, _ | _, Error message -> Error message
+     | Ok encrypted_title, Ok encrypted_name ->
+       (match
+          session.send
+            (Api.encrypted_journal_page_request
+               config
+               ~uuid:page_id
+               ~title:encrypted_title
+               ~name:encrypted_name
+               ~journal_day)
+        with
+        | Ok response when response.Api.status >= 200 && response.Api.status < 300 -> Ok page_id
+        | Ok response ->
+          Error
+            ("Logseq encrypted journal page API returned HTTP "
+             ^ string_of_int response.Api.status)
+        | Error _ as error -> error))
+;;
+
 let sync_pending_unlocked session config =
   let pending_blocks = Model.pending_blocks session.model in
+  let resolved_journal_pages = Hashtbl.create 8 in
+  let resolve_journal_page journal_day =
+    match Hashtbl.find_opt resolved_journal_pages journal_day with
+    | Some page_id -> Ok page_id
+    | None ->
+      let result =
+        match session.journal_page_id with
+        | None -> Error "encrypted graph journal lookup is unavailable"
+        | Some journal_page_id ->
+          (match journal_page_id ~journal_day with
+           | Some page_id -> Ok page_id
+           | None -> create_encrypted_journal_page session config ~journal_day)
+      in
+      (match result with
+       | Ok page_id -> Hashtbl.replace resolved_journal_pages journal_day page_id
+       | Error _ -> ());
+      result
+  in
   let authoritative_uuids = Hashtbl.create 64 in
   Option.iter
     (fun blocks ->
@@ -522,19 +631,66 @@ let sync_pending_unlocked session config =
           ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid))
       else (
         let result =
-        match block.kind, block.status, block.local_path, block.asset_type,
-              block.asset_size, block.asset_checksum with
-        | "block", _, _, _, _, _ ->
-          Http.send (Api.capture_request config ~uuid:block.uuid block.title)
-        | "task", Some status, _, _, _, _ ->
-          Http.send (Api.task_request config ~uuid:block.uuid ~status:status.uuid block.title)
-        | "asset", _, Some file_path, Some asset_type, Some asset_size, Some checksum ->
-          Http.upload_file
-            (Api.asset_upload_request config ~uuid:block.uuid ~file_name:block.title
-               ~size:asset_size ~checksum ~file_path
-               ~content_type:(Api.content_type_for_asset_type asset_type))
-        | _ ->
-          Http.send (Api.capture_request config ~uuid:block.uuid block.title)
+          if selected_graph_is_encrypted session
+          then (
+            let journal_day = Model.journal_day_for_ms block.created_at in
+            match session.encrypt_title with
+            | Some encrypt_title ->
+              (match encrypt_title ~graph_id:config.Api.graph_id block.title with
+               | Error message -> Error message
+               | Ok title ->
+                 (match resolve_journal_page journal_day with
+                  | Error message -> Error message
+                  | Ok page_id ->
+                 (match block.kind, block.status, block.local_path, block.asset_type,
+                        block.asset_size, block.asset_checksum with
+                  | "block", _, _, _, _, _ ->
+                    session.send
+                      (Api.capture_request ~page_id config ~uuid:block.uuid title)
+                  | "task", Some status, _, _, _, _ ->
+                    session.send
+                      (Api.task_request ~page_id config ~uuid:block.uuid
+                         ~status:status.uuid title)
+                  | "asset", _, Some source_path, Some _asset_type, Some asset_size,
+                    Some checksum ->
+                    (match session.encrypt_asset_file with
+                     | None -> Error "encrypted asset encryption is unavailable"
+                     | Some encrypt_asset_file ->
+                       (match encrypt_asset_file ~graph_id:config.graph_id ~source_path with
+                        | Error _ as error -> error
+                        | Ok (file_path, upload_size) ->
+                          Fun.protect
+                            ~finally:(fun () -> session.cleanup_file file_path)
+                            (fun () ->
+                              session.upload_file
+                                (Api.encrypted_asset_upload_request
+                                   config
+                                   ~uuid:block.uuid
+                                   ~file_name:block.title
+                                   ~title
+                                   ~page_id
+                                   ~size:asset_size
+                                   ~upload_size
+                                   ~checksum
+                                   ~file_path))))
+                  | _ ->
+                    session.send
+                      (Api.capture_request ~page_id config ~uuid:block.uuid title))))
+            | None -> Error "encrypted graph write support is unavailable")
+          else
+            match block.kind, block.status, block.local_path, block.asset_type,
+                  block.asset_size, block.asset_checksum with
+            | "block", _, _, _, _, _ ->
+              session.send (Api.capture_request config ~uuid:block.uuid block.title)
+            | "task", Some status, _, _, _, _ ->
+              session.send (Api.task_request config ~uuid:block.uuid ~status:status.uuid block.title)
+            | "asset", _, Some file_path, Some asset_type, Some asset_size, Some checksum ->
+              session.upload_file
+                (Api.asset_upload_request config ~uuid:block.uuid ~file_name:block.title
+                   ~size:asset_size ~checksum ~file_path
+                   ~content_type:(Api.content_type_for_asset_type asset_type))
+            | _ ->
+              session.send (Api.capture_request config ~uuid:block.uuid block.title)
       in
       match result with
       | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
@@ -573,7 +729,7 @@ let sync_pending session config =
 ;;
 
 let load_related session request key =
-  match Http.send request with
+  match session.send request with
   | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
     session.related_blocks <- Api.blocks_from_list_body key response.body;
     snapshot_visible session

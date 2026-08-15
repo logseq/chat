@@ -147,6 +147,14 @@ let recent_journal_page_ids db =
     |> List.map snd
 ;;
 
+let journal_page_uuid db ~journal_day =
+  Datascript.datoms db Aevt ~a:"block/journal-day" ()
+  |> Seq.find_map (fun datom ->
+    match datom.v with
+    | Int day when day = journal_day -> uuid_for_eid db datom.e
+    | _ -> None)
+;;
+
 let blocks ?(decrypt_title = fun value -> Ok value) db =
   let entity_ids =
     recent_journal_page_ids db

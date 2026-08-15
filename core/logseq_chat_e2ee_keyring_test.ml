@@ -157,9 +157,43 @@ let test_title_codec_uses_loaded_graph_key () =
     (Keyring.decrypt_title keyring ~graph_id:"encrypted-graph" encrypted |> expect_ok)
 ;;
 
+let test_asset_codec_encrypts_binary_transit () =
+  let encrypted_plaintext = ref None in
+  let asset_crypto =
+    E2ee.
+      { decrypt_private_key = (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ -> Error "unused")
+      ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Error "unused")
+      ; encrypt_aes_gcm =
+          (fun ~key ~plaintext ->
+            expect_equal "cached-key" key;
+            encrypted_plaintext := Some plaintext;
+            Ok ("asset-iv", "asset-ciphertext"))
+      ; decrypt_aes_gcm = (fun ~key:_ ~iv:_ ~ciphertext:_ -> Error "unused")
+      }
+  in
+  let keyring =
+    Keyring.create
+      ~crypto:asset_crypto
+      ~load:(fun ~graph_id:_ -> Ok (Some "cached-key"))
+      ~save:(fun ~graph_id:_ ~key:_ -> Ok ())
+      ~fetch:(fun _ -> Error "unused")
+  in
+  ignore (Keyring.load_cached keyring ~graph_id:"encrypted-graph" |> expect_ok);
+  let encrypted =
+    Keyring.encrypt_asset keyring ~graph_id:"encrypted-graph" "raw-image-bytes" |> expect_ok
+  in
+  (match Option.map Codec.of_string !encrypted_plaintext with
+   | Some (Transit.Binary "raw-image-bytes") -> ()
+   | _ -> failwith "asset plaintext must be Transit binary");
+  (match Codec.of_string encrypted with
+   | Transit.Array [ Transit.Binary "asset-iv"; Transit.Binary "asset-ciphertext" ] -> ()
+   | _ -> failwith "asset encryption does not match Logseq Transit")
+;;
+
 let () =
   test_unlock_fetches_and_saves_graph_key ();
   test_cached_key_opens_offline ();
   test_wrong_password_does_not_save_key ();
-  test_title_codec_uses_loaded_graph_key ()
+  test_title_codec_uses_loaded_graph_key ();
+  test_asset_codec_encrypts_binary_transit ()
 ;;

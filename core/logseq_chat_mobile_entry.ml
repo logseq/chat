@@ -156,6 +156,53 @@ let graph_blocks () =
   | None -> None
 ;;
 
+let journal_page_id ~journal_day =
+  match !graph_runtime with
+  | Some runtime ->
+    Logseq_chat_graph_read.journal_page_uuid
+      (Datascript.conn_db runtime.conn)
+      ~journal_day
+  | None -> None
+;;
+
+let read_file path =
+  try
+    let channel = open_in_bin path in
+    Fun.protect
+      ~finally:(fun () -> close_in_noerr channel)
+      (fun () -> Ok (really_input_string channel (in_channel_length channel)))
+  with
+  | error -> Error ("read asset for encryption: " ^ Printexc.to_string error)
+;;
+
+let write_file path contents =
+  try
+    let channel = open_out_bin path in
+    Fun.protect
+      ~finally:(fun () -> close_out_noerr channel)
+      (fun () -> output_string channel contents);
+    Ok ()
+  with
+  | error -> Error ("write encrypted asset: " ^ Printexc.to_string error)
+;;
+
+let encrypt_asset_file ~graph_id ~source_path =
+  let bind result f = match result with Ok value -> f value | Error _ as error -> error in
+  bind (read_file source_path) (fun bytes ->
+    bind (E2ee_keyring.encrypt_asset e2ee_keyring ~graph_id bytes) (fun encrypted ->
+      let path =
+        Filename.temp_file
+          ~temp_dir:(Filename.dirname source_path)
+          "logseq-chat-e2ee-"
+          ".transit"
+      in
+      match write_file path encrypted with
+      | Ok () -> Ok (path, String.length encrypted)
+      | Error _ as error ->
+        (try Sys.remove path with _ -> ());
+        error))
+;;
+
 let graph_catalog_address = "logseq-chat/graph-catalog/v1"
 
 let create_session ?storage ?catalog_session () =
@@ -185,6 +232,9 @@ let create_session ?storage ?catalog_session () =
       Result.map (fun _key -> ()) (E2ee_keyring.unlock e2ee_keyring config ~password))
     ~graph_unlocked:(fun ~graph_id ->
       Result.is_ok (E2ee_keyring.graph_key e2ee_keyring ~graph_id))
+    ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring)
+    ~encrypt_asset_file
+    ~journal_page_id
     ()
 ;;
 let session = ref (create_session ())

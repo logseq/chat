@@ -82,6 +82,11 @@ let encrypt_title t ~graph_id title =
     E2ee.encrypt_value ~crypto:t.crypto ~graph_key (Transit.String title))
 ;;
 
+let encrypt_asset t ~graph_id bytes =
+  bind (graph_key t ~graph_id) (fun graph_key ->
+    E2ee.encrypt_value ~crypto:t.crypto ~graph_key (Transit.Binary bytes))
+;;
+
 let decrypt_title t ~graph_id ciphertext =
   bind (graph_key t ~graph_id) (fun graph_key ->
     E2ee.decrypt_string ~crypto:t.crypto ~graph_key ciphertext)
