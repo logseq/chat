@@ -157,6 +157,36 @@ import Foundation
         #expect(flow.contains("id: \"screen.graph-picker\""))
     }
 
+    @Test func offlineE2EPreservesTheCachedGraphAndReconcilesAfterReconnect() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let offlineFlow = try String(
+            contentsOf: root.appendingPathComponent(".maestro/ios-offline-restart.yaml"),
+            encoding: .utf8
+        )
+        let reconnectFlow = try String(
+            contentsOf: root.appendingPathComponent(".maestro/ios-offline-reconnect.yaml"),
+            encoding: .utf8
+        )
+        let script = try String(
+            contentsOf: root.appendingPathComponent("scripts/test-ios-offline-sync-e2e.sh"),
+            encoding: .utf8
+        )
+
+        #expect(!offlineFlow.contains("clearState"))
+        #expect(offlineFlow.contains("assertNotVisible:"))
+        #expect(offlineFlow.contains("id: \"screen.graph-picker\""))
+        #expect(offlineFlow.contains("id: \"button.send\""))
+        #expect(offlineFlow.contains("Sync pending"))
+        #expect(offlineFlow.components(separatedBy: "- launchApp").count == 3)
+        #expect(reconnectFlow.contains("id: \"sync.connected\""))
+        #expect(reconnectFlow.contains("Synced"))
+        #expect(script.contains("LOGSEQ_CHAT_E2E_OFFLINE_BASE_URL"))
+        #expect(script.contains("get_app_container"))
+        #expect(script.contains("~:applied-server-t"))
+        #expect(script.contains("cursor_after > cursor_before"))
+        #expect(!script.contains("simctl uninstall"))
+    }
+
     @Test func signedInAppRequiresExplicitUnencryptedGraphSelection() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(

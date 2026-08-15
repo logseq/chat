@@ -55,7 +55,7 @@ support:
 | Android authentication | Amplify UI Android `Authenticator` 1.9.2 with `AWSCognitoAuthPlugin`; built-in challenge flows, access-token retrieval, persisted session restore, and system-inset layout are emulator-verified |
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
-| Unencrypted Apple sync | Full snapshot import, SSE latest-entity changes, offline-first local writes, self-echo reconciliation, and durable cursor are implemented and device-verified |
+| Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client SSE, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
 | Android sync transport | OCaml core, full-snapshot download/import, and native SSE entity-change streaming are connected; device E2E remains pending |
 | Encrypted graph sync | Graphs are discoverable but opening them is explicitly rejected until the E2EE milestone is implemented and verified |
