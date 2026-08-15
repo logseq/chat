@@ -31,6 +31,16 @@ let close session =
 let encode payload = Marshal.to_string payload [ Marshal.No_sharing ]
 let decode payload = Marshal.from_string payload 0
 
+let store_string session ~address value =
+  ensure_open session;
+  sqlite_store session.path [ address, value ]
+;;
+
+let restore_string session ~address =
+  ensure_open session;
+  sqlite_restore session.path address
+;;
+
 let storage session : Ds.storage =
   { storage_store =
       (fun entries ->

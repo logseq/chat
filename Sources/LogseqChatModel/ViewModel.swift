@@ -46,6 +46,12 @@ public final class LogseqChatCore {
     private init() {
     }
 
+    public func initialize() {
+        #if LOGSEQ_CHAT_CORE
+        LogseqChatCoreABI.logseq_chat_initialize()
+        #endif
+    }
+
     /* SKIP EXTERN */ public func logseq_chat_call(_ request: String) -> String {
         #if LOGSEQ_CHAT_CORE
         return String(cString: LogseqChatCoreABI.logseq_chat_call(request))
@@ -574,6 +580,71 @@ private struct OpenGraphPayload: Encodable {
     let checkpointPath: String
 }
 
+#if !SKIP
+private final class LogseqChatCoreExecutor: @unchecked Sendable {
+    static let shared = LogseqChatCoreExecutor()
+
+    private struct Job: Sendable {
+        let callCore: @Sendable (String) -> String
+        let requestJSON: String
+        let continuation: CheckedContinuation<String, Never>
+    }
+
+    private final class State: @unchecked Sendable {
+        private let condition = NSCondition()
+        private var jobs: [Job] = []
+
+        func enqueue(_ job: Job) {
+            condition.lock()
+            jobs.append(job)
+            condition.signal()
+            condition.unlock()
+        }
+
+        func next() -> Job {
+            condition.lock()
+            while jobs.isEmpty {
+                condition.wait()
+            }
+            let job = jobs.removeFirst()
+            condition.unlock()
+            return job
+        }
+    }
+
+    private let state: State
+    private let thread: Thread
+
+    private init() {
+        let state = State()
+        self.state = state
+        self.thread = Thread {
+            Thread.current.name = "LogseqChatCore"
+            LogseqChatCore.shared.initialize()
+            while true {
+                let job = state.next()
+                job.continuation.resume(returning: job.callCore(job.requestJSON))
+            }
+        }
+        thread.name = "LogseqChatCore"
+        thread.start()
+    }
+
+    func call(
+        _ callCore: @escaping @Sendable (String) -> String,
+        requestJSON: String
+    ) async -> String {
+        await withCheckedContinuation { continuation in
+            state.enqueue(Job(
+                callCore: callCore,
+                requestJSON: requestJSON,
+                continuation: continuation
+            ))
+        }
+    }
+}
+#endif
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -660,7 +731,7 @@ private struct OpenGraphPayload: Encodable {
 
     public func open(path: String) {
         openedDatabasePath = path
-        perform(LogseqChatRPCRequest(method: "open", params: LogseqChatRPCParams(action: nil, path: path)))
+        performAsync(LogseqChatRPCRequest(method: "open", params: LogseqChatRPCParams(action: nil, path: path)))
     }
 
     public func configure(
@@ -1062,11 +1133,11 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func select(_ block: LogseqBlock) {
-        perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "select", payload: block.uuid)))
+        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "select", payload: block.uuid)))
     }
 
     public func clearSelection() {
-        perform(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "clearSelection")))
+        performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "clearSelection")))
     }
 
     public func loadBlockReferences(_ uuid: String) {
@@ -1120,28 +1191,6 @@ private struct OpenGraphPayload: Encodable {
         }
     }
 
-    private func perform(
-        _ request: LogseqChatRPCRequest,
-        shouldApply: (@MainActor () -> Bool)? = nil
-    ) {
-        let actionName = request.params.action ?? request.method
-        guard let requestJSON = encode(request) else {
-            return
-        }
-        #if DEBUG
-        print("LogseqChat debug: core action started \(actionName)")
-        #endif
-        logger.info("Core action started: \(actionName)")
-        let responseJSON = callCore(requestJSON)
-        #if DEBUG
-        print("LogseqChat debug: core action returned \(actionName)")
-        #endif
-        logger.info("Core action returned: \(actionName)")
-        if shouldApply?() ?? true {
-            apply(responseJSON: responseJSON, actionName: actionName)
-        }
-    }
-
     private func performAsyncAndWait(
         _ request: LogseqChatRPCRequest,
         shouldApply: (@MainActor () -> Bool)? = nil
@@ -1150,12 +1199,18 @@ private struct OpenGraphPayload: Encodable {
         guard let requestJSON = encode(request) else {
             return
         }
-        let callCore = callCore
         #if DEBUG
         print("LogseqChat debug: async core action started \(actionName)")
         #endif
         logger.info("Core action started: \(actionName)")
+        #if !SKIP
+        let responseJSON = await LogseqChatCoreExecutor.shared.call(
+            callCore,
+            requestJSON: requestJSON
+        )
+        #else
         let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
+        #endif
         #if DEBUG
         print("LogseqChat debug: async core action returned \(actionName)")
         #endif

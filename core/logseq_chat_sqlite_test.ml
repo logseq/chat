@@ -149,47 +149,33 @@ let () =
 let () =
   with_temp_db (fun path ->
     let first_session = Logseq_chat_sqlite.open_session path in
-    let first_model =
-      Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage first_session) ()
+    let catalog =
+      {|{"graphs":[{"graph-id":"plain-graph","graph-name":"Sync 2","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"encrypted-graph","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":false}]}|}
     in
-    Logseq_chat_model.cache_graphs
-      first_model
-      [ { id = "plain-graph"; name = "Sync 2"; e2ee = false; ready = true }
-      ; { id = "encrypted-graph"; name = "Private"; e2ee = true; ready = false }
-      ];
+    Logseq_chat_sqlite.store_string first_session ~address:"logseq-chat/graph-catalog/v1" catalog;
     Logseq_chat_sqlite.close first_session;
 
     let second_session = Logseq_chat_sqlite.open_session path in
     Fun.protect
       ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
       (fun () ->
-        let restored_model =
-          Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage second_session) ()
-        in
-        match Logseq_chat_model.cached_graphs restored_model with
-        | [ encrypted; plain ] ->
-          assert_equal "encrypted graph id" "encrypted-graph" encrypted.id;
-          assert_equal "encrypted graph name" "Private" encrypted.name;
-          assert_bool "encrypted graph flag" encrypted.e2ee;
-          assert_bool "encrypted graph ready flag" (not encrypted.ready);
-          assert_equal "plain graph id" "plain-graph" plain.id;
-          assert_equal "plain graph name" "Sync 2" plain.name;
-          assert_bool "plain graph encryption flag" (not plain.e2ee);
-          assert_bool "plain graph ready flag" plain.ready
-        | graphs ->
-          failwith
-            (Printf.sprintf "expected two persisted cached graphs, got %d" (List.length graphs))))
+        match
+          Logseq_chat_sqlite.restore_string
+            second_session
+            ~address:"logseq-chat/graph-catalog/v1"
+        with
+        | Some restored ->
+          assert_equal "graph catalog should use a dedicated SQLite value" catalog restored
+        | None -> failwith "graph catalog was not restored from SQLite"))
 ;;
 
 let () =
   with_temp_db (fun path ->
     let first_session = Logseq_chat_sqlite.open_session path in
-    let first_model =
-      Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage first_session) ()
-    in
-    Logseq_chat_model.cache_graphs
-      first_model
-      [ { id = "plain-graph"; name = "Sync 2"; e2ee = false; ready = true } ];
+    Logseq_chat_sqlite.store_string
+      first_session
+      ~address:"logseq-chat/graph-catalog/v1"
+      {|{"graphs":[{"graph-id":"plain-graph","graph-name":"Sync 2","graph-e2ee?":false,"graph-ready-for-use?":true}]}|};
     Logseq_chat_sqlite.close first_session;
 
     let second_session = Logseq_chat_sqlite.open_session path in
@@ -197,7 +183,13 @@ let () =
       ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
       (fun () ->
         let rpc =
-          Logseq_chat_rpc.create ~storage:(Logseq_chat_sqlite.storage second_session) ()
+          Logseq_chat_rpc.create
+            ~storage:(Logseq_chat_sqlite.storage second_session)
+            ~load_graph_catalog:(fun () ->
+              Logseq_chat_sqlite.restore_string
+                second_session
+                ~address:"logseq-chat/graph-catalog/v1")
+            ()
         in
         let response =
           Logseq_chat_rpc.call

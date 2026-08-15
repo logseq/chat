@@ -15,13 +15,6 @@ type status =
   ; icon_color : string option
   }
 
-type cached_graph =
-  { id : string
-  ; name : string
-  ; e2ee : bool
-  ; ready : bool
-  }
-
 type block =
   { uuid : string
   ; kind : string
@@ -199,30 +192,6 @@ let status_of_json value =
   | exception _ -> None
 ;;
 
-let cached_graph_prefix = "graph-catalog/"
-
-let cached_graph_json (graph : cached_graph) =
-  `Assoc
-    [ "id", `String graph.id
-    ; "name", `String graph.name
-    ; "e2ee", `Bool graph.e2ee
-    ; "ready", `Bool graph.ready
-    ]
-  |> Yojson.Basic.to_string
-;;
-
-let cached_graph_of_json value =
-  match Yojson.Basic.from_string value with
-  | `Assoc fields ->
-    (match List.assoc_opt "id" fields, List.assoc_opt "name" fields,
-           List.assoc_opt "e2ee" fields, List.assoc_opt "ready" fields with
-     | Some (`String id), Some (`String name), Some (`Bool e2ee), Some (`Bool ready) ->
-       Some { id; name; e2ee; ready }
-     | _ -> None)
-  | _ -> None
-  | exception _ -> None
-;;
-
 let block_exists model uuid =
   entity_attr_value model.db (block_ref uuid) "block/uuid" <> None
 ;;
@@ -274,21 +243,6 @@ let all_statuses model =
         && String.equal (String.sub uuid 0 (String.length prefix)) prefix ->
       Option.bind (read_block model uuid) (fun block -> block.status)
     | _ -> None)
-;;
-
-let cached_graphs model =
-  let prefix_length = String.length cached_graph_prefix in
-  datoms model.db Aevt ~a:"block/uuid" () |> List.of_seq
-  |> List.filter_map (fun datom ->
-    match datom.v with
-    | String uuid when
-        String.length uuid > prefix_length
-        && String.equal (String.sub uuid 0 prefix_length) cached_graph_prefix ->
-      Option.bind
-        (option_string_attr model.db (block_ref uuid) "block/status-json")
-        cached_graph_of_json
-    | _ -> None)
-  |> List.sort (fun left right -> String.compare left.id right.id)
 ;;
 
 let journal_day_for_ms now =
@@ -449,30 +403,6 @@ let commit model transactions =
   match storage model.db with
   | Some storage -> store ~storage model.db
   | None -> ()
-;;
-
-let cache_graphs model graphs =
-  let existing = cached_graphs model in
-  let transactions =
-    List.map
-      (fun (graph : cached_graph) ->
-        RetractEntity (block_ref (cached_graph_prefix ^ graph.id)))
-      existing
-    @ List.concat_map
-        (fun (graph : cached_graph) ->
-          let uuid = cached_graph_prefix ^ graph.id in
-          [ Add (Temp_id uuid, "block/uuid", String uuid)
-          ; Add (Temp_id uuid, "block/kind", String "page")
-          ; Add (Temp_id uuid, "block/title", String "")
-          ; Add (Temp_id uuid, "block/page-id", String "")
-          ; Add (Temp_id uuid, "block/created-at", Int 0)
-          ; Add (Temp_id uuid, "block/updated-at", Int 0)
-          ; Add (Temp_id uuid, "block/sync-status", String "synced")
-          ; Add (Temp_id uuid, "block/status-json", String (cached_graph_json graph))
-          ])
-        graphs
-  in
-  if transactions <> [] then commit model transactions
 ;;
 
 let upsert_statuses model statuses =

@@ -17,6 +17,7 @@ type t =
   ; graph_blocks : (unit -> Model.block list option) option
   ; mutable sync_connected : bool
   ; mutable sync_in_progress : bool
+  ; save_graph_catalog : (string -> unit) option
   }
 
 let debug format =
@@ -162,14 +163,6 @@ let graph_json (graph : Api.graph) =
     ]
 ;;
 
-let api_graph_of_cached (graph : Model.cached_graph) : Api.graph =
-  { id = graph.id; name = graph.name; e2ee = graph.e2ee; ready = graph.ready }
-;;
-
-let cached_graph_of_api (graph : Api.graph) : Model.cached_graph =
-  { id = graph.id; name = graph.name; e2ee = graph.e2ee; ready = graph.ready }
-;;
-
 let snapshot session blocks =
   success
     (`Assoc
@@ -290,12 +283,21 @@ let create
       ?feed_sse
       ?sync_cursor
       ?graph_blocks
+      ?load_graph_catalog
+      ?save_graph_catalog
       ()
   =
   let model = Model.create ?storage () in
+  let available_graphs =
+    match Option.bind load_graph_catalog (fun load -> load ()) with
+    | Some body ->
+      (try Api.graphs_from_graphs_body body with
+       | _ -> [])
+    | None -> []
+  in
   { model
   ; config = None
-  ; available_graphs = Model.cached_graphs model |> List.map api_graph_of_cached
+  ; available_graphs
   ; related_blocks = []
   ; open_graph
   ; import_snapshot
@@ -305,6 +307,7 @@ let create
   ; graph_blocks
   ; sync_connected = false
   ; sync_in_progress = false
+  ; save_graph_catalog
   }
 ;;
 
@@ -317,9 +320,7 @@ let discover_graphs session config =
   | Ok response ->
     (try
        session.available_graphs <- Api.graphs_from_graphs_body response.body;
-       Model.cache_graphs
-         session.model
-         (List.map cached_graph_of_api session.available_graphs);
+       Option.iter (fun save -> save response.body) session.save_graph_catalog;
        Ok ()
      with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
 ;;

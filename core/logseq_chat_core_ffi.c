@@ -25,6 +25,10 @@ static void ensure_ocaml_runtime(void) {
   pthread_once(&logseq_chat_runtime_once, start_ocaml_runtime);
 }
 
+void logseq_chat_initialize(void) {
+  ensure_ocaml_runtime();
+}
+
 static const char *replace_response(const char *value) {
   size_t length = strlen(value);
   char *copy = malloc(length + 1);

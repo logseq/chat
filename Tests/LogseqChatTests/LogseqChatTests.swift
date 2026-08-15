@@ -1008,6 +1008,38 @@ import Foundation
         }
     }
 
+    @Test func appleRuntimeInitializesOCamlOnThePersistentCoreThread() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let app = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
+            encoding: .utf8
+        )
+        let model = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift"),
+            encoding: .utf8
+        )
+        let header = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_core_ffi.h"),
+            encoding: .utf8
+        )
+        let abiHeader = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatCoreABI/include/LogseqChatCoreABI.h"),
+            encoding: .utf8
+        )
+        #expect(!app.contains("LogseqChatCore.shared.initialize()"))
+        #expect(model.contains("private final class LogseqChatCoreExecutor"))
+        #expect(model.contains("Thread {"))
+        let executor = try #require(model.range(of: "private final class LogseqChatCoreExecutor"))
+        let remainingExecutor = model[executor.lowerBound...]
+        let initialize = try #require(remainingExecutor.range(of: "LogseqChatCore.shared.initialize()"))
+        let callCore = try #require(remainingExecutor.range(of: "callCore(requestJSON)"))
+        #expect(initialize.lowerBound < callCore.lowerBound)
+        #expect(model.contains("public func initialize()"))
+        #expect(model.contains("LogseqChatCoreABI.logseq_chat_initialize()"))
+        #expect(header.contains("void logseq_chat_initialize(void);"))
+        #expect(abiHeader.contains("void logseq_chat_initialize(void);"))
+    }
+
     @Test func composerDismissesWhenLeavingHomeOrEnteringSearch() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")

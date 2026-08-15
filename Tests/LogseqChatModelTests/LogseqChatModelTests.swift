@@ -19,7 +19,7 @@ private let testEmptySnapshotJSON = """
 }
 """
 
-@Suite struct LogseqChatModelTests {
+@Suite(.serialized) struct LogseqChatModelTests {
 
     @Test func logseqChatModel() throws {
         #expect(1 + 2 == 3, "basic test")
@@ -331,6 +331,7 @@ private let testEmptySnapshotJSON = """
         let store = LogseqChatStore { request in
             recorder.append(request)
             let status = request.contains("\"action\":\"updateBlockStatus\"")
+                || request.contains("\"action\":\"syncPending\"")
                 ? ##"{"uuid":"custom-waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}"##
                 : ##"{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo"}"##
             return """
@@ -358,6 +359,9 @@ private let testEmptySnapshotJSON = """
             """
         }
         store.open(path: "/tmp/status-test.sqlite")
+        try await waitUntil {
+            store.snapshot.blocks.first?.uuid == "task-1"
+        }
         let block = try #require(store.snapshot.blocks.first)
 
         store.updateStatus(block: block, status: waiting)
@@ -851,6 +855,126 @@ private let testEmptySnapshotJSON = """
         #expect(refreshCount == 1)
     }
 
+    @Test @MainActor func nativeCoreCallsAreSerializedAcrossAsyncAndImmediateActions() async throws {
+        let probe = CoreCallConcurrencyProbe()
+        let store = LogseqChatStore { request in
+            probe.call(request, delayingAction: "configure")
+        }
+
+        store.configure(
+            baseURL: "https://api-staging.logseq.io",
+            token: "token",
+            refreshAfterApply: false
+        )
+        try await waitUntil {
+            probe.events.contains("start configure")
+        }
+
+        let start = Date()
+        store.open(path: "/tmp/serialized-core.sqlite")
+        store.searchLocal("queued")
+        let elapsed = Date().timeIntervalSince(start)
+
+        #expect(elapsed < 0.1)
+        try await waitUntil(timeout: 2.0) {
+            probe.events.contains("finish searchLocal")
+        }
+        #expect(probe.maximumConcurrentCalls == 1)
+        #expect(probe.events == [
+            "start configure",
+            "finish configure",
+            "start open",
+            "finish open",
+            "start searchLocal",
+            "finish searchLocal",
+        ])
+    }
+
+    @Test @MainActor func nativeCoreSerializationContinuesAfterAnErrorResponse() async throws {
+        let probe = CoreCallConcurrencyProbe(failingAction: "configure")
+        let store = LogseqChatStore { request in
+            probe.call(request, delayingAction: "configure")
+        }
+
+        store.configure(
+            baseURL: "https://api-staging.logseq.io",
+            token: "token",
+            refreshAfterApply: false
+        )
+        try await waitUntil {
+            probe.events.contains("start configure")
+        }
+        store.searchLocal("after error")
+
+        try await waitUntil(timeout: 2.0) {
+            probe.events.contains("finish searchLocal")
+        }
+        try await waitUntil(timeout: 2.0) {
+            store.snapshot.query == "after error" && store.lastError == nil
+        }
+        #expect(probe.maximumConcurrentCalls == 1)
+        #expect(probe.events == [
+            "start configure",
+            "finish configure",
+            "start searchLocal",
+            "finish searchLocal",
+        ])
+        #expect(store.snapshot.query == "after error")
+        #expect(store.lastError == nil)
+    }
+
+    @Test @MainActor func nativeCoreCallsAreSerializedAcrossStoreInstances() async throws {
+        let probe = CoreCallConcurrencyProbe()
+        let firstStore = LogseqChatStore { request in
+            probe.call(request, delayingAction: "configure")
+        }
+        let secondStore = LogseqChatStore { request in
+            probe.call(request, delayingAction: "configure")
+        }
+
+        firstStore.configure(
+            baseURL: "https://api-staging.logseq.io",
+            token: "token",
+            refreshAfterApply: false
+        )
+        try await waitUntil {
+            probe.events.contains("start configure")
+        }
+        secondStore.searchLocal("queued across stores")
+
+        try await waitUntil(timeout: 2.0) {
+            probe.events.contains("finish searchLocal")
+        }
+        #expect(probe.maximumConcurrentCalls == 1)
+        #expect(probe.events == [
+            "start configure",
+            "finish configure",
+            "start searchLocal",
+            "finish searchLocal",
+        ])
+    }
+
+    @Test @MainActor func nativeCoreCallsStayOnOneOperatingSystemThreadAcrossStores() async throws {
+        let probe = CoreCallConcurrencyProbe()
+        let firstStore = LogseqChatStore { request in
+            probe.call(request, delayingAction: "never")
+        }
+        let secondStore = LogseqChatStore { request in
+            probe.call(request, delayingAction: "never")
+        }
+
+        for index in 0..<4 {
+            let store = index.isMultiple(of: 2) ? firstStore : secondStore
+            store.searchLocal("thread-affinity-\(index)")
+        }
+
+        try await waitUntil(timeout: 2.0) {
+            probe.finishedCallCount == 4
+        }
+        #expect(probe.operatingSystemThreadIDs.count == 1)
+        #expect(probe.operatingSystemThreadNames == ["LogseqChatCore"])
+    }
+
     @Test @MainActor func searchLocalKeepsDurableCaptureVisible() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
@@ -1010,6 +1134,9 @@ private let testEmptySnapshotJSON = """
 
         try await waitUntil(timeout: 2.0) {
             recorder.all.contains("send-returned")
+        }
+        try await waitUntil(timeout: 2.0) {
+            store.snapshot.blocks.map(\.title).contains("E2E capture responsive")
         }
 
         #expect(store.snapshot.query == "E2E capture")
@@ -1252,7 +1379,99 @@ private final class RequestRecorder: @unchecked Sendable {
     }
 }
 
+private final class CoreCallConcurrencyProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let failingAction: String?
+    private let callDelay: TimeInterval
+    private var activeCalls = 0
+    private var maximumActiveCalls = 0
+    private var recordedEvents: [String] = []
+    private var recordedOperatingSystemThreadIDs: Set<UInt64> = []
+    private var recordedOperatingSystemThreadNames: Set<String> = []
+
+    init(failingAction: String? = nil, callDelay: TimeInterval = 0) {
+        self.failingAction = failingAction
+        self.callDelay = callDelay
+    }
+
+    var events: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedEvents
+    }
+
+    var maximumConcurrentCalls: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return maximumActiveCalls
+    }
+
+    var finishedCallCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedEvents.count { $0.hasPrefix("finish ") }
+    }
+
+    var operatingSystemThreadIDs: Set<UInt64> {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedOperatingSystemThreadIDs
+    }
+
+    var operatingSystemThreadNames: Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedOperatingSystemThreadNames
+    }
+
+    func call(_ request: String, delayingAction: String) -> String {
+        let decoded = try? JSONDecoder().decode(TestRPCRequest.self, from: Data(request.utf8))
+        let action = decoded?.params.action ?? decoded?.method ?? "unknown"
+
+        lock.lock()
+        activeCalls += 1
+        maximumActiveCalls = max(maximumActiveCalls, activeCalls)
+        recordedEvents.append("start \(action)")
+        recordedOperatingSystemThreadIDs.insert(UInt64(pthread_mach_thread_np(pthread_self())))
+        recordedOperatingSystemThreadNames.insert(Thread.current.name ?? "")
+        lock.unlock()
+
+        if action == delayingAction {
+            Thread.sleep(forTimeInterval: 0.2)
+        } else if callDelay > 0 {
+            Thread.sleep(forTimeInterval: callDelay)
+        }
+
+        lock.lock()
+        recordedEvents.append("finish \(action)")
+        activeCalls -= 1
+        lock.unlock()
+
+        if action == failingAction {
+            return #"{"apiVersion":1,"ok":false,"result":null,"error":{"code":"test_error","message":"Expected test failure"}}"#
+        }
+        let query = action == "searchLocal" ? (decoded?.params.payload ?? "") : ""
+        return """
+        {
+          "apiVersion": 1,
+          "ok": true,
+          "result": {
+            "revision": 1,
+            "query": "\(query)",
+            "blocks": [],
+            "selectedBlock": null,
+            "lastRefreshAt": null,
+            "graphName": "probe",
+            "isSearching": \(action == "searchLocal")
+          },
+          "error": null
+        }
+        """
+    }
+}
+
 private struct TestRPCRequest: Decodable {
+    let method: String
     let params: TestRPCParams
 }
 

@@ -111,9 +111,21 @@ let graph_blocks () =
   | None -> None
 ;;
 
-let create_session ?storage () =
+let graph_catalog_address = "logseq-chat/graph-catalog/v1"
+
+let create_session ?storage ?catalog_session () =
   Logseq_chat_rpc.create
     ?storage
+    ?load_graph_catalog:
+      (Option.map
+         (fun session () ->
+           Logseq_chat_sqlite.restore_string session ~address:graph_catalog_address)
+         catalog_session)
+    ?save_graph_catalog:
+      (Option.map
+         (fun session body ->
+           Logseq_chat_sqlite.store_string session ~address:graph_catalog_address body)
+         catalog_session)
     ~open_graph
     ~import_snapshot
     ~start_sse
@@ -138,7 +150,10 @@ let open_database request =
           let opened = Logseq_chat_sqlite.open_session path in
           sqlite_session := Some opened;
           session :=
-            create_session ~storage:(Logseq_chat_sqlite.storage opened) ();
+            create_session
+              ~storage:(Logseq_chat_sqlite.storage opened)
+              ~catalog_session:opened
+              ();
           Some (Logseq_chat_rpc.call !session {|{"apiVersion":1,"method":"snapshot","params":{}}|})
         | _ -> None)
      | _ -> None)
