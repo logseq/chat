@@ -652,10 +652,11 @@ struct ContentView: View {
 
     private func openAsset(_ block: LogseqBlock) {
         dismissComposerEditing()
-        guard let path = block.localPath, !path.isEmpty else { return }
         #if !SKIP && os(iOS)
-        previewAssetURL = URL(fileURLWithPath: path)
+        guard let path = block.localPath, let url = LocalAssetPath.resolve(path) else { return }
+        previewAssetURL = url
         #elseif SKIP
+        guard let path = block.localPath, !path.isEmpty else { return }
         AndroidAssetImporter.openFile(path: path, contentType: block.assetType ?? "application/octet-stream")
         #endif
     }
@@ -1125,7 +1126,7 @@ struct ContentView: View {
             assetType: metadata.assetType,
             assetSize: metadata.size,
             assetChecksum: metadata.checksum,
-            localPath: metadata.path
+            localPath: LocalAssetPath.storedPath(metadata.path)
         )
     }
 
@@ -1606,7 +1607,10 @@ private struct AssetPreview: View {
 
     var body: some View {
         #if !SKIP && os(iOS)
-        if let path = block.localPath, isImage, let image = UIImage(contentsOfFile: path) {
+        if let path = block.localPath,
+           let url = LocalAssetPath.resolve(path),
+           isImage,
+           let image = UIImage(contentsOfFile: url.path) {
             Button { onOpen?() } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     Image(uiImage: image)
@@ -1617,10 +1621,12 @@ private struct AssetPreview: View {
                 }
             }
             .buttonStyle(.plain)
-        } else if let path = block.localPath, isAudio {
+        } else if let path = block.localPath,
+                  let url = LocalAssetPath.resolve(path),
+                  isAudio {
             VStack(alignment: .leading, spacing: 8) {
                 assetTitle
-                AssetAudioPlayer(path: path)
+                AssetAudioPlayer(path: url.path)
                     .frame(height: 44)
             }
         } else {

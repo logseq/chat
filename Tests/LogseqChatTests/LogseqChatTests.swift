@@ -783,14 +783,45 @@ import Foundation
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("Sources/LogseqChat/ContentView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let imageStart = try #require(source.range(of: "if let path = block.localPath, isImage"))
-        let imageBranch = source[imageStart.lowerBound...]
-        let audioStart = try #require(imageBranch.range(of: "} else if let path = block.localPath, isAudio"))
+        let previewStart = try #require(source.range(of: "private struct AssetPreview"))
+        let previewSource = source[previewStart.lowerBound...]
+        let imageStart = try #require(previewSource.range(of: "if let path = block.localPath,"))
+        let imageBranch = previewSource[imageStart.lowerBound...]
+        let audioStart = try #require(imageBranch.range(of: "} else if let path = block.localPath,"))
         let imageSource = imageBranch[..<audioStart.lowerBound]
 
+        #expect(imageSource.contains("LocalAssetPath.resolve(path)"))
         #expect(imageSource.contains("Image(uiImage: image)"))
         #expect(!imageSource.contains("assetTitle"))
     }
+
+    #if !SKIP
+    @Test func localAssetPathSurvivesIOSDataContainerChanges() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let documentsDirectory = temporaryDirectory.appendingPathComponent("Documents", isDirectory: true)
+        let assetsDirectory = documentsDirectory.appendingPathComponent("Assets", isDirectory: true)
+        try FileManager.default.createDirectory(at: assetsDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let currentAsset = assetsDirectory.appendingPathComponent("Photo-example.png")
+        try Data([0x89, 0x50, 0x4e, 0x47]).write(to: currentAsset)
+        let staleAbsolutePath = "/var/mobile/Containers/Data/Application/OLD/Documents/Assets/Photo-example.png"
+
+        #expect(
+            LocalAssetPath.resolve(staleAbsolutePath, documentsDirectory: documentsDirectory)?.path
+                == currentAsset.path
+        )
+        #expect(
+            LocalAssetPath.storedPath(currentAsset.path, documentsDirectory: documentsDirectory)
+                == "Assets/Photo-example.png"
+        )
+        #expect(
+            LocalAssetPath.resolve("Assets/Photo-example.png", documentsDirectory: documentsDirectory)?.path
+                == currentAsset.path
+        )
+    }
+    #endif
 
     @Test func composerGlassUsesTheRequestedCornerRadiusInsteadOfDefaultCapsule() throws {
         let sourceURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
