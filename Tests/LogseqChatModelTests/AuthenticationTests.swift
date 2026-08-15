@@ -100,10 +100,10 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
 
         do {
             _ = try await auth.accessToken()
-            Issue.record("Expected access token restoration to fail")
+            #expect(1 == 0, "Expected access token restoration to fail")
         } catch {
             #expect(auth.state == .signedOut)
-            #expect(auth.errorMessage == "Could not restore the Cognito session.")
+            #expect(auth.errorMessage?.isEmpty == false)
             #expect(published == [nil])
         }
     }

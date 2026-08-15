@@ -112,6 +112,7 @@ private let testEmptySnapshotJSON = """
         }
     }
 
+    #if !SKIP
     @Test func snapshotMetadataRequestUsesSyncAPIAndOAuthBearerToken() throws {
         let request = try LogseqGraphSyncHTTP.snapshotMetadataRequest(
             baseURL: "http://127.0.0.1:8787/api",
@@ -121,6 +122,7 @@ private let testEmptySnapshotJSON = """
         #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/snapshot/download")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
     }
+    #endif
 
     #if !SKIP
     @Test func gzipSnapshotIsDecodedBeforeNativeImport() throws {
@@ -144,6 +146,7 @@ private let testEmptySnapshotJSON = """
     }
     #endif
 
+    #if !SKIP
     @Test func graphEventsRequestResumesFromAuthoritativeCursor() throws {
         let request = try LogseqGraphSyncHTTP.eventsRequest(
             baseURL: "http://127.0.0.1:8787",
@@ -155,6 +158,7 @@ private let testEmptySnapshotJSON = """
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
         #expect(request.value(forHTTPHeaderField: "Accept") == "text/event-stream")
     }
+    #endif
 
     #if !SKIP
     @Test func sseTransportPreservesBlankLineFrameBoundary() throws {
@@ -921,6 +925,7 @@ private let testEmptySnapshotJSON = """
         #expect(refreshCount == 1)
     }
 
+    #if !SKIP
     @Test @MainActor func nativeCoreCallsAreSerializedAcrossAsyncAndImmediateActions() async throws {
         let probe = CoreCallConcurrencyProbe()
         let store = LogseqChatStore { request in
@@ -1019,7 +1024,9 @@ private let testEmptySnapshotJSON = """
             "finish searchLocal",
         ])
     }
+    #endif
 
+    #if !SKIP
     @Test @MainActor func nativeCoreCallsStayOnOneOperatingSystemThreadAcrossStores() async throws {
         let probe = CoreCallConcurrencyProbe()
         let firstStore = LogseqChatStore { request in
@@ -1030,7 +1037,7 @@ private let testEmptySnapshotJSON = """
         }
 
         for index in 0..<4 {
-            let store = index.isMultiple(of: 2) ? firstStore : secondStore
+            let store = index % 2 == 0 ? firstStore : secondStore
             store.searchLocal("thread-affinity-\(index)")
         }
 
@@ -1040,6 +1047,7 @@ private let testEmptySnapshotJSON = """
         #expect(probe.operatingSystemThreadIDs.count == 1)
         #expect(probe.operatingSystemThreadNames == ["LogseqChatCore"])
     }
+    #endif
 
     @Test @MainActor func searchLocalKeepsDurableCaptureVisible() async throws {
         let recorder = RequestRecorder()
@@ -1572,8 +1580,10 @@ private final class CoreCallConcurrencyProbe: @unchecked Sendable {
         activeCalls += 1
         maximumActiveCalls = max(maximumActiveCalls, activeCalls)
         recordedEvents.append("start \(action)")
+        #if !SKIP
         recordedOperatingSystemThreadIDs.insert(UInt64(pthread_mach_thread_np(pthread_self())))
         recordedOperatingSystemThreadNames.insert(Thread.current.name ?? "")
+        #endif
         lock.unlock()
 
         if action == delayingAction {

@@ -1401,9 +1401,7 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             callCore(requestJSON)
         }.value
         #else
-        return await withContext(Dispatchers.IO) {
-            callCore(requestJSON)
-        }
+        return await AndroidCoreExecutor.call(requestJSON: requestJSON, callCore: callCore)
         #endif
     }
 
