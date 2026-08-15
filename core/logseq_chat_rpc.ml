@@ -15,6 +15,9 @@ type t =
   ; feed_sse : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
   ; graph_blocks : (unit -> Model.block list option) option
+  ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
+  ; unlock_graph : (Api.config -> password:string -> (unit, string) result) option
+  ; graph_unlocked : (graph_id:string -> bool) option
   ; mutable sync_connected : bool
   ; mutable sync_in_progress : bool
   ; save_graph_catalog : (string -> unit) option
@@ -168,6 +171,30 @@ let graph_json (graph : Api.graph) =
     ]
 ;;
 
+let selected_graph session =
+  match session.config with
+  | Some config ->
+    List.find_opt
+      (fun (graph : Api.graph) -> String.equal graph.id config.graph_id)
+      session.available_graphs
+  | None -> None
+;;
+
+let selected_graph_is_encrypted session =
+  Option.fold ~none:false ~some:(fun (graph : Api.graph) -> graph.e2ee) (selected_graph session)
+;;
+
+let selected_graph_is_unlocked session =
+  match session.config, selected_graph session with
+  | _, Some graph when not graph.e2ee -> true
+  | Some config, Some _ ->
+    Option.fold
+      ~none:false
+      ~some:(fun graph_unlocked -> graph_unlocked ~graph_id:config.graph_id)
+      session.graph_unlocked
+  | _ -> false
+;;
+
 let snapshot session blocks =
   success
     (`Assoc
@@ -192,6 +219,8 @@ let snapshot session blocks =
          | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
          | _ -> `Null)
       ; "graphs", `List (List.map graph_json session.available_graphs)
+      ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
+      ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
       ; "appliedServerT",
         (match session.sync_cursor with
          | Some cursor -> Option.fold ~none:`Null ~some:(fun value -> `Int value) (cursor ())
@@ -304,6 +333,9 @@ let create
       ?feed_sse
       ?sync_cursor
       ?graph_blocks
+      ?load_cached_graph_key
+      ?unlock_graph
+      ?graph_unlocked
       ?load_graph_catalog
       ?save_graph_catalog
       ()
@@ -326,6 +358,9 @@ let create
   ; feed_sse
   ; sync_cursor
   ; graph_blocks
+  ; load_cached_graph_key
+  ; unlock_graph
+  ; graph_unlocked
   ; sync_connected = false
   ; sync_in_progress = false
   ; save_graph_catalog
@@ -578,6 +613,14 @@ let dispatch session action payload =
                  |> Option.map (fun (graph : Api.graph) -> graph.name)
              in
              session.config <- Some { Api.base_url; graph_id; graph_name; token };
+             (match
+                List.find_opt
+                  (fun (graph : Api.graph) -> String.equal graph.id graph_id && graph.e2ee)
+                  session.available_graphs,
+                session.load_cached_graph_key
+              with
+              | Some _, Some load -> ignore (load ~graph_id)
+              | _ -> ());
              snapshot_visible session
            | _ ->
              failure
@@ -592,6 +635,10 @@ let dispatch session action payload =
        (match discover_graphs session config with
         | Ok () -> snapshot_visible session
         | Error message -> failure ~code:"graph_discovery_failed" ~message)
+     | Some _config when selected_graph_is_encrypted session ->
+       if selected_graph_is_unlocked session
+       then snapshot_visible session
+       else failure ~code:"encrypted_graph_locked" ~message:"Unlock the encrypted graph first"
      | Some config -> refresh_from_remote session config)
   | "refreshGraphCatalog" ->
     (match session.config with
@@ -615,14 +662,26 @@ let dispatch session action payload =
      | Some config, Some graph_id ->
        (match List.find_opt (fun (graph : Api.graph) -> String.equal graph.id graph_id) session.available_graphs with
         | None -> failure ~code:"unknown_graph" ~message:"The selected graph is not available"
-        | Some graph when graph.e2ee ->
-          failure ~code:"encrypted_graph_unsupported" ~message:"Encrypted graph sync is not enabled yet"
         | Some graph when not graph.ready ->
           failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
         | Some graph ->
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
+          if graph.e2ee
+          then
+            Option.iter
+              (fun load -> ignore (load ~graph_id:graph.id))
+              session.load_cached_graph_key;
           snapshot_visible session)
      | _ -> failure ~code:"invalid_params" ~message:"selectGraph requires a graph id")
+  | "unlockGraph" ->
+    (match session.config, session.unlock_graph, payload with
+     | Some config, Some unlock_graph, Some password when selected_graph_is_encrypted session ->
+       (match unlock_graph config ~password with
+        | Ok () -> snapshot_visible session
+        | Error message -> failure ~code:"graph_unlock_failed" ~message)
+     | Some _, _, _ when not (selected_graph_is_encrypted session) -> snapshot_visible session
+     | _, None, _ -> failure ~code:"graph_unlock_unavailable" ~message:"Graph unlock is unavailable"
+     | _ -> failure ~code:"invalid_params" ~message:"unlockGraph requires a selected graph and password")
   | "importSnapshot" ->
     (match session.import_snapshot, payload with
      | Some import_snapshot, Some payload ->
@@ -668,6 +727,8 @@ let dispatch session action payload =
   | "search" ->
     let query = Option.value payload ~default:"" in
     (match session.config, String.equal (String.trim query) "" with
+     | Some _config, false when selected_graph_is_encrypted session ->
+       snapshot session (Model.search session.model query)
      | Some config, false ->
        (match resolve_graph session config with
         | Ok config -> search_remote session config query

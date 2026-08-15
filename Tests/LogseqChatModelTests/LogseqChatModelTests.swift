@@ -788,11 +788,11 @@ private let testEmptySnapshotJSON = """
         }
     }
 
-    @Test @MainActor func refreshAndSyncForBackgroundWaitsForCoreActions() async throws {
+    @Test @MainActor func backgroundSyncOnlySubmitsPendingWrites() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
-            if request.contains("\"action\":\"refresh\"") {
+            if request.contains("\"action\":\"syncPending\"") {
                 Thread.sleep(forTimeInterval: 0.15)
             }
             return """
@@ -824,11 +824,11 @@ private let testEmptySnapshotJSON = """
         }
 
         let start = Date()
-        await store.refreshAndSyncForBackground()
+        await store.syncPendingForBackground()
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(elapsed >= 0.15)
-        #expect(recorder.all.contains { $0.contains("\"action\":\"refresh\"") })
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"refresh\"") })
         #expect(recorder.all.contains { $0.contains("\"action\":\"syncPending\"") })
         #expect(store.snapshot.blocks.first?.title == "Remote background block")
     }

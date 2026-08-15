@@ -117,13 +117,36 @@ private enum LogseqAmplifyAuth {
         store.open(path: databasePath)
     }
 
-    public func refreshFromStoredConnection() async {
+    public func syncFromStoredConnection() async {
         openStore()
         let defaults = UserDefaults.standard
         let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
-        let graphID = defaults.string(forKey: "logseq.selectedGraphId")
+        guard let graphID = defaults.string(forKey: "logseq.selectedGraphId"), !graphID.isEmpty else {
+            return
+        }
         guard let token = try? await authentication.accessToken() else { return }
-        await store.configureAndRefreshForBackground(baseURL: baseURL, token: token, graphID: graphID)
+        await store.configureAndSelectGraph(
+            baseURL: baseURL,
+            token: token,
+            selectedGraphID: graphID
+        )
+        guard store.lastError == nil else { return }
+        let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
+        if isEncrypted && store.snapshot.isGraphUnlocked != true { return }
+        guard await store.bootstrapSelectedGraph(
+            graphID: graphID,
+            baseURL: baseURL,
+            accessToken: token,
+            allowSnapshotDownload: false,
+            isEncrypted: isEncrypted
+        ) else { return }
+        await store.syncPendingForBackground()
+        guard store.lastError == nil else { return }
+        _ = await store.runGraphEventsOnce(
+            graphID: graphID,
+            baseURL: baseURL,
+            accessToken: token
+        )
     }
 }
 
@@ -172,7 +195,7 @@ public enum LogseqChatBackgroundRefresh {
     private static func handle(_ task: BGTask) {
         schedule()
         let refreshTask = Task {
-            await LogseqChatRuntime.shared.refreshFromStoredConnection()
+            await LogseqChatRuntime.shared.syncFromStoredConnection()
             task.setTaskCompleted(success: true)
         }
         task.expirationHandler = {

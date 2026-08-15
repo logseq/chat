@@ -1190,6 +1190,62 @@ import Foundation
         #expect(!crypto.contains("graph-e2ee"))
     }
 
+    @Test func iosGraphRuntimeUsesTheOCamlKeyringForEncryptedProjection() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let mobileEntry = try String(
+            contentsOf: root.appendingPathComponent("core/logseq_chat_mobile_entry.ml"),
+            encoding: .utf8
+        )
+        let viewModel = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift"),
+            encoding: .utf8
+        )
+
+        #expect(mobileEntry.contains("Logseq_chat_e2ee_keyring.create"))
+        #expect(mobileEntry.contains("Logseq_chat_platform_crypto.crypto"))
+        #expect(mobileEntry.contains("~decrypt_title"))
+        #expect(mobileEntry.contains("~load_cached_graph_key"))
+        #expect(mobileEntry.contains("~unlock_graph"))
+        #expect(viewModel.contains("let isEncrypted: Bool"))
+        #expect(viewModel.contains("isEncrypted: isEncrypted"))
+    }
+
+    @Test func encryptedGraphSelectionPromptsForItsPasswordBeforeSync() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+        let viewModel = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChatModel/ViewModel.swift"),
+            encoding: .utf8
+        )
+
+        #expect(content.contains("SecureField"))
+        #expect(content.contains("store.unlockGraph"))
+        #expect(content.contains("snapshot.isGraphUnlocked"))
+        #expect(!content.contains(".disabled(graph.isEncrypted"))
+        #expect(viewModel.contains("action: \"unlockGraph\""))
+    }
+
+    @Test func backgroundGraphSyncReplaysSSEFromTheStoredCursorWithoutSemanticRefresh() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let app = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/LogseqChatApp.swift"),
+            encoding: .utf8
+        )
+        let content = try String(
+            contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
+            encoding: .utf8
+        )
+
+        #expect(app.contains("runGraphEventsOnce"))
+        #expect(app.contains("syncPendingForBackground"))
+        #expect(!app.contains("configureAndRefreshForBackground"))
+        #expect(!content.contains("store.refreshSoon()"))
+        #expect(!content.contains("runRefreshLoop"))
+    }
+
     @Test func iosSimulatorRelinksWhenTheNativeCoreChanges() throws {
         let scriptURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("scripts/build-mobile-ios-simulator.sh")

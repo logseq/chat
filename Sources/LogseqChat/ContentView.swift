@@ -21,6 +21,9 @@ struct ContentView: View {
     @State private var composerExpanded = false
     @State private var searchExpanded = false
     @State private var settingsPresented = false
+    @State private var graphPasswordPresented = false
+    @State private var graphPassword = ""
+    @State private var graphUnlockInProgress = false
     @State private var fileImporterPresented = false
     @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var editingBlock: LogseqBlock?
@@ -65,18 +68,18 @@ struct ContentView: View {
             print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
             #endif
             connectWithCurrentAccessToken()
-            await store.runRefreshLoop()
+            await store.runPendingSyncLoop()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                store.refreshSoon()
+                store.syncPending()
             }
         }
         .onChange(of: store.snapshot.selectedGraphId) { _, graphID in
             guard let graphID, !graphID.isEmpty else { return }
             selectedGraphID = graphID
             guard authentication.state == .signedIn else { return }
-            startGraphSync(graphID)
+            beginGraphAccess(graphID)
         }
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
@@ -96,6 +99,33 @@ struct ContentView: View {
                     }
                 }
             )
+        }
+        .sheet(isPresented: $graphPasswordPresented) {
+            NavigationStack {
+                Form {
+                    SecureField("Graph password", text: $graphPassword)
+                        .textContentType(.password)
+                    if let error = store.lastError {
+                        Text(verbatim: error.message)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .navigationTitle("Unlock graph")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            graphPasswordPresented = false
+                            graphPassword = ""
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Unlock") {
+                            unlockSelectedGraph()
+                        }
+                        .disabled(graphPassword.isEmpty || graphUnlockInProgress)
+                    }
+                }
+            }
         }
         #if !SKIP
         .fileImporter(
@@ -143,7 +173,7 @@ struct ContentView: View {
                 Spacer()
                 settingsControl
             }
-            Text(verbatim: "Select an unencrypted Logseq graph to download and sync on this device.")
+            Text(verbatim: "Select a Logseq graph to download and sync on this device.")
                 .foregroundStyle(.secondary)
             if let message = authentication.errorMessage {
                 Text(verbatim: message)
@@ -175,7 +205,7 @@ struct ContentView: View {
                                         Text(verbatim: graph.name)
                                             .fontWeight(.semibold)
                                         if graph.isEncrypted {
-                                            Text(verbatim: "Encrypted graphs will be supported after unencrypted sync is verified.")
+                                            Text(verbatim: "Encrypted")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         } else if !graph.isReady {
@@ -191,7 +221,7 @@ struct ContentView: View {
                                 .background(Color.white.opacity(0.7))
                                 .cornerRadius(16)
                             }
-                            .disabled(graph.isEncrypted || !graph.isReady)
+                            .disabled(!graph.isReady)
                             .accessibilityIdentifier("graph.\(graph.id)")
                         }
                     }
@@ -344,7 +374,7 @@ struct ContentView: View {
                     selectedGraphID: selectedGraphID.isEmpty ? nil : selectedGraphID
                 )
                 if !selectedGraphID.isEmpty {
-                    startGraphSync(selectedGraphID)
+                    beginGraphAccess(selectedGraphID)
                 }
             } catch {
                 #if DEBUG
@@ -362,11 +392,15 @@ struct ContentView: View {
             token: "",
             selectedGraphID: selectedGraphID
         )
+        if store.snapshot.isGraphEncrypted == true && store.snapshot.isGraphUnlocked != true {
+            return
+        }
         _ = await store.bootstrapSelectedGraph(
             graphID: selectedGraphID,
             baseURL: baseURL,
             accessToken: "",
-            allowSnapshotDownload: false
+            allowSnapshotDownload: false,
+            isEncrypted: store.snapshot.graphs?.first(where: { $0.id == selectedGraphID })?.isEncrypted ?? false
         )
     }
 
@@ -383,10 +417,12 @@ struct ContentView: View {
         let generation = graphSyncGeneration
         Task {
             guard let accessToken = try? await authentication.accessToken() else { return }
+            let isEncrypted = store.snapshot.graphs?.first(where: { $0.id == graphID })?.isEncrypted ?? false
             guard await store.bootstrapSelectedGraph(
                 graphID: graphID,
                 baseURL: baseURL,
-                accessToken: accessToken
+                accessToken: accessToken,
+                isEncrypted: isEncrypted
             ) else { return }
             while generation == graphSyncGeneration && authentication.state == .signedIn {
                 guard let freshAccessToken = try? await authentication.accessToken() else { return }
@@ -401,13 +437,37 @@ struct ContentView: View {
                         graphID: graphID,
                         baseURL: baseURL,
                         accessToken: refreshedToken,
-                        forceSnapshot: true
+                        forceSnapshot: true,
+                        isEncrypted: isEncrypted
                     ) else { return }
                 }
                 if generation == graphSyncGeneration {
                     try? await Task.sleep(for: .seconds(1))
                 }
             }
+        }
+    }
+
+    private func beginGraphAccess(_ graphID: String) {
+        if store.snapshot.isGraphEncrypted == true && store.snapshot.isGraphUnlocked != true {
+            graphPassword = ""
+            graphPasswordPresented = true
+            return
+        }
+        startGraphSync(graphID)
+    }
+
+    private func unlockSelectedGraph() {
+        let graphID = store.snapshot.selectedGraphId ?? selectedGraphID
+        guard !graphID.isEmpty else { return }
+        graphUnlockInProgress = true
+        Task {
+            await store.unlockGraph(graphPassword)
+            graphUnlockInProgress = false
+            guard store.lastError == nil else { return }
+            graphPassword = ""
+            graphPasswordPresented = false
+            startGraphSync(graphID)
         }
     }
 

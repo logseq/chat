@@ -1,10 +1,21 @@
 module Sync_session = Logseq_chat_sync_session
 module Checkpoint = Logseq_chat_sync_checkpoint
+module E2ee_keyring = Logseq_chat_e2ee_keyring
+
+let e2ee_keyring =
+  Logseq_chat_e2ee_keyring.create
+    ~crypto:Logseq_chat_platform_crypto.crypto
+    ~load:Logseq_chat_platform_crypto.load_graph_key
+    ~save:Logseq_chat_platform_crypto.save_graph_key
+    ~fetch:Logseq_chat_http.send
+;;
 
 type graph_runtime =
   { conn : Datascript.conn
   ; state : Logseq_chat_sync_state.t
   ; checkpoint_path : string
+  ; graph_id : string
+  ; e2ee : bool
   ; mutable recent_blocks : Logseq_chat_model.block list
   }
 
@@ -17,7 +28,23 @@ let required_string fields name =
   | _ -> Error ("graph sync payload requires " ^ name)
 ;;
 
-let open_graph_paths ~graph_id ~active_path ~checkpoint_path =
+let optional_bool fields name =
+  match List.assoc_opt name fields with
+  | Some (`Bool value) -> Ok value
+  | None -> Ok false
+  | Some _ -> Error ("graph sync payload requires a boolean " ^ name)
+;;
+
+let graph_blocks ~graph_id ~e2ee conn =
+  if e2ee
+  then
+    Logseq_chat_graph_read.blocks
+      ~decrypt_title:(E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
+      (Datascript.conn_db conn)
+  else Logseq_chat_graph_read.blocks (Datascript.conn_db conn)
+;;
+
+let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
   let ( let* ) = bind in
   let* checkpoint = Checkpoint.load checkpoint_path in
@@ -28,14 +55,19 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path =
     | None -> Error "graph checkpoint is missing"
   in
   let* conn = Logseq_chat_graph_store.restore_conn ~path:active_path in
+  let* () =
+    if e2ee
+    then Result.map (fun _key -> ()) (E2ee_keyring.graph_key e2ee_keyring ~graph_id)
+    else Ok ()
+  in
   let state =
     Logseq_chat_sync_state.create
       ~graph_id
       ~schema_version:checkpoint.schema_version
       ~applied_server_t:checkpoint.applied_server_t
   in
-  let recent_blocks = Logseq_chat_graph_read.blocks (Datascript.conn_db conn) in
-  graph_runtime := Some { conn; state; checkpoint_path; recent_blocks };
+  let recent_blocks = graph_blocks ~graph_id ~e2ee conn in
+  graph_runtime := Some { conn; state; checkpoint_path; graph_id; e2ee; recent_blocks };
   Ok ()
 ;;
 
@@ -48,7 +80,8 @@ let open_graph payload =
       let* graph_id = required_string fields "graphId" in
       let* active_path = required_string fields "activePath" in
       let* checkpoint_path = required_string fields "checkpointPath" in
-      open_graph_paths ~graph_id ~active_path ~checkpoint_path
+      let* e2ee = optional_bool fields "isEncrypted" in
+      open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee
     | _ -> Error "openGraph payload must be an object"
   with
   | error -> Error (Printexc.to_string error)
@@ -65,6 +98,7 @@ let import_snapshot payload =
       let* checkpoint_path = required_string fields "checkpointPath" in
       let* metadata_body = required_string fields "metadataBody" in
       let* download_path = required_string fields "downloadPath" in
+      let* e2ee = optional_bool fields "isEncrypted" in
       let* metadata = Sync_session.decode_snapshot_metadata metadata_body in
       let* _ =
         Sync_session.import_snapshot_file
@@ -74,7 +108,7 @@ let import_snapshot payload =
           ~metadata
           ~download_path
       in
-      open_graph_paths ~graph_id ~active_path ~checkpoint_path
+      open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee
     | _ -> Error "importSnapshot payload must be an object"
   with
   | error -> Error (Printexc.to_string error)
@@ -104,7 +138,7 @@ let feed_sse chunk =
                     change)
                  (fun () ->
                    runtime.recent_blocks <-
-                     Logseq_chat_graph_read.blocks (Datascript.conn_db runtime.conn);
+                     graph_blocks ~graph_id:runtime.graph_id ~e2ee:runtime.e2ee runtime.conn;
                    apply_frames rest)))
   in
   apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
@@ -143,6 +177,14 @@ let create_session ?storage ?catalog_session () =
     ~feed_sse
     ~sync_cursor
     ~graph_blocks
+    ~load_cached_graph_key:(fun ~graph_id ->
+      Result.map
+        (fun _key -> ())
+        (E2ee_keyring.load_cached e2ee_keyring ~graph_id))
+    ~unlock_graph:(fun config ~password ->
+      Result.map (fun _key -> ()) (E2ee_keyring.unlock e2ee_keyring config ~password))
+    ~graph_unlocked:(fun ~graph_id ->
+      Result.is_ok (E2ee_keyring.graph_key e2ee_keyring ~graph_id))
     ()
 ;;
 let session = ref (create_session ())

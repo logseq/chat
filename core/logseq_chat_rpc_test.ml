@@ -26,6 +26,12 @@ let required_int name fields =
   | _ -> failwith ("missing int field: " ^ name)
 ;;
 
+let required_bool name fields =
+  match assoc name fields with
+  | Some (`Bool value) -> value
+  | _ -> failwith ("missing bool field: " ^ name)
+;;
+
 let assert_equal label expected actual =
   if not (String.equal expected actual)
   then
@@ -38,6 +44,88 @@ let assert_int_equal label expected actual =
   then
     failwith
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
+;;
+
+let encrypted_graph_catalog =
+  {|{"graphs":[{"graph-id":"encrypted-1","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}
+;;
+
+let configure_encrypted_graph session =
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"\",\"token\":\"access\"}"}}|})
+;;
+
+let () =
+  let unlocked = ref false in
+  let loaded = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
+      ~load_cached_graph_key:(fun ~graph_id ->
+        loaded := graph_id :: !loaded;
+        Error "not cached")
+      ~graph_unlocked:(fun ~graph_id:_ -> !unlocked)
+      ()
+  in
+  configure_encrypted_graph session;
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    (match assoc "ok" fields with
+     | Some (`Bool true) -> ()
+     | _ -> failwith "encrypted graph selection should succeed");
+    let result = required_assoc "result" fields in
+    if not (required_bool "isGraphEncrypted" result)
+    then failwith "selected encrypted graph must be identified as encrypted";
+    if required_bool "isGraphUnlocked" result
+    then failwith "encrypted graph without a cached key must remain locked";
+    if !loaded <> [ "encrypted-1" ]
+    then failwith "encrypted graph selection must try the offline key cache"
+  | _ -> failwith "selectGraph should return an RPC response"
+;;
+
+let () =
+  let unlocked = ref false in
+  let received = ref None in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
+      ~unlock_graph:(fun _config ~password ->
+        received := Some password;
+        unlocked := true;
+        Ok ())
+      ~graph_unlocked:(fun ~graph_id:_ -> !unlocked)
+      ()
+  in
+  configure_encrypted_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"unlockGraph","payload":"correct horse"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    (match assoc "ok" fields with
+     | Some (`Bool true) -> ()
+     | _ -> failwith "unlockGraph should succeed");
+    if !received <> Some "correct horse"
+    then failwith "unlockGraph must pass the password to the native keyring";
+    let result = required_assoc "result" fields in
+    if not (required_bool "isGraphUnlocked" result)
+    then failwith "successful unlock must update graph state"
+  | _ -> failwith "unlockGraph should return an RPC response"
 ;;
 
 let () =

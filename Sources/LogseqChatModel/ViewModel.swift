@@ -282,6 +282,8 @@ public struct LogseqChatSnapshot: Codable {
     public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
     public let taskStatuses: [LogseqTaskStatus]?
+    public let isGraphEncrypted: Bool?
+    public let isGraphUnlocked: Bool?
 
     public init(
         revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
@@ -289,7 +291,9 @@ public struct LogseqChatSnapshot: Codable {
         selectedGraphId: String? = nil, graphs: [LogseqGraph]? = nil,
         appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
-        taskStatuses: [LogseqTaskStatus]? = nil
+        taskStatuses: [LogseqTaskStatus]? = nil,
+        isGraphEncrypted: Bool? = nil,
+        isGraphUnlocked: Bool? = nil
     ) {
         self.revision = revision
         self.query = query
@@ -304,6 +308,8 @@ public struct LogseqChatSnapshot: Codable {
         self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
         self.taskStatuses = taskStatuses
+        self.isGraphEncrypted = isGraphEncrypted
+        self.isGraphUnlocked = isGraphUnlocked
     }
 }
 
@@ -572,12 +578,14 @@ private struct ImportSnapshotPayload: Encodable {
     let checkpointPath: String
     let metadataBody: String
     let downloadPath: String
+    let isEncrypted: Bool
 }
 
 private struct OpenGraphPayload: Encodable {
     let graphId: String
     let activePath: String
     let checkpointPath: String
+    let isEncrypted: Bool
 }
 
 #if !SKIP
@@ -750,20 +758,6 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
         })
     }
 
-    public func configureAndRefreshForBackground(
-        baseURL: String, token: String, graphID: String? = nil
-    ) async {
-        let baseURL = Self.normalizedBaseURL(baseURL)
-        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let payload = """
-        {"baseUrl":"\(Self.escape(baseURL))","graphId":"\(Self.escape(graphID ?? ""))","token":"\(Self.escape(token))"}
-        """
-        await performAsyncAndWait(
-            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload))
-        )
-        await refreshAndSyncForBackground()
-    }
-
     public func configureAndSelectGraph(
         baseURL: String, token: String, selectedGraphID: String?
     ) async {
@@ -820,9 +814,18 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
         )
     }
 
+    public func unlockGraph(_ password: String) async {
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "unlockGraph", payload: password)
+            )
+        )
+    }
+
     public func bootstrapSelectedGraph(
         graphID: String, baseURL: String, accessToken: String, forceSnapshot: Bool = false,
-        allowSnapshotDownload: Bool = true
+        allowSnapshotDownload: Bool = true, isEncrypted: Bool = false
     ) async -> Bool {
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(code: "database_not_open", message: "Open local storage before syncing")
@@ -844,7 +847,8 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             let openPayload = OpenGraphPayload(
                 graphId: graphID,
                 activePath: activeURL.path,
-                checkpointPath: checkpointURL.path
+                checkpointPath: checkpointURL.path,
+                isEncrypted: isEncrypted
             )
             if !forceSnapshot,
                FileManager.default.fileExists(atPath: activeURL.path),
@@ -875,7 +879,8 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
                 activePath: activeURL.path,
                 checkpointPath: checkpointURL.path,
                 metadataBody: artifact.metadataBody,
-                downloadPath: artifact.filePath
+                downloadPath: artifact.filePath,
+                isEncrypted: isEncrypted
             )
             let payloadData = try JSONEncoder().encode(payload)
             guard let payloadString = String(data: payloadData, encoding: .utf8) else {
@@ -1127,13 +1132,10 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
         performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
     }
 
-    public func refreshAndSyncForBackground() async {
-        isRefreshing = true
-        await performAsyncAndWait(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh")))
-        isRefreshing = false
-        if lastError == nil {
-            await performAsyncAndWait(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending")))
-        }
+    public func syncPendingForBackground() async {
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "syncPending"))
+        )
     }
 
     public func update(block: LogseqBlock, title: String) {
@@ -1201,10 +1203,9 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
         performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "clearRelated")))
     }
 
-    @MainActor public func runRefreshLoop() async {
+    @MainActor public func runPendingSyncLoop() async {
         while !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 300_000_000_000)
-            refresh()
             syncPending()
         }
     }
@@ -1384,7 +1385,9 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             appliedServerT: snapshot.appliedServerT,
             syncConnected: snapshot.syncConnected,
             relatedBlocks: snapshot.relatedBlocks,
-            taskStatuses: snapshot.taskStatuses
+            taskStatuses: snapshot.taskStatuses,
+            isGraphEncrypted: snapshot.isGraphEncrypted,
+            isGraphUnlocked: snapshot.isGraphUnlocked
         )
         lastError = nil
     }
@@ -1415,7 +1418,9 @@ private final class LogseqChatCoreExecutor: @unchecked Sendable {
             appliedServerT: result.appliedServerT,
             syncConnected: result.syncConnected,
             relatedBlocks: result.relatedBlocks,
-            taskStatuses: result.taskStatuses ?? snapshot.taskStatuses
+            taskStatuses: result.taskStatuses ?? snapshot.taskStatuses,
+            isGraphEncrypted: result.isGraphEncrypted,
+            isGraphUnlocked: result.isGraphUnlocked
         )
     }
 
