@@ -41,6 +41,22 @@ require_text "scripts/build-android-native.sh" "liblogseq_chat_core.so"
 require_text "scripts/build-android-native.sh" 'Android/app/src/main/jniLibs/$android_abi'
 require_text "scripts/build-android-native.sh" "logseq_chat_call"
 require_text "scripts/build-android-native.sh" "logseq_chat_https_android.c"
+for module in \
+  logseq_chat_edn \
+  logseq_chat_sync_protocol \
+  logseq_chat_sync_state \
+  logseq_chat_sync_checkpoint \
+  logseq_chat_snapshot \
+  logseq_chat_entity_sync \
+  logseq_chat_graph_read \
+  logseq_chat_sse \
+  logseq_chat_logseq_storage_codec \
+  logseq_chat_graph_store \
+  logseq_chat_sync_session; do
+  require_text "scripts/build-android-native.sh" "$module.cmx"
+done
+require_text "scripts/build-android-native.sh" "logseq_chat_graph_store_stubs.c"
+require_text "scripts/build-android-native.sh" "logseq_chat_graph_store_stubs.o"
 require_text "core/logseq_chat_https_android.c" "JNI_OnLoad"
 require_text "core/logseq_chat_https_android.c" "AndroidHttpTransport"
 require_text "Android/app/src/main/kotlin/AndroidHttpTransport.kt" "connectTimeout = 30_000"

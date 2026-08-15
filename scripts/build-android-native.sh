@@ -75,12 +75,34 @@ cd "$build_dir"
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_edn.cmx \
+  "$repo_root/core/logseq_chat_edn.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_protocol.cmx \
+  "$repo_root/core/logseq_chat_sync_protocol.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_state.cmx \
+  "$repo_root/core/logseq_chat_sync_state.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_checkpoint.cmx \
+  "$repo_root/core/logseq_chat_sync_checkpoint.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_snapshot.cmx \
+  "$repo_root/core/logseq_chat_snapshot.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_entity_sync.cmx \
+  "$repo_root/core/logseq_chat_entity_sync.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_read.cmx \
+  "$repo_root/core/logseq_chat_graph_read.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sse.cmx \
+  "$repo_root/core/logseq_chat_sse.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_api.cmx \
   "$repo_root/core/logseq_chat_api.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_http.cmx \
   "$repo_root/core/logseq_chat_http.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
   "$repo_root/core/logseq_chat_rpc.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
+  "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_store.cmx \
+  "$repo_root/core/logseq_chat_graph_store.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_session.cmx \
+  "$repo_root/core/logseq_chat_sync_session.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sqlite.cmx \
   "$repo_root/core/logseq_chat_sqlite.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_mobile_entry.cmx \
@@ -100,9 +122,20 @@ cd "$build_dir"
   threads.cmxa \
   "${dependency_objects[@]}" \
   logseq_chat_model.cmx \
+  logseq_chat_edn.cmx \
+  logseq_chat_sync_protocol.cmx \
+  logseq_chat_sync_state.cmx \
+  logseq_chat_sync_checkpoint.cmx \
+  logseq_chat_snapshot.cmx \
+  logseq_chat_entity_sync.cmx \
+  logseq_chat_graph_read.cmx \
+  logseq_chat_sse.cmx \
   logseq_chat_api.cmx \
   logseq_chat_http.cmx \
   logseq_chat_rpc.cmx \
+  logseq_chat_logseq_storage_codec.cmx \
+  logseq_chat_graph_store.cmx \
+  logseq_chat_sync_session.cmx \
   logseq_chat_sqlite.cmx \
   logseq_chat_mobile_entry.cmx
 
@@ -120,6 +153,14 @@ cd "$build_dir"
   -I "$ndk_root/toolchains/llvm/prebuilt/$ndk_host/sysroot/usr/include" \
   -c "$repo_root/core/logseq_chat_https_android.c" \
   -o logseq_chat_https_android.o
+
+"$ndk_bin/clang" \
+  --target="$target" \
+  -fPIC \
+  -I "$ocaml_lib" \
+  -I "$sqlite_source_dir" \
+  -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
+  -o logseq_chat_graph_store_stubs.o
 
 "$ndk_bin/clang" \
   --target="$target" \
@@ -148,6 +189,7 @@ cd "$build_dir"
   logseq_chat_runtime.o \
   logseq_chat_core_ffi.o \
   logseq_chat_https_android.o \
+  logseq_chat_graph_store_stubs.o \
   datascript_sqlite_stubs.o \
   sqlite3.o \
   -lm \
