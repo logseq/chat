@@ -247,6 +247,37 @@ let assert_uploaded_asset_reconciles_server_uuid () =
      |> List.length)
 ;;
 
+let assert_remote_refresh_preserves_synced_local_asset_metadata () =
+  let model = Logseq_chat_model.create () in
+  Logseq_chat_model.cache_local_asset
+    model
+    ~uuid:"stable-asset"
+    ~title:"photo.jpg"
+    ~asset_type:"jpg"
+    ~asset_size:2048
+    ~asset_checksum:"checksum"
+    ~local_path:"/documents/photo.jpg"
+    ~now:1_776_000_000_000;
+  (match Logseq_chat_model.mark_block_synced model ~uuid:"stable-asset" with
+   | Ok () -> ()
+   | Error message -> failwith message);
+  Logseq_chat_model.upsert_blocks
+    model
+    [ block
+        ~uuid:"stable-asset"
+        ~kind:"block"
+        ~title:"photo.jpg"
+        ~page_id:"journal/2026-08-15"
+        ~created_at:1_776_000_000_000
+    ]
+    ~refresh_time:1_776_000_000_100;
+  let asset = Option.get (Logseq_chat_model.read_block model "stable-asset") in
+  assert_equal "refreshed asset kind" "asset" asset.kind;
+  assert_equal "refreshed asset type" "jpg" (Option.get asset.asset_type);
+  assert_equal "refreshed asset checksum" "checksum" (Option.get asset.asset_checksum);
+  assert_equal "refreshed asset path" "/documents/photo.jpg" (Option.get asset.local_path)
+;;
+
 let assert_created_block_reconciles_server_uuid () =
   let model = Logseq_chat_model.create () in
   Logseq_chat_model.cache_local_message
@@ -334,6 +365,7 @@ let () =
   assert_partial_search_result_preserves_journal_relation ();
   assert_task_and_asset_metadata_persist ();
   assert_uploaded_asset_reconciles_server_uuid ();
+  assert_remote_refresh_preserves_synced_local_asset_metadata ();
   assert_created_block_reconciles_server_uuid ();
   assert_remote_refresh_preserves_offline_edit ()
 ;;

@@ -457,6 +457,18 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
               not (String.equal existing.sync_status "synced")
               && String.equal block.sync_status "synced" ->
             existing
+          | Some existing when
+              Option.is_some existing.local_path && Option.is_none block.local_path ->
+            let prefer_local local_value remote_value =
+              match local_value with Some _ -> local_value | None -> remote_value
+            in
+            { block with
+              kind = existing.kind
+            ; asset_type = prefer_local existing.asset_type block.asset_type
+            ; asset_size = prefer_local existing.asset_size block.asset_size
+            ; asset_checksum = prefer_local existing.asset_checksum block.asset_checksum
+            ; local_path = existing.local_path
+            }
           | Some _ | None -> block
         in
         let entity_ref =
