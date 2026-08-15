@@ -3,13 +3,13 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ocaml_demo_root=${LOGSEQ_CHAT_OCAML_DEMO_ROOT:-/Users/tiensonqin/Codes/projects/ocaml-demo}
+toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
 ocaml_version=${LOGSEQ_CHAT_MACOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_MACOS_DEPLOYMENT_TARGET:-14.0}
 configuration=${LOGSEQ_CHAT_MACOS_CONFIGURATION:-release}
 bundle_id=${LOGSEQ_CHAT_MACOS_BUNDLE_ID:-com.logseq.chat}
 toolchain_name="host-$ocaml_version-macos$deployment_target"
-target_prefix="$ocaml_demo_root/_build/macos-toolchain/$toolchain_name"
+target_prefix=${LOGSEQ_CHAT_MACOS_TOOLCHAIN_PREFIX:-$toolchain_root/macos/$toolchain_name}
 triple="arm64-apple-macosx$deployment_target"
 sdk_path=$(xcrun --sdk macosx --show-sdk-path)
 core_build_dir="$repo_root/_build/macos-core"
@@ -37,7 +37,7 @@ case "$configuration" in
 esac
 
 if [[ ${LOGSEQ_CHAT_MACOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
-  echo "configuration=$configuration ocaml-version=$ocaml_version target=$triple toolchain=$toolchain_name"
+  echo "configuration=$configuration ocaml-version=$ocaml_version target=$triple toolchain=$toolchain_name toolchain-root=$toolchain_root toolchain-prefix=$target_prefix"
   exit 0
 fi
 
@@ -66,8 +66,20 @@ while IFS= read -r object; do
   dependency_objects+=("$object")
 done <"$dependency_dir/link-objects.txt"
 sqlite_stub_source=$(<"$dependency_dir/sqlite-stub-source.txt")
+core_fingerprint=$("$repo_root/scripts/apple-core-fingerprint.sh" \
+  "$target_prefix" "$triple" "$sdk_path" "$dependency_dir/.build-fingerprint")
+core_cache_stamp="$core_build_dir/.core-build-fingerprint"
 
-cd "$core_build_dir"
+if [[ -f $core_cache_stamp \
+  && $(<"$core_cache_stamp") == "$core_fingerprint" \
+  && -s $core_object \
+  && -s $ffi_object \
+  && -s $https_object \
+  && -s $sqlite_object \
+  && -s $graph_store_object ]]; then
+  echo "OCaml core cache hit: $core_build_dir"
+else
+  cd "$core_build_dir"
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
@@ -153,6 +165,8 @@ cd "$core_build_dir"
   -I "$ocaml_lib" \
   -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
   -o "$graph_store_object"
+  printf '%s\n' "$core_fingerprint" >"$core_cache_stamp"
+fi
 
 cd "$repo_root"
 swift build \

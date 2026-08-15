@@ -7,7 +7,7 @@
  (synopsis "Logseq chat mobile core backed by DataScript OCaml")
  (allow_empty)
  (depends
-  (ocaml (>= 5.1.0))
+  (ocaml (>= 5.5.0))
   dune
   datascript_ocaml
   datascript-ocaml-native

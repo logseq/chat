@@ -2,12 +2,13 @@
 
 set -euo pipefail
 
-ocaml_demo_root=${LOGSEQ_CHAT_OCAML_DEMO_ROOT:-/Users/tiensonqin/Codes/projects/ocaml-demo}
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+apple_toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
 ocaml_version=${LOGSEQ_CHAT_MACOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_MACOS_DEPLOYMENT_TARGET:-14.0}
 jobs=${LOGSEQ_CHAT_MACOS_BUILD_JOBS:-8}
 toolchain_name="host-$ocaml_version-macos$deployment_target"
-toolchain_root="$ocaml_demo_root/_build/macos-toolchain"
+toolchain_root="$apple_toolchain_root/macos"
 target_prefix="$toolchain_root/$toolchain_name"
 source_dir="$toolchain_root/ocaml-$ocaml_version-macos$deployment_target"
 completion_stamp="$target_prefix/.logseq-chat-toolchain-complete"

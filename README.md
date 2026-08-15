@@ -49,8 +49,12 @@ Build the native macOS Release app, including the OCaml 5.5 DataScript core:
 open .build/macos/LogseqChat.app
 ```
 
-The first build creates a deployment-targeted OCaml toolchain under the
-configured `ocaml-demo` workspace. Later builds reuse it.
+The first Apple build creates a deployment-targeted OCaml 5.5 toolchain under
+`_build/apple-toolchains`. Native dependencies and core objects are keyed by
+compiler, target, and source fingerprints, so later builds reuse them. Set
+`LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT` to share the toolchain cache, or provide
+`LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX`/`LOGSEQ_CHAT_MACOS_TOOLCHAIN_PREFIX` to use
+an existing compatible compiler directly.
 
 ## Testing
 

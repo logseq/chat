@@ -8,13 +8,13 @@ die() {
 }
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ocaml_demo_root=${LOGSEQ_CHAT_OCAML_DEMO_ROOT:-/Users/tiensonqin/Codes/projects/ocaml-demo}
+toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
 team_id=${LOGSEQ_CHAT_SIMULATOR_TEAM_ID:-3K44EUN829}
 sdk_path=$(xcrun --sdk iphonesimulator --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}-simulator"
-target_prefix="$ocaml_demo_root/_build/ios-toolchain/$triple-$ocaml_version"
+target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
 swift_build_dir="$repo_root/.build/arm64-apple-ios-simulator/debug"
 core_build_dir="$repo_root/_build/ios-core/simulator"
 core_object="$core_build_dir/logseq_chat_runtime.o"
@@ -28,8 +28,13 @@ signature_entitlements="$core_build_dir/simulator-signature-entitlements.plist"
 app_dir="$repo_root/.build/LogseqChat.app"
 xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/Debug-iphonesimulator/LogseqChat.app"
 
+if [[ ${LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
+  echo "configuration=debug ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix"
+  exit 0
+fi
+
 if [[ ! -x $target_prefix/bin/ocamlopt.opt ]]; then
-  "$ocaml_demo_root/scripts/bootstrap-ios-ocaml.sh" >/dev/null
+  "$repo_root/scripts/bootstrap-ios-ocaml.sh" simulator >/dev/null
 fi
 
 ocamlopt="$target_prefix/bin/ocamlopt.opt"
@@ -50,8 +55,21 @@ while IFS= read -r object; do
   dependency_objects+=("$object")
 done <"$dependency_dir/link-objects.txt"
 sqlite_stub_source=$(<"$dependency_dir/sqlite-stub-source.txt")
+core_fingerprint=$("$repo_root/scripts/apple-core-fingerprint.sh" \
+  "$target_prefix" "$triple" "$sdk_path" "$dependency_dir/.build-fingerprint")
+core_cache_stamp="$core_build_dir/.core-build-fingerprint"
 
-cd "$core_build_dir"
+if [[ -f $core_cache_stamp \
+  && $(<"$core_cache_stamp") == "$core_fingerprint" \
+  && -s $core_object \
+  && -s $ffi_object \
+  && -s $https_object \
+  && -s $crypto_object \
+  && -s $sqlite_object \
+  && -s $graph_store_object ]]; then
+  echo "OCaml core cache hit: $core_build_dir"
+else
+  cd "$core_build_dir"
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
@@ -168,6 +186,8 @@ cd "$core_build_dir"
   -I "$ocaml_lib" \
   -c "$repo_root/core/logseq_chat_graph_store_stubs.c" \
   -o "$graph_store_object"
+  printf '%s\n' "$core_fingerprint" >"$core_cache_stamp"
+fi
 
 native_link_fingerprint=$(
   shasum -a 256 \

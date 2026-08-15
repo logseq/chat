@@ -28,6 +28,30 @@ ocamlopt="$target_prefix/bin/ocamlopt.opt"
 ocamldep="$target_prefix/bin/ocamldep.opt"
 source_dir="$build_dir/mobile-ocaml-deps-source"
 object_dir="$build_dir/mobile-ocaml-deps"
+cache_stamp="$object_dir/.build-fingerprint"
+
+build_fingerprint=$(
+  {
+    printf '%s\n' \
+      "$datascript_revision" \
+      "$persistent_set_revision" \
+      "$melange_edn_revision" \
+      "$melange_transit_revision" \
+      "$ptime_revision" \
+      "$yojson_revision"
+    "$ocamlopt" -version
+    "$ocamlopt" -config
+    shasum -a 256 "$repo_root/scripts/build-mobile-ocaml-deps.sh"
+  } | shasum -a 256 | cut -d ' ' -f 1
+)
+
+if [[ -f $cache_stamp \
+  && $(<"$cache_stamp") == "$build_fingerprint" \
+  && -s $object_dir/link-objects.txt \
+  && -s $object_dir/sqlite-stub-source.txt ]]; then
+  echo "OCaml dependency cache hit: $object_dir"
+  exit 0
+fi
 
 clone_revision() {
   local url=$1
@@ -216,3 +240,4 @@ done
 
 printf '%s\n' "$datascript_source/sqlite/datascript_sqlite_stubs.c" \
   >"$object_dir/sqlite-stub-source.txt"
+printf '%s\n' "$build_fingerprint" >"$cache_stamp"
