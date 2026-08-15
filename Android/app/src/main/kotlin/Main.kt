@@ -16,6 +16,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -26,6 +29,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.core.app.ActivityCompat
+import com.amplifyframework.ui.authenticator.ui.Authenticator
 
 internal val logger: SkipLogger = SkipLogger(subsystem = "logseq.chat", category = "LogseqChat")
 
@@ -63,10 +67,16 @@ open class MainActivity: AppCompatActivity {
         enableEdgeToEdge()
 
         setContent {
-            val saveableStateHolder = rememberSaveableStateHolder()
-            saveableStateHolder.SaveableStateProvider(true) {
-                PresentationRootView(ComposeContext())
-                SideEffect { saveableStateHolder.removeState(true) }
+            Authenticator(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+            ) {
+                val saveableStateHolder = rememberSaveableStateHolder()
+                saveableStateHolder.SaveableStateProvider(true) {
+                    PresentationRootView(ComposeContext())
+                    SideEffect { saveableStateHolder.removeState(true) }
+                }
             }
         }
 

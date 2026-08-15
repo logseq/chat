@@ -15,4 +15,4 @@ build:
   contents:
     - block: 'dependencies'
       contents:
-        - 'implementation("com.amazonaws:aws-android-sdk-cognitoidentityprovider:2.81.1")'
+        - 'api("com.amplifyframework.ui:authenticator:1.9.2")'

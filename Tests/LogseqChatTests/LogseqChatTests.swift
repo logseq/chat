@@ -8,7 +8,7 @@ import Foundation
         #expect(1 + 2 == 3, "basic test")
     }
 
-    @Test func appleAppUsesAmplifyAuthenticatorInsteadOfCustomLoginUI() throws {
+    @Test func appsUseNativeAmplifyAuthenticatorsInsteadOfCustomLoginUI() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let content = try String(
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/ContentView.swift"),
@@ -26,6 +26,10 @@ import Foundation
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/Skip/CognitoAuthProvider.kt"),
             encoding: .utf8
         )
+        let androidMain = try String(
+            contentsOf: root.appendingPathComponent("Android/app/src/main/kotlin/Main.kt"),
+            encoding: .utf8
+        )
         let skipConfiguration = try String(
             contentsOf: root.appendingPathComponent("Sources/LogseqChat/Skip/skip.yml"),
             encoding: .utf8
@@ -33,19 +37,30 @@ import Foundation
 
         #expect(app.contains("import Authenticator"))
         #expect(app.contains("Authenticator {"))
-        #expect(content.contains("#if SKIP"))
-        #expect(content.contains("LogseqLoginView"))
-        #expect(!content.contains("#if !SKIP\n                LogseqLoginView"))
+        #expect(!content.contains("LogseqLoginView"))
         #expect(!content.contains("field.pat"))
         #expect(provider.contains("import Amplify"))
         #expect(provider.contains("AuthCognitoTokensProvider"))
         #expect(provider.contains("Amplify.Auth.fetchAuthSession()"))
         #expect(provider.contains("tokens.accessToken"))
         #expect(!provider.contains("AWSCognitoIdentityUserPool"))
-        #expect(androidProvider.contains("CognitoUserPool"))
-        #expect(androidProvider.contains("session.accessToken?.jwtToken"))
-        #expect(skipConfiguration.contains("aws-android-sdk-cognitoidentityprovider"))
-        #expect(!skipConfiguration.contains("com.amplifyframework"))
+        #expect(androidMain.contains("import com.amplifyframework.ui.authenticator.ui.Authenticator"))
+        #expect(androidMain.contains("Authenticator("))
+        #expect(androidMain.contains("windowInsetsPadding(WindowInsets.safeDrawing)"))
+        let androidAuthenticator = try #require(androidMain.range(of: "Authenticator("))
+        let androidContent = try #require(androidMain.range(of: "PresentationRootView("))
+        #expect(androidAuthenticator.lowerBound < androidContent.lowerBound)
+        #expect(androidProvider.contains("import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin"))
+        #expect(androidProvider.contains("import com.amplifyframework.auth.cognito.AWSCognitoAuthSession"))
+        #expect(androidProvider.contains("Amplify.Auth.fetchAuthSession"))
+        #expect(androidProvider.contains("userPoolTokensResult.value?.accessToken"))
+        #expect(androidProvider.contains("Amplify.addPlugin(AWSCognitoAuthPlugin())"))
+        #expect(androidProvider.contains("Amplify.configure("))
+        #expect(androidProvider.contains("\"password_policy\""))
+        #expect(androidProvider.contains("\"min_length\", 8"))
+        #expect(!androidProvider.contains("com.amazonaws"))
+        #expect(skipConfiguration.contains("com.amplifyframework.ui:authenticator:1.9.2"))
+        #expect(!skipConfiguration.contains("aws-android-sdk-cognitoidentityprovider"))
     }
 
     @Test func appleAuthDependsOnlyOnAmplifyCognitoAndAuthenticatorProducts() throws {

@@ -52,7 +52,7 @@ support:
 | Area | Current state |
 | --- | --- |
 | Apple authentication | Amplify UI Swift `Authenticator` with `AWSCognitoAuthPlugin`; access-token session refresh is owned by Amplify |
-| Android authentication | Cognito SDK adapter exists, but the Amplify Authenticator UI and challenge parity are not complete |
+| Android authentication | Amplify UI Android `Authenticator` 1.9.2 with `AWSCognitoAuthPlugin`; built-in challenge flows, access-token retrieval, persisted session restore, and system-inset layout are emulator-verified |
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted Apple sync | Full snapshot import, SSE latest-entity changes, offline-first local writes, self-echo reconciliation, and durable cursor are implemented and device-verified |
@@ -67,8 +67,10 @@ support:
 Logseq Chat will use the native Amplify Authenticator component rather than
 implementing username, password, challenge, and account-recovery screens itself.
 On Apple platforms this is Amplify UI Swift's `Authenticator` with Amplify Swift
-and `AWSCognitoAuthPlugin`. Android will use the corresponding native Amplify UI
-Authenticator behind the same app-level auth interface. The app will not open
+and `AWSCognitoAuthPlugin`. Android uses Amplify UI Android's Compose
+`Authenticator` with `AWSCognitoAuthPlugin` behind the same app-level auth
+interface. Its Gradle dependency is the Authenticator module rather than the
+Amplify umbrella, API, Storage, or DataStore modules. The app will not open
 Cognito Managed Login, Hosted UI, an embedded web view, or the system browser.
 
 Logseq Chat is a Skip application, so authentication is exposed to shared app code
@@ -598,4 +600,6 @@ The implementation is complete when automated integration tests demonstrate:
 - [melange-edn: native OCaml, js_of_ocaml, and Melange EDN](https://github.com/RCmerci/melange-edn)
 - [Amplify Swift sign-in](https://docs.amplify.aws/swift/frontend/auth/sign-in/)
 - [Amplify Swift session and Cognito token access](https://docs.amplify.aws/swift/frontend/auth/manage-user-sessions/)
+- [Amplify UI Android Authenticator](https://ui.docs.amplify.aws/android/connected-components/authenticator)
+- [Amplify Android session and Cognito token access](https://docs.amplify.aws/android/frontend/auth/manage-user-sessions/)
 - [Amazon Cognito User Pool authentication flows](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-authentication-flow-methods.html)

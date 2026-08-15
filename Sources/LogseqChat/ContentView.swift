@@ -131,19 +131,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var rootContent: some View {
-        #if SKIP
-        Group {
-            if authentication.state == .signedIn {
-                authenticatedContent
-            } else {
-                LogseqLoginView(authentication: authentication, onSignedIn: {
-                    connectWithCurrentAccessToken()
-                })
-            }
-        }
-        #else
         authenticatedContent
-        #endif
     }
 
     private var graphPicker: some View {
@@ -1258,53 +1246,7 @@ private struct ConnectionSettingsView: View {
     }
 }
 
-private struct LogseqLoginView: View {
-    let authentication: LogseqAuthenticationStore
-    let onSignedIn: () -> Void
-    @State private var username = ""
-    @State private var password = ""
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Text("Sign in to Logseq")
-                .font(.title2.weight(.semibold))
-            TextField("Email", text: $username)
-                .platformLoginTextInput()
-                .accessibilityIdentifier("field.email")
-            SecureField("Password", text: $password)
-                .accessibilityIdentifier("field.password")
-            if let message = authentication.errorMessage {
-                Text(message)
-                    .foregroundStyle(.red)
-            }
-            Button(authentication.state == .signingIn ? "Signing In…" : "Sign In") {
-                Task {
-                    await authentication.signIn(username: username, password: password)
-                    if authentication.state == .signedIn {
-                        password = ""
-                        onSignedIn()
-                    }
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(authentication.state == .signingIn)
-            .accessibilityIdentifier("button.sign-in")
-        }
-        .padding(32)
-    }
-}
-
 extension View {
-    @ViewBuilder public func platformLoginTextInput() -> some View {
-        #if os(iOS) || SKIP
-        self
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-        #else
-        self
-        #endif
-    }
-
     @ViewBuilder public func platformGlassButtonStyle() -> some View {
         #if !SKIP
         if #available(iOS 26.0, macOS 26.0, *) {

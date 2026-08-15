@@ -1,104 +1,118 @@
 package logseq.chat
 
 import android.content.Context
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.CognitoDevice
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.CognitoUserPool
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.CognitoUserSession
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.continuations.AuthenticationContinuation
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.continuations.AuthenticationDetails
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.continuations.ChallengeContinuation
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.continuations.MultiFactorAuthenticationContinuation
-import com.amazonaws.mobileconnectors.cognitoidentityprovider.handlers.AuthenticationHandler
-import com.amazonaws.regions.Regions
+import com.amplifyframework.auth.cognito.AWSCognitoAuthPlugin
+import com.amplifyframework.auth.cognito.AWSCognitoAuthSession
+import com.amplifyframework.core.Amplify
+import com.amplifyframework.core.configuration.AmplifyOutputs
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import logseq.chat.model.LogseqCognitoProviding
+import org.json.JSONArray
+import org.json.JSONObject
 
 class CognitoAuthProvider(
-    private val region: String,
-    private val userPoolId: String,
-    private val appClientId: String
+    region: String,
+    userPoolId: String,
+    appClientId: String
 ) : LogseqCognitoProviding {
-    private val userPool: CognitoUserPool by lazy {
+    init {
         require(region.isNotBlank() && userPoolId.isNotBlank() && appClientId.isNotBlank()) {
             "The native Cognito app client is not configured"
         }
-        CognitoUserPool(
-            requireNotNull(context) { "Cognito provider was not initialized" },
-            userPoolId,
-            appClientId,
-            null,
-            Regions.fromName(region)
-        )
     }
 
-    override suspend fun accessToken(): String? {
-        val session = session(username = null, password = null) ?: return null
-        return session.accessToken?.jwtToken
-            ?: throw IllegalStateException("Cognito did not return an access token")
-    }
+    override suspend fun accessToken(): String? =
+        suspendCancellableCoroutine { continuation ->
+            Amplify.Auth.fetchAuthSession(
+                { result ->
+                    val session = result as? AWSCognitoAuthSession
+                    if (!continuation.isActive) return@fetchAuthSession
+                    if (session == null || !session.isSignedIn) {
+                        continuation.resume(null)
+                    } else {
+                        val token = session.userPoolTokensResult.value?.accessToken
+                        if (token == null) {
+                            continuation.resumeWithException(
+                                IllegalStateException("Cognito did not return an access token")
+                            )
+                        } else {
+                            continuation.resume(token)
+                        }
+                    }
+                },
+                { error ->
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            )
+        }
 
     override suspend fun signIn(username: String, password: String): String {
-        val session = session(username, password)
-            ?: throw IllegalStateException("Cognito did not return a user session")
-        return session.accessToken?.jwtToken
-            ?: throw IllegalStateException("Cognito did not return an access token")
+        suspendCancellableCoroutine<Unit> { continuation ->
+            Amplify.Auth.signIn(
+                username,
+                password,
+                { result ->
+                    if (!continuation.isActive) return@signIn
+                    if (result.isSignedIn) {
+                        continuation.resume(Unit)
+                    } else {
+                        continuation.resumeWithException(
+                            IllegalStateException("Continue sign-in with Amplify Authenticator")
+                        )
+                    }
+                },
+                { error ->
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+            )
+        }
+        return accessToken() ?: throw IllegalStateException("Cognito did not return an access token")
     }
 
     override suspend fun signOut() {
-        userPool.currentUser.signOut()
+        suspendCancellableCoroutine<Unit> { continuation ->
+            Amplify.Auth.signOut {
+                if (continuation.isActive) continuation.resume(Unit)
+            }
+        }
     }
 
-    private suspend fun session(username: String?, password: String?): CognitoUserSession? =
-        suspendCancellableCoroutine { continuation ->
-            val user = if (username == null) userPool.currentUser else userPool.getUser(username)
-            user.getSessionInBackground(object : AuthenticationHandler {
-                override fun onSuccess(session: CognitoUserSession, device: CognitoDevice?) {
-                    if (continuation.isActive) continuation.resume(session)
-                }
-
-                override fun getAuthenticationDetails(
-                    authenticationContinuation: AuthenticationContinuation,
-                    userId: String?
-                ) {
-                    if (username == null || password == null) {
-                        if (continuation.isActive) continuation.resume(null)
-                        return
-                    }
-                    authenticationContinuation.setAuthenticationDetails(
-                        AuthenticationDetails(username, password, null)
-                    )
-                    authenticationContinuation.continueTask()
-                }
-
-                override fun getMFACode(continuation: MultiFactorAuthenticationContinuation) {
-                    failUnsupportedChallenge()
-                }
-
-                override fun authenticationChallenge(continuation: ChallengeContinuation) {
-                    failUnsupportedChallenge()
-                }
-
-                override fun onFailure(error: Exception) {
-                    if (continuation.isActive) continuation.resumeWithException(error)
-                }
-
-                private fun failUnsupportedChallenge() {
-                    if (continuation.isActive) {
-                        continuation.resumeWithException(
-                            IllegalStateException("This account requires an additional sign-in challenge")
-                        )
-                    }
-                }
-            })
-        }
-
     companion object {
-        private var context: Context? = null
+        private const val configurationAsset = "logseq/chat/Resources/logseq-auth.json"
+
+        @Volatile
+        private var configured = false
 
         fun initialize(context: Context) {
-            this.context = context.applicationContext
+            synchronized(this) {
+                if (configured) return
+                val configuration = context.assets.open(configurationAsset)
+                    .bufferedReader()
+                    .use { JSONObject(it.readText()) }
+                val passwordPolicy = JSONObject()
+                    .put("min_length", 8)
+                    .put("require_lowercase", true)
+                    .put("require_numbers", true)
+                    .put("require_symbols", true)
+                    .put("require_uppercase", true)
+                val auth = JSONObject()
+                    .put("aws_region", configuration.getString("region"))
+                    .put("user_pool_id", configuration.getString("userPoolId"))
+                    .put("user_pool_client_id", configuration.getString("appClientId"))
+                    .put("password_policy", passwordPolicy)
+                    .put("standard_required_attributes", JSONArray().put("email"))
+                    .put("user_verification_types", JSONArray().put("email"))
+                    .put("unauthenticated_identities_enabled", false)
+                val outputs = JSONObject()
+                    .put("version", "1.1")
+                    .put("auth", auth)
+
+                Amplify.addPlugin(AWSCognitoAuthPlugin())
+                Amplify.configure(AmplifyOutputs.fromString(outputs.toString()), context.applicationContext)
+                configured = true
+            }
         }
     }
 }

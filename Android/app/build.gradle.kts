@@ -10,6 +10,7 @@ skip {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     testImplementation(kotlin("test-junit"))
     testImplementation("org.json:json:20251224")
 }
@@ -35,6 +36,7 @@ android {
     namespace = group as String
     compileSdk = libs.versions.android.sdk.compile.get().toInt()
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
         targetCompatibility = JavaVersion.toVersion(libs.versions.jvm.get())
     }
