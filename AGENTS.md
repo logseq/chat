@@ -1,6 +1,6 @@
 # Logseq Chat
 
-Skip dual-platform (iOS/Android) client with an OCaml DataScript core. Canonical setup is in `README.md`.
+Logseq Chat is a Skip dual-platform (iOS/Android) client with an OCaml DataScript core. Canonical setup is in `README.md`.
 
 ## Cursor Cloud specific instructions
 
