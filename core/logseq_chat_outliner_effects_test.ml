@@ -8,9 +8,9 @@ let assert_bool label value = if not value then fail label
 
 let block ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
   Model.
-    { uuid; kind = "block"; title; page_id = "page"; parent_id; order
+    { uuid; title; page_id = "page"; parent_id; order
     ; created_at = 0; updated_at = 0; sync_status = "synced"; tags = []
-    ; references = []; status = None; asset_type = None; asset_size = None
+    ; references = []; breadcrumbs = []; status = None; is_asset = false; asset_type = None; asset_size = None
     ; asset_checksum = None; local_path = None; journal = None }
 ;;
 
@@ -21,7 +21,7 @@ let context =
         ; block ~order:(Some "a1") "second" "Second"
         ; block ~order:(Some "a2") "third" "Third"
         ]
-    ; pages = []
+    ; pages = []; tags = []
     }
 ;;
 
@@ -191,7 +191,7 @@ let () =
           ; block ~order:(Some "a0") "ordered" "Ordered"
           ; block ~order:None "a" "A"
           ]
-      ; pages = []
+      ; pages = []; tags = []
       }
   in
   assert_bool "siblings sort ordered values before missing values and then by UUID"
@@ -266,7 +266,7 @@ let status ?ident uuid =
 let context_with_status status =
   State.
     { blocks = [ { (block "task" "Task") with status = Some status } ]
-    ; pages = []
+    ; pages = []; tags = []
     }
 ;;
 

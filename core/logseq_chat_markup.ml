@@ -10,7 +10,6 @@ type emphasis =
 
 type node_target =
   { uuid : string
-  ; kind : string
   ; title : string
   }
 
@@ -34,7 +33,7 @@ let rec debug_string = function
   | Text value -> Printf.sprintf "Text(%S)" value
   | Code value -> Printf.sprintf "Code(%S)" value
   | Node_ref target ->
-    Printf.sprintf "Node(%S,%S,%S)" target.uuid target.kind target.title
+    Printf.sprintf "Node(%S,%S)" target.uuid target.title
   | Tag_ref target -> Printf.sprintf "Tag(%S,%S)" target.uuid target.title
   | Emphasis (_, children) ->
     Printf.sprintf "Emphasis([%s])" (String.concat ";" (List.map debug_string children))
@@ -69,7 +68,6 @@ let rec node_to_yojson = function
     `Assoc
       [ "type", `String "nodeReference"
       ; "uuid", `String target.uuid
-      ; "kind", `String target.kind
       ; "title", `String target.title
       ]
   | Tag_ref target ->
@@ -175,7 +173,7 @@ and convert_node ~source ~references ~tags node position =
     let value = node_name link in
     (match find_summary references value with
      | Some summary ->
-       [ Node_ref { uuid = summary.uuid; kind = summary.kind; title = summary.title } ]
+       [ Node_ref { uuid = summary.uuid; title = summary.title } ]
      | None -> raw ())
   | Tag children ->
     let value =
@@ -197,7 +195,7 @@ and convert_node ~source ~references ~tags node position =
      | Page_ref value ->
        (match find_summary references value with
         | Some summary ->
-          [ Node_ref { uuid = summary.uuid; kind = summary.kind; title = summary.title } ]
+          [ Node_ref { uuid = summary.uuid; title = summary.title } ]
         | None -> raw ())
      | _ ->
        [ Link

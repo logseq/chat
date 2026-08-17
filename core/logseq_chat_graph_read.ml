@@ -52,19 +52,40 @@ let has_ref db eid attr target_eid =
   |> Seq.exists (fun datom -> Ds_value.ref_eid db attr datom.v = Some target_eid)
 ;;
 
+let ref_eids db eid attr =
+  Datascript.datoms db Eavt ~e:eid ~a:attr ()
+  |> Seq.filter_map (fun datom -> Ds_value.ref_eid db attr datom.v)
+  |> List.of_seq
+;;
+
+let class_descendants db root_eid =
+  let rec visit seen = function
+    | [] -> seen
+    | eid :: rest when Int_set.mem eid seen -> visit seen rest
+    | eid :: rest ->
+      let children =
+        Ds_value.datoms_by_ref db Aevt "logseq.property.class/extends" eid
+        |> Seq.map (fun datom -> datom.e)
+        |> List.of_seq
+      in
+      visit (Int_set.add eid seen) (List.rev_append children rest)
+  in
+  visit Int_set.empty [ root_eid ]
+;;
+
+let entity_is_instance_of db eid class_ident =
+  match Datascript.entid db "db/ident" (Keyword class_ident) with
+  | None -> false
+  | Some class_eid ->
+    let accepted_classes = class_descendants db class_eid in
+    ref_eids db eid "block/tags"
+    |> List.exists (fun tag_eid -> Int_set.mem tag_eid accepted_classes)
+;;
+
 let entity_summary decrypt_title db eid =
   match uuid_for_eid db eid, protected_string decrypt_title (value db eid "block/title") with
   | Some uuid, Some title ->
-    let is_tag =
-      Datascript.entid db "db/ident" (Keyword "logseq.class/Tag")
-      |> Option.exists (has_ref db eid "block/tags")
-    in
-    let kind =
-      if is_tag then "tag"
-      else if Option.is_some (value db eid "block/name") then "page"
-      else "block"
-    in
-    Some Model.{ uuid; kind; title }
+    Some Model.{ uuid; title }
   | _ -> None
 ;;
 
@@ -88,8 +109,28 @@ let visible_tag_summaries decrypt_title db eid =
       if internal
       then None
       else
-        Option.bind (entity_summary decrypt_title db tag_eid) (fun summary ->
-          if String.equal summary.Model.kind "tag" then Some summary else None)))
+        if entity_is_instance_of db tag_eid "logseq.class/Tag"
+        then entity_summary decrypt_title db tag_eid
+        else None))
+;;
+
+let breadcrumbs decrypt_title db eid =
+  let rec collect seen eid acc =
+    if Int_set.mem eid seen
+    then acc
+    else
+      let seen = Int_set.add eid seen in
+      match Ds_value.optional_ref_eid db "block/parent" (value db eid "block/parent") with
+      | None -> acc
+      | Some parent_eid ->
+        let acc =
+          match entity_summary decrypt_title db parent_eid with
+          | Some summary -> summary :: acc
+          | None -> acc
+        in
+        collect seen parent_eid acc
+  in
+  collect Int_set.empty eid []
 ;;
 
 let status_for_eid decrypt_title db eid =
@@ -132,10 +173,14 @@ let block decrypt_title db eid =
     in
     let page_eid = Ds_value.optional_ref_eid db "block/page" (value db eid "block/page") in
     let page_id = Option.bind page_eid (uuid_for_eid db) |> Option.value ~default:"" in
+    let breadcrumbs = breadcrumbs decrypt_title db eid in
     let journal =
       Option.bind page_eid (fun page_eid ->
         match
-          protected_string decrypt_title (value db page_eid "block/title"),
+          List.find_opt
+            (fun (summary : Model.entity_summary) -> String.equal summary.uuid page_id)
+            breadcrumbs
+          |> Option.map (fun (summary : Model.entity_summary) -> summary.title),
           int_value (value db page_eid "block/journal-day")
         with
         | Some title, Some day -> Some (title, day)
@@ -148,17 +193,11 @@ let block decrypt_title db eid =
       Option.value (int_value (value db eid "block/updated-at")) ~default:created_at
     in
     let status = status_for_eid decrypt_title db eid in
+    let is_asset = entity_is_instance_of db eid "logseq.class/Asset" in
     let asset_type = string_value (value db eid "logseq.property.asset/type") in
-    let kind =
-      match asset_type, status with
-      | Some _, _ -> "asset"
-      | None, Some _ -> "task"
-      | None, None -> "block"
-    in
     Some
       Model.
         { uuid
-        ; kind
         ; title
         ; page_id
         ; parent_id
@@ -168,7 +207,9 @@ let block decrypt_title db eid =
         ; sync_status = "synced"
         ; tags = visible_tag_summaries decrypt_title db eid
         ; references = entity_summaries decrypt_title db eid "block/refs"
+        ; breadcrumbs
         ; status
+        ; is_asset
         ; asset_type
         ; asset_size = int_value (value db eid "logseq.property.asset/size")
         ; asset_checksum = string_value (value db eid "logseq.property.asset/checksum")
@@ -263,6 +304,28 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
   { favorites; recent_pages }
 ;;
 
+let tag_pages ?(decrypt_title = fun value -> Ok value) db =
+  match Datascript.entid db "db/ident" (Keyword "logseq.class/Tag") with
+  | None -> []
+  | Some tag_class_eid ->
+    Ds_value.datoms_by_ref db Aevt "block/tags" tag_class_eid
+    |> List.of_seq
+    |> List.filter_map (fun datom ->
+      let internal =
+        match value db datom.e "db/ident" with
+        | Some (Keyword ident) -> String.starts_with ~prefix:"logseq." ident
+        | _ -> false
+      in
+      if internal then None else page_summary decrypt_title db datom.e)
+    |> List.sort_uniq (fun left right -> String.compare left.uuid right.uuid)
+;;
+
+let node_is_tag db uuid =
+  match Datascript.entid db "block/uuid" (Uuid uuid) with
+  | None -> false
+  | Some eid -> entity_is_instance_of db eid "logseq.class/Tag"
+;;
+
 let compare_blocks left right =
   match left.Model.order, right.Model.order with
   | Some left, Some right -> String.compare left right
@@ -300,7 +363,17 @@ let node_destination ?(decrypt_title = fun value -> Ok value) db uuid =
 ;;
 
 let objects_for_tag ?(decrypt_title = fun value -> Ok value) db tag_uuid =
-  blocks_referencing ~decrypt_title db ~attr:"block/tags" tag_uuid
+  match Datascript.entid db "block/uuid" (Uuid tag_uuid) with
+  | None -> []
+  | Some tag_eid ->
+    class_descendants db tag_eid
+    |> Int_set.to_seq
+    |> Seq.flat_map (Ds_value.datoms_by_ref db Aevt "block/tags")
+    |> Seq.fold_left (fun eids datom -> Int_set.add datom.e eids) Int_set.empty
+    |> Int_set.to_seq
+    |> Seq.filter_map (block decrypt_title db)
+    |> List.of_seq
+    |> List.sort compare_blocks
 ;;
 
 let references_for_node ?(decrypt_title = fun value -> Ok value) db node_uuid =

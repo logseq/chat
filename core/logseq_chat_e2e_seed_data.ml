@@ -4,6 +4,7 @@ let tag_uuid = "e2e00000-0000-4000-8000-000000000001"
 let source_uuid = "e2e00000-0000-4000-8000-000000000002"
 let older_block_uuid = "e2e00000-0000-4000-8000-000000000003"
 let trailing_tag_uuid = "e2e00000-0000-4000-8000-000000000004"
+let child_tag_uuid = "e2e00000-0000-4000-8000-000000000005"
 
 let page_uuid index =
   Printf.sprintf "e2e10000-0000-4000-8000-%012d" index
@@ -23,6 +24,7 @@ let journal_entities =
     let block_title =
       if number = 7 then "E2E Block Target"
       else if number = 1 then "E2E Earlier Journal Block"
+      else if number = 6 then "E2E Child Tag Object"
       else Printf.sprintf "E2E Journal Block %02d" number
     in
     [ Entity
@@ -49,6 +51,9 @@ let journal_entities =
             ; "block/created-at", One_value (Int (20_000 + number))
             ; "block/updated-at", One_value (Int (20_000 + number))
             ]
+            @ (if number = 6
+               then [ "block/tags", Many_values [ Ref_to (Temp_id "e2e-child-tag") ] ]
+               else [])
         }
     ])
   |> List.concat
@@ -88,6 +93,17 @@ let seed conn =
                 ; "block/name", One_value (String "e2e-trailing")
                 ; "block/title", One_value (String "E2E Trailing")
                 ; "block/tags", Many_values [ Ref_to (Temp_id tag_class_temp_id) ]
+                ]
+            }
+        ; Entity
+            { db_id = Some (Temp_id "e2e-child-tag")
+            ; attrs =
+                [ "block/uuid", One_value (Uuid child_tag_uuid)
+                ; "block/name", One_value (String "e2e-child-project")
+                ; "block/title", One_value (String "E2E Child Project")
+                ; "block/tags", Many_values [ Ref_to (Temp_id tag_class_temp_id) ]
+                ; ( "logseq.property.class/extends"
+                  , Many_values [ Ref_to (Temp_id tag_temp_id) ] )
                 ]
             }
         ; Entity

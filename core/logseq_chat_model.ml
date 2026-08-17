@@ -2,7 +2,6 @@ open Datascript
 
 type entity_summary =
   { uuid : string
-  ; kind : string
   ; title : string
   }
 
@@ -17,7 +16,6 @@ type status =
 
 type block =
   { uuid : string
-  ; kind : string
   ; title : string
   ; page_id : string
   ; parent_id : string option
@@ -27,7 +25,9 @@ type block =
   ; sync_status : string
   ; tags : entity_summary list
   ; references : entity_summary list
+  ; breadcrumbs : entity_summary list
   ; status : status option
+  ; is_asset : bool
   ; asset_type : string option
   ; asset_size : int option
   ; asset_checksum : string option
@@ -58,7 +58,6 @@ let one ?unique ?value_type ?(indexed = false) () =
 
 let schema =
   [ "block/uuid", one ~unique:Identity ~value_type:StringType ~indexed:true ()
-  ; "block/kind", one ~value_type:StringType ~indexed:true ()
   ; "block/title", one ~value_type:StringType ()
   ; "block/page-id", one ~value_type:StringType ~indexed:true ()
   ; "block/parent-id", one ~value_type:StringType ()
@@ -68,6 +67,7 @@ let schema =
   ; "block/sync-status", one ~value_type:StringType ~indexed:true ()
   ; "block/tags-json", one ~value_type:StringType ()
   ; "block/references-json", one ~value_type:StringType ()
+  ; "block/breadcrumbs-json", one ~value_type:StringType ()
   ; "block/status-json", one ~value_type:StringType ()
   ; "block/asset-type", one ~value_type:StringType ~indexed:true ()
   ; "block/asset-size", one ~value_type:NumberType ()
@@ -138,7 +138,6 @@ let summaries_json (summaries : entity_summary list) =
        (fun (summary : entity_summary) ->
          `Assoc
            [ "uuid", `String summary.uuid
-           ; "kind", `String summary.kind
            ; "title", `String summary.title
            ])
        summaries)
@@ -151,9 +150,9 @@ let summaries_of_json value =
     List.filter_map
       (function
         | `Assoc fields ->
-          (match List.assoc_opt "uuid" fields, List.assoc_opt "kind" fields, List.assoc_opt "title" fields with
-           | Some (`String uuid), Some (`String kind), Some (`String title) ->
-             Some { uuid; kind; title }
+          (match List.assoc_opt "uuid" fields, List.assoc_opt "title" fields with
+           | Some (`String uuid), Some (`String title) ->
+             Some { uuid; title }
            | _ -> None)
         | _ -> None)
       values
@@ -204,7 +203,6 @@ let read_block model uuid =
     let entity_ref = block_ref uuid in
     Some
       { uuid
-      ; kind = string_attr model.db entity_ref "block/kind" "block"
       ; title = string_attr model.db entity_ref "block/title" ""
       ; page_id = string_attr model.db entity_ref "block/page-id" ""
       ; parent_id = option_string_attr model.db entity_ref "block/parent-id"
@@ -214,7 +212,9 @@ let read_block model uuid =
       ; sync_status = string_attr model.db entity_ref "block/sync-status" "synced"
       ; tags = summaries_of_json (string_attr model.db entity_ref "block/tags-json" "[]")
       ; references = summaries_of_json (string_attr model.db entity_ref "block/references-json" "[]")
+      ; breadcrumbs = summaries_of_json (string_attr model.db entity_ref "block/breadcrumbs-json" "[]")
       ; status = Option.bind (option_string_attr model.db entity_ref "block/status-json") status_of_json
+      ; is_asset = Option.is_some (option_string_attr model.db entity_ref "block/asset-type")
       ; asset_type = option_string_attr model.db entity_ref "block/asset-type"
       ; asset_size = Option.bind (entity_attr_value model.db entity_ref "block/asset-size") value_int
       ; asset_checksum = option_string_attr model.db entity_ref "block/asset-checksum"
@@ -264,8 +264,7 @@ let block_journal_metadata model block =
 ;;
 
 let is_recent_feed_block model block =
-  not (String.equal block.kind "page")
-  && not (String.equal (String.trim block.title) "")
+  not (String.equal (String.trim block.title) "")
   && block.page_id <> ""
   &&
   match block_journal_metadata model block with
@@ -408,8 +407,7 @@ let search model query =
   model.query <- query;
   all_blocks model
   |> List.filter (fun block ->
-    not (String.equal block.kind "page")
-    && not (String.equal (String.trim block.title) ""))
+    not (String.equal (String.trim block.title) ""))
   |> List.sort compare_recent
   |> List.filter (title_matches query)
   |> take 100
@@ -433,7 +431,6 @@ let upsert_statuses model statuses =
           if block_exists model uuid then block_ref uuid else Temp_id ("status-" ^ status.uuid)
         in
         [ Add (entity_ref, "block/uuid", String uuid)
-        ; Add (entity_ref, "block/kind", String "page")
         ; Add (entity_ref, "block/title", String "")
         ; Add (entity_ref, "block/page-id", String "")
         ; Add (entity_ref, "block/created-at", Int 0)
@@ -463,7 +460,7 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
               match local_value with Some _ -> local_value | None -> remote_value
             in
             { block with
-              kind = existing.kind
+              is_asset = existing.is_asset || block.is_asset
             ; asset_type = prefer_local existing.asset_type block.asset_type
             ; asset_size = prefer_local existing.asset_size block.asset_size
             ; asset_checksum = prefer_local existing.asset_checksum block.asset_checksum
@@ -497,7 +494,6 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
           | None -> Option.bind existing_block (fun existing -> existing.order)
         in
         [ Add (entity_ref, "block/uuid", String block.uuid)
-        ; Add (entity_ref, "block/kind", String block.kind)
         ; Add (entity_ref, "block/title", String block.title)
         ; Add (entity_ref, "block/page-id", String page_id)
         ; Add (entity_ref, "block/created-at", Int created_at)
@@ -505,6 +501,7 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
         ; Add (entity_ref, "block/sync-status", String block.sync_status)
         ; Add (entity_ref, "block/tags-json", String (summaries_json block.tags))
         ; Add (entity_ref, "block/references-json", String (summaries_json block.references))
+        ; Add (entity_ref, "block/breadcrumbs-json", String (summaries_json block.breadcrumbs))
         ]
         @ (match block.status with
            | Some status -> [ Add (entity_ref, "block/status-json", String (status_json status)) ]
@@ -559,7 +556,6 @@ let upsert_journal_page ?(title = "") model ~uuid ~journal_day =
   commit
     model
     [ Add (entity_ref, "block/uuid", String uuid)
-    ; Add (entity_ref, "block/kind", String "page")
     ; Add (entity_ref, "page/journal-day", Int journal_day)
     ; Add (entity_ref, "page/title", String title)
     ]
@@ -579,7 +575,6 @@ let cache_local_message model ~uuid ~title ~now =
   upsert_blocks
     model
     [ { uuid
-      ; kind = "block"
       ; title
       ; page_id
       ; parent_id = None
@@ -589,7 +584,9 @@ let cache_local_message model ~uuid ~title ~now =
       ; sync_status = "pending"
       ; tags = []
       ; references = []
+      ; breadcrumbs = []
       ; status = None
+      ; is_asset = false
       ; asset_type = None
       ; asset_size = None
       ; asset_checksum = None
@@ -604,9 +601,9 @@ let cache_local_task model ~uuid ~title ~status ~now =
   let page_id = journal_page_id_for_ms now in
   upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
   upsert_blocks model
-    [ { uuid; kind = "task"; title; page_id; parent_id = None; order = None; created_at = now
-      ; updated_at = now; sync_status = "pending"; tags = []; references = []
-      ; status = Some status; asset_type = None; asset_size = None
+    [ { uuid; title; page_id; parent_id = None; order = None; created_at = now
+      ; updated_at = now; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
+      ; status = Some status; is_asset = false; asset_type = None; asset_size = None
       ; asset_checksum = None; local_path = None; journal = None } ]
     ~refresh_time:now
 ;;
@@ -615,9 +612,9 @@ let cache_local_asset model ~uuid ~title ~asset_type ~asset_size ~asset_checksum
   let page_id = journal_page_id_for_ms now in
   upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
   upsert_blocks model
-    [ { uuid; kind = "asset"; title; page_id; parent_id = None; order = None; created_at = now
-      ; updated_at = now; sync_status = "pending"; tags = []; references = []
-      ; status = None; asset_type = Some asset_type; asset_size = Some asset_size
+    [ { uuid; title; page_id; parent_id = None; order = None; created_at = now
+      ; updated_at = now; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
+      ; status = None; is_asset = true; asset_type = Some asset_type; asset_size = Some asset_size
       ; asset_checksum = Some asset_checksum; local_path = Some local_path; journal = None } ]
     ~refresh_time:now
 ;;
@@ -666,8 +663,8 @@ let reconcile_created_block ?(sync_status = "submitted") model ~local_uuid ~remo
     let reconciled =
       { base with
         uuid = remote_uuid
-      ; kind = local.kind
       ; sync_status
+      ; is_asset = local.is_asset || base.is_asset
       ; asset_type = prefer_local local.asset_type base.asset_type
       ; asset_size = prefer_local local.asset_size base.asset_size
       ; asset_checksum = prefer_local local.asset_checksum base.asset_checksum
@@ -706,8 +703,7 @@ let update_block_status model ~uuid ~status ~now =
   else (
     commit
       model
-      [ Add (block_ref uuid, "block/kind", String "task")
-      ; Add (block_ref uuid, "block/status-json", String (status_json status))
+      [ Add (block_ref uuid, "block/status-json", String (status_json status))
       ; Add (block_ref uuid, "block/updated-at", Int now)
       ; Add (block_ref uuid, "block/sync-status", String "pending")
       ];
@@ -729,8 +725,7 @@ let visible_from model blocks =
   else
     blocks
     |> List.filter (fun block ->
-      not (String.equal block.kind "page")
-      && not (String.equal (String.trim block.title) "")
+      not (String.equal (String.trim block.title) "")
       && title_matches model.query block)
     |> List.sort compare_recent
     |> take 100

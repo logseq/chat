@@ -35,7 +35,6 @@ private let testEmptySnapshotJSON = """
     @Test func failedSyncStatusIsSeparateFromPending() throws {
         let failedBlock = LogseqBlock(
             uuid: "failed",
-            kind: "block",
             title: "Failed",
             pageId: "journal/2026-08-13",
             parentId: nil,
@@ -45,7 +44,6 @@ private let testEmptySnapshotJSON = """
         )
         let pendingBlock = LogseqBlock(
             uuid: "pending",
-            kind: "block",
             title: "Pending",
             pageId: "journal/2026-08-13",
             parentId: nil,
@@ -61,7 +59,7 @@ private let testEmptySnapshotJSON = """
     }
 
     @Test func modelIdentityAndTimestampPresentationAreStable() {
-        let entity = LogseqEntitySummary(uuid: "entity-1", kind: "page", title: "Page")
+        let entity = LogseqEntitySummary(uuid: "entity-1", title: "Page")
         let status = LogseqTaskStatus(
             uuid: "status-1",
             ident: "user.status/waiting",
@@ -70,7 +68,6 @@ private let testEmptySnapshotJSON = """
         )
         let block = LogseqBlock(
             uuid: "block-1",
-            kind: "block",
             title: "Block",
             pageId: "page-1",
             parentId: nil,
@@ -86,6 +83,16 @@ private let testEmptySnapshotJSON = """
         )
         let page = LogseqSidebarPage(uuid: "page-1", title: "Page")
         let candidate = LogseqOutlinerAutocompleteCandidate(label: "Page", value: "page-1")
+        let projection = LogseqNodeProjection(
+            uuid: "node-1",
+            isTag: false,
+            page: page,
+            blocks: [block],
+            relatedBlocks: [],
+            outlinerState: .empty,
+            outlinerRows: [row],
+            outlinerAutocompleteCandidates: []
+        )
 
         #expect(entity.id == entity.uuid)
         #expect(status.id == status.uuid)
@@ -96,7 +103,8 @@ private let testEmptySnapshotJSON = """
         #expect(!block.timeTitle.isEmpty)
         #expect(row.id == block.uuid)
         #expect(page.id == page.uuid)
-        #expect(candidate.id == "Page\u{0}page-1")
+        #expect(candidate.id == "Page|page-1")
+        #expect(projection.id == projection.uuid)
     }
 
     @Test func outlinerAutocompleteUsesTheUnifiedNodeKind() throws {
@@ -104,12 +112,12 @@ private let testEmptySnapshotJSON = """
             LogseqOutlinerAutocomplete.self,
             from: Data(#"{"kind":"node","query":"Project"}"#.utf8)
         )
-        #expect(autocomplete.kind == .node)
+        #expect(autocomplete.kind == LogseqOutlinerAutocompleteKind.node)
         #expect(autocomplete.query == "Project")
     }
 
     @Test func decodesTypedMldocRenderNodesWithoutParsingInSwift() throws {
-        let data = Data(#"{"uuid":"source","kind":"block","title":"See [[target]]","pageId":"page","createdAt":1,"updatedAt":1,"markup":[{"type":"text","text":"See "},{"type":"nodeReference","uuid":"target","kind":"block","title":"Target","children":[]}]}"#.utf8)
+        let data = Data(#"{"uuid":"source","title":"See [[target]]","pageId":"page","createdAt":1,"updatedAt":1,"markup":[{"type":"text","text":"See "},{"type":"nodeReference","uuid":"target","title":"Target","children":[]}]}"#.utf8)
         let block = try JSONDecoder().decode(LogseqBlock.self, from: data)
 
         #expect(block.markup.map(\.type) == [
@@ -117,17 +125,17 @@ private let testEmptySnapshotJSON = """
         ])
         #expect(block.markup[0].text == "See ")
         #expect(block.markup[1].uuid == "target")
-        #expect(block.markup[1].kind == "block")
         #expect(block.markup[1].title == "Target")
     }
 
     @Test func decodesTaskTagsReferencesAndAssetMetadata() throws {
-        let data = Data(##"{"uuid":"asset-1","kind":"asset","title":"photo.jpg","pageId":"journal-1","createdAt":1,"updatedAt":2,"tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}},"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}"##.utf8)
+        let data = Data(##"{"uuid":"asset-1","title":"photo.jpg","pageId":"journal-1","createdAt":1,"updatedAt":2,"tags":[{"uuid":"tag-1","title":"Project"}],"references":[{"uuid":"page-1","title":"Project"}],"status":{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}},"isAsset":true,"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}"##.utf8)
         let block = try JSONDecoder().decode(LogseqBlock.self, from: data)
         #expect(block.tags.first?.title == "Project")
-        #expect(block.references.first?.kind == "page")
+        #expect(block.references.first?.title == "Project")
         #expect(block.status?.icon?.id == "clock")
         #expect(block.status?.icon?.color == "#7c3aed")
+        #expect(block.isAsset)
         #expect(block.assetType == "jpg")
         #expect(block.assetSize == 2048)
         #expect(block.localPath == "/documents/photo.jpg")
@@ -407,7 +415,6 @@ private let testEmptySnapshotJSON = """
         }
         let block = LogseqBlock(
             uuid: "block-1",
-            kind: "block",
             title: "Block",
             pageId: "page-1",
             parentId: "page-1",
@@ -428,11 +435,11 @@ private let testEmptySnapshotJSON = """
         store.loadTagObjects("tag-1")
         store.clearRelated()
 
-        try await waitUntil { recorder.all.count == 11 }
+        try await waitUntil { recorder.all.count >= 11 }
 
         let expectedActionsAndPayloads: [(String, String?)] = [
             ("selectPage", "page-1"),
-            ("openNode", "block-1"),
+            ("openNode", #"{\"uuid\":\"block-1\"}"#),
             ("loadOlderJournals", nil),
             ("clearSelectedPage", nil),
             ("unlockGraph", "secret"),
@@ -492,7 +499,6 @@ private let testEmptySnapshotJSON = """
     @Test @MainActor func updateBlockTitleAppliesCoreSnapshot() async throws {
         let block = LogseqBlock(
             uuid: "block-1",
-            kind: "block",
             title: "Draft title",
             pageId: "page-1",
             parentId: nil,
@@ -513,7 +519,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "block-1",
-                    "kind": "block",
                     "title": "Published title",
                     "pageId": "page-1",
                     "createdAt": 1776000000000,
@@ -694,7 +699,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "remote-1",
-                    "kind": "block",
                     "title": "Remote block",
                     "pageId": "page-1",
                     "createdAt": 1776000000000,
@@ -728,7 +732,6 @@ private let testEmptySnapshotJSON = """
     @Test @MainActor func updateBlockTitleDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
         let block = LogseqBlock(
             uuid: "block-1",
-            kind: "block",
             title: "Draft title",
             pageId: "page-1",
             parentId: nil,
@@ -752,7 +755,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "block-1",
-                    "kind": "block",
                     "title": "Published title",
                     "pageId": "page-1",
                     "createdAt": 1776000000000,
@@ -840,7 +842,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "local-1",
-                    "kind": "block",
                     "title": "Slow local capture",
                     "pageId": "journal/2026-08-13",
                     "createdAt": 1776000000000,
@@ -975,7 +976,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "\(uuid)",
-                    "kind": "block",
                     "title": "Durable capture",
                     "pageId": "journal/2026-08-13",
                     "createdAt": 1776000000000,
@@ -1291,7 +1291,6 @@ private let testEmptySnapshotJSON = """
                     "query": "E2E capture",
                     "blocks": [{
                       "uuid": "\(uuid)",
-                      "kind": "block",
                       "title": "E2E capture responsive",
                       "pageId": "journal/2026-08-13",
                       "createdAt": 1776000000000,
@@ -1320,7 +1319,6 @@ private let testEmptySnapshotJSON = """
                 "query": "",
                 "blocks": [{
                   "uuid": "\(uuid)",
-                  "kind": "block",
                   "title": "E2E capture responsive",
                   "pageId": "journal/2026-08-13",
                   "createdAt": 1776000000000,
@@ -1372,7 +1370,6 @@ private let testEmptySnapshotJSON = """
                     "blocks": [
                       {
                         "uuid": "local-1",
-                        "kind": "block",
                         "title": "E2E capture responsive",
                         "pageId": "journal/2026-08-13",
                         "createdAt": 1776000000000,
@@ -1457,7 +1454,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "new",
-                    "kind": "block",
                     "title": "Newer",
                     "pageId": "journal-today",
                     "parentId": "journal-today",
@@ -1469,7 +1465,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "yesterday",
-                    "kind": "block",
                     "title": "Yesterday",
                     "pageId": "journal-yesterday",
                     "parentId": "journal-yesterday",
@@ -1481,7 +1476,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "old",
-                    "kind": "block",
                     "title": "Older",
                     "pageId": "journal-today",
                     "parentId": "journal-today",
@@ -1532,7 +1526,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "today-new",
-                    "kind": "block",
                     "title": "Today new",
                     "pageId": "journal-today",
                     "createdAt": 300,
@@ -1542,7 +1535,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "yesterday",
-                    "kind": "block",
                     "title": "Yesterday",
                     "pageId": "journal-yesterday",
                     "createdAt": 200,
@@ -1552,7 +1544,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "today-old",
-                    "kind": "block",
                     "title": "Today old",
                     "pageId": "journal-today",
                     "createdAt": 100,
@@ -1580,7 +1571,7 @@ private let testEmptySnapshotJSON = """
         #expect(store.sections[0].blocks.map(\.uuid) == ["yesterday"])
         #expect(store.sections[1].id == "20260813")
         #expect(store.sections[1].blocks.map(\.uuid) == ["today-old", "today-new"])
-        #expect(store.sections.flatMap(\.blocks).allSatisfy { $0.kind == "block" })
+        #expect(store.sections.flatMap(\.blocks).count == 3)
     }
 
     @Test @MainActor func outlinerSectionsUseProjectedRowsForPendingBlocks() async throws {
@@ -1595,7 +1586,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "authoritative",
-                    "kind": "block",
                     "title": "Authoritative",
                     "pageId": "journal-today",
                     "createdAt": 100,
@@ -1608,7 +1598,6 @@ private let testEmptySnapshotJSON = """
                   {
                     "block": {
                       "uuid": "authoritative",
-                      "kind": "block",
                       "title": "Authoritative",
                       "pageId": "journal-today",
                       "createdAt": 100,
@@ -1623,7 +1612,6 @@ private let testEmptySnapshotJSON = """
                   {
                     "block": {
                       "uuid": "pending-enter",
-                      "kind": "block",
                       "title": "",
                       "pageId": "journal-today",
                       "createdAt": 101,
@@ -1668,7 +1656,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "second-root",
-                    "kind": "block",
                     "title": "Second root",
                     "pageId": "journal-today",
                     "parentId": "journal-today",
@@ -1680,7 +1667,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "other-page",
-                    "kind": "block",
                     "title": "Other page",
                     "pageId": "project-page",
                     "parentId": "project-page",
@@ -1690,7 +1676,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "child",
-                    "kind": "block",
                     "title": "Child",
                     "pageId": "journal-today",
                     "parentId": "first-root",
@@ -1702,7 +1687,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "first-root",
-                    "kind": "block",
                     "title": "First root",
                     "pageId": "journal-today",
                     "parentId": "journal-today",
@@ -1743,7 +1727,6 @@ private let testEmptySnapshotJSON = """
                 "blocks": [
                   {
                     "uuid": "child",
-                    "kind": "block",
                     "title": "Child",
                     "pageId": "project-page",
                     "parentId": "root",
@@ -1753,7 +1736,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "second-root",
-                    "kind": "block",
                     "title": "Second root",
                     "pageId": "project-page",
                     "parentId": "project-page",
@@ -1763,7 +1745,6 @@ private let testEmptySnapshotJSON = """
                   },
                   {
                     "uuid": "root",
-                    "kind": "block",
                     "title": "Root",
                     "pageId": "project-page",
                     "parentId": "project-page",
@@ -1831,7 +1812,7 @@ private let testEmptySnapshotJSON = """
             return outlineSnapshotJSON(blocks: [], appliedServerT: 48192)
         }
         let block = LogseqBlock(
-            uuid: "delete-me", kind: "block", title: "Delete me", pageId: "page",
+            uuid: "delete-me", title: "Delete me", pageId: "page",
             parentId: "page", createdAt: 1, updatedAt: 1, syncStatus: "synced"
         )
 
@@ -1853,7 +1834,7 @@ private let testEmptySnapshotJSON = """
             return outlineSnapshotJSON(blocks: [], appliedServerT: nil)
         }
         let block = LogseqBlock(
-            uuid: "delete-me", kind: "block", title: "Delete me", pageId: "page",
+            uuid: "delete-me", title: "Delete me", pageId: "page",
             parentId: "page", createdAt: 1, updatedAt: 1, syncStatus: "synced"
         )
 
@@ -1904,6 +1885,69 @@ private let testEmptySnapshotJSON = """
         try await waitUntil {
             recorder.all.contains { $0.contains("outlinerEvent") }
         }
+    }
+
+    @Test @MainActor func boundedOutlinerPatchPreservesTheLongPageProjection() async throws {
+        let block = outlineBlockJSON(
+            uuid: "source", parentID: "page", order: "a0", createdAt: 1
+        )
+        let store = LogseqChatStore { request in
+            if request.contains("outlinerEvent") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"",\
+                "blocks":[],"selectedBlock":null,"isSearching":false,\
+                "outlinerState":{"editing":{"uuid":"source","title":"source",\
+                "caretUTF16Offset":6},"selectedBlockIds":[],"autocomplete":null,\
+                "collapsedBlockIds":[],"zoomedBlockIds":[]},\
+                "outlinerRows":[],"isOutlinerPatch":true},"error":null}
+                """
+            }
+            return outlineSnapshotJSON(blocks: [block], appliedServerT: 51)
+        }
+
+        store.search("")
+        try await waitUntil { store.snapshot.blocks.count == 1 }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        try await waitUntil { store.snapshot.outlinerState.editing?.uuid == "source" }
+
+        #expect(store.snapshot.blocks.map(\.uuid) == ["source"])
+        #expect(store.snapshot.outlinerState.editing?.title == "source")
+    }
+
+    @Test @MainActor func boundedTitlePatchUpdatesOnlyTheChangedLongPageRow() async throws {
+        let first = outlineBlockJSON(
+            uuid: "first", parentID: "page", order: "a0", createdAt: 1
+        )
+        let second = outlineBlockJSON(
+            uuid: "second", parentID: "page", order: "a1", createdAt: 2
+        )
+        let store = LogseqChatStore { request in
+            if request.contains("outlinerEvent") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"",\
+                "blocks":[{"uuid":"first","title":"After",\
+                "pageId":"page","parentId":"page","order":"a0","createdAt":1,\
+                "updatedAt":2,"syncStatus":"pending","tags":[],"references":[]}],\
+                "selectedBlock":null,"isSearching":false,\
+                "outlinerState":{"editing":null,"selectedBlockIds":[],\
+                "autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]},\
+                "outlinerRows":[{"block":{"uuid":"first",\
+                "title":"After","pageId":"page","parentId":"page","order":"a0",\
+                "createdAt":1,"updatedAt":2,"syncStatus":"pending","tags":[],\
+                "references":[]},"depth":0,"hasChildren":false,"isCollapsed":false}],\
+                "isOutlinerPatch":true},"error":null}
+                """
+            }
+            return outlineSnapshotJSON(blocks: [first, second], appliedServerT: 51)
+        }
+
+        store.search("")
+        try await waitUntil { store.snapshot.blocks.count == 2 }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "hideKeyboard"))
+        try await waitUntil { store.snapshot.blocks.first?.title == "After" }
+
+        #expect(store.snapshot.blocks.map(\.title) == ["After", "second"])
+        #expect(store.snapshot.outlinerRows.map(\.block.title) == ["After", "second"])
     }
 
     @Test @MainActor func supersededTypingProjectionDoesNotOverwriteTheEditor() async throws {
@@ -2119,7 +2163,7 @@ private let testEmptySnapshotJSON = """
             "outlinerState":{"editing":{"uuid":"child","title":"Draft","caretUTF16Offset":5},
             "selectedBlockIds":["child"],"autocomplete":null,
             "collapsedBlockIds":["root"],"zoomedBlockIds":["root"]},
-            "outlinerRows":[{"block":{"uuid":"root","kind":"block","title":"Root",
+            "outlinerRows":[{"block":{"uuid":"root","title":"Root",
             "pageId":"page","parentId":"page","order":"a0","createdAt":1,"updatedAt":1,
             "syncStatus":"synced"},"depth":0,"hasChildren":true,"isCollapsed":true}],
             "outlinerCommandRevision":2,"outlinerCommands":[{"type":"haptic","style":"impact"}]},
@@ -2145,7 +2189,7 @@ private func outlineBlockJSON(
     createdAt: Int
 ) -> String {
     """
-    {"uuid":"\(uuid)","kind":"block","title":"\(uuid)","pageId":"page",\
+    {"uuid":"\(uuid)","title":"\(uuid)","pageId":"page",\
     "parentId":"\(parentID)","order":"\(order)","createdAt":\(createdAt),\
     "updatedAt":\(createdAt),"syncStatus":"synced"}
     """
@@ -2153,10 +2197,14 @@ private func outlineBlockJSON(
 
 private func outlineSnapshotJSON(blocks: [String], appliedServerT: Int? = 48192) -> String {
     let cursor = appliedServerT.map { String($0) } ?? "null"
+    let rows = blocks.map { block in
+        "{\"block\":\(block),\"depth\":0,\"hasChildren\":false,\"isCollapsed\":false}"
+    }
     return """
     {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"","blocks":[\
     \(blocks.joined(separator: ","))],"selectedBlock":null,"lastRefreshAt":null,\
-    "graphName":"Test","isSearching":false,"appliedServerT":\(cursor)},"error":null}
+    "graphName":"Test","isSearching":false,"appliedServerT":\(cursor),\
+    "outlinerRows":[\(rows.joined(separator: ","))]},"error":null}
     """
 }
 
@@ -2226,7 +2274,6 @@ private func pendingPumpSnapshot(
         "query": "\(query)",
         "blocks": [{
           "uuid": "local-1",
-          "kind": "block",
           "title": "Offline capture",
           "pageId": "journal/2026-08-13",
           "createdAt": 1776000000000,

@@ -227,9 +227,7 @@ struct ContentView: View {
     @State private var composerExpanded = false
     @State private var searchExpanded = false
     @State private var settingsPresented = false
-    #if SKIP
     @State private var graphsPresented = false
-    #endif
     @State private var graphPasswordPresented = false
     @State private var graphPassword = ""
     @State private var graphUnlockInProgress = false
@@ -238,6 +236,7 @@ struct ContentView: View {
     @State private var editingBlock: LogseqBlock?
     @State private var blocksPendingDeletion: [LogseqBlock] = []
     @State private var outlinerDeleteConfirmationPending = false
+    @State private var outlinerKeyboardDismissalPending = false
     @State private var sidebarMotion = SidebarMotionState()
     @State private var appNavigationPath: [AppNavigationRoute] = []
     #if !SKIP
@@ -304,6 +303,11 @@ struct ContentView: View {
         }
         .onChange(of: store.snapshot.outlinerCommandRevision) { _, _ in
             performOutlinerPlatformCommands()
+        }
+        .onChange(of: store.snapshot.outlinerState.editing?.uuid) { _, uuid in
+            if uuid == nil {
+                outlinerKeyboardDismissalPending = false
+            }
         }
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
@@ -405,20 +409,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var rootContent: some View {
-        #if SKIP
         authenticatedContent
-            .sheet(isPresented: $graphsPresented) {
-                GraphsView(
-                    graphs: store.snapshot.graphs ?? [],
-                    databasePath: databasePath,
-                    refresh: { store.refresh() },
-                    open: openManagedGraph,
-                    deleteGraph: deleteManagedGraph
-                )
-            }
-        #else
-        authenticatedContent
-        #endif
     }
 
     private var graphPicker: some View {
@@ -510,33 +501,11 @@ struct ContentView: View {
                         appNavigationDestination(route)
                     }
             }
-            .onAppear {
-                appNavigationPath = store.snapshot.outlinerState.zoomedBlockIds.map {
-                    .outlinerBlock($0)
-                }
-            }
-            .onChange(of: store.snapshot.outlinerState.zoomedBlockIds) { _, path in
-                let routes = path.map { AppNavigationRoute.outlinerBlock($0) }
-                if !AppNavigationPathPolicy.containsIndependentDestination(appNavigationPath),
-                   appNavigationPath != routes {
-                    appNavigationPath = routes
-                }
-            }
             .onChange(of: appNavigationPath) { previousPath, path in
-                let steps = OutlinerNavigationPolicy.backStepCount(
-                    presentedPath: AppNavigationPathPolicy.zoomedBlockIDs(path),
-                    modelPath: store.snapshot.outlinerState.zoomedBlockIds
-                )
-                for _ in 0..<steps {
-                    store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
-                }
-                if AppNavigationPathPolicy.containsNode(previousPath),
-                   !AppNavigationPathPolicy.containsNode(path) {
-                    store.clearSelectedPage()
-                }
-                if AppNavigationPathPolicy.containsTag(previousPath),
-                   !AppNavigationPathPolicy.containsTag(path) {
-                    store.clearRelated()
+                let closedNodes = AppNavigationPathPolicy.nodeCount(previousPath)
+                    - AppNavigationPathPolicy.nodeCount(path)
+                if closedNodes > 0 {
+                    for _ in 0..<closedNodes { store.closeNode() }
                 }
             }
             #if os(iOS)
@@ -550,68 +519,68 @@ struct ContentView: View {
     #if !SKIP
     @ViewBuilder private func appNavigationDestination(_ route: AppNavigationRoute) -> some View {
         switch route {
-        case let .outlinerBlock(uuid):
-            outlinerNavigationDestination(uuid: uuid)
-        case let .node(uuid, _):
-            nodeNavigationDestination(uuid: uuid)
-        case let .tag(uuid):
-            tagNavigationDestination(uuid: uuid)
-        case .graphs:
-            GraphsView(
-                graphs: store.snapshot.graphs ?? [],
-                databasePath: databasePath,
-                refresh: { store.refresh() },
-                open: openManagedGraph,
-                deleteGraph: deleteManagedGraph
-            )
+        case let .node(uuid): nodeNavigationDestination(uuid: uuid)
         }
     }
 
     private func nodeNavigationDestination(uuid: String) -> some View {
         Group {
-            if store.snapshot.selectedPage == nil {
+            if let projection = store.snapshot.nodeRoutes.last(where: { $0.uuid == uuid }) {
+                nodeProjectionContent(projection)
+            } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                primaryContent
             }
         }
         .background(appBackground)
-        .navigationTitle(markupTargetTitle(uuid: uuid) ?? store.snapshot.selectedPage?.title ?? "Node")
+        .navigationTitle(nodeProjectionTitle(uuid: uuid))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
     }
 
-    private func tagNavigationDestination(uuid: String) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                RelatedBlocksSection(
-                    title: "Objects",
-                    emptyTitle: "No objects",
-                    blocks: store.snapshot.relatedBlocks ?? [],
-                    accessibilityIdentifier: "section.tag.objects"
-                )
-            }
-            .padding()
-        }
-        .background(appBackground)
-        .navigationTitle(markupTargetTitle(uuid: uuid).map { "#\($0)" } ?? "Tag")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-    }
-
-    private func outlinerNavigationDestination(uuid: String) -> some View {
-        primaryContent
-            .background(appBackground)
-            .navigationTitle(
-                store.snapshot.blocks.first(where: { $0.uuid == uuid })?.title
-                    ?? "Untitled block"
+    @ViewBuilder private func nodeProjectionContent(_ projection: LogseqNodeProjection) -> some View {
+        if projection.isTag {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+            RelatedBlocksSection(
+                title: "Tagged nodes",
+                emptyTitle: projection.relatedBlocks.isEmpty ? "No tagged nodes" : nil,
+                blocks: projection.relatedBlocks,
+                accessibilityIdentifier: "section.tag.tagged-nodes",
+                onOpenMarkupLink: openMarkupLink
             )
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
+                }
+                .padding()
+            }
+        } else {
+            OutlinerView(
+                rows: projection.outlinerRows,
+                sections: store.sections(for: projection),
+                editing: projection.outlinerState.editing,
+                selectedBlockIDs: Set(projection.outlinerState.selectedBlockIds),
+                statuses: availableTaskStatuses,
+                error: store.lastError,
+                hasOlderJournals: false,
+                topPadding: 16,
+                bottomPadding: blockListContentBottomPadding,
+                sendEvent: store.outlinerEvent,
+                onBeginInteraction: beginOutlinerInteraction,
+                onZoomBlock: openOutlinerNode,
+                onOpenMarkupLink: openMarkupLink,
+                onLoadOlderJournals: {},
+                relatedTitle: projection.relatedBlocks.isEmpty ? nil : "Linked references",
+                relatedBlocks: projection.relatedBlocks
+            )
+        }
+    }
+
+    private func nodeProjectionTitle(uuid: String) -> String {
+        guard let projection = store.snapshot.nodeRoutes.last(where: { $0.uuid == uuid }) else {
+            return markupTargetTitle(uuid: uuid) ?? "Node"
+        }
+        if projection.isTag { return "#\(projection.page.title)" }
+        return projection.blocks.first(where: { $0.uuid == uuid })?.title ?? projection.page.title
     }
 
     private var navigationMainContent: some View {
@@ -785,6 +754,7 @@ struct ContentView: View {
         guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
+        graphsPresented = false
         searchText = ""
         store.selectPage(page.uuid)
     }
@@ -793,6 +763,7 @@ struct ContentView: View {
         guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
+        graphsPresented = false
         searchText = ""
         store.clearSelectedPage()
     }
@@ -801,19 +772,11 @@ struct ContentView: View {
         guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
-        #if SKIP
         graphsPresented = true
-        #else
-        appNavigationPath.append(.graphs)
-        #endif
     }
 
     private func openManagedGraph(_ graph: LogseqGraph) {
-        #if SKIP
         graphsPresented = false
-        #else
-        appNavigationPath = OutlinerNavigationPolicy.pathAfterBackButton(appNavigationPath)
-        #endif
         searchText = ""
         if graph.id == store.snapshot.selectedGraphId,
            LogseqGraphLocalStorage.isDownloaded(databasePath: databasePath, graphID: graph.id) {
@@ -891,12 +854,20 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var primaryContent: some View {
-        Group {
+        if graphsPresented {
+            GraphsView(
+                graphs: store.snapshot.graphs ?? [],
+                databasePath: databasePath,
+                refresh: { store.refresh() },
+                open: openManagedGraph,
+                deleteGraph: deleteManagedGraph
+            )
+        } else {
             if presentedContentMode == .outliner {
                 OutlinerView(
                     rows: store.snapshot.outlinerRows,
                     sections: store.sections(for: LogseqContentMode.outliner),
-                    editing: outlinerEditing,
+                    editing: presentedOutlinerEditing,
                     selectedBlockIDs: outlinerSelectedBlockIDs,
                     statuses: availableTaskStatuses,
                     error: store.lastError,
@@ -904,18 +875,12 @@ struct ContentView: View {
                     topPadding: blockListContentTopPadding,
                     bottomPadding: blockListContentBottomPadding,
                     sendEvent: store.outlinerEvent,
-                    onBeginInteraction: {
-                        composerExpanded = false
-                        composerFocused = false
-                        editingBlock = nil
-                    },
+                    onBeginInteraction: beginOutlinerInteraction,
+                    onZoomBlock: openOutlinerNode,
                     onOpenMarkupLink: openMarkupLink,
                     onLoadOlderJournals: store.loadOlderJournals,
-                    relatedTitle: RelatedContentPolicy.sectionTitle(
-                        route: appNavigationPath.last,
-                        hasBlocks: !(store.snapshot.relatedBlocks ?? []).isEmpty
-                    ),
-                    relatedBlocks: store.snapshot.relatedBlocks ?? []
+                    relatedTitle: nil,
+                    relatedBlocks: []
                 )
             } else {
                 blockList
@@ -932,16 +897,48 @@ struct ContentView: View {
         return nil
     }
 
+    private func beginOutlinerInteraction() {
+        outlinerKeyboardDismissalPending = false
+        composerExpanded = false
+        composerFocused = false
+        editingBlock = nil
+    }
+
     private func openMarkupLink(_ link: OutlinerMarkupLink) {
         switch link {
-        case let .node(uuid, kind):
+        case let .node(uuid):
+            #if SKIP
             store.openNode(uuid)
-            appNavigationPath.append(.node(uuid, kind))
-        case let .tag(uuid):
-            store.loadTagObjects(uuid)
-            appNavigationPath.append(.tag(uuid))
+            #else
+            openNodeRoute(uuid)
+            #endif
         }
     }
+
+    private func openOutlinerNode(_ uuid: String) {
+        #if SKIP
+        store.outlinerEvent(LogseqOutlinerEvent(type: "zoomIn", uuid: uuid))
+        #else
+        openNodeRoute(uuid)
+        #endif
+    }
+
+    #if !SKIP
+    private func openNodeRoute(_ uuid: String) {
+        let route = AppNavigationRoute.node(uuid)
+        guard AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath) else {
+            #if DEBUG
+            print("LogseqChat debug: ignored duplicate node route target=\(route)")
+            #endif
+            return
+        }
+        store.openNode(uuid)
+        #if DEBUG
+        print("LogseqChat debug: opening node route target=\(route) currentDepth=\(appNavigationPath.count)")
+        #endif
+        appNavigationPath.append(route)
+    }
+    #endif
 
     private var shouldShowComposer: Bool {
         #if SKIP
@@ -967,7 +964,7 @@ struct ContentView: View {
             isSearching: isSearching,
             composerExpanded: composerExpanded,
             hasOutlinerSelection: !outlinerSelectedBlockIDs.isEmpty,
-            isEditingOutlinerBlock: outlinerEditing != nil
+            isEditingOutlinerBlock: presentedOutlinerEditing != nil
         )
     }
 
@@ -993,6 +990,13 @@ struct ContentView: View {
 
     private var outlinerEditing: LogseqOutlinerEditing? {
         store.snapshot.outlinerState.editing
+    }
+
+    private var presentedOutlinerEditing: LogseqOutlinerEditing? {
+        OutlinerKeyboardPresentationPolicy.presentedEditing(
+            coreEditing: outlinerEditing,
+            dismissalPending: outlinerKeyboardDismissalPending
+        )
     }
 
     private var outlinerSelectedBlockIDs: Set<String> {
@@ -1091,11 +1095,7 @@ struct ContentView: View {
     }
 
     private var graphsDestinationPresented: Bool {
-        #if SKIP
         graphsPresented
-        #else
-        AppNavigationPathPolicy.containsGraphs(appNavigationPath)
-        #endif
     }
 
     private func startGraphSync(_ graphID: String) {
@@ -1364,7 +1364,7 @@ struct ContentView: View {
                                 .padding(.horizontal, 4)
                                 .padding(.top, 8)
                             ForEach(section.blocks) { block in
-                                if block.kind == "asset" {
+                                if block.isAsset {
                                     BlockRow(
                                         block: block,
                                         onOpenAsset: { openAsset(block) },
@@ -1419,7 +1419,6 @@ struct ContentView: View {
     }
 
     private func confirmDelete(_ block: LogseqBlock) {
-        guard block.kind == "block" else { return }
         blocksPendingDeletion = [block]
     }
 
@@ -1621,6 +1620,15 @@ struct ContentView: View {
 
     private func handleOutlinerEditorToolbarAction(_ action: OutlinerToolbarAction) {
         guard let eventValue = action.eventValue else { return }
+        if action == .hideKeyboard {
+            outlinerKeyboardDismissalPending = true
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil,
+                from: nil,
+                for: nil
+            )
+        }
         store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: eventValue))
     }
 
@@ -2383,7 +2391,7 @@ private struct BlockRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if block.kind == "asset" {
+            if block.isAsset {
                 AssetPreview(block: block, onOpen: onOpenAsset)
             } else {
                 HStack(alignment: .top, spacing: 8) {
@@ -2423,7 +2431,7 @@ private struct BlockRow: View {
                     tags: block.tags,
                     markup: block.markup
                 ),
-                onOpenTag: { onOpenMarkupLink?(.tag(uuid: $0)) }
+                onOpenTag: { onOpenMarkupLink?(.node(uuid: $0)) }
             )
             HStack(spacing: 6) {
                 Text(verbatim: block.timeTitle)
@@ -2599,7 +2607,7 @@ struct TaskStatusIcon: View {
         self.size = size
     }
 
-    private var kind: String {
+    private var statusStyle: String {
         let value = (status.ident ?? status.icon?.id ?? status.title).lowercased()
         if value.contains("backlog") { return "backlog" }
         if value.contains("in-review") || value.contains("inreview") { return "in-review" }
@@ -2613,7 +2621,7 @@ struct TaskStatusIcon: View {
         if let customColor = status.icon?.color, let color = taskStatusColor(hex: customColor) {
             return color
         }
-        switch kind {
+        switch statusStyle {
         case "backlog": return Color(red: 0.66, green: 0.64, blue: 0.62)
         case "todo": return Color(red: 0.47, green: 0.44, blue: 0.42)
         case "doing": return Color(red: 0.79, green: 0.54, blue: 0.02)
@@ -2625,7 +2633,7 @@ struct TaskStatusIcon: View {
     }
 
     private var iconName: String {
-        switch kind {
+        switch statusStyle {
         case "backlog": return "task_backlog"
         case "doing": return "task_doing"
         case "in-review": return "task_review"

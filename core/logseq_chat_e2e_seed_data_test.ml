@@ -19,6 +19,7 @@ let schema =
   ; "block/order", one ~value_type:StringType ()
   ; "block/refs", many ~value_type:RefType ()
   ; "block/tags", many ~value_type:RefType ()
+  ; "logseq.property.class/extends", many ~value_type:RefType ()
   ; "block/journal-day", one ~value_type:NumberType ~indexed:true ()
   ; "block/created-at", one ~value_type:NumberType ()
   ; "block/updated-at", one ~value_type:NumberType ()
@@ -45,13 +46,8 @@ let () =
      |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid Seed.source_uuid)
    with
    | Some source ->
-     if
-       List.map
-         (fun (item : Logseq_chat_model.entity_summary) -> item.kind)
-         source.references
-       |> List.sort String.compare
-       <> [ "block"; "page" ]
-     then failwith "the E2E source must cover both node reference kinds";
+     if List.length source.references <> 2
+     then failwith "the E2E source must cover both page and block references";
      if
        List.map
          (fun (item : Logseq_chat_model.entity_summary) -> item.uuid, item.title)
@@ -74,5 +70,10 @@ let () =
      in
      if inline_tags <> [ Seed.tag_uuid ]
      then failwith "only the tag encoded in the title may be rendered inline"
-   | None -> failwith "the E2E link source is missing")
+   | None -> failwith "the E2E link source is missing");
+  if
+    Logseq_chat_graph_read.objects_for_tag db Seed.tag_uuid
+    |> List.exists (fun block -> String.equal block.Logseq_chat_model.title "E2E Child Tag Object")
+    |> not
+  then failwith "parent tagged nodes must include objects of extending tags"
 ;;

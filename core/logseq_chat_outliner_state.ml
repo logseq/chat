@@ -132,6 +132,7 @@ type cmd =
 type context =
   { blocks : Model.block list
   ; pages : autocomplete_candidate list
+  ; tags : autocomplete_candidate list
   }
 
 let empty =
@@ -218,7 +219,7 @@ let autocomplete_candidates context request =
       @ List.map
           (fun (block : Model.block) -> { label = block.title; value = block.uuid })
           context.blocks
-    | Tag -> context.pages
+    | Tag -> context.tags
     | Property ->
       List.map (fun value -> { label = value; value }) [ "status"; "tags"; "alias"; "priority" ]
   in
@@ -270,7 +271,7 @@ let complete editing kind value =
   let completion =
     match kind with
     | Node -> Option.map (fun index -> index, "[[" ^ value ^ "]]" ) (last_substring prefix "[[")
-    | Tag -> Option.map (fun index -> index, "#" ^ value) (String.rindex_opt prefix '#')
+    | Tag -> Option.map (fun index -> index, "#[[" ^ value ^ "]]" ) (String.rindex_opt prefix '#')
     | Property ->
       let start = option_value_map (String.rindex_opt prefix '\n') ~default:0 ~f:(fun index -> index + 1) in
       Some (start, value ^ ":: ")

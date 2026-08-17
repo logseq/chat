@@ -369,10 +369,9 @@ let summaries_member name fields =
       (function
         | `Assoc summary ->
           let uuid = string_member "uuid" summary in
-          let kind = string_member "kind" summary in
           let title = string_member "title" summary in
           if uuid = "" || title = "" then None
-          else Some Logseq_chat_model.{ uuid; kind; title }
+          else Some Logseq_chat_model.{ uuid; title }
         | _ -> None)
       values
   | _ -> []
@@ -434,10 +433,6 @@ let block_of_json ?(fallback_time = 0) json =
       Some
         Logseq_chat_model.
           { uuid
-          ; kind =
-              (match string_member "kind" fields with
-               | "" -> "block"
-               | value -> value)
           ; title
           ; page_id = string_member "page-id" fields
           ; parent_id = option_string_member "parent-id" fields
@@ -453,7 +448,9 @@ let block_of_json ?(fallback_time = 0) json =
 	          ; sync_status = "synced"
 	          ; tags = summaries_member "tags" fields
 	          ; references = summaries_member "references" fields
+	          ; breadcrumbs = summaries_member "breadcrumbs" fields
 	          ; status = status_member fields
+	          ; is_asset = false
 	          ; asset_type = option_string_member "asset-type" fields
 	          ; asset_size = (match List.assoc_opt "asset-size" fields with Some (`Int value) -> Some value | _ -> None)
 	          ; asset_checksum = option_string_member "asset-checksum" fields

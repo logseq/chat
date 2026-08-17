@@ -58,7 +58,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = FocusRetainingTextView()
+        let textView = UITextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = .preferredFont(forTextStyle: .body)
@@ -73,6 +73,14 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             location: min(desiredCaretUTF16Offset ?? text.utf16.count, text.utf16.count),
             length: 0
         )
+        DispatchQueue.main.async { [weak textView] in
+            guard let textView,
+                  InlineEditorFocusPolicy.shouldRequestFocus(
+                    isAttachedToWindow: textView.window != nil,
+                    isFirstResponder: textView.isFirstResponder
+                  ) else { return }
+            textView.becomeFirstResponder()
+        }
         return textView
     }
 
@@ -114,7 +122,10 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.activeAccessibilityIdentifier = accessibilityIdentifier
         }
         textView.accessibilityIdentifier = accessibilityIdentifier
-        if textView.window != nil, !textView.isFirstResponder {
+        if InlineEditorFocusPolicy.shouldRequestFocus(
+            isAttachedToWindow: textView.window != nil,
+            isFirstResponder: textView.isFirstResponder
+        ) {
             textView.becomeFirstResponder()
         }
     }
@@ -182,15 +193,6 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 return false
             }
             return true
-        }
-    }
-
-    private final class FocusRetainingTextView: UITextView {
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            if window != nil, !isFirstResponder {
-                becomeFirstResponder()
-            }
         }
     }
 }

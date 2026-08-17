@@ -17,6 +17,7 @@ struct OutlinerView: View {
     let bottomPadding: CGFloat
     let sendEvent: (LogseqOutlinerEvent) -> Void
     let onBeginInteraction: () -> Void
+    let onZoomBlock: (String) -> Void
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
     let onLoadOlderJournals: () -> Void
     let relatedTitle: String?
@@ -57,7 +58,8 @@ struct OutlinerView: View {
                         title: relatedTitle,
                         emptyTitle: nil,
                         blocks: relatedBlocks,
-                        accessibilityIdentifier: "section.node.references"
+                        accessibilityIdentifier: "section.node.linked-references",
+                        onOpenMarkupLink: onOpenMarkupLink
                     )
                     .padding(.top, 26)
                 }
@@ -134,13 +136,24 @@ struct OutlinerView: View {
         OutlinerBlockRow(
             row: row,
             statuses: statuses,
+            renderKey: OutlinerRowRenderKey(
+                row: row,
+                statuses: statuses,
+                isEditing: editing?.uuid == row.block.uuid,
+                isSelected: selectedBlockIDs.contains(row.block.uuid),
+                isSelectionActive: !selectedBlockIDs.isEmpty,
+                editingTitle: editing?.uuid == row.block.uuid
+                    ? editing?.title ?? row.block.title : row.block.title,
+                desiredCaretUTF16Offset: editing?.uuid == row.block.uuid
+                    ? editing?.caretUTF16Offset : nil
+            ),
             isEditing: editing?.uuid == row.block.uuid,
             isSelected: selectedBlockIDs.contains(row.block.uuid),
             isSelectionActive: !selectedBlockIDs.isEmpty,
             editingTitle: editing?.uuid == row.block.uuid
                 ? editing?.title ?? row.block.title : row.block.title,
             onZoom: {
-                sendEvent(LogseqOutlinerEvent(type: "zoomIn", uuid: row.block.uuid))
+                onZoomBlock(row.block.uuid)
             },
             onToggleCollapse: {
                 sendEvent(LogseqOutlinerEvent(type: "toggleCollapsed", uuid: row.block.uuid))
@@ -201,6 +214,7 @@ struct OutlinerView: View {
             },
             onOpenMarkupLink: onOpenMarkupLink
         )
+        .equatable()
     }
 
     private func beginDrag(_ block: LogseqBlock) {
@@ -216,6 +230,7 @@ struct RelatedBlocksSection: View {
     let emptyTitle: String?
     let blocks: [LogseqBlock]
     let accessibilityIdentifier: String
+    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
 
     var body: some View {
         Text(verbatim: title)
@@ -229,18 +244,102 @@ struct RelatedBlocksSection: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        ForEach(blocks) { block in
-            Text(verbatim: block.title)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        ForEach(RelatedBlockGrouping.groups(blocks)) { group in
+            if !group.breadcrumbs.isEmpty {
+                BlockBreadcrumb(
+                    summaries: group.breadcrumbs,
+                    onOpenMarkupLink: onOpenMarkupLink
+                )
+                .padding(.top, 8)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(group.blocks) { block in
+                    RelatedBlockRow(block: block, onOpenMarkupLink: onOpenMarkupLink)
+                    if block.uuid != group.blocks.last?.uuid {
+                        Divider()
+                    }
+                }
+            }
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
         }
     }
 }
 
-struct OutlinerBlockRow: View {
+private struct BlockBreadcrumb: View {
+    let summaries: [LogseqEntitySummary]
+    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
+                if index > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Button(summary.title) {
+                    onOpenMarkupLink(.node(uuid: summary.uuid))
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("breadcrumb.related-blocks")
+    }
+}
+
+private struct RelatedBlockRow: View {
+    let block: LogseqBlock
+    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle()
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 6, height: 6)
+            VStack(alignment: .leading, spacing: 5) {
+                #if !SKIP
+                Text(OutlinerMarkupAttributedString.make(
+                    nodes: block.markup,
+                    fallback: block.title.isEmpty ? "Untitled block" : block.title
+                ))
+                .environment(\.openURL, OpenURLAction { url in
+                    guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
+                    onOpenMarkupLink(link)
+                    return .handled
+                })
+                #else
+                Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
+                #endif
+                BlockTrailingTags(
+                    tags: BlockTagPresentationPolicy.trailingTags(
+                        tags: block.tags,
+                        markup: block.markup
+                    ),
+                    onOpenTag: { onOpenMarkupLink(.node(uuid: $0)) }
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        #if DEBUG
+        .onAppear {
+            print(
+                "LogseqChat debug: related block uuid=\(block.uuid) "
+                    + "markup=\(block.markup.count) refs=\(block.references.count) "
+                    + "tags=\(block.tags.count) breadcrumbs=\(block.breadcrumbs.count)"
+            )
+        }
+        #endif
+    }
+}
+
+struct OutlinerBlockRow: View, Equatable {
     let row: LogseqOutlineRow
     let statuses: [LogseqTaskStatus]
+    nonisolated let renderKey: OutlinerRowRenderKey
     let isEditing: Bool
     let isSelected: Bool
     let isSelectionActive: Bool
@@ -259,6 +358,10 @@ struct OutlinerBlockRow: View {
     let onDrop: (OutlinerDropPlacement) -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
     @State private var measuredHeight: CGFloat = 44
+
+    nonisolated static func == (left: Self, right: Self) -> Bool {
+        left.renderKey == right.renderKey
+    }
 
     private var isCompleted: Bool {
         let ident = row.block.status?.ident ?? ""
@@ -420,7 +523,7 @@ struct OutlinerBlockRow: View {
                         tags: row.block.tags,
                         markup: row.block.markup
                     ),
-                    onOpenTag: { onOpenMarkupLink(.tag(uuid: $0)) }
+                    onOpenTag: { onOpenMarkupLink(.node(uuid: $0)) }
                 )
             }
             syncStatus
@@ -528,14 +631,14 @@ enum OutlinerMarkupAttributedString {
             return value
         case .nodeReference:
             var value = AttributedString(node.title ?? "")
-            if let uuid = node.uuid, let kind = node.kind {
-                value.link = OutlinerMarkupLink.node(uuid: uuid, kind: kind).url
+            if let uuid = node.uuid {
+                value.link = OutlinerMarkupLink.node(uuid: uuid).url
             }
             return value
         case .tagReference:
             var value = AttributedString("#" + (node.title ?? ""))
             if let uuid = node.uuid {
-                value.link = OutlinerMarkupLink.tag(uuid: uuid).url
+                value.link = OutlinerMarkupLink.node(uuid: uuid).url
             }
             return value
         }

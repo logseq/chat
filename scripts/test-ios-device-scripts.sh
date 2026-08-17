@@ -99,7 +99,9 @@ done
 
 for marker in \
   '.maestro/ios-local-graph-setup.yaml' \
-  '__LOGSEQ_CHAT_E2E_SETUP_FLOW__'; do
+  '__LOGSEQ_CHAT_E2E_SETUP_FLOW__' \
+  'sync.checkpoint' \
+  'waiting for the graph snapshot import to finish'; do
   if ! grep -Fq "$marker" "$ios_e2e_script"; then
     echo "not ok - iOS Simulator E2E omits local graph setup: $marker" >&2
     failures=$((failures + 1))

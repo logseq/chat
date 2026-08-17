@@ -14,4 +14,17 @@ import Testing
         #expect(SidebarContentItem.recent.title == "Recent")
         #expect(SidebarContentItem.recent.accessibilityIdentifier == "section.sidebar.recent")
     }
+
+    @Test func graphsAndJournalsReplaceMainContentWithoutPushingNavigation() {
+        #expect(SidebarDestinationPolicy.presentation(
+            for: SidebarContentItem.journals
+        ) == SidebarPrimaryPresentation.journals)
+        #expect(SidebarDestinationPolicy.presentation(
+            for: SidebarContentItem.graphs
+        ) == SidebarPrimaryPresentation.graphs)
+        #expect(SidebarDestinationPolicy.closesSidebar(for: SidebarContentItem.journals))
+        #expect(SidebarDestinationPolicy.closesSidebar(for: SidebarContentItem.graphs))
+        #expect(!SidebarDestinationPolicy.pushesNavigation(for: SidebarContentItem.journals))
+        #expect(!SidebarDestinationPolicy.pushesNavigation(for: SidebarContentItem.graphs))
+    }
 }

@@ -64,28 +64,77 @@ let page_names title =
   find_open 0 []
 ;;
 
+let inline_tag_names title =
+  let length = String.length title in
+  let rec find_open index acc =
+    if index + 2 >= length
+    then List.rev acc
+    else if title.[index] = '#' && title.[index + 1] = '[' && title.[index + 2] = '['
+    then find_close (index + 3) (index + 3) acc
+    else find_open (index + 1) acc
+  and find_close start index acc =
+    if index + 1 >= length
+    then List.rev acc
+    else if title.[index] = ']' && title.[index + 1] = ']'
+    then
+      let name = String.sub title start (index - start) |> String.trim in
+      find_open (index + 2) (if String.equal name "" then acc else name :: acc)
+    else find_close start (index + 1) acc
+  in
+  find_open 0 []
+;;
+
+let eid_for_node db value =
+  match entid db "block/uuid" (Uuid value) with
+  | Some _ as eid -> eid
+  | None ->
+    datoms db Aevt ~a:"block/name" ~v:(String (String.lowercase_ascii value)) ()
+    |> Seq.uncons
+    |> Option.map (fun (datom, _) -> datom.e)
+;;
+
 let refs_for_title db title =
   page_names title
-  |> List.filter_map (fun name ->
-    datoms db Aevt ~a:"block/name" ~v:(String (String.lowercase_ascii name)) ()
-    |> Seq.uncons
-    |> Option.map (fun (datom, _) -> datom.e))
+  |> List.filter_map (eid_for_node db)
+  |> List.sort_uniq compare
+;;
+
+let tag_eids_for_title db title =
+  inline_tag_names title
+  |> List.filter_map (eid_for_node db)
+  |> List.filter (fun eid ->
+    match entid db "db/ident" (Keyword "logseq.class/Tag") with
+    | None -> false
+    | Some tag_class_eid ->
+      datoms db Eavt ~e:eid ~a:"block/tags" ()
+      |> Seq.exists (fun datom -> Ds_value.ref_eid db "block/tags" datom.v = Some tag_class_eid))
   |> List.sort_uniq compare
 ;;
 
 let title_tx db uuid title =
   let entity_ref = lookup uuid in
-  let retract_refs =
+  let retract_refs, retract_inline_tags =
     match entid db "block/uuid" (Uuid uuid) with
-    | None -> []
+    | None -> [], []
     | Some eid ->
-      datoms db Eavt ~e:eid ~a:"block/refs" ()
-      |> List.of_seq
-      |> List.map (fun datom -> Retract (entity_ref, "block/refs", Some datom.v))
+      let refs =
+        datoms db Eavt ~e:eid ~a:"block/refs" ()
+        |> List.of_seq
+        |> List.map (fun datom -> Retract (entity_ref, "block/refs", Some datom.v))
+      in
+      let old_title = Option.value (string_value (one_value db entity_ref "block/title")) ~default:"" in
+      let tags =
+        tag_eids_for_title db old_title
+        |> List.map (fun tag_eid -> Retract (entity_ref, "block/tags", Some (Ref tag_eid)))
+      in
+      refs, tags
   in
+  let tag_eids = tag_eids_for_title db title in
   Add (entity_ref, "block/title", String title)
   :: retract_refs
+  @ retract_inline_tags
   @ List.map (fun eid -> Add (entity_ref, "block/refs", Ref eid)) (refs_for_title db title)
+  @ List.map (fun eid -> Add (entity_ref, "block/tags", Ref eid)) tag_eids
 ;;
 
 let uuid_for_eid db eid =
@@ -114,21 +163,26 @@ let outliner_block db uuid =
 ;;
 
 let insert_tx db (block : Outliner.block) created_at =
-  Entity
-    { db_id = Some (Temp_id ("pending/" ^ block.uuid))
-    ; attrs =
-        [ "block/uuid", One_value (Uuid block.uuid)
-        ; "block/title", One_value (String block.title)
-        ; "block/page", One_value (Ref_to (lookup block.page_uuid))
-        ; "block/parent", One_value (Ref_to (lookup block.parent_uuid))
-        ; "block/order", One_value (String block.order)
-        ; "block/created-at", One_value (Int created_at)
-        ; "block/updated-at", One_value (Int created_at)
-        ]
-    }
-  :: List.map
-       (fun eid -> Add (lookup block.uuid, "block/refs", Ref eid))
-       (refs_for_title db block.title)
+  let many attr eids =
+    match eids with
+    | [] -> []
+    | eids -> [ attr, Many_values (List.map (fun eid -> Ref_to (Entity_id eid)) eids) ]
+  in
+  [ Entity
+      { db_id = Some (Temp_id ("pending/" ^ block.uuid))
+      ; attrs =
+          [ "block/uuid", One_value (Uuid block.uuid)
+          ; "block/title", One_value (String block.title)
+          ; "block/page", One_value (Ref_to (lookup block.page_uuid))
+          ; "block/parent", One_value (Ref_to (lookup block.parent_uuid))
+          ; "block/order", One_value (String block.order)
+          ; "block/created-at", One_value (Int created_at)
+          ; "block/updated-at", One_value (Int created_at)
+          ]
+          @ many "block/refs" (refs_for_title db block.title)
+          @ many "block/tags" (tag_eids_for_title db block.title)
+      }
+  ]
 ;;
 
 let outliner_mutation_tx db = function
@@ -212,22 +266,7 @@ let rec compile db = function
             || Option.is_none (entid db "block/uuid" (Uuid parent_uuid))
     then Error "insert parent or page no longer exists"
     else
-      Ok
-        (Entity
-           { db_id = Some (Temp_id ("pending/" ^ uuid))
-           ; attrs =
-               [ "block/uuid", One_value (Uuid uuid)
-               ; "block/title", One_value (String title)
-               ; "block/page", One_value (Ref_to (lookup page_uuid))
-               ; "block/parent", One_value (Ref_to (lookup parent_uuid))
-               ; "block/order", One_value (String order)
-               ; "block/created-at", One_value (Int created_at)
-               ; "block/updated-at", One_value (Int created_at)
-               ]
-           }
-         :: List.map
-              (fun eid -> Add (lookup uuid, "block/refs", Ref eid))
-              (refs_for_title db title))
+      Ok (insert_tx db Outliner.{ uuid; title; page_uuid; parent_uuid; order } created_at)
   | Move_block { uuid; page_uuid; parent_uuid; order } ->
     (match entid db "block/uuid" (Uuid uuid),
            entid db "block/uuid" (Uuid page_uuid),

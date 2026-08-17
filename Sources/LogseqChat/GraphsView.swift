@@ -8,7 +8,6 @@ struct GraphsView: View {
     let open: (LogseqGraph) -> Void
     let deleteGraph: (LogseqGraph) async throws -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var pendingDeletion: LogseqGraph?
     @State private var deletingGraphID: String?
     @State private var storageRevision = 0
@@ -26,23 +25,21 @@ struct GraphsView: View {
     }
 
     var body: some View {
-        #if SKIP
-        NavigationStack {
-            graphsContent
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                            .accessibilityIdentifier("button.graphs.close")
-                    }
-                }
-        }
-        #else
         graphsContent
-        #endif
     }
 
     private var graphsContent: some View {
             List {
+                Button {
+                    feedbackRevision += 1
+                    refresh()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("button.graphs.refresh")
+
                 Section("Local graphs:") {
                     if localGraphs.isEmpty {
                         Text(verbatim: "No local graphs")
@@ -60,16 +57,6 @@ struct GraphsView: View {
                             remoteGraphRow(graph)
                         }
                     }
-                }
-            }
-            .navigationTitle("All graphs")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Refresh") {
-                        feedbackRevision += 1
-                        refresh()
-                    }
-                    .accessibilityIdentifier("button.graphs.refresh")
                 }
             }
             .confirmationDialog(

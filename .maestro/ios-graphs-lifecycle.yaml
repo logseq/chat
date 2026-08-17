@@ -13,6 +13,9 @@ appId: com.logseq.chat
     id: "link.sidebar.graphs"
 - assertVisible:
     id: "screen.graphs"
+- assertVisible:
+    id: "button.sidebar"
+- assertNotVisible: "Back"
 - tapOn:
     id: "button.graphs.refresh"
 - assertVisible: "Local graphs:"

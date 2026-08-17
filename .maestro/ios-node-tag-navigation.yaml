@@ -21,31 +21,64 @@ appId: com.logseq.chat
 - tapOn: "E2E Page Target"
 - extendedWaitUntil:
     visible:
-      id: "section.node.references"
+      id: "section.node.linked-references"
     timeout: 30000
-- assertVisible: "E2E links.*"
+- assertVisible: "Linked references"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
 - tapOn: "Back"
 - tapOn: "E2E Block Target"
 - extendedWaitUntil:
     visible:
-      id: "section.node.references"
+      id: "section.node.linked-references"
     timeout: 30000
-- assertVisible: "E2E links.*"
+- assertVisible: "Linked references"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
 - tapOn: "Back"
 - tapOn: "#E2E Project"
 - extendedWaitUntil:
     visible:
-      id: "section.tag.objects"
+      id: "section.tag.tagged-nodes"
     timeout: 30000
-- assertVisible: "E2E links.*"
+- assertVisible: "Tagged nodes"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E Child Tag Object"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
+- tapOn: "Back"
+- tapOn: "Edit block E2E Journal Block 08"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.tag"
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- tapOn: "E2E Project"
+- assertNotVisible:
+    id: "toolbar.outliner.autocomplete"
+- tapOn: "Hide keyboard"
+- extendedWaitUntil:
+    visible: "E2E Journal Block 08 #E2E Project"
+    timeout: 10000
+- assertNotVisible: "E2E Journal Block 08 #[[e2e00000-0000-4000-8000-000000000001]]"
+- tapOn: "#E2E Project"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.tagged-nodes"
+    timeout: 30000
+- assertVisible: "E2E Journal Block 08 #E2E Project"
+- assertNotVisible: "e2e10000-0000-4000-8000-000000000007"
+- assertNotVisible: "e2e20000-0000-4000-8000-000000000007"
 - tapOn: "Back"
 - tapOn:
     id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
 - extendedWaitUntil:
     visible:
-      id: "section.tag.objects"
+      id: "section.tag.tagged-nodes"
     timeout: 30000
-- assertVisible: "E2E links.*"
+- assertVisible: "Tagged nodes"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
 - swipe:
     start: 0%, 50%
     end: 75%, 50%
@@ -53,7 +86,7 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.sidebar"
 - assertNotVisible:
-    id: "section.tag.objects"
+    id: "section.tag.tagged-nodes"
 - tapOn:
     id: "button.content-mode"
 - assertVisible:
@@ -70,13 +103,17 @@ appId: com.logseq.chat
     id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
 - extendedWaitUntil:
     visible:
-      id: "section.tag.objects"
+      id: "section.tag.tagged-nodes"
     timeout: 30000
-- assertVisible: "E2E links.*"
+- assertVisible: "Tagged nodes"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
 - tapOn: "Back"
 - tapOn: "#E2E Project"
 - extendedWaitUntil:
     visible:
-      id: "section.tag.objects"
+      id: "section.tag.tagged-nodes"
     timeout: 30000
-- assertVisible: "E2E links.*"
+- assertVisible: "Tagged nodes"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"

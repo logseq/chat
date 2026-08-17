@@ -22,3 +22,22 @@ enum SidebarContentItem: String, CaseIterable {
         }
     }
 }
+
+enum SidebarPrimaryPresentation: Equatable {
+    case journals
+    case graphs
+}
+
+enum SidebarDestinationPolicy {
+    static func presentation(for item: SidebarContentItem) -> SidebarPrimaryPresentation {
+        item == .graphs ? .graphs : .journals
+    }
+
+    static func closesSidebar(for item: SidebarContentItem) -> Bool {
+        item == .journals || item == .graphs
+    }
+
+    static func pushesNavigation(for item: SidebarContentItem) -> Bool {
+        false
+    }
+}

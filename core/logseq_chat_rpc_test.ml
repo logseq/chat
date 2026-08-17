@@ -86,7 +86,6 @@ let () =
   let block =
     Logseq_chat_model.
       { uuid = "source"
-      ; kind = "block"
       ; title = "See [[target]]"
       ; page_id = "page"
       ; parent_id = None
@@ -95,8 +94,10 @@ let () =
       ; updated_at = 0
       ; sync_status = "synced"
       ; tags = []
-      ; references = [ { uuid = "target"; kind = "block"; title = "Target block" } ]
+      ; references = [ { uuid = "target"; title = "Target block" } ]
+      ; breadcrumbs = []
       ; status = None
+      ; is_asset = false
       ; asset_type = None
       ; asset_size = None
       ; asset_checksum = None
@@ -111,7 +112,6 @@ let () =
        ; `Assoc
            [ "type", `String "nodeReference"
            ; "uuid", `String "target"
-           ; "kind", `String "block"
            ; "title", `String "Target block"
            ]
        ] -> ()
@@ -226,7 +226,6 @@ let () =
   let authoritative =
     Logseq_chat_model.
       { uuid = "remote-task"
-      ; kind = "task"
       ; title = "Old title"
       ; page_id = "journal-page"
       ; parent_id = None
@@ -236,7 +235,9 @@ let () =
       ; sync_status = "synced"
       ; tags = []
       ; references = []
+      ; breadcrumbs = []
       ; status = Some { uuid = "todo"; ident = None; title = "Todo"; icon_type = None; icon_id = None; icon_color = None }
+      ; is_asset = false
       ; asset_type = None
       ; asset_size = None
       ; asset_checksum = None
@@ -539,7 +540,6 @@ let () =
   let block =
     Logseq_chat_model.
       { uuid = "block-1"
-      ; kind = "block"
       ; title = "Referenced block"
       ; page_id = page.uuid
       ; parent_id = Some page.uuid
@@ -549,7 +549,9 @@ let () =
       ; sync_status = "synced"
       ; tags = []
       ; references = []
+      ; breadcrumbs = [ { uuid = page.uuid; title = page.title } ]
       ; status = None
+      ; is_asset = false
       ; asset_type = None
       ; asset_size = None
       ; asset_checksum = None
@@ -562,36 +564,77 @@ let () =
       ~graph_node_destination:(function
         | "page-1" -> Some (page, false)
         | "block-1" -> Some (page, true)
+        | "tag-1" -> Some (page, false)
         | _ -> None)
       ~graph_page_blocks:(fun uuid -> if uuid = page.uuid then Some [ block ] else None)
+      ~graph_tag_pages:(fun () -> Some [ Logseq_chat_graph_read.{ uuid = "tag-1"; title = "Tag one" } ])
+      ~graph_node_is_tag:(String.equal "tag-1")
       ~graph_node_references:(fun uuid -> if uuid = "block-1" then Some [ block ] else None)
       ~graph_tag_objects:(fun uuid -> if uuid = "tag-1" then Some [ block ] else None)
       ()
   in
   let opened =
     Logseq_chat_rpc.call session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"block-1"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"block-1\"}"}}|}
     |> from_string
   in
   (match opened with
    | `Assoc fields ->
      let result = required_assoc "result" fields in
-     assert_equal "node page" "page-1" (required_assoc "selectedPage" result |> required_string "uuid");
-     (match required_assoc "outlinerState" result |> required_list "zoomedBlockIds" with
+     (match assoc "selectedPage" result with
+      | Some `Null -> ()
+      | _ -> failwith "opening a node route must not replace the root projection");
+     let route = required_first_assoc "nodeRoutes" result in
+     assert_equal "node route id" "block-1" (required_string "uuid" route);
+     assert_equal "node page" "page-1" (required_assoc "page" route |> required_string "uuid");
+     (match required_assoc "outlinerState" route |> required_list "zoomedBlockIds" with
       | [ `String "block-1" ] -> ()
       | _ -> failwith "ordinary node navigation must zoom to the referenced block");
-     let related = required_first_assoc "relatedBlocks" result in
-     assert_equal "projected node reference" "block-1" (required_string "uuid" related)
+     let related = required_first_assoc "relatedBlocks" route in
+     assert_equal "projected node reference" "block-1" (required_string "uuid" related);
+     ignore (required_list "breadcrumbs" related)
    | _ -> failwith "openNode should return an RPC response");
+  let edit_patch =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"outlinerEvent","payload":"{\"type\":\"tapBlock\",\"uuid\":\"block-1\"}"}}|}
+    |> from_string
+  in
+  (match edit_patch with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     if required_bool "isOutlinerPatch" result
+     then failwith "node route editing must refresh its independent projection";
+     let route = required_first_assoc "nodeRoutes" result in
+     (match required_assoc "outlinerState" route |> assoc "editing" with
+      | Some (`Assoc editing) -> assert_equal "editing route block" "block-1" (required_string "uuid" editing)
+      | _ -> failwith "node route editing state is missing")
+   | _ -> failwith "tapBlock should return an outliner patch");
   let objects =
     Logseq_chat_rpc.call session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"loadTagObjects","payload":"tag-1"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"tag-1\"}"}}|}
     |> from_string
   in
   match objects with
   | `Assoc fields ->
-    let related = required_assoc "result" fields |> required_first_assoc "relatedBlocks" in
-    assert_equal "projected tag object" "block-1" (required_string "uuid" related)
+    let routes = required_assoc "result" fields |> required_list "nodeRoutes" in
+    if List.length routes <> 2 then failwith "nested node navigation must retain both projections";
+    let route =
+      match List.rev routes with `Assoc route :: _ -> route | _ -> failwith "missing tag route"
+    in
+    if not (required_bool "isTag" route) then failwith "block/tags must identify tag routes";
+    let related = required_first_assoc "relatedBlocks" route in
+    assert_equal "projected tag object" "block-1" (required_string "uuid" related);
+    ignore (required_list "breadcrumbs" related);
+    let closed =
+      Logseq_chat_rpc.call session
+        {|{"apiVersion":1,"method":"dispatch","params":{"action":"closeNode"}}|}
+      |> from_string
+    in
+    (match closed with
+     | `Assoc fields ->
+       let routes = required_assoc "result" fields |> required_list "nodeRoutes" in
+       if List.length routes <> 1 then failwith "closing a node must restore the previous projection"
+     | _ -> failwith "closeNode should return an RPC response")
   | _ -> failwith "loadTagObjects should return projected objects"
 ;;
 
@@ -654,7 +697,6 @@ let () =
   let authoritative =
     Logseq_chat_model.
       { uuid = "restored-journal-block"
-      ; kind = "block"
       ; title = "Restored from the graph snapshot"
       ; page_id = "journal-page"
       ; parent_id = Some "journal-page"
@@ -664,7 +706,9 @@ let () =
       ; sync_status = "synced"
       ; tags = []
       ; references = []
+      ; breadcrumbs = []
       ; status = None
+      ; is_asset = false
       ; asset_type = None
       ; asset_size = None
       ; asset_checksum = None
@@ -698,7 +742,7 @@ let () =
   | _ -> failwith "openGraph should return an RPC response"
 ;;
 
-let assert_dispatch_block action payload expected_kind expected_uuid =
+let assert_dispatch_block action payload expected_uuid =
   let session = Logseq_chat_rpc.create () in
   let request =
     `Assoc
@@ -713,7 +757,6 @@ let assert_dispatch_block action payload expected_kind expected_uuid =
     let blocks = required_assoc "result" fields |> required_list "blocks" in
     (match blocks with
      | `Assoc block :: _ ->
-       assert_equal (action ^ " kind") expected_kind (required_string "kind" block);
        assert_equal (action ^ " uuid") expected_uuid (required_string "uuid" block)
      | _ -> failwith (action ^ " should return one optimistic block"))
   | _ -> failwith (action ^ " should return an RPC response")
@@ -723,11 +766,11 @@ let () =
   assert_dispatch_block
     "sendTask"
     {|{"text":"Follow up","uuid":"task-local","now":1776000000000,"status":{"uuid":"status-waiting","ident":"user.status/waiting","title":"Waiting","iconType":"tabler-icon","iconId":"clock"}}|}
-    "task" "task-local";
+    "task-local";
   assert_dispatch_block
     "addAsset"
     {|{"uuid":"asset-local","title":"photo.jpg","now":1776000000001,"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}|}
-    "asset" "asset-local"
+    "asset-local"
 ;;
 
 let () =
@@ -738,7 +781,6 @@ let () =
         authoritative_blocks :=
           [ Logseq_chat_model.
               { uuid = "local-self-echo"
-              ; kind = "block"
               ; title = "Synced capture"
               ; page_id = "journal/2026-08-15"
               ; parent_id = None
@@ -748,7 +790,9 @@ let () =
               ; sync_status = "synced"
               ; tags = []
               ; references = []
+              ; breadcrumbs = []
               ; status = None
+              ; is_asset = false
               ; asset_type = None
               ; asset_size = None
               ; asset_checksum = None
@@ -789,7 +833,6 @@ let () =
   authoritative_blocks :=
     [ Logseq_chat_model.
         { uuid = "synced-asset"
-        ; kind = "block"
         ; title = "photo.png"
         ; page_id = "journal/2026-08-15"
         ; parent_id = None
@@ -799,7 +842,9 @@ let () =
         ; sync_status = "synced"
         ; tags = []
         ; references = []
+        ; breadcrumbs = []
         ; status = None
+        ; is_asset = false
         ; asset_type = None
         ; asset_size = None
         ; asset_checksum = None
@@ -817,7 +862,6 @@ let () =
     let blocks = required_assoc "result" fields |> required_list "blocks" in
     (match blocks with
      | [ `Assoc block ] ->
-       assert_equal "synced asset kind" "asset" (required_string "kind" block);
        assert_equal
          "synced asset local path"
          "/documents/photo.png"
@@ -855,7 +899,6 @@ let () =
 let remote_block uuid title =
   Logseq_chat_model.
     { uuid
-    ; kind = "block"
     ; title
     ; page_id = "page"
     ; parent_id = Some "page"
@@ -865,7 +908,9 @@ let remote_block uuid title =
     ; sync_status = "synced"
     ; tags = []
     ; references = []
+    ; breadcrumbs = []
     ; status = None
+    ; is_asset = false
     ; asset_type = None
     ; asset_size = None
     ; asset_checksum = None
@@ -968,6 +1013,86 @@ let () =
   let autocomplete = required_assoc "autocomplete" state in
   assert_equal "outliner autocomplete kind" "node" (required_string "kind" autocomplete);
   assert_equal "outliner autocomplete query" "Pro" (required_string "query" autocomplete)
+;;
+
+let () =
+  let tag = Logseq_chat_graph_read.{ uuid = "tag-uuid"; title = "Project" } in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_blocks:(fun () -> Some [ remote_block "tag-editable" "Hello" ])
+      ~graph_tag_pages:(fun () -> Some [ tag ])
+      ()
+  in
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String "tag-editable" ]));
+  let response =
+    dispatch_outliner
+      session
+      (`Assoc [ "type", `String "toolbar"; "action", `String "tag" ])
+  in
+  match required_list "outlinerAutocompleteCandidates" response with
+  | [ `Assoc candidate ] ->
+    assert_equal "tag candidate label" "Project" (required_string "label" candidate);
+    assert_equal "tag candidate canonical value" "tag-uuid" (required_string "value" candidate)
+  | _ -> failwith "tag autocomplete must be populated from graph Tag entities"
+;;
+
+let () =
+  let staged = ref [] in
+  let projected = ref [ remote_block "bounded-save" "Before" ] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 91)
+      ~graph_blocks:(fun () -> Some !projected)
+      ~stage_operation:(fun operation ->
+        staged := operation :: !staged;
+        (match operation.Logseq_chat_pending_ops.intent with
+         | Save_title { uuid; title; _ } ->
+           projected :=
+             List.map
+               (fun (block : Logseq_chat_model.block) ->
+                 if String.equal block.uuid uuid then { block with title } else block)
+               !projected
+         | _ -> ());
+        Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String "bounded-save" ]));
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc
+         [ "type", `String "textChanged"
+         ; "title", `String "After"
+         ; "caretUTF16Offset", `Int 5
+         ]));
+  let saved =
+    dispatch_outliner
+      session
+      (`Assoc
+        [ "type", `String "toolbar"
+        ; "action", `String "hideKeyboard"
+        ])
+  in
+  if not (required_bool "isOutlinerPatch" saved)
+  then failwith "saving an edited title must return a bounded patch";
+  (match required_list "blocks" saved, required_list "outlinerRows" saved with
+   | [ `Assoc block ], [ `Assoc row ] ->
+     assert_equal "bounded saved block" "After" (required_string "title" block);
+     assert_equal
+       "bounded saved row"
+       "After"
+       (required_assoc "block" row |> required_string "title")
+   | _ -> failwith "a title save patch must contain exactly one block and one row");
+  if List.length !staged <> 1 then failwith "closing the keyboard must stage one title save"
 ;;
 
 let () =
@@ -1442,7 +1567,6 @@ let () =
   let authoritative =
     Logseq_chat_model.
       { uuid = "offline-edit"
-      ; kind = "block"
       ; title = "Server title"
       ; page_id = "journal/2026-08-15"
       ; parent_id = None
@@ -1452,7 +1576,9 @@ let () =
       ; sync_status = "synced"
       ; tags = []
       ; references = []
+      ; breadcrumbs = []
       ; status = None
+      ; is_asset = false
       ; asset_type = None
       ; asset_size = None
       ; asset_checksum = None

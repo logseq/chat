@@ -43,23 +43,23 @@ let contains text substring =
 let () =
   let explicit =
     required_single_block
-      {|{"results":[{"uuid":"block-explicit","title":"Explicit","kind":"block","order":"a1","created-at":1776000000000,"updated-at":1776000100000}]}|}
+      {|{"results":[{"uuid":"block-explicit","title":"Explicit","order":"a1","created-at":1776000000000,"updated-at":1776000100000}]}|}
   in
   assert_some_string "explicit outliner order" "a1" explicit.order;
   assert_int_equal "explicit created-at" 1_776_000_000_000 explicit.created_at;
   assert_int_equal "explicit updated-at" 1_776_000_100_000 explicit.updated_at;
   let missing =
     required_single_block
-      {|{"results":[{"uuid":"block-missing","title":"Missing","kind":"block"}]}|}
+      {|{"results":[{"uuid":"block-missing","title":"Missing"}]}|}
   in
   assert_int_equal "missing created-at is not fabricated" 0 missing.created_at;
   assert_int_equal "missing updated-at is not fabricated" 0 missing.updated_at;
   let semantic =
     required_single_block
-      {|{"results":[{"uuid":"semantic","title":"Review [[Project]]","kind":"asset","tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"logseq.property/status.todo","title":"Todo","icon":{"type":"tabler-icon","id":"circle"}},"asset-type":"jpg","asset-size":2048,"asset-checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}|}
+      {|{"results":[{"uuid":"semantic","title":"Review [[Project]]","tags":[{"uuid":"tag-1","title":"Project"}],"references":[{"uuid":"page-1","title":"Project"}],"status":{"uuid":"status-1","ident":"logseq.property/status.todo","title":"Todo","icon":{"type":"tabler-icon","id":"circle"}},"asset-type":"jpg","asset-size":2048,"asset-checksum":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}|}
   in
   assert_equal "tag title" "Project" (List.hd semantic.tags).title;
-  assert_equal "reference kind" "page" (List.hd semantic.references).kind;
+  assert_equal "reference title" "Project" (List.hd semantic.references).title;
   assert_some_string "status title" "Todo"
     (Option.map (fun (status : Logseq_chat_model.status) -> status.title) semantic.status);
   assert_some_string "status icon" "circle"
@@ -76,7 +76,7 @@ let () =
   assert_int_equal "asset size" 2048 (Option.value semantic.asset_size ~default:0);
   let search_journals =
     Logseq_chat_api.journals_from_search_body
-      {|{"results":[{"uuid":"block-search","title":"Search","kind":"block","page-id":"journal-search","journal-title":"Aug 13th, 2026","journal-day":20260813}]}|}
+      {|{"results":[{"uuid":"block-search","title":"Search","page-id":"journal-search","journal-title":"Aug 13th, 2026","journal-day":20260813}]}|}
   in
   (match search_journals with
    | [ journal ] ->
@@ -120,7 +120,7 @@ let () =
     (Logseq_chat_api.page_references_request config "page-1").url;
   let related =
     Logseq_chat_api.blocks_from_list_body "references"
-      {|{"references":[{"uuid":"backlink","kind":"block","title":"Uses Project"}]}|}
+      {|{"references":[{"uuid":"backlink","title":"Uses Project"}]}|}
   in
   assert_equal "related block" "backlink" (List.hd related).uuid;
   let capture = Logseq_chat_api.capture_request config ~uuid:"client-block" "Offline" in
@@ -240,7 +240,7 @@ let () =
        {|{"page-id":"journal","blocks":[{"uuid":"server-block","title":"Offline"}]}|});
   let block, journal =
     required_feed
-      {|{"blocks":[{"uuid":"block-1","title":"Message","kind":"block","page-id":"journal-new","created-at":1776000000000}],"journals":[{"uuid":"journal-new","title":"Aug 13th, 2026","kind":"page","journal-day":20260813}]}|}
+      {|{"blocks":[{"uuid":"block-1","title":"Message","page-id":"journal-new","created-at":1776000000000}],"journals":[{"uuid":"journal-new","title":"Aug 13th, 2026","journal-day":20260813}]}|}
   in
   assert_equal "feed block" "block-1" block.uuid;
   assert_equal "feed journal" "journal-new" journal.uuid;

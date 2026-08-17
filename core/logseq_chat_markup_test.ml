@@ -1,15 +1,15 @@
 module Markup = Logseq_chat_markup
 module Model = Logseq_chat_model
 
-let summary uuid kind title = Model.{ uuid; kind; title }
+let summary uuid title = Model.{ uuid; title }
 
 let () =
   let references =
-    [ summary "page-uuid" "page" "Page target"
-    ; summary "block-uuid" "block" "Block target"
+    [ summary "page-uuid" "Page target"
+    ; summary "block-uuid" "Block target"
     ]
   in
-  let tags = [ summary "tag-uuid" "tag" "Project" ] in
+  let tags = [ summary "tag-uuid" "Project" ] in
   let actual =
     Markup.parse
       ~references
@@ -23,10 +23,10 @@ let () =
     ; Markup.Code "code"
     ; Markup.Text " "
     ; Markup.Node_ref
-        { uuid = "page-uuid"; kind = "page"; title = "Page target" }
+        { uuid = "page-uuid"; title = "Page target" }
     ; Markup.Text " "
     ; Markup.Node_ref
-        { uuid = "block-uuid"; kind = "block"; title = "Block target" }
+        { uuid = "block-uuid"; title = "Block target" }
     ; Markup.Text " "
     ; Markup.Tag_ref { uuid = "tag-uuid"; title = "Project" }
     ]
@@ -65,10 +65,23 @@ let () =
 ;;
 
 let () =
+  let tags = [ summary "tag-uuid" "Project" ] in
+  match Markup.parse ~references:[] ~tags "Inline #[[Project]] tag" with
+  | [ Markup.Text "Inline "
+    ; Markup.Tag_ref { uuid = "tag-uuid"; title = "Project" }
+    ; Markup.Text " tag"
+    ] -> ()
+  | actual ->
+    failwith
+      ("an inline tag title must resolve to its canonical tag entity: "
+       ^ String.concat "; " (List.map Markup.debug_string actual))
+;;
+
+let () =
   let json =
     Markup.to_yojson
       [ Markup.Text "Open "
-      ; Markup.Node_ref { uuid = "block-uuid"; kind = "block"; title = "Target" }
+      ; Markup.Node_ref { uuid = "block-uuid"; title = "Target" }
       ; Markup.Tag_ref { uuid = "tag-uuid"; title = "Project" }
       ]
   in
@@ -78,7 +91,6 @@ let () =
       ; `Assoc
           [ "type", `String "nodeReference"
           ; "uuid", `String "block-uuid"
-          ; "kind", `String "block"
           ; "title", `String "Target"
           ]
       ; `Assoc

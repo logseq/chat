@@ -246,6 +246,16 @@ let () =
                ]
            }
        ; Entity
+           { db_id = Some (Temp_id "parent-block")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "parent-block")
+               ; "block/title", One_value (String "Parent block")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/created-at", One_value (Instant 1)
+               ]
+           }
+       ; Entity
            { db_id = None
            ; attrs =
                [ "block/uuid", One_value (Uuid block_uuid)
@@ -261,7 +271,7 @@ let () =
                [ "block/uuid", One_value (Uuid object_uuid)
                ; "block/title", One_value (String "Tagged object")
                ; "block/page", One_value (Ref_to (Temp_id "node-page"))
-               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "parent-block"))
                ; "block/tags", Many_values [ Ref_to (Temp_id "tag") ]
                ; "block/created-at", One_value (Instant 2)
                ]
@@ -286,11 +296,120 @@ let () =
    | Some (page, true) when page.uuid = page_uuid -> ()
    | _ -> failwith "an ordinary block node reference did not resolve to its containing page");
   (match Logseq_chat_graph_read.objects_for_tag db tag_uuid with
-   | [ block ] when block.uuid = object_uuid && block.title = "Tagged object" -> ()
+   | [ block ]
+     when block.uuid = object_uuid
+          && block.title = "Tagged object"
+          && List.map
+               (fun (summary : Logseq_chat_model.entity_summary) -> summary.title)
+               block.breadcrumbs
+             = [ "Node page"; "Parent block" ] -> ()
    | _ -> failwith "tag objects were not read from the projected Datascript DB");
   (match Logseq_chat_graph_read.references_for_node db page_uuid with
-   | [ block ] when block.uuid = "linked-reference" && block.title = "Linked reference" -> ()
+   | [ block ]
+     when block.uuid = "linked-reference"
+          && block.title = "Linked reference"
+          && List.map
+               (fun (summary : Logseq_chat_model.entity_summary) -> summary.title)
+               block.breadcrumbs
+             = [ "Node page" ] -> ()
    | _ -> failwith "linked references were not read from the projected Datascript DB")
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/parent", one ~value_type:RefType ()
+    ; "block/tags", many ~value_type:RefType ()
+    ; "logseq.property.class/extends", many ~value_type:RefType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "db/ident", one ~value_type:KeywordType ~unique:(Some Identity) ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  let entity id attrs = Entity { db_id = Some (Temp_id id); attrs } in
+  ignore
+    (transact_conn
+       conn
+       [ entity "tag-class" [ "db/ident", One_value (Keyword "logseq.class/Tag") ]
+       ; entity "asset-class" [ "db/ident", One_value (Keyword "logseq.class/Asset") ]
+       ; entity
+           "page"
+           [ "block/uuid", One_value (Uuid "page")
+           ; "block/name", One_value (String "page")
+           ; "block/title", One_value (String "Page")
+           ]
+       ; entity
+           "parent-tag"
+           [ "block/uuid", One_value (Uuid "parent-tag")
+           ; "block/name", One_value (String "parent tag")
+           ; "block/title", One_value (String "Parent tag")
+           ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+           ; ( "logseq.property.class/extends"
+             , Many_values [ Ref_to (Temp_id "grandchild-tag") ] )
+           ]
+       ; entity
+           "child-tag"
+           [ "block/uuid", One_value (Uuid "child-tag")
+           ; "block/name", One_value (String "child tag")
+           ; "block/title", One_value (String "Child tag")
+           ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+           ; ( "logseq.property.class/extends"
+             , Many_values [ Ref_to (Temp_id "parent-tag") ] )
+           ]
+       ; entity
+           "grandchild-tag"
+           [ "block/uuid", One_value (Uuid "grandchild-tag")
+           ; "block/name", One_value (String "grandchild tag")
+           ; "block/title", One_value (String "Grandchild tag")
+           ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+           ; ( "logseq.property.class/extends"
+             , Many_values [ Ref_to (Temp_id "child-tag") ] )
+           ]
+       ; entity
+           "tagged-object"
+           [ "block/uuid", One_value (Uuid "tagged-object")
+           ; "block/title", One_value (String "Tagged through a descendant")
+           ; "block/page", One_value (Ref_to (Temp_id "page"))
+           ; "block/parent", One_value (Ref_to (Temp_id "page"))
+           ; "block/tags", Many_values [ Ref_to (Temp_id "grandchild-tag") ]
+           ; "block/created-at", One_value (Instant 1)
+           ]
+       ; entity
+           "asset-child"
+           [ "block/uuid", One_value (Uuid "asset-child")
+           ; "block/name", One_value (String "asset child")
+           ; "block/title", One_value (String "Asset child")
+           ; ( "logseq.property.class/extends"
+             , Many_values [ Ref_to (Temp_id "asset-class") ] )
+           ]
+       ; entity
+           "asset-object"
+           [ "block/uuid", One_value (Uuid "asset-object")
+           ; "block/title", One_value (String "Asset")
+           ; "block/page", One_value (Ref_to (Temp_id "page"))
+           ; "block/parent", One_value (Ref_to (Temp_id "page"))
+           ; "block/tags", Many_values [ Ref_to (Temp_id "asset-child") ]
+           ; "block/created-at", One_value (Instant 2)
+           ]
+       ]);
+  let db = conn_db conn in
+  if not (Logseq_chat_graph_read.node_is_tag db "child-tag")
+  then failwith "a class that extends another tag must still use the tag node route";
+  (match Logseq_chat_graph_read.objects_for_tag db "parent-tag" with
+   | [ block ] when String.equal block.uuid "tagged-object" -> ()
+   | _ -> failwith "tagged nodes must include instances of transitively extending tags");
+  match Logseq_chat_graph_read.blocks_for_page db "page" with
+  | blocks ->
+    (match
+       List.find_opt
+         (fun (block : Logseq_chat_model.block) -> String.equal block.uuid "asset-object")
+         blocks
+     with
+     | Some block when block.is_asset -> ()
+     | _ -> failwith "asset classification must follow block/tags and class extends")
 ;;
 
 let () =
@@ -460,8 +579,12 @@ let () =
                ]
            }
        ]);
+  let db = conn_db conn in
+  (match Logseq_chat_graph_read.tag_pages db with
+   | [ tag ] when tag.uuid = "tag-target" && tag.title = "Project" -> ()
+   | _ -> failwith "tag autocomplete pages must contain only user Tag entities");
   match
-    Logseq_chat_graph_read.blocks (conn_db conn)
+    Logseq_chat_graph_read.blocks db
     |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
   with
   | None -> failwith "source block missing from graph projection"
@@ -469,17 +592,17 @@ let () =
     let summaries values =
       List.map
         (fun (summary : Logseq_chat_model.entity_summary) ->
-          summary.uuid, summary.kind, summary.title)
+          summary.uuid, summary.title)
         values
       |> List.sort compare
     in
     if
       summaries block.references
-      <> [ "block-target", "block", "Block target"
-         ; "page-target", "page", "Page target"
+      <> [ "block-target", "Block target"
+         ; "page-target", "Page target"
          ]
     then failwith "node references must resolve page and ordinary-block targets";
-    if summaries block.tags <> [ "tag-target", "tag", "Project" ]
+    if summaries block.tags <> [ "tag-target", "Project" ]
     then failwith "tags must resolve through DB graph tag entities";
     let projection = Logseq_chat_graph_read.create_projection (conn_db conn) in
     ignore
@@ -506,8 +629,8 @@ let () =
      with
      | Some source
        when summaries source.references
-            = [ "block-target", "block", "Block target"
-              ; "page-target", "page", "Renamed page"
+            = [ "block-target", "Block target"
+              ; "page-target", "Renamed page"
               ] -> ()
      | _ -> failwith "referenced target changes must refresh referring projection blocks")
 ;;

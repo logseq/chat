@@ -12,11 +12,11 @@ let assert_int_equal label expected actual =
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
 ;;
 
-let block ~uuid ~kind ~title ~page_id ~created_at =
+let block ~uuid ~title ~page_id ~created_at =
   Logseq_chat_model.
-    { uuid; kind; title; page_id; parent_id = None; order = None; created_at
-    ; updated_at = created_at; sync_status = "synced"; tags = []; references = []
-    ; status = None; asset_type = None; asset_size = None; asset_checksum = None
+    { uuid; title; page_id; parent_id = None; order = None; created_at
+    ; updated_at = created_at; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
+    ; status = None; is_asset = false; asset_type = None; asset_size = None; asset_checksum = None
     ; local_path = None; journal = None }
 ;;
 
@@ -53,7 +53,7 @@ let assert_refresh_preserves_existing_created_at_when_remote_omits_it () =
     ~title:"Original"
     ~now:created_at;
   let remote_block =
-    block ~uuid:"stable-created-at" ~kind:"block" ~title:"Updated remotely"
+    block ~uuid:"stable-created-at" ~title:"Updated remotely"
       ~page_id:"page-1" ~created_at:0
   in
   Logseq_chat_model.upsert_blocks model [ remote_block ] ~refresh_time:(created_at + 10_000);
@@ -66,14 +66,13 @@ let assert_refresh_preserves_existing_created_at_when_remote_omits_it () =
 
 let assert_recent_blocks_excludes_pages_and_empty_blocks () =
   let model = Logseq_chat_model.create () in
-  let block kind uuid title created_at =
-    block ~kind ~uuid ~title ~page_id:"journal-1" ~created_at
+  let block uuid title created_at =
+    block ~uuid ~title ~page_id:"journal-1" ~created_at
   in
   Logseq_chat_model.upsert_blocks
     model
-    [ block "page" "page-entity" "Journal page" 300
-    ; block "block" "empty-block" "   " 200
-    ; block "block" "real-block" "Visible" 100
+    [ block "empty-block" "   " 200
+    ; block "real-block" "Visible" 100
     ]
     ~refresh_time:400;
   Logseq_chat_model.upsert_journal_page model ~uuid:"journal-1" ~journal_day:20260813;
@@ -85,7 +84,7 @@ let assert_recent_blocks_excludes_pages_and_empty_blocks () =
 let assert_recent_blocks_require_a_current_or_past_journal_page () =
   let model = Logseq_chat_model.create () in
   let block uuid page_id created_at =
-    block ~uuid ~kind:"block" ~title:uuid ~page_id ~created_at
+    block ~uuid ~title:uuid ~page_id ~created_at
   in
   Logseq_chat_model.upsert_journal_page model ~uuid:"past-journal" ~journal_day:20260812;
   Logseq_chat_model.upsert_journal_page model ~uuid:"future-journal" ~journal_day:20990101;
@@ -105,13 +104,13 @@ let assert_journal_blocks_follow_page_tree_and_outliner_order () =
   let model = Logseq_chat_model.create () in
   Logseq_chat_model.upsert_journal_page model ~uuid:"journal-today" ~journal_day:20260815;
   let journal_block uuid parent_id order created_at =
-    { (block ~uuid ~kind:"block" ~title:uuid ~page_id:"journal-today" ~created_at) with
+    { (block ~uuid ~title:uuid ~page_id:"journal-today" ~created_at) with
       parent_id = Some parent_id
     ; order = Some order
     }
   in
   let other_page =
-    { (block ~uuid:"other-page" ~kind:"block" ~title:"Other" ~page_id:"project" ~created_at:500) with
+    { (block ~uuid:"other-page" ~title:"Other" ~page_id:"project" ~created_at:500) with
       parent_id = Some "project"
     ; order = Some "a0"
     }
@@ -135,15 +134,14 @@ let assert_journal_blocks_follow_page_tree_and_outliner_order () =
 
 let assert_search_excludes_pages_and_empty_blocks () =
   let model = Logseq_chat_model.create () in
-  let entity kind uuid title =
-    block ~kind ~uuid ~title ~page_id:"journal-1" ~created_at:100
+  let entity uuid title =
+    block ~uuid ~title ~page_id:"journal-1" ~created_at:100
   in
   Logseq_chat_model.upsert_journal_page model ~uuid:"journal-1" ~journal_day:20260813;
   Logseq_chat_model.upsert_blocks
     model
-    [ entity "page" "matching-page" "Match page"
-    ; entity "block" "matching-empty" "   "
-    ; entity "block" "matching-block" "Match block"
+    [ entity "matching-empty" "   "
+    ; entity "matching-block" "Match block"
     ]
     ~refresh_time:100;
   match Logseq_chat_model.search model "match" with
@@ -154,7 +152,7 @@ let assert_search_excludes_pages_and_empty_blocks () =
 let assert_partial_search_result_preserves_journal_relation () =
   let model = Logseq_chat_model.create () in
   let block =
-    block ~uuid:"search-block" ~kind:"block" ~title:"Before search"
+    block ~uuid:"search-block" ~title:"Before search"
       ~page_id:"journal-1" ~created_at:100
   in
   Logseq_chat_model.upsert_journal_page
@@ -199,10 +197,8 @@ let assert_task_and_asset_metadata_persist () =
     ~local_path:"/documents/voice.m4a"
     ~now:(now + 1);
   let task = Option.get (Logseq_chat_model.read_block model "task-local") in
-  assert_equal "task kind" "task" task.kind;
   assert_equal "task status" "Waiting" (Option.get task.status).title;
   let asset = Option.get (Logseq_chat_model.read_block model "asset-local") in
-  assert_equal "asset kind" "asset" asset.kind;
   assert_equal "asset type" "m4a" (Option.get asset.asset_type);
   assert_equal "asset local path" "/documents/voice.m4a" (Option.get asset.local_path)
 ;;
@@ -220,10 +216,10 @@ let assert_uploaded_asset_reconciles_server_uuid () =
     ~now:1_776_000_000_000;
   Logseq_chat_model.upsert_blocks
     model
-    [ { uuid = "server-asset"; kind = "asset"; title = "photo"; page_id = "remote-journal"
+    [ { uuid = "server-asset"; title = "photo"; page_id = "remote-journal"
       ; parent_id = Some "remote-journal"; order = None; created_at = 1_776_000_000_100
-      ; updated_at = 1_776_000_000_100; sync_status = "synced"; tags = []; references = []
-      ; status = None; asset_type = None; asset_size = None; asset_checksum = None
+      ; updated_at = 1_776_000_000_100; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
+      ; status = None; is_asset = false; asset_type = None; asset_size = None; asset_checksum = None
       ; local_path = None; journal = None } ]
     ~refresh_time:1_776_000_000_100;
   (match
@@ -235,7 +231,6 @@ let assert_uploaded_asset_reconciles_server_uuid () =
   if Option.is_some (Logseq_chat_model.read_block model "local-asset")
   then failwith "local asset should be removed after the server assigns a different uuid";
   let asset = Option.get (Logseq_chat_model.read_block model "server-asset") in
-  assert_equal "reconciled asset kind" "asset" asset.kind;
   assert_equal "reconciled local path" "/documents/photo.jpg" (Option.get asset.local_path);
   assert_equal "reconciled checksum" "checksum" (Option.get asset.asset_checksum);
   assert_equal "reconciled sync status" "submitted" asset.sync_status;
@@ -243,7 +238,7 @@ let assert_uploaded_asset_reconciles_server_uuid () =
     "one asset remains after uuid reconciliation"
     1
     (Logseq_chat_model.all_blocks model
-     |> List.filter (fun (block : Logseq_chat_model.block) -> String.equal block.kind "asset")
+     |> List.filter (fun (block : Logseq_chat_model.block) -> Option.is_some block.asset_type)
      |> List.length)
 ;;
 
@@ -265,14 +260,12 @@ let assert_remote_refresh_preserves_synced_local_asset_metadata () =
     model
     [ block
         ~uuid:"stable-asset"
-        ~kind:"block"
         ~title:"photo.jpg"
         ~page_id:"journal/2026-08-15"
         ~created_at:1_776_000_000_000
     ]
     ~refresh_time:1_776_000_000_100;
   let asset = Option.get (Logseq_chat_model.read_block model "stable-asset") in
-  assert_equal "refreshed asset kind" "asset" asset.kind;
   assert_equal "refreshed asset type" "jpg" (Option.get asset.asset_type);
   assert_equal "refreshed asset checksum" "checksum" (Option.get asset.asset_checksum);
   assert_equal "refreshed asset path" "/documents/photo.jpg" (Option.get asset.local_path)
@@ -300,7 +293,6 @@ let assert_remote_refresh_preserves_offline_edit () =
   let original =
     block
       ~uuid:"offline-edit"
-      ~kind:"block"
       ~title:"Server title"
       ~page_id:"journal/2026-08-15"
       ~created_at:1_776_000_000_000

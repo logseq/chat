@@ -7,7 +7,6 @@ let assert_bool label value = if not value then fail label
 let block ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
   Model.
     { uuid
-    ; kind = "block"
     ; title
     ; page_id = "page"
     ; parent_id
@@ -17,7 +16,9 @@ let block ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
     ; sync_status = "synced"
     ; tags = []
     ; references = []
+    ; breadcrumbs = []
     ; status = None
+    ; is_asset = false
     ; asset_type = None
     ; asset_size = None
     ; asset_checksum = None
@@ -26,7 +27,7 @@ let block ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
     }
 ;;
 
-let context = State.{ blocks = [ block "a" "Alpha"; block ~order:(Some "a1") "b" "Beta" ]; pages = [] }
+let context = State.{ blocks = [ block "a" "Alpha"; block ~order:(Some "a1") "b" "Beta" ]; pages = []; tags = [] }
 
 let () =
   let state, effects = State.update context State.empty (Tap_block "a") in
@@ -46,10 +47,35 @@ let () =
 ;;
 
 let () =
+  let tag_uuid = "tag-uuid" in
+  let context =
+    State.
+      { blocks = [ block "a" "Alpha" ]
+      ; pages = []
+      ; tags = [ { label = "Project"; value = tag_uuid } ]
+      }
+  in
+  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ =
+    State.update context state (Text_changed { title = "Alpha #Pro"; caret = 10 })
+  in
+  assert_bool "inline tag autocomplete is recognized"
+    (match State.autocomplete state with
+     | Some { kind = Tag; query = "Pro" } -> true
+     | _ -> false);
+  let state, effects = State.update context state (Choose_autocomplete tag_uuid) in
+  assert_bool "tag completion uses Logseq's canonical inline tag syntax"
+    (State.editing_title state = Some "Alpha #[[tag-uuid]]");
+  assert_bool "tag completion keeps editing active and requests selection feedback"
+    (State.editing_uuid state = Some "a" && effects = [ State.Haptic Selection ])
+;;
+
+let () =
   let context =
     State.
       { blocks = [ block "alpha" "Alpha block"; block ~order:(Some "a1") "beta" "Beta" ]
       ; pages = [ { label = "Project Alpha"; value = "Project Alpha" } ]
+      ; tags = []
       }
   in
   let node_candidates =
@@ -69,7 +95,7 @@ let () =
     ; block ~order:(Some "a1") "sibling" "Sibling"
     ]
   in
-  let context = State.{ blocks; pages = [] } in
+  let context = State.{ blocks; pages = []; tags = [] } in
   let state, effects = State.update context State.empty (Toggle_collapsed "parent") in
   assert_bool "collapse emits only a platform haptic" (effects = [ State.Haptic Impact ]);
   assert_bool "collapsed child is absent from visible rows"
@@ -93,7 +119,7 @@ let () =
     ; block ~parent_id:(Some "parent") "child" "Child"
     ]
   in
-  let context = State.{ blocks; pages = [] } in
+  let context = State.{ blocks; pages = []; tags = [] } in
   let editing, _ = State.update context State.empty (Tap_block "parent") in
   let editing, _ =
     State.update context editing (Text_changed { title = "Changed"; caret = 7 })
@@ -250,7 +276,7 @@ let () =
     ; block ~order:(Some "a2") "third" "Third"
     ]
   in
-  let context = State.{ blocks; pages = [] } in
+  let context = State.{ blocks; pages = []; tags = [] } in
   let state, _ = State.update context State.empty (Long_press_block "second") in
   let state, _ = State.update context state (Tap_block "third") in
   let state, effects = State.update context state (Toolbar Indent) in
@@ -284,7 +310,7 @@ let () =
     ; block ~order:(Some "a1") "next" "Next"
     ]
   in
-  let context = State.{ blocks; pages = [] } in
+  let context = State.{ blocks; pages = []; tags = [] } in
   let state, _ = State.update context State.empty (Long_press_block "child-a") in
   let state, _ = State.update context state (Tap_block "child-b") in
   let state, effects = State.update context state (Toolbar Outdent) in
@@ -308,7 +334,7 @@ let () =
     ; block ~order:(Some "a1") "target" "Target"
     ]
   in
-  let context = State.{ blocks; pages = [] } in
+  let context = State.{ blocks; pages = []; tags = [] } in
   let state, _ = State.update context State.empty (Long_press_block "parent") in
   let unchanged, effects =
     State.update context state (Drop_blocks { target_uuid = "child"; placement = After })
@@ -344,7 +370,7 @@ let () =
     ; block ~order:(Some "a1") "next" "Next"
     ]
   in
-  let child_context = State.{ blocks; pages = [] } in
+  let child_context = State.{ blocks; pages = []; tags = [] } in
   let state, _ = State.update child_context State.empty (Tap_block "child") in
   let state, effects = State.update child_context state (Toolbar Outdent) in
   assert_bool "editor outdent keeps the same block focused"
@@ -428,7 +454,7 @@ let () =
     ; block ~order:(Some "a1") "sibling" "Sibling"
     ]
   in
-  let nested_context = State.{ blocks; pages = [] } in
+  let nested_context = State.{ blocks; pages = []; tags = [] } in
   let state, _ = State.update nested_context State.empty (Zoom_in "parent") in
   let state, _ = State.update nested_context state (Zoom_in "child") in
   assert_bool "zoom is nested page navigation"
@@ -451,10 +477,10 @@ let () =
     ; block ~parent_id:(Some "parent") "child" "Child"
     ]
   in
-  let before_delete = State.{ blocks; pages = [] } in
+  let before_delete = State.{ blocks; pages = []; tags = [] } in
   let state, _ = State.update before_delete State.empty (Zoom_in "parent") in
   let state, _ = State.update before_delete state (Zoom_in "child") in
-  let after_delete = State.{ blocks = []; pages = [] } in
+  let after_delete = State.{ blocks = []; pages = []; tags = [] } in
   let state, _ =
     State.update
       after_delete
@@ -478,7 +504,7 @@ let () =
         (Some uuid)
         (block ~parent_id uuid uuid :: acc)
   in
-  let large_context = State.{ blocks = make_chain 0 None []; pages = [] } in
+  let large_context = State.{ blocks = make_chain 0 None []; pages = []; tags = [] } in
   let started = Unix.gettimeofday () in
   let rows = State.visible_rows large_context State.empty in
   let elapsed = Unix.gettimeofday () -. started in
@@ -521,6 +547,10 @@ let () =
           [ { label = "Project"; value = "project" }
           ; { label = "Project duplicate"; value = "project" }
           ]
+      ; tags =
+          [ { label = "Project"; value = "project" }
+          ; { label = "Project duplicate"; value = "project" }
+          ]
       }
   in
   assert_bool "autocomplete candidates deduplicate by value"
@@ -538,7 +568,7 @@ let () =
   in
   assert_bool "autocomplete result count is bounded"
     (List.length
-       (State.autocomplete_candidates State.{ blocks = []; pages = many_pages }
+       (State.autocomplete_candidates State.{ blocks = []; pages = many_pages; tags = [] }
           State.{ kind = Node; query = "" })
      = 12)
 ;;
@@ -581,7 +611,7 @@ let () =
   assert_bool "node completion replaces the open token"
     (completed_title State.Node "[[Pr" "Project" = Some "[[Project]]");
   assert_bool "tag completion replaces the token"
-    (completed_title State.Tag "#ta" "tag" = Some "#tag");
+    (completed_title State.Tag "#ta" "tag" = Some "#[[tag]]");
   assert_bool "property completion replaces the current line"
     (completed_title State.Property "before\nsta::" "status" = Some "before\nstatus:: ");
   assert_bool "completion without its marker is ignored"
@@ -635,7 +665,7 @@ let () =
     ; block ~order:(Some "a2") "last" "Last"
     ]
   in
-  let drop_context = State.{ blocks; pages = [] } in
+  let drop_context = State.{ blocks; pages = []; tags = [] } in
   let selected = State.String_set.singleton "middle" in
   let before = State.drop drop_context selected "first" State.Before in
   let after = State.drop drop_context selected "last" State.After in
@@ -777,7 +807,7 @@ let () =
     ; block ~parent_id:(Some "other") "other-child" "Other child"
     ]
   in
-  let structural = State.{ blocks; pages = [] } in
+  let structural = State.{ blocks; pages = []; tags = [] } in
   assert_bool "indent rejects the first sibling"
     (State.indent structural (State.String_set.singleton "first") = None);
   let noncontiguous =
@@ -797,7 +827,7 @@ let () =
           ; block ~parent_id:(Some "first") "existing" "Existing"
           ; block ~order:(Some "a1") "second" "Second"
           ]
-      ; pages = []
+      ; pages = []; tags = []
       }
   in
   assert_bool "indent appends after existing children"
@@ -818,7 +848,7 @@ let () =
     ; block ~parent_id:(Some "other") "other-child" "Other child"
     ]
   in
-  let structural = State.{ blocks; pages = [] } in
+  let structural = State.{ blocks; pages = []; tags = [] } in
   assert_bool "outdent rejects noncontiguous children"
     (State.outdent structural State.String_set.(empty |> add "first" |> add "third") = None);
   assert_bool "outdent rejects roots from different parents"
@@ -829,7 +859,7 @@ let () =
           [ block ~parent_id:None "parent" "Parent"
           ; block ~parent_id:(Some "parent") "child" "Child"
           ]
-      ; pages = []
+      ; pages = []; tags = []
       }
   in
   assert_bool "outdent rejects a parent missing from its outer sibling list"
@@ -840,7 +870,7 @@ let () =
           [ block "parent" "Parent"
           ; block ~parent_id:(Some "parent") "child" "Child"
           ]
-      ; pages = []
+      ; pages = []; tags = []
       }
   in
   assert_bool "outdent after the final outer sibling allocates an unbounded order"
@@ -852,7 +882,7 @@ let () =
 let () =
   let cyclic_a = block ~parent_id:(Some "cyclic-b") "cyclic-a" "A" in
   let cyclic_b = block ~parent_id:(Some "cyclic-a") "cyclic-b" "B" in
-  let cyclic = State.{ blocks = [ cyclic_a; cyclic_b ]; pages = [] } in
+  let cyclic = State.{ blocks = [ cyclic_a; cyclic_b ]; pages = []; tags = [] } in
   assert_bool "ancestor traversal terminates on malformed cycles"
     (State.String_set.cardinal (State.ancestor_uuids cyclic cyclic_a) = 2);
   let roots =
@@ -870,7 +900,7 @@ let () =
     ; block ~parent_id:None "detached" "Detached"
     ]
   in
-  let drop_context = State.{ blocks; pages = [] } in
+  let drop_context = State.{ blocks; pages = []; tags = [] } in
   let selected = State.String_set.singleton "middle" in
   assert_bool "drop inside appends after existing children"
     (match State.drop drop_context selected "last" State.Inside with
@@ -910,11 +940,11 @@ let () =
   let selected = block ~parent_id:(Some "cycle-a") "selected" "Selected" in
   let cycle_a = block ~parent_id:(Some "cycle-b") "cycle-a" "A" in
   let cycle_b = block ~parent_id:(Some "cycle-a") "cycle-b" "B" in
-  let cycle_context = State.{ blocks = [ selected; cycle_a; cycle_b ]; pages = [] } in
+  let cycle_context = State.{ blocks = [ selected; cycle_a; cycle_b ]; pages = []; tags = [] } in
   assert_bool "selected-root ancestor scan stops when unselected ancestors cycle"
     (State.selected_roots cycle_context (State.String_set.singleton "selected") = [ selected ]);
   let state, _ = State.update context State.empty (Tap_block "a") in
-  let without_editing_block = State.{ blocks = [ block "other" "Other" ]; pages = [] } in
+  let without_editing_block = State.{ blocks = [ block "other" "Other" ]; pages = []; tags = [] } in
   let unchanged, effects =
     State.update without_editing_block state (Backspace_pressed { selection_length = 0 })
   in

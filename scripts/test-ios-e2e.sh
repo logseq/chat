@@ -74,8 +74,16 @@ sed \
 if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 ]]; then
   MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"
   data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
-  graph_database=$(find "$data_container/Documents/graphs" -name graph.sqlite -type f | head -1)
-  [[ -n $graph_database ]] || die "the setup flow did not download a graph database"
+  graph_database=""
+  for _ in {1..120}; do
+    graph_database=$(find "$data_container/Documents/graphs" -name graph.sqlite -type f | head -1)
+    if [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]]; then
+      break
+    fi
+    sleep 0.5
+  done
+  [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]] \
+    || die "timed out waiting for the graph snapshot import to finish"
   xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
   opam exec --switch=5.5.0 -- dune exec core/logseq_chat_e2e_seed.exe -- "$graph_database"
 fi

@@ -56,6 +56,15 @@ let has_ref db ~source ~target =
   | _ -> false
 ;;
 
+let has_tag db ~source ~target =
+  match entid db "block/uuid" (Uuid source), entid db "block/uuid" (Uuid target) with
+  | Some source_eid, Some target_eid ->
+    datoms db Eavt ~e:source_eid ~a:"block/tags" ()
+    |> Seq.exists (fun datom ->
+      Logseq_chat_datascript_value.ref_eid db "block/tags" datom.v = Some target_eid)
+  | _ -> false
+;;
+
 let operation id base_t intent =
   Ops.{ operation_id = id; base_t; state = Queued; intent }
 ;;
@@ -69,15 +78,62 @@ let base_db () =
        ; Add (Entity_id 2, "block/uuid", Uuid "project")
        ; Add (Entity_id 2, "block/title", String "Project")
        ; Add (Entity_id 2, "block/name", String "project")
+       ; Add (Entity_id 2, "block/tags", Ref 4)
        ; Add (Entity_id 3, "block/uuid", Uuid "old-ref")
        ; Add (Entity_id 3, "block/title", String "Old ref")
        ; Add (Entity_id 3, "block/name", String "old ref")
+       ; Add (Entity_id 4, "db/ident", Keyword "logseq.class/Tag")
+       ; Add (Entity_id 5, "block/uuid", Uuid "non-inline-tag")
+       ; Add (Entity_id 5, "block/title", String "Non-inline")
+       ; Add (Entity_id 5, "block/name", String "non-inline")
+       ; Add (Entity_id 5, "block/tags", Ref 4)
        ; Add (Entity_id 10, "block/uuid", Uuid "block")
        ; Add (Entity_id 10, "block/title", String "Old")
        ; Add (Entity_id 10, "block/page", Ref 1)
        ; Add (Entity_id 10, "block/parent", Ref 1)
        ; Add (Entity_id 10, "block/order", String "a0")
-       ; Add (Entity_id 10, "block/refs", Ref 3) ]
+       ; Add (Entity_id 10, "block/refs", Ref 3)
+       ; Add (Entity_id 10, "block/tags", Ref 5) ]
+;;
+
+let () =
+  let authoritative = base_db () in
+  let op =
+    operation
+      "op-inline-tag"
+      42
+      (Save_title
+         { uuid = "block"
+         ; expected_title = "Old"
+         ; title = "New #[[project]]"
+         })
+  in
+  let snapshot = Projection.build ~server_t:42 authoritative [ op ] in
+  assert_bool "inline tag edit projects the canonical block/tags relation"
+    (has_tag snapshot.db ~source:"block" ~target:"project");
+  assert_bool "inline tag edit preserves independently assigned non-inline tags"
+    (has_tag snapshot.db ~source:"block" ~target:"non-inline-tag");
+  let with_inline =
+    authoritative
+    |> db_with
+         [ Add (lookup "block", "block/title", String "Old #[[project]]")
+         ; Add (lookup "block", "block/tags", Ref 2)
+         ]
+  in
+  let remove =
+    operation
+      "op-remove-inline-tag"
+      42
+      (Save_title
+         { uuid = "block"
+         ; expected_title = "Old #[[project]]"
+         ; title = "Plain"
+         })
+  in
+  let removed = Projection.build ~server_t:42 with_inline [ remove ] in
+  assert_bool "removing inline syntax retracts only its derived tag relation"
+    (not (has_tag removed.db ~source:"block" ~target:"project")
+     && has_tag removed.db ~source:"block" ~target:"non-inline-tag")
 ;;
 
 let () =
@@ -99,6 +155,17 @@ let () =
     (Projection.page_names "[[]] [[Project]] [[" = [ "Project" ]);
   assert_bool "page reference parser handles text without references"
     (Projection.page_names "plain" = []);
+  assert_bool "inline tag parser ignores empty and unfinished tags"
+    (Projection.inline_tag_names "#[[]] #[[unfinished" = []);
+  let db_without_tag_class =
+    empty_db ~schema ()
+    |> db_with
+         [ Add (Entity_id 1, "block/uuid", Uuid "project")
+         ; Add (Entity_id 1, "block/name", String "project")
+         ]
+  in
+  assert_bool "inline tags require the graph Tag class"
+    (Projection.tag_eids_for_title db_without_tag_class "#[[project]]" = []);
   assert_bool "one-value lookup rejects missing entities and cardinality-many attributes"
     (Projection.one_value db (lookup "missing") "block/title" = None
      && Projection.one_value db (lookup "block") "block/refs" = None);
@@ -123,6 +190,26 @@ let () =
   assert_bool "title transaction for a missing UUID has no stale refs to retract"
     (Projection.title_tx db "new-title-target" "New" =
      [ Add (lookup "new-title-target", "block/title", String "New") ]);
+  (match
+     Projection.compile
+       db
+       (Insert_block
+          { uuid = "inline-tagged-insert"
+          ; title = "New #[[project]]"
+          ; page_uuid = "page"
+          ; parent_uuid = "page"
+          ; order = "a1"
+          ; created_at = 1
+          })
+   with
+   | Ok ([ Entity { attrs; _ } ] as tx) ->
+     assert_bool "insert transaction contains the derived inline tag"
+       (List.mem_assoc "block/tags" attrs);
+     let projected = db_with tx db in
+     assert_bool "insert derives the canonical inline tag relation"
+       (has_tag projected ~source:"inline-tagged-insert" ~target:"project")
+   | Ok _ -> fail "inline tagged insert" "expected one entity transaction"
+   | Error message -> fail "inline tagged insert" message);
   assert_bool "outliner delete mutation ignores an already missing entity"
     (Projection.outliner_mutation_tx db (Projection.Outliner.Delete { uuid = "missing" }) = []);
   let dangling =

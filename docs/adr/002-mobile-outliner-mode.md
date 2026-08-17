@@ -267,12 +267,13 @@ that tree and sends typed tap actions; it does not parse Markdown or infer refer
 always shows the raw title so formatting cannot change the source text or caret. Non-editing blocks
 render the mldoc tree, including supported emphasis, code, links, `[[...]]` node references, and tags.
 
-Tapping a node reference pushes a native navigation destination. Page targets show that page as an
-outliner; ordinary-block targets show that block as the outliner root. Tapping a tag pushes a tag
-destination whose Objects list is queried from `projected-db`, so pending tag changes and deletes are
-immediately reflected. Native back and interactive-pop exit editing and selection before the
-destination changes. These destinations are state transitions in the shared core; Swift owns only the
-NavigationStack path and native presentation.
+Page, ordinary block, tag, property, and class entities all use the same native node route. Their
+entity kind selects the node page sections; it does not select a different routing mechanism. A page
+node shows its blocks as an outliner, an ordinary block node shows that block as the outliner root,
+and a tag node shows Tagged nodes queried from `projected-db`. Each route owns an independent core
+projection keyed by node UUID, so pushing or popping a node cannot mutate the projection rendered by
+the route underneath it. Native back and interactive-pop exit editing and selection before the
+destination changes. Swift owns only the NavigationStack path and native presentation.
 
 ### Bound journal projection
 

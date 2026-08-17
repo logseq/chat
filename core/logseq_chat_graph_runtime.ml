@@ -247,6 +247,14 @@ let objects_for_tag runtime uuid =
     uuid
 ;;
 
+let tag_pages runtime =
+  Logseq_chat_graph_read.tag_pages runtime.snapshot.db
+;;
+
+let node_is_tag runtime uuid =
+  Logseq_chat_graph_read.node_is_tag runtime.snapshot.db uuid
+;;
+
 let references_for_node runtime uuid =
   Logseq_chat_graph_read.references_for_node
     runtime.snapshot.db

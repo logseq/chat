@@ -22,9 +22,13 @@ public enum LogseqContentMode: String, Codable, Sendable {
 
 public struct LogseqEntitySummary: Codable, Hashable, Identifiable, Sendable {
     public let uuid: String
-    public let kind: String
     public let title: String
     public var id: String { uuid }
+
+    public init(uuid: String, title: String) {
+        self.uuid = uuid
+        self.title = title
+    }
 }
 
 public enum LogseqMarkupNodeType: String, Codable, Hashable, Sendable {
@@ -42,7 +46,6 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
     public let style: String?
     public let url: String?
     public let uuid: String?
-    public let kind: String?
     public let title: String?
     public let children: [LogseqMarkupNode]
 
@@ -52,7 +55,6 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         style: String? = nil,
         url: String? = nil,
         uuid: String? = nil,
-        kind: String? = nil,
         title: String? = nil,
         children: [LogseqMarkupNode] = []
     ) {
@@ -61,13 +63,12 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         self.style = style
         self.url = url
         self.uuid = uuid
-        self.kind = kind
         self.title = title
         self.children = children
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, text, style, url, uuid, kind, title, children
+        case type, text, style, url, uuid, title, children
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,7 +78,6 @@ public struct LogseqMarkupNode: Codable, Hashable, Sendable {
         style = try values.decodeIfPresent(String.self, forKey: .style)
         url = try values.decodeIfPresent(String.self, forKey: .url)
         uuid = try values.decodeIfPresent(String.self, forKey: .uuid)
-        kind = try values.decodeIfPresent(String.self, forKey: .kind)
         title = try values.decodeIfPresent(String.self, forKey: .title)
         children = try values.decodeIfPresent([LogseqMarkupNode].self, forKey: .children) ?? []
     }
@@ -144,7 +144,6 @@ public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
 
 public struct LogseqBlock: Codable, Identifiable, Hashable {
     public let uuid: String
-    public let kind: String
     public let title: String
     public let pageId: String
     public let parentId: String?
@@ -156,8 +155,10 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     public let journalDay: Int?
     public let tags: [LogseqEntitySummary]
     public let references: [LogseqEntitySummary]
+    public let breadcrumbs: [LogseqEntitySummary]
     public let markup: [LogseqMarkupNode]
     public let status: LogseqTaskStatus?
+    public let isAsset: Bool
     public let assetType: String?
     public let assetSize: Int?
     public let assetChecksum: String?
@@ -165,7 +166,6 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
 
     public init(
         uuid: String,
-        kind: String,
         title: String,
         pageId: String,
         parentId: String?,
@@ -177,15 +177,16 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         journalDay: Int? = nil,
         tags: [LogseqEntitySummary] = [],
         references: [LogseqEntitySummary] = [],
+        breadcrumbs: [LogseqEntitySummary] = [],
         markup: [LogseqMarkupNode] = [],
         status: LogseqTaskStatus? = nil,
+        isAsset: Bool = false,
         assetType: String? = nil,
         assetSize: Int? = nil,
         assetChecksum: String? = nil,
         localPath: String? = nil
     ) {
         self.uuid = uuid
-        self.kind = kind
         self.title = title
         self.pageId = pageId
         self.parentId = parentId
@@ -197,8 +198,10 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         self.journalDay = journalDay
         self.tags = tags
         self.references = references
+        self.breadcrumbs = breadcrumbs
         self.markup = markup
         self.status = status
+        self.isAsset = isAsset
         self.assetType = assetType
         self.assetSize = assetSize
         self.assetChecksum = assetChecksum
@@ -206,15 +209,14 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, kind, title, pageId, parentId, order, createdAt, updatedAt, syncStatus
-        case journalTitle, journalDay, tags, references, markup, status, assetType, assetSize
+        case uuid, title, pageId, parentId, order, createdAt, updatedAt, syncStatus
+        case journalTitle, journalDay, tags, references, breadcrumbs, markup, status, isAsset, assetType, assetSize
         case assetChecksum, localPath
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         uuid = try values.decode(String.self, forKey: .uuid)
-        kind = try values.decode(String.self, forKey: .kind)
         title = try values.decode(String.self, forKey: .title)
         pageId = try values.decode(String.self, forKey: .pageId)
         parentId = try values.decodeIfPresent(String.self, forKey: .parentId)
@@ -226,8 +228,10 @@ public struct LogseqBlock: Codable, Identifiable, Hashable {
         journalDay = try values.decodeIfPresent(Int.self, forKey: .journalDay)
         tags = try values.decodeIfPresent([LogseqEntitySummary].self, forKey: .tags) ?? []
         references = try values.decodeIfPresent([LogseqEntitySummary].self, forKey: .references) ?? []
+        breadcrumbs = try values.decodeIfPresent([LogseqEntitySummary].self, forKey: .breadcrumbs) ?? []
         markup = try values.decodeIfPresent([LogseqMarkupNode].self, forKey: .markup) ?? []
         status = try values.decodeIfPresent(LogseqTaskStatus.self, forKey: .status)
+        isAsset = try values.decodeIfPresent(Bool.self, forKey: .isAsset) ?? false
         assetType = try values.decodeIfPresent(String.self, forKey: .assetType)
         assetSize = try values.decodeIfPresent(Int.self, forKey: .assetSize)
         assetChecksum = try values.decodeIfPresent(String.self, forKey: .assetChecksum)
@@ -302,6 +306,26 @@ public struct LogseqSidebarPage: Codable, Hashable, Identifiable, Sendable {
     public var id: String { uuid }
 }
 
+public struct LogseqNodeProjection: Codable, Identifiable {
+    public let uuid: String
+    public let isTag: Bool
+    public let page: LogseqSidebarPage
+    public let blocks: [LogseqBlock]
+    public let relatedBlocks: [LogseqBlock]
+    public let outlinerState: LogseqOutlinerState
+    public let outlinerRows: [LogseqOutlineRow]
+    public let outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate]
+    public var id: String { uuid }
+}
+
+public struct LogseqNodeRouteRequest: Codable, Sendable {
+    public let uuid: String
+
+    public init(uuid: String) {
+        self.uuid = uuid
+    }
+}
+
 public struct LogseqPendingSyncRequest: Codable, Sendable {
     public let id: Int
     public let method: String
@@ -360,7 +384,7 @@ public struct LogseqOutlinerAutocomplete: Codable, Equatable, Sendable {
 public struct LogseqOutlinerAutocompleteCandidate: Codable, Equatable, Identifiable, Sendable {
     public let label: String
     public let value: String
-    public var id: String { "\(label)\u{0}\(value)" }
+    public var id: String { "\(label)|\(value)" }
 }
 
 public struct LogseqOutlinerState: Codable, Equatable, Sendable {
@@ -444,6 +468,7 @@ public struct LogseqChatSnapshot: Codable {
     public let syncConnected: Bool?
     public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
+    public let nodeRoutes: [LogseqNodeProjection]
     public let taskStatuses: [LogseqTaskStatus]?
     public let isGraphEncrypted: Bool?
     public let isGraphUnlocked: Bool?
@@ -455,6 +480,7 @@ public struct LogseqChatSnapshot: Codable {
     public let outlinerRows: [LogseqOutlineRow]
     public let hasPendingSemanticOperations: Bool
     public let hasOlderJournals: Bool
+    public let isOutlinerPatch: Bool
 
     public init(
         revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
@@ -464,6 +490,7 @@ public struct LogseqChatSnapshot: Codable {
         selectedPage: LogseqSidebarPage? = nil,
         appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
+        nodeRoutes: [LogseqNodeProjection] = [],
         taskStatuses: [LogseqTaskStatus]? = nil,
         isGraphEncrypted: Bool? = nil,
         isGraphUnlocked: Bool? = nil,
@@ -474,7 +501,8 @@ public struct LogseqChatSnapshot: Codable {
         outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate] = [],
         outlinerRows: [LogseqOutlineRow] = [],
         hasPendingSemanticOperations: Bool = false,
-        hasOlderJournals: Bool = false
+        hasOlderJournals: Bool = false,
+        isOutlinerPatch: Bool = false
     ) {
         self.revision = revision
         self.query = query
@@ -491,6 +519,7 @@ public struct LogseqChatSnapshot: Codable {
         self.syncConnected = syncConnected
         self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
+        self.nodeRoutes = nodeRoutes
         self.taskStatuses = taskStatuses
         self.isGraphEncrypted = isGraphEncrypted
         self.isGraphUnlocked = isGraphUnlocked
@@ -502,18 +531,20 @@ public struct LogseqChatSnapshot: Codable {
         self.outlinerRows = outlinerRows
         self.hasPendingSemanticOperations = hasPendingSemanticOperations
         self.hasOlderJournals = hasOlderJournals
+        self.isOutlinerPatch = isOutlinerPatch
     }
 
     private enum CodingKeys: String, CodingKey {
         case revision, query, blocks, selectedBlock, lastRefreshAt, graphName
         case selectedGraphId, graphs, favorites, recentPages, selectedPage, appliedServerT
-        case syncConnected, isSearching, relatedBlocks, taskStatuses
+        case syncConnected, isSearching, relatedBlocks, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
         case outlinerAutocompleteCandidates
         case outlinerRows
         case hasPendingSemanticOperations
         case hasOlderJournals
+        case isOutlinerPatch
     }
 
     public init(from decoder: Decoder) throws {
@@ -533,6 +564,9 @@ public struct LogseqChatSnapshot: Codable {
         syncConnected = try values.decodeIfPresent(Bool.self, forKey: .syncConnected)
         isSearching = try values.decode(Bool.self, forKey: .isSearching)
         relatedBlocks = try values.decodeIfPresent([LogseqBlock].self, forKey: .relatedBlocks)
+        nodeRoutes = try values.decodeIfPresent(
+            [LogseqNodeProjection].self, forKey: .nodeRoutes
+        ) ?? []
         taskStatuses = try values.decodeIfPresent([LogseqTaskStatus].self, forKey: .taskStatuses)
         isGraphEncrypted = try values.decodeIfPresent(Bool.self, forKey: .isGraphEncrypted)
         isGraphUnlocked = try values.decodeIfPresent(Bool.self, forKey: .isGraphUnlocked)
@@ -547,6 +581,7 @@ public struct LogseqChatSnapshot: Codable {
         outlinerRows = try values.decodeIfPresent([LogseqOutlineRow].self, forKey: .outlinerRows) ?? []
         hasPendingSemanticOperations = try values.decodeIfPresent(Bool.self, forKey: .hasPendingSemanticOperations) ?? false
         hasOlderJournals = try values.decodeIfPresent(Bool.self, forKey: .hasOlderJournals) ?? false
+        isOutlinerPatch = try values.decodeIfPresent(Bool.self, forKey: .isOutlinerPatch) ?? false
     }
 }
 

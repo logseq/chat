@@ -223,11 +223,30 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func sections(for contentMode: LogseqContentMode) -> [LogseqBlockSection] {
+        #if DEBUG
+        let startedAt = Date()
+        #endif
         guard contentMode == .outliner else { return sections }
         let projectedBlocks = snapshot.outlinerRows.isEmpty && !snapshot.blocks.isEmpty
             ? snapshot.blocks
             : snapshot.outlinerRows.map(\.block)
-        return Array(makeSections(from: projectedBlocks).reversed())
+        let result = Array(makeSections(from: projectedBlocks).reversed())
+        #if DEBUG
+        let milliseconds = Date().timeIntervalSince(startedAt) * 1_000
+        logger.info(
+            "Section timing: mode=\(contentMode.rawValue), ms=\(String(format: "%.2f", milliseconds)), "
+                + "blocks=\(projectedBlocks.count), sections=\(result.count)"
+        )
+        #endif
+        return result
+    }
+
+    public func sections(for projection: LogseqNodeProjection) -> [LogseqBlockSection] {
+        [LogseqBlockSection(
+            id: projection.page.uuid,
+            title: projection.page.title,
+            blocks: Self.outlinerPreorder(projection.blocks, pageId: projection.page.uuid)
+        )]
     }
 
     private static func outlinerPreorder(_ blocks: [LogseqBlock], pageId: String) -> [LogseqBlock] {
@@ -374,13 +393,14 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func openNode(_ nodeID: String) {
-        performAsync(
-            LogseqChatRPCRequest(
-                method: "dispatch",
-                params: LogseqChatRPCParams(action: "openNode", payload: nodeID)
-            ),
-            afterApply: nil
-        )
+        dispatchEncoded("openNode", LogseqNodeRouteRequest(uuid: nodeID))
+    }
+
+    public func closeNode() {
+        performAsync(LogseqChatRPCRequest(
+            method: "dispatch",
+            params: LogseqChatRPCParams(action: "closeNode")
+        ))
     }
 
     public func clearSelectedPage() {
@@ -575,7 +595,7 @@ private struct OpenGraphPayload: Encodable {
     private func dispatchEncodedAndWait<T: Encodable>(
         _ action: String,
         _ value: T,
-        shouldApply: (@MainActor () -> Bool)? = nil
+        shouldApply: (() -> Bool)? = nil
     ) async {
         do {
             let data = try JSONEncoder().encode(value)
@@ -603,7 +623,7 @@ private struct OpenGraphPayload: Encodable {
         )
     }
 
-    private func refresh(afterApply: (@MainActor () -> Void)?) {
+    private func refresh(afterApply: (() -> Void)?) {
         guard !isRefreshing else { return }
         isRefreshing = true
         performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "refresh")), afterApply: {
@@ -775,13 +795,6 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func delete(block: LogseqBlock) {
-        guard block.kind == "block" else {
-            lastError = LogseqChatCoreError(
-                code: "ordinary_delete_rejects_page",
-                message: "Recycle is only available for pages; ordinary delete only supports blocks"
-            )
-            return
-        }
         guard let expectedServerT = snapshot.appliedServerT else {
             lastError = LogseqChatCoreError(
                 code: "delete_requires_server_cursor",
@@ -833,6 +846,12 @@ private struct OpenGraphPayload: Encodable {
     }
 
     public func outlinerEvent(_ event: LogseqOutlinerEvent) {
+        #if DEBUG
+        logger.info(
+            "Outliner event queued: type=\(event.type), uuid=\(event.uuid ?? "nil"), "
+                + "action=\(event.action ?? "nil")"
+        )
+        #endif
         outlinerProjectionGeneration += 1
         let generation = outlinerProjectionGeneration
         let isAtomicStructureEvent =
@@ -888,11 +907,12 @@ private struct OpenGraphPayload: Encodable {
             if canBeSuperseded, self.outlinerProjectionGeneration != generation {
                 return
             }
+            let projectionIsCurrent = self.outlinerProjectionGeneration == generation
             await self.dispatchEncodedAndWait(
                 "outlinerEvent",
                 event,
                 shouldApply: {
-                    !canBeSuperseded || self.outlinerProjectionGeneration == generation
+                    !canBeSuperseded || projectionIsCurrent
                 }
             )
             if self.snapshot.hasPendingSemanticOperations {
@@ -910,8 +930,8 @@ private struct OpenGraphPayload: Encodable {
 
     private func performAsync(
         _ request: LogseqChatRPCRequest,
-        shouldApply: (@MainActor () -> Bool)? = nil,
-        afterApply: (@MainActor () -> Void)? = nil
+        shouldApply: (() -> Bool)? = nil,
+        afterApply: (() -> Void)? = nil
     ) {
         Task {
             await performAsyncAndWait(request, shouldApply: shouldApply)
@@ -956,7 +976,7 @@ private struct OpenGraphPayload: Encodable {
 
     private func performAsyncAndWait(
         _ request: LogseqChatRPCRequest,
-        shouldApply: (@MainActor () -> Bool)? = nil
+        shouldApply: (() -> Bool)? = nil
     ) async {
         let actionName = request.params.action ?? request.method
         guard let requestJSON = encode(request) else {
@@ -964,6 +984,7 @@ private struct OpenGraphPayload: Encodable {
         }
         #if DEBUG
         print("LogseqChat debug: async core action started \(actionName)")
+        let coreStartedAt = Date()
         #endif
         logger.info("Core action started: \(actionName)")
         #if !SKIP
@@ -975,7 +996,16 @@ private struct OpenGraphPayload: Encodable {
         let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
         #endif
         #if DEBUG
-        print("LogseqChat debug: async core action returned \(actionName)")
+        let coreMilliseconds = Date().timeIntervalSince(coreStartedAt) * 1_000
+        let coreTiming =
+            "Core timing: action=\(actionName), coreMs=\(String(format: "%.2f", coreMilliseconds)), "
+                + "requestBytes=\(requestJSON.utf8.count), responseBytes=\(responseJSON.utf8.count)"
+        logger.info(coreTiming)
+        print(
+            "LogseqChat debug: async core action returned \(actionName) "
+                + "coreMs=\(String(format: "%.2f", coreMilliseconds)) "
+                + "requestBytes=\(requestJSON.utf8.count) responseBytes=\(responseJSON.utf8.count)"
+        )
         if responseJSON.contains("invalid_json") {
             let locallyValid = (try? JSONSerialization.jsonObject(
                 with: Data(requestJSON.utf8)
@@ -1023,17 +1053,28 @@ private struct OpenGraphPayload: Encodable {
     }
 
     private func apply(responseJSON: String, actionName: String = "sync") {
+        #if DEBUG
+        let applyStartedAt = Date()
+        #endif
         do {
             let responseData = Data(responseJSON.utf8)
             let response = try JSONDecoder().decode(LogseqChatRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {
                 let mergedResult = mergedSnapshot(result, actionName: actionName)
                 #if DEBUG
+                let applyMilliseconds = Date().timeIntervalSince(applyStartedAt) * 1_000
+                logger.info(
+                    "Apply timing: action=\(actionName), applyMs=\(String(format: "%.2f", applyMilliseconds)), "
+                        + "blocks=\(mergedResult.blocks.count), rows=\(mergedResult.outlinerRows.count), "
+                        + "patch=\(result.isOutlinerPatch)"
+                )
                 print(
                     "LogseqChat debug: core action applied \(actionName) "
                         + "revision=\(mergedResult.revision) blocks=\(mergedResult.blocks.count) "
                         + "journals=\(mergedResult.blocks.filter { $0.journalDay != nil }.count) "
-                        + "graphs=\(mergedResult.graphs?.count ?? 0)"
+                        + "graphs=\(mergedResult.graphs?.count ?? 0) "
+                        + "patch=\(result.isOutlinerPatch) "
+                        + "applyMs=\(String(format: "%.2f", applyMilliseconds))"
                 )
                 #endif
                 logger.info(
@@ -1086,6 +1127,47 @@ private struct OpenGraphPayload: Encodable {
     }
 
     private func mergedSnapshot(_ result: LogseqChatSnapshot, actionName: String) -> LogseqChatSnapshot {
+        if result.isOutlinerPatch {
+            let blocks = result.blocks.isEmpty ? snapshot.blocks : snapshot.blocks.map { block in
+                result.blocks.first { $0.uuid == block.uuid } ?? block
+            }
+            let outlinerRows = result.outlinerRows.isEmpty ? snapshot.outlinerRows : snapshot.outlinerRows.map { row in
+                result.outlinerRows.first { $0.block.uuid == row.block.uuid } ?? row
+            }
+            let selectedBlock = snapshot.selectedBlock.flatMap { selected in
+                result.blocks.first { $0.uuid == selected.uuid } ?? selected
+            }
+            return LogseqChatSnapshot(
+                revision: snapshot.revision,
+                query: snapshot.query,
+                blocks: blocks,
+                selectedBlock: selectedBlock,
+                lastRefreshAt: snapshot.lastRefreshAt,
+                graphName: snapshot.graphName,
+                isSearching: snapshot.isSearching,
+                selectedGraphId: snapshot.selectedGraphId,
+                graphs: snapshot.graphs,
+                favorites: snapshot.favorites,
+                recentPages: snapshot.recentPages,
+                selectedPage: snapshot.selectedPage,
+                appliedServerT: snapshot.appliedServerT,
+                syncConnected: snapshot.syncConnected,
+                relatedBlocks: snapshot.relatedBlocks,
+                nodeRoutes: snapshot.nodeRoutes,
+                taskStatuses: snapshot.taskStatuses,
+                isGraphEncrypted: snapshot.isGraphEncrypted,
+                isGraphUnlocked: snapshot.isGraphUnlocked,
+                pendingSyncRequest: snapshot.pendingSyncRequest,
+                outlinerState: result.outlinerState,
+                outlinerCommandRevision: result.outlinerCommandRevision,
+                outlinerCommands: result.outlinerCommands,
+                outlinerAutocompleteCandidates: result.outlinerAutocompleteCandidates,
+                outlinerRows: outlinerRows,
+                hasPendingSemanticOperations: result.hasPendingSemanticOperations,
+                hasOlderJournals: snapshot.hasOlderJournals,
+                isOutlinerPatch: false
+            )
+        }
         let preservesCurrentSearch = actionName != "search" && actionName != "searchLocal" && snapshot.isSearching
         let query = preservesCurrentSearch ? snapshot.query : result.query
         let isSearching = preservesCurrentSearch ? snapshot.isSearching : result.isSearching
@@ -1110,6 +1192,7 @@ private struct OpenGraphPayload: Encodable {
             appliedServerT: result.appliedServerT,
             syncConnected: result.syncConnected,
             relatedBlocks: result.relatedBlocks,
+            nodeRoutes: result.nodeRoutes,
             taskStatuses: result.taskStatuses ?? snapshot.taskStatuses,
             isGraphEncrypted: result.isGraphEncrypted,
             isGraphUnlocked: result.isGraphUnlocked,

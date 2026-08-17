@@ -154,7 +154,6 @@ let () =
     let remote_block =
       Logseq_chat_model.
         { uuid = "remote-existing"
-        ; kind = "block"
         ; title = "Existing server block"
         ; page_id = "journal/2026-04-13"
         ; parent_id = None
@@ -164,7 +163,9 @@ let () =
         ; sync_status = "synced"
         ; tags = []
         ; references = []
+        ; breadcrumbs = []
         ; status = None
+        ; is_asset = false
         ; asset_type = None
         ; asset_size = None
         ; asset_checksum = None

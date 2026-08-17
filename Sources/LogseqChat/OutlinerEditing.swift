@@ -27,30 +27,17 @@ enum OutlinerClipboardPolicy {
 }
 
 enum OutlinerMarkupLink: Equatable {
-    case node(uuid: String, kind: String)
-    case tag(uuid: String)
+    case node(uuid: String)
 
     var url: URL? {
-        switch self {
-        case let .node(uuid, kind):
-            return URL(string: "logseq-node://\(uuid)?kind=\(kind)")
-        case let .tag(uuid):
-            return URL(string: "logseq-tag://\(uuid)")
-        }
+        switch self { case let .node(uuid): return URL(string: "logseq-node://\(uuid)") }
     }
 
     init?(url: URL) {
         guard let uuid = url.host, !uuid.isEmpty else { return nil }
         switch url.scheme {
         case "logseq-node":
-            let kind = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                .queryItems?
-                .first(where: { $0.name == "kind" })?
-                .value
-            guard let kind, kind == "page" || kind == "block" else { return nil }
-            self = .node(uuid: uuid, kind: kind)
-        case "logseq-tag":
-            self = .tag(uuid: uuid)
+            self = .node(uuid: uuid)
         default:
             return nil
         }
@@ -81,13 +68,13 @@ struct OutlinerMarkupPresentation: Equatable {
                     }
                 case .nodeReference:
                     text += node.title ?? ""
-                    if let uuid = node.uuid, let kind = node.kind {
-                        links.append(.node(uuid: uuid, kind: kind))
+                    if let uuid = node.uuid {
+                        links.append(.node(uuid: uuid))
                     }
                 case .tagReference:
                     text += "#" + (node.title ?? "")
                     if let uuid = node.uuid {
-                        links.append(.tag(uuid: uuid))
+                        links.append(.node(uuid: uuid))
                     }
                 }
             }
@@ -112,8 +99,7 @@ enum BlockTagPresentationPolicy {
         let inlineIDs = inlineTagIDs(markup)
         var seen: Set<String> = []
         return tags.filter { tag in
-            tag.kind == "tag"
-                && !inlineIDs.contains(tag.uuid)
+            !inlineIDs.contains(tag.uuid)
                 && seen.insert(tag.uuid).inserted
         }
     }
@@ -159,6 +145,25 @@ enum InlineEditorReturnTransition {
         let suffixStart = location + selectionLength
         return value.substring(from: suffixStart)
     }
+}
+
+enum InlineEditorFocusPolicy {
+    static func shouldRequestFocus(
+        isAttachedToWindow: Bool,
+        isFirstResponder: Bool
+    ) -> Bool {
+        isAttachedToWindow && !isFirstResponder
+    }
+}
+
+struct OutlinerRowRenderKey: Equatable, @unchecked Sendable {
+    let row: LogseqOutlineRow
+    let statuses: [LogseqTaskStatus]
+    let isEditing: Bool
+    let isSelected: Bool
+    let isSelectionActive: Bool
+    let editingTitle: String
+    let desiredCaretUTF16Offset: Int?
 }
 
 enum OutlinerToolbarAction: Hashable {
@@ -268,6 +273,15 @@ enum OutlinerToolbarPolicy {
     ]
 }
 
+enum OutlinerKeyboardPresentationPolicy {
+    static func presentedEditing(
+        coreEditing: LogseqOutlinerEditing?,
+        dismissalPending: Bool
+    ) -> LogseqOutlinerEditing? {
+        dismissalPending ? nil : coreEditing
+    }
+}
+
 enum OutlinerLayoutMetrics {
     static let outerHorizontalInset: CGFloat = 8
     static let indentation: CGFloat = 22
@@ -300,50 +314,54 @@ enum OutlinerNavigationPolicy {
 }
 
 enum AppNavigationRoute: Hashable {
-    case outlinerBlock(String)
-    case node(String, String)
-    case tag(String)
-    case graphs
+    case node(String)
 }
 
 enum AppNavigationPathPolicy {
-    static func zoomedBlockIDs(_ path: [AppNavigationRoute]) -> [String] {
-        path.compactMap { route in
-            if case let .outlinerBlock(uuid) = route { return uuid }
-            return nil
-        }
-    }
+    static func nodeCount(_ path: [AppNavigationRoute]) -> Int { path.count }
 
-    static func containsGraphs(_ path: [AppNavigationRoute]) -> Bool {
-        for route in path where route == .graphs {
-            return true
-        }
-        return false
-    }
-
-    static func containsIndependentDestination(_ path: [AppNavigationRoute]) -> Bool {
-        path.contains { route in
-            switch route {
-            case .node, .tag, .graphs: return true
-            case .outlinerBlock: return false
-            }
-        }
-    }
-
-    static func containsNode(_ path: [AppNavigationRoute]) -> Bool {
-        path.contains { if case .node = $0 { return true } else { return false } }
-    }
-
-    static func containsTag(_ path: [AppNavigationRoute]) -> Bool {
-        path.contains { if case .tag = $0 { return true } else { return false } }
+    static func shouldAppend(_ route: AppNavigationRoute, to path: [AppNavigationRoute]) -> Bool {
+        path.last != route
     }
 }
 
 enum RelatedContentPolicy {
-    static func sectionTitle(route: AppNavigationRoute?, hasBlocks: Bool) -> String? {
-        guard hasBlocks else { return nil }
-        if case .node = route { return "References" }
-        return nil
+    static func sectionTitle(isTag: Bool, hasBlocks: Bool) -> String? {
+        isTag ? "Tagged nodes" : (hasBlocks ? "Linked references" : nil)
+    }
+
+    static func emptyTitle(isTag: Bool, hasBlocks: Bool) -> String? {
+        isTag && !hasBlocks ? "No tagged nodes" : nil
+    }
+}
+
+struct RelatedBlockGroup: Identifiable, Equatable {
+    let id: String
+    let breadcrumbs: [LogseqEntitySummary]
+    let blocks: [LogseqBlock]
+}
+
+enum RelatedBlockGrouping {
+    static func groups(_ blocks: [LogseqBlock]) -> [RelatedBlockGroup] {
+        var order: [String] = []
+        var breadcrumbsByID: [String: [LogseqEntitySummary]] = [:]
+        var blocksByID: [String: [LogseqBlock]] = [:]
+        for block in blocks {
+            let key = block.breadcrumbs.last?.uuid ?? block.parentId ?? block.pageId
+            if blocksByID[key] == nil {
+                order.append(key)
+                breadcrumbsByID[key] = block.breadcrumbs
+                blocksByID[key] = []
+            }
+            blocksByID[key]!.append(block)
+        }
+        return order.map { key in
+            RelatedBlockGroup(
+                id: key,
+                breadcrumbs: breadcrumbsByID[key]!,
+                blocks: blocksByID[key]!
+            )
+        }
     }
 }
 

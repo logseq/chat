@@ -92,6 +92,10 @@ let () =
       (Runtime.node_destination runtime "missing" = None);
     assert_bool "missing tags have no projected objects"
       (Runtime.objects_for_tag runtime "missing" = []);
+    assert_bool "a graph without Tag entities has no tag autocomplete pages"
+      (Runtime.tag_pages runtime = []);
+    assert_bool "a missing graph node is not a tag"
+      (not (Runtime.node_is_tag runtime "missing"));
     assert_bool "missing nodes have no projected references"
       (Runtime.references_for_node runtime "missing" = []);
     assert_bool "pending op is stored beside graph kvs"

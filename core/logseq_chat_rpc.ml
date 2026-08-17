@@ -46,12 +46,23 @@ type semantic_active =
   ; request : Api.request
   }
 
+type node_route =
+  { uuid : string
+  ; is_tag : bool
+  ; page : Logseq_chat_graph_read.sidebar_page
+  ; zoom_to_block : bool
+  ; related_blocks : Model.block list
+  ; mutable state : Outliner_state.t
+  }
+
 type t =
   { model : Model.t
   ; mutable config : Api.config option
   ; mutable available_graphs : Api.graph list
   ; mutable related_blocks : Model.block list
   ; mutable selected_sidebar_page : Logseq_chat_graph_read.sidebar_page option
+  ; mutable node_routes : node_route list
+  ; mutable node_base_state : Outliner_state.t option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; start_sse : (unit -> unit) option
@@ -59,6 +70,8 @@ type t =
   ; sync_cursor : (unit -> int option) option
   ; graph_blocks : (unit -> Model.block list option) option
   ; graph_sidebar_pages : (unit -> Logseq_chat_graph_read.sidebar_pages option) option
+  ; graph_tag_pages : (unit -> Logseq_chat_graph_read.sidebar_page list option) option
+  ; graph_node_is_tag : (string -> bool) option
   ; graph_page_blocks : (string -> Model.block list option) option
   ; graph_node_destination :
       (string -> (Logseq_chat_graph_read.sidebar_page * bool) option) option
@@ -224,7 +237,7 @@ let status_semantic_ref (status : Model.status) =
 
 let block_json (block : Model.block) =
   let summary_json (summary : Model.entity_summary) =
-    `Assoc [ "uuid", `String summary.uuid; "kind", `String summary.kind; "title", `String summary.title ]
+    `Assoc [ "uuid", `String summary.uuid; "title", `String summary.title ]
   in
   let status_fields =
     match block.status with
@@ -234,14 +247,15 @@ let block_json (block : Model.block) =
   in
   `Assoc
     ([ "uuid", `String block.uuid
-     ; "kind", `String block.kind
      ; "title", `String block.title
      ; "pageId", `String block.page_id
      ; "createdAt", `Int block.created_at
      ; "updatedAt", `Int block.updated_at
      ; "syncStatus", `String block.sync_status
+     ; "isAsset", `Bool block.is_asset
      ; "tags", `List (List.map summary_json block.tags)
      ; "references", `List (List.map summary_json block.references)
+     ; "breadcrumbs", `List (List.map summary_json block.breadcrumbs)
      ; ( "markup"
        , Logseq_chat_markup.parse
            ~references:block.references
@@ -329,13 +343,7 @@ let autocomplete_kind_json = function
   | Property -> "property"
 ;;
 
-let outliner_context session =
-  let blocks =
-    match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
-    | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
-    | _, _, Some load -> Option.value (load ()) ~default:[]
-    | _ -> []
-  in
+let outliner_context_with_blocks session blocks =
   let pages =
     match session.graph_sidebar_pages with
     | None -> []
@@ -347,9 +355,46 @@ let outliner_context session =
       in
       sidebar.favorites @ sidebar.recent_pages
       |> List.map (fun page ->
-        Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.title })
+        Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.uuid })
   in
-  Outliner_state.{ blocks; pages }
+  let tags =
+    match session.graph_tag_pages with
+    | None -> []
+    | Some load ->
+      Option.value (load ()) ~default:[]
+      |> List.map (fun page ->
+        Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.uuid })
+  in
+  Outliner_state.{ blocks; pages; tags }
+;;
+
+let base_outliner_context session =
+  let blocks =
+    match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
+    | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
+    | _, _, Some load -> Option.value (load ()) ~default:[]
+    | _ -> []
+  in
+  outliner_context_with_blocks session blocks
+;;
+
+let node_route_context session route =
+  let blocks =
+    match session.graph_page_blocks with
+    | Some load -> Option.value (load route.page.uuid) ~default:[]
+    | None -> []
+  in
+  outliner_context_with_blocks session blocks
+;;
+
+let active_node_route session =
+  match List.rev session.node_routes with route :: _ -> Some route | [] -> None
+;;
+
+let outliner_context session =
+  match active_node_route session with
+  | Some route -> node_route_context session route
+  | None -> base_outliner_context session
 ;;
 
 let outliner_state_json state =
@@ -403,6 +448,29 @@ let outliner_candidates_json context state =
         ; "value", `String candidate.value
         ])
     |> fun candidates -> `List candidates
+;;
+
+let node_routes_json session =
+  let active = active_node_route session in
+  session.node_routes
+  |> List.map (fun route ->
+    let state =
+      match active with
+      | Some active when String.equal active.uuid route.uuid -> session.outliner_state
+      | _ -> route.state
+    in
+    let context = node_route_context session route in
+    `Assoc
+      [ "uuid", `String route.uuid
+      ; "isTag", `Bool route.is_tag
+      ; "page", sidebar_page_json route.page
+      ; "blocks", `List (List.map (visible_block_json session.model) context.blocks)
+      ; "relatedBlocks", `List (List.map block_json route.related_blocks)
+      ; "outlinerState", outliner_state_json state
+      ; "outlinerRows", outliner_rows_json session context state
+      ; "outlinerAutocompleteCandidates", outliner_candidates_json context state
+      ])
+  |> fun routes -> `List routes
 ;;
 
 let haptic_json = function Outliner_state.Selection -> "selection" | Impact -> "impact"
@@ -463,6 +531,8 @@ let snapshot session blocks =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
     |> Option.value ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
   in
+  let base_state = Option.value session.node_base_state ~default:session.outliner_state in
+  let base_context = base_outliner_context session in
   success
     (`Assoc
       [ "revision", `Int session.model.revision
@@ -473,6 +543,7 @@ let snapshot session blocks =
          | Some block -> block_json block
          | None -> `Null)
       ; "relatedBlocks", `List (List.map (block_json) session.related_blocks)
+      ; "nodeRoutes", node_routes_json session
       ; "lastRefreshAt",
         (match session.model.last_refresh_at with
          | Some value -> `Int value
@@ -502,17 +573,51 @@ let snapshot session blocks =
       ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ; "pendingSyncRequest", pending_request_json session
-      ; "outlinerState", outliner_state_json session.outliner_state
+      ; "outlinerState", outliner_state_json base_state
       ; "outlinerAutocompleteCandidates",
-        outliner_candidates_json (outliner_context session) session.outliner_state
+        outliner_candidates_json base_context base_state
       ; "outlinerRows",
-        outliner_rows_json session (outliner_context session) session.outliner_state
+        outliner_rows_json session base_context base_state
       ; "outlinerCommandRevision", `Int session.outliner_revision
       ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
         `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
       ; "hasOlderJournals",
         `Bool (Option.fold ~none:false ~some:(fun read -> read ()) session.has_older_journals)
+      ; "isOutlinerPatch", `Bool false
+      ])
+;;
+
+let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.context) =
+  let changed uuid = List.exists (String.equal uuid) changed_uuids in
+  let blocks = List.filter (fun (block : Model.block) -> changed block.uuid) context.blocks in
+  let rows =
+    Outliner_state.visible_rows context session.outliner_state
+    |> List.filter (fun row -> changed row.Outliner_state.block.uuid)
+    |> List.map (fun row ->
+      `Assoc
+        [ "block", visible_block_json session.model row.Outliner_state.block
+        ; "depth", `Int row.depth
+        ; "hasChildren", `Bool row.has_children
+        ; "isCollapsed", `Bool row.is_collapsed
+        ])
+  in
+  success
+    (`Assoc
+      [ "revision", `Int session.model.revision
+      ; "query", `String session.model.query
+      ; "blocks", `List (List.map (visible_block_json session.model) blocks)
+      ; "selectedBlock", `Null
+      ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
+      ; "outlinerState", outliner_state_json session.outliner_state
+      ; "outlinerAutocompleteCandidates",
+        outliner_candidates_json (outliner_context session) session.outliner_state
+      ; "outlinerRows", `List rows
+      ; "outlinerCommandRevision", `Int session.outliner_revision
+      ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
+      ; "hasPendingSemanticOperations",
+        `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
+      ; "isOutlinerPatch", `Bool true
       ])
 ;;
 
@@ -548,7 +653,7 @@ let snapshot_visible session =
                (match Hashtbl.find_opt local_by_uuid block.uuid with
                 | Some local when Option.is_some local.local_path ->
                   { block with
-                    kind = local.kind
+                    is_asset = local.is_asset
                   ; asset_type = local.asset_type
                   ; asset_size = local.asset_size
                   ; asset_checksum = local.asset_checksum
@@ -625,6 +730,8 @@ let create
       ?sync_cursor
       ?graph_blocks
       ?graph_sidebar_pages
+      ?graph_tag_pages
+      ?graph_node_is_tag
       ?graph_page_blocks
       ?graph_node_destination
       ?graph_node_references
@@ -660,6 +767,8 @@ let create
   ; available_graphs
   ; related_blocks = []
   ; selected_sidebar_page = None
+  ; node_routes = []
+  ; node_base_state = None
   ; open_graph
   ; import_snapshot
   ; start_sse
@@ -667,6 +776,8 @@ let create
   ; sync_cursor
   ; graph_blocks
   ; graph_sidebar_pages
+  ; graph_tag_pages
+  ; graph_node_is_tag
   ; graph_page_blocks
   ; graph_node_destination
   ; graph_node_references
@@ -847,7 +958,6 @@ let same_status left right =
 
 let same_pending_version (left : Model.block) (right : Model.block) =
   String.equal left.uuid right.uuid
-  && String.equal left.kind right.kind
   && String.equal left.title right.title
   && left.updated_at = right.updated_at
   && same_status left.status right.status
@@ -961,17 +1071,8 @@ and prepare_pending_creation session pump (block : Model.block) =
   else prepare_pending_create_request session pump block ~title:block.title ~page_id:None
 
 and prepare_pending_create_request session pump (block : Model.block) ~title ~page_id =
-  match block.kind, block.status, block.local_path, block.asset_type,
-        block.asset_size, block.asset_checksum with
-  | "block", _, _, _, _, _ ->
-    set_pending_active
-      session
-      pump
-      ~transport:(Json_request (Api.capture_request ?page_id pump.config ~uuid:block.uuid title))
-      ~operation:(Create_block block)
-      ();
-    Ok ()
-  | "task", Some status, _, _, _, _ ->
+  match block.status, block.local_path, block.asset_type, block.asset_size, block.asset_checksum with
+  | Some status, _, _, _, _ ->
     set_pending_active
       session
       pump
@@ -979,7 +1080,7 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
       ~operation:(Create_block block)
       ();
     Ok ()
-  | "asset", _, Some source_path, Some asset_type, Some asset_size, Some checksum ->
+  | None, Some source_path, Some asset_type, Some asset_size, Some checksum ->
     if selected_graph_is_encrypted session
     then
       (match page_id, session.encrypt_asset_file with
@@ -1027,6 +1128,14 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
         ~operation:(Create_block block)
         ();
       Ok ())
+  | None, None, None, None, None ->
+    set_pending_active
+      session
+      pump
+      ~transport:(Json_request (Api.capture_request ?page_id pump.config ~uuid:block.uuid title))
+      ~operation:(Create_block block)
+      ();
+    Ok ()
   | _ -> Error "pending block has incomplete semantic REST metadata"
 ;;
 
@@ -1310,6 +1419,58 @@ let reset_outliner session =
   session.outliner_revision <- session.outliner_revision + 1
 ;;
 
+let clear_node_navigation session =
+  (match session.node_base_state with
+   | Some state -> session.outliner_state <- state
+   | None -> ());
+  session.node_routes <- [];
+  session.node_base_state <- None
+;;
+
+let persist_active_node_state session =
+  match active_node_route session with
+  | Some route -> route.state <- session.outliner_state
+  | None -> ()
+;;
+
+let initial_node_state session route =
+  if not route.zoom_to_block
+  then Outliner_state.empty
+  else
+    fst
+      (Outliner_state.update
+         (node_route_context session route)
+         Outliner_state.empty
+         (Outliner_state.Zoom_in route.uuid))
+;;
+
+let push_node_route session route =
+  persist_active_node_state session;
+  if session.node_routes = [] then session.node_base_state <- Some session.outliner_state;
+  let state = initial_node_state session route in
+  route.state <- state;
+  session.node_routes <- session.node_routes @ [ route ];
+  session.outliner_state <- state;
+  session.outliner_commands <- [];
+  session.outliner_revision <- session.outliner_revision + 1
+;;
+
+let pop_node_route session =
+  persist_active_node_state session;
+  match List.rev session.node_routes with
+  | [] -> ()
+  | _ :: remaining_reversed ->
+    session.node_routes <- List.rev remaining_reversed;
+    (match active_node_route session, session.node_base_state with
+     | Some route, _ -> session.outliner_state <- route.state
+     | None, Some state ->
+       session.outliner_state <- state;
+       session.node_base_state <- None
+     | None, None -> session.outliner_state <- Outliner_state.empty);
+    session.outliner_commands <- [];
+    session.outliner_revision <- session.outliner_revision + 1
+;;
+
 let toolbar_action = function
   | "task" -> Ok Outliner_state.Task
   | "outdent" -> Ok Outdent
@@ -1435,7 +1596,9 @@ let dispatch_outliner_event session payload =
        (match enqueue_result with
        | Error message -> failure ~code:"outliner_effect_failed" ~message
        | Ok () ->
-          let projected_context = outliner_context session in
+          let projected_context =
+            if interpreted.operations = [] then context else outliner_context session
+          in
           let next_state =
             List.fold_left
               (fun state operation ->
@@ -1450,7 +1613,24 @@ let dispatch_outliner_event session payload =
           session.outliner_state <- next_state;
           session.outliner_commands <- interpreted.platform;
           session.outliner_revision <- session.outliner_revision + 1;
-          snapshot_visible session))
+          let patch_uuids =
+            match interpreted.operations with
+            | [ { Pending_ops.intent = Save_title { uuid; _ }; _ } ] -> Some [ uuid ]
+            | [ { intent = Set_property { uuid; _ }; _ } ] -> Some [ uuid ]
+            | [] ->
+              (match message with
+               | Tap_block _ | Long_press_block _ | Text_changed _ | Caret_moved _
+               | Choose_autocomplete _ | Cancel_editing | Toolbar _ -> Some []
+               | Return_pressed | Return_pressed_with_text _ | Backspace_pressed _
+               | Backspace_pressed_with_text _ | Drop_blocks _ | Confirm_delete
+               | Set_task_status _ | Toggle_collapsed _ | Zoom_in _ | Zoom_out
+               | Operation_staged _ -> None)
+            | _ -> None
+          in
+          match patch_uuids, session.node_routes with
+          | Some changed_uuids, [] -> outliner_patch ~changed_uuids session projected_context
+          | Some _, _ :: _ -> snapshot_visible session
+          | None, _ -> snapshot_visible session))
 ;;
 
 let dispatch session action payload =
@@ -1535,6 +1715,7 @@ let dispatch session action payload =
         | Some graph when not graph.ready ->
           failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
         | Some graph ->
+          clear_node_navigation session;
           session.selected_sidebar_page <- None;
           reset_outliner session;
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
@@ -1551,6 +1732,7 @@ let dispatch session action payload =
        let all_pages = pages.favorites @ pages.recent_pages in
        (match List.find_opt (fun page -> String.equal page.Logseq_chat_graph_read.uuid uuid) all_pages with
         | Some page ->
+          clear_node_navigation session;
           session.selected_sidebar_page <- Some page;
           reset_outliner session;
           ignore (Model.search session.model "");
@@ -1559,30 +1741,34 @@ let dispatch session action payload =
      | _ -> failure ~code:"invalid_params" ~message:"selectPage requires a page id")
   | "openNode" ->
     (match payload, session.graph_node_destination with
-     | Some uuid, Some resolve ->
-       (match resolve uuid with
+     | Some payload, Some resolve ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields with
+           | Ok uuid ->
+             (match resolve uuid with
         | Some (page, zoom_to_block) ->
-          session.selected_sidebar_page <- Some page;
-          session.related_blocks <-
-            Option.bind session.graph_node_references (fun load -> load uuid)
-            |> Option.value ~default:[];
-          reset_outliner session;
-          ignore (Model.search session.model "");
-          if zoom_to_block
-          then (
-            let state, _commands =
-              Outliner_state.update
-                (outliner_context session)
-                session.outliner_state
-                (Outliner_state.Zoom_in uuid)
-            in
-            session.outliner_state <- state;
-            session.outliner_commands <- [ Outliner_effects.Haptic Outliner_state.Selection ];
-            session.outliner_revision <- session.outliner_revision + 1);
+          let is_tag = Option.fold ~none:false ~some:(fun check -> check uuid) session.graph_node_is_tag in
+          let related_blocks =
+            if is_tag
+            then Option.bind session.graph_tag_objects (fun load -> load uuid)
+                 |> Option.value ~default:[]
+            else Option.bind session.graph_node_references (fun load -> load uuid)
+                 |> Option.value ~default:[]
+          in
+          let route = { uuid; is_tag; page; zoom_to_block; related_blocks; state = Outliner_state.empty } in
+          push_node_route session route;
           snapshot_visible session
         | None -> failure ~code:"unknown_node" ~message:"The referenced node is not available")
+           | Error message -> failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"openNode payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"openNode payload must be valid JSON")
      | _ -> failure ~code:"invalid_params" ~message:"openNode requires a node id")
+  | "closeNode" ->
+    pop_node_route session;
+    snapshot_visible session
   | "clearSelectedPage" ->
+    clear_node_navigation session;
     session.selected_sidebar_page <- None;
     reset_outliner session;
     ignore (Model.search session.model "");

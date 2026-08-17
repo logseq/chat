@@ -188,6 +188,18 @@ let graph_sidebar_pages () =
   | None -> None
 ;;
 
+let graph_tag_pages () =
+  match !graph_runtime with
+  | Some runtime -> Some (Logseq_chat_graph_runtime.tag_pages runtime.read_runtime)
+  | None -> None
+;;
+
+let graph_node_is_tag uuid =
+  match !graph_runtime with
+  | Some runtime -> Logseq_chat_graph_runtime.node_is_tag runtime.read_runtime uuid
+  | None -> false
+;;
+
 let graph_page_blocks page_uuid =
   match !graph_runtime with
   | Some runtime ->
@@ -315,6 +327,8 @@ let create_session ?storage ?catalog_session () =
     ~sync_cursor
     ~graph_blocks
     ~graph_sidebar_pages
+    ~graph_tag_pages
+    ~graph_node_is_tag
     ~graph_page_blocks
     ~graph_node_destination
     ~graph_node_references

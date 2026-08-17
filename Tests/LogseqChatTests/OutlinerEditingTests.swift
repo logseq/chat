@@ -21,33 +21,30 @@ import Testing
     }
 
     @Test func typedMarkupLinksUseOneNodeRouteForPagesAndBlocks() throws {
-        let pageURL = try #require(OutlinerMarkupLink.node(
-            uuid: "page-uuid", kind: "page"
-        ).url)
-        let blockURL = try #require(OutlinerMarkupLink.node(
-            uuid: "block-uuid", kind: "block"
-        ).url)
-        let tagURL = try #require(OutlinerMarkupLink.tag(uuid: "tag-uuid").url)
+        let pageURL = try #require(OutlinerMarkupLink.node(uuid: "page-uuid").url)
+        let blockURL = try #require(OutlinerMarkupLink.node(uuid: "block-uuid").url)
+        let tagURL = try #require(OutlinerMarkupLink.node(uuid: "tag-uuid").url)
 
-        #expect(OutlinerMarkupLink(url: pageURL) == .node(uuid: "page-uuid", kind: "page"))
-        #expect(OutlinerMarkupLink(url: blockURL) == .node(uuid: "block-uuid", kind: "block"))
-        #expect(OutlinerMarkupLink(url: tagURL) == .tag(uuid: "tag-uuid"))
+        #expect(OutlinerMarkupLink(url: pageURL) == .node(uuid: "page-uuid"))
+        #expect(OutlinerMarkupLink(url: blockURL) == .node(uuid: "block-uuid"))
+        #expect(OutlinerMarkupLink(url: tagURL) == .node(uuid: "tag-uuid"))
+        #expect(OutlinerMarkupLink(url: URL(string: "logseq-tag://tag-uuid")!) == nil)
         #expect(OutlinerMarkupLink(url: URL(string: "https://logseq.com")!) == nil)
     }
 
     @Test func typedMarkupLinksRejectIncompleteOrUnsupportedRoutes() throws {
         #expect(OutlinerMarkupLink(url: try #require(URL(string: "logseq-node:?kind=page"))) == nil)
-        #expect(OutlinerMarkupLink(url: try #require(URL(string: "logseq-node://node"))) == nil)
+        #expect(OutlinerMarkupLink(url: try #require(URL(string: "logseq-node://node"))) == .node(uuid: "node"))
         #expect(OutlinerMarkupLink(url: try #require(
             URL(string: "logseq-node://node?kind=object")
-        )) == nil)
+        )) == .node(uuid: "node"))
     }
 
     @Test func typedMarkupPresentationPreservesTextAndLinkDestinations() throws {
         let nodes = [
             LogseqMarkupNode(type: .text, text: "See "),
             LogseqMarkupNode(
-                type: .nodeReference, uuid: "page-uuid", kind: "page", title: "Page"
+                type: .nodeReference, uuid: "page-uuid", title: "Page"
             ),
             LogseqMarkupNode(type: .text, text: " and "),
             LogseqMarkupNode(type: .tagReference, uuid: "tag-uuid", title: "Project"),
@@ -56,8 +53,8 @@ import Testing
 
         #expect(presentation.plainText == "See Page and #Project")
         #expect(presentation.links == [
-            OutlinerMarkupLink.node(uuid: "page-uuid", kind: "page"),
-            OutlinerMarkupLink.tag(uuid: "tag-uuid"),
+            OutlinerMarkupLink.node(uuid: "page-uuid"),
+            OutlinerMarkupLink.node(uuid: "tag-uuid"),
         ])
         #expect(OutlinerMarkupPresentation.make(nodes: [], fallback: "((legacy))").plainText ==
             "((legacy))")
@@ -90,15 +87,13 @@ import Testing
             [LogseqEntitySummary].self,
             from: Data("""
             [
-              {"uuid":"inline","kind":"tag","title":"Inline"},
-              {"uuid":"trailing","kind":"tag","title":"Trailing"},
-              {"uuid":"page","kind":"page","title":"Page"}
+              {"uuid":"inline","title":"Inline"},
+              {"uuid":"trailing","title":"Trailing"}
             ]
             """.utf8)
         )
         let inline = summaries[0]
         let trailing = summaries[1]
-        let page = summaries[2]
         let markup = [
             LogseqMarkupNode(
                 type: .emphasis,
@@ -112,7 +107,7 @@ import Testing
 
         #expect(BlockTagPresentationPolicy.inlineTagIDs(markup) == Set(["inline"]))
         #expect(BlockTagPresentationPolicy.trailingTags(
-            tags: [inline, trailing, page, trailing],
+            tags: [inline, trailing, trailing],
             markup: markup
         ) == [trailing])
         #expect(BlockTagPresentationPolicy.trailingTags(tags: [], markup: []).isEmpty)
@@ -208,50 +203,125 @@ import Testing
         ) == 0)
     }
 
+    @Test func nativeBackClosesExactlyOneCoreNodeProjection() {
+        let previousPath: [AppNavigationRoute] = [.node("parent"), .node("child")]
+        let path: [AppNavigationRoute] = [.node("parent")]
+        #expect(
+            AppNavigationPathPolicy.nodeCount(previousPath)
+                - AppNavigationPathPolicy.nodeCount(path) == 1
+        )
+    }
+
     @Test func backButtonPopsThePresentedNativeNavigationPathFirst() {
         #expect(OutlinerNavigationPolicy.pathAfterBackButton(["parent", "child"]) == ["parent"])
         #expect(OutlinerNavigationPolicy.pathAfterBackButton(["parent"]) == [])
         #expect(OutlinerNavigationPolicy.pathAfterBackButton([String]()) == [])
     }
 
-    @Test func graphsAndOutlinerZoomShareOneTypedNativeNavigationPath() {
+    @Test func pagesBlocksTagsAndOutlinerZoomUseOneNativeNodeRoute() {
         let path: [AppNavigationRoute] = [
-            .outlinerBlock("parent"), .outlinerBlock("child"), .graphs,
+            .node("parent"),
+            .node("child"),
         ]
-        #expect(AppNavigationPathPolicy.zoomedBlockIDs(path) == ["parent", "child"])
-        #expect(AppNavigationPathPolicy.containsGraphs(path))
-        #expect(!AppNavigationPathPolicy.containsGraphs([
-            AppNavigationRoute.outlinerBlock("parent"),
-        ]))
-        let references: [AppNavigationRoute] = [
-            .node("node-1", "block"), .tag("tag-1"),
-        ]
-        #expect(AppNavigationPathPolicy.containsIndependentDestination(references))
-        #expect(AppNavigationPathPolicy.containsNode(references))
-        #expect(AppNavigationPathPolicy.containsTag(references))
-        #expect(!AppNavigationPathPolicy.containsNode([AppNavigationRoute.tag("tag-1")]))
-        #expect(!AppNavigationPathPolicy.containsTag([
-            AppNavigationRoute.node("node-1", "block")
-        ]))
-        #expect(!AppNavigationPathPolicy.containsIndependentDestination([
-            AppNavigationRoute.outlinerBlock("parent"),
-        ]))
+        #expect(AppNavigationPathPolicy.nodeCount(path) == 2)
     }
 
-    @Test func relatedContentAppearsOnlyForPopulatedNodeViews() {
+    @Test func markupNavigationDoesNotPushTheCurrentDestinationAgain() {
+        let node = AppNavigationRoute.node("node-1")
+        let tag = AppNavigationRoute.node("tag-1")
+
+        #expect(!AppNavigationPathPolicy.shouldAppend(node, to: [node]))
+        #expect(!AppNavigationPathPolicy.shouldAppend(tag, to: [node, tag]))
+        #expect(AppNavigationPathPolicy.shouldAppend(tag, to: [node]))
+        #expect(AppNavigationPathPolicy.shouldAppend(node, to: []))
+    }
+
+    @Test func relatedContentUsesLogseqSectionNamesForPopulatedNodeAndTagViews() {
         #expect(RelatedContentPolicy.sectionTitle(
-            route: AppNavigationRoute.node("node-1", "block"),
+            isTag: false,
             hasBlocks: true
-        ) == "References")
+        ) == "Linked references")
         #expect(RelatedContentPolicy.sectionTitle(
-            route: AppNavigationRoute.node("node-1", "block"),
+            isTag: false,
             hasBlocks: false
         ) == nil)
         #expect(RelatedContentPolicy.sectionTitle(
-            route: AppNavigationRoute.tag("tag-1"),
+            isTag: true,
+            hasBlocks: true
+        ) == "Tagged nodes")
+        #expect(RelatedContentPolicy.sectionTitle(
+            isTag: true,
+            hasBlocks: false
+        ) == "Tagged nodes")
+        #expect(RelatedContentPolicy.emptyTitle(
+            isTag: true,
+            hasBlocks: false
+        ) == "No tagged nodes")
+        #expect(RelatedContentPolicy.emptyTitle(
+            isTag: true,
             hasBlocks: true
         ) == nil)
-        #expect(RelatedContentPolicy.sectionTitle(route: nil, hasBlocks: true) == nil)
+        #expect(RelatedContentPolicy.sectionTitle(isTag: false, hasBlocks: false) == nil)
+    }
+
+    @Test func relatedBlockMarkupShowsTitlesInsteadOfCanonicalUUIDs() {
+        let nodes = [
+            LogseqMarkupNode(type: .text, text: "E2E links "),
+            LogseqMarkupNode(
+                type: .nodeReference,
+                uuid: "page-uuid",
+                title: "E2E Page Target"
+            ),
+            LogseqMarkupNode(type: .text, text: " "),
+            LogseqMarkupNode(
+                type: .nodeReference,
+                uuid: "block-uuid",
+                title: "E2E Block Target"
+            ),
+            LogseqMarkupNode(type: .text, text: " "),
+            LogseqMarkupNode(
+                type: .tagReference,
+                uuid: "tag-uuid",
+                title: "E2E Project"
+            ),
+        ]
+        let presentation = OutlinerMarkupPresentation.make(nodes: nodes, fallback: "unused")
+
+        #expect(presentation.plainText ==
+            "E2E links E2E Page Target E2E Block Target #E2E Project")
+        #expect(!presentation.plainText.contains("page-uuid"))
+        #expect(!presentation.plainText.contains("block-uuid"))
+        #expect(!presentation.plainText.contains("tag-uuid"))
+    }
+
+    @Test func linkedReferencesAndTaggedNodesGroupBlocksByImmediateParent() {
+        let page = LogseqEntitySummary(uuid: "page", title: "Page")
+        let parent = LogseqEntitySummary(uuid: "parent", title: "Parent")
+        func block(_ uuid: String, parentID: String?, breadcrumbs: [LogseqEntitySummary]) -> LogseqBlock {
+            LogseqBlock(
+                uuid: uuid,
+                title: uuid,
+                pageId: "page",
+                parentId: parentID,
+                createdAt: 1,
+                updatedAt: 1,
+                syncStatus: "synced",
+                breadcrumbs: breadcrumbs
+            )
+        }
+        let groups = RelatedBlockGrouping.groups([
+            block("first", parentID: "parent", breadcrumbs: [page, parent]),
+            block("second", parentID: "parent", breadcrumbs: [page, parent]),
+            block("third", parentID: "page", breadcrumbs: [page]),
+            block("fourth", parentID: "orphan-parent", breadcrumbs: []),
+            block("fifth", parentID: nil, breadcrumbs: []),
+        ])
+
+        #expect(groups.map(\.id) == ["parent", "page", "orphan-parent"])
+        #expect(groups[0].breadcrumbs == [page, parent])
+        #expect(groups[0].blocks.map(\.uuid) == ["first", "second"])
+        #expect(groups[2].blocks.map(\.uuid) == ["fourth"])
+        #expect(groups[1].blocks.map(\.uuid) == ["third", "fifth"])
     }
 
     @Test func everySupportedToolbarCommandHasAnEventIconAndAccessibleTitle() {
@@ -293,6 +363,26 @@ import Testing
             #expect(action.preservesInlineEditorFocus)
         }
         #expect(!OutlinerToolbarAction.hideKeyboard.preservesInlineEditorFocus)
+    }
+
+    @Test func keyboardDismissalHidesTheInlineEditorBeforeCoreAcknowledgesIt() throws {
+        let editing = try JSONDecoder().decode(
+            LogseqOutlinerEditing.self,
+            from: Data(#"{"uuid":"block","title":"Draft","caretUTF16Offset":5}"#.utf8)
+        )
+
+        #expect(OutlinerKeyboardPresentationPolicy.presentedEditing(
+            coreEditing: editing,
+            dismissalPending: false
+        ) == editing)
+        #expect(OutlinerKeyboardPresentationPolicy.presentedEditing(
+            coreEditing: editing,
+            dismissalPending: true
+        ) == nil)
+        #expect(OutlinerKeyboardPresentationPolicy.presentedEditing(
+            coreEditing: nil,
+            dismissalPending: true
+        ) == nil)
     }
 
     @Test func outlinerIdleStateStillShowsTheGlobalBottomBar() {
@@ -350,6 +440,49 @@ import Testing
         #expect(InlineEditorTextReconciliationPolicy.decision(
             modelText: "Remote", localText: nil
         ) == .applyModel)
+    }
+
+    @Test func unchangedRowsKeepTheSameRenderIdentityAcrossUnrelatedSnapshots() throws {
+        let block = try JSONDecoder().decode(
+            LogseqBlock.self,
+            from: Data(#"{"uuid":"block","title":"Title","pageId":"page","parentId":null,"createdAt":1,"updatedAt":1,"syncStatus":null}"#.utf8)
+        )
+        let row = try JSONDecoder().decode(
+            LogseqOutlineRow.self,
+            from: Data(#"{"block":{"uuid":"block","title":"Title","pageId":"page","parentId":null,"createdAt":1,"updatedAt":1,"syncStatus":null},"depth":0,"hasChildren":false,"isCollapsed":false}"#.utf8)
+        )
+        let idle = OutlinerRowRenderKey(
+            row: row,
+            statuses: [LogseqTaskStatus.todo, LogseqTaskStatus.done],
+            isEditing: false,
+            isSelected: false,
+            isSelectionActive: false,
+            editingTitle: block.title,
+            desiredCaretUTF16Offset: nil
+        )
+
+        #expect(idle == idle)
+        #expect(idle != OutlinerRowRenderKey(
+            row: row,
+            statuses: [LogseqTaskStatus.todo, LogseqTaskStatus.done],
+            isEditing: true,
+            isSelected: false,
+            isSelectionActive: false,
+            editingTitle: block.title,
+            desiredCaretUTF16Offset: 2
+        ))
+    }
+
+    @Test func inlineEditorRequestsFocusOnlyWhenAttachedAndNotAlreadyFocused() {
+        #expect(InlineEditorFocusPolicy.shouldRequestFocus(
+            isAttachedToWindow: true, isFirstResponder: false
+        ))
+        #expect(!InlineEditorFocusPolicy.shouldRequestFocus(
+            isAttachedToWindow: false, isFirstResponder: false
+        ))
+        #expect(!InlineEditorFocusPolicy.shouldRequestFocus(
+            isAttachedToWindow: true, isFirstResponder: true
+        ))
     }
 
 
