@@ -17,7 +17,7 @@ eval $(opam env --switch=5.5.0)
 dune runtest
 ```
 
-`dune runtest` is the lint/test/build gate here. `dune build` of `logseq_chat_mobile_entry` looks for SQLite via a Homebrew path in `core/dune`; on Linux, either skip that executable or set `LIBRARY_PATH=/usr/lib/x86_64-linux-gnu` first.
+`dune runtest` is the lint/test/build gate here. `dune build` of `logseq_chat_mobile_entry` looks for SQLite via a Homebrew path in `core/dune`; on Linux, either skip that executable or set `LIBRARY_PATH` to your system SQLite lib dir (e.g. `/usr/lib/x86_64-linux-gnu` on Debian/Ubuntu) first.
 
 `opam install . --deps-only` does not apply nested pins from `datascript-ocaml-native`. Pin these first (idempotent):
 
