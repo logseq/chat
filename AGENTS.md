@@ -2,6 +2,26 @@
 
 Logseq Chat is a Skip dual-platform (iOS/Android) client with an OCaml DataScript core. Canonical setup is in `README.md`.
 
+## Testing
+
+- Do NOT run `swift test` (xctest). It hangs indefinitely in this
+  environment (an async Swift Testing case blocks on an XCTWaiter that never
+  finishes), wasting many minutes per run. Skip it.
+- Validate OCaml core changes with `dune build @core/runtest`.
+- If a Swift compile check is needed, use `swift build` (build only, no test
+  run) with sandbox disabled; SwiftPM's own sandbox conflicts with the agent
+  sandbox.
+
+## Build system
+
+- `dune build` of the whole workspace fails on `logseq_chat_mobile_entry`
+  because `logseq_chat_platform_crypto` is only compiled by the platform
+  build scripts; this is expected. Use the `@core/runtest` target instead.
+- The platform build scripts (`scripts/build-mobile-ios-*.sh`,
+  `scripts/build-android-native.sh`, `scripts/build-macos-app.sh`) hardcode
+  the OCaml module list. Adding a new module under `core/` requires updating
+  `core/dune` and every one of those scripts (compile and link sections).
+
 ## Cursor Cloud specific instructions
 
 Cloud Agent VMs are Linux. They cannot run Xcode, the iOS simulator, the macOS `.app`, `swift test`, or `skip test`. Do not try to start those from this environment.
