@@ -142,12 +142,14 @@ import Testing
 
     @Test func selectionToolbarMatchesCurrentLogseqMobileOrderAndSymbols() {
         let expected: [OutlinerToolbarAction] = [
-            .copy, .outdent, .indent, .delete, .copyReference, .copyURL, .unselect,
+            .copy, .outdent, .indent, .delete, .copyReference, .copyURL,
         ]
         #expect(OutlinerToolbarPolicy.selectionActions == expected)
         #expect(OutlinerToolbarPolicy.selectionActions.map(\.systemImageName) == [
-            "doc.on.doc", "arrow.left", "arrow.right", "trash", "r.square", "link", "xmark",
+            "doc.on.doc", "arrow.left", "arrow.right", "trash", "r.square", "link",
         ])
+        #expect(OutlinerToolbarPolicy.trailingSelectionAction == .unselect)
+        #expect(OutlinerToolbarPolicy.trailingSelectionAction.systemImageName == "xmark")
     }
 
     @Test func toolbarItemsStayCompactInsideHorizontalScrollViews() {
@@ -344,6 +346,7 @@ import Testing
             OutlinerToolbarPolicy.editorActions
                 + [OutlinerToolbarPolicy.trailingEditorAction]
                 + OutlinerToolbarPolicy.selectionActions
+                + [OutlinerToolbarPolicy.trailingSelectionAction]
         )
 
         #expect(supported == Set(expected.keys))

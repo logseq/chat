@@ -297,9 +297,13 @@ let () =
   let state, effects = State.update context state (Toolbar Delete) in
   assert_bool "delete asks the UI for confirmation without mutating data"
     (effects = [ State.Request_delete_confirmation [ "a" ]; State.Haptic State.Impact ]);
-  let _, effects = State.update context state Confirm_delete in
+  assert_bool "delete closes the selection immediately"
+    (State.selected_uuids state = []);
+  let state, effects = State.update context state Confirm_delete in
   assert_bool "confirmed delete becomes a domain effect"
-    (effects = [ State.Delete_blocks [ "a" ] ])
+    (effects = [ State.Delete_blocks [ "a" ] ]);
+  let _, effects = State.update context state Confirm_delete in
+  assert_bool "confirmation is consumed after the delete" (effects = [])
 ;;
 
 let () =
@@ -432,15 +436,19 @@ let () =
 
 let () =
   let state, _ = State.update context State.empty (Long_press_block "a") in
-  let _, copy = State.update context state (Toolbar Copy) in
-  let _, copy_reference = State.update context state (Toolbar Copy_reference) in
-  let _, copy_url = State.update context state (Toolbar Copy_url) in
+  let copied, copy = State.update context state (Toolbar Copy) in
+  let referenced, copy_reference = State.update context state (Toolbar Copy_reference) in
+  let linked, copy_url = State.update context state (Toolbar Copy_url) in
   assert_bool "selection copy command is complete"
     (copy = [ State.Copy_text "Alpha"; State.Haptic State.Impact ]);
   assert_bool "selection copy reference command is complete"
     (copy_reference = [ State.Copy_references [ "a" ]; State.Haptic State.Impact ]);
   assert_bool "selection copy URL command is complete"
     (copy_url = [ State.Copy_urls [ "a" ]; State.Haptic State.Impact ]);
+  assert_bool "copy commands close the selection"
+    (State.selected_uuids copied = []
+     && State.selected_uuids referenced = []
+     && State.selected_uuids linked = []);
   let state, effects = State.update context state (Toolbar Unselect) in
   assert_bool "unselect clears selection"
     (State.selected_uuids state = [] && effects = [ State.Haptic State.Impact ])

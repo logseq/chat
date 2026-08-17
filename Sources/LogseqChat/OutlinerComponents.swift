@@ -819,40 +819,48 @@ struct OutlinerSelectionToolbar: View {
     let onAction: (OutlinerToolbarAction) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: OutlinerToolbarPolicy.selectionItemSpacing) {
-                ForEach(OutlinerToolbarPolicy.selectionActions, id: \.self) { action in
-                    Button {
-                        onAction(action)
-                    } label: {
-                        VStack(spacing: 2) {
-                            Image(systemName: action.systemImageName)
-                                .font(.system(size: OutlinerToolbarPolicy.iconSize, weight: .medium))
-                                .frame(
-                                    width: OutlinerToolbarPolicy.iconBoxSize,
-                                    height: OutlinerToolbarPolicy.iconBoxSize
-                                )
-                            Text(action.accessibilityTitle)
-                                .font(.caption2)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .frame(height: OutlinerToolbarPolicy.captionHeight)
-                        }
-                        .frame(
-                            width: OutlinerToolbarPolicy.selectionItemWidth,
-                            height: 46,
-                            alignment: .center
-                        )
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: OutlinerToolbarPolicy.selectionItemSpacing) {
+                    ForEach(OutlinerToolbarPolicy.selectionActions, id: \.self) { action in
+                        selectionButton(action)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(action.accessibilityTitle)
-                    .accessibilityIdentifier("button.outliner.selection.\(action.identifier)")
                 }
+                .padding(.leading, 12)
             }
-            .padding(.horizontal, 12)
+            selectionButton(OutlinerToolbarPolicy.trailingSelectionAction)
+                .padding(.horizontal, 6)
         }
         .frame(height: 54)
         .accessibilityIdentifier("toolbar.outliner.selection")
+    }
+
+    private func selectionButton(_ action: OutlinerToolbarAction) -> some View {
+        Button {
+            onAction(action)
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: action.systemImageName)
+                    .font(.system(size: OutlinerToolbarPolicy.iconSize, weight: .medium))
+                    .frame(
+                        width: OutlinerToolbarPolicy.iconBoxSize,
+                        height: OutlinerToolbarPolicy.iconBoxSize
+                    )
+                Text(action.accessibilityTitle)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(height: OutlinerToolbarPolicy.captionHeight)
+            }
+            .frame(
+                width: OutlinerToolbarPolicy.selectionItemWidth,
+                height: 46,
+                alignment: .center
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(action.accessibilityTitle)
+        .accessibilityIdentifier("button.outliner.selection.\(action.identifier)")
     }
 }
 #endif

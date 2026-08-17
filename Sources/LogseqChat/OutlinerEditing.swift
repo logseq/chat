@@ -269,8 +269,10 @@ enum OutlinerToolbarPolicy {
     static let trailingEditorAction = OutlinerToolbarAction.hideKeyboard
 
     static let selectionActions: [OutlinerToolbarAction] = [
-        .copy, .outdent, .indent, .delete, .copyReference, .copyURL, .unselect,
+        .copy, .outdent, .indent, .delete, .copyReference, .copyURL,
     ]
+
+    static let trailingSelectionAction = OutlinerToolbarAction.unselect
 }
 
 enum OutlinerKeyboardPresentationPolicy {

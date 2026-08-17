@@ -31,6 +31,7 @@ type editing =
 type t =
   { editing : editing option
   ; selected : String_set.t
+  ; pending_deletion : string list
   ; autocomplete : autocomplete option
   ; collapsed : String_set.t
   ; zoomed : string list
@@ -138,6 +139,7 @@ type context =
 let empty =
   { editing = None
   ; selected = String_set.empty
+  ; pending_deletion = []
   ; autocomplete = None
   ; collapsed = String_set.empty
   ; zoomed = []
@@ -681,10 +683,21 @@ let update context state message =
     (match indent context targets with
      | Some moves -> state, [ Move_blocks moves; Haptic Impact ]
      | None -> state, [ Haptic Impact ])
-  | Toolbar Delete -> state, [ Request_delete_confirmation (selected_uuids state); Haptic Impact ]
-  | Confirm_delete ->
+  | Toolbar Delete ->
     let uuids = selected_uuids state in
-    if uuids = [] then state, [] else { state with selected = String_set.empty }, [ Delete_blocks uuids ]
+    ( { state with selected = String_set.empty; pending_deletion = uuids }
+    , [ Request_delete_confirmation uuids; Haptic Impact ] )
+  | Confirm_delete ->
+    let uuids =
+      match state.pending_deletion with
+      | [] -> selected_uuids state
+      | uuids -> uuids
+    in
+    if uuids = []
+    then state, []
+    else
+      ( { state with selected = String_set.empty; pending_deletion = [] }
+      , [ Delete_blocks uuids ] )
   | Toolbar Unselect -> { state with selected = String_set.empty }, [ Haptic Impact ]
   | Toolbar Task ->
     (match state.editing with Some editing -> state, [ Cycle_task_status editing.uuid; Haptic Impact ] | None -> state, [])
@@ -714,9 +727,14 @@ let update context state message =
       |> List.filter (fun (block : Model.block) -> String_set.mem block.uuid state.selected)
       |> List.map (fun block -> block.Model.title)
     in
-    state, [ Copy_text (String.concat "\n" titles); Haptic Impact ]
-  | Toolbar Copy_reference -> state, [ Copy_references (selected_uuids state); Haptic Impact ]
-  | Toolbar Copy_url -> state, [ Copy_urls (selected_uuids state); Haptic Impact ]
+    ( { state with selected = String_set.empty }
+    , [ Copy_text (String.concat "\n" titles); Haptic Impact ] )
+  | Toolbar Copy_reference ->
+    ( { state with selected = String_set.empty }
+    , [ Copy_references (selected_uuids state); Haptic Impact ] )
+  | Toolbar Copy_url ->
+    ( { state with selected = String_set.empty }
+    , [ Copy_urls (selected_uuids state); Haptic Impact ] )
   | Toolbar Outdent ->
     let targets =
       if String_set.is_empty state.selected
