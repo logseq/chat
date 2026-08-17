@@ -263,3 +263,8 @@ let references_for_node runtime uuid =
 
 let journal_page_uuid runtime ~journal_day =
   Logseq_chat_graph_read.journal_page_uuid runtime.snapshot.db ~journal_day
+;;
+
+let normalize_title runtime ~uuid title =
+  Logseq_chat_graph_read.normalize_title_text runtime.snapshot.db ~uuid title
+;;

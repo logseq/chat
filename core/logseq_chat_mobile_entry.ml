@@ -228,6 +228,13 @@ let graph_node_references uuid =
   | None -> None
 ;;
 
+let graph_normalize_title ~uuid title =
+  match !graph_runtime with
+  | Some runtime ->
+    Logseq_chat_graph_runtime.normalize_title runtime.read_runtime ~uuid title
+  | None -> title
+;;
+
 let load_older_journals () =
   Option.iter
     (fun runtime -> Logseq_chat_graph_runtime.load_older_journals runtime.read_runtime)
@@ -333,6 +340,7 @@ let create_session ?storage ?catalog_session () =
     ~graph_node_destination
     ~graph_node_references
     ~graph_tag_objects
+    ~graph_normalize_title
     ~load_older_journals
     ~has_older_journals
     ~stage_operation

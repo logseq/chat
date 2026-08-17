@@ -64,10 +64,55 @@ let () =
      | Some { kind = Tag; query = "Pro" } -> true
      | _ -> false);
   let state, effects = State.update context state (Choose_autocomplete tag_uuid) in
-  assert_bool "tag completion uses Logseq's canonical inline tag syntax"
-    (State.editing_title state = Some "Alpha #[[tag-uuid]]");
+  assert_bool "tag completion shows the tag label in the editor"
+    (State.editing_title state = Some "Alpha #Project");
   assert_bool "tag completion keeps editing active and requests selection feedback"
     (State.editing_uuid state = Some "a" && effects = [ State.Haptic Selection ])
+;;
+
+let () =
+  let tag_uuid = "tag-uuid" in
+  let context =
+    State.
+      { blocks = [ block "a" "Alpha" ]
+      ; pages = []
+      ; tags = [ { label = "favorite book"; value = tag_uuid } ]
+      }
+  in
+  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.update context state (Text_changed { title = "Alpha #fav"; caret = 10 }) in
+  let state, _ = State.update context state (Choose_autocomplete tag_uuid) in
+  assert_bool "tag completion brackets labels that cannot be bare hashtags"
+    (State.editing_title state = Some "Alpha #[[favorite book]]")
+;;
+
+let () =
+  let summary uuid title = Model.{ uuid; title } in
+  let stored =
+    { (block "a" "Ship [[page-uuid-1]] with #[[tag-uuid-1]] and #[[tag-uuid-2]]") with
+      Model.references = [ summary "page-uuid-1" "Roadmap" ]
+    ; tags = [ summary "tag-uuid-1" "Project"; summary "tag-uuid-2" "favorite book" ]
+    }
+  in
+  let context = State.{ blocks = [ stored ]; pages = []; tags = [] } in
+  let state, _ = State.update context State.empty (Tap_block "a") in
+  assert_bool "editing shows names instead of stored uuid references"
+    (State.editing_title state = Some "Ship [[Roadmap]] with #Project and #[[favorite book]]");
+  let _, effects = State.update context state Cancel_editing in
+  assert_bool "leaving an untouched display title does not emit a commit" (effects = [])
+;;
+
+let () =
+  let summary uuid title = Model.{ uuid; title } in
+  let stored =
+    { (block "a" "See [[page-uuid-1]] or [[page-uuid-2]]") with
+      Model.references = [ summary "page-uuid-1" "Roadmap"; summary "page-uuid-2" "roadmap" ]
+    }
+  in
+  let context = State.{ blocks = [ stored ]; pages = []; tags = [] } in
+  let state, _ = State.update context State.empty (Tap_block "a") in
+  assert_bool "duplicated reference names stay uuid-addressed in the editor"
+    (State.editing_title state = Some "See [[page-uuid-1]] or [[page-uuid-2]]")
 ;;
 
 let () =
@@ -612,20 +657,23 @@ let editing title =
 ;;
 
 let completed_title kind title value =
-  Option.map (fun editing -> editing.State.title) (State.complete (editing title) kind value)
+  Option.map
+    (fun editing -> editing.State.title)
+    (State.complete context (editing title) kind value)
 ;;
 
 let () =
   assert_bool "node completion replaces the open token"
     (completed_title State.Node "[[Pr" "Project" = Some "[[Project]]");
-  assert_bool "tag completion replaces the token"
+  assert_bool "tag completion without a known label keeps the uuid form"
     (completed_title State.Tag "#ta" "tag" = Some "#[[tag]]");
   assert_bool "property completion replaces the current line"
     (completed_title State.Property "before\nsta::" "status" = Some "before\nstatus:: ");
   assert_bool "completion without its marker is ignored"
-    (State.complete (editing "plain") State.Node "Project" = None);
+    (State.complete context (editing "plain") State.Node "Project" = None);
   assert_bool "unchanged title does not emit a commit"
-    (State.commit_effect (Some (editing "Alpha")) = [] && State.commit_effect None = []);
+    (State.commit_effect context (Some (editing "Alpha")) = []
+     && State.commit_effect context None = []);
   let empty_editing : State.editing =
     { uuid = "a"; expected_title = ""; title = ""; caret = 0 }
   in

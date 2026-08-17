@@ -77,6 +77,7 @@ type t =
       (string -> (Logseq_chat_graph_read.sidebar_page * bool) option) option
   ; graph_node_references : (string -> Model.block list option) option
   ; graph_tag_objects : (string -> Model.block list option) option
+  ; graph_normalize_title : (uuid:string -> string -> string) option
   ; load_older_journals : (unit -> unit) option
   ; has_older_journals : (unit -> bool) option
   ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
@@ -736,6 +737,7 @@ let create
       ?graph_node_destination
       ?graph_node_references
       ?graph_tag_objects
+      ?graph_normalize_title
       ?load_older_journals
       ?has_older_journals
       ?stage_operation
@@ -782,6 +784,7 @@ let create
   ; graph_node_destination
   ; graph_node_references
   ; graph_tag_objects
+  ; graph_normalize_title
   ; load_older_journals
   ; has_older_journals
   ; load_cached_graph_key
@@ -1564,6 +1567,34 @@ let outliner_message payload =
   | exception _ -> Error "outliner event must be valid JSON"
 ;;
 
+(* Editor text keeps page and tag names readable; the stored titles use the
+   uuid reference form. Rewrite the title payloads of freshly interpreted
+   operations before they are staged or synced. *)
+let normalize_operation_titles session (operation : Pending_ops.t) =
+  match session.graph_normalize_title with
+  | None -> operation
+  | Some normalize ->
+    let intent =
+      match operation.Pending_ops.intent with
+      | Pending_ops.Save_title { uuid; expected_title; title } ->
+        Pending_ops.Save_title { uuid; expected_title; title = normalize ~uuid title }
+      | Pending_ops.Insert_block record ->
+        Pending_ops.Insert_block
+          { record with title = normalize ~uuid:record.uuid record.title }
+      | Pending_ops.Split_block record ->
+        Pending_ops.Split_block
+          { record with
+            before = normalize ~uuid:record.uuid record.before
+          ; after = normalize ~uuid:record.uuid record.after
+          }
+      | Pending_ops.Merge_backward record ->
+        Pending_ops.Merge_backward
+          { record with title = normalize ~uuid:record.uuid record.title }
+      | intent -> intent
+    in
+    { operation with Pending_ops.intent }
+;;
+
 let dispatch_outliner_event session payload =
   match outliner_message payload with
   | Error message -> failure ~code:"invalid_outliner_event" ~message
@@ -1572,12 +1603,18 @@ let dispatch_outliner_event session payload =
     let next_state, commands = Outliner_state.update context session.outliner_state message in
     let base_t = Option.bind session.sync_cursor (fun cursor -> cursor ()) |> Option.value ~default:(-1) in
     (match
-       Outliner_effects.interpret
-         ~base_t
-         ~now:now_ms
-         ~fresh_uuid:fresh_squuid
-         context
-         commands
+       Result.map
+         (fun (interpreted : Outliner_effects.result) ->
+           { interpreted with
+             Outliner_effects.operations =
+               List.map (normalize_operation_titles session) interpreted.operations
+           })
+         (Outliner_effects.interpret
+            ~base_t
+            ~now:now_ms
+            ~fresh_uuid:fresh_squuid
+            context
+            commands)
      with
      | Error message -> failure ~code:"outliner_command_failed" ~message
      | Ok interpreted ->

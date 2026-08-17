@@ -2,6 +2,7 @@ module String_set = Set.Make (String)
 module Model = Logseq_chat_model
 module Ops = Logseq_chat_pending_ops
 module Order = Logseq_chat_fractional_order
+module Ref_text = Logseq_chat_ref_text
 
 let option_value_map option ~default ~f = match option with Some value -> f value | None -> default
 let list_last values = match List.rev values with value :: _ -> Some value | [] -> None
@@ -154,6 +155,50 @@ let find_block context uuid =
   List.find_opt (fun (block : Model.block) -> String.equal block.uuid uuid) context.blocks
 ;;
 
+(* Labels that resolve to more than one entity must stay uuid-addressed so a
+   round trip through the editor cannot re-bind the reference. *)
+let duplicated_labels candidates =
+  let by_label = Hashtbl.create 16 in
+  List.iter
+    (fun candidate ->
+      let key = String.lowercase_ascii candidate.label in
+      let existing = Option.value (Hashtbl.find_opt by_label key) ~default:String_set.empty in
+      Hashtbl.replace by_label key (String_set.add candidate.value existing))
+    candidates;
+  Hashtbl.fold
+    (fun label values duplicated ->
+      if String_set.cardinal values > 1 then String_set.add label duplicated else duplicated)
+    by_label
+    String_set.empty
+;;
+
+let summary_candidates (summaries : Model.entity_summary list) =
+  List.map (fun (summary : Model.entity_summary) -> { label = summary.title; value = summary.uuid }) summaries
+;;
+
+(* Stored title (uuid refs) -> editor text, resolved with the block's own
+   reference and tag summaries, like Logseq's id-ref->title-ref. *)
+let display_block_title context (block : Model.block) =
+  let duplicated =
+    duplicated_labels
+      (context.pages @ context.tags @ summary_candidates (block.references @ block.tags))
+  in
+  let summary_title summaries uuid =
+    List.find_map
+      (fun (summary : Model.entity_summary) ->
+        if String.equal summary.uuid uuid
+           && not (String.equal (String.trim summary.title) "")
+           && not (String_set.mem (String.lowercase_ascii summary.title) duplicated)
+        then Some summary.title
+        else None)
+      summaries
+  in
+  Ref_text.to_text
+    ~tag_title:(summary_title (block.tags @ block.references))
+    ~ref_title:(summary_title (block.references @ block.tags))
+    block.title
+;;
+
 let utf8_sequence_length byte =
   if byte land 0x80 = 0 then 1
   else if byte land 0xE0 = 0xC0 then 2
@@ -267,13 +312,36 @@ let replace_range value start finish replacement =
   ^ String.sub value finish (String.length value - finish)
 ;;
 
-let complete editing kind value =
+(* Look up a completion's display label; a duplicated or empty label keeps
+   the uuid form so the reference stays unambiguous. *)
+let candidate_label context candidates value =
+  let duplicated = duplicated_labels (context.pages @ context.tags) in
+  List.find_map
+    (fun candidate ->
+      if String.equal candidate.value value
+         && not (String.equal (String.trim candidate.label) "")
+         && not (String_set.mem (String.lowercase_ascii candidate.label) duplicated)
+      then Some candidate.label
+      else None)
+    candidates
+;;
+
+let complete context editing kind value =
   let caret_byte = byte_index_of_utf16 editing.title editing.caret in
   let prefix = String.sub editing.title 0 caret_byte in
   let completion =
     match kind with
-    | Node -> Option.map (fun index -> index, "[[" ^ value ^ "]]" ) (last_substring prefix "[[")
-    | Tag -> Option.map (fun index -> index, "#[[" ^ value ^ "]]" ) (String.rindex_opt prefix '#')
+    | Node ->
+      let text = Option.value (candidate_label context (context.pages @ context.tags) value) ~default:value in
+      Option.map (fun index -> index, "[[" ^ text ^ "]]" ) (last_substring prefix "[[")
+    | Tag ->
+      let replacement =
+        match candidate_label context context.tags value with
+        | Some label when Ref_text.plain_tag_label label -> "#" ^ label
+        | Some label -> "#[[" ^ label ^ "]]"
+        | None -> "#[[" ^ value ^ "]]"
+      in
+      Option.map (fun index -> index, replacement) (String.rindex_opt prefix '#')
     | Property ->
       let start = option_value_map (String.rindex_opt prefix '\n') ~default:0 ~f:(fun index -> index + 1) in
       Some (start, value ^ ":: ")
@@ -286,15 +354,27 @@ let complete editing kind value =
     completion
 ;;
 
-let commit_effect = function
-  | Some editing when not (String.equal editing.title editing.expected_title) ->
-    [ Commit_title
-        { uuid = editing.uuid
-        ; expected_title = editing.expected_title
-        ; title = editing.title
-        }
-    ]
-  | _ -> []
+(* The editor works on display text while [expected_title] stays in the
+   stored uuid form, so the no-op check compares against the display form of
+   the expected title. *)
+let commit_effect context = function
+  | Some editing ->
+    let display_expected =
+      match find_block context editing.uuid with
+      | Some block ->
+        display_block_title context { block with Model.title = editing.expected_title }
+      | None -> editing.expected_title
+    in
+    if String.equal editing.title display_expected
+    then []
+    else
+      [ Commit_title
+          { uuid = editing.uuid
+          ; expected_title = editing.expected_title
+          ; title = editing.title
+          }
+      ]
+  | None -> []
 ;;
 
 let insert_at_caret editing text ~backward_utf16 =
@@ -578,7 +658,7 @@ let update context state message =
       ; selected = String_set.empty
       ; autocomplete = None
       }
-    , commit_effect state.editing )
+    , commit_effect context state.editing )
   in
   let split_editing editing =
     let index = byte_index_of_utf16 editing.title editing.caret in
@@ -625,9 +705,10 @@ let update context state message =
     (match find_block context uuid with
      | None -> state, []
      | Some block ->
-       let effects = commit_effect state.editing in
+       let effects = commit_effect context state.editing in
+       let display = display_block_title context block in
        ( { state with
-           editing = Some { uuid; expected_title = block.title; title = block.title; caret = utf16_length block.title }
+           editing = Some { uuid; expected_title = block.title; title = display; caret = utf16_length display }
          ; selected = String_set.empty
          ; autocomplete = None
          }
@@ -637,7 +718,7 @@ let update context state message =
       ; selected = String_set.singleton uuid
       ; autocomplete = None
       }
-    , commit_effect state.editing @ [ Haptic Selection ] )
+    , commit_effect context state.editing @ [ Haptic Selection ] )
   | Text_changed { title; caret } ->
     (match state.editing with
      | None -> state, []
@@ -651,7 +732,7 @@ let update context state message =
   | Choose_autocomplete value ->
     (match state.editing, state.autocomplete with
      | Some editing, Some autocomplete ->
-       (match complete editing autocomplete.kind value with
+       (match complete context editing autocomplete.kind value with
         | Some editing ->
           { state with editing = Some editing; autocomplete = None }, [ Haptic Selection ]
         | None -> state, [])
@@ -702,9 +783,10 @@ let update context state message =
   | Toolbar Task ->
     (match state.editing with Some editing -> state, [ Cycle_task_status editing.uuid; Haptic Impact ] | None -> state, [])
   | Toolbar Hide_keyboard ->
-    { state with editing = None; autocomplete = None }, commit_effect state.editing @ [ Haptic Impact ]
+    ( { state with editing = None; autocomplete = None }
+    , commit_effect context state.editing @ [ Haptic Impact ] )
   | Cancel_editing ->
-    { state with editing = None; autocomplete = None }, commit_effect state.editing
+    { state with editing = None; autocomplete = None }, commit_effect context state.editing
   | Toolbar Tag_action ->
     (match state.editing with
      | None -> state, []
@@ -773,12 +855,16 @@ let update context state message =
     let zoomed = match List.rev state.zoomed with _ :: rest -> List.rev rest | [] -> [] in
     { state with zoomed }, effects @ [ Haptic Selection ]
   | Operation_staged (Ops.Split_block { new_uuid; after; _ }) ->
-    let title = Option.fold ~none:after ~some:(fun block -> block.Model.title) (find_block context new_uuid) in
+    let expected_title, display =
+      match find_block context new_uuid with
+      | Some block -> block.Model.title, display_block_title context block
+      | None -> after, after
+    in
     ( { state with editing =
           Some
             { uuid = new_uuid
-            ; expected_title = title
-            ; title
+            ; expected_title
+            ; title = display
             ; caret = 0
             }
       ; selected = String_set.empty
@@ -789,12 +875,13 @@ let update context state message =
     (match find_block context previous_uuid with
      | None -> state, []
      | Some block ->
+       let display = display_block_title context block in
        ( { state with editing =
              Some
                { uuid = previous_uuid
                ; expected_title = block.title
-               ; title = block.title
-               ; caret = utf16_length block.title
+               ; title = display
+               ; caret = utf16_length display
                }
          ; selected = String_set.empty
          ; autocomplete = None

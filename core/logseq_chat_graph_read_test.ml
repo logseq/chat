@@ -834,3 +834,70 @@ let () =
          && block.journal = Some ("Raw journal", 20260817) -> ()
   | _ -> failwith "raw numeric values under ref schema must remain navigable after restore"
 ;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; (* Page names are not unique in db graphs; duplicates must be detected. *)
+      "block/name", { (one ~value_type:StringType ()) with indexed = true }
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/parent", one ~value_type:RefType ()
+    ; "block/refs", many ~value_type:RefType ()
+    ; "block/tags", many ~value_type:RefType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "db/ident", one ~value_type:KeywordType ~unique:(Some Identity) ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  let entity id attrs = Entity { db_id = Some (Temp_id id); attrs } in
+  ignore
+    (transact_conn
+       conn
+       [ entity "tag-class" [ "db/ident", One_value (Keyword "logseq.class/Tag") ]
+       ; entity
+           "project-tag"
+           [ "block/uuid", One_value (Uuid "project-tag-uuid")
+           ; "block/name", One_value (String "project")
+           ; "block/title", One_value (String "Project")
+           ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+           ]
+       ; entity
+           "roadmap-page"
+           [ "block/uuid", One_value (Uuid "roadmap-page-uuid")
+           ; "block/name", One_value (String "roadmap")
+           ; "block/title", One_value (String "Roadmap")
+           ]
+       ; entity
+           "dup-a"
+           [ "block/uuid", One_value (Uuid "dup-a-uuid")
+           ; "block/name", One_value (String "dup")
+           ; "block/title", One_value (String "Dup")
+           ]
+       ; entity
+           "dup-b"
+           [ "block/uuid", One_value (Uuid "dup-b-uuid")
+           ; "block/name", One_value (String "dup")
+           ; "block/title", One_value (String "Dup")
+           ]
+       ; entity
+           "note"
+           [ "block/uuid", One_value (Uuid "note-uuid")
+           ; "block/title", One_value (String "Note")
+           ; "block/refs", Many_values [ Ref_to (Temp_id "roadmap-page") ]
+           ]
+       ]);
+  let db = conn_db conn in
+  let normalize = Logseq_chat_graph_read.normalize_title_text db ~uuid:"note-uuid" in
+  assert
+    (String.equal
+       (normalize "Ship [[Roadmap]] as #project and #[[Project]]")
+       "Ship [[roadmap-page-uuid]] as #[[project-tag-uuid]] and #[[project-tag-uuid]]");
+  (* A tag name is matched case-insensitively even for a brand-new mention. *)
+  assert (String.equal (normalize "todo #PROJECT.") "todo #[[project-tag-uuid]].");
+  (* An unknown or duplicated name must stay plain text instead of re-binding. *)
+  assert (String.equal (normalize "see [[Dup]] and #nothing") "see [[Dup]] and #nothing");
+  (* Page names never satisfy a hashtag, and uuid forms pass through. *)
+  assert (String.equal (normalize "#roadmap stays") "#roadmap stays");
+  assert (String.equal (normalize "kept [[roadmap-page-uuid]]") "kept [[roadmap-page-uuid]]")
+;;

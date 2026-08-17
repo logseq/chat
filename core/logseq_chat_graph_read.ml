@@ -326,6 +326,62 @@ let node_is_tag db uuid =
   | Some eid -> entity_is_instance_of db eid "logseq.class/Tag"
 ;;
 
+(* Resolve a page or tag name to the uuid of the unique entity carrying it;
+   duplicated names stay unresolved so text never re-binds silently. *)
+let unique_named_uuid ?(require_tag = false) db name =
+  let key = String.lowercase_ascii (String.trim name) in
+  if String.equal key ""
+  then None
+  else (
+    let matches =
+      Datascript.datoms db Aevt ~a:"block/name" ~v:(String key) ()
+      |> List.of_seq
+      |> List.map (fun datom -> datom.e)
+      |> List.filter (fun eid ->
+        (not require_tag) || entity_is_instance_of db eid "logseq.class/Tag")
+    in
+    match matches with
+    | [ eid ] -> uuid_for_eid db eid
+    | _ -> None)
+;;
+
+(* Editor text -> stored uuid form (Logseq's title-ref->id-ref): first match
+   names against the block's existing refs and tags, then fall back to a
+   unique db-wide page or tag name. *)
+let normalize_title_text db ~uuid title =
+  let plain = fun value -> Ok value in
+  let refs, tags =
+    match Datascript.entid db "block/uuid" (Uuid uuid) with
+    | None -> [], []
+    | Some eid ->
+      entity_summaries plain db eid "block/refs", entity_summaries plain db eid "block/tags"
+  in
+  let known summaries name =
+    let key = String.lowercase_ascii (String.trim name) in
+    if String.equal key ""
+    then None
+    else (
+      match
+        List.filter
+          (fun (summary : Model.entity_summary) ->
+            String.equal (String.lowercase_ascii summary.title) key)
+          summaries
+      with
+      | [ summary ] -> Some summary.Model.uuid
+      | _ -> None)
+  in
+  Logseq_chat_ref_text.to_ids
+    ~resolve_ref:(fun name ->
+      match known (refs @ tags) name with
+      | Some uuid -> Some uuid
+      | None -> unique_named_uuid db name)
+    ~resolve_tag:(fun name ->
+      match known tags name with
+      | Some uuid -> Some uuid
+      | None -> unique_named_uuid ~require_tag:true db name)
+    title
+;;
+
 let compare_blocks left right =
   match left.Model.order, right.Model.order with
   | Some left, Some right -> String.compare left right

@@ -21,6 +21,7 @@
   logseq_chat_outliner_effects
   logseq_chat_pending_ops
   logseq_chat_pending_projection
+  logseq_chat_ref_text
   logseq_chat_rpc
   logseq_chat_snapshot
   logseq_chat_sse
