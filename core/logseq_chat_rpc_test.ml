@@ -639,6 +639,73 @@ let () =
 ;;
 
 let () =
+  (* A node that only exists in the local chat cache (for example a block
+     created while offline) must still open from the cached data instead of
+     failing with an endless spinner. *)
+  let cached =
+    Logseq_chat_model.
+      { uuid = "cached-block"
+      ; title = "Cached offline block"
+      ; page_id = "journal/2026-08-15"
+      ; parent_id = Some "journal/2026-08-15"
+      ; order = Some "a0"
+      ; created_at = 1
+      ; updated_at = 1
+      ; sync_status = "pending"
+      ; tags = []
+      ; references = []
+      ; breadcrumbs = []
+      ; status = None
+      ; is_asset = false
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      ; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create ~graph_node_destination:(fun _ -> None) ()
+  in
+  Logseq_chat_model.upsert_journal_page
+    session.model ~title:"Aug 15th, 2026" ~uuid:"journal/2026-08-15" ~journal_day:20260815;
+  Logseq_chat_model.upsert_blocks session.model [ cached ] ~refresh_time:1;
+  let opened =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"cached-block\"}"}}|}
+    |> from_string
+  in
+  (match opened with
+   | `Assoc fields ->
+     let route = required_assoc "result" fields |> required_first_assoc "nodeRoutes" in
+     assert_equal "cached node route id" "cached-block" (required_string "uuid" route);
+     assert_equal
+       "cached node page"
+       "journal/2026-08-15"
+       (required_assoc "page" route |> required_string "uuid");
+     assert_equal
+       "cached node page title"
+       "Aug 15th, 2026"
+       (required_assoc "page" route |> required_string "title");
+     (match required_assoc "outlinerState" route |> required_list "zoomedBlockIds" with
+      | [ `String "cached-block" ] -> ()
+      | _ -> failwith "cached node navigation must zoom to the cached block");
+     let block = required_first_assoc "blocks" route in
+     assert_equal "cached node block" "cached-block" (required_string "uuid" block)
+   | _ -> failwith "openNode should fall back to the local block cache");
+  let missing =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"missing-block\"}"}}|}
+    |> from_string
+  in
+  match missing with
+  | `Assoc fields ->
+    let error = required_assoc "error" fields in
+    assert_equal "unknown node error" "unknown_node" (required_string "code" error)
+  | _ -> failwith "openNode should return an RPC response"
+;;
+
+let () =
   let window = ref 7 in
   let session =
     Logseq_chat_rpc.create

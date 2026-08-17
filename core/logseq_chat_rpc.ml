@@ -380,16 +380,48 @@ let base_outliner_context session =
 ;;
 
 let node_route_context session route =
-  let blocks =
+  let graph_blocks =
     match session.graph_page_blocks with
     | Some load -> Option.value (load route.page.uuid) ~default:[]
     | None -> []
   in
-  outliner_context_with_blocks session blocks
+  (* Locally cached blocks (for example chat entries that have not synced into
+     the graph yet) must stay visible when the node view is opened offline. *)
+  let cached_blocks =
+    Model.all_blocks session.model
+    |> List.filter (fun (block : Model.block) ->
+      String.equal block.page_id route.page.uuid
+      && not
+           (List.exists
+              (fun (existing : Model.block) -> String.equal existing.uuid block.uuid)
+              graph_blocks))
+  in
+  outliner_context_with_blocks session (graph_blocks @ cached_blocks)
 ;;
 
 let active_node_route session =
   match List.rev session.node_routes with route :: _ -> Some route | [] -> None
+;;
+
+(* Resolve a node from the locally cached chat blocks when the graph db does
+   not know the uuid yet (for example a freshly created block while offline). *)
+let model_node_destination session uuid =
+  match Model.read_block session.model uuid with
+  | None -> None
+  | Some block when String.equal block.Model.page_id "" -> None
+  | Some block ->
+    let page_title =
+      match Model.block_journal_metadata session.model block with
+      | Some (title, _) when not (String.equal (String.trim title) "") -> title
+      | _ ->
+        (match block.Model.breadcrumbs with
+         | first :: _ -> first.Model.title
+         | [] -> block.Model.title)
+    in
+    let page : Logseq_chat_graph_read.sidebar_page =
+      { uuid = block.Model.page_id; title = page_title }
+    in
+    Some (page, true)
 ;;
 
 let outliner_context session =
@@ -1777,13 +1809,20 @@ let dispatch session action payload =
         | None -> failure ~code:"unknown_page" ~message:"The selected page is not available")
      | _ -> failure ~code:"invalid_params" ~message:"selectPage requires a page id")
   | "openNode" ->
-    (match payload, session.graph_node_destination with
-     | Some payload, Some resolve ->
+    (match payload with
+     | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
           (match required_string "uuid" fields with
            | Ok uuid ->
-             (match resolve uuid with
+             let destination =
+               match
+                 Option.bind session.graph_node_destination (fun resolve -> resolve uuid)
+               with
+               | Some _ as resolved -> resolved
+               | None -> model_node_destination session uuid
+             in
+             (match destination with
         | Some (page, zoom_to_block) ->
           let is_tag = Option.fold ~none:false ~some:(fun check -> check uuid) session.graph_node_is_tag in
           let related_blocks =
@@ -1800,7 +1839,7 @@ let dispatch session action payload =
            | Error message -> failure ~code:"invalid_params" ~message)
         | _ -> failure ~code:"invalid_params" ~message:"openNode payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"openNode payload must be valid JSON")
-     | _ -> failure ~code:"invalid_params" ~message:"openNode requires a node id")
+     | None -> failure ~code:"invalid_params" ~message:"openNode requires a node id")
   | "closeNode" ->
     pop_node_route session;
     snapshot_visible session

@@ -239,6 +239,7 @@ struct ContentView: View {
     @State private var outlinerKeyboardDismissalPending = false
     @State private var sidebarMotion = SidebarMotionState()
     @State private var appNavigationPath: [AppNavigationRoute] = []
+    @State private var pendingNodeRoutes: Set<AppNavigationRoute> = []
     #if !SKIP
     @State private var taskStatusPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
@@ -926,17 +927,27 @@ struct ContentView: View {
     #if !SKIP
     private func openNodeRoute(_ uuid: String) {
         let route = AppNavigationRoute.node(uuid)
-        guard AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath) else {
+        guard AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath),
+              !pendingNodeRoutes.contains(route)
+        else {
             #if DEBUG
             print("LogseqChat debug: ignored duplicate node route target=\(route)")
             #endif
             return
         }
-        store.openNode(uuid)
         #if DEBUG
         print("LogseqChat debug: opening node route target=\(route) currentDepth=\(appNavigationPath.count)")
         #endif
-        appNavigationPath.append(route)
+        pendingNodeRoutes.insert(route)
+        // Navigate only after the core resolved the node from local data, so
+        // an unknown node can never leave an endless spinner behind.
+        store.openNode(uuid) { resolved in
+            pendingNodeRoutes.remove(route)
+            guard resolved,
+                  AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath)
+            else { return }
+            appNavigationPath.append(route)
+        }
     }
     #endif
 

@@ -396,6 +396,33 @@ private struct OpenGraphPayload: Encodable {
         dispatchEncoded("openNode", LogseqNodeRouteRequest(uuid: nodeID))
     }
 
+    /// Opens a node route and reports whether the core resolved it, so the
+    /// caller can undo optimistic navigation instead of spinning forever.
+    public func openNode(_ nodeID: String, onResolved: @escaping (Bool) -> Void) {
+        do {
+            let payloadData = try JSONEncoder().encode(LogseqNodeRouteRequest(uuid: nodeID))
+            guard let payload = String(data: payloadData, encoding: .utf8) else {
+                lastError = LogseqChatCoreError(
+                    code: "request_encoding", message: "Could not encode openNode payload"
+                )
+                onResolved(false)
+                return
+            }
+            performAsync(
+                LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "openNode", payload: payload)
+                ),
+                afterApply: {
+                    onResolved(self.snapshot.nodeRoutes.contains { $0.uuid == nodeID })
+                }
+            )
+        } catch {
+            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+            onResolved(false)
+        }
+    }
+
     public func closeNode() {
         performAsync(LogseqChatRPCRequest(
             method: "dispatch",
