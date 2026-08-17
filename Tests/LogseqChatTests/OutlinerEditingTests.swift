@@ -392,7 +392,6 @@ import Testing
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.outliner,
             hasSelectedPage: false,
-            isSearching: false,
             composerExpanded: false,
             hasOutlinerSelection: false,
             isEditingOutlinerBlock: false
@@ -400,7 +399,6 @@ import Testing
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.outliner,
             hasSelectedPage: false,
-            isSearching: false,
             composerExpanded: false,
             hasOutlinerSelection: false,
             isEditingOutlinerBlock: true
@@ -408,7 +406,6 @@ import Testing
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.outliner,
             hasSelectedPage: false,
-            isSearching: false,
             composerExpanded: false,
             hasOutlinerSelection: true,
             isEditingOutlinerBlock: true
@@ -416,7 +413,6 @@ import Testing
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.outliner,
             hasSelectedPage: true,
-            isSearching: false,
             composerExpanded: false,
             hasOutlinerSelection: false,
             isEditingOutlinerBlock: false

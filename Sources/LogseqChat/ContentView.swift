@@ -221,11 +221,7 @@ struct ContentView: View {
     @State private var store: LogseqChatStore
     @State private var authentication: LogseqAuthenticationStore
     private let syncCoordinator: GraphSyncCoordinator
-    @State private var searchText = ""
-    @State private var searchPresented = false
-    @State private var isRestoringSearchProjection = false
     @State private var composerExpanded = false
-    @State private var searchExpanded = false
     @State private var settingsPresented = false
     @State private var searchPagePresented = false
     @State private var graphsPresented = false
@@ -257,7 +253,6 @@ struct ContentView: View {
     @AppStorage("logseq.composerDraft") private var persistedDraft = ""
     @AppStorage("logseq.contentMode") private var contentModeRaw = LogseqContentMode.chat.rawValue
     @FocusState private var composerFocused: Bool
-    @FocusState private var searchFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
     init(
@@ -729,7 +724,6 @@ struct ContentView: View {
         guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
-        searchText = ""
         if graph.id == store.snapshot.selectedGraphId {
             store.clearSelectedPage()
             return
@@ -743,7 +737,6 @@ struct ContentView: View {
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
         graphsPresented = false
-        searchText = ""
         store.selectPage(page.uuid)
     }
 
@@ -752,7 +745,6 @@ struct ContentView: View {
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
         graphsPresented = false
-        searchText = ""
         store.clearSelectedPage()
     }
 
@@ -765,7 +757,6 @@ struct ContentView: View {
 
     private func openManagedGraph(_ graph: LogseqGraph) {
         graphsPresented = false
-        searchText = ""
         if graph.id == store.snapshot.selectedGraphId,
            LogseqGraphLocalStorage.isDownloaded(databasePath: databasePath, graphID: graph.id) {
             store.clearSelectedPage()
@@ -951,11 +942,7 @@ struct ContentView: View {
     #endif
 
     private var shouldShowComposer: Bool {
-        #if SKIP
-        return store.snapshot.selectedPage == nil && !searchExpanded
-        #else
-        return store.snapshot.selectedPage == nil && !searchPresented
-        #endif
+        store.snapshot.selectedPage == nil
     }
 
     private var shouldShowExpandedComposer: Bool {
@@ -963,15 +950,9 @@ struct ContentView: View {
     }
 
     private var bottomChromePresentation: BottomChromePresentation {
-        #if SKIP
-        let isSearching = searchExpanded
-        #else
-        let isSearching = searchPresented
-        #endif
-        return BottomChromePolicy.presentation(
+        BottomChromePolicy.presentation(
             contentMode: presentedContentMode,
             hasSelectedPage: store.snapshot.selectedPage != nil,
-            isSearching: isSearching,
             composerExpanded: composerExpanded,
             hasOutlinerSelection: !outlinerSelectedBlockIDs.isEmpty,
             isEditingOutlinerBlock: presentedOutlinerEditing != nil
@@ -993,7 +974,6 @@ struct ContentView: View {
 
     private var presentedContentMode: LogseqContentMode {
         contentMode.presentationMode(
-            isSearching: store.snapshot.isSearching,
             hasSelectedPage: store.snapshot.selectedPage != nil
         )
     }
@@ -1231,10 +1211,9 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
-            if !store.snapshot.isSearching,
-               LogseqContentMode.supportsModeSwitch(
-                   hasSelectedPage: store.snapshot.selectedPage != nil
-               ) {
+            if LogseqContentMode.supportsModeSwitch(
+                hasSelectedPage: store.snapshot.selectedPage != nil
+            ) {
                 Button {
                     finishOutlinerEditing()
                     composerExpanded = false
@@ -1365,24 +1344,13 @@ struct ContentView: View {
                 autoScrollOnFirstAppear(proxy)
             }
             .onChange(of: store.snapshot.blocks) { oldBlocks, newBlocks in
-                let restoringSearchProjection = isRestoringSearchProjection
-                if restoringSearchProjection {
-                    isRestoringSearchProjection = false
-                }
                 if !hasAutoScrolledInitially {
                     autoScrollOnFirstAppear(proxy)
                 } else if BlockListUpdatePolicy.shouldScrollToBottom(
                     oldBlockIDs: Set(oldBlocks.map(\.uuid)),
-                    newBlockIDs: Set(newBlocks.map(\.uuid)),
-                    queryIsEmpty: store.snapshot.query.isEmpty,
-                    isRestoringSearchProjection: restoringSearchProjection
+                    newBlockIDs: Set(newBlocks.map(\.uuid))
                 ) {
                     scrollToBottom(proxy)
-                }
-            }
-            .onChange(of: store.snapshot.query) { oldQuery, newQuery in
-                if oldQuery.isEmpty && !newQuery.isEmpty {
-                    scrollToTop(proxy)
                 }
             }
         }
@@ -1394,7 +1362,7 @@ struct ContentView: View {
 
     private var blockListContentTopPadding: CGFloat {
         #if SKIP
-        return searchExpanded ? 180.0 : 60.0
+        return 60.0
         #else
         return 16.0
         #endif
@@ -1494,13 +1462,6 @@ struct ContentView: View {
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         guard !store.snapshot.blocks.isEmpty else { return }
         proxy.scrollTo(Self.blockListBottomID, anchor: .bottom)
-    }
-
-    private func scrollToTop(_ proxy: ScrollViewProxy) {
-        guard !store.snapshot.blocks.isEmpty else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(Self.blockListTopID, anchor: .top)
-        }
     }
 
     private func autoScrollOnFirstAppear(_ proxy: ScrollViewProxy) {
@@ -1879,12 +1840,6 @@ struct ContentView: View {
         #endif
     }
 
-    private func focusSearch() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            searchFocused = true
-        }
-    }
-
     #if !SKIP
     private func presentSearch() {
         composerExpanded = false
@@ -1895,21 +1850,6 @@ struct ContentView: View {
     private func expandSearch() {
         composerExpanded = false
         searchPagePresented = true
-    }
-
-    private func handleSearchPresentationChanged(_ presented: Bool) {
-        guard !presented else {
-            dismissComposerEditing()
-            return
-        }
-        searchFocused = false
-        clearSearch()
-    }
-
-    private func clearSearch() {
-        guard !searchText.isEmpty else { return }
-        searchText = ""
-        store.searchLocal("")
     }
 
     private func dismissComposerEditing() {
@@ -2231,24 +2171,6 @@ extension View {
     }
 
     #if !SKIP
-    @ViewBuilder public func platformSearchable(
-        enabled: Bool,
-        text: Binding<String>,
-        isPresented: Binding<Bool>,
-        prompt: String
-    ) -> some View {
-        if enabled {
-            self.searchable(
-                text: text,
-                isPresented: isPresented,
-                placement: .automatic,
-                prompt: Text(verbatim: prompt)
-            )
-        } else {
-            self
-        }
-    }
-
     @ViewBuilder public func platformRootNavigationChromeHidden() -> some View {
         #if os(iOS)
         if #available(iOS 18.0, *) {
@@ -2261,17 +2183,6 @@ extension View {
         #endif
     }
 
-    @ViewBuilder public func platformSearchFocused(_ binding: FocusState<Bool>.Binding) -> some View {
-        #if os(iOS)
-        if #available(iOS 18.0, *) {
-            self.searchFocused(binding)
-        } else {
-            self
-        }
-        #else
-        self
-        #endif
-    }
     #endif
 
     @ViewBuilder public func platformGlassContainer(cornerRadius: CGFloat = 28) -> some View {

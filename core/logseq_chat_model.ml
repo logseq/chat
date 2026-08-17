@@ -37,7 +37,6 @@ type block =
 
 type t =
   { mutable db : db
-  ; mutable query : string
   ; mutable selected_block_uuid : string option
   ; mutable last_refresh_at : int option
   ; mutable revision : int
@@ -92,7 +91,7 @@ let create ?storage () =
          db)
     | None -> empty_db ~schema ()
   in
-  { db; query = ""; selected_block_uuid = None; last_refresh_at = None; revision = 0 }
+  { db; selected_block_uuid = None; last_refresh_at = None; revision = 0 }
 ;;
 
 let value_string = function
@@ -377,40 +376,6 @@ let selected_block model =
   match model.selected_block_uuid with
   | Some uuid -> read_block model uuid
   | None -> None
-;;
-
-let lowercase value = String.lowercase_ascii value
-
-let contains_substring haystack needle =
-  let haystack_len = String.length haystack in
-  let needle_len = String.length needle in
-  let rec check_at index needle_index =
-    needle_index = needle_len
-    || (index + needle_index < haystack_len
-        && haystack.[index + needle_index] = needle.[needle_index]
-        && check_at index (needle_index + 1))
-  in
-  let rec loop index =
-    needle_len = 0
-    || (index + needle_len <= haystack_len && (check_at index 0 || loop (index + 1)))
-  in
-  loop 0
-;;
-
-let title_matches query block =
-  let query = lowercase (String.trim query) in
-  String.equal query ""
-  || contains_substring (lowercase block.title) query
-;;
-
-let search model query =
-  model.query <- query;
-  all_blocks model
-  |> List.filter (fun block ->
-    not (String.equal (String.trim block.title) ""))
-  |> List.sort compare_recent
-  |> List.filter (title_matches query)
-  |> take 100
 ;;
 
 let commit model transactions =
@@ -710,23 +675,12 @@ let update_block_status model ~uuid ~status ~now =
     Ok ())
 ;;
 
-let visible_blocks model =
-  if String.equal (String.trim model.query) "" then recent_blocks model else search model model.query
-;;
+let visible_blocks model = recent_blocks model
 
 let visible_from model blocks =
-  if String.equal (String.trim model.query) ""
-  then
-    blocks
-    |> List.filter (is_recent_feed_block model)
-    |> List.sort compare_recent
-    |> take 100
-    |> journal_blocks model
-  else
-    blocks
-    |> List.filter (fun block ->
-      not (String.equal (String.trim block.title) "")
-      && title_matches model.query block)
-    |> List.sort compare_recent
-    |> take 100
+  blocks
+  |> List.filter (is_recent_feed_block model)
+  |> List.sort compare_recent
+  |> take 100
+  |> journal_blocks model
 ;;

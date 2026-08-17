@@ -152,12 +152,10 @@ private struct OpenGraphPayload: Encodable {
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
-        query: "",
         blocks: [],
         selectedBlock: nil,
         lastRefreshAt: nil,
         graphName: nil,
-        isSearching: false,
         relatedBlocks: nil
     )
     public private(set) var lastError: LogseqChatCoreError?
@@ -195,7 +193,7 @@ private struct OpenGraphPayload: Encodable {
     }
 
     private func makeSections(from blocks: [LogseqBlock]) -> [LogseqBlockSection] {
-        let visibleBlocks = snapshot.isSearching || snapshot.selectedPage != nil
+        let visibleBlocks = snapshot.selectedPage != nil
             ? blocks
             : blocks.filter { $0.journalDay != nil }
         if let selectedPage = snapshot.selectedPage {
@@ -670,28 +668,6 @@ private struct OpenGraphPayload: Encodable {
         }
     }
 
-    public func search(_ query: String) {
-        searchGeneration += 1
-        let generation = searchGeneration
-        performAsync(
-            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "search", payload: query)),
-            shouldApply: {
-                self.searchGeneration == generation
-            }
-        )
-    }
-
-    public func searchLocal(_ query: String) {
-        searchGeneration += 1
-        let generation = searchGeneration
-        performAsync(
-            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "searchLocal", payload: query)),
-            shouldApply: {
-                self.searchGeneration == generation
-            }
-        )
-    }
-
     public func searchNodes(_ query: String) {
         searchGeneration += 1
         let generation = searchGeneration
@@ -1098,7 +1074,7 @@ private struct OpenGraphPayload: Encodable {
             let responseData = Data(responseJSON.utf8)
             let response = try JSONDecoder().decode(LogseqChatRPCResponse.self, from: responseData)
             if response.ok, let result = response.result {
-                let mergedResult = mergedSnapshot(result, actionName: actionName)
+                let mergedResult = mergedSnapshot(result)
                 #if DEBUG
                 let applyMilliseconds = Date().timeIntervalSince(applyStartedAt) * 1_000
                 logger.info(
@@ -1164,7 +1140,7 @@ private struct OpenGraphPayload: Encodable {
         Int64(Date().timeIntervalSince1970 * 1000.0)
     }
 
-    private func mergedSnapshot(_ result: LogseqChatSnapshot, actionName: String) -> LogseqChatSnapshot {
+    private func mergedSnapshot(_ result: LogseqChatSnapshot) -> LogseqChatSnapshot {
         if result.isOutlinerPatch {
             let blocks = result.blocks.isEmpty ? snapshot.blocks : snapshot.blocks.map { block in
                 result.blocks.first { $0.uuid == block.uuid } ?? block
@@ -1177,12 +1153,10 @@ private struct OpenGraphPayload: Encodable {
             }
             return LogseqChatSnapshot(
                 revision: snapshot.revision,
-                query: snapshot.query,
                 blocks: blocks,
                 selectedBlock: selectedBlock,
                 lastRefreshAt: snapshot.lastRefreshAt,
                 graphName: snapshot.graphName,
-                isSearching: snapshot.isSearching,
                 selectedGraphId: snapshot.selectedGraphId,
                 graphs: snapshot.graphs,
                 favorites: snapshot.favorites,
@@ -1209,9 +1183,6 @@ private struct OpenGraphPayload: Encodable {
                 isOutlinerPatch: false
             )
         }
-        let preservesCurrentSearch = actionName != "search" && actionName != "searchLocal" && snapshot.isSearching
-        let query = preservesCurrentSearch ? snapshot.query : result.query
-        let isSearching = preservesCurrentSearch ? snapshot.isSearching : result.isSearching
         if let mutationServerT, let appliedServerT = result.appliedServerT,
            appliedServerT > mutationServerT {
             cursorAdvancedAfterMutation = true
@@ -1219,12 +1190,10 @@ private struct OpenGraphPayload: Encodable {
         }
         return LogseqChatSnapshot(
             revision: result.revision,
-            query: query,
-            blocks: mergedBlocks(from: result.blocks, query: query),
+            blocks: result.blocks,
             selectedBlock: result.selectedBlock,
             lastRefreshAt: result.lastRefreshAt,
             graphName: result.graphName,
-            isSearching: isSearching,
             selectedGraphId: result.selectedGraphId,
             graphs: result.graphs ?? snapshot.graphs,
             favorites: result.favorites,
@@ -1251,24 +1220,4 @@ private struct OpenGraphPayload: Encodable {
         )
     }
 
-    private func mergedBlocks(from blocks: [LogseqBlock], query: String) -> [LogseqBlock] {
-        blocks.filter { Self.block($0, matches: query) }
-    }
-
-    private static func block(_ block: LogseqBlock, matches query: String) -> Bool {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalizedQuery.isEmpty else {
-            return true
-        }
-        if block.title.lowercased().contains(normalizedQuery) {
-            return true
-        }
-        if block.pageId.lowercased().contains(normalizedQuery) {
-            return true
-        }
-        if block.uuid.lowercased().contains(normalizedQuery) {
-            return true
-        }
-        return block.parentId?.lowercased().contains(normalizedQuery) == true
-    }
 }

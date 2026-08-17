@@ -4,7 +4,7 @@ let assert_int_equal label expected actual =
 ;;
 
 let required_single_block body =
-  match Logseq_chat_api.blocks_from_search_body body with
+  match Logseq_chat_api.blocks_from_list_body "results" body with
   | [ block ] -> block
   | blocks -> failwith (Printf.sprintf "expected one block, got %d" (List.length blocks))
 ;;
@@ -74,16 +74,6 @@ let () =
   assert_some_string "status choice color" "#7c3aed" custom_status.icon_color;
   assert_some_string "asset type" "jpg" semantic.asset_type;
   assert_int_equal "asset size" 2048 (Option.value semantic.asset_size ~default:0);
-  let search_journals =
-    Logseq_chat_api.journals_from_search_body
-      {|{"results":[{"uuid":"block-search","title":"Search","page-id":"journal-search","journal-title":"Aug 13th, 2026","journal-day":20260813}]}|}
-  in
-  (match search_journals with
-   | [ journal ] ->
-     assert_equal "search journal id" "journal-search" journal.uuid;
-     assert_equal "search journal title" "Aug 13th, 2026" journal.title;
-     assert_int_equal "search journal day" 20_260_813 journal.journal_day
-   | journals -> failwith (Printf.sprintf "expected one search journal, got %d" (List.length journals)));
   let config =
     Logseq_chat_api.
       { base_url = "https://api.example"
@@ -106,9 +96,6 @@ let () =
     "graph discovery uses the authenticated db-sync graph index"
     "https://api.example/graphs"
     (Logseq_chat_api.graphs_request config).url;
-  let search_request = Logseq_chat_api.search_request config "voice" in
-  if not (String.contains search_request.url ',')
-  then failwith "remote search must include block and asset resources";
   assert_equal "block references URL"
     "https://api.example/api/v1/graphs/graph-1/blocks/block-1/references?limit=100"
     (Logseq_chat_api.block_references_request config "block-1").url;

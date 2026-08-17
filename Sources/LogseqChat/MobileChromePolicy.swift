@@ -55,12 +55,10 @@ enum BottomChromePolicy {
     static func presentation(
         contentMode: LogseqContentMode,
         hasSelectedPage: Bool,
-        isSearching: Bool,
         composerExpanded: Bool,
         hasOutlinerSelection: Bool,
         isEditingOutlinerBlock: Bool
     ) -> BottomChromePresentation {
-        if isSearching { return .hidden }
         if contentMode == .outliner && hasOutlinerSelection { return .outlinerSelection }
         if contentMode == .outliner && isEditingOutlinerBlock { return .outlinerEditor }
         if hasSelectedPage { return .hidden }
@@ -84,12 +82,8 @@ enum GraphLaunchPolicy {
 enum BlockListUpdatePolicy {
     static func shouldScrollToBottom(
         oldBlockIDs: Set<String>,
-        newBlockIDs: Set<String>,
-        queryIsEmpty: Bool,
-        isRestoringSearchProjection: Bool
+        newBlockIDs: Set<String>
     ) -> Bool {
         !newBlockIDs.isSubset(of: oldBlockIDs)
-            && queryIsEmpty
-            && !isRestoringSearchProjection
     }
 }

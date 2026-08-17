@@ -609,7 +609,6 @@ let snapshot session blocks =
   success
     (`Assoc
       [ "revision", `Int session.model.revision
-      ; "query", `String session.model.query
       ; "blocks", `List (List.map (visible_block_json session.model) blocks)
       ; "selectedBlock",
         (match Model.selected_block session.model with
@@ -646,7 +645,6 @@ let snapshot session blocks =
          | Some cursor -> Option.fold ~none:`Null ~some:(fun value -> `Int value) (cursor ())
          | None -> `Null)
       ; "syncConnected", `Bool session.sync_connected
-      ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ; "pendingSyncRequest", pending_request_json session
       ; "outlinerState", outliner_state_json base_state
@@ -681,10 +679,8 @@ let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.conte
   success
     (`Assoc
       [ "revision", `Int session.model.revision
-      ; "query", `String session.model.query
       ; "blocks", `List (List.map (visible_block_json session.model) blocks)
       ; "selectedBlock", `Null
-      ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
       ; "outlinerState", outliner_state_json session.outliner_state
       ; "outlinerAutocompleteCandidates",
         outliner_candidates_json (outliner_context session) session.outliner_state
@@ -747,21 +743,10 @@ let snapshot_visible session =
        | None -> Model.visible_blocks session.model)
     | None -> Model.visible_blocks session.model
   in
-  let query = String.trim session.model.query |> String.lowercase_ascii in
   let blocks =
-    if String.equal query "" && Option.is_some session.selected_sidebar_page
+    if Option.is_some session.selected_sidebar_page
     then blocks
-    else if String.equal query ""
-    then Model.visible_from session.model blocks
-    else
-      List.filter
-        (fun (block : Model.block) ->
-          let title = String.lowercase_ascii block.title in
-          try
-            ignore (Str.search_forward (Str.regexp_string query) title 0);
-            true
-          with Not_found -> false)
-        blocks
+    else Model.visible_from session.model blocks
   in
   snapshot session blocks
 ;;
@@ -931,24 +916,6 @@ let cache_remote_blocks session response ~now =
     Error ("Logseq API returned HTTP " ^ string_of_int response.Api.status))
 ;;
 
-let cache_search_blocks session response ~now =
-  if response.Api.status >= 200 && response.Api.status < 300
-  then (
-    let blocks = Api.blocks_from_search_body response.body in
-    let journals = Api.journals_from_search_body response.body in
-    List.iter
-      (fun (journal : Api.journal) ->
-        Model.upsert_journal_page
-          ~title:journal.title
-          session.model
-          ~uuid:journal.uuid
-          ~journal_day:journal.journal_day)
-      journals;
-    Model.upsert_blocks ~in_recent_feed:false session.model blocks ~refresh_time:now;
-    Ok ())
-  else Error ("Logseq API returned HTTP " ^ string_of_int response.Api.status)
-;;
-
 let cache_task_statuses session response =
   if response.Api.status >= 200 && response.Api.status < 300
   then (
@@ -985,16 +952,6 @@ let resolve_graph _session config =
     debug "graph discovery skipped graph=%s" config.Api.graph_id;
     Ok config)
   else Error "Select a Logseq graph before syncing"
-;;
-
-let search_remote session config query =
-  let now = now_ms () in
-  match session.send (Api.search_request config query) with
-  | Ok response ->
-    (match cache_search_blocks session response ~now with
-     | Ok () -> snapshot session (Model.search session.model query)
-     | Error _ -> snapshot session (Model.search session.model query))
-  | Error _ -> snapshot session (Model.search session.model query)
 ;;
 
 let journal_page_uuid journal_day =
@@ -1851,7 +1808,6 @@ let dispatch session action payload =
           clear_node_navigation session;
           session.selected_sidebar_page <- Some page;
           reset_outliner session;
-          ignore (Model.search session.model "");
           snapshot_visible session
         | None -> failure ~code:"unknown_page" ~message:"The selected page is not available")
      | _ -> failure ~code:"invalid_params" ~message:"selectPage requires a page id")
@@ -1894,7 +1850,6 @@ let dispatch session action payload =
     clear_node_navigation session;
     session.selected_sidebar_page <- None;
     reset_outliner session;
-    ignore (Model.search session.model "");
     snapshot_visible session
   | "loadOlderJournals" ->
     Option.iter (fun load -> load ()) session.load_older_journals;
@@ -1950,19 +1905,6 @@ let dispatch session action payload =
   | "stopSSE" ->
     session.sync_connected <- false;
     snapshot_visible session
-  | "search" ->
-    let query = Option.value payload ~default:"" in
-    (match session.config, String.equal (String.trim query) "" with
-     | Some _config, false when selected_graph_is_encrypted session ->
-       snapshot session (Model.search session.model query)
-     | Some config, false ->
-       (match resolve_graph session config with
-        | Ok config -> search_remote session config query
-        | Error _ -> snapshot session (Model.search session.model query))
-     | _ -> snapshot session (Model.search session.model query))
-  | "searchLocal" ->
-    let query = Option.value payload ~default:"" in
-    snapshot session (Model.search session.model query)
   | "searchNodes" ->
     let query = Option.value payload ~default:"" in
     session.search_query <- query;

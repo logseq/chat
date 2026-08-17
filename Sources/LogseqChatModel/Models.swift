@@ -8,10 +8,7 @@ public enum LogseqContentMode: String, Codable, Sendable {
         self == .chat ? .outliner : .chat
     }
 
-    public func presentationMode(
-        isSearching: Bool,
-        hasSelectedPage: Bool = false
-    ) -> Self {
+    public func presentationMode(hasSelectedPage: Bool = false) -> Self {
         hasSelectedPage ? .outliner : self
     }
 
@@ -491,7 +488,6 @@ public struct LogseqOutlinerEvent: Encodable, Sendable {
 
 public struct LogseqChatSnapshot: Codable {
     public let revision: Int
-    public let query: String
     public let blocks: [LogseqBlock]
     public let selectedBlock: LogseqBlock?
     public let lastRefreshAt: Int64?
@@ -504,7 +500,6 @@ public struct LogseqChatSnapshot: Codable {
     public let selectedPageIsTag: Bool?
     public let appliedServerT: Int?
     public let syncConnected: Bool?
-    public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
     public let searchQuery: String?
     public let searchResults: [LogseqSearchHit]?
@@ -523,8 +518,8 @@ public struct LogseqChatSnapshot: Codable {
     public let isOutlinerPatch: Bool
 
     public init(
-        revision: Int, query: String, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
-        lastRefreshAt: Int64?, graphName: String?, isSearching: Bool,
+        revision: Int, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
+        lastRefreshAt: Int64?, graphName: String?,
         selectedGraphId: String? = nil, graphs: [LogseqGraph]? = nil,
         favorites: [LogseqSidebarPage] = [], recentPages: [LogseqSidebarPage] = [],
         selectedPage: LogseqSidebarPage? = nil,
@@ -548,7 +543,6 @@ public struct LogseqChatSnapshot: Codable {
         isOutlinerPatch: Bool = false
     ) {
         self.revision = revision
-        self.query = query
         self.blocks = blocks
         self.selectedBlock = selectedBlock
         self.lastRefreshAt = lastRefreshAt
@@ -561,7 +555,6 @@ public struct LogseqChatSnapshot: Codable {
         self.selectedPageIsTag = selectedPageIsTag
         self.appliedServerT = appliedServerT
         self.syncConnected = syncConnected
-        self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
         self.searchQuery = searchQuery
         self.searchResults = searchResults
@@ -581,9 +574,9 @@ public struct LogseqChatSnapshot: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case revision, query, blocks, selectedBlock, lastRefreshAt, graphName
+        case revision, blocks, selectedBlock, lastRefreshAt, graphName
         case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag, appliedServerT
-        case syncConnected, isSearching, relatedBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
+        case syncConnected, relatedBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
         case outlinerAutocompleteCandidates
@@ -596,7 +589,6 @@ public struct LogseqChatSnapshot: Codable {
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         revision = try values.decode(Int.self, forKey: .revision)
-        query = try values.decode(String.self, forKey: .query)
         blocks = try values.decode([LogseqBlock].self, forKey: .blocks)
         selectedBlock = try values.decodeIfPresent(LogseqBlock.self, forKey: .selectedBlock)
         lastRefreshAt = try values.decodeIfPresent(Int64.self, forKey: .lastRefreshAt)
@@ -609,7 +601,6 @@ public struct LogseqChatSnapshot: Codable {
         selectedPageIsTag = try values.decodeIfPresent(Bool.self, forKey: .selectedPageIsTag)
         appliedServerT = try values.decodeIfPresent(Int.self, forKey: .appliedServerT)
         syncConnected = try values.decodeIfPresent(Bool.self, forKey: .syncConnected)
-        isSearching = try values.decode(Bool.self, forKey: .isSearching)
         relatedBlocks = try values.decodeIfPresent([LogseqBlock].self, forKey: .relatedBlocks)
         searchQuery = try values.decodeIfPresent(String.self, forKey: .searchQuery)
         searchResults = try values.decodeIfPresent([LogseqSearchHit].self, forKey: .searchResults)

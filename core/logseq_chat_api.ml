@@ -156,19 +156,6 @@ let encrypted_journal_page_request config ~uuid ~title ~name ~journal_day =
   }
 ;;
 
-let search_request config query =
-  { method_ = "GET"
-  ; url =
-      Printf.sprintf
-        "%s/api/v1/graphs/%s/search?q=%s&types=blocks,assets&limit=100"
-        (api_root config)
-        (url_encode config.graph_id)
-        (url_encode query)
-  ; body = None
-  ; token = config.token
-  }
-;;
-
 let related_request config resource uuid collection =
   { method_ = "GET"
   ; url = Printf.sprintf "%s/api/v1/graphs/%s/%s/%s/%s?limit=100"
@@ -460,42 +447,11 @@ let block_of_json ?(fallback_time = 0) json =
   | _ -> None
 ;;
 
-let blocks_from_search_body body =
-  match from_string body with
-  | `Assoc fields ->
-    (match List.assoc_opt "results" fields with
-     | Some (`List results) ->
-       results
-       |> List.filter_map (block_of_json ~fallback_time:0)
-     | _ -> [])
-  | _ -> []
-;;
-
 let blocks_from_list_body key body =
   match from_string body with
   | `Assoc fields ->
     (match List.assoc_opt key fields with
      | Some (`List values) -> List.filter_map block_of_json values
-     | _ -> [])
-  | _ -> []
-;;
-
-let journals_from_search_body body =
-  match from_string body with
-  | `Assoc fields ->
-    (match List.assoc_opt "results" fields with
-     | Some (`List results) ->
-       results
-       |> List.filter_map (function
-         | `Assoc result_fields ->
-           let uuid = string_member "page-id" result_fields in
-           let title = string_member "journal-title" result_fields in
-           let journal_day = int_member "journal-day" result_fields in
-           if String.equal uuid "" || journal_day <= 0
-           then None
-           else Some { uuid; title; journal_day }
-         | _ -> None)
-       |> List.sort_uniq (fun left right -> String.compare left.uuid right.uuid)
      | _ -> [])
   | _ -> []
 ;;

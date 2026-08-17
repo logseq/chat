@@ -70,49 +70,28 @@ import LogseqChatModel
         ))
     }
 
-    @Test func bottomChromePriorityCoversSearchComposerAndIdleStates() {
+    @Test func bottomChromePriorityCoversComposerAndIdleStates() {
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.chat,
             hasSelectedPage: false,
-            isSearching: true,
-            composerExpanded: true,
-            hasOutlinerSelection: false,
-            isEditingOutlinerBlock: false
-        ) == .hidden)
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.chat,
-            hasSelectedPage: false,
-            isSearching: false,
             composerExpanded: true,
             hasOutlinerSelection: false,
             isEditingOutlinerBlock: false
         ) == .expandedComposer)
     }
 
-    @Test func restoringSearchResultsDoesNotLookLikeANewCapture() {
-        #expect(!BlockListUpdatePolicy.shouldScrollToBottom(
-            oldBlockIDs: ["old"],
-            newBlockIDs: ["old", "search-result"],
-            queryIsEmpty: true,
-            isRestoringSearchProjection: true
-        ))
+    @Test func onlyNewBlocksScrollTheListToTheBottom() {
         #expect(BlockListUpdatePolicy.shouldScrollToBottom(
             oldBlockIDs: ["old"],
-            newBlockIDs: ["old", "captured"],
-            queryIsEmpty: true,
-            isRestoringSearchProjection: false
+            newBlockIDs: ["old", "captured"]
         ))
         #expect(BlockListUpdatePolicy.shouldScrollToBottom(
             oldBlockIDs: ["local"],
-            newBlockIDs: ["authoritative"],
-            queryIsEmpty: true,
-            isRestoringSearchProjection: false
+            newBlockIDs: ["authoritative"]
         ))
         #expect(!BlockListUpdatePolicy.shouldScrollToBottom(
             oldBlockIDs: ["old"],
-            newBlockIDs: ["old"],
-            queryIsEmpty: true,
-            isRestoringSearchProjection: false
+            newBlockIDs: ["old"]
         ))
     }
 }

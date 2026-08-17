@@ -8,12 +8,10 @@ private let testEmptySnapshotJSON = """
   "ok": true,
   "result": {
     "revision": 1,
-    "query": "",
     "blocks": [],
     "selectedBlock": null,
     "lastRefreshAt": null,
-    "graphName": null,
-    "isSearching": false
+    "graphName": null
   },
   "error": null
 }
@@ -895,7 +893,7 @@ private let testEmptySnapshotJSON = """
                 if request.contains("\"action\":\"completePendingSync\"") {
                     return pendingPumpSnapshot(query: "local", syncStatus: "submitted", request: nil)
                 }
-                if request.contains("\"action\":\"searchLocal\"") {
+                if request.contains("\"action\":\"searchNodes\"") {
                     return pendingPumpSnapshot(query: "local", syncStatus: "pending", request: nil)
                 }
                 return pendingPumpSnapshot(query: "", syncStatus: "pending", request: nil)
@@ -908,8 +906,8 @@ private let testEmptySnapshotJSON = """
         store.send("Offline capture")
         try await waitUntilAsync { await transport.hasStarted }
 
-        store.searchLocal("local")
-        try await waitUntil { store.snapshot.query == "local" }
+        store.searchNodes("local")
+        try await waitUntil { store.snapshot.searchQuery == "local" }
         #expect(await transport.isWaiting)
 
         await transport.resume()
@@ -1003,7 +1001,7 @@ private let testEmptySnapshotJSON = """
         }
     }
 
-    @Test @MainActor func searchLocalDispatchesCacheOnlySearch() async throws {
+    @Test @MainActor func searchNodesDispatchesCacheOnlySearch() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
@@ -1013,7 +1011,7 @@ private let testEmptySnapshotJSON = """
               "ok": true,
               "result": {
                 "revision": 1,
-                "query": "offline",
+                "searchQuery": "offline",
                 "blocks": [],
                 "selectedBlock": null,
                 "lastRefreshAt": null,
@@ -1025,25 +1023,24 @@ private let testEmptySnapshotJSON = """
             """
         }
 
-        store.searchLocal("offline")
+        store.searchNodes("offline")
 
         try await waitUntil {
-            recorder.first?.contains("\"action\":\"searchLocal\"") == true
-                && store.snapshot.query == "offline"
+            recorder.first?.contains("\"action\":\"searchNodes\"") == true
+                && store.snapshot.searchQuery == "offline"
         }
 
         let request = try #require(recorder.first)
-        #expect(request.contains("\"action\":\"searchLocal\""))
+        #expect(request.contains("\"action\":\"searchNodes\""))
         #expect(!request.contains("\"action\":\"search\""))
-        #expect(store.snapshot.query == "offline")
-        #expect(store.snapshot.isSearching == true)
+        #expect(store.snapshot.searchQuery == "offline")
     }
 
-    @Test @MainActor func searchLocalDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
+    @Test @MainActor func searchNodesDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
-            if request.contains("\"action\":\"searchLocal\"") {
+            if request.contains("\"action\":\"searchNodes\"") {
                 Thread.sleep(forTimeInterval: 0.25)
             }
             return """
@@ -1052,7 +1049,7 @@ private let testEmptySnapshotJSON = """
               "ok": true,
               "result": {
                 "revision": 1,
-                "query": "slow",
+                "searchQuery": "slow",
                 "blocks": [],
                 "selectedBlock": null,
                 "lastRefreshAt": null,
@@ -1065,13 +1062,13 @@ private let testEmptySnapshotJSON = """
         }
 
         let start = Date()
-        store.searchLocal("slow")
+        store.searchNodes("slow")
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(elapsed < 0.05)
         try await waitUntil {
-            recorder.first?.contains("\"action\":\"searchLocal\"") == true
-                && store.snapshot.query == "slow"
+            recorder.first?.contains("\"action\":\"searchNodes\"") == true
+                && store.snapshot.searchQuery == "slow"
         }
     }
 
@@ -1170,12 +1167,12 @@ private let testEmptySnapshotJSON = """
 
         let start = Date()
         store.open(path: "/tmp/serialized-core.sqlite")
-        store.searchLocal("queued")
+        store.searchNodes("queued")
         let elapsed = Date().timeIntervalSince(start)
 
         #expect(elapsed < 0.1)
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish searchLocal")
+            probe.events.contains("finish searchNodes")
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
@@ -1183,8 +1180,8 @@ private let testEmptySnapshotJSON = """
             "finish configure",
             "start open",
             "finish open",
-            "start searchLocal",
-            "finish searchLocal",
+            "start searchNodes",
+            "finish searchNodes",
         ])
     }
 
@@ -1202,22 +1199,22 @@ private let testEmptySnapshotJSON = """
         try await waitUntil {
             probe.events.contains("start configure")
         }
-        store.searchLocal("after error")
+        store.searchNodes("after error")
 
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish searchLocal")
+            probe.events.contains("finish searchNodes")
         }
         try await waitUntil(timeout: 2.0) {
-            store.snapshot.query == "after error" && store.lastError == nil
+            store.snapshot.searchQuery == "after error" && store.lastError == nil
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start searchLocal",
-            "finish searchLocal",
+            "start searchNodes",
+            "finish searchNodes",
         ])
-        #expect(store.snapshot.query == "after error")
+        #expect(store.snapshot.searchQuery == "after error")
         #expect(store.lastError == nil)
     }
 
@@ -1238,17 +1235,17 @@ private let testEmptySnapshotJSON = """
         try await waitUntil {
             probe.events.contains("start configure")
         }
-        secondStore.searchLocal("queued across stores")
+        secondStore.searchNodes("queued across stores")
 
         try await waitUntil(timeout: 2.0) {
-            probe.events.contains("finish searchLocal")
+            probe.events.contains("finish searchNodes")
         }
         #expect(probe.maximumConcurrentCalls == 1)
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start searchLocal",
-            "finish searchLocal",
+            "start searchNodes",
+            "finish searchNodes",
         ])
     }
     #endif
@@ -1265,7 +1262,7 @@ private let testEmptySnapshotJSON = """
 
         for index in 0..<4 {
             let store = index % 2 == 0 ? firstStore : secondStore
-            store.searchLocal("thread-affinity-\(index)")
+            store.searchNodes("thread-affinity-\(index)")
         }
 
         try await waitUntil(timeout: 2.0) {
@@ -1276,11 +1273,11 @@ private let testEmptySnapshotJSON = """
     }
     #endif
 
-    @Test @MainActor func searchLocalKeepsDurableCaptureVisible() async throws {
+    @Test @MainActor func searchNodesKeepsDurableCaptureVisible() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
-            if request.contains("\"action\":\"searchLocal\"") {
+            if request.contains("\"action\":\"searchNodes\"") {
                 let uuid = latestSendUUID(in: recorder) ?? "local-search"
                 return """
                 {
@@ -1288,7 +1285,7 @@ private let testEmptySnapshotJSON = """
                   "ok": true,
                   "result": {
                     "revision": 1,
-                    "query": "E2E capture",
+                    "searchQuery": "E2E capture",
                     "blocks": [{
                       "uuid": "\(uuid)",
                       "title": "E2E capture responsive",
@@ -1340,105 +1337,13 @@ private let testEmptySnapshotJSON = """
             store.snapshot.blocks.first?.title == "E2E capture responsive"
         }
 
-        store.searchLocal("E2E capture")
+        store.searchNodes("E2E capture")
 
         try await waitUntil {
-            recorder.all.contains { $0.contains("\"action\":\"searchLocal\"") }
-                && store.snapshot.query == "E2E capture"
+            recorder.all.contains { $0.contains("\"action\":\"searchNodes\"") }
+                && store.snapshot.searchQuery == "E2E capture"
         }
 
-        #expect(store.snapshot.blocks.map(\.title).contains("E2E capture responsive"))
-    }
-
-    @Test @MainActor func staleSendResponseDoesNotClearCurrentSearchQuery() async throws {
-        let recorder = RequestRecorder()
-        let store = LogseqChatStore { request in
-            recorder.append(request)
-            if request.contains("\"action\":\"send\"")
-                || request.contains("\"action\":\"beginPendingSync\"") {
-                if request.contains("\"action\":\"send\"") {
-                    Thread.sleep(forTimeInterval: 0.15)
-                    recorder.append("send-returned")
-                }
-                return """
-                {
-                  "apiVersion": 1,
-                  "ok": true,
-                  "result": {
-                    "revision": 2,
-                    "query": "",
-                    "blocks": [
-                      {
-                        "uuid": "local-1",
-                        "title": "E2E capture responsive",
-                        "pageId": "journal/2026-08-13",
-                        "createdAt": 1776000000000,
-                        "updatedAt": 1776000000000,
-                        "syncStatus": "pending"
-                      }
-                    ],
-                    "selectedBlock": null,
-                    "lastRefreshAt": 1776000000000,
-                    "graphName": "pat test",
-                    "isSearching": false
-                  },
-                  "error": null
-                }
-                """
-            }
-            if request.contains("\"action\":\"searchLocal\"") {
-                return """
-                {
-                  "apiVersion": 1,
-                  "ok": true,
-                  "result": {
-                    "revision": 1,
-                    "query": "E2E capture",
-                    "blocks": [],
-                    "selectedBlock": null,
-                    "lastRefreshAt": null,
-                    "graphName": "pat test",
-                    "isSearching": true
-                  },
-                  "error": null
-                }
-                """
-            }
-            return """
-            {
-              "apiVersion": 1,
-              "ok": true,
-              "result": {
-                "revision": 1,
-                "query": "",
-                "blocks": [],
-                "selectedBlock": null,
-                "lastRefreshAt": null,
-                "graphName": "pat test",
-                "isSearching": false
-              },
-              "error": null
-            }
-            """
-        }
-
-        store.send("E2E capture responsive")
-        store.searchLocal("E2E capture")
-
-        try await waitUntil {
-            recorder.all.contains { $0.contains("\"action\":\"searchLocal\"") }
-                && store.snapshot.query == "E2E capture"
-        }
-
-        try await waitUntil(timeout: 2.0) {
-            recorder.all.contains("send-returned")
-        }
-        try await waitUntil(timeout: 2.0) {
-            store.snapshot.blocks.map(\.title).contains("E2E capture responsive")
-        }
-
-        #expect(store.snapshot.query == "E2E capture")
-        #expect(store.snapshot.isSearching == true)
         #expect(store.snapshot.blocks.map(\.title).contains("E2E capture responsive"))
     }
 
@@ -1495,7 +1400,7 @@ private let testEmptySnapshotJSON = """
             """
         }
 
-        store.search("")
+        store.refresh()
 
         try await waitUntil {
             let blockIDs = store.sections.flatMap { $0.blocks }.map { $0.uuid }
@@ -1562,7 +1467,7 @@ private let testEmptySnapshotJSON = """
             """
         }
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.blocks.count == 3 }
 
         #expect(store.sections.count == 2)
@@ -1634,7 +1539,7 @@ private let testEmptySnapshotJSON = """
             """
         }
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.revision == 2 }
 
         #expect(store.sections(for: .chat).flatMap(\.blocks).map(\.uuid) == ["authoritative"])
@@ -1707,7 +1612,7 @@ private let testEmptySnapshotJSON = """
             """
         }
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.blocks.count == 4 }
 
         #expect(store.sections.count == 1)
@@ -1764,7 +1669,7 @@ private let testEmptySnapshotJSON = """
             """
         }
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.blocks.count == 3 }
 
         #expect(store.sections.count == 1)
@@ -1779,29 +1684,15 @@ private let testEmptySnapshotJSON = """
         #expect(LogseqContentMode(rawValue: "unknown") == nil)
     }
 
-    @Test func searchingPreservesTheCurrentRowPresentation() {
-        #expect(LogseqContentMode.chat.presentationMode(isSearching: true) == .chat)
-        #expect(LogseqContentMode.outliner.presentationMode(isSearching: true) == .outliner)
-        #expect(LogseqContentMode.outliner.presentationMode(isSearching: false) == .outliner)
-    }
-
     @Test func regularPagesAlwaysUseOutlinerPresentation() {
-        #expect(LogseqContentMode.chat.presentationMode(
-            isSearching: false,
-            hasSelectedPage: true
-        ) == .outliner)
-        #expect(LogseqContentMode.chat.presentationMode(
-            isSearching: true,
-            hasSelectedPage: true
-        ) == .outliner)
+        #expect(LogseqContentMode.chat.presentationMode(hasSelectedPage: true) == .outliner)
+        #expect(LogseqContentMode.outliner.presentationMode(hasSelectedPage: true) == .outliner)
         #expect(!LogseqContentMode.supportsModeSwitch(hasSelectedPage: true))
     }
 
     @Test func journalsKeepChatAndOutlinerModes() {
-        #expect(LogseqContentMode.chat.presentationMode(
-            isSearching: false,
-            hasSelectedPage: false
-        ) == .chat)
+        #expect(LogseqContentMode.chat.presentationMode(hasSelectedPage: false) == .chat)
+        #expect(LogseqContentMode.outliner.presentationMode(hasSelectedPage: false) == .outliner)
         #expect(LogseqContentMode.supportsModeSwitch(hasSelectedPage: false))
     }
 
@@ -1816,7 +1707,7 @@ private let testEmptySnapshotJSON = """
             parentId: "page", createdAt: 1, updatedAt: 1, syncStatus: "synced"
         )
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.appliedServerT == 48192 }
         store.delete(block: block)
         try await waitUntil { recorder.all.contains { $0.contains("deleteBlock") } }
@@ -1905,7 +1796,7 @@ private let testEmptySnapshotJSON = """
             return outlineSnapshotJSON(blocks: [block], appliedServerT: 51)
         }
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.blocks.count == 1 }
         store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
         try await waitUntil { store.snapshot.outlinerState.editing?.uuid == "source" }
@@ -1941,7 +1832,7 @@ private let testEmptySnapshotJSON = """
             return outlineSnapshotJSON(blocks: [first, second], appliedServerT: 51)
         }
 
-        store.search("")
+        store.refresh()
         try await waitUntil { store.snapshot.blocks.count == 2 }
         store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "hideKeyboard"))
         try await waitUntil { store.snapshot.blocks.first?.title == "After" }
@@ -2271,7 +2162,7 @@ private func pendingPumpSnapshot(
       "ok": true,
       "result": {
         "revision": 1,
-        "query": "\(query)",
+        "searchQuery": "\(query)",
         "blocks": [{
           "uuid": "local-1",
           "title": "Offline capture",
@@ -2387,19 +2278,18 @@ private final class CoreCallConcurrencyProbe: @unchecked Sendable {
         if action == failingAction {
             return #"{"apiVersion":1,"ok":false,"result":null,"error":{"code":"test_error","message":"Expected test failure"}}"#
         }
-        let query = action == "searchLocal" ? (decoded?.params.payload ?? "") : ""
+        let query = action == "searchNodes" ? (decoded?.params.payload ?? "") : ""
         return """
         {
           "apiVersion": 1,
           "ok": true,
           "result": {
             "revision": 1,
-            "query": "\(query)",
+            "searchQuery": "\(query)",
             "blocks": [],
             "selectedBlock": null,
             "lastRefreshAt": null,
-            "graphName": "probe",
-            "isSearching": \(action == "searchLocal")
+            "graphName": "probe"
           },
           "error": null
         }

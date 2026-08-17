@@ -132,23 +132,6 @@ let assert_journal_blocks_follow_page_tree_and_outliner_order () =
   | _ -> failwith ("unexpected journal outliner order: " ^ String.concat ", " uuids)
 ;;
 
-let assert_search_excludes_pages_and_empty_blocks () =
-  let model = Logseq_chat_model.create () in
-  let entity uuid title =
-    block ~uuid ~title ~page_id:"journal-1" ~created_at:100
-  in
-  Logseq_chat_model.upsert_journal_page model ~uuid:"journal-1" ~journal_day:20260813;
-  Logseq_chat_model.upsert_blocks
-    model
-    [ entity "matching-empty" "   "
-    ; entity "matching-block" "Match block"
-    ]
-    ~refresh_time:100;
-  match Logseq_chat_model.search model "match" with
-  | [ block ] -> assert_equal "search returns only blocks" "matching-block" block.uuid
-  | blocks -> failwith (Printf.sprintf "expected one search block, got %d" (List.length blocks))
-;;
-
 let assert_partial_search_result_preserves_journal_relation () =
   let model = Logseq_chat_model.create () in
   let block =
@@ -353,7 +336,6 @@ let () =
   assert_recent_blocks_excludes_pages_and_empty_blocks ();
   assert_recent_blocks_require_a_current_or_past_journal_page ();
   assert_journal_blocks_follow_page_tree_and_outliner_order ();
-  assert_search_excludes_pages_and_empty_blocks ();
   assert_partial_search_result_preserves_journal_relation ();
   assert_task_and_asset_metadata_persist ();
   assert_uploaded_asset_reconciles_server_uuid ();
