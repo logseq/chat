@@ -174,6 +174,23 @@ let () =
     "status update body"
     {|{"value":"custom-waiting"}|}
     (Option.value status_update.body ~default:"");
+  let tx_batch =
+    Logseq_chat_api.tx_batch_request
+      config
+      ~t_before:42
+      ~tx_id:"018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
+      ~outliner_op:"split-block"
+      ~tx:"[\"~:db/add\"]"
+  in
+  assert_equal "outliner tx batch method" "POST" tx_batch.method_;
+  assert_equal
+    "outliner tx batch URL"
+    "https://api.example/sync/graph-1/tx/batch"
+    tx_batch.url;
+  assert_equal
+    "outliner tx batch body"
+    {|{"t-before":42,"txs":[{"tx-id":"018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8","tx":"[\"~:db/add\"]","outliner-op":"split-block"}]}|}
+    (Option.value tx_batch.body ~default:"");
   let upload =
     Logseq_chat_api.asset_upload_request
       config

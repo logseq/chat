@@ -1,0 +1,42 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.task-status"
+- tapOn: "Todo"
+- tapOn:
+    id: "field.composer"
+- inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn:
+    id: "button.send"
+- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "button.block-task-status"
+- tapOn: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.search"
+- assertVisible: "Search blocks"
+- tapOn: "Search blocks"
+- inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- extendedWaitUntil:
+    visible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+    timeout: 10000
+- tapOn: "close"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 10000
+- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "button.block-task-status"
+- takeScreenshot: "ios-search-status-regression"

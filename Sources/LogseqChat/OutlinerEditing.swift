@@ -1,0 +1,385 @@
+import SwiftUI
+import LogseqChatModel
+
+enum BlockEditPresentation: Equatable {
+    case composer
+    case inline
+}
+
+enum BlockEditingPolicy {
+    static func presentation(for contentMode: LogseqContentMode) -> BlockEditPresentation {
+        contentMode == .outliner ? .inline : .composer
+    }
+}
+
+enum BlockSelectionActivation: Equatable {
+    case longPress
+}
+
+enum BlockSelectionGesturePolicy {
+    static let activation = BlockSelectionActivation.longPress
+}
+
+enum OutlinerClipboardPolicy {
+    static func nodeReferences(_ uuids: [String]) -> String {
+        uuids.map { "[[\($0)]]" }.joined(separator: "\n")
+    }
+}
+
+enum OutlinerMarkupLink: Equatable {
+    case node(uuid: String, kind: String)
+    case tag(uuid: String)
+
+    var url: URL? {
+        switch self {
+        case let .node(uuid, kind):
+            return URL(string: "logseq-node://\(uuid)?kind=\(kind)")
+        case let .tag(uuid):
+            return URL(string: "logseq-tag://\(uuid)")
+        }
+    }
+
+    init?(url: URL) {
+        guard let uuid = url.host, !uuid.isEmpty else { return nil }
+        switch url.scheme {
+        case "logseq-node":
+            let kind = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "kind" })?
+                .value
+            guard let kind, kind == "page" || kind == "block" else { return nil }
+            self = .node(uuid: uuid, kind: kind)
+        case "logseq-tag":
+            self = .tag(uuid: uuid)
+        default:
+            return nil
+        }
+    }
+}
+
+struct OutlinerMarkupPresentation: Equatable {
+    let plainText: String
+    let links: [OutlinerMarkupLink]
+
+    static func make(nodes: [LogseqMarkupNode], fallback: String) -> Self {
+        guard !nodes.isEmpty else { return Self(plainText: fallback, links: []) }
+        var text = ""
+        var links: [OutlinerMarkupLink] = []
+
+        func append(_ nodes: [LogseqMarkupNode]) {
+            for node in nodes {
+                switch node.type {
+                case .text, .code:
+                    text += node.text ?? ""
+                case .emphasis:
+                    append(node.children)
+                case .link:
+                    if node.children.isEmpty {
+                        text += node.url ?? ""
+                    } else {
+                        append(node.children)
+                    }
+                case .nodeReference:
+                    text += node.title ?? ""
+                    if let uuid = node.uuid, let kind = node.kind {
+                        links.append(.node(uuid: uuid, kind: kind))
+                    }
+                case .tagReference:
+                    text += "#" + (node.title ?? "")
+                    if let uuid = node.uuid {
+                        links.append(.tag(uuid: uuid))
+                    }
+                }
+            }
+        }
+
+        append(nodes)
+        return Self(plainText: text, links: links)
+    }
+}
+
+enum BlockTagPresentationPolicy {
+    static func inlineTagIDs(_ nodes: [LogseqMarkupNode]) -> Set<String> {
+        var result: Set<String> = []
+        collectInlineTagIDs(nodes, into: &result)
+        return result
+    }
+
+    static func trailingTags(
+        tags: [LogseqEntitySummary],
+        markup: [LogseqMarkupNode]
+    ) -> [LogseqEntitySummary] {
+        let inlineIDs = inlineTagIDs(markup)
+        var seen: Set<String> = []
+        return tags.filter { tag in
+            tag.kind == "tag"
+                && !inlineIDs.contains(tag.uuid)
+                && seen.insert(tag.uuid).inserted
+        }
+    }
+
+    private static func collectInlineTagIDs(
+        _ nodes: [LogseqMarkupNode],
+        into result: inout Set<String>
+    ) {
+        for node in nodes {
+            if node.type == .tagReference, let uuid = node.uuid {
+                result.insert(uuid)
+            }
+            collectInlineTagIDs(node.children, into: &result)
+        }
+    }
+}
+
+enum InlineEditorTextReconciliationDecision: Equatable {
+    case keepLocal
+    case acknowledgeLocal
+    case applyModel
+}
+
+enum InlineEditorTextReconciliationPolicy {
+    static func decision(
+        modelText: String,
+        localText: String?,
+        isSameBlock: Bool = true,
+        isAwaitingBlockHandoff: Bool = false
+    ) -> InlineEditorTextReconciliationDecision {
+        guard let localText else { return .applyModel }
+        if modelText == localText { return .acknowledgeLocal }
+        if !isSameBlock && !isAwaitingBlockHandoff { return .applyModel }
+        return .keepLocal
+    }
+}
+
+enum InlineEditorReturnTransition {
+    static func localText(text: String, replacementRange: NSRange) -> String {
+        let value = text as NSString
+        let location = min(replacementRange.location, value.length)
+        let selectionLength = min(replacementRange.length, value.length - location)
+        let suffixStart = location + selectionLength
+        return value.substring(from: suffixStart)
+    }
+}
+
+enum OutlinerToolbarAction: Hashable {
+    case task
+    case outdent
+    case indent
+    case tag
+    case pageReference
+    case camera
+    case attachment
+    case hideKeyboard
+    case copy
+    case delete
+    case copyReference
+    case copyURL
+    case unselect
+    case undo
+    case redo
+
+    var eventValue: String? {
+        switch self {
+        case .task: return "task"
+        case .outdent: return "outdent"
+        case .indent: return "indent"
+        case .tag: return "tag"
+        case .pageReference: return "pageReference"
+        case .camera: return "camera"
+        case .attachment: return "attachment"
+        case .hideKeyboard: return "hideKeyboard"
+        case .copy: return "copy"
+        case .delete: return "delete"
+        case .copyReference: return "copyReference"
+        case .copyURL: return "copyURL"
+        case .unselect: return "unselect"
+        case .undo, .redo: return nil
+        }
+    }
+
+    var systemImageName: String {
+        switch self {
+        case .task: return "checkmark.square"
+        case .outdent: return "arrow.left"
+        case .indent: return "arrow.right"
+        case .tag: return "number"
+        case .camera: return "camera"
+        case .attachment: return "paperclip"
+        case .pageReference: return "parentheses"
+        case .hideKeyboard: return "keyboard.chevron.compact.down"
+        case .copy: return "doc.on.doc"
+        case .delete: return "trash"
+        case .copyReference: return "r.square"
+        case .copyURL: return "link"
+        case .unselect: return "xmark"
+        case .undo: return "arrow.uturn.backward"
+        case .redo: return "arrow.uturn.forward"
+        }
+    }
+
+    var accessibilityTitle: String {
+        switch self {
+        case .task: return "Task"
+        case .outdent: return "Outdent"
+        case .indent: return "Indent"
+        case .tag: return "Tag"
+        case .pageReference: return "Page reference"
+        case .camera: return "Photo"
+        case .attachment: return "Upload asset"
+        case .hideKeyboard: return "Hide keyboard"
+        case .copy: return "Copy"
+        case .delete: return "Delete"
+        case .copyReference: return "Copy reference"
+        case .copyURL: return "Copy URL"
+        case .unselect: return "Unselect"
+        case .undo: return "Undo"
+        case .redo: return "Redo"
+        }
+    }
+
+    var preservesInlineEditorFocus: Bool {
+        switch self {
+        case .task, .outdent, .indent, .tag, .pageReference:
+            return true
+        case .camera, .attachment, .hideKeyboard, .copy, .delete,
+             .copyReference, .copyURL, .unselect, .undo, .redo:
+            return false
+        }
+    }
+}
+
+enum OutlinerToolbarPolicy {
+    static let editorItemWidth: CGFloat = 42
+    static let selectionItemWidth: CGFloat = 58
+    static let selectionItemSpacing: CGFloat = 6
+    static let iconSize: CGFloat = 18
+    static let iconBoxSize: CGFloat = 22
+    static let captionHeight: CGFloat = 14
+
+    static let editorActions: [OutlinerToolbarAction] = [
+        .task, .outdent, .indent, .tag, .camera, .attachment,
+        .pageReference,
+    ]
+
+    static let trailingEditorAction = OutlinerToolbarAction.hideKeyboard
+
+    static let selectionActions: [OutlinerToolbarAction] = [
+        .copy, .outdent, .indent, .delete, .copyReference, .copyURL, .unselect,
+    ]
+}
+
+enum OutlinerLayoutMetrics {
+    static let outerHorizontalInset: CGFloat = 8
+    static let indentation: CGFloat = 22
+    static let bulletHitSize: CGFloat = 24
+    static let rootBulletCenterX = bulletHitSize / 2
+
+    static func bulletCenterX(depth: Int) -> CGFloat {
+        rootBulletCenterX + CGFloat(depth) * indentation
+    }
+
+    static func guideCenterX(level: Int) -> CGFloat {
+        bulletCenterX(depth: level)
+    }
+}
+
+enum OutlinerPaginationPolicy {
+    static let buttonTitle = "Load earlier journals"
+    static let accessibilityIdentifier = "button.outliner.load-older-journals"
+}
+
+enum OutlinerNavigationPolicy {
+    static func backStepCount(presentedPath: [String], modelPath: [String]) -> Int {
+        guard modelPath.starts(with: presentedPath) else { return 0 }
+        return modelPath.count - presentedPath.count
+    }
+
+    static func pathAfterBackButton<Element>(_ path: [Element]) -> [Element] {
+        path.isEmpty ? [] : Array(path.dropLast())
+    }
+}
+
+enum AppNavigationRoute: Hashable {
+    case outlinerBlock(String)
+    case node(String, String)
+    case tag(String)
+    case graphs
+}
+
+enum AppNavigationPathPolicy {
+    static func zoomedBlockIDs(_ path: [AppNavigationRoute]) -> [String] {
+        path.compactMap { route in
+            if case let .outlinerBlock(uuid) = route { return uuid }
+            return nil
+        }
+    }
+
+    static func containsGraphs(_ path: [AppNavigationRoute]) -> Bool {
+        for route in path where route == .graphs {
+            return true
+        }
+        return false
+    }
+
+    static func containsIndependentDestination(_ path: [AppNavigationRoute]) -> Bool {
+        path.contains { route in
+            switch route {
+            case .node, .tag, .graphs: return true
+            case .outlinerBlock: return false
+            }
+        }
+    }
+
+    static func containsNode(_ path: [AppNavigationRoute]) -> Bool {
+        path.contains { if case .node = $0 { return true } else { return false } }
+    }
+
+    static func containsTag(_ path: [AppNavigationRoute]) -> Bool {
+        path.contains { if case .tag = $0 { return true } else { return false } }
+    }
+}
+
+enum RelatedContentPolicy {
+    static func sectionTitle(route: AppNavigationRoute?, hasBlocks: Bool) -> String? {
+        guard hasBlocks else { return nil }
+        if case .node = route { return "References" }
+        return nil
+    }
+}
+
+enum OutlinerAccessibilityTitle {
+    private static func displayTitle(_ title: String) -> String {
+        title.isEmpty ? "Untitled block" : title
+    }
+
+    static func zoom(blockTitle: String) -> String {
+        "Zoom into \(displayTitle(blockTitle))"
+    }
+
+    static func collapse(blockTitle: String, isCollapsed: Bool) -> String {
+        "\(isCollapsed ? "Expand" : "Collapse") \(displayTitle(blockTitle))"
+    }
+}
+
+enum OutlinerDropPlacement: Equatable {
+    case before
+    case inside
+    case after
+
+    var eventValue: String {
+        switch self {
+        case .before: return "before"
+        case .inside: return "inside"
+        case .after: return "after"
+        }
+    }
+}
+
+enum OutlinerDropZone {
+    static func placement(locationY: CGFloat, rowHeight: CGFloat) -> OutlinerDropPlacement {
+        let height = max(rowHeight, 1)
+        if locationY < height * 0.25 { return .before }
+        if locationY > height * 0.75 { return .after }
+        return .inside
+    }
+}

@@ -26,6 +26,7 @@ let payload =
               ]
           ] )
     ; Keyword "deleted", Array []
+    ; Keyword "operation-ids", Array [ String "op-delete"; String "op-title" ]
     ]
 ;;
 
@@ -38,6 +39,8 @@ let () =
     if not (String.equal change.graph_id "graph-1") then fail "graph id changed";
     if not (String.equal change.schema_version "65.33") then fail "schema changed";
     if change.t_before <> 41 || change.t <> 42 then fail "cursor changed";
+    if change.operation_ids <> [ "op-delete"; "op-title" ]
+    then fail "operation identities were not preserved";
     (match change.upserts with
      | [ entity ] ->
        (match entity.id with
@@ -47,6 +50,35 @@ let () =
         | Some (Set [ Array [ Keyword "db/ident"; Keyword "logseq.class/Task" ] ]) -> ()
         | _ -> fail "typed set/reference value was not preserved")
      | _ -> fail "expected one upsert")
+;;
+
+let () =
+  let without_operation_ids =
+    match payload with
+    | Map fields ->
+      Map (List.filter (fun (key, _) -> key <> Keyword "operation-ids") fields)
+    | _ -> assert false
+  in
+  let wire = Transit_native.Transit.Json.to_string without_operation_ids in
+  match Logseq_chat_sync_protocol.decode_change_set wire with
+  | Ok { operation_ids = []; _ } -> ()
+  | Ok _ -> fail "missing operation-ids must decode as an empty compatibility field"
+  | Error message -> fail message
+;;
+
+let () =
+  let malformed_operation_ids =
+    match payload with
+    | Map fields ->
+      Map
+        ((Keyword "operation-ids", Array [ Int 1 ])
+         :: List.remove_assoc (Keyword "operation-ids") fields)
+    | _ -> assert false
+  in
+  let wire = Transit_native.Transit.Json.to_string malformed_operation_ids in
+  match Logseq_chat_sync_protocol.decode_change_set wire with
+  | Error _ -> ()
+  | Ok _ -> fail "operation-ids must contain only strings"
 ;;
 
 let () =

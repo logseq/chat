@@ -1,0 +1,28 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- stopApp
+- launchApp
+- assertNotVisible: "Choose a graph"
+- runFlow:
+    when:
+      notVisible:
+        id: "button.composer.expand"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- extendedWaitUntil:
+    visible:
+      id: "field.composer"
+    timeout: 10000
+- tapOn:
+    id: "field.composer"
+- waitForAnimationToEnd
+- takeScreenshot: "ios-cold-start-composer"

@@ -1,0 +1,24 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.content-mode"
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible:
+        id: "list.outliner"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- assertVisible:
+    id: "list.outliner"
+- assertVisible: "Show chat"
+- tapOn:
+    id: "button.content-mode"
+- assertNotVisible:
+    id: "list.outliner"
+- assertVisible: "Show outliner"

@@ -15,7 +15,8 @@ signing_keychain_password=${LOGSEQ_CHAT_IOS_KEYCHAIN_PASSWORD-}
 sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}"
 target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_build_dir="$repo_root/.build/arm64-apple-ios/$build_configuration"
+swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build/ios-device}
+swift_build_dir="$swift_scratch_dir/arm64-apple-ios/$build_configuration"
 core_build_dir="$repo_root/_build/ios-core/device"
 core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
@@ -123,6 +124,8 @@ else
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_markup.cmx \
+  "$repo_root/core/logseq_chat_markup.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_edn.cmx \
   "$repo_root/core/logseq_chat_edn.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_e2ee.cmx \
@@ -137,6 +140,8 @@ else
   "$repo_root/core/logseq_chat_snapshot.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_entity_sync.cmx \
   "$repo_root/core/logseq_chat_entity_sync.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_datascript_value.cmx \
+  "$repo_root/core/logseq_chat_datascript_value.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_read.cmx \
   "$repo_root/core/logseq_chat_graph_read.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sse.cmx \
@@ -149,12 +154,28 @@ else
   "$repo_root/core/logseq_chat_platform_crypto.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_http.cmx \
   "$repo_root/core/logseq_chat_http.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_fractional_order.cmx \
+  "$repo_root/core/logseq_chat_fractional_order.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_outliner.cmx \
+  "$repo_root/core/logseq_chat_outliner.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_pending_ops.cmx \
+  "$repo_root/core/logseq_chat_pending_ops.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_outliner_state.cmx \
+  "$repo_root/core/logseq_chat_outliner_state.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_outliner_effects.cmx \
+  "$repo_root/core/logseq_chat_outliner_effects.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
   "$repo_root/core/logseq_chat_rpc.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
   "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_store.cmx \
   "$repo_root/core/logseq_chat_graph_store.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_pending_projection.cmx \
+  "$repo_root/core/logseq_chat_pending_projection.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_tx.cmx \
+  "$repo_root/core/logseq_chat_sync_tx.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_runtime.cmx \
+  "$repo_root/core/logseq_chat_graph_runtime.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_session.cmx \
   "$repo_root/core/logseq_chat_sync_session.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sqlite.cmx \
@@ -175,6 +196,7 @@ else
   threads.cmxa \
   "${dependency_objects[@]}" \
   logseq_chat_model.cmx \
+  logseq_chat_markup.cmx \
   logseq_chat_edn.cmx \
   logseq_chat_e2ee.cmx \
   logseq_chat_sync_protocol.cmx \
@@ -182,15 +204,24 @@ else
   logseq_chat_sync_checkpoint.cmx \
   logseq_chat_snapshot.cmx \
   logseq_chat_entity_sync.cmx \
+  logseq_chat_datascript_value.cmx \
   logseq_chat_graph_read.cmx \
   logseq_chat_sse.cmx \
   logseq_chat_api.cmx \
   logseq_chat_e2ee_keyring.cmx \
   logseq_chat_platform_crypto.cmx \
   logseq_chat_http.cmx \
+  logseq_chat_fractional_order.cmx \
+  logseq_chat_outliner.cmx \
+  logseq_chat_pending_ops.cmx \
+  logseq_chat_outliner_state.cmx \
+  logseq_chat_outliner_effects.cmx \
   logseq_chat_rpc.cmx \
   logseq_chat_logseq_storage_codec.cmx \
   logseq_chat_graph_store.cmx \
+  logseq_chat_pending_projection.cmx \
+  logseq_chat_sync_tx.cmx \
+  logseq_chat_graph_runtime.cmx \
   logseq_chat_sync_session.cmx \
   logseq_chat_sqlite.cmx \
   logseq_chat_mobile_entry.cmx
@@ -239,10 +270,30 @@ else
   printf '%s\n' "$core_fingerprint" >"$core_cache_stamp"
 fi
 
-rm -f "$swift_build_dir/LogseqChatShell"
-LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$core_object:$ffi_object:$https_object:$crypto_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a" \
+native_link_fingerprint=$(
+  shasum -a 256 \
+    "$core_object" \
+    "$ffi_object" \
+    "$https_object" \
+    "$crypto_object" \
+    "$sqlite_object" \
+    "$graph_store_object" \
+    "$ocaml_lib/libthreadsnat.a" \
+    | shasum -a 256 \
+    | cut -d ' ' -f 1
+)
+native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
+fingerprinted_core_object="$native_link_dir/logseq_chat_runtime.o"
+mkdir -p "$native_link_dir"
+if [[ ! -s $fingerprinted_core_object ]]; then
+  cp "$core_object" "$fingerprinted_core_object"
+fi
+fingerprinted_native_link_inputs="$fingerprinted_core_object:$ffi_object:$https_object:$crypto_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a"
+
+LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$fingerprinted_native_link_inputs" \
 swift build \
   -c "$build_configuration" \
+  --scratch-path "$swift_scratch_dir" \
   --disable-keychain \
   --package-path "$repo_root" \
   --product LogseqChatShell \

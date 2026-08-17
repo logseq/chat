@@ -1,17 +1,8 @@
 appId: com.logseq.chat
 ---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
 - launchApp
-- assertVisible:
-    text: "Enter your username"
-- tapOn:
-    text: "Enter your username"
-- inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
-- tapOn:
-    text: "Enter your password"
-- inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
-- tapOn:
-    text: "Sign In"
-    index: 1
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"
@@ -45,26 +36,26 @@ appId: com.logseq.chat
 - eraseText: 8
 - tapOn:
     id: "field.composer"
-- inputText: "After clear"
+- inputText: "After clear __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - assertVisible:
     id: "field.composer"
-- assertVisible: "After clear"
-- inputText: "E2E capture responsive"
+- assertVisible: "After clear __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - assertVisible:
     id: "field.composer"
-- assertVisible: "E2E capture responsive"
-- tapOn: "E2E capture responsive"
+- assertVisible: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible:
     id: "button.composer.expand"
-- tapOn: "E2E capture responsive"
+- tapOn: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible:
     id: "field.composer"
 - eraseText: 22
-- inputText: "E2E block edited"
+- inputText: "E2E edited __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
-- assertVisible: "E2E block edited"
+- assertVisible: "E2E edited __LOGSEQ_CHAT_E2E_RUN_ID__"

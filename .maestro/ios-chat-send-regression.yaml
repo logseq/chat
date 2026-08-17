@@ -1,0 +1,30 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.content-mode"
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        text: "Show chat"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.composer.expand"
+- tapOn:
+    id: "field.composer"
+- inputText: "Chat send regression 2233"
+- tapOn:
+    id: "button.send"
+- extendedWaitUntil:
+    visible: "Chat send regression 2233"
+    timeout: 10000
+- assertNotVisible: "invalid_json"
+- stopApp

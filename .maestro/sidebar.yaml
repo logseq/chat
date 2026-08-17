@@ -1,0 +1,37 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "button.graph-switch"
+- assertVisible:
+    id: "link.sidebar.graphs"
+- assertVisible: "Favorites"
+- assertVisible: "Recent"
+- assertVisible:
+    id: "section.sidebar.favorites"
+- assertVisible:
+    id: "section.sidebar.recent"
+- tapOn:
+    id: "button.sidebar.dismiss"
+- assertNotVisible:
+    id: "button.sidebar.dismiss"
+- swipe:
+    start: "0%,50%"
+    end: "75%,50%"
+    duration: 500
+- assertVisible:
+    id: "button.sidebar.dismiss"
+- swipe:
+    start: "75%,50%"
+    end: "0%,50%"
+    duration: 500
+- assertNotVisible:
+    id: "button.sidebar.dismiss"

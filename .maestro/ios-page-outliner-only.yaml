@@ -1,0 +1,27 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "Deepseek VS ChatGPT"
+- extendedWaitUntil:
+    visible: "Deepseek VS ChatGPT"
+    timeout: 10000
+- assertVisible:
+    id: "list.outliner"
+- assertNotVisible:
+    id: "button.content-mode"
+- assertNotVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- assertVisible:
+    id: "button.content-mode"

@@ -13,4 +13,5 @@
   datascript-ocaml-native
   melange-edn-native
   melange-transit-native
+  mldoc
   yojson))

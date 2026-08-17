@@ -1,0 +1,82 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- assertVisible:
+    id: "button.sidebar"
+- runFlow:
+    when:
+      visible:
+        id: "button.composer.expand"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- extendedWaitUntil:
+    visible: "E2E Page Target"
+    timeout: 30000
+- assertVisible: "#E2E Project"
+- assertVisible:
+    id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.references"
+    timeout: 30000
+- assertVisible: "E2E links.*"
+- tapOn: "Back"
+- tapOn: "E2E Block Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.references"
+    timeout: 30000
+- assertVisible: "E2E links.*"
+- tapOn: "Back"
+- tapOn: "#E2E Project"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.objects"
+    timeout: 30000
+- assertVisible: "E2E links.*"
+- tapOn: "Back"
+- tapOn:
+    id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.objects"
+    timeout: 30000
+- assertVisible: "E2E links.*"
+- swipe:
+    start: 0%, 50%
+    end: 75%, 50%
+    duration: 600
+- assertVisible:
+    id: "button.sidebar"
+- assertNotVisible:
+    id: "section.tag.objects"
+- tapOn:
+    id: "button.content-mode"
+- assertVisible:
+    id: "button.composer.expand"
+- scrollUntilVisible:
+    element:
+      id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
+    direction: DOWN
+    timeout: 10000
+    visibilityPercentage: 1
+    centerElement: true
+- assertVisible: "#E2E Project"
+- tapOn:
+    id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.objects"
+    timeout: 30000
+- assertVisible: "E2E links.*"
+- tapOn: "Back"
+- tapOn: "#E2E Project"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.objects"
+    timeout: 30000
+- assertVisible: "E2E links.*"

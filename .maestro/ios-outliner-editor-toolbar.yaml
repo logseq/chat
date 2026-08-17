@@ -1,0 +1,61 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.task"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.tag"
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- pressKey: BACKSPACE
+- swipe:
+    start: 80%, 55%
+    end: 15%, 55%
+    duration: 800
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.pageReference"
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- tapOn:
+    id: "button.outliner.autocomplete.0"
+- assertNotVisible:
+    id: "toolbar.outliner.autocomplete"
+- tapOn:
+    id: "button.outliner.editor.indent"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.outdent"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.camera"
+- extendedWaitUntil:
+    visible: "Chrome.DismissImagePicker.axLabel"
+    timeout: 10000
+- tapOn: "Chrome.DismissImagePicker.axLabel"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.attachment"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 10000
+- tapOn: "Cancel"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn: "Hide keyboard"
+- assertVisible:
+    id: "button.composer.expand"
+- assertNotVisible: "outliner_effect_failed"

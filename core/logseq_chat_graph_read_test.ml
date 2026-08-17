@@ -15,6 +15,19 @@ let one ?value_type ?(unique = None) () =
   }
 ;;
 
+let many ?value_type () =
+  { cardinality = Many
+  ; unique = None
+  ; indexed = true
+  ; is_component = false
+  ; no_history = false
+  ; doc = None
+  ; value_type
+  ; tuple_attrs = None
+  ; tuple_types = None
+  }
+;;
+
 let identity uuid =
   Transit.Array [ Transit.Keyword "block/uuid"; Transit.Uuid uuid ]
 ;;
@@ -27,6 +40,7 @@ let change ?(upserts = []) ?(deleted = []) t : Protocol.change_set =
   ; t
   ; upserts
   ; deleted
+  ; operation_ids = []
   }
 ;;
 
@@ -183,10 +197,100 @@ let () =
            }
          ]
        5);
+  let latest_page_eid = Option.get (entid (conn_db conn) "block/uuid" (Uuid next_page_uuid)) in
+  if Logseq_chat_graph_read.recent_journal_page_ids ~limit:1 (conn_db conn)
+     <> [ latest_page_eid ]
+  then failwith "journal reads must honor the bounded newest-first window";
+  if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 2
+  then failwith "journal pagination must expose whether older pages remain";
   match Logseq_chat_graph_read.projection_blocks projection with
   | [ old_block; new_block ]
     when old_block.uuid = second_uuid && new_block.uuid = next_block_uuid -> ()
   | _ -> failwith "a journal-page change did not rebuild the projection"
+;;
+
+let () =
+  let page_uuid = "038f7850-c6aa-7da0-8b3f-6dbb64aa4ec8" in
+  let block_uuid = "038f7850-c6aa-7da0-8b3f-6dbb64aa4ec9" in
+  let tag_uuid = "038f7850-c6aa-7da0-8b3f-6dbb64aa4eca" in
+  let object_uuid = "038f7850-c6aa-7da0-8b3f-6dbb64aa4ecb" in
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/parent", one ~value_type:RefType ()
+    ; "block/tags", many ~value_type:RefType ()
+    ; "block/refs", many ~value_type:RefType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "node-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid page_uuid)
+               ; "block/name", One_value (String "node-page")
+               ; "block/title", One_value (String "Node page")
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "tag")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid tag_uuid)
+               ; "block/name", One_value (String "project")
+               ; "block/title", One_value (String "Project")
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid block_uuid)
+               ; "block/title", One_value (String "Referenced block")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/created-at", One_value (Instant 1)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid object_uuid)
+               ; "block/title", One_value (String "Tagged object")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/tags", Many_values [ Ref_to (Temp_id "tag") ]
+               ; "block/created-at", One_value (Instant 2)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "linked-reference")
+               ; "block/title", One_value (String "Linked reference")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/refs", Many_values [ Ref_to (Temp_id "node-page") ]
+               ; "block/created-at", One_value (Instant 3)
+               ]
+           }
+       ]);
+  let db = conn_db conn in
+  (match Logseq_chat_graph_read.node_destination db page_uuid with
+   | Some (page, false) when page.uuid = page_uuid && page.title = "Node page" -> ()
+   | _ -> failwith "a page node reference did not resolve to its outliner page");
+  (match Logseq_chat_graph_read.node_destination db block_uuid with
+   | Some (page, true) when page.uuid = page_uuid -> ()
+   | _ -> failwith "an ordinary block node reference did not resolve to its containing page");
+  (match Logseq_chat_graph_read.objects_for_tag db tag_uuid with
+   | [ block ] when block.uuid = object_uuid && block.title = "Tagged object" -> ()
+   | _ -> failwith "tag objects were not read from the projected Datascript DB");
+  (match Logseq_chat_graph_read.references_for_node db page_uuid with
+   | [ block ] when block.uuid = "linked-reference" && block.title = "Linked reference" -> ()
+   | _ -> failwith "linked references were not read from the projected Datascript DB")
 ;;
 
 let () =
@@ -201,6 +305,7 @@ let () =
     ; "block/order", one ~value_type:StringType ()
     ; "block/created-at", one ~value_type:InstantType ()
     ; "block/updated-at", one ~value_type:InstantType ()
+    ; "logseq.property/hide?", one ()
     ; "block/journal-day", one ()
     ]
   in
@@ -269,4 +374,340 @@ let () =
     if block.journal <> Some ("Decrypted journal", 20260815)
     then failwith "encrypted journal title was not decrypted for the projection"
   | _ -> failwith "encrypted graph reader must return non-page blocks only"
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ()
+    ; "block/parent", one ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "block/journal-day", one ()
+    ; "block/refs", many ~value_type:RefType ()
+    ; "block/tags", many ~value_type:RefType ()
+    ; "db/ident", one ~value_type:KeywordType ~unique:(Some Identity) ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "tag-class")
+           ; attrs = [ "db/ident", One_value (Keyword "logseq.class/Tag") ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "journal")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "journal")
+               ; "block/name", One_value (String "journal")
+               ; "block/title", One_value (String "Journal")
+               ; "block/journal-day", One_value (Int 20260817)
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "page-target")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "page-target")
+               ; "block/name", One_value (String "page target")
+               ; "block/title", One_value (String "Page target")
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "block-target")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "block-target")
+               ; "block/title", One_value (String "Block target")
+               ; "block/page", One_value (Ref_to (Temp_id "journal"))
+               ; "block/parent", One_value (Ref_to (Temp_id "journal"))
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "tag-target")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "tag-target")
+               ; "block/name", One_value (String "project")
+               ; "block/title", One_value (String "Project")
+               ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "internal-tag")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "internal-tag")
+               ; "block/name", One_value (String "task")
+               ; "block/title", One_value (String "Task")
+               ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+               ; "db/ident", One_value (Keyword "logseq.class/Task")
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "source")
+               ; "block/title", One_value (String "Source")
+               ; "block/page", One_value (Ref_to (Temp_id "journal"))
+               ; "block/parent", One_value (Ref_to (Temp_id "journal"))
+               ; "block/created-at", One_value (Instant 1)
+               ; ( "block/refs"
+                 , Many_values
+                     [ Ref_to (Temp_id "page-target"); Ref_to (Temp_id "block-target") ] )
+               ; ( "block/tags"
+                 , Many_values
+                     [ Ref_to (Temp_id "tag-target"); Ref_to (Temp_id "internal-tag") ] )
+               ]
+           }
+       ]);
+  match
+    Logseq_chat_graph_read.blocks (conn_db conn)
+    |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
+  with
+  | None -> failwith "source block missing from graph projection"
+  | Some block ->
+    let summaries values =
+      List.map
+        (fun (summary : Logseq_chat_model.entity_summary) ->
+          summary.uuid, summary.kind, summary.title)
+        values
+      |> List.sort compare
+    in
+    if
+      summaries block.references
+      <> [ "block-target", "block", "Block target"
+         ; "page-target", "page", "Page target"
+         ]
+    then failwith "node references must resolve page and ordinary-block targets";
+    if summaries block.tags <> [ "tag-target", "tag", "Project" ]
+    then failwith "tags must resolve through DB graph tag entities";
+    let projection = Logseq_chat_graph_read.create_projection (conn_db conn) in
+    ignore
+      (transact_conn
+         conn
+         [ Add
+             ( Lookup_ref ("block/uuid", Uuid "page-target")
+             , "block/title"
+             , String "Renamed page" )
+         ]);
+    Logseq_chat_graph_read.update_projection
+      projection
+      (conn_db conn)
+      (change
+         ~upserts:
+           [ { Protocol.id = identity "page-target"
+             ; attrs = [ Transit.Keyword "block/title", Transit.String "Renamed page" ]
+             }
+           ]
+         2);
+    (match
+       Logseq_chat_graph_read.projection_blocks projection
+       |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
+     with
+     | Some source
+       when summaries source.references
+            = [ "block-target", "block", "Block target"
+              ; "page-target", "page", "Renamed page"
+              ] -> ()
+     | _ -> failwith "referenced target changes must refresh referring projection blocks")
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/link", one ~value_type:RefType ()
+    ; "block/order", one ~value_type:StringType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "block/updated-at", one ~value_type:InstantType ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "favorites")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "favorites-page")
+               ; "block/name", One_value (String "$$$favorites")
+               ; "block/title", One_value (String "Favorites")
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "alpha")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "page-alpha")
+               ; "block/name", One_value (String "alpha")
+               ; "block/title", One_value (String "Alpha")
+               ; "block/updated-at", One_value (Instant 200)
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "beta")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "page-beta")
+               ; "block/name", One_value (String "beta")
+               ; "block/title", One_value (String "Beta")
+               ; "block/updated-at", One_value (Instant 300)
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "hidden")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "page-hidden")
+               ; "block/name", One_value (String "hidden")
+               ; "block/title", One_value (String "Hidden")
+               ; "block/updated-at", One_value (Instant 400)
+               ; "logseq.property/hide?", One_value (Bool true)
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "seeded-recent")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "page-seeded-recent")
+               ; "block/name", One_value (String "seeded-recent")
+               ; "block/title", One_value (String "Seeded recent")
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "favorite-alpha")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "favorite-alpha")
+               ; "block/title", One_value (String "")
+               ; "block/page", One_value (Ref_to (Temp_id "favorites"))
+               ; "block/link", One_value (Ref_to (Temp_id "alpha"))
+               ; "block/order", One_value (String "b")
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "favorite-beta")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "favorite-beta")
+               ; "block/title", One_value (String "")
+               ; "block/page", One_value (Ref_to (Temp_id "favorites"))
+               ; "block/link", One_value (Ref_to (Temp_id "beta"))
+               ; "block/order", One_value (String "a")
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "alpha-block")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "alpha-block")
+               ; "block/title", One_value (String "Alpha content")
+               ; "block/page", One_value (Ref_to (Temp_id "alpha"))
+               ; "block/created-at", One_value (Instant 100)
+               ; "block/updated-at", One_value (Instant 100)
+               ]
+           }
+       ]);
+  let sidebar = Logseq_chat_graph_read.sidebar_pages (conn_db conn) in
+  if List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.favorites
+     <> [ "page-beta"; "page-alpha" ]
+  then failwith "favorites must preserve their graph order";
+  if List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.recent_pages
+     <> [ "page-beta"; "page-alpha"; "page-seeded-recent" ]
+  then failwith "recent pages must be newest first";
+  if List.exists
+       (fun page -> page.Logseq_chat_graph_read.uuid = "favorites-page")
+       sidebar.recent_pages
+  then failwith "hidden built-in pages must not appear in recent pages"
+  else
+    match Logseq_chat_graph_read.blocks_for_page (conn_db conn) "page-alpha" with
+    | [ block ] when block.Logseq_chat_model.uuid = "alpha-block" -> ()
+    | _ -> failwith "opening a sidebar page must read that page's blocks by UUID"
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/parent", one ~value_type:RefType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "block/journal-day", one ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  let entities =
+    List.init 1_000 (fun index ->
+      let page_id = "large-page-" ^ string_of_int index in
+      [ Entity
+          { db_id = Some (Temp_id page_id)
+          ; attrs =
+              [ "block/uuid", One_value (Uuid page_id)
+              ; "block/name", One_value (String page_id)
+              ; "block/title", One_value (String ("Journal " ^ string_of_int index))
+              ; "block/journal-day", One_value (Int (2_000_000 + index))
+              ]
+          }
+      ; Entity
+          { db_id = None
+          ; attrs =
+              [ "block/uuid", One_value (Uuid ("large-block-" ^ string_of_int index))
+              ; "block/title", One_value (String ("Block " ^ string_of_int index))
+              ; "block/page", One_value (Ref_to (Temp_id page_id))
+              ; "block/parent", One_value (Ref_to (Temp_id page_id))
+              ; "block/created-at", One_value (Instant index)
+              ]
+          }
+      ])
+    |> List.concat
+  in
+  ignore (transact_conn conn entities);
+  let decrypt_count = ref 0 in
+  let decrypt_title value =
+    incr decrypt_count;
+    Ok value
+  in
+  let visible =
+    Logseq_chat_graph_read.blocks ~decrypt_title ~journal_limit:7 (conn_db conn)
+  in
+  if List.length visible <> 7
+  then failwith "large graphs must materialize only the requested journal window";
+  if !decrypt_count <> 14
+  then failwith "older journal titles must not be decrypted or materialized";
+  if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 1_000
+  then failwith "bounded reads must retain an accurate older-journal indicator";
+  if
+    List.map (fun block -> block.Logseq_chat_model.uuid) visible
+    <> List.init 7 (fun offset -> "large-block-" ^ string_of_int (993 + offset))
+  then failwith "bounded journal reads must preserve stable block identities and order"
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ()
+    ; "block/parent", one ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "block/journal-day", one ()
+    ]
+  in
+  let db =
+    empty_db ~schema ()
+    |> db_with
+         [ Raw_datom (datom ~e:1 ~a:"block/uuid" ~v:(Uuid "raw-page") ())
+         ; Raw_datom (datom ~e:1 ~a:"block/name" ~v:(String "raw-page") ())
+         ; Raw_datom (datom ~e:1 ~a:"block/title" ~v:(String "Raw journal") ())
+         ; Raw_datom (datom ~e:1 ~a:"block/journal-day" ~v:(Int 20260817) ())
+         ; Raw_datom (datom ~e:2 ~a:"block/uuid" ~v:(Uuid "raw-block") ())
+         ; Raw_datom (datom ~e:2 ~a:"block/title" ~v:(String "Restored block") ())
+         ; Raw_datom (datom ~e:2 ~a:"block/page" ~v:(Int 1) ())
+         ; Raw_datom (datom ~e:2 ~a:"block/parent" ~v:(Int 1) ())
+         ; Raw_datom (datom ~e:2 ~a:"block/created-at" ~v:(Instant 1) ())
+         ]
+  in
+  match Logseq_chat_graph_read.blocks db with
+  | [ block ]
+    when block.Logseq_chat_model.uuid = "raw-block"
+         && block.page_id = "raw-page"
+         && block.parent_id = Some "raw-page"
+         && block.journal = Some ("Raw journal", 20260817) -> ()
+  | _ -> failwith "raw numeric values under ref schema must remain navigable after restore"
 ;;

@@ -70,11 +70,83 @@ if ! grep -q 'NSLocalNetworkUsageDescription' \
   failures=$((failures + 1))
 fi
 
-if ! grep -q 'rm -f "$swift_build_dir/LogseqChatShell"' \
-  "$repo_root/scripts/build-mobile-ios-device.sh"; then
-  echo "not ok - device build does not relink after native core changes" >&2
+ios_e2e_script="$repo_root/scripts/test-ios-e2e.sh"
+ios_e2e_suite_script="$repo_root/scripts/test-ios-e2e-suite.sh"
+
+if ! grep -Fq \
+  'base_url=${LOGSEQ_CHAT_E2E_BASE_URL:-http://127.0.0.1:8787}' \
+  "$ios_e2e_script"; then
+  echo "not ok - iOS Simulator E2E does not default to the local API" >&2
   failures=$((failures + 1))
 fi
+
+if grep -Fq 'api-staging.logseq.io' "$ios_e2e_script"; then
+  echo "not ok - iOS Simulator E2E embeds the staging API" >&2
+  failures=$((failures + 1))
+fi
+
+for required_flow in \
+  '.maestro/ios-outliner-editor-toolbar.yaml' \
+  '.maestro/ios-outliner-continuous-editing.yaml' \
+  '.maestro/ios-outliner-selection-toolbar.yaml' \
+  '.maestro/ios-outliner-hierarchy-navigation.yaml' \
+  '.maestro/ios-graphs-lifecycle.yaml'; do
+  if ! grep -Fq "$required_flow" "$ios_e2e_suite_script"; then
+    echo "error: iOS E2E suite is missing $required_flow" >&2
+    exit 1
+  fi
+done
+
+for marker in \
+  '.maestro/ios-local-graph-setup.yaml' \
+  '__LOGSEQ_CHAT_E2E_SETUP_FLOW__'; do
+  if ! grep -Fq "$marker" "$ios_e2e_script"; then
+    echo "not ok - iOS Simulator E2E omits local graph setup: $marker" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+device_build_script="$repo_root/scripts/build-mobile-ios-device.sh"
+mobile_deps_script="$repo_root/scripts/build-mobile-ocaml-deps.sh"
+
+if ! grep -Fq 'PATH="$host_prefix/bin:$PATH" dune build' "$mobile_deps_script"; then
+  echo "not ok - mobile dependency build does not select its matching OCaml host compiler" >&2
+  failures=$((failures + 1))
+fi
+
+if grep -q 'rm -f "$swift_build_dir/LogseqChatShell"' "$device_build_script"; then
+  echo "not ok - device build unconditionally discards the incremental Swift link" >&2
+  failures=$((failures + 1))
+fi
+
+for marker in \
+  'native_link_fingerprint=$(' \
+  'native-link-inputs/$native_link_fingerprint' \
+  'fingerprinted_native_link_inputs=' \
+  'swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build/ios-device}' \
+  '--scratch-path "$swift_scratch_dir"'; do
+  if ! grep -Fq -- "$marker" "$device_build_script"; then
+    echo "not ok - device build does not content-address native link inputs: $marker" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+native_fingerprint_block=$(sed -n \
+  '/native_link_fingerprint=$(/,/^)/p' \
+  "$device_build_script")
+for input in \
+  '$core_object' \
+  '$ffi_object' \
+  '$https_object' \
+  '$crypto_object' \
+  '$sqlite_object' \
+  '$graph_store_object' \
+  '$ocaml_lib/libthreadsnat.a'; do
+  if [[ $native_fingerprint_block != *"$input"* ]]; then
+    echo "not ok - native link fingerprint omits input: $input" >&2
+    failures=$((failures + 1))
+  fi
+done
 
 check_rejects() {
   local name=$1
@@ -151,14 +223,14 @@ check_rejects \
 
 check_succeeds \
   "device build selects release configuration" \
-  "configuration=release swift-build-dir=$repo_root/.build/arm64-apple-ios/release" \
+  "configuration=release swift-build-dir=$repo_root/.build/ios-device/arm64-apple-ios/release" \
   env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=release \
     LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
 
 check_succeeds \
   "device build keeps debug configuration available" \
-  "configuration=debug swift-build-dir=$repo_root/.build/arm64-apple-ios/debug" \
+  "configuration=debug swift-build-dir=$repo_root/.build/ios-device/arm64-apple-ios/debug" \
   env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=debug \
     LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"

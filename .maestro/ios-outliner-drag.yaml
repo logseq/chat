@@ -1,0 +1,19 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- assertVisible:
+    id: "list.outliner"
+- longPressOn: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Copy"
+- swipe:
+    start: 30%, 48%
+    end: 33%, 49%
+    duration: 2000
+- assertVisible: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Copy"
+- takeScreenshot: "ios-outliner-drag-cancelled"
+- stopApp

@@ -73,6 +73,8 @@ else
 
 "$ocamlopt" -I "$dependency_dir" -c -o logseq_chat_model.cmx \
   "$repo_root/core/logseq_chat_model.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_markup.cmx \
+  "$repo_root/core/logseq_chat_markup.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_edn.cmx \
   "$repo_root/core/logseq_chat_edn.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_e2ee.cmx \
@@ -87,6 +89,8 @@ else
   "$repo_root/core/logseq_chat_snapshot.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_entity_sync.cmx \
   "$repo_root/core/logseq_chat_entity_sync.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_datascript_value.cmx \
+  "$repo_root/core/logseq_chat_datascript_value.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_read.cmx \
   "$repo_root/core/logseq_chat_graph_read.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sse.cmx \
@@ -99,12 +103,28 @@ else
   "$repo_root/core/logseq_chat_platform_crypto.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_http.cmx \
   "$repo_root/core/logseq_chat_http.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_fractional_order.cmx \
+  "$repo_root/core/logseq_chat_fractional_order.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_outliner.cmx \
+  "$repo_root/core/logseq_chat_outliner.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_pending_ops.cmx \
+  "$repo_root/core/logseq_chat_pending_ops.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_outliner_state.cmx \
+  "$repo_root/core/logseq_chat_outliner_state.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_outliner_effects.cmx \
+  "$repo_root/core/logseq_chat_outliner_effects.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
   "$repo_root/core/logseq_chat_rpc.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
   "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_store.cmx \
   "$repo_root/core/logseq_chat_graph_store.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_pending_projection.cmx \
+  "$repo_root/core/logseq_chat_pending_projection.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_tx.cmx \
+  "$repo_root/core/logseq_chat_sync_tx.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_runtime.cmx \
+  "$repo_root/core/logseq_chat_graph_runtime.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_session.cmx \
   "$repo_root/core/logseq_chat_sync_session.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sqlite.cmx \
@@ -125,6 +145,7 @@ else
   threads.cmxa \
   "${dependency_objects[@]}" \
   logseq_chat_model.cmx \
+  logseq_chat_markup.cmx \
   logseq_chat_edn.cmx \
   logseq_chat_e2ee.cmx \
   logseq_chat_sync_protocol.cmx \
@@ -132,15 +153,24 @@ else
   logseq_chat_sync_checkpoint.cmx \
   logseq_chat_snapshot.cmx \
   logseq_chat_entity_sync.cmx \
+  logseq_chat_datascript_value.cmx \
   logseq_chat_graph_read.cmx \
   logseq_chat_sse.cmx \
   logseq_chat_api.cmx \
   logseq_chat_e2ee_keyring.cmx \
   logseq_chat_platform_crypto.cmx \
   logseq_chat_http.cmx \
+  logseq_chat_fractional_order.cmx \
+  logseq_chat_outliner.cmx \
+  logseq_chat_pending_ops.cmx \
+  logseq_chat_outliner_state.cmx \
+  logseq_chat_outliner_effects.cmx \
   logseq_chat_rpc.cmx \
   logseq_chat_logseq_storage_codec.cmx \
   logseq_chat_graph_store.cmx \
+  logseq_chat_pending_projection.cmx \
+  logseq_chat_sync_tx.cmx \
+  logseq_chat_graph_runtime.cmx \
   logseq_chat_sync_session.cmx \
   logseq_chat_sqlite.cmx \
   logseq_chat_mobile_entry.cmx

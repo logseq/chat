@@ -9,6 +9,13 @@ public struct LogseqGraphSnapshotArtifact: Sendable {
 }
 
 #if !SKIP
+enum LogseqGraphSSEFailurePolicy {
+    static func shouldReport(_ error: Error, taskIsCancelled: Bool) -> Bool {
+        guard !taskIsCancelled, !(error is CancellationError) else { return false }
+        return (error as? URLError)?.code != .cancelled
+    }
+}
+
 struct LogseqGraphSSETransportBuffer {
     private static let maximumFrameBytes = 64 * 1024 * 1024
     private static let lineFeedBoundary = Data([0x0a, 0x0a])

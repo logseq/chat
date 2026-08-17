@@ -60,6 +60,67 @@ private let testEmptySnapshotJSON = """
         #expect(pendingBlock.isPendingSync)
     }
 
+    @Test func modelIdentityAndTimestampPresentationAreStable() {
+        let entity = LogseqEntitySummary(uuid: "entity-1", kind: "page", title: "Page")
+        let status = LogseqTaskStatus(
+            uuid: "status-1",
+            ident: "user.status/waiting",
+            title: "Waiting",
+            icon: nil
+        )
+        let block = LogseqBlock(
+            uuid: "block-1",
+            kind: "block",
+            title: "Block",
+            pageId: "page-1",
+            parentId: nil,
+            createdAt: 1_776_000_000_000,
+            updatedAt: 1_776_000_000_000,
+            syncStatus: nil
+        )
+        let row = LogseqOutlineRow(
+            block: block,
+            depth: 0,
+            hasChildren: false,
+            isCollapsed: false
+        )
+        let page = LogseqSidebarPage(uuid: "page-1", title: "Page")
+        let candidate = LogseqOutlinerAutocompleteCandidate(label: "Page", value: "page-1")
+
+        #expect(entity.id == entity.uuid)
+        #expect(status.id == status.uuid)
+        #expect(block.id == block.uuid)
+        #expect(block.createdDate.timeIntervalSince1970 == 1_776_000_000)
+        #expect(!block.dayTitle.isEmpty)
+        #expect(block.journalSectionID == block.dayTitle)
+        #expect(!block.timeTitle.isEmpty)
+        #expect(row.id == block.uuid)
+        #expect(page.id == page.uuid)
+        #expect(candidate.id == "Page\u{0}page-1")
+    }
+
+    @Test func outlinerAutocompleteUsesTheUnifiedNodeKind() throws {
+        let autocomplete = try JSONDecoder().decode(
+            LogseqOutlinerAutocomplete.self,
+            from: Data(#"{"kind":"node","query":"Project"}"#.utf8)
+        )
+        #expect(autocomplete.kind == .node)
+        #expect(autocomplete.query == "Project")
+    }
+
+    @Test func decodesTypedMldocRenderNodesWithoutParsingInSwift() throws {
+        let data = Data(#"{"uuid":"source","kind":"block","title":"See [[target]]","pageId":"page","createdAt":1,"updatedAt":1,"markup":[{"type":"text","text":"See "},{"type":"nodeReference","uuid":"target","kind":"block","title":"Target","children":[]}]}"#.utf8)
+        let block = try JSONDecoder().decode(LogseqBlock.self, from: data)
+
+        #expect(block.markup.map(\.type) == [
+            LogseqMarkupNodeType.text, LogseqMarkupNodeType.nodeReference,
+        ])
+        #expect(block.markup[0].text == "See ")
+        #expect(block.markup[1].uuid == "target")
+        #expect(block.markup[1].kind == "block")
+        #expect(block.markup[1].title == "Target")
+    }
+
     @Test func decodesTaskTagsReferencesAndAssetMetadata() throws {
         let data = Data(##"{"uuid":"asset-1","kind":"asset","title":"photo.jpg","pageId":"journal-1","createdAt":1,"updatedAt":2,"tags":[{"uuid":"tag-1","kind":"tag","title":"Project"}],"references":[{"uuid":"page-1","kind":"page","title":"Project"}],"status":{"uuid":"status-1","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}},"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}"##.utf8)
         let block = try JSONDecoder().decode(LogseqBlock.self, from: data)
@@ -88,6 +149,37 @@ private let testEmptySnapshotJSON = """
         #expect(snapshot.taskStatuses?.first?.icon?.color == "#7c3aed")
     }
 
+    @Test func taskStatusChoicesPreferGraphCatalogIdentityOverFallbacks() {
+        let graphTodo = LogseqTaskStatus(
+            uuid: "8e7f7d42-graph-todo",
+            ident: "logseq.property/status.todo",
+            title: "Todo",
+            icon: LogseqIcon(type: "tabler-icon", id: "circle")
+        )
+        let waiting = LogseqTaskStatus(
+            uuid: "custom-waiting",
+            ident: "user.status/waiting",
+            title: "Waiting",
+            icon: nil
+        )
+        let statusWithoutIdent = LogseqTaskStatus(
+            uuid: "custom-without-ident",
+            ident: nil,
+            title: "Custom",
+            icon: nil
+        )
+
+        let choices = LogseqTaskStatus.availableChoices(
+            catalog: [graphTodo, waiting, statusWithoutIdent, statusWithoutIdent]
+        )
+
+        #expect(choices.first?.uuid == graphTodo.uuid)
+        #expect(choices.contains { $0.uuid == waiting.uuid })
+        #expect(choices.filter { $0.uuid == statusWithoutIdent.uuid }.count == 1)
+        #expect(!choices.contains { $0.uuid == LogseqTaskStatus.todo.uuid })
+        #expect(choices.filter { $0.ident == graphTodo.ident }.count == 1)
+    }
+
     @Test func snapshotPreservesGraphEncryptionAndReadiness() throws {
         let data = Data(#"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"selectedGraphId":null,"graphs":[{"id":"plain-1","name":"Plain","isEncrypted":false,"isReady":true},{"id":"encrypted-1","name":"Encrypted","isEncrypted":true,"isReady":true}],"isSearching":false}"#.utf8)
         let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
@@ -95,6 +187,30 @@ private let testEmptySnapshotJSON = """
         #expect(snapshot.graphs?.first?.isEncrypted == false)
         #expect(snapshot.graphs?.last?.isEncrypted == true)
         #expect(snapshot.graphs?.allSatisfy(\.isReady) == true)
+    }
+
+    @Test func snapshotPreservesSidebarFavoritesAndRecentPages() throws {
+        let data = Data(#"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Test","isSearching":false,"favorites":[{"uuid":"favorite-1","title":"Favorite page"}],"recentPages":[{"uuid":"recent-1","title":"Recent page"}]}"#.utf8)
+        let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
+        let encoded = try JSONEncoder().encode(snapshot)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let favorites = try #require(object["favorites"] as? [[String: Any]])
+        let recentPages = try #require(object["recentPages"] as? [[String: Any]])
+
+        #expect(favorites.first?["uuid"] as? String == "favorite-1")
+        #expect(favorites.first?["title"] as? String == "Favorite page")
+        #expect(recentPages.first?["uuid"] as? String == "recent-1")
+        #expect(recentPages.first?["title"] as? String == "Recent page")
+    }
+
+    @Test func snapshotDefaultsMissingSidebarCollectionsToEmpty() throws {
+        let data = Data(#"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"isSearching":false}"#.utf8)
+        let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
+        let encoded = try JSONEncoder().encode(snapshot)
+        let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        #expect((object["favorites"] as? [Any])?.isEmpty == true)
+        #expect((object["recentPages"] as? [Any])?.isEmpty == true)
     }
 
     @Test @MainActor func selectingGraphUsesExplicitGraphID() async throws {
@@ -110,6 +226,30 @@ private let testEmptySnapshotJSON = """
                     && $0.contains("\"payload\":\"plain-1\"")
             }
         }
+    }
+
+    @Test @MainActor func resettingToCatalogReopensTheConfiguredDatabase() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+        store.open(path: "/tmp/catalog.sqlite")
+        try await waitUntil { recorder.all.count == 1 }
+
+        await store.resetToCatalog()
+
+        #expect(recorder.all.count == 2)
+        #expect(recorder.all.last?.contains("\"method\":\"open\"") == true)
+        #expect(recorder.all.last?.contains("catalog.sqlite") == true)
+    }
+
+    @Test @MainActor func resettingBeforeOpeningReportsAnError() async {
+        let store = LogseqChatStore { _ in testEmptySnapshotJSON }
+
+        await store.resetToCatalog()
+
+        #expect(store.lastError?.code == "database_not_open")
     }
 
     #if !SKIP
@@ -168,6 +308,21 @@ private let testEmptySnapshotJSON = """
 
         #expect(first.isEmpty)
         #expect(second == ["id: 39\nevent: graph-changes\ndata: payload\n\n"])
+    }
+
+    @Test func expectedSSECancellationDoesNotPublishAConnectionFailure() {
+        #expect(!LogseqGraphSSEFailurePolicy.shouldReport(
+            CancellationError(),
+            taskIsCancelled: true
+        ))
+        #expect(!LogseqGraphSSEFailurePolicy.shouldReport(
+            URLError(.cancelled),
+            taskIsCancelled: false
+        ))
+        #expect(LogseqGraphSSEFailurePolicy.shouldReport(
+            URLError(.timedOut),
+            taskIsCancelled: false
+        ))
     }
     #endif
 
@@ -242,6 +397,71 @@ private let testEmptySnapshotJSON = """
         #expect(recorder.all.count == 1)
         #expect(recorder.all[0].contains("\"action\":\"configure\""))
         #expect(store.snapshot.graphName == "Sync 2")
+    }
+
+    @Test @MainActor func navigationAndRelatedActionsDispatchTheirExactCoreCommands() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+        let block = LogseqBlock(
+            uuid: "block-1",
+            kind: "block",
+            title: "Block",
+            pageId: "page-1",
+            parentId: "page-1",
+            createdAt: 1,
+            updatedAt: 1,
+            syncStatus: nil
+        )
+
+        store.selectPage("page-1")
+        store.openNode("block-1")
+        store.loadOlderJournals()
+        store.clearSelectedPage()
+        await store.unlockGraph("secret")
+        store.select(block)
+        store.clearSelection()
+        store.loadBlockReferences("block-1")
+        store.loadPageReferences("page-1")
+        store.loadTagObjects("tag-1")
+        store.clearRelated()
+
+        try await waitUntil { recorder.all.count == 11 }
+
+        let expectedActionsAndPayloads: [(String, String?)] = [
+            ("selectPage", "page-1"),
+            ("openNode", "block-1"),
+            ("loadOlderJournals", nil),
+            ("clearSelectedPage", nil),
+            ("unlockGraph", "secret"),
+            ("select", "block-1"),
+            ("clearSelection", nil),
+            ("loadBlockReferences", "block-1"),
+            ("loadPageReferences", "page-1"),
+            ("loadTagObjects", "tag-1"),
+            ("clearRelated", nil),
+        ]
+        for (action, payload) in expectedActionsAndPayloads {
+            let request = try #require(recorder.all.first {
+                $0.contains("\"action\":\"\(action)\"")
+            })
+            if let payload {
+                #expect(request.contains("\"payload\":\"\(payload)\""))
+            }
+        }
+    }
+
+    @Test @MainActor func journalPaginationAvailabilitySurvivesSnapshotMerging() async throws {
+        let store = LogseqChatStore { _ in
+            #"{"apiVersion":1,"ok":true,"result":{"revision":2,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","isSearching":false,"hasOlderJournals":true},"error":null}"#
+        }
+
+        store.loadOlderJournals()
+
+        try await waitUntil { store.snapshot.revision == 2 }
+        #expect(store.snapshot.hasOlderJournals)
     }
 
     @Test @MainActor func taskAndAssetCreationDispatchDurableCoreWrites() async throws {
@@ -319,12 +539,14 @@ private let testEmptySnapshotJSON = """
         let capturedRequest = try #require(recorder.first)
         #expect(capturedRequest.contains("\"action\":\"updateBlock\""))
         #expect(capturedRequest.contains("\\\"uuid\\\":\\\"block-1\\\""))
+        #expect(capturedRequest.contains("\\\"expectedTitle\\\":\\\"Draft title\\\""))
+        #expect(capturedRequest.contains("\\\"operationId\\\":"))
         #expect(capturedRequest.contains("\\\"title\\\":\\\"Published title\\\""))
         #expect(store.snapshot.blocks.first?.title == "Published title")
         #expect(store.snapshot.blocks.first?.updatedAt == 1_776_000_100_000)
     }
 
-    @Test @MainActor func taskStatusUpdatesOptimisticallyAndPersistsCustomChoice() async throws {
+    @Test @MainActor func taskStatusPublishesOnlyTheDurableCoreProjection() async throws {
         let recorder = RequestRecorder()
         let waiting = LogseqTaskStatus(
             uuid: "custom-waiting",
@@ -370,15 +592,20 @@ private let testEmptySnapshotJSON = """
 
         store.updateStatus(block: block, status: waiting)
 
-        #expect(store.snapshot.blocks.first?.status?.uuid == "custom-waiting")
+        #expect(store.snapshot.blocks.first?.status?.uuid == "todo")
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"updateBlockStatus\"") }
+                && store.snapshot.blocks.first?.status?.uuid == "custom-waiting"
         }
         #expect(store.snapshot.blocks.first?.status?.uuid == "custom-waiting")
         let request = try #require(
             recorder.all.last { $0.contains("\"action\":\"updateBlockStatus\"") }
         )
         #expect(request.contains("\\\"uuid\\\":\\\"task-1\\\""))
+        #expect(request.contains("\\\"expectedStatusUuid\\\":\\\"todo\\\""))
+        #expect(request.contains("expectedStatusIdent"))
+        #expect(request.contains("status.todo"))
+        #expect(request.contains("\\\"operationId\\\":"))
         #expect(request.contains("\\\"uuid\\\":\\\"custom-waiting\\\""))
         #expect(request.contains("\\\"iconColor\\\":\\\"#7c3aed\\\""))
     }
@@ -1218,7 +1445,7 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.map(\.title).contains("E2E capture responsive"))
     }
 
-    @Test @MainActor func sectionsDisplayJournalsByDayAndBlocksByOutlinerOrder() async throws {
+    @Test @MainActor func sectionsDisplayJournalsChronologicallyAndBlocksByOutlinerOrder() async throws {
         let store = LogseqChatStore { _ in
             return """
             {
@@ -1289,6 +1516,8 @@ private let testEmptySnapshotJSON = """
         #expect(store.sections.count == 2)
         #expect(store.sections.first?.blocks.map(\.uuid) == ["yesterday"])
         #expect(store.sections.last?.blocks.map(\.uuid) == ["old", "new"])
+        #expect(store.sections(for: LogseqContentMode.chat).map(\.id) == ["20260412", "20260413"])
+        #expect(store.sections(for: LogseqContentMode.outliner).map(\.id) == ["20260413", "20260412"])
     }
 
     @Test @MainActor func sectionsUseJournalMetadataWithoutRenderingJournalPages() async throws {
@@ -1347,10 +1576,84 @@ private let testEmptySnapshotJSON = """
 
         #expect(store.sections.count == 2)
         #expect(store.sections[0].id == "20260812")
+        #expect(store.sections[0].title == "Aug 12th, 2026")
         #expect(store.sections[0].blocks.map(\.uuid) == ["yesterday"])
-        #expect(store.sections[1].title == "Aug 13th, 2026")
+        #expect(store.sections[1].id == "20260813")
         #expect(store.sections[1].blocks.map(\.uuid) == ["today-old", "today-new"])
         #expect(store.sections.flatMap(\.blocks).allSatisfy { $0.kind == "block" })
+    }
+
+    @Test @MainActor func outlinerSectionsUseProjectedRowsForPendingBlocks() async throws {
+        let store = LogseqChatStore { _ in
+            """
+            {
+              "apiVersion": 1,
+              "ok": true,
+              "result": {
+                "revision": 2,
+                "query": "",
+                "blocks": [
+                  {
+                    "uuid": "authoritative",
+                    "kind": "block",
+                    "title": "Authoritative",
+                    "pageId": "journal-today",
+                    "createdAt": 100,
+                    "updatedAt": 100,
+                    "journalTitle": "Aug 16th, 2026",
+                    "journalDay": 20260816
+                  }
+                ],
+                "outlinerRows": [
+                  {
+                    "block": {
+                      "uuid": "authoritative",
+                      "kind": "block",
+                      "title": "Authoritative",
+                      "pageId": "journal-today",
+                      "createdAt": 100,
+                      "updatedAt": 100,
+                      "journalTitle": "Aug 16th, 2026",
+                      "journalDay": 20260816
+                    },
+                    "depth": 0,
+                    "hasChildren": false,
+                    "isCollapsed": false
+                  },
+                  {
+                    "block": {
+                      "uuid": "pending-enter",
+                      "kind": "block",
+                      "title": "",
+                      "pageId": "journal-today",
+                      "createdAt": 101,
+                      "updatedAt": 101,
+                      "journalTitle": "Aug 16th, 2026",
+                      "journalDay": 20260816,
+                      "syncStatus": "pending"
+                    },
+                    "depth": 0,
+                    "hasChildren": false,
+                    "isCollapsed": false
+                  }
+                ],
+                "selectedBlock": null,
+                "lastRefreshAt": 101,
+                "isSearching": false
+              },
+              "error": null
+            }
+            """
+        }
+
+        store.search("")
+        try await waitUntil { store.snapshot.revision == 2 }
+
+        #expect(store.sections(for: .chat).flatMap(\.blocks).map(\.uuid) == ["authoritative"])
+        #expect(
+            store.sections(for: .outliner).flatMap(\.blocks).map(\.uuid)
+                == ["authoritative", "pending-enter"]
+        )
     }
 
     @Test @MainActor func journalSectionsUsePageMembershipAndOutlinerPreorder() async throws {
@@ -1428,6 +1731,443 @@ private let testEmptySnapshotJSON = """
         #expect(store.sections[0].blocks.map(\.order) == ["a1", "a0", "a2"])
     }
 
+    @Test @MainActor func regularPageUsesItsTitleAndOutlinerPreorder() async throws {
+        let store = LogseqChatStore { _ in
+            return """
+            {
+              "apiVersion": 1,
+              "ok": true,
+              "result": {
+                "revision": 1,
+                "query": "",
+                "blocks": [
+                  {
+                    "uuid": "child",
+                    "kind": "block",
+                    "title": "Child",
+                    "pageId": "project-page",
+                    "parentId": "root",
+                    "order": "a0",
+                    "createdAt": 200,
+                    "updatedAt": 200
+                  },
+                  {
+                    "uuid": "second-root",
+                    "kind": "block",
+                    "title": "Second root",
+                    "pageId": "project-page",
+                    "parentId": "project-page",
+                    "order": "a2",
+                    "createdAt": 300,
+                    "updatedAt": 300
+                  },
+                  {
+                    "uuid": "root",
+                    "kind": "block",
+                    "title": "Root",
+                    "pageId": "project-page",
+                    "parentId": "project-page",
+                    "order": "a1",
+                    "createdAt": 100,
+                    "updatedAt": 100
+                  }
+                ],
+                "selectedBlock": null,
+                "lastRefreshAt": 300,
+                "graphName": "Test",
+                "selectedPage": {"uuid":"project-page","title":"Project Alpha"},
+                "isSearching": false
+              },
+              "error": null
+            }
+            """
+        }
+
+        store.search("")
+        try await waitUntil { store.snapshot.blocks.count == 3 }
+
+        #expect(store.sections.count == 1)
+        #expect(store.sections[0].id == "project-page")
+        #expect(store.sections[0].title == "Project Alpha")
+        #expect(store.sections[0].blocks.map(\.uuid) == ["root", "child", "second-root"])
+    }
+
+    @Test func contentModeTogglesBetweenChatAndOutliner() {
+        #expect(LogseqContentMode.chat.toggled == .outliner)
+        #expect(LogseqContentMode.outliner.toggled == .chat)
+        #expect(LogseqContentMode(rawValue: "unknown") == nil)
+    }
+
+    @Test func searchingPreservesTheCurrentRowPresentation() {
+        #expect(LogseqContentMode.chat.presentationMode(isSearching: true) == .chat)
+        #expect(LogseqContentMode.outliner.presentationMode(isSearching: true) == .outliner)
+        #expect(LogseqContentMode.outliner.presentationMode(isSearching: false) == .outliner)
+    }
+
+    @Test func regularPagesAlwaysUseOutlinerPresentation() {
+        #expect(LogseqContentMode.chat.presentationMode(
+            isSearching: false,
+            hasSelectedPage: true
+        ) == .outliner)
+        #expect(LogseqContentMode.chat.presentationMode(
+            isSearching: true,
+            hasSelectedPage: true
+        ) == .outliner)
+        #expect(!LogseqContentMode.supportsModeSwitch(hasSelectedPage: true))
+    }
+
+    @Test func journalsKeepChatAndOutlinerModes() {
+        #expect(LogseqContentMode.chat.presentationMode(
+            isSearching: false,
+            hasSelectedPage: false
+        ) == .chat)
+        #expect(LogseqContentMode.supportsModeSwitch(hasSelectedPage: false))
+    }
+
+    @Test @MainActor func deleteBlockUsesOperationIdentityAndAuthoritativeCursor() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 48192)
+        }
+        let block = LogseqBlock(
+            uuid: "delete-me", kind: "block", title: "Delete me", pageId: "page",
+            parentId: "page", createdAt: 1, updatedAt: 1, syncStatus: "synced"
+        )
+
+        store.search("")
+        try await waitUntil { store.snapshot.appliedServerT == 48192 }
+        store.delete(block: block)
+        try await waitUntil { recorder.all.contains { $0.contains("deleteBlock") } }
+
+        let request = try #require(recorder.all.first { $0.contains("deleteBlock") })
+        #expect(request.contains("\\\"uuid\\\":\\\"delete-me\\\""))
+        #expect(request.contains("\\\"expectedServerT\\\":48192"))
+        #expect(request.contains("\\\"operationId\\\":"))
+    }
+
+    @Test @MainActor func deleteBlockIsRejectedWithoutAuthoritativeCursor() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: nil)
+        }
+        let block = LogseqBlock(
+            uuid: "delete-me", kind: "block", title: "Delete me", pageId: "page",
+            parentId: "page", createdAt: 1, updatedAt: 1, syncStatus: "synced"
+        )
+
+        store.delete(block: block)
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(!recorder.all.contains { $0.contains("deleteBlock") })
+        #expect(store.lastError?.code == "delete_requires_server_cursor")
+    }
+
+
+    @Test @MainActor func outlinerEventsAreSerializedThroughTheCoreReducer() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "hello", caretUTF16Offset: 5
+        ))
+        try await waitUntil(timeout: 2.0) {
+            recorder.all.filter { $0.contains("outlinerEvent") }.count == 2
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        let first = try #require(events.first)
+        let last = try #require(events.last)
+        #expect(first.contains("tapBlock"))
+        #expect(last.contains("textChanged"))
+    }
+
+    @Test @MainActor func outlinerEventsDoNotBlockTheMainActorWhenCoreIsSlow() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("outlinerEvent") {
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        let start = Date()
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        let elapsed = Date().timeIntervalSince(start)
+
+        #expect(elapsed < 0.1)
+        try await waitUntil {
+            recorder.all.contains { $0.contains("outlinerEvent") }
+        }
+    }
+
+    @Test @MainActor func supersededTypingProjectionDoesNotOverwriteTheEditor() async throws {
+        let store = LogseqChatStore { request in
+            if request.contains("old") {
+                Thread.sleep(forTimeInterval: 0.05)
+                return outlinerSnapshotJSON(revision: 10, title: "old")
+            }
+            Thread.sleep(forTimeInterval: 0.20)
+            return outlinerSnapshotJSON(revision: 20, title: "new")
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "old", caretUTF16Offset: 3
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "new", caretUTF16Offset: 3
+        ))
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(store.snapshot.revision == 0)
+        try await waitUntil(timeout: 2.0) { store.snapshot.revision == 20 }
+        #expect(store.snapshot.outlinerState.editing?.title == "new")
+    }
+
+    @Test @MainActor func rapidOutlinerTypingCoalescesToTheLatestTransientEvent() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlinerSnapshotJSON(revision: 1, title: "new")
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "n", caretUTF16Offset: 1
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "ne", caretUTF16Offset: 2
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "new", caretUTF16Offset: 3
+        ))
+
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(recorder.all.allSatisfy { !$0.contains("outlinerEvent") })
+        try await waitUntil {
+            recorder.all.contains { $0.contains("outlinerEvent") }
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        #expect(events.count == 1)
+        #expect(events[0].contains("new"))
+        #expect(!events[0].contains("\\\"title\\\":\\\"ne\\\""))
+    }
+
+    @Test @MainActor func structuralOutlinerEventFlushesLatestTypingFirst() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "latest", caretUTF16Offset: 6
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "returnPressed"))
+
+        try await waitUntil {
+            recorder.all.filter { $0.contains("outlinerEvent") }.count == 2
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        #expect(events[0].contains("textChanged"))
+        #expect(events[0].contains("latest"))
+        #expect(events[1].contains("returnPressed"))
+    }
+
+    @Test @MainActor func commandFlushCannotBeSupersededByALateCaretEvent() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("tapBlock") {
+                Thread.sleep(forTimeInterval: 0.30)
+            }
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "child title", caretUTF16Offset: 11
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "indent"))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "caretMoved", caretUTF16Offset: 11))
+
+        try await waitUntil(timeout: 2.0) {
+            recorder.all.contains { $0.contains("indent") }
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        #expect(events.contains { $0.contains("textChanged") && $0.contains("child title") })
+        let textIndex = try #require(events.firstIndex { $0.contains("textChanged") })
+        let commandIndex = try #require(events.firstIndex { $0.contains("indent") })
+        #expect(textIndex < commandIndex)
+    }
+
+    @Test @MainActor func atomicReturnDropsPendingTypingAndUsesOneCoreRequest() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "stale", caretUTF16Offset: 5
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "returnPressed", title: "final", caretUTF16Offset: 5
+        ))
+
+        try await waitUntil {
+            recorder.all.filter { $0.contains("outlinerEvent") }.count == 1
+        }
+        let event = try #require(recorder.all.first { $0.contains("outlinerEvent") })
+        #expect(event.contains("returnPressed"))
+        #expect(event.contains("final"))
+        #expect(!event.contains("textChanged"))
+        #expect(!event.contains("stale"))
+    }
+
+    @Test @MainActor func atomicBackspaceDropsPendingTypingAndUsesOneCoreRequest() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "stale", caretUTF16Offset: 5
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "backspacePressed", title: "final", selectionLength: 0
+        ))
+
+        try await waitUntil {
+            recorder.all.filter { $0.contains("outlinerEvent") }.count == 1
+        }
+        let event = try #require(recorder.all.first { $0.contains("outlinerEvent") })
+        #expect(event.contains("backspacePressed"))
+        #expect(event.contains("final"))
+        #expect(!event.contains("textChanged"))
+        #expect(!event.contains("stale"))
+    }
+
+    @Test @MainActor func atomicReturnSkipsAQueuedSupersededTypingRequest() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("tapBlock") {
+                Thread.sleep(forTimeInterval: 1.40)
+            }
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "superseded", caretUTF16Offset: 10
+        ))
+        try await Task.sleep(for: .milliseconds(1_100))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "returnPressed", title: "final", caretUTF16Offset: 5
+        ))
+
+        try await waitUntil {
+            recorder.all.contains { $0.contains("returnPressed") }
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        #expect(events.count == 2)
+        #expect(events[0].contains("tapBlock"))
+        #expect(events[1].contains("returnPressed"))
+        #expect(!events.contains { $0.contains("superseded") })
+    }
+
+    @Test @MainActor func atomicBackspaceSkipsAQueuedSupersededTypingRequest() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("tapBlock") {
+                Thread.sleep(forTimeInterval: 1.40)
+            }
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "superseded", caretUTF16Offset: 10
+        ))
+        try await Task.sleep(for: .milliseconds(1_100))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "backspacePressed", title: "final", selectionLength: 0
+        ))
+
+        try await waitUntil {
+            recorder.all.contains { $0.contains("backspacePressed") }
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        #expect(events.count == 2)
+        #expect(events[0].contains("tapBlock"))
+        #expect(events[1].contains("backspacePressed"))
+        #expect(!events.contains { $0.contains("superseded") })
+    }
+
+    @Test func outlinerProjectionDecodesCoreOwnedStateAndRows() throws {
+        let response = try JSONDecoder().decode(
+            LogseqChatRPCResponse.self,
+            from: Data(#"""
+            {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"","blocks":[],
+            "selectedBlock":null,"lastRefreshAt":null,"isSearching":false,
+            "outlinerState":{"editing":{"uuid":"child","title":"Draft","caretUTF16Offset":5},
+            "selectedBlockIds":["child"],"autocomplete":null,
+            "collapsedBlockIds":["root"],"zoomedBlockIds":["root"]},
+            "outlinerRows":[{"block":{"uuid":"root","kind":"block","title":"Root",
+            "pageId":"page","parentId":"page","order":"a0","createdAt":1,"updatedAt":1,
+            "syncStatus":"synced"},"depth":0,"hasChildren":true,"isCollapsed":true}],
+            "outlinerCommandRevision":2,"outlinerCommands":[{"type":"haptic","style":"impact"}]},
+            "error":null}
+            """#.utf8)
+        )
+        let snapshot = try #require(response.result)
+        #expect(snapshot.outlinerState.editing?.title == "Draft")
+        #expect(snapshot.outlinerState.collapsedBlockIds == ["root"])
+        #expect(snapshot.outlinerState.zoomedBlockIds == ["root"])
+        #expect(snapshot.outlinerState.zoomedBlockId == "root")
+        #expect(snapshot.outlinerRows.map(\.block.uuid) == ["root"])
+        #expect(snapshot.outlinerRows[0].isCollapsed)
+        #expect(snapshot.outlinerCommands[0].style == "impact")
+    }
+
+}
+
+private func outlineBlockJSON(
+    uuid: String,
+    parentID: String,
+    order: String,
+    createdAt: Int
+) -> String {
+    """
+    {"uuid":"\(uuid)","kind":"block","title":"\(uuid)","pageId":"page",\
+    "parentId":"\(parentID)","order":"\(order)","createdAt":\(createdAt),\
+    "updatedAt":\(createdAt),"syncStatus":"synced"}
+    """
+}
+
+private func outlineSnapshotJSON(blocks: [String], appliedServerT: Int? = 48192) -> String {
+    let cursor = appliedServerT.map { String($0) } ?? "null"
+    return """
+    {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"","blocks":[\
+    \(blocks.joined(separator: ","))],"selectedBlock":null,"lastRefreshAt":null,\
+    "graphName":"Test","isSearching":false,"appliedServerT":\(cursor)},"error":null}
+    """
+}
+
+private func outlinerSnapshotJSON(revision: Int, title: String) -> String {
+    """
+    {"apiVersion":1,"ok":true,"result":{"revision":\(revision),"query":"","blocks":[],
+    "selectedBlock":null,"lastRefreshAt":null,"isSearching":false,
+    "outlinerState":{"editing":{"uuid":"block","title":"\(title)","caretUTF16Offset":3},
+    "selectedBlockIds":[],"autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]}},
+    "error":null}
+    """
 }
 
 private actor SuspendedPendingTransport {

@@ -99,12 +99,27 @@ let values_for_attr db pending_temp_ids attr value =
     bind (value_for_attr db pending_temp_ids attr value) (fun value -> Ok [ value ])
 ;;
 
-let decoded_attrs db pending_temp_ids attrs =
+let protected_attr attr =
+  String.equal attr "block/title" || String.equal attr "block/name"
+;;
+
+let decrypt_attr decrypt attr value =
+  if protected_attr attr
+  then
+    match value with
+    | Value.String ciphertext ->
+      Result.map (fun plaintext -> Value.String plaintext) (decrypt ciphertext)
+    | _ -> Error ("protected server attribute " ^ attr ^ " must be a string")
+  else Ok value
+;;
+
+let decoded_attrs decrypt db pending_temp_ids attrs =
   let rec decode decoded = function
     | [] -> Ok (List.rev decoded)
     | (Value.Keyword attr, value) :: rest ->
-      bind (values_for_attr db pending_temp_ids attr value) (fun values ->
-        decode ((attr, values) :: decoded) rest)
+      bind (decrypt_attr decrypt attr value) (fun value ->
+        bind (values_for_attr db pending_temp_ids attr value) (fun values ->
+          decode ((attr, values) :: decoded) rest))
     | _ -> Error "server entity attribute name is not a keyword"
   in
   decode [] attrs
@@ -128,9 +143,9 @@ let pending_temp_ids db entities =
   collect [] entities
 ;;
 
-let upsert_ops db pending_temp_ids (entity : Protocol.entity) =
+let upsert_ops decrypt db pending_temp_ids (entity : Protocol.entity) =
   bind (identity_parts entity.id) (fun (identity_attr, identity_value, identity_ref) ->
-    bind (decoded_attrs db pending_temp_ids entity.attrs) (fun attrs ->
+    bind (decoded_attrs decrypt db pending_temp_ids entity.attrs) (fun attrs ->
       match Datascript.entid_ref db identity_ref with
       | Some eid ->
         let retractions =
@@ -177,14 +192,14 @@ let delete_ops db identities =
   collect [] identities
 ;;
 
-let apply_change_set conn (change : Protocol.change_set) =
+let apply_change_set ?(decrypt_protected = fun value -> Ok value) conn (change : Protocol.change_set) =
   try
     let db = Datascript.conn_db conn in
     bind (pending_temp_ids db change.upserts) (fun pending_temp_ids ->
       let rec collect_upserts operations = function
         | [] -> Ok (List.rev operations |> List.concat)
         | entity :: rest ->
-          bind (upsert_ops db pending_temp_ids entity) (fun entity_operations ->
+          bind (upsert_ops decrypt_protected db pending_temp_ids entity) (fun entity_operations ->
             collect_upserts (entity_operations :: operations) rest)
       in
       bind (collect_upserts [] change.upserts) (fun upserts ->

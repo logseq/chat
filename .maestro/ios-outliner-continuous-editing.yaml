@@ -1,0 +1,46 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- pressKey: ENTER
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- assertNotVisible: "outliner_effect_failed"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: ENTER
+- inputText: "E2E continuous first"
+- assertVisible: "E2E continuous first"
+- pressKey: ENTER
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: BACKSPACE
+- assertVisible: "E2E continuous first"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: ENTER
+- inputText: "E2E continuous second"
+- assertVisible: "E2E continuous second"
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn: "Hide keyboard"
+- longPressOn: "E2E continuous first"
+- tapOn: "E2E continuous second"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.delete"
+- assertVisible: "Delete blocks?"
+- tapOn: "Delete"
+- assertNotVisible: "E2E continuous first"
+- assertNotVisible: "E2E continuous second"
+- assertNotVisible: "outliner_effect_failed"

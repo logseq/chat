@@ -6,6 +6,7 @@ let change ~graph_id ~schema_version ~t_before ~t =
   ; t
   ; upserts = []
   ; deleted = []
+  ; operation_ids = []
   }
 ;;
 

@@ -1,0 +1,85 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertVisible:
+    id: "button.outliner.editor.task"
+- assertVisible:
+    id: "button.outliner.editor.outdent"
+- assertVisible:
+    id: "button.outliner.editor.indent"
+- assertVisible:
+    id: "button.outliner.editor.tag"
+- assertVisible:
+    id: "button.outliner.editor.camera"
+- assertVisible:
+    id: "button.outliner.editor.attachment"
+- assertVisible:
+    id: "button.outliner.editor.pageReference"
+- assertVisible: "Hide keyboard"
+- pressKey: ENTER
+- assertVisible: "return"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: ENTER
+- assertVisible: "return"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: BACKSPACE
+- assertVisible: "return"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: BACKSPACE
+- assertVisible: "return"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertNotVisible: "outliner_effect_failed"
+- tapOn:
+    id: "button.outliner.editor.indent"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertVisible: "return"
+- tapOn:
+    id: "button.outliner.editor.outdent"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertVisible: "return"
+- tapOn: "Hide keyboard"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    text: "Zoom into E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Back"
+- tapOn: "Back"
+- assertVisible:
+    id: "button.sidebar"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "list.outliner"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+    direction: DOWN
+    timeout: 60000
+    speed: 50
+    visibilityPercentage: 100
+    centerElement: true
+- swipe:
+    start: 50%, 25%
+    end: 50%, 35%
+    duration: 1000
+- longPressOn: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Copy"
+- assertVisible: "Delete"
+- stopApp

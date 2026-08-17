@@ -1,0 +1,4 @@
+[submodule "Vendor/mldoc"]
+	path = Vendor/mldoc
+	url = https://github.com/logseq/mldoc.git
+	branch = master

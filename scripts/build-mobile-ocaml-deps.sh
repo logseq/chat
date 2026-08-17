@@ -18,14 +18,32 @@ melange_edn_source="$source_root/melange-edn"
 melange_transit_source="$source_root/melange-transit"
 ptime_source="$source_root/ptime"
 yojson_source="$source_root/yojson"
+mldoc_checkout="$repo_root/Vendor/mldoc"
+mldoc_source="$source_root/mldoc-ios-build"
+mldoc_patch="$repo_root/scripts/patches/mldoc-wrapped.patch"
 datascript_revision=3e9bee227686ba8608fc3fb027c4ebe30961360f
 persistent_set_revision=f95398e77a1a003f65ecf201c4aede961e52e929
 melange_edn_revision=a1410a31b57b5e42f152357d0303635685501bc6
 melange_transit_revision=898bc1418e8e6405f53d659209d932cddc6e3070
 ptime_revision=fc8e8dab8f417558d882e6989b080d9f2100f8b6
 yojson_revision=b2193e8e0c88c6501710d08b836b3219673383f3
+mldoc_revision=bedae990097fff9251cde34e685bc3cec13c01a3
 ocamlopt="$target_prefix/bin/ocamlopt.opt"
 ocamldep="$target_prefix/bin/ocamldep.opt"
+ocaml_version=$("$ocamlopt" -version)
+host_prefix="$(dirname "$target_prefix")/host-$ocaml_version"
+[[ -x $host_prefix/bin/ocamlc ]] || {
+  echo "error: OCaml $ocaml_version host compiler is missing at $host_prefix" >&2
+  exit 1
+}
+opam_switch=5.5.0
+[[ $ocaml_version == "$opam_switch" ]] || {
+  echo "error: mobile dependencies require OCaml $opam_switch, got $ocaml_version" >&2
+  exit 1
+}
+opam_prefix=$(opam var --switch="$opam_switch" prefix)
+opam_sources="$opam_prefix/.opam-switch/sources"
+host_dependency_lib="$opam_prefix/lib"
 source_dir="$build_dir/mobile-ocaml-deps-source"
 object_dir="$build_dir/mobile-ocaml-deps"
 cache_stamp="$object_dir/.build-fingerprint"
@@ -38,10 +56,12 @@ build_fingerprint=$(
       "$melange_edn_revision" \
       "$melange_transit_revision" \
       "$ptime_revision" \
-      "$yojson_revision"
+      "$yojson_revision" \
+      "$mldoc_revision"
     "$ocamlopt" -version
     "$ocamlopt" -config
     shasum -a 256 "$repo_root/scripts/build-mobile-ocaml-deps.sh"
+    shasum -a 256 "$mldoc_patch"
   } | shasum -a 256 | cut -d ' ' -f 1
 )
 
@@ -91,6 +111,21 @@ clone_revision \
   "$yojson_revision" \
   "$yojson_source"
 
+[[ -f $mldoc_checkout/lib/dune ]] || {
+  echo "error: initialize the pinned Vendor/mldoc submodule" >&2
+  exit 1
+}
+[[ $(git -C "$mldoc_checkout" rev-parse HEAD) == "$mldoc_revision" ]] || {
+  echo "error: Vendor/mldoc must be pinned at $mldoc_revision" >&2
+  exit 1
+}
+rm -rf "$mldoc_source"
+mkdir -p "$mldoc_source"
+git -C "$mldoc_checkout" archive "$mldoc_revision" | tar -x -C "$mldoc_source"
+/usr/bin/patch -d "$mldoc_source" -p1 <"$mldoc_patch"
+opam exec --switch="$opam_switch" -- \
+  dune build --root "$mldoc_source" lib/mldoc.cmxa
+
 mkdir -p "$source_dir" "$object_dir"
 
 ln -sf \
@@ -138,7 +173,7 @@ for source in $ordered_sources; do
   esac
 done
 
-dune build --root "$yojson_source" lib/yojson.cmxa
+PATH="$host_prefix/bin:$PATH" dune build --root "$yojson_source" lib/yojson.cmxa
 yojson_lib="$yojson_source/_build/default/lib"
 ln -sf "$yojson_lib/yojson__.ml-gen" "$source_dir/yojson__.ml"
 "$ocamlopt" -I "$object_dir" -no-alias-deps -w -49 -c \
@@ -212,6 +247,81 @@ printf '%s\n' \
   -o datascript_sqlite_codec.cmx \
   "$datascript_source/sqlite/datascript_sqlite_codec.ml"
 
+bigstringaf_source="$opam_sources/bigstringaf.0.10.0/lib"
+stringext_source="$opam_sources/stringext.1.6.0/lib"
+uri_source="$opam_sources/uri.4.4.0/lib"
+ppx_deriving_source="$opam_sources/ppx_deriving.6.1.3/src/runtime"
+ppx_yojson_source="$opam_sources/ppx_deriving_yojson.3.10.0/src"
+angstrom_source="$host_dependency_lib/angstrom"
+xmlm_source="$opam_sources/xmlm/src"
+
+"$ocamlopt" -I "$object_dir" -c "$bigstringaf_source/bigstringaf.mli" \
+  -o bigstringaf.cmi
+"$ocamlopt" -I "$object_dir" -c "$bigstringaf_source/bigstringaf.ml" \
+  -o bigstringaf.cmx
+"$ocamlopt" -c "$bigstringaf_source/bigstringaf_stubs.c" \
+  -o bigstringaf_stubs.o
+"$ocamlopt" -I "$object_dir" -c "$ppx_deriving_source/ppx_deriving_runtime.mli" \
+  -o ppx_deriving_runtime.cmi
+"$ocamlopt" -I "$object_dir" -c "$ppx_deriving_source/ppx_deriving_runtime.ml" \
+  -o ppx_deriving_runtime.cmx
+"$ocamlopt" -I "$object_dir" -c "$ppx_yojson_source/ppx_deriving_yojson_runtime.mli" \
+  -o ppx_deriving_yojson_runtime.cmi
+"$ocamlopt" -I "$object_dir" -c "$ppx_yojson_source/ppx_deriving_yojson_runtime.ml" \
+  -o ppx_deriving_yojson_runtime.cmx
+"$ocamlopt" -I "$object_dir" -c "$stringext_source/stringext.mli" \
+  -o stringext.cmi
+"$ocamlopt" -I "$object_dir" -c "$stringext_source/stringext.ml" \
+  -o stringext.cmx
+
+"$ocamlopt" -I "$object_dir" -no-alias-deps -w -49 -c \
+  "$angstrom_source/angstrom__.ml" -o angstrom__.cmx
+for module in Input Buffering More Exported_state Parser; do
+  source_name=$(printf '%s' "$module" | tr '[:upper:]' '[:lower:]')
+  if [[ -f $angstrom_source/$source_name.mli ]]; then
+    "$ocamlopt" -I "$object_dir" -open Angstrom__ -c \
+      "$angstrom_source/$source_name.mli" -o "angstrom__${module}.cmi"
+  fi
+  "$ocamlopt" -I "$object_dir" -open Angstrom__ -c \
+    "$angstrom_source/$source_name.ml" -o "angstrom__${module}.cmx"
+done
+"$ocamlopt" -I "$object_dir" -open Angstrom__ -c \
+  "$angstrom_source/angstrom.mli" -o angstrom.cmi
+"$ocamlopt" -I "$object_dir" -open Angstrom__ -c \
+  "$angstrom_source/angstrom.ml" -o angstrom.cmx
+"$ocamlopt" -I "$object_dir" -c "$uri_source/uri.mli" -o uri.cmi
+"$ocamlopt" -I "$object_dir" -c "$uri_source/uri.ml" -o uri.cmx
+"$ocamlopt" -I "$object_dir" -c "$xmlm_source/xmlm.mli" -o xmlm.cmi
+"$ocamlopt" -I "$object_dir" -c "$xmlm_source/xmlm.ml" -o xmlm.cmx
+
+mldoc_build="$mldoc_source/_build/default/lib"
+"$ocamlopt" -I "$object_dir" -no-alias-deps -w -49 -c \
+  -impl "$mldoc_build/mldoc__.ml-gen" -o mldoc__.cmx
+mldoc_sources=$(find "$mldoc_build" -type f -name '*.pp.ml' \
+  ! -path "$mldoc_build/mldoc.pp.ml" -print | sort -u)
+mldoc_ordered=$(opam exec --switch="$opam_switch" -- ocamldep -sort $mldoc_sources)
+mldoc_seen=' '
+: >"$object_dir/mldoc-link-objects.txt"
+for source in $mldoc_ordered; do
+  source_name=$(basename "$source" .pp.ml)
+  case "$mldoc_seen" in
+    *" $source_name "*) continue ;;
+  esac
+  mldoc_seen="$mldoc_seen$source_name "
+  module_name="${source_name^}"
+  interface="$(dirname "$source")/$source_name.pp.mli"
+  if [[ -f $interface ]]; then
+    "$ocamlopt" -I "$object_dir" -open Mldoc__ -c "$interface" \
+      -o "mldoc__${module_name}.cmi"
+  fi
+  "$ocamlopt" -I "$object_dir" -open Mldoc__ -c "$source" \
+    -o "mldoc__${module_name}.cmx"
+  printf '%s\n' "$object_dir/mldoc__${module_name}.cmx" \
+    >>"$object_dir/mldoc-link-objects.txt"
+done
+"$ocamlopt" -I "$object_dir" -open Mldoc__ -c "$mldoc_build/mldoc.pp.ml" \
+  -o mldoc.cmx
+
 cmx_list=$("$ocamldep" -sort "$source_dir"/*.ml)
 : >"$object_dir/link-objects.txt"
 for source in $cmx_list; do
@@ -241,6 +351,28 @@ for object in \
   datascript_sqlite_codec.cmx; do
   printf '%s\n' "$object_dir/$object" >>"$object_dir/link-objects.txt"
 done
+for object in \
+  bigstringaf.cmx \
+  bigstringaf_stubs.o \
+  ppx_deriving_runtime.cmx \
+  ppx_deriving_yojson_runtime.cmx \
+  angstrom__.cmx \
+  angstrom__Input.cmx \
+  angstrom__Buffering.cmx \
+  angstrom__More.cmx \
+  angstrom__Exported_state.cmx \
+  angstrom__Parser.cmx \
+  angstrom.cmx \
+  stringext.cmx \
+  uri.cmx \
+  xmlm.cmx \
+  mldoc__.cmx; do
+  printf '%s\n' "$object_dir/$object" >>"$object_dir/link-objects.txt"
+done
+while IFS= read -r object; do
+  printf '%s\n' "$object" >>"$object_dir/link-objects.txt"
+done <"$object_dir/mldoc-link-objects.txt"
+printf '%s\n' "$object_dir/mldoc.cmx" >>"$object_dir/link-objects.txt"
 
 printf '%s\n' "$datascript_source/sqlite/datascript_sqlite_stubs.c" \
   >"$object_dir/sqlite-stub-source.txt"

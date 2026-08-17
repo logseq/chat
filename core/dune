@@ -3,20 +3,30 @@
  (wrapped false)
  (modules
   logseq_chat_api
+  logseq_chat_datascript_value
   logseq_chat_edn
   logseq_chat_e2ee
   logseq_chat_e2ee_keyring
   logseq_chat_entity_sync
+  logseq_chat_fractional_order
   logseq_chat_graph_store
   logseq_chat_graph_read
+  logseq_chat_graph_runtime
   logseq_chat_http
   logseq_chat_logseq_storage_codec
+  logseq_chat_markup
   logseq_chat_model
+  logseq_chat_outliner
+  logseq_chat_outliner_state
+  logseq_chat_outliner_effects
+  logseq_chat_pending_ops
+  logseq_chat_pending_projection
   logseq_chat_rpc
   logseq_chat_snapshot
   logseq_chat_sse
   logseq_chat_sync_checkpoint
   logseq_chat_sync_protocol
+  logseq_chat_sync_tx
   logseq_chat_sync_session
   logseq_chat_sync_state)
  (libraries
@@ -25,8 +35,11 @@
   melange-transit-core
   melange-transit-native
   yojson
+  mldoc
   str
   unix)
+ (instrumentation
+  (backend bisect_ppx))
  (foreign_stubs
   (language c)
   (names logseq_chat_https_stub logseq_chat_graph_store_stubs))
@@ -46,6 +59,24 @@
  (link_flags :standard -cclib -L/opt/homebrew/opt/sqlite/lib)
  (flags :standard -linkall))
 
+(library
+ (name logseq_chat_e2e_seed_support)
+ (wrapped false)
+ (modules logseq_chat_e2e_seed_data)
+ (libraries logseq_chat_core)
+ (instrumentation
+  (backend bisect_ppx)))
+
+(executable
+ (name logseq_chat_e2e_seed)
+ (modules logseq_chat_e2e_seed)
+ (libraries logseq_chat_core logseq_chat_e2e_seed_support))
+
+(test
+ (name logseq_chat_e2e_seed_data_test)
+ (modules logseq_chat_e2e_seed_data_test)
+ (libraries logseq_chat_core logseq_chat_e2e_seed_support))
+
 (test
  (name logseq_chat_model_test)
  (modules logseq_chat_model_test)
@@ -60,6 +91,11 @@
  (name logseq_chat_http_test)
  (modules logseq_chat_http_test)
  (libraries logseq_chat_core unix))
+
+(test
+ (name logseq_chat_markup_test)
+ (modules logseq_chat_markup_test)
+ (libraries logseq_chat_core))
 
 (test
  (name logseq_chat_rpc_test)
@@ -81,6 +117,11 @@
 (test
  (name logseq_chat_sync_protocol_test)
  (modules logseq_chat_sync_protocol_test)
+ (libraries logseq_chat_core melange-transit-core melange-transit-native))
+
+(test
+ (name logseq_chat_sync_tx_test)
+ (modules logseq_chat_sync_tx_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
 
 (test
@@ -109,6 +150,11 @@
  (libraries logseq_chat_core))
 
 (test
+ (name logseq_chat_logseq_storage_codec_test)
+ (modules logseq_chat_logseq_storage_codec_test)
+ (libraries logseq_chat_core))
+
+(test
  (name logseq_chat_sync_session_test)
  (modules logseq_chat_sync_session_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
@@ -121,6 +167,41 @@
 (test
  (name logseq_chat_graph_read_test)
  (modules logseq_chat_graph_read_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_pending_projection_test)
+ (modules logseq_chat_pending_projection_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_pending_ops_test)
+ (modules logseq_chat_pending_ops_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_outliner_test)
+ (modules logseq_chat_outliner_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_fractional_order_test)
+ (modules logseq_chat_fractional_order_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_outliner_state_test)
+ (modules logseq_chat_outliner_state_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_outliner_effects_test)
+ (modules logseq_chat_outliner_effects_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_graph_runtime_test)
+ (modules logseq_chat_graph_runtime_test)
  (libraries logseq_chat_core))
 
 (test

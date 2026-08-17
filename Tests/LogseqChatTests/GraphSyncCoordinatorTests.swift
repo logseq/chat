@@ -46,6 +46,33 @@ import Testing
         #expect(await events.snapshot() == ["foreground-start", "foreground-stop", "background-start"])
     }
 
+    @Test func foregroundWaitsForActiveBackgroundCatchUp() async {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+        let gate = AsyncGate()
+
+        let background = Task {
+            await coordinator.runBackground {
+                await events.append("background-start")
+                await gate.wait()
+                await events.append("background-stop")
+                return true
+            }
+        }
+        await waitForEvent("background-start", in: events)
+
+        await coordinator.startForeground(graphID: "graph-1") { _ in
+            await events.append("foreground-start")
+        }
+        await gate.open()
+        #expect(await background.value)
+        await waitForEvent("foreground-start", in: events)
+
+        #expect(await events.snapshot() == [
+            "background-start", "background-stop", "foreground-start",
+        ])
+    }
+
     @Test func concurrentBackgroundCatchUpsShareOneExecution() async {
         let coordinator = GraphSyncCoordinator()
         let probe = BackgroundExecutionProbe()
@@ -80,6 +107,36 @@ import Testing
         #expect(await events.snapshot() == ["start", "cleanup"])
     }
 
+    @Test func stoppingWithoutForegroundWorkIsANoOp() async {
+        let coordinator = GraphSyncCoordinator()
+        await coordinator.stopForeground()
+    }
+
+    @Test func foregroundCanceledWhileWaitingForBackgroundDoesNotStart() async {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+        let gate = AsyncGate()
+
+        let background = Task {
+            await coordinator.runBackground {
+                await events.append("background-start")
+                await gate.wait()
+                return true
+            }
+        }
+        await waitForEvent("background-start", in: events)
+
+        await coordinator.startForeground(graphID: "graph-1") { _ in
+            await events.append("foreground-start")
+        }
+        let stop = Task { await coordinator.stopForeground() }
+        await gate.open()
+        _ = await background.value
+        await stop.value
+
+        #expect(await events.snapshot() == ["background-start"])
+    }
+
     @Test func cancelingBackgroundWaitsForCleanup() async {
         let coordinator = GraphSyncCoordinator()
         let events = SyncEventRecorder()
@@ -102,6 +159,36 @@ import Testing
         #expect(await events.snapshot() == ["start", "cleanup"])
     }
 
+    @Test func cancelingWithoutBackgroundWorkIsANoOp() async {
+        let coordinator = GraphSyncCoordinator()
+        await coordinator.cancelBackground()
+    }
+
+    @Test func backgroundCanceledWhileWaitingForForegroundDoesNotStart() async {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+        let gate = AsyncGate()
+
+        await coordinator.startForeground(graphID: "graph-1") { _ in
+            await events.append("foreground-start")
+            await gate.wait()
+        }
+        await waitForEvent("foreground-start", in: events)
+
+        let background = Task {
+            await coordinator.runBackground {
+                await events.append("background-start")
+                return true
+            }
+        }
+        let cancel = Task { await coordinator.cancelBackground() }
+        await gate.open()
+        await cancel.value
+
+        #expect(await background.value == false)
+        #expect(await events.snapshot() == ["foreground-start"])
+    }
+
     @Test @MainActor func backgroundTaskCompletionOnlyFinishesOnce() {
         let completion = BackgroundTaskCompletion()
         var results: [Bool] = []
@@ -122,6 +209,22 @@ private actor SyncEventRecorder {
 
     func snapshot() -> [String] {
         values
+    }
+}
+
+private actor AsyncGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
     }
 }
 

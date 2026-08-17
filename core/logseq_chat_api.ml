@@ -307,6 +307,30 @@ let update_block_request config ~uuid ~title =
   }
 ;;
 
+let tx_batch_request config ~t_before ~tx_id ~outliner_op ~tx =
+  { method_ = "POST"
+  ; url =
+      Printf.sprintf
+        "%s/sync/%s/tx/batch"
+        (api_root config)
+        (url_encode config.graph_id)
+  ; body =
+      Some
+        (to_string
+           (`Assoc
+             [ "t-before", `Int t_before
+             ; ( "txs"
+               , `List
+                   [ `Assoc
+                       [ "tx-id", `String tx_id
+                       ; "tx", `String tx
+                       ; "outliner-op", `String outliner_op
+                       ] ] )
+             ]))
+  ; token = config.token
+  }
+;;
+
 let update_block_status_request config ~uuid ~status =
   { method_ = "PUT"
   ; url =

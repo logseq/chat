@@ -1,0 +1,212 @@
+module State = Logseq_chat_outliner_state
+module Ops = Logseq_chat_pending_ops
+module Model = Logseq_chat_model
+module Order = Logseq_chat_fractional_order
+
+type platform_command =
+  | Haptic of State.haptic
+  | Focus_block of string
+  | Confirm_delete of string list
+  | Set_clipboard_text of string
+  | Set_clipboard_references of string list
+  | Set_clipboard_urls of string list
+  | Pick_attachment of string
+  | Take_photo of string
+
+type result =
+  { operations : Ops.t list
+  ; platform : platform_command list
+  }
+
+let find_block (context : State.context) uuid =
+  List.find_opt (fun (block : Model.block) -> String.equal block.uuid uuid) context.blocks
+;;
+
+let sorted_siblings (context : State.context) parent_id =
+  context.blocks
+  |> List.filter (fun (block : Model.block) -> block.parent_id = parent_id)
+  |> List.sort (fun (left : Model.block) (right : Model.block) ->
+    match left.order, right.order with
+    | Some left, Some right when not (String.equal left right) -> String.compare left right
+    | Some _, None -> -1
+    | None, Some _ -> 1
+    | _ -> String.compare left.uuid right.uuid)
+;;
+
+let next_order context (block : Model.block) =
+  let siblings = sorted_siblings context block.parent_id in
+  let rec loop = function
+    | current :: next :: _ when String.equal current.Model.uuid block.uuid -> next.Model.order
+    | _ :: rest -> loop rest
+    | [] -> None
+  in
+  loop siblings
+;;
+
+let operation ~base_t ~fresh_uuid intent =
+  Ops.{ operation_id = fresh_uuid (); base_t; state = Queued; intent }
+;;
+
+let built_in_status_idents =
+  [ "logseq.property/status.backlog"
+  ; "logseq.property/status.todo"
+  ; "logseq.property/status.doing"
+  ; "logseq.property/status.in-review"
+  ; "logseq.property/status.done"
+  ; "logseq.property/status.canceled"
+  ]
+;;
+
+let status_reference (status : Model.status) =
+  match status.ident with
+  | Some ident -> Ops.Ref_ident ident
+  | None -> Ops.Ref_uuid status.uuid
+;;
+
+let next_status_ident block =
+  let current_ident = Option.bind block.Model.status (fun status -> status.Model.ident) in
+  let rec next = function
+    | [] -> List.hd built_in_status_idents
+    | current :: following :: _ when Option.equal String.equal current_ident (Some current) ->
+      following
+    | [ current ] when Option.equal String.equal current_ident (Some current) ->
+      List.hd built_in_status_idents
+    | _ :: rest -> next rest
+  in
+  match current_ident with None -> List.hd built_in_status_idents | Some _ -> next built_in_status_idents
+;;
+
+let append_result left right =
+  { operations = left.operations @ right.operations
+  ; platform = left.platform @ right.platform
+  }
+;;
+
+let command ~base_t ~now ~fresh_uuid context = function
+  | State.Haptic haptic -> Ok { operations = []; platform = [ Haptic haptic ] }
+  | State.Commit_title { uuid; expected_title; title } ->
+    Ok
+      { operations = [ operation ~base_t ~fresh_uuid (Save_title { uuid; expected_title; title }) ]
+      ; platform = []
+      }
+  | State.Split_at { uuid; expected_title; before; after } ->
+    (match find_block context uuid with
+     | None -> Error "split source no longer exists"
+     | Some block ->
+       let lower = block.Model.order in
+       let upper = next_order context block in
+       Result.bind (Order.between lower upper) (fun new_order ->
+         let operation_id = fresh_uuid () in
+         let new_uuid = fresh_uuid () in
+         Ok
+           { operations =
+               [ Ops.
+                   { operation_id
+                   ; base_t
+                   ; state = Queued
+                   ; intent =
+                       Split_block
+                         { uuid
+                         ; expected_title
+                         ; before
+                         ; after
+                         ; new_uuid
+                         ; new_order
+                         ; created_at = now ()
+                         }
+                   }
+               ]
+           ; platform = [ Focus_block new_uuid ]
+           }))
+  | State.Merge_backward
+      { uuid; expected_title; title; previous_uuid; expected_previous_title } ->
+    Ok
+      { operations =
+          [ operation
+              ~base_t
+              ~fresh_uuid
+              (Merge_backward
+                 { uuid
+                 ; expected_title
+                 ; title
+                 ; previous_uuid
+                 ; expected_previous_title
+                 ; merged_title = None
+                 })
+          ]
+      ; platform = [ Focus_block previous_uuid ]
+      }
+  | State.Move_blocks moves ->
+    if moves = []
+    then Error "move batch must not be empty"
+    else
+      Ok
+        { operations = [ operation ~base_t ~fresh_uuid (Move_blocks { moves }) ]
+        ; platform = []
+        }
+  | State.Request_delete_confirmation uuids ->
+    Ok { operations = []; platform = [ Confirm_delete uuids ] }
+  | State.Delete_blocks uuids ->
+    if uuids = []
+    then Ok { operations = []; platform = [] }
+    else
+      Ok
+        { operations = [ operation ~base_t ~fresh_uuid (Delete_blocks { uuids }) ]
+        ; platform = []
+        }
+  | State.Cycle_task_status uuid ->
+    (match find_block context uuid with
+     | None -> Error "task block no longer exists"
+     | Some block ->
+       Ok
+         { operations =
+             [ operation
+                 ~base_t
+                 ~fresh_uuid
+                 (Set_property
+                    { uuid
+                    ; attr = "logseq.property/status"
+                    ; expected = Option.map status_reference block.status
+                    ; value = Some (Ref_ident (next_status_ident block))
+                    })
+             ]
+         ; platform = []
+         })
+  | State.Set_task_status_value { uuid; status } ->
+    (match find_block context uuid with
+     | None -> Error "task block no longer exists"
+     | Some block ->
+       Ok
+         { operations =
+             [ operation
+                 ~base_t
+                 ~fresh_uuid
+                 (Set_property
+                    { uuid
+                    ; attr = "logseq.property/status"
+                    ; expected = Option.map status_reference block.status
+                    ; value = Some status
+                    })
+             ]
+         ; platform = []
+         })
+  | State.Pick_attachment uuid ->
+    Ok { operations = []; platform = [ Pick_attachment uuid ] }
+  | State.Take_photo uuid ->
+    Ok { operations = []; platform = [ Take_photo uuid ] }
+  | State.Copy_text text ->
+    Ok { operations = []; platform = [ Set_clipboard_text text ] }
+  | State.Copy_references uuids ->
+    Ok { operations = []; platform = [ Set_clipboard_references uuids ] }
+  | State.Copy_urls uuids ->
+    Ok { operations = []; platform = [ Set_clipboard_urls uuids ] }
+;;
+
+let interpret ~base_t ~now ~fresh_uuid context commands =
+  List.fold_left
+    (fun result next ->
+      Result.bind result (fun accumulated ->
+        Result.map (append_result accumulated) (command ~base_t ~now ~fresh_uuid context next)))
+    (Ok { operations = []; platform = [] })
+    commands
+;;

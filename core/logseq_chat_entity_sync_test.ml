@@ -80,6 +80,7 @@ let () =
         ; entity remote_parent_uuid (block remote_parent_uuid "Remote parent")
         ]
     ; deleted = [ identity doomed_uuid ]
+    ; operation_ids = []
     }
   in
   (match Logseq_chat_entity_sync.apply_change_set conn changes with
@@ -118,4 +119,50 @@ let () =
    | _ -> fail "same-batch reference did not resolve through a shared temp id");
   if Option.is_some (entid db "block/uuid" (Uuid doomed_uuid))
   then fail "authoritative remote deletion was not applied"
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/name", one ~value_type:StringType ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  let change : Protocol.change_set =
+    { format_version = 1
+    ; graph_id = "encrypted-graph"
+    ; schema_version = "65.33"
+    ; t_before = 0
+    ; t = 1
+    ; upserts =
+        [ entity
+            "encrypted-block"
+            [ Value.Keyword "block/uuid", Value.Uuid "encrypted-block"
+            ; Value.Keyword "block/title", Value.String "cipher:Title"
+            ; Value.Keyword "block/name", Value.String "cipher:title"
+            ]
+        ]
+    ; deleted = []
+    ; operation_ids = []
+    }
+  in
+  let decrypt value =
+    match String.starts_with ~prefix:"cipher:" value with
+    | true -> Ok (String.sub value 7 (String.length value - 7))
+    | false -> Error "expected ciphertext"
+  in
+  (match Logseq_chat_entity_sync.apply_change_set ~decrypt_protected:decrypt conn change with
+   | Ok () -> ()
+   | Error message -> fail message);
+  let db = conn_db conn in
+  let eid = Option.get (entid db "block/uuid" (Uuid "encrypted-block")) in
+  let value attr =
+    datoms db Eavt ~e:eid ~a:attr ()
+    |> Seq.map (fun datom -> datom.v)
+    |> List.of_seq
+  in
+  if value "block/title" <> [ String "Title" ]
+     || value "block/name" <> [ String "title" ]
+  then fail "encrypted server attributes must be plaintext in local DataScript"
 ;;

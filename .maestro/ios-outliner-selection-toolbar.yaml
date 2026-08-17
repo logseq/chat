@@ -1,0 +1,60 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- longPressOn: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- assertVisible:
+    id: "button.outliner.selection.copy"
+- assertVisible:
+    id: "button.outliner.selection.outdent"
+- assertVisible:
+    id: "button.outliner.selection.indent"
+- assertVisible:
+    id: "button.outliner.selection.delete"
+- assertVisible:
+    id: "button.outliner.selection.copyReference"
+- assertVisible:
+    id: "button.outliner.selection.copyURL"
+- tapOn: "Select block E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn:
+    id: "button.outliner.selection.copy"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.copyReference"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.copyURL"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.indent"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.outdent"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.delete"
+- assertVisible: "Delete blocks?"
+- tapOn: "Cancel"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- swipe:
+    start: 80%, 97%
+    end: 15%, 97%
+    duration: 1000
+- assertVisible:
+    id: "button.outliner.selection.unselect"
+- tapOn:
+    id: "button.outliner.selection.unselect"
+- assertVisible:
+    id: "button.composer.expand"
+- assertNotVisible: "outliner_effect_failed"

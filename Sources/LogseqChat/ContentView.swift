@@ -1,5 +1,6 @@
 import SwiftUI
 import LogseqChatModel
+import Observation
 #if !SKIP
 import CryptoKit
 import PhotosUI
@@ -10,6 +11,209 @@ import QuickLook
 import UIKit
 #endif
 #endif
+#if SKIP
+import androidx.activity.compose.BackHandler
+#endif
+
+private enum SidebarChromeMetrics {
+    static let iOSHeaderTopPadding: CGFloat = 64
+    static let androidHeaderTopPadding: CGFloat = 12
+    static let menuGlyphWidth: CGFloat = 18
+    static let menuVisualFrame: CGFloat = 24
+    static let minimumHitTarget: CGFloat = 44
+    static let headerBottomPadding: CGFloat = 8
+    static let headerHeight = minimumHitTarget + headerBottomPadding
+}
+
+private struct SidebarMenuIcon: View {
+    var body: some View {
+        VStack(spacing: 4) {
+            Capsule()
+                .frame(width: SidebarChromeMetrics.menuGlyphWidth, height: 2)
+            Capsule()
+                .frame(width: SidebarChromeMetrics.menuGlyphWidth, height: 2)
+            Capsule()
+                .frame(width: SidebarChromeMetrics.menuGlyphWidth, height: 2)
+        }
+        .frame(
+            width: SidebarChromeMetrics.menuVisualFrame,
+            height: SidebarChromeMetrics.menuVisualFrame
+        )
+    }
+}
+
+@MainActor @Observable final class SidebarMotionState {
+    var isPresented = false
+    var isAnimating = false
+    var dragOffset: CGFloat = 0
+
+    func setPresented(_ presented: Bool) {
+        guard presented != isPresented || abs(dragOffset) > 0 else { return }
+        isAnimating = true
+        #if SKIP
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            isPresented = presented
+            dragOffset = 0
+        }
+        Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            isAnimating = false
+        }
+        #else
+        withAnimation(
+            .spring(response: 0.28, dampingFraction: 0.9),
+            completionCriteria: .logicallyComplete
+        ) {
+            isPresented = presented
+            dragOffset = 0
+        } completion: {
+            self.isAnimating = false
+        }
+        #endif
+    }
+}
+
+private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
+    let motion: SidebarMotionState
+    let activationAvailable: Bool
+    let sidebar: Sidebar
+    let main: Main
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = min(geometry.size.width * 0.84, 360)
+            let baseOffset = motion.isPresented ? width : 0
+            let contentOffset = min(max(baseOffset + motion.dragOffset, 0), width)
+            let progress = width > 0 ? contentOffset / width : 0
+            let isDragging = abs(motion.dragOffset) > 0
+
+            ZStack(alignment: .leading) {
+                #if SKIP
+                ComposeView { _ in
+                    BackHandler(enabled: motion.isPresented) {
+                        motion.setPresented(false)
+                    }
+                }
+                .frame(width: 0, height: 0)
+                #endif
+
+                sidebar
+                    .frame(width: width)
+                    .scrollDisabled(SidebarDragPolicy.disablesScrollEnvironment(
+                        isDragging: isDragging,
+                        isAnimating: motion.isAnimating
+                    ))
+                    .allowsHitTesting(SidebarDragPolicy.allowsSidebarInteraction(
+                        isPresented: motion.isPresented,
+                        isDragging: isDragging,
+                        isAnimating: motion.isAnimating
+                    ))
+                    .background(Color.black.opacity(0.001))
+                    .opacity(0.35 + (0.65 * progress))
+                    .scaleEffect(0.96 + (0.04 * progress))
+                    .offset(x: -20 * (1 - progress))
+
+                main
+                    .platformSidebarSafeAreaPadding(
+                        top: geometry.safeAreaInsets.top,
+                        bottom: MobileChromePolicy.mainPanelBottomSafeAreaPadding
+                    )
+                    .scrollDisabled(SidebarDragPolicy.disablesScrollEnvironment(
+                        isDragging: isDragging,
+                        isAnimating: motion.isAnimating
+                    ))
+                    .allowsHitTesting(
+                        !isDragging
+                            && !SidebarDragPolicy.blocksMainInteraction(
+                                isAnimating: motion.isAnimating
+                            )
+                    )
+                    .overlay {
+                        if motion.isPresented {
+                            Button {
+                                motion.setPresented(false)
+                            } label: {
+                                Color.black.opacity(0.001)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Close sidebar")
+                            .accessibilityIdentifier("button.sidebar.dismiss")
+                        }
+                    }
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 40 * progress))
+                    .shadow(color: Color.black.opacity(0.18), radius: 16, x: -6)
+                    .offset(x: contentOffset)
+            }
+            #if SKIP
+            .simultaneousGesture(dragGesture(sidebarWidth: width))
+            #else
+            .simultaneousGesture(
+                dragGesture(sidebarWidth: width),
+                isEnabled: activationAllowed
+            )
+            #endif
+            .sensoryFeedback(.impact(weight: .light), trigger: motion.isPresented)
+        }
+        .platformFullScreenSidebarShell()
+    }
+
+    private var activationAllowed: Bool {
+        motion.isPresented || activationAvailable
+    }
+
+    private func dragGesture(sidebarWidth: CGFloat) -> some Gesture {
+        #if SKIP
+        let gesture = DragGesture(minimumDistance: SidebarDragPolicy.minimumDistance)
+        #else
+        let gesture = DragGesture(
+            minimumDistance: SidebarDragPolicy.minimumDistance,
+            coordinateSpace: .global
+        )
+        #endif
+        return gesture
+            .onChanged { value in
+                if activationAllowed, SidebarDragPolicy.accepts(
+                    translationX: value.translation.width,
+                    translationY: value.translation.height
+                ) {
+                    var transaction = Transaction()
+                    transaction.animation = nil
+                    withTransaction(transaction) {
+                        motion.dragOffset = SidebarDragPolicy.dragOffset(
+                            isPresented: motion.isPresented,
+                            translationX: value.translation.width
+                        )
+                    }
+                } else {
+                    motion.dragOffset = 0
+                }
+            }
+            .onEnded { value in
+                guard activationAllowed else {
+                    motion.dragOffset = 0
+                    return
+                }
+                motion.setPresented(SidebarDragPolicy.presentedAfterDrag(
+                    isPresented: motion.isPresented,
+                    translationX: value.translation.width,
+                    translationY: value.translation.height,
+                    predictedTranslationX: value.predictedEndTranslation.width,
+                    sidebarWidth: sidebarWidth
+                ))
+            }
+    }
+}
+
+private struct OutlinerBackIcon: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
+}
 
 struct ContentView: View {
     private static let blockListTopID = "block-list-top"
@@ -19,15 +223,23 @@ struct ContentView: View {
     private let syncCoordinator: GraphSyncCoordinator
     @State private var searchText = ""
     @State private var searchPresented = false
+    @State private var isRestoringSearchProjection = false
     @State private var composerExpanded = false
     @State private var searchExpanded = false
     @State private var settingsPresented = false
+    #if SKIP
+    @State private var graphsPresented = false
+    #endif
     @State private var graphPasswordPresented = false
     @State private var graphPassword = ""
     @State private var graphUnlockInProgress = false
     @State private var fileImporterPresented = false
     @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var editingBlock: LogseqBlock?
+    @State private var blocksPendingDeletion: [LogseqBlock] = []
+    @State private var outlinerDeleteConfirmationPending = false
+    @State private var sidebarMotion = SidebarMotionState()
+    @State private var appNavigationPath: [AppNavigationRoute] = []
     #if !SKIP
     @State private var taskStatusPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
@@ -42,6 +254,7 @@ struct ContentView: View {
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
     @AppStorage("logseq.composerDraft") private var persistedDraft = ""
+    @AppStorage("logseq.contentMode") private var contentModeRaw = LogseqContentMode.chat.rawValue
     @FocusState private var composerFocused: Bool
     @FocusState private var searchFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -89,6 +302,9 @@ struct ContentView: View {
             guard authentication.state == .signedIn else { return }
             beginGraphAccess(graphID)
         }
+        .onChange(of: store.snapshot.outlinerCommandRevision) { _, _ in
+            performOutlinerPlatformCommands()
+        }
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
                 baseURL: $baseURL,
@@ -135,6 +351,26 @@ struct ContentView: View {
                 }
             }
         }
+        .alert(
+            blocksPendingDeletion.count > 1 ? "Delete blocks?" : "Delete block?",
+            isPresented: deleteConfirmationPresented
+        ) {
+            Button("Delete", role: .destructive) {
+                if outlinerDeleteConfirmationPending {
+                    store.outlinerEvent(LogseqOutlinerEvent(type: "confirmDelete"))
+                } else if blocksPendingDeletion.count == 1, let block = blocksPendingDeletion.first {
+                    store.delete(block: block)
+                }
+                blocksPendingDeletion = []
+                outlinerDeleteConfirmationPending = false
+            }
+            Button("Cancel", role: .cancel) {
+                blocksPendingDeletion = []
+                outlinerDeleteConfirmationPending = false
+            }
+        } message: {
+            Text(verbatim: "This deletes the block and all of its children. Pages use Recycle instead.")
+        }
         #if !SKIP
         .fileImporter(
             isPresented: $fileImporterPresented,
@@ -169,7 +405,20 @@ struct ContentView: View {
 
     @ViewBuilder
     private var rootContent: some View {
+        #if SKIP
         authenticatedContent
+            .sheet(isPresented: $graphsPresented) {
+                GraphsView(
+                    graphs: store.snapshot.graphs ?? [],
+                    databasePath: databasePath,
+                    refresh: { store.refresh() },
+                    open: openManagedGraph,
+                    deleteGraph: deleteManagedGraph
+                )
+            }
+        #else
+        authenticatedContent
+        #endif
     }
 
     private var graphPicker: some View {
@@ -242,38 +491,363 @@ struct ContentView: View {
         .accessibilityIdentifier("screen.graph-picker")
     }
 
-    @ViewBuilder private var appShell: some View {
+    private var appShell: some View {
+        SidebarMotionShell(
+            motion: sidebarMotion,
+            activationAvailable: sidebarActivationAvailable,
+            sidebar: sidebarContent,
+            main: sidebarMainPage
+        )
+    }
+
+    @ViewBuilder private var sidebarMainPage: some View {
         #if SKIP
             mainContent
             #else
-            NavigationStack {
-                mainContent
-                    .platformSearchable(
-                        enabled: !composerExpanded,
-                        text: $searchText,
-                        isPresented: $searchPresented,
-                        prompt: "Search blocks"
-                    )
-                    .platformSearchFocused($searchFocused)
-                    .onSubmit(of: .search) {
-                        store.search(searchText)
-                    }
-                    .onChange(of: searchText) { _, query in
-                        store.searchLocal(query)
-                    }
-                    .onChange(of: searchPresented) { _, presented in
-                        handleSearchPresentationChanged(presented)
-                    }
-                    .platformRootNavigationChromeHidden()
-                    .platformBottomComposerToolbar(
-                        showsComposer: shouldShowToolbarComposer,
-                        showsSearch: shouldShowSearchToolbarItem
-                    ) {
-                        bottomToolbarComposer
-                            .platformBottomComposerWidth()
+            NavigationStack(path: $appNavigationPath) {
+                navigationMainContent
+                    .navigationDestination(for: AppNavigationRoute.self) { route in
+                        appNavigationDestination(route)
                     }
             }
+            .onAppear {
+                appNavigationPath = store.snapshot.outlinerState.zoomedBlockIds.map {
+                    .outlinerBlock($0)
+                }
+            }
+            .onChange(of: store.snapshot.outlinerState.zoomedBlockIds) { _, path in
+                let routes = path.map { AppNavigationRoute.outlinerBlock($0) }
+                if !AppNavigationPathPolicy.containsIndependentDestination(appNavigationPath),
+                   appNavigationPath != routes {
+                    appNavigationPath = routes
+                }
+            }
+            .onChange(of: appNavigationPath) { previousPath, path in
+                let steps = OutlinerNavigationPolicy.backStepCount(
+                    presentedPath: AppNavigationPathPolicy.zoomedBlockIDs(path),
+                    modelPath: store.snapshot.outlinerState.zoomedBlockIds
+                )
+                for _ in 0..<steps {
+                    store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
+                }
+                if AppNavigationPathPolicy.containsNode(previousPath),
+                   !AppNavigationPathPolicy.containsNode(path) {
+                    store.clearSelectedPage()
+                }
+                if AppNavigationPathPolicy.containsTag(previousPath),
+                   !AppNavigationPathPolicy.containsTag(path) {
+                    store.clearRelated()
+                }
+            }
+            #if os(iOS)
+            .overlay(alignment: .bottom) {
+                iosBottomChrome
+            }
+            #endif
         #endif
+    }
+
+    #if !SKIP
+    @ViewBuilder private func appNavigationDestination(_ route: AppNavigationRoute) -> some View {
+        switch route {
+        case let .outlinerBlock(uuid):
+            outlinerNavigationDestination(uuid: uuid)
+        case let .node(uuid, _):
+            nodeNavigationDestination(uuid: uuid)
+        case let .tag(uuid):
+            tagNavigationDestination(uuid: uuid)
+        case .graphs:
+            GraphsView(
+                graphs: store.snapshot.graphs ?? [],
+                databasePath: databasePath,
+                refresh: { store.refresh() },
+                open: openManagedGraph,
+                deleteGraph: deleteManagedGraph
+            )
+        }
+    }
+
+    private func nodeNavigationDestination(uuid: String) -> some View {
+        Group {
+            if store.snapshot.selectedPage == nil {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                primaryContent
+            }
+        }
+        .background(appBackground)
+        .navigationTitle(markupTargetTitle(uuid: uuid) ?? store.snapshot.selectedPage?.title ?? "Node")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+
+    private func tagNavigationDestination(uuid: String) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                RelatedBlocksSection(
+                    title: "Objects",
+                    emptyTitle: "No objects",
+                    blocks: store.snapshot.relatedBlocks ?? [],
+                    accessibilityIdentifier: "section.tag.objects"
+                )
+            }
+            .padding()
+        }
+        .background(appBackground)
+        .navigationTitle(markupTargetTitle(uuid: uuid).map { "#\($0)" } ?? "Tag")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+
+    private func outlinerNavigationDestination(uuid: String) -> some View {
+        primaryContent
+            .background(appBackground)
+            .navigationTitle(
+                store.snapshot.blocks.first(where: { $0.uuid == uuid })?.title
+                    ?? "Untitled block"
+            )
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+    }
+
+    private var navigationMainContent: some View {
+        mainContent
+            .platformSearchable(
+                enabled: searchPresented && !composerExpanded,
+                text: $searchText,
+                isPresented: $searchPresented,
+                prompt: "Search blocks"
+            )
+            .platformSearchFocused($searchFocused)
+            .onSubmit(of: .search) {
+                store.search(searchText)
+            }
+            .onChange(of: searchText) { oldQuery, query in
+                if !oldQuery.isEmpty && query.isEmpty {
+                    isRestoringSearchProjection = true
+                }
+                store.searchLocal(query)
+            }
+            .onChange(of: searchPresented) { _, presented in
+                handleSearchPresentationChanged(presented)
+            }
+            .platformRootNavigationChromeHidden()
+    }
+    #endif
+
+    private var sidebarContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Menu {
+                    ForEach(store.snapshot.graphs ?? []) { graph in
+                        Button {
+                            switchGraph(to: graph)
+                        } label: {
+                            Text(verbatim: graph.name)
+                        }
+                        .disabled(!graph.isReady)
+                    }
+                } label: {
+                    HStack {
+                        Text(verbatim: graphSubtitle)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(verbatim: "⌄")
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+                .accessibilityLabel("Switch graph")
+                .accessibilityIdentifier("button.graph-switch")
+                .padding(.bottom, 20)
+
+                ForEach(SidebarContentItem.allCases, id: \.rawValue) { item in
+                    sidebarItem(item)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            #if SKIP
+            .padding(.top, SidebarChromeMetrics.androidHeaderTopPadding)
+            #else
+            .padding(.top, SidebarChromeMetrics.iOSHeaderTopPadding)
+            #endif
+        }
+    }
+
+    @ViewBuilder private func sidebarItem(_ item: SidebarContentItem) -> some View {
+        switch item {
+        case .journals:
+            Button {
+                openJournals()
+            } label: {
+                HStack {
+                    Text(verbatim: item.title)
+                        .font(.body)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.001))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(item.accessibilityIdentifier)
+        case .graphs:
+            Button {
+                openGraphs()
+            } label: {
+                HStack {
+                    Text(verbatim: item.title)
+                        .font(.body)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.001))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(item.accessibilityIdentifier)
+        case .favorites:
+            sidebarSection(
+                title: item.title,
+                identifier: item.accessibilityIdentifier,
+                pages: store.snapshot.favorites
+            )
+        case .recent:
+            sidebarSection(
+                title: item.title,
+                identifier: item.accessibilityIdentifier,
+                pages: store.snapshot.recentPages
+            )
+        }
+    }
+
+    private func sidebarSection(
+        title: String,
+        identifier: String,
+        pages: [LogseqSidebarPage]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 4)
+            ForEach(pages) { page in
+                Button {
+                    openSidebarPage(page)
+                } label: {
+                    HStack {
+                        Text(verbatim: page.title)
+                            .font(.body)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.001))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("link.sidebar.page.\(page.uuid)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func switchGraph(to graph: LogseqGraph) {
+        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+              abs(sidebarMotion.dragOffset) == 0 else { return }
+        sidebarMotion.setPresented(false)
+        searchText = ""
+        if graph.id == store.snapshot.selectedGraphId {
+            store.clearSelectedPage()
+            return
+        }
+        selectedGraphID = graph.id
+        store.selectGraph(graph.id)
+    }
+
+    private func openSidebarPage(_ page: LogseqSidebarPage) {
+        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+              abs(sidebarMotion.dragOffset) == 0 else { return }
+        sidebarMotion.setPresented(false)
+        searchText = ""
+        store.selectPage(page.uuid)
+    }
+
+    private func openJournals() {
+        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+              abs(sidebarMotion.dragOffset) == 0 else { return }
+        sidebarMotion.setPresented(false)
+        searchText = ""
+        store.clearSelectedPage()
+    }
+
+    private func openGraphs() {
+        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+              abs(sidebarMotion.dragOffset) == 0 else { return }
+        sidebarMotion.setPresented(false)
+        #if SKIP
+        graphsPresented = true
+        #else
+        appNavigationPath.append(.graphs)
+        #endif
+    }
+
+    private func openManagedGraph(_ graph: LogseqGraph) {
+        #if SKIP
+        graphsPresented = false
+        #else
+        appNavigationPath = OutlinerNavigationPolicy.pathAfterBackButton(appNavigationPath)
+        #endif
+        searchText = ""
+        if graph.id == store.snapshot.selectedGraphId,
+           LogseqGraphLocalStorage.isDownloaded(databasePath: databasePath, graphID: graph.id) {
+            store.clearSelectedPage()
+            return
+        }
+        selectedGraphID = graph.id
+        store.selectGraph(graph.id)
+    }
+
+    private func deleteManagedGraph(_ graph: LogseqGraph) async throws {
+        let deletingSelectedGraph = graph.id == selectedGraphID || graph.id == store.snapshot.selectedGraphId
+        if deletingSelectedGraph {
+            await syncCoordinator.stopForeground()
+            await store.resetToCatalog()
+        }
+        try LogseqGraphLocalStorage.delete(databasePath: databasePath, graphID: graph.id)
+        guard deletingSelectedGraph else { return }
+        selectedGraphID = ""
+        let accessToken = try await authentication.accessToken()
+        await store.configureAndSelectGraph(
+            baseURL: baseURL,
+            token: accessToken,
+            selectedGraphID: nil
+        )
+    }
+
+    private var sidebarActivationAvailable: Bool {
+        SidebarDragPolicy.allowsActivation(
+            isPresented: false,
+            isEditingOutlinerBlock: outlinerEditing != nil,
+            hasOutlinerSelection: !outlinerSelectedBlockIDs.isEmpty,
+            hasPresentedNavigation: !appNavigationPath.isEmpty
+        )
     }
 
     @ViewBuilder private var mainContent: some View {
@@ -292,49 +866,109 @@ struct ContentView: View {
             }
         #else
         stackedContent
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if shouldShowExpandedComposer {
-                    floatingComposer
-                        .platformFloatingComposerInset()
-                }
-            }
         #endif
     }
 
-    private var stackedContent: some View {
+    @ViewBuilder private var stackedContent: some View {
+        #if os(iOS) && !SKIP
         ZStack(alignment: .top) {
-            blockList
+            primaryContent
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: SidebarChromeMetrics.headerHeight)
+                }
             header
+                .platformContinuousHeaderChrome()
         }
         .background(appBackground)
+        #else
+        ZStack(alignment: .top) {
+            primaryContent
+            header
+                .platformLegacyHeaderChrome()
+        }
+        .background(appBackground)
+        #endif
+    }
+
+    @ViewBuilder private var primaryContent: some View {
+        Group {
+            if presentedContentMode == .outliner {
+                OutlinerView(
+                    rows: store.snapshot.outlinerRows,
+                    sections: store.sections(for: LogseqContentMode.outliner),
+                    editing: outlinerEditing,
+                    selectedBlockIDs: outlinerSelectedBlockIDs,
+                    statuses: availableTaskStatuses,
+                    error: store.lastError,
+                    hasOlderJournals: store.snapshot.hasOlderJournals,
+                    topPadding: blockListContentTopPadding,
+                    bottomPadding: blockListContentBottomPadding,
+                    sendEvent: store.outlinerEvent,
+                    onBeginInteraction: {
+                        composerExpanded = false
+                        composerFocused = false
+                        editingBlock = nil
+                    },
+                    onOpenMarkupLink: openMarkupLink,
+                    onLoadOlderJournals: store.loadOlderJournals,
+                    relatedTitle: RelatedContentPolicy.sectionTitle(
+                        route: appNavigationPath.last,
+                        hasBlocks: !(store.snapshot.relatedBlocks ?? []).isEmpty
+                    ),
+                    relatedBlocks: store.snapshot.relatedBlocks ?? []
+                )
+            } else {
+                blockList
+            }
+        }
+    }
+
+    private func markupTargetTitle(uuid: String) -> String? {
+        for block in store.snapshot.blocks {
+            if let target = (block.references + block.tags).first(where: { $0.uuid == uuid }) {
+                return target.title
+            }
+        }
+        return nil
+    }
+
+    private func openMarkupLink(_ link: OutlinerMarkupLink) {
+        switch link {
+        case let .node(uuid, kind):
+            store.openNode(uuid)
+            appNavigationPath.append(.node(uuid, kind))
+        case let .tag(uuid):
+            store.loadTagObjects(uuid)
+            appNavigationPath.append(.tag(uuid))
+        }
     }
 
     private var shouldShowComposer: Bool {
         #if SKIP
-        return !searchExpanded
+        return store.snapshot.selectedPage == nil && !searchExpanded
         #else
-        return !searchPresented
-        #endif
-    }
-
-    private var shouldShowToolbarComposer: Bool {
-        #if SKIP
-        return false
-        #else
-        return shouldShowComposer && !composerExpanded
-        #endif
-    }
-
-    private var shouldShowSearchToolbarItem: Bool {
-        #if SKIP
-        return false
-        #else
-        return !composerExpanded
+        return store.snapshot.selectedPage == nil && !searchPresented
         #endif
     }
 
     private var shouldShowExpandedComposer: Bool {
         shouldShowComposer && composerExpanded
+    }
+
+    private var bottomChromePresentation: BottomChromePresentation {
+        #if SKIP
+        let isSearching = searchExpanded
+        #else
+        let isSearching = searchPresented
+        #endif
+        return BottomChromePolicy.presentation(
+            contentMode: presentedContentMode,
+            hasSelectedPage: store.snapshot.selectedPage != nil,
+            isSearching: isSearching,
+            composerExpanded: composerExpanded,
+            hasOutlinerSelection: !outlinerSelectedBlockIDs.isEmpty,
+            isEditingOutlinerBlock: outlinerEditing != nil
+        )
     }
 
     private var graphSubtitle: String {
@@ -345,6 +979,39 @@ struct ContentView: View {
         return graphID.isEmpty ? "Choose a graph" : graphID
     }
 
+    private var contentMode: LogseqContentMode {
+        get { LogseqContentMode(rawValue: contentModeRaw) ?? .chat }
+        nonmutating set { contentModeRaw = newValue.rawValue }
+    }
+
+    private var presentedContentMode: LogseqContentMode {
+        contentMode.presentationMode(
+            isSearching: store.snapshot.isSearching,
+            hasSelectedPage: store.snapshot.selectedPage != nil
+        )
+    }
+
+    private var outlinerEditing: LogseqOutlinerEditing? {
+        store.snapshot.outlinerState.editing
+    }
+
+    private var outlinerSelectedBlockIDs: Set<String> {
+        Set(store.snapshot.outlinerState.selectedBlockIds)
+    }
+
+    private var zoomedOutlinerBlock: LogseqBlock? {
+        guard presentedContentMode == .outliner,
+              let id = store.snapshot.outlinerState.zoomedBlockId else { return nil }
+        return store.snapshot.blocks.first(where: { $0.uuid == id })
+    }
+
+    private var deleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { !blocksPendingDeletion.isEmpty },
+            set: { if !$0 { blocksPendingDeletion = [] } }
+        )
+    }
+
     private var databasePath: String {
         LogseqChatRuntime.shared.databasePath
     }
@@ -353,11 +1020,10 @@ struct ContentView: View {
         #if !SKIP
         let graphID = store.snapshot.selectedGraphId ?? selectedGraphID
         guard !graphID.isEmpty else { return nil }
-        let directoryName = graphID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? graphID
-        let databaseURL = URL(fileURLWithPath: databasePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("graphs")
-            .appendingPathComponent(directoryName)
+        let databaseURL = LogseqGraphLocalStorage.directoryURL(
+            databasePath: databasePath,
+            graphID: graphID
+        )
             .appendingPathComponent("graph.sqlite")
         return FileManager.default.fileExists(atPath: databaseURL.path) ? databaseURL.path : nil
         #else
@@ -413,11 +1079,23 @@ struct ContentView: View {
     }
 
     @ViewBuilder private var authenticatedContent: some View {
-        if store.snapshot.selectedGraphId == nil {
+        if GraphLaunchPolicy.shouldShowPicker(
+            snapshotSelectedGraphID: store.snapshot.selectedGraphId,
+            persistedSelectedGraphID: selectedGraphID,
+            isGraphsPresented: graphsDestinationPresented
+        ) {
             graphPicker
         } else {
             appShell
         }
+    }
+
+    private var graphsDestinationPresented: Bool {
+        #if SKIP
+        graphsPresented
+        #else
+        AppNavigationPathPolicy.containsGraphs(appNavigationPath)
+        #endif
     }
 
     private func startGraphSync(_ graphID: String) {
@@ -505,23 +1183,73 @@ struct ContentView: View {
             #endif
         }
         .platformFloatingHeaderInset()
-        .platformHeaderChrome()
     }
 
     private var topBar: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(verbatim: graphSubtitle)
+            Button {
+                if zoomedOutlinerBlock != nil {
+                    #if SKIP
+                    store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
+                    #else
+                    let path = OutlinerNavigationPolicy.pathAfterBackButton(
+                        appNavigationPath
+                    )
+                    if path == appNavigationPath {
+                        store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
+                    } else {
+                        appNavigationPath = path
+                    }
+                    #endif
+                } else if sidebarActivationAvailable {
+                    sidebarMotion.setPresented(!sidebarMotion.isPresented)
+                }
+            } label: {
+                if zoomedOutlinerBlock != nil {
+                    OutlinerBackIcon()
+                        .stroke(style: StrokeStyle(lineWidth: 2.25, lineCap: .round, lineJoin: .round))
+                        .frame(width: 10, height: 18)
+                } else {
+                    SidebarMenuIcon()
+                }
+            }
+            .frame(
+                width: SidebarChromeMetrics.minimumHitTarget,
+                height: SidebarChromeMetrics.minimumHitTarget
+            )
+            .buttonStyle(.plain)
+            .disabled(zoomedOutlinerBlock == nil && !sidebarActivationAvailable)
+            .accessibilityLabel(zoomedOutlinerBlock == nil ? "Open sidebar" : "Back")
+            .accessibilityIdentifier(zoomedOutlinerBlock == nil ? "button.sidebar" : "button.outliner.zoom-out")
+            Text(verbatim: zoomedOutlinerBlock?.title ?? store.snapshot.selectedPage?.title ?? graphSubtitle)
                 .font(.subheadline)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
+            if !store.snapshot.isSearching,
+               LogseqContentMode.supportsModeSwitch(
+                   hasSelectedPage: store.snapshot.selectedPage != nil
+               ) {
+                Button {
+                    finishOutlinerEditing()
+                    composerExpanded = false
+                    composerFocused = false
+                    contentMode = contentMode.toggled
+                } label: {
+                    ContentModeIcon(mode: contentMode.toggled)
+                }
+                .frame(width: 44, height: 44)
+                .buttonStyle(.plain)
+                .accessibilityLabel(contentMode == .chat ? "Show outliner" : "Show chat")
+                .accessibilityIdentifier("button.content-mode")
+            }
             syncIndicatorControl
             settingsControl
         }
         .padding(.horizontal, 20)
         .padding(.top, 0)
-        .padding(.bottom, 8)
+        .padding(.bottom, SidebarChromeMetrics.headerBottomPadding)
     }
 
     private var hasUnconfirmedSyncChanges: Bool {
@@ -628,7 +1356,7 @@ struct ContentView: View {
                     if store.sections.isEmpty {
                         EmptyBlocksView()
                     } else {
-                        ForEach(store.sections) { section in
+                        ForEach(store.sections(for: LogseqContentMode.chat)) { section in
                             Text(verbatim: section.title)
                                 .font(.caption)
                                 .fontWeight(.semibold)
@@ -639,16 +1367,19 @@ struct ContentView: View {
                                 if block.kind == "asset" {
                                     BlockRow(
                                         block: block,
-                                        onOpenAsset: { openAsset(block) }
+                                        onOpenAsset: { openAsset(block) },
+                                        onDelete: { confirmDelete(block) }
                                     )
                                 } else {
                                     BlockRow(
                                         block: block,
                                         statuses: availableTaskStatuses,
                                         onEdit: { handleBlockTap(block) },
+                                        onOpenMarkupLink: openMarkupLink,
                                         onStatusChange: { status in
                                             store.updateStatus(block: block, status: status)
-                                        }
+                                        },
+                                        onDelete: { confirmDelete(block) }
                                     )
                                 }
                             }
@@ -664,9 +1395,18 @@ struct ContentView: View {
                 autoScrollOnFirstAppear(proxy)
             }
             .onChange(of: store.snapshot.blocks) { oldBlocks, newBlocks in
+                let restoringSearchProjection = isRestoringSearchProjection
+                if restoringSearchProjection {
+                    isRestoringSearchProjection = false
+                }
                 if !hasAutoScrolledInitially {
                     autoScrollOnFirstAppear(proxy)
-                } else if newBlocks.count > oldBlocks.count && store.snapshot.query.isEmpty {
+                } else if BlockListUpdatePolicy.shouldScrollToBottom(
+                    oldBlockIDs: Set(oldBlocks.map(\.uuid)),
+                    newBlockIDs: Set(newBlocks.map(\.uuid)),
+                    queryIsEmpty: store.snapshot.query.isEmpty,
+                    isRestoringSearchProjection: restoringSearchProjection
+                ) {
                     scrollToBottom(proxy)
                 }
             }
@@ -678,16 +1418,25 @@ struct ContentView: View {
         }
     }
 
+    private func confirmDelete(_ block: LogseqBlock) {
+        guard block.kind == "block" else { return }
+        blocksPendingDeletion = [block]
+    }
+
     private var blockListContentTopPadding: CGFloat {
         #if SKIP
         return searchExpanded ? 180.0 : 60.0
         #else
-        return 60.0
+        return 16.0
         #endif
     }
 
     private var blockListContentBottomPadding: CGFloat {
+        #if !SKIP && os(iOS)
+        MobileChromePolicy.minimumScrollableBottomClearance
+        #else
         72.0
+        #endif
     }
 
     private func handleBlockTap(_ block: LogseqBlock) {
@@ -696,6 +1445,58 @@ struct ContentView: View {
             return
         }
         editBlock(block)
+    }
+
+    private func finishOutlinerEditing(_ block: LogseqBlock? = nil) {
+        guard outlinerEditing != nil else { return }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "cancelEditing"))
+    }
+
+    private func performOutlinerPlatformCommands() {
+        for command in store.snapshot.outlinerCommands {
+            switch command.type {
+            case "haptic":
+                #if !SKIP && os(iOS)
+                if command.style == "selection" {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                } else {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+                #endif
+            case "confirmDelete":
+                let ids = Set(command.uuids ?? [])
+                blocksPendingDeletion = store.snapshot.blocks.filter { ids.contains($0.uuid) }
+                outlinerDeleteConfirmationPending = !blocksPendingDeletion.isEmpty
+            case "setClipboardText":
+                #if !SKIP && os(iOS)
+                UIPasteboard.general.string = command.text
+                #endif
+            case "setClipboardReferences":
+                #if !SKIP && os(iOS)
+                UIPasteboard.general.string = OutlinerClipboardPolicy.nodeReferences(
+                    command.uuids ?? []
+                )
+                #endif
+            case "setClipboardURLs":
+                #if !SKIP && os(iOS)
+                UIPasteboard.general.string = (command.uuids ?? []).map {
+                    "logseq://graph/\(graphSubtitle)?block-id=\($0)"
+                }.joined(separator: "\n")
+                #endif
+            case "pickAttachment":
+                fileImporterPresented = true
+            case "takePhoto":
+                #if !SKIP && os(iOS)
+                if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    cameraPresented = true
+                }
+                #endif
+            case "focusBlock":
+                break
+            default:
+                break
+            }
+        }
     }
 
     private func editBlock(_ block: LogseqBlock) {
@@ -723,9 +1524,7 @@ struct ContentView: View {
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         guard !store.snapshot.blocks.isEmpty else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
-            proxy.scrollTo(Self.blockListBottomID, anchor: .bottom)
-        }
+        proxy.scrollTo(Self.blockListBottomID, anchor: .bottom)
     }
 
     private func scrollToTop(_ proxy: ScrollViewProxy) {
@@ -741,12 +1540,6 @@ struct ContentView: View {
         hasAutoScrolledInitially = true
         scrollToBottom(proxy)
     }
-
-    #if !SKIP
-    private var bottomToolbarComposer: some View {
-        toolbarCollapsedComposer
-    }
-    #endif
 
     #if SKIP
     private var androidFloatingControls: some View {
@@ -776,6 +1569,78 @@ struct ContentView: View {
     }
     #endif
 
+    #if !SKIP && os(iOS)
+    @ViewBuilder private var iosBottomChrome: some View {
+        Group {
+            switch bottomChromePresentation {
+            case .outlinerSelection:
+                OutlinerSelectionToolbar(onAction: handleOutlinerSelectionToolbarAction)
+                    .platformGlassContainer()
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, MobileChromePolicy.bottomControlScreenEdgeInset)
+            case .outlinerEditor:
+                VStack(spacing: 0) {
+                    if !outlinerAutocompleteCandidates.isEmpty {
+                        OutlinerAutocompleteBar(
+                            candidates: outlinerAutocompleteCandidates,
+                            onSelect: completeOutlinerAutocomplete
+                        )
+                    }
+                    OutlinerEditorToolbar(onAction: handleOutlinerEditorToolbarAction)
+                }
+                    .platformGlassContainer()
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, MobileChromePolicy.bottomControlScreenEdgeInset)
+            case .expandedComposer:
+                composer
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    .padding(.bottom, MobileChromePolicy.bottomControlScreenEdgeInset)
+            case .captureAndSearch:
+                HStack(spacing: 10) {
+                    collapsedComposer
+                    Button(action: presentSearch) {
+                        IconImage(name: "search")
+                            .frame(width: 24, height: 24)
+                            .frame(width: 58, height: 58)
+                    }
+                    .buttonStyle(.plain)
+                    .platformGlassContainer()
+                    .platformRoundedHitTarget(cornerRadius: 30)
+                    .accessibilityLabel("Search")
+                    .accessibilityIdentifier("button.search")
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, MobileChromePolicy.bottomControlScreenEdgeInset)
+            case .hidden:
+                EmptyView()
+            }
+        }
+    }
+
+    private func handleOutlinerEditorToolbarAction(_ action: OutlinerToolbarAction) {
+        guard let eventValue = action.eventValue else { return }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: eventValue))
+    }
+
+    private func handleOutlinerSelectionToolbarAction(_ action: OutlinerToolbarAction) {
+        guard let eventValue = action.eventValue else { return }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: eventValue))
+    }
+
+    private var outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate] {
+        store.snapshot.outlinerAutocompleteCandidates
+    }
+
+    private func completeOutlinerAutocomplete(_ candidate: LogseqOutlinerAutocompleteCandidate) {
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "chooseAutocomplete",
+            value: candidate.value
+        ))
+    }
+    #endif
+
     private var floatingComposer: some View {
         composer
             .padding(.horizontal, 16)
@@ -791,23 +1656,6 @@ struct ContentView: View {
             }
         }
     }
-
-    #if !SKIP
-    private var toolbarCollapsedComposer: some View {
-        Button {
-            expandComposer()
-        } label: {
-            Text(verbatim: "Capture")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-                .padding(.horizontal, 30)
-                .platformRectangularHitTarget()
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("button.composer.expand")
-    }
-    #endif
 
     private var expandedComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1059,6 +1907,13 @@ struct ContentView: View {
         }
     }
 
+    #if !SKIP
+    private func presentSearch() {
+        searchPresented = true
+        focusSearch()
+    }
+    #endif
+
     private func expandSearch() {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
             searchExpanded = true
@@ -1123,16 +1978,7 @@ struct ContentView: View {
     }
 
     private var availableTaskStatuses: [LogseqTaskStatus] {
-        var result = LogseqTaskStatus.builtIn
-        var identities = Set(result.map { $0.ident ?? $0.uuid })
-        let remoteStatuses = store.snapshot.taskStatuses ?? []
-        for status in remoteStatuses + store.snapshot.blocks.compactMap(\.status) {
-            let identity = status.ident ?? status.uuid
-            if identities.insert(identity).inserted {
-                result.append(status)
-            }
-        }
-        return result
+        LogseqTaskStatus.availableChoices(catalog: store.snapshot.taskStatuses ?? [])
     }
 
     private var taskStatusMenuStatuses: [LogseqTaskStatus] {
@@ -1315,6 +2161,26 @@ private struct ConnectionSettingsView: View {
 }
 
 extension View {
+    @ViewBuilder public func platformSidebarSafeAreaPadding(
+        top: CGFloat,
+        bottom: CGFloat
+    ) -> some View {
+        #if !SKIP && os(iOS)
+        self.safeAreaPadding(.top, top)
+            .safeAreaPadding(.bottom, bottom)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder public func platformFullScreenSidebarShell() -> some View {
+        #if !SKIP && os(iOS)
+        self.ignoresSafeArea(.container)
+        #else
+        self
+        #endif
+    }
+
     @ViewBuilder public func platformGlassButtonStyle() -> some View {
         #if !SKIP
         if #available(iOS 26.0, macOS 26.0, *) {
@@ -1396,20 +2262,16 @@ extension View {
         isPresented: Binding<Bool>,
         prompt: String
     ) -> some View {
-        let presentation = Binding(
-            get: { enabled && isPresented.wrappedValue },
-            set: { value in
-                if enabled || !value {
-                    isPresented.wrappedValue = value
-                }
-            }
-        )
-        self.searchable(
-            text: text,
-            isPresented: presentation,
-            placement: .automatic,
-            prompt: Text(verbatim: prompt)
-        )
+        if enabled {
+            self.searchable(
+                text: text,
+                isPresented: isPresented,
+                placement: .automatic,
+                prompt: Text(verbatim: prompt)
+            )
+        } else {
+            self
+        }
     }
 
     @ViewBuilder public func platformRootNavigationChromeHidden() -> some View {
@@ -1418,51 +2280,6 @@ extension View {
             self.toolbarVisibility(.hidden, for: .navigationBar)
         } else {
             self.toolbar(.hidden, for: .navigationBar)
-        }
-        #else
-        self
-        #endif
-    }
-
-    @ViewBuilder public func platformBottomComposerWidth() -> some View {
-        #if os(iOS)
-        self.frame(
-            width: max(220.0, UIScreen.main.bounds.width - 112.0),
-            alignment: .leading
-        )
-        #else
-        self.frame(maxWidth: .infinity, alignment: .leading)
-        #endif
-    }
-
-    @ViewBuilder public func platformBottomComposerToolbar<Content: View>(
-        showsComposer: Bool,
-        showsSearch: Bool,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self.toolbar {
-                if showsComposer {
-                    ToolbarItem(placement: .bottomBar) {
-                        content()
-                    }
-                }
-                if showsSearch {
-                    ToolbarSpacer(.flexible, placement: .bottomBar)
-                    DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                }
-            }
-            .searchToolbarBehavior(.minimize)
-        } else {
-            self.toolbar {
-                ToolbarItemGroup(placement: .bottomBar) {
-                    if showsComposer {
-                        content()
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
         }
         #else
         self
@@ -1508,15 +2325,32 @@ extension View {
         #endif
     }
 
-    @ViewBuilder public func platformHeaderChrome() -> some View {
+    @ViewBuilder public func platformLegacyHeaderChrome() -> some View {
         #if !SKIP
-        self.background(.ultraThinMaterial)
+        self.background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea(edges: .top)
+        }
             .overlay(alignment: .bottom) {
                 Divider()
                     .opacity(0.2)
             }
         #else
         self
+        #endif
+    }
+
+    @ViewBuilder public func platformContinuousHeaderChrome() -> some View {
+        #if !SKIP && os(iOS)
+        self.background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .frame(height: SidebarChromeMetrics.headerHeight + 200)
+                .offset(y: -100)
+        }
+        #else
+        self.platformLegacyHeaderChrome()
         #endif
     }
 
@@ -1543,7 +2377,9 @@ private struct BlockRow: View {
     var statuses: [LogseqTaskStatus] = []
     var onOpenAsset: (() -> Void)? = nil
     var onEdit: (() -> Void)? = nil
+    var onOpenMarkupLink: ((OutlinerMarkupLink) -> Void)? = nil
     var onStatusChange: ((LogseqTaskStatus) -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1562,15 +2398,19 @@ private struct BlockRow: View {
                                         Text(verbatim: option.title)
                                     }
                                 }
+                                .accessibilityIdentifier(
+                                    "button.block-task-status-option.\(option.ident ?? option.uuid)"
+                                )
                             }
                         } label: {
                             TaskStatusIcon(status: status, size: 24)
                                 .frame(width: 24, height: 24)
                         }
                         .accessibilityLabel("Task status")
+                        .accessibilityIdentifier("button.block-task-status")
                         .platformIconMenuStyle()
                     }
-                    Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
+                    renderedTitle
                         .font(.body)
                         .fontWeight(.medium)
                         .foregroundStyle(.primary)
@@ -1578,21 +2418,13 @@ private struct BlockRow: View {
                         .padding(.top, 2)
                 }
             }
-            if !block.tags.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(block.tags) { tag in
-                        Text(verbatim: "#" + tag.title)
-                            .font(.caption)
-                            .foregroundStyle(.tint)
-                    }
-                }
-            }
-            if !block.references.isEmpty {
-                Text(verbatim: block.references.map { "[[\($0.title)]]" }.joined(separator: "  "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+            BlockTrailingTags(
+                tags: BlockTagPresentationPolicy.trailingTags(
+                    tags: block.tags,
+                    markup: block.markup
+                ),
+                onOpenTag: { onOpenMarkupLink?(.tag(uuid: $0)) }
+            )
             HStack(spacing: 6) {
                 Text(verbatim: block.timeTitle)
                     .font(.caption)
@@ -1612,6 +2444,57 @@ private struct BlockRow: View {
         .onTapGesture {
             onEdit?()
         }
+        .contextMenu {
+            Button("Delete", role: .destructive) {
+                onDelete?()
+            }
+        }
+    }
+
+    @ViewBuilder private var renderedTitle: some View {
+        #if !SKIP
+        Text(OutlinerMarkupAttributedString.make(
+            nodes: block.markup,
+            fallback: block.title.isEmpty ? "Untitled block" : block.title
+        ))
+        .environment(\.openURL, OpenURLAction { url in
+            guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
+            onOpenMarkupLink?(link)
+            return .handled
+        })
+        #else
+        Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
+        #endif
+    }
+}
+
+private struct ContentModeIcon: View {
+    let mode: LogseqContentMode
+
+    var body: some View {
+        Group {
+            if mode == .outliner {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        HStack(spacing: 4) {
+                            Circle().frame(width: 4, height: 4)
+                            Capsule().frame(width: 14, height: 2)
+                        }
+                    }
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(lineWidth: 1.8)
+                    .frame(width: 21, height: 17)
+                    .overlay {
+                        VStack(spacing: 3) {
+                            Capsule().frame(width: 12, height: 1.5)
+                            Capsule().frame(width: 9, height: 1.5)
+                        }
+                    }
+            }
+        }
+        .frame(width: 22, height: 22)
     }
 }
 
@@ -1707,7 +2590,7 @@ private struct AssetAudioPlayer: View {
 }
 #endif
 
-private struct TaskStatusIcon: View {
+struct TaskStatusIcon: View {
     let status: LogseqTaskStatus
     let size: CGFloat
 
@@ -1867,39 +2750,5 @@ private struct IconImage: View {
             .scaledToFit()
             .frame(width: size, height: size)
             .accessibilityHidden(true)
-    }
-}
-
-private struct ErrorBanner: View {
-    let error: LogseqChatCoreError
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: error.code)
-                .font(.headline)
-            Text(verbatim: error.message)
-                .font(.subheadline)
-        }
-        .foregroundStyle(Color(red: 0.48, green: 0.08, blue: 0.08))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Color(red: 1.0, green: 0.90, blue: 0.90))
-        .cornerRadius(16)
-    }
-}
-
-private struct EmptyBlocksView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: "No cached blocks")
-                .font(.headline)
-            Text(verbatim: "Connect to Logseq or add a local block to start.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(Color.white.opacity(0.65))
-        .cornerRadius(18)
     }
 }

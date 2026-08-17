@@ -4,6 +4,13 @@ module Checkpoint = Logseq_chat_sync_checkpoint
 
 let fail label message = failwith (label ^ ": " ^ message)
 
+let contains text needle =
+  try
+    ignore (Str.search_forward (Str.regexp_string needle) text 0);
+    true
+  with Not_found -> false
+;;
+
 let expect_ok label = function
   | Ok value -> value
   | Error message -> fail label message
@@ -19,12 +26,19 @@ let frame value =
   prefix ^ payload
 ;;
 
-let fixture_wire () =
+let fixture_wire ?(title = "Local title") () =
+  let schema =
+    Transit.Map
+      [ ( Transit.Keyword "block/title"
+        , Transit.Map
+            [ Transit.Keyword "db/valueType", Transit.Keyword "db.type/string" ] )
+      ]
+  in
   let root =
     Transit.Map
-      [ Transit.Keyword "schema", Transit.Map []
-      ; Transit.Keyword "max-eid", Transit.Int 0
-      ; Transit.Keyword "max-tx", Transit.Int 536870912
+      [ Transit.Keyword "schema", schema
+      ; Transit.Keyword "max-eid", Transit.Int 1
+      ; Transit.Keyword "max-tx", Transit.Int 536870913
       ; Transit.Keyword "eavt", Transit.Int 2
       ; Transit.Keyword "aevt", Transit.Int 3
       ; Transit.Keyword "avet", Transit.Int 4
@@ -33,7 +47,19 @@ let fixture_wire () =
       ; Transit.Keyword "ref-type", Transit.Keyword "soft"
       ]
   in
-  let leaf = Transit.Map [ Transit.Keyword "keys", Transit.Array [] ] in
+  let leaf =
+    Transit.Map
+      [ ( Transit.Keyword "keys"
+        , Transit.Array
+            [ Transit.Array
+                [ Transit.Int 1
+                ; Transit.Keyword "block/title"
+                ; Transit.String title
+                ; Transit.Int 536870913
+                ]
+            ] )
+      ]
+  in
   let row addr content =
     Transit.Array [ Transit.Int addr; Transit.String content; Transit.Null ]
   in
@@ -91,7 +117,8 @@ let () =
              ~active_path
              ~checkpoint_path
              ~metadata
-             ~download_path)
+             ~download_path
+             ())
       in
       if result.applied_server_t <> 48192
       then fail "import cursor" "baseline cursor changed";
@@ -111,6 +138,7 @@ let () =
            ~checkpoint_path
            ~metadata
            ~download_path
+           ()
        with
        | Error _ -> ()
        | Ok _ -> fail "corrupt snapshot" "invalid stream was activated");
@@ -138,6 +166,7 @@ let () =
         ; t = 48193
         ; upserts = []
         ; deleted = []
+        ; operation_ids = []
         }
       in
       expect_ok
@@ -148,4 +177,53 @@ let () =
       match expect_ok "event checkpoint" (Checkpoint.load checkpoint_path) with
       | Some checkpoint when checkpoint.applied_server_t = 48193 -> ()
       | _ -> fail "event checkpoint" "successful SSE event did not persist cursor")
+;;
+
+let () =
+  let active_path = Filename.temp_file "logseq-chat-encrypted-import" ".sqlite" in
+  let checkpoint_path = Filename.temp_file "logseq-chat-encrypted-import" ".checkpoint" in
+  let download_path = Filename.temp_file "logseq-chat-encrypted-import" ".snapshot" in
+  Sys.remove active_path;
+  Sys.remove checkpoint_path;
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun path -> if Sys.file_exists path then Sys.remove path)
+        [ active_path; active_path ^ ".import"; checkpoint_path; checkpoint_path ^ ".tmp"; download_path ])
+    (fun () ->
+      write_file download_path (fixture_wire ~title:"cipher:Private title" ());
+      let metadata : Session.snapshot_metadata =
+        { url = "https://sync.example/snapshot"
+        ; content_encoding = None
+        ; baseline_t = 9
+        ; schema_version = "65.33"
+        ; row_count = 5
+        }
+      in
+      let decrypt value =
+        if String.starts_with ~prefix:"cipher:" value
+        then Ok (String.sub value 7 (String.length value - 7))
+        else Error "expected encrypted snapshot title"
+      in
+      ignore
+        (expect_ok
+           "import encrypted snapshot as local plaintext"
+           (Session.import_snapshot_file
+              ~decrypt_protected:decrypt
+              ~graph_id:"encrypted-graph"
+              ~active_path
+              ~checkpoint_path
+              ~metadata
+              ~download_path
+              ()));
+      let db = expect_ok "restore local plaintext snapshot" (Logseq_chat_graph_store.restore_db ~path:active_path) in
+      (match Datascript.datoms db Datascript.Aevt ~a:"block/title" () |> List.of_seq with
+      | [ { Datascript.v = Datascript.String "Private title"; _ } ] -> ()
+      | _ -> fail "encrypted snapshot" "ciphertext was persisted in local DataScript");
+      Logseq_chat_graph_store.list_stored_addresses active_path
+      |> List.iter (fun addr ->
+        match expect_ok "read local snapshot row" (Logseq_chat_graph_store.read_row ~path:active_path ~addr) with
+        | Some (content, _) when contains content "cipher:Private title" ->
+          fail "encrypted snapshot" "obsolete ciphertext row remained in local SQLite"
+        | _ -> ()))
 ;;

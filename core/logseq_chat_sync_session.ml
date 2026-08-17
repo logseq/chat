@@ -59,12 +59,43 @@ let cleanup_staging active_path =
   | _ -> ()
 ;;
 
+let protected_attr attr =
+  String.equal attr "block/title" || String.equal attr "block/name"
+;;
+
+let plaintext_snapshot_db decrypt db =
+  let rec loop datoms = function
+    | [] -> Ok (Datascript.init_db ~schema:db.Datascript.schema (List.rev datoms))
+    | datom :: rest when protected_attr datom.Datascript.a ->
+      (match datom.v with
+       | Datascript.String ciphertext ->
+         bind (decrypt ciphertext) (fun plaintext ->
+           loop ({ datom with Datascript.v = Datascript.String plaintext } :: datoms) rest)
+       | _ -> Error ("protected snapshot attribute " ^ datom.a ^ " must be a string"))
+    | datom :: rest -> loop (datom :: datoms) rest
+  in
+  loop [] (Datascript.datoms db Datascript.Eavt () |> List.of_seq)
+;;
+
+let materialize_plaintext_snapshot ~active_path decrypt encrypted_db =
+  bind (plaintext_snapshot_db decrypt encrypted_db) (fun plaintext_db ->
+    try
+      let storage = Store.import_storage ~active_path in
+      Datascript.store ~storage plaintext_db;
+      Datascript.collect_garbage storage;
+      Ok ()
+    with
+    | error -> Error ("store local plaintext graph: " ^ Printexc.to_string error))
+;;
+
 let import_snapshot_file
+      ?decrypt_protected
       ~graph_id
       ~active_path
       ~checkpoint_path
       ~metadata
       ~download_path
+      ()
   =
   let parser = Snapshot.create_parser ~max_frame_bytes:(64 * 1024 * 1024) in
   let import =
@@ -94,10 +125,18 @@ let import_snapshot_file
       bind streamed (fun () ->
         bind (Snapshot.finish_parser parser) (fun () ->
           bind (Snapshot.finish_import import) (fun completed ->
-            bind
-              (Store.restore_db ~path:(Store.staging_path active_path))
-              (fun _validated_db ->
-                bind (Store.activate ~active_path) (fun () ->
+            bind (Store.restore_db ~path:(Store.staging_path active_path)) (fun imported_db ->
+              let materialized =
+                match decrypt_protected with
+                | None -> Ok ()
+                | Some decrypt ->
+                  materialize_plaintext_snapshot ~active_path decrypt imported_db
+              in
+              bind materialized (fun () ->
+                bind
+                  (Store.restore_db ~path:(Store.staging_path active_path))
+                  (fun _validated_db ->
+                    bind (Store.activate ~active_path) (fun () ->
                   let checkpoint =
                     Checkpoint.create
                       ~graph_id
@@ -105,7 +144,7 @@ let import_snapshot_file
                       ~applied_server_t:metadata.baseline_t
                   in
                   bind (Checkpoint.save_atomic checkpoint_path checkpoint) (fun () ->
-                    Ok completed)))))))
+                    Ok completed)))))))))
   in
   try
     match run () with
@@ -119,19 +158,27 @@ let import_snapshot_file
     Error ("import graph snapshot: " ^ Printexc.to_string error)
 ;;
 
-let apply_change_set ~conn ~checkpoint_path state change =
+let apply_change_set
+      ?(decrypt_protected = fun value -> Ok value)
+      ~conn
+      ~checkpoint_path
+      state
+      change
+  =
   Logseq_chat_sync_state.apply_change_set
     state
     change
     ~apply:(fun change ->
-      bind (Logseq_chat_entity_sync.apply_change_set conn change) (fun () ->
+      bind
+        (Logseq_chat_entity_sync.apply_change_set ~decrypt_protected conn change)
+        (fun () ->
         let checkpoint =
           Checkpoint.create
             ~graph_id:change.Logseq_chat_sync_protocol.graph_id
             ~schema_version:change.schema_version
             ~applied_server_t:change.t
         in
-        Checkpoint.save_atomic checkpoint_path checkpoint))
+          Checkpoint.save_atomic checkpoint_path checkpoint))
   |> Result.map_error (function
     | Logseq_chat_sync_state.Unsupported_format -> "unsupported sync format"
     | Graph_mismatch -> "sync graph mismatch"

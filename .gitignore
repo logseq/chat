@@ -30,6 +30,7 @@ default.profraw
 .swiftpm
 .build/
 _build/
+_coverage/
 build/
 DerivedData/
 xcuserdata/

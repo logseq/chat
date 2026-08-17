@@ -14,6 +14,7 @@ type change_set =
   ; t : int
   ; upserts : entity list
   ; deleted : Value.value list
+  ; operation_ids : string list
   }
 
 type reset =
@@ -99,6 +100,12 @@ let decode_list decode values =
   loop [] values
 ;;
 
+let optional_list key decode fields =
+  match map_value key fields with
+  | None -> Ok []
+  | Some value -> bind (as_array value) (decode_list decode)
+;;
+
 let decode_change_value value =
   bind (as_map value) (fun fields ->
     bind (required "format-version" as_int fields) (fun format_version ->
@@ -110,15 +117,17 @@ let decode_change_value value =
                 bind (decode_list decode_entity upsert_values) (fun upserts ->
                   bind (required "deleted" as_array fields) (fun deleted_values ->
                     bind (decode_list as_identity deleted_values) (fun deleted ->
-                      Ok
-                        { format_version
-                        ; graph_id
-                        ; schema_version
-                        ; t_before
-                        ; t
-                        ; upserts
-                        ; deleted
-                        }))))))))))
+                      bind (optional_list "operation-ids" as_string fields) (fun operation_ids ->
+                        Ok
+                          { format_version
+                          ; graph_id
+                          ; schema_version
+                          ; t_before
+                          ; t
+                          ; upserts
+                          ; deleted
+                          ; operation_ids
+                          })))))))))))
 ;;
 
 let protect decode wire =

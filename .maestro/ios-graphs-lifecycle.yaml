@@ -1,0 +1,45 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.graphs"
+- assertVisible:
+    id: "screen.graphs"
+- tapOn:
+    id: "button.graphs.refresh"
+- assertVisible: "Local graphs:"
+- tapOn:
+    id: "button.graph.delete.*"
+- tapOn: "Delete local graph"
+- assertVisible: "Delete local graph"
+- assertVisible: "Confirm"
+- tapOn:
+    point: "90%,80%"
+- assertNotVisible: "Confirm"
+- assertVisible:
+    id: "screen.graphs"
+- tapOn:
+    id: "button.graph.delete.*"
+- tapOn: "Delete local graph"
+- assertVisible: "Confirm"
+- tapOn: "Confirm"
+- extendedWaitUntil:
+    visible: "Remote graphs:"
+    timeout: 15000
+- tapOn:
+    text: "chat-local-e2e-.*"
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 60000
+- assertNotVisible:
+    id: "screen.graphs"

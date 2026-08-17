@@ -16,7 +16,7 @@ type graph_runtime =
   ; checkpoint_path : string
   ; graph_id : string
   ; e2ee : bool
-  ; projection : Logseq_chat_graph_read.projection
+  ; read_runtime : Logseq_chat_graph_runtime.t
   }
 
 let graph_runtime : graph_runtime option ref = ref None
@@ -35,13 +35,15 @@ let optional_bool fields name =
   | Some _ -> Error ("graph sync payload requires a boolean " ^ name)
 ;;
 
-let graph_projection ~graph_id ~e2ee conn =
+let graph_read_runtime ~graph_id ~active_path ~server_t ~e2ee conn =
   if e2ee
   then
-    Logseq_chat_graph_read.create_projection
-      ~decrypt_title:(E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
-      (Datascript.conn_db conn)
-  else Logseq_chat_graph_read.create_projection (Datascript.conn_db conn)
+    Logseq_chat_graph_runtime.create
+      ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring ~graph_id)
+      ~path:active_path
+      ~server_t
+      conn
+  else Logseq_chat_graph_runtime.create ~path:active_path ~server_t conn
 ;;
 
 let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
@@ -66,8 +68,15 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
       ~schema_version:checkpoint.schema_version
       ~applied_server_t:checkpoint.applied_server_t
   in
-  let projection = graph_projection ~graph_id ~e2ee conn in
-  graph_runtime := Some { conn; state; checkpoint_path; graph_id; e2ee; projection };
+  let read_runtime =
+    graph_read_runtime
+      ~graph_id
+      ~active_path
+      ~server_t:checkpoint.applied_server_t
+      ~e2ee
+      conn
+  in
+  graph_runtime := Some { conn; state; checkpoint_path; graph_id; e2ee; read_runtime };
   Ok ()
 ;;
 
@@ -102,11 +111,17 @@ let import_snapshot payload =
       let* metadata = Sync_session.decode_snapshot_metadata metadata_body in
       let* _ =
         Sync_session.import_snapshot_file
+          ?decrypt_protected:
+            (if e2ee
+             then
+               Some (E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
+             else None)
           ~graph_id
           ~active_path
           ~checkpoint_path
           ~metadata
           ~download_path
+          ()
       in
       open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee
     | _ -> Error "importSnapshot payload must be an object"
@@ -132,15 +147,23 @@ let feed_sse chunk =
              | Some runtime ->
                bind
                  (Sync_session.apply_change_set
+                    ?decrypt_protected:
+                      (if runtime.e2ee
+                       then
+                         Some
+                           (E2ee_keyring.decrypt_title
+                              e2ee_keyring
+                              ~graph_id:runtime.graph_id)
+                       else None)
                     ~conn:runtime.conn
                     ~checkpoint_path:runtime.checkpoint_path
                     runtime.state
                     change)
                  (fun () ->
-                   Logseq_chat_graph_read.update_projection
-                     runtime.projection
-                     (Datascript.conn_db runtime.conn)
-                     change;
+                   Logseq_chat_graph_runtime.rebase
+                     runtime.read_runtime
+                     ~server_t:change.t
+                     ~operation_ids:change.operation_ids;
                    apply_frames rest)))
   in
   apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
@@ -154,17 +177,82 @@ let sync_cursor () =
 
 let graph_blocks () =
   match !graph_runtime with
-  | Some runtime -> Some (Logseq_chat_graph_read.projection_blocks runtime.projection)
+  | Some runtime -> Some (Logseq_chat_graph_runtime.blocks runtime.read_runtime)
   | None -> None
+;;
+
+let graph_sidebar_pages () =
+  match !graph_runtime with
+  | Some runtime ->
+    Some (Logseq_chat_graph_runtime.sidebar_pages runtime.read_runtime)
+  | None -> None
+;;
+
+let graph_page_blocks page_uuid =
+  match !graph_runtime with
+  | Some runtime ->
+    Some (Logseq_chat_graph_runtime.blocks_for_page runtime.read_runtime page_uuid)
+  | None -> None
+;;
+
+let graph_node_destination uuid =
+  match !graph_runtime with
+  | Some runtime ->
+    Logseq_chat_graph_runtime.node_destination runtime.read_runtime uuid
+  | None -> None
+;;
+
+let graph_tag_objects uuid =
+  match !graph_runtime with
+  | Some runtime ->
+    Some (Logseq_chat_graph_runtime.objects_for_tag runtime.read_runtime uuid)
+  | None -> None
+;;
+
+let graph_node_references uuid =
+  match !graph_runtime with
+  | Some runtime ->
+    Some (Logseq_chat_graph_runtime.references_for_node runtime.read_runtime uuid)
+  | None -> None
+;;
+
+let load_older_journals () =
+  Option.iter
+    (fun runtime -> Logseq_chat_graph_runtime.load_older_journals runtime.read_runtime)
+    !graph_runtime
+;;
+
+let has_older_journals () =
+  Option.fold
+    ~none:false
+    ~some:(fun runtime ->
+      Logseq_chat_graph_runtime.has_older_journals runtime.read_runtime)
+    !graph_runtime
 ;;
 
 let journal_page_id ~journal_day =
   match !graph_runtime with
   | Some runtime ->
-    Logseq_chat_graph_read.journal_page_uuid
-      (Datascript.conn_db runtime.conn)
-      ~journal_day
+    Logseq_chat_graph_runtime.journal_page_uuid runtime.read_runtime ~journal_day
   | None -> None
+;;
+
+let stage_operation operation =
+  match !graph_runtime with
+  | None -> Error "graph runtime is not open"
+  | Some runtime -> Logseq_chat_graph_runtime.stage runtime.read_runtime operation
+;;
+
+let prepare_operation operation =
+  match !graph_runtime with
+  | None -> Error "graph runtime is not open"
+  | Some runtime -> Logseq_chat_graph_runtime.prepare_sync runtime.read_runtime operation
+;;
+
+let pending_operations () =
+  match !graph_runtime with
+  | None -> []
+  | Some runtime -> Logseq_chat_graph_runtime.pending_operations runtime.read_runtime
 ;;
 
 let read_file path =
@@ -226,6 +314,16 @@ let create_session ?storage ?catalog_session () =
     ~feed_sse
     ~sync_cursor
     ~graph_blocks
+    ~graph_sidebar_pages
+    ~graph_page_blocks
+    ~graph_node_destination
+    ~graph_node_references
+    ~graph_tag_objects
+    ~load_older_journals
+    ~has_older_journals
+    ~stage_operation
+    ~prepare_operation
+    ~pending_operations
     ~load_cached_graph_key:(fun ~graph_id ->
       Result.map
         (fun _key -> ())
@@ -252,6 +350,7 @@ let open_database request =
        (match assoc "path" params with
         | Some (`String path) ->
           Option.iter Logseq_chat_sqlite.close !sqlite_session;
+          graph_runtime := None;
           let opened = Logseq_chat_sqlite.open_session path in
           sqlite_session := Some opened;
           session :=

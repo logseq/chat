@@ -3,6 +3,9 @@ open Yojson.Basic
 module Model = Logseq_chat_model
 module Api = Logseq_chat_api
 module Http = Logseq_chat_http
+module Pending_ops = Logseq_chat_pending_ops
+module Outliner_state = Logseq_chat_outliner_state
+module Outliner_effects = Logseq_chat_outliner_effects
 
 type pending_transport =
   | Json_request of Api.request
@@ -34,17 +37,35 @@ type pending_sync =
   ; mutable active : pending_active option
   }
 
+type semantic_pending =
+  { operation : Pending_ops.t }
+
+type semantic_active =
+  { id : int
+  ; pending : semantic_pending
+  ; request : Api.request
+  }
+
 type t =
   { model : Model.t
   ; mutable config : Api.config option
   ; mutable available_graphs : Api.graph list
   ; mutable related_blocks : Model.block list
+  ; mutable selected_sidebar_page : Logseq_chat_graph_read.sidebar_page option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; start_sse : (unit -> unit) option
   ; feed_sse : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
   ; graph_blocks : (unit -> Model.block list option) option
+  ; graph_sidebar_pages : (unit -> Logseq_chat_graph_read.sidebar_pages option) option
+  ; graph_page_blocks : (string -> Model.block list option) option
+  ; graph_node_destination :
+      (string -> (Logseq_chat_graph_read.sidebar_page * bool) option) option
+  ; graph_node_references : (string -> Model.block list option) option
+  ; graph_tag_objects : (string -> Model.block list option) option
+  ; load_older_journals : (unit -> unit) option
+  ; has_older_journals : (unit -> bool) option
   ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
   ; unlock_graph : (Api.config -> password:string -> (unit, string) result) option
   ; graph_unlocked : (graph_id:string -> bool) option
@@ -57,6 +78,14 @@ type t =
   ; mutable sync_connected : bool
   ; mutable pending_sync : pending_sync option
   ; mutable next_pending_request_id : int
+  ; stage_operation : (Pending_ops.t -> (unit, string) result) option
+  ; prepare_operation : (Pending_ops.t -> (string * string, string) result) option
+  ; pending_operations : (unit -> Pending_ops.t list) option
+  ; mutable semantic_queue : semantic_pending list
+  ; mutable semantic_active : semantic_active option
+  ; mutable outliner_state : Outliner_state.t
+  ; mutable outliner_commands : Outliner_effects.platform_command list
+  ; mutable outliner_revision : int
   ; save_graph_catalog : (string -> unit) option
   }
 
@@ -101,6 +130,45 @@ let optional_int name fields =
   | Some (`Int value) -> Ok (Some value)
   | Some `Null | None -> Ok None
   | Some _ -> Error ("field must be an integer: " ^ name)
+;;
+
+let required_string_list name fields =
+  match assoc name fields with
+  | Some (`List values) ->
+    let rec loop result = function
+      | [] -> Ok (List.rev result)
+      | `String value :: rest when not (String.equal (String.trim value) "") ->
+        loop (value :: result) rest
+      | _ -> Error ("field must be a list of non-empty strings: " ^ name)
+    in
+    loop [] values
+  | _ -> Error ("field must be a list: " ^ name)
+;;
+
+let required_moves fields =
+  match assoc "moves" fields with
+  | Some (`List values) ->
+    let decode = function
+      | `Assoc move ->
+        (match required_string "uuid" move,
+               required_string "pageUuid" move,
+               required_string "parentUuid" move,
+               required_string "order" move with
+         | Ok uuid, Ok page_uuid, Ok parent_uuid, Ok order ->
+           Ok Pending_ops.{ uuid; page_uuid; parent_uuid; order }
+         | Error message, _, _, _ | _, Error message, _, _
+         | _, _, Error message, _ | _, _, _, Error message -> Error message)
+      | _ -> Error "moves must contain objects"
+    in
+    let rec loop result = function
+      | [] -> Ok (List.rev result)
+      | value :: rest ->
+        (match decode value with
+         | Ok move -> loop (move :: result) rest
+         | Error _ as error -> error)
+    in
+    loop [] values
+  | _ -> Error "field must be a list: moves"
 ;;
 
 let send_payload payload =
@@ -148,6 +216,12 @@ let status_response_json (status : Model.status) =
         | _ -> []))
 ;;
 
+let status_semantic_ref (status : Model.status) =
+  match status.ident with
+  | Some ident when not (String.equal (String.trim ident) "") -> Pending_ops.Ref_ident ident
+  | Some _ | None -> Pending_ops.Ref_uuid status.uuid
+;;
+
 let block_json (block : Model.block) =
   let summary_json (summary : Model.entity_summary) =
     `Assoc [ "uuid", `String summary.uuid; "kind", `String summary.kind; "title", `String summary.title ]
@@ -168,6 +242,12 @@ let block_json (block : Model.block) =
      ; "syncStatus", `String block.sync_status
      ; "tags", `List (List.map summary_json block.tags)
      ; "references", `List (List.map summary_json block.references)
+     ; ( "markup"
+       , Logseq_chat_markup.parse
+           ~references:block.references
+           ~tags:block.tags
+           block.title
+         |> Logseq_chat_markup.to_yojson )
      ]
      @ (match block.order with Some value -> [ "order", `String value ] | None -> [])
      @ status_fields
@@ -208,8 +288,20 @@ let graph_json (graph : Api.graph) =
     ]
 ;;
 
+let sidebar_page_json (page : Logseq_chat_graph_read.sidebar_page) =
+  `Assoc [ "uuid", `String page.uuid; "title", `String page.title ]
+;;
+
 let pending_request_json session =
-  let request_json id request file_path content_type =
+  let request_json id (request : Api.request) file_path content_type =
+    let body_fields =
+      match request.body with
+      | Some body ->
+        (match from_string body with
+         | json -> [ "body", `String body; "bodyObject", json ]
+         | exception _ -> [ "body", `String body ])
+      | None -> []
+    in
     `Assoc
       ([ "id", `Int id
        ; "method", `String request.Api.method_
@@ -217,16 +309,129 @@ let pending_request_json session =
        ; "token", `String request.token
        ; "contentType", `String content_type
        ]
-       @ (match request.body with Some body -> [ "body", `String body ] | None -> [])
+       @ body_fields
        @ (match file_path with Some path -> [ "filePath", `String path ] | None -> []))
   in
-  match session.pending_sync with
-  | Some { active = Some active; _ } ->
+  match session.semantic_active, session.pending_sync with
+  | Some active, _ ->
+    request_json active.id active.request None "application/json"
+  | None, Some { active = Some active; _ } ->
     (match active.transport with
      | Json_request request -> request_json active.id request None "application/json"
      | File_upload upload ->
        request_json active.id upload.request (Some upload.file_path) upload.content_type)
-  | Some _ | None -> `Null
+  | None, Some _ | None, None -> `Null
+;;
+
+let autocomplete_kind_json = function
+  | Outliner_state.Node -> "node"
+  | Tag -> "tag"
+  | Property -> "property"
+;;
+
+let outliner_context session =
+  let blocks =
+    match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
+    | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
+    | _, _, Some load -> Option.value (load ()) ~default:[]
+    | _ -> []
+  in
+  let pages =
+    match session.graph_sidebar_pages with
+    | None -> []
+    | Some load ->
+      let sidebar =
+        Option.value
+          (load ())
+          ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
+      in
+      sidebar.favorites @ sidebar.recent_pages
+      |> List.map (fun page ->
+        Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.title })
+  in
+  Outliner_state.{ blocks; pages }
+;;
+
+let outliner_state_json state =
+  `Assoc
+    [ ( "editing"
+      , match state.Outliner_state.editing with
+        | None -> `Null
+        | Some editing ->
+          `Assoc
+            [ "uuid", `String editing.uuid
+            ; "title", `String editing.title
+            ; "caretUTF16Offset", `Int editing.caret
+            ] )
+    ; "selectedBlockIds", `List (List.map (fun uuid -> `String uuid) (Outliner_state.selected_uuids state))
+    ; "collapsedBlockIds",
+      `List
+        (Outliner_state.String_set.elements state.collapsed
+         |> List.map (fun uuid -> `String uuid))
+    ; "zoomedBlockIds", `List (List.map (fun uuid -> `String uuid) state.zoomed)
+    ; ( "autocomplete"
+      , match state.autocomplete with
+        | None -> `Null
+        | Some autocomplete ->
+          `Assoc
+            [ "kind", `String (autocomplete_kind_json autocomplete.kind)
+            ; "query", `String autocomplete.query
+            ] )
+    ]
+;;
+
+let outliner_rows_json session context state =
+  Outliner_state.visible_rows context state
+  |> List.map (fun row ->
+    `Assoc
+      [ "block", visible_block_json session.model row.Outliner_state.block
+      ; "depth", `Int row.depth
+      ; "hasChildren", `Bool row.has_children
+      ; "isCollapsed", `Bool row.is_collapsed
+      ])
+  |> fun rows -> `List rows
+;;
+
+let outliner_candidates_json context state =
+  match state.Outliner_state.autocomplete with
+  | None -> `List []
+  | Some request ->
+    Outliner_state.autocomplete_candidates context request
+    |> List.map (fun candidate ->
+      `Assoc
+        [ "label", `String candidate.Outliner_state.label
+        ; "value", `String candidate.value
+        ])
+    |> fun candidates -> `List candidates
+;;
+
+let haptic_json = function Outliner_state.Selection -> "selection" | Impact -> "impact"
+
+let outliner_command_json = function
+  | Outliner_effects.Haptic haptic ->
+    `Assoc [ "type", `String "haptic"; "style", `String (haptic_json haptic) ]
+  | Focus_block uuid -> `Assoc [ "type", `String "focusBlock"; "uuid", `String uuid ]
+  | Confirm_delete uuids ->
+    `Assoc
+      [ "type", `String "confirmDelete"
+      ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
+      ]
+  | Set_clipboard_text text ->
+    `Assoc [ "type", `String "setClipboardText"; "text", `String text ]
+  | Set_clipboard_references uuids ->
+    `Assoc
+      [ "type", `String "setClipboardReferences"
+      ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
+      ]
+  | Set_clipboard_urls uuids ->
+    `Assoc
+      [ "type", `String "setClipboardURLs"
+      ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
+      ]
+  | Pick_attachment uuid ->
+    `Assoc [ "type", `String "pickAttachment"; "uuid", `String uuid ]
+  | Take_photo uuid ->
+    `Assoc [ "type", `String "takePhoto"; "uuid", `String uuid ]
 ;;
 
 let selected_graph session =
@@ -254,6 +459,10 @@ let selected_graph_is_unlocked session =
 ;;
 
 let snapshot session blocks =
+  let sidebar_pages =
+    Option.bind session.graph_sidebar_pages (fun load -> load ())
+    |> Option.value ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
+  in
   success
     (`Assoc
       [ "revision", `Int session.model.revision
@@ -277,6 +486,12 @@ let snapshot session blocks =
          | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
          | _ -> `Null)
       ; "graphs", `List (List.map graph_json session.available_graphs)
+      ; "favorites", `List (List.map sidebar_page_json sidebar_pages.favorites)
+      ; "recentPages", `List (List.map sidebar_page_json sidebar_pages.recent_pages)
+      ; "selectedPage",
+        (match session.selected_sidebar_page with
+         | Some page -> sidebar_page_json page
+         | None -> `Null)
       ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
       ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
       ; "appliedServerT",
@@ -287,11 +502,26 @@ let snapshot session blocks =
       ; "isSearching", `Bool (not (String.equal (String.trim session.model.query) ""))
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ; "pendingSyncRequest", pending_request_json session
+      ; "outlinerState", outliner_state_json session.outliner_state
+      ; "outlinerAutocompleteCandidates",
+        outliner_candidates_json (outliner_context session) session.outliner_state
+      ; "outlinerRows",
+        outliner_rows_json session (outliner_context session) session.outliner_state
+      ; "outlinerCommandRevision", `Int session.outliner_revision
+      ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
+      ; "hasPendingSemanticOperations",
+        `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
+      ; "hasOlderJournals",
+        `Bool (Option.fold ~none:false ~some:(fun read -> read ()) session.has_older_journals)
       ])
 ;;
 
 let snapshot_visible session =
   let blocks =
+    match session.selected_sidebar_page, session.graph_page_blocks with
+    | Some page, Some graph_page_blocks ->
+      Option.value (graph_page_blocks page.uuid) ~default:[]
+    | _ ->
     match session.graph_blocks with
     | Some graph_blocks ->
       (match graph_blocks () with
@@ -338,7 +568,9 @@ let snapshot_visible session =
   in
   let query = String.trim session.model.query |> String.lowercase_ascii in
   let blocks =
-    if String.equal query ""
+    if String.equal query "" && Option.is_some session.selected_sidebar_page
+    then blocks
+    else if String.equal query ""
     then Model.visible_from session.model blocks
     else
       List.filter
@@ -392,6 +624,16 @@ let create
       ?feed_sse
       ?sync_cursor
       ?graph_blocks
+      ?graph_sidebar_pages
+      ?graph_page_blocks
+      ?graph_node_destination
+      ?graph_node_references
+      ?graph_tag_objects
+      ?load_older_journals
+      ?has_older_journals
+      ?stage_operation
+      ?prepare_operation
+      ?pending_operations
       ?load_cached_graph_key
       ?unlock_graph
       ?graph_unlocked
@@ -417,12 +659,20 @@ let create
   ; config = None
   ; available_graphs
   ; related_blocks = []
+  ; selected_sidebar_page = None
   ; open_graph
   ; import_snapshot
   ; start_sse
   ; feed_sse
   ; sync_cursor
   ; graph_blocks
+  ; graph_sidebar_pages
+  ; graph_page_blocks
+  ; graph_node_destination
+  ; graph_node_references
+  ; graph_tag_objects
+  ; load_older_journals
+  ; has_older_journals
   ; load_cached_graph_key
   ; unlock_graph
   ; graph_unlocked
@@ -435,6 +685,14 @@ let create
   ; sync_connected = false
   ; pending_sync = None
   ; next_pending_request_id = 0
+  ; stage_operation
+  ; prepare_operation
+  ; pending_operations
+  ; semantic_queue = []
+  ; semantic_active = None
+  ; outliner_state = Outliner_state.empty
+  ; outliner_commands = []
+  ; outliner_revision = 0
   ; save_graph_catalog
   }
 ;;
@@ -772,10 +1030,69 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
   | _ -> Error "pending block has incomplete semantic REST metadata"
 ;;
 
+let activate_semantic_request session config =
+  match session.semantic_active, session.semantic_queue, session.prepare_operation with
+  | Some _, _, _ | None, [], _ -> ()
+  | None, pending :: rest, Some prepare ->
+    (match prepare pending.operation with
+     | Error message ->
+       debug
+         "semantic operation id=%s is waiting for authoritative dependencies: %s"
+         pending.operation.Pending_ops.operation_id
+         message
+     | Ok (outliner_op, tx) ->
+       let t_before =
+         Option.bind session.sync_cursor (fun cursor -> cursor ())
+         |> Option.value ~default:pending.operation.base_t
+       in
+       let request =
+         Api.tx_batch_request
+           config
+           ~t_before
+           ~tx_id:pending.operation.operation_id
+           ~outliner_op
+           ~tx
+       in
+       session.next_pending_request_id <- session.next_pending_request_id + 1;
+       session.semantic_queue <- rest;
+       session.semantic_active <-
+         Some { id = session.next_pending_request_id; pending; request })
+  | None, _ :: _, None -> ()
+;;
+
+let enqueue_semantic session _config operation =
+  match session.stage_operation, session.prepare_operation with
+  | None, _ | _, None -> Error "projected graph operations are unavailable"
+  | Some stage, Some _ ->
+    (match stage operation with
+     | Error _ as error -> error
+     | Ok () ->
+       session.semantic_queue <- session.semantic_queue @ [ { operation } ];
+       Ok ())
+;;
+
+let restore_semantic_queue session config =
+  match session.semantic_active, session.semantic_queue, session.pending_operations with
+  | None, [], Some pending_operations ->
+    pending_operations ()
+    |> List.iter (fun operation ->
+      match enqueue_semantic session config operation with
+      | Ok () -> ()
+      | Error message ->
+        debug
+          "could not restore semantic operation id=%s: %s"
+          operation.Pending_ops.operation_id
+          message)
+  | Some _, _, _ | None, _ :: _, _ | None, [], None -> ()
+;;
+
 let begin_pending_sync session config =
-  match session.pending_sync with
-  | Some _ -> ()
-  | None ->
+  restore_semantic_queue session config;
+  activate_semantic_request session config;
+  match session.semantic_active, session.pending_sync with
+  | Some _, _ -> ()
+  | None, Some _ -> ()
+  | None, None ->
     let authoritative = Hashtbl.create 64 in
     Option.iter
       (fun blocks ->
@@ -795,7 +1112,30 @@ let begin_pending_sync session config =
     prepare_pending_next session pump
 ;;
 
-let cleanup_pending_active session active =
+let finish_semantic_active session active ~succeeded ~accepted_t =
+  let state =
+    if not succeeded
+    then Pending_ops.Retryable
+    else
+      match accepted_t with
+      | Some accepted_t -> Pending_ops.Accepted accepted_t
+      | None -> Pending_ops.Submitted
+  in
+  Option.iter
+    (fun stage ->
+      ignore (stage { active.pending.operation with state }))
+    session.stage_operation;
+  session.semantic_active <- None;
+  let authoritative_caught_up =
+    match accepted_t, Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+    | Some accepted_t, Some current_t -> current_t >= accepted_t
+    | _ -> false
+  in
+  if succeeded && authoritative_caught_up
+  then Option.iter (activate_semantic_request session) session.config
+;;
+
+let cleanup_pending_active session (active : pending_active) =
   Option.iter session.cleanup_file active.cleanup_path
 ;;
 
@@ -809,7 +1149,7 @@ let finish_pending_block session pump block ~succeeded =
   prepare_pending_next session pump
 ;;
 
-let complete_pending_active session pump active response =
+let complete_pending_active session pump (active : pending_active) response =
   let succeeded = response.Api.status >= 200 && response.status < 300 in
   match active.operation with
   | Update_title block when succeeded ->
@@ -860,9 +1200,43 @@ let complete_pending_active session pump active response =
 
 let complete_pending_sync session payload =
   let invalid message = Error message in
-  match session.pending_sync with
-  | None -> invalid "pending sync is not active"
-  | Some pump ->
+  let parsed_completion expected_id =
+    match from_string payload with
+    | `Assoc fields ->
+      (match assoc "id" fields with
+       | Some (`Int id) when id = expected_id ->
+         (match assoc "error" fields, assoc "status" fields with
+          | Some (`String message), _ when not (String.equal message "") -> Ok (false, None)
+          | _, Some (`Int status) ->
+            let accepted_t =
+              match assoc "body" fields with
+              | Some (`String body) ->
+                (try
+                   match from_string body with
+                   | `Assoc body_fields ->
+                     (match assoc "acceptedT" body_fields, assoc "t" body_fields with
+                      | Some (`Int accepted_t), _ | _, Some (`Int accepted_t) -> Some accepted_t
+                      | _ -> None)
+                   | _ -> None
+                 with _ -> None)
+              | _ -> None
+            in
+            Ok (status >= 200 && status < 300, accepted_t)
+          | _ -> invalid "pending transport returned no HTTP status")
+       | Some (`Int _) -> invalid "pending sync request id does not match"
+       | _ -> invalid "pending sync completion requires id")
+    | _ -> invalid "pending sync completion must be an object"
+  in
+  match session.semantic_active, session.pending_sync with
+  | Some active, _ ->
+    (try
+       Result.map
+         (fun (succeeded, accepted_t) ->
+           finish_semantic_active session active ~succeeded ~accepted_t)
+         (parsed_completion active.id)
+     with error -> invalid ("invalid pending sync completion: " ^ Printexc.to_string error))
+  | None, None -> invalid "pending sync is not active"
+  | None, Some pump ->
     (match pump.active with
      | None -> invalid "pending sync has no active request"
      | Some active ->
@@ -898,6 +1272,11 @@ let complete_pending_sync session payload =
 ;;
 
 let cancel_pending_sync session =
+  (match session.semantic_active with
+   | Some active ->
+     session.semantic_queue <- active.pending :: session.semantic_queue;
+     session.semantic_active <- None
+   | None -> ());
   Option.iter
     (fun pump -> Option.iter (cleanup_pending_active session) pump.active)
     session.pending_sync;
@@ -919,8 +1298,167 @@ let load_related session request key =
     snapshot_visible session
 ;;
 
+let fresh_squuid () =
+  match Datascript.squuid () with
+  | Datascript.Uuid uuid -> uuid
+  | _ -> failwith "Datascript.squuid returned a non-UUID value"
+;;
+
+let reset_outliner session =
+  session.outliner_state <- Outliner_state.empty;
+  session.outliner_commands <- [];
+  session.outliner_revision <- session.outliner_revision + 1
+;;
+
+let toolbar_action = function
+  | "task" -> Ok Outliner_state.Task
+  | "outdent" -> Ok Outdent
+  | "indent" -> Ok Indent
+  | "tag" -> Ok Tag_action
+  | "pageReference" -> Ok Page_reference
+  | "camera" -> Ok Camera
+  | "attachment" -> Ok Attachment
+  | "hideKeyboard" -> Ok Hide_keyboard
+  | "copy" -> Ok Copy
+  | "delete" -> Ok Delete
+  | "copyReference" -> Ok Copy_reference
+  | "copyURL" -> Ok Copy_url
+  | "unselect" -> Ok Unselect
+  | _ -> Error "unknown outliner toolbar action"
+;;
+
+let outliner_message payload =
+  let int fields name =
+    match List.assoc_opt name fields with
+    | Some (`Int value) -> Ok value
+    | _ -> Error ("missing integer outliner event field: " ^ name)
+  in
+  match from_string payload with
+  | `Assoc fields ->
+    (match required_string "type" fields with
+     | Error _ as error -> error
+     | Ok "tapBlock" -> Result.map (fun uuid -> Outliner_state.Tap_block uuid) (required_string "uuid" fields)
+     | Ok "longPressBlock" ->
+       Result.map (fun uuid -> Outliner_state.Long_press_block uuid) (required_string "uuid" fields)
+     | Ok "textChanged" ->
+       (match required_string "title" fields, int fields "caretUTF16Offset" with
+        | Ok title, Ok caret -> Ok (Outliner_state.Text_changed { title; caret })
+        | Error message, _ | _, Error message -> Error message)
+     | Ok "caretMoved" -> Result.map (fun caret -> Outliner_state.Caret_moved caret) (int fields "caretUTF16Offset")
+     | Ok "returnPressed" ->
+       (match List.assoc_opt "title" fields, List.assoc_opt "caretUTF16Offset" fields with
+        | Some (`String title), Some (`Int caret) ->
+          Ok (Outliner_state.Return_pressed_with_text { title; caret })
+        | None, None -> Ok Outliner_state.Return_pressed
+        | _ -> Error "returnPressed requires both title and caretUTF16Offset")
+     | Ok "backspacePressed" ->
+       Result.bind (int fields "selectionLength") (fun selection_length ->
+         match List.assoc_opt "title" fields with
+         | Some (`String title) ->
+           Ok (Outliner_state.Backspace_pressed_with_text { title; selection_length })
+         | None -> Ok (Outliner_state.Backspace_pressed { selection_length })
+         | _ -> Error "backspacePressed title must be a string")
+     | Ok "toolbar" ->
+       Result.bind (required_string "action" fields) (fun action ->
+         Result.map (fun action -> Outliner_state.Toolbar action) (toolbar_action action))
+     | Ok "dropBlocks" ->
+       (match required_string "targetUuid" fields, required_string "placement" fields with
+        | Ok target_uuid, Ok placement ->
+          let placement =
+            match placement with
+            | "before" -> Ok Outliner_state.Before
+            | "inside" -> Ok Inside
+            | "after" -> Ok After
+            | _ -> Error "unknown outliner drop placement"
+          in
+          Result.map
+            (fun placement -> Outliner_state.Drop_blocks { target_uuid; placement })
+            placement
+        | Error message, _ | _, Error message -> Error message)
+     | Ok "chooseAutocomplete" ->
+       Result.map
+         (fun value -> Outliner_state.Choose_autocomplete value)
+         (required_string "value" fields)
+     | Ok "confirmDelete" -> Ok Outliner_state.Confirm_delete
+     | Ok "cancelEditing" -> Ok Outliner_state.Cancel_editing
+     | Ok "toggleCollapsed" ->
+       Result.map
+         (fun uuid -> Outliner_state.Toggle_collapsed uuid)
+         (required_string "uuid" fields)
+     | Ok "zoomIn" ->
+       Result.map (fun uuid -> Outliner_state.Zoom_in uuid) (required_string "uuid" fields)
+     | Ok "zoomOut" -> Ok Outliner_state.Zoom_out
+     | Ok "setTaskStatus" ->
+       (match required_string "uuid" fields,
+              optional_string "statusIdent" fields,
+              optional_string "statusUuid" fields with
+        | Ok uuid, Ok (Some ident), _ ->
+          Ok (Outliner_state.Set_task_status { uuid; status = Ref_ident ident })
+        | Ok uuid, Ok None, Ok (Some status_uuid) ->
+          Ok (Outliner_state.Set_task_status { uuid; status = Ref_uuid status_uuid })
+        | Ok _, Ok None, Ok None -> Error "setTaskStatus requires a status reference"
+        | Error message, _, _ | _, Error message, _ | _, _, Error message -> Error message)
+     | Ok _ -> Error "unknown outliner event type")
+  | _ -> Error "outliner event must be an object"
+  | exception _ -> Error "outliner event must be valid JSON"
+;;
+
+let dispatch_outliner_event session payload =
+  match outliner_message payload with
+  | Error message -> failure ~code:"invalid_outliner_event" ~message
+  | Ok message ->
+    let context = outliner_context session in
+    let next_state, commands = Outliner_state.update context session.outliner_state message in
+    let base_t = Option.bind session.sync_cursor (fun cursor -> cursor ()) |> Option.value ~default:(-1) in
+    (match
+       Outliner_effects.interpret
+         ~base_t
+         ~now:now_ms
+         ~fresh_uuid:fresh_squuid
+         context
+         commands
+     with
+     | Error message -> failure ~code:"outliner_command_failed" ~message
+     | Ok interpreted ->
+       let enqueue_result =
+         match interpreted.operations, session.config, base_t with
+         | [], _, _ -> Ok ()
+         | _, None, _ -> Error "Select a graph before editing"
+         | _, _, -1 -> Error "A current server cursor is required"
+         | operations, Some config, _ ->
+           List.fold_left
+             (fun result operation ->
+               Result.bind result (fun () -> enqueue_semantic session config operation))
+             (Ok ())
+             operations
+       in
+       (match enqueue_result with
+       | Error message -> failure ~code:"outliner_effect_failed" ~message
+       | Ok () ->
+          let projected_context = outliner_context session in
+          let next_state =
+            List.fold_left
+              (fun state operation ->
+                fst
+                  (Outliner_state.update
+                     projected_context
+                     state
+                     (Operation_staged operation.Pending_ops.intent)))
+              next_state
+              interpreted.operations
+          in
+          session.outliner_state <- next_state;
+          session.outliner_commands <- interpreted.platform;
+          session.outliner_revision <- session.outliner_revision + 1;
+          snapshot_visible session))
+;;
+
 let dispatch session action payload =
   match action with
+  | "outlinerEvent" ->
+    (match payload with
+     | Some payload -> dispatch_outliner_event session payload
+     | None -> failure ~code:"invalid_params" ~message:"outlinerEvent requires a JSON payload")
   | "configure" ->
     (match payload with
      | None -> failure ~code:"invalid_params" ~message:"configure requires a JSON payload"
@@ -997,6 +1535,8 @@ let dispatch session action payload =
         | Some graph when not graph.ready ->
           failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
         | Some graph ->
+          session.selected_sidebar_page <- None;
+          reset_outliner session;
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
           if graph.e2ee
           then
@@ -1005,6 +1545,51 @@ let dispatch session action payload =
               session.load_cached_graph_key;
           snapshot_visible session)
      | _ -> failure ~code:"invalid_params" ~message:"selectGraph requires a graph id")
+  | "selectPage" ->
+    (match payload, Option.bind session.graph_sidebar_pages (fun load -> load ()) with
+     | Some uuid, Some pages ->
+       let all_pages = pages.favorites @ pages.recent_pages in
+       (match List.find_opt (fun page -> String.equal page.Logseq_chat_graph_read.uuid uuid) all_pages with
+        | Some page ->
+          session.selected_sidebar_page <- Some page;
+          reset_outliner session;
+          ignore (Model.search session.model "");
+          snapshot_visible session
+        | None -> failure ~code:"unknown_page" ~message:"The selected page is not available")
+     | _ -> failure ~code:"invalid_params" ~message:"selectPage requires a page id")
+  | "openNode" ->
+    (match payload, session.graph_node_destination with
+     | Some uuid, Some resolve ->
+       (match resolve uuid with
+        | Some (page, zoom_to_block) ->
+          session.selected_sidebar_page <- Some page;
+          session.related_blocks <-
+            Option.bind session.graph_node_references (fun load -> load uuid)
+            |> Option.value ~default:[];
+          reset_outliner session;
+          ignore (Model.search session.model "");
+          if zoom_to_block
+          then (
+            let state, _commands =
+              Outliner_state.update
+                (outliner_context session)
+                session.outliner_state
+                (Outliner_state.Zoom_in uuid)
+            in
+            session.outliner_state <- state;
+            session.outliner_commands <- [ Outliner_effects.Haptic Outliner_state.Selection ];
+            session.outliner_revision <- session.outliner_revision + 1);
+          snapshot_visible session
+        | None -> failure ~code:"unknown_node" ~message:"The referenced node is not available")
+     | _ -> failure ~code:"invalid_params" ~message:"openNode requires a node id")
+  | "clearSelectedPage" ->
+    session.selected_sidebar_page <- None;
+    reset_outliner session;
+    ignore (Model.search session.model "");
+    snapshot_visible session
+  | "loadOlderJournals" ->
+    Option.iter (fun load -> load ()) session.load_older_journals;
+    snapshot_visible session
   | "unlockGraph" ->
     (match session.config, session.unlock_graph, payload with
      | Some config, Some unlock_graph, Some password when selected_graph_is_encrypted session ->
@@ -1155,12 +1740,19 @@ let dispatch session action payload =
         | Error _ -> snapshot_visible session)
      | _ -> snapshot_visible session)
   | "loadTagObjects" ->
-    (match session.config, payload with
-     | Some config, Some uuid ->
-       (match resolve_graph session config with
-        | Ok config -> load_related session (Api.tag_objects_request config uuid) "objects"
-        | Error _ -> snapshot_visible session)
-     | _ -> snapshot_visible session)
+    (match payload, session.graph_tag_objects with
+     | Some uuid, Some load ->
+       session.related_blocks <- Option.value (load uuid) ~default:[];
+       snapshot_visible session
+     | _, Some _ -> snapshot_visible session
+     | Some uuid, None ->
+       (match session.config with
+        | Some config ->
+          (match resolve_graph session config with
+           | Ok config -> load_related session (Api.tag_objects_request config uuid) "objects"
+           | Error _ -> snapshot_visible session)
+        | None -> snapshot_visible session)
+     | None, None -> snapshot_visible session)
   | "clearRelated" ->
     session.related_blocks <- [];
     snapshot_visible session
@@ -1170,14 +1762,56 @@ let dispatch session action payload =
      | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
-          (match required_string "uuid" fields, status_payload fields with
-           | Ok uuid, Ok status ->
-             (match Model.update_block_status session.model ~uuid ~status ~now:(now_ms ()) with
-             | Error message -> failure ~code:"unknown_block" ~message
-             | Ok () ->
-                snapshot_visible session)
-           | Error message, _ | _, Error message ->
-             failure ~code:"invalid_params" ~message)
+          (match session.stage_operation with
+           | Some _ ->
+             (match required_string "uuid" fields,
+                    required_string "operationId" fields,
+                    optional_string "expectedStatusUuid" fields,
+                    optional_string "expectedStatusIdent" fields,
+                    status_payload fields,
+                    session.config,
+                    Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+              | Ok uuid, Ok operation_id, Ok expected_status_uuid, Ok expected_status_ident, Ok status,
+                Some config, Some base_t ->
+                let expected =
+                  match expected_status_ident, expected_status_uuid with
+                  | Some ident, _ -> Some (Pending_ops.Ref_ident ident)
+                  | None, Some uuid -> Some (Pending_ops.Ref_uuid uuid)
+                  | None, None -> None
+                in
+                let operation =
+                  Pending_ops.
+                    { operation_id
+                    ; base_t
+                    ; state = Queued
+                    ; intent =
+                        Set_property
+                          { uuid
+                          ; attr = "logseq.property/status"
+                          ; expected
+                          ; value = Some (status_semantic_ref status)
+                          }
+                    }
+                in
+                (match enqueue_semantic session config operation with
+                 | Ok () -> snapshot_visible session
+                 | Error message -> failure ~code:"stage_operation_failed" ~message)
+              | Error message, _, _, _, _, _, _ | _, Error message, _, _, _, _, _
+              | _, _, Error message, _, _, _, _ | _, _, _, Error message, _, _, _
+              | _, _, _, _, Error message, _, _ ->
+                failure ~code:"invalid_params" ~message
+              | _, _, _, _, _, _, None ->
+                failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+              | _, _, _, _, _, None, _ ->
+                failure ~code:"graph_not_configured" ~message:"Select a graph before editing")
+           | None ->
+             (match required_string "uuid" fields, status_payload fields with
+              | Ok uuid, Ok status ->
+                (match Model.update_block_status session.model ~uuid ~status ~now:(now_ms ()) with
+                 | Error message -> failure ~code:"unknown_block" ~message
+                 | Ok () -> snapshot_visible session)
+              | Error message, _ | _, Error message ->
+                failure ~code:"invalid_params" ~message))
         | _ -> failure ~code:"invalid_params" ~message:"updateBlockStatus payload must be an object"
         | exception _ ->
           failure ~code:"invalid_json" ~message:"updateBlockStatus payload must be valid JSON"))
@@ -1187,12 +1821,45 @@ let dispatch session action payload =
      | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
-          (match
-             required_string "uuid" fields,
-             required_string "title" fields,
-             optional_status_payload fields
-           with
-           | Ok uuid, Ok title, Ok status ->
+          (match session.stage_operation with
+           | Some _ ->
+             (match required_string "uuid" fields,
+                    required_string "operationId" fields,
+                    required_string "expectedTitle" fields,
+                    required_string "title" fields,
+                    session.config,
+                    Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+              | Ok uuid, Ok operation_id, Ok expected_title, Ok title,
+                Some config, Some base_t ->
+                let title = String.trim title in
+                if String.equal title ""
+                then failure ~code:"invalid_params" ~message:"updateBlock title must not be empty"
+                else
+                  let operation =
+                    Pending_ops.
+                      { operation_id
+                      ; base_t
+                      ; state = Queued
+                      ; intent = Save_title { uuid; expected_title; title }
+                      }
+                  in
+                  (match enqueue_semantic session config operation with
+                   | Ok () -> snapshot_visible session
+                   | Error message -> failure ~code:"stage_operation_failed" ~message)
+              | Error message, _, _, _, _, _ | _, Error message, _, _, _, _
+              | _, _, Error message, _, _, _ | _, _, _, Error message, _, _ ->
+                failure ~code:"invalid_params" ~message
+              | _, _, _, _, _, None ->
+                failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+              | _, _, _, _, None, _ ->
+                failure ~code:"graph_not_configured" ~message:"Select a graph before editing")
+           | None ->
+             (match
+                required_string "uuid" fields,
+                required_string "title" fields,
+                optional_status_payload fields
+              with
+              | Ok uuid, Ok title, Ok status ->
              let title = String.trim title in
              if String.equal title ""
              then failure ~code:"invalid_params" ~message:"updateBlock title must not be empty"
@@ -1207,10 +1874,244 @@ let dispatch session action payload =
                    status;
                  snapshot_visible session
                | Error message -> failure ~code:"unknown_block" ~message)
-           | Error message, _, _ | _, Error message, _ | _, _, Error message ->
-             failure ~code:"invalid_params" ~message)
+              | Error message, _, _ | _, Error message, _ | _, _, Error message ->
+                failure ~code:"invalid_params" ~message))
         | _ -> failure ~code:"invalid_params" ~message:"updateBlock payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"updateBlock payload must be valid JSON"))
+  | "splitBlock" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields,
+                 required_string "operationId" fields,
+                 optional_int "expectedServerT" fields,
+                 required_string "expectedTitle" fields,
+                 required_string "before" fields,
+                 required_string "after" fields,
+                 required_string "newUuid" fields,
+                 required_string "newOrder" fields,
+                 optional_int "createdAt" fields,
+                 session.config,
+                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+           | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Ok expected_title,
+             Ok before, Ok after, Ok new_uuid, Ok new_order, Ok (Some created_at),
+             Some config, Some current_t
+             when expected_server_t = current_t ->
+             if String.equal uuid new_uuid
+                || String.equal (String.trim new_uuid) ""
+                || String.equal (String.trim new_order) ""
+             then failure ~code:"invalid_params" ~message:"Invalid split block fragments or identity"
+             else
+               let operation =
+                 Pending_ops.
+                   { operation_id
+                   ; base_t = current_t
+                   ; state = Queued
+                   ; intent =
+                       Split_block
+                         { uuid; expected_title; before; after; new_uuid; new_order; created_at }
+                   }
+               in
+               (match enqueue_semantic session config operation with
+                | Ok () -> snapshot_visible session
+                | Error message -> failure ~code:"stage_operation_failed" ~message)
+           | Error message, _, _, _, _, _, _, _, _, _, _
+           | _, Error message, _, _, _, _, _, _, _, _, _
+           | _, _, Error message, _, _, _, _, _, _, _, _
+           | _, _, _, Error message, _, _, _, _, _, _, _
+           | _, _, _, _, Error message, _, _, _, _, _, _
+           | _, _, _, _, _, Error message, _, _, _, _, _
+           | _, _, _, _, _, _, Error message, _, _, _, _
+           | _, _, _, _, _, _, _, Error message, _, _, _
+           | _, _, _, _, _, _, _, _, Error message, _, _ ->
+             failure ~code:"invalid_params" ~message
+           | _, _, Ok None, _, _, _, _, _, _, _, _
+           | _, _, _, _, _, _, _, _, Ok None, _, _ ->
+             failure ~code:"invalid_params" ~message:"splitBlock requires integer cursor and timestamp"
+           | _, _, _, _, _, _, _, _, _, None, _ ->
+             failure ~code:"graph_not_configured" ~message:"Select a graph before splitting"
+           | _, _, _, _, _, _, _, _, _, _, None ->
+             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+           | _, _, Ok (Some _), _, _, _, _, _, Ok (Some _), Some _, Some _ ->
+             failure ~code:"stale_server_cursor" ~message:"The graph changed before split")
+        | _ -> failure ~code:"invalid_params" ~message:"splitBlock payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"splitBlock payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"splitBlock requires a JSON payload")
+  | "mergeBackward" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields,
+                 required_string "operationId" fields,
+                 optional_int "expectedServerT" fields,
+                 required_string "expectedTitle" fields,
+                 required_string "title" fields,
+                 required_string "previousUuid" fields,
+                 required_string "expectedPreviousTitle" fields,
+                 session.config,
+                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+           | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Ok expected_title,
+             Ok title, Ok previous_uuid, Ok expected_previous_title, Some config, Some current_t
+             when expected_server_t = current_t ->
+             if String.equal uuid previous_uuid
+             then failure ~code:"invalid_params" ~message:"merge source and target must differ"
+             else
+               let operation =
+                 Pending_ops.
+                   { operation_id
+                   ; base_t = current_t
+                   ; state = Queued
+                   ; intent =
+                       Merge_backward
+                         { uuid
+                         ; expected_title
+                         ; title
+                         ; previous_uuid
+                         ; expected_previous_title
+                         ; merged_title = None
+                         }
+                   }
+               in
+               (match enqueue_semantic session config operation with
+                | Ok () -> snapshot_visible session
+                | Error message -> failure ~code:"stage_operation_failed" ~message)
+           | Error message, _, _, _, _, _, _, _, _
+           | _, Error message, _, _, _, _, _, _, _
+           | _, _, Error message, _, _, _, _, _, _
+           | _, _, _, Error message, _, _, _, _, _
+           | _, _, _, _, Error message, _, _, _, _
+           | _, _, _, _, _, Error message, _, _, _
+           | _, _, _, _, _, _, Error message, _, _ ->
+             failure ~code:"invalid_params" ~message
+           | _, _, Ok None, _, _, _, _, _, _ ->
+             failure ~code:"invalid_params" ~message:"mergeBackward requires expectedServerT"
+           | _, _, _, _, _, _, _, None, _ ->
+             failure ~code:"graph_not_configured" ~message:"Select a graph before merging"
+           | _, _, _, _, _, _, _, _, None ->
+             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+           | _, _, Ok (Some _), _, _, _, _, Some _, Some _ ->
+             failure ~code:"stale_server_cursor" ~message:"The graph changed before merge")
+        | _ -> failure ~code:"invalid_params" ~message:"mergeBackward payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"mergeBackward payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"mergeBackward requires a JSON payload")
+  | "moveBlocks" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "operationId" fields,
+                 optional_int "expectedServerT" fields,
+                 required_moves fields,
+                 session.config,
+                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+           | Ok operation_id, Ok (Some expected_server_t), Ok moves, Some config, Some current_t
+             when expected_server_t = current_t ->
+             let identities = List.map (fun move -> move.Pending_ops.uuid) moves in
+             if moves = [] || List.length identities <> List.length (List.sort_uniq String.compare identities)
+             then failure ~code:"invalid_params" ~message:"moveBlocks requires distinct moves"
+             else
+               let operation =
+                 Pending_ops.
+                   { operation_id
+                   ; base_t = current_t
+                   ; state = Queued
+                   ; intent = Move_blocks { moves }
+                   }
+               in
+               (match enqueue_semantic session config operation with
+                | Ok () -> snapshot_visible session
+                | Error message -> failure ~code:"stage_operation_failed" ~message)
+           | Error message, _, _, _, _ | _, Error message, _, _, _
+           | _, _, Error message, _, _ -> failure ~code:"invalid_params" ~message
+           | _, Ok None, _, _, _ ->
+             failure ~code:"invalid_params" ~message:"moveBlocks requires expectedServerT"
+           | _, _, _, None, _ ->
+             failure ~code:"graph_not_configured" ~message:"Select a graph before moving"
+           | _, _, _, _, None ->
+             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+           | _, Ok (Some _), _, Some _, Some _ ->
+             failure ~code:"stale_server_cursor" ~message:"The graph changed before move")
+        | _ -> failure ~code:"invalid_params" ~message:"moveBlocks payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"moveBlocks payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"moveBlocks requires a JSON payload")
+  | "deleteBlocks" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "operationId" fields,
+                 optional_int "expectedServerT" fields,
+                 required_string_list "uuids" fields,
+                 session.config,
+                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+           | Ok operation_id, Ok (Some expected_server_t), Ok uuids, Some config, Some current_t
+             when expected_server_t = current_t ->
+             let uuids = List.sort_uniq String.compare uuids in
+             if uuids = []
+             then failure ~code:"invalid_params" ~message:"deleteBlocks requires block ids"
+             else
+               let operation =
+                 Pending_ops.
+                   { operation_id
+                   ; base_t = current_t
+                   ; state = Queued
+                   ; intent = Delete_blocks { uuids }
+                   }
+               in
+               (match enqueue_semantic session config operation with
+                | Ok () -> snapshot_visible session
+                | Error message -> failure ~code:"stage_operation_failed" ~message)
+           | Error message, _, _, _, _ | _, Error message, _, _, _
+           | _, _, Error message, _, _ -> failure ~code:"invalid_params" ~message
+           | _, Ok None, _, _, _ ->
+             failure ~code:"invalid_params" ~message:"deleteBlocks requires expectedServerT"
+           | _, _, _, None, _ ->
+             failure ~code:"graph_not_configured" ~message:"Select a graph before deleting"
+           | _, _, _, _, None ->
+             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+           | _, Ok (Some _), _, Some _, Some _ ->
+             failure ~code:"stale_server_cursor" ~message:"The graph changed before delete")
+        | _ -> failure ~code:"invalid_params" ~message:"deleteBlocks payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"deleteBlocks payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"deleteBlocks requires a JSON payload")
+  | "deleteBlock" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields,
+                 required_string "operationId" fields,
+                 optional_int "expectedServerT" fields,
+                 session.config,
+                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+           | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Some config, Some current_t
+             when expected_server_t = current_t ->
+             let operation =
+               Pending_ops.
+                 { operation_id
+                 ; base_t = current_t
+                 ; state = Queued
+                 ; intent = Delete_blocks { uuids = [ uuid ] }
+                 }
+             in
+             (match enqueue_semantic session config operation with
+              | Ok () -> snapshot_visible session
+              | Error message -> failure ~code:"stage_operation_failed" ~message)
+           | Error message, _, _, _, _ | _, Error message, _, _, _
+           | _, _, Error message, _, _ -> failure ~code:"invalid_params" ~message
+           | _, _, Ok None, _, _ ->
+             failure ~code:"invalid_params" ~message:"deleteBlock requires expectedServerT"
+           | _, _, _, None, _ ->
+             failure ~code:"graph_not_configured" ~message:"Select a graph before deleting"
+           | _, _, _, _, None ->
+             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+           | _, _, Ok (Some _), Some _, Some _ ->
+             failure ~code:"stale_server_cursor" ~message:"The graph changed before delete")
+        | _ -> failure ~code:"invalid_params" ~message:"deleteBlock payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"deleteBlock payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"deleteBlock requires a JSON payload")
   | "select" ->
     (match payload with
      | Some uuid ->
