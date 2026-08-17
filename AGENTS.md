@@ -10,7 +10,7 @@ The Linux-runnable surface is the OCaml core in `core/` (inbox capture, DataScri
 
 ### OCaml core
 
-Use the `5.5.0` opam switch (already created on this VM):
+Use the `5.5.0` opam switch (create it if needed with `opam switch create 5.5.0`):
 
 ```sh
 eval $(opam env --switch=5.5.0)
