@@ -639,6 +639,57 @@ let () =
 ;;
 
 let () =
+  (* Selecting a tag (class) page from the sidebar must project its tagged
+     objects without a separate loadTagObjects round trip. *)
+  let tag_page = Logseq_chat_graph_read.{ uuid = "tag-1"; title = "Task" } in
+  let tagged =
+    Logseq_chat_model.
+      { uuid = "task-1"
+      ; title = "Do the thing"
+      ; page_id = "page-1"
+      ; parent_id = Some "page-1"
+      ; order = Some "a0"
+      ; created_at = 1
+      ; updated_at = 1
+      ; sync_status = "synced"
+      ; tags = []
+      ; references = []
+      ; breadcrumbs = []
+      ; status = None
+      ; is_asset = false
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      ; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_sidebar_pages:(fun () ->
+        Some Logseq_chat_graph_read.{ favorites = [ tag_page ]; recent_pages = [] })
+      ~graph_page_blocks:(fun _ -> Some [])
+      ~graph_node_is_tag:(String.equal tag_page.uuid)
+      ~graph_tag_objects:(fun uuid ->
+        if String.equal uuid tag_page.uuid then Some [ tagged ] else None)
+      ()
+  in
+  let response =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectPage","payload":"tag-1"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let result = required_assoc "result" fields in
+    if not (required_bool "selectedPageIsTag" result)
+    then failwith "selecting a tag page must mark the projection as a tag";
+    let related = required_first_assoc "relatedBlocks" result in
+    assert_equal "sidebar tag object" "task-1" (required_string "uuid" related)
+  | _ -> failwith "selectPage should return an RPC response"
+;;
+
+let () =
   (* A node that only exists in the local chat cache (for example a block
      created while offline) must still open from the cached data instead of
      failing with an endless spinner. *)

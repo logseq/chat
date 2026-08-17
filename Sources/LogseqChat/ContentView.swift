@@ -880,13 +880,25 @@ struct ContentView: View {
                     onZoomBlock: openOutlinerNode,
                     onOpenMarkupLink: openMarkupLink,
                     onLoadOlderJournals: store.loadOlderJournals,
-                    relatedTitle: nil,
-                    relatedBlocks: []
+                    relatedTitle: selectedTagPageRelatedTitle,
+                    relatedBlocks: selectedTagPageRelatedBlocks
                 )
             } else {
                 blockList
             }
         }
+    }
+
+    // Tag (class) pages opened from the sidebar list their tagged objects, the
+    // same way tag node routes do.
+    private var selectedTagPageRelatedBlocks: [LogseqBlock] {
+        guard store.snapshot.selectedPage != nil,
+              store.snapshot.selectedPageIsTag == true else { return [] }
+        return store.snapshot.relatedBlocks ?? []
+    }
+
+    private var selectedTagPageRelatedTitle: String? {
+        selectedTagPageRelatedBlocks.isEmpty ? nil : "Tagged nodes"
     }
 
     private func markupTargetTitle(uuid: String) -> String? {

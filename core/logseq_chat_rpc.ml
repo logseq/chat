@@ -559,6 +559,25 @@ let selected_graph_is_unlocked session =
   | _ -> false
 ;;
 
+(* A selected sidebar page that is a tag (class) lists its tagged objects,
+   including instances of classes extending it via
+   logseq.property.class/extends (handled by objects_for_tag). *)
+let selected_page_is_tag session =
+  match session.selected_sidebar_page, session.graph_node_is_tag with
+  | Some page, Some is_tag -> is_tag page.Logseq_chat_graph_read.uuid
+  | _ -> false
+;;
+
+let snapshot_related_blocks session =
+  if selected_page_is_tag session
+  then (
+    match session.selected_sidebar_page, session.graph_tag_objects with
+    | Some page, Some load ->
+      Option.value (load page.Logseq_chat_graph_read.uuid) ~default:[]
+    | _ -> [])
+  else session.related_blocks
+;;
+
 let snapshot session blocks =
   let sidebar_pages =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
@@ -575,7 +594,8 @@ let snapshot session blocks =
         (match Model.selected_block session.model with
          | Some block -> block_json block
          | None -> `Null)
-      ; "relatedBlocks", `List (List.map (block_json) session.related_blocks)
+      ; "relatedBlocks", `List (List.map block_json (snapshot_related_blocks session))
+      ; "selectedPageIsTag", `Bool (selected_page_is_tag session)
       ; "nodeRoutes", node_routes_json session
       ; "lastRefreshAt",
         (match session.model.last_refresh_at with

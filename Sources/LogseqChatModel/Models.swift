@@ -464,6 +464,7 @@ public struct LogseqChatSnapshot: Codable {
     public let favorites: [LogseqSidebarPage]
     public let recentPages: [LogseqSidebarPage]
     public let selectedPage: LogseqSidebarPage?
+    public let selectedPageIsTag: Bool?
     public let appliedServerT: Int?
     public let syncConnected: Bool?
     public let isSearching: Bool
@@ -488,6 +489,7 @@ public struct LogseqChatSnapshot: Codable {
         selectedGraphId: String? = nil, graphs: [LogseqGraph]? = nil,
         favorites: [LogseqSidebarPage] = [], recentPages: [LogseqSidebarPage] = [],
         selectedPage: LogseqSidebarPage? = nil,
+        selectedPageIsTag: Bool? = nil,
         appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
         nodeRoutes: [LogseqNodeProjection] = [],
@@ -515,6 +517,7 @@ public struct LogseqChatSnapshot: Codable {
         self.favorites = favorites
         self.recentPages = recentPages
         self.selectedPage = selectedPage
+        self.selectedPageIsTag = selectedPageIsTag
         self.appliedServerT = appliedServerT
         self.syncConnected = syncConnected
         self.isSearching = isSearching
@@ -536,7 +539,7 @@ public struct LogseqChatSnapshot: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case revision, query, blocks, selectedBlock, lastRefreshAt, graphName
-        case selectedGraphId, graphs, favorites, recentPages, selectedPage, appliedServerT
+        case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag, appliedServerT
         case syncConnected, isSearching, relatedBlocks, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
@@ -560,6 +563,7 @@ public struct LogseqChatSnapshot: Codable {
         favorites = try values.decodeIfPresent([LogseqSidebarPage].self, forKey: .favorites) ?? []
         recentPages = try values.decodeIfPresent([LogseqSidebarPage].self, forKey: .recentPages) ?? []
         selectedPage = try values.decodeIfPresent(LogseqSidebarPage.self, forKey: .selectedPage)
+        selectedPageIsTag = try values.decodeIfPresent(Bool.self, forKey: .selectedPageIsTag)
         appliedServerT = try values.decodeIfPresent(Int.self, forKey: .appliedServerT)
         syncConnected = try values.decodeIfPresent(Bool.self, forKey: .syncConnected)
         isSearching = try values.decode(Bool.self, forKey: .isSearching)
