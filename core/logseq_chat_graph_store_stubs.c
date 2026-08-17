@@ -354,6 +354,186 @@ CAMLprim value logseq_chat_graph_store_delete(value raw_path, value raw_addresse
   CAMLreturn(Val_unit);
 }
 
+/* Search index: schema, upsert/delete and queries mirror Logseq's sqlite
+   search (frontend.worker.search): a blocks table plus a blocks_fts FTS5
+   virtual table using the trigram tokenizer, kept in sync by triggers. */
+
+static void ensure_search_schema(sqlite3 *db)
+{
+  execute(db,
+          "CREATE TABLE IF NOT EXISTS blocks ("
+          "id TEXT NOT NULL PRIMARY KEY, "
+          "title TEXT NOT NULL, "
+          "page TEXT)",
+          "creating search blocks table");
+  execute(db,
+          "CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(id, title, page, "
+          "tokenize=\"trigram\")",
+          "creating search blocks fts table");
+  execute(db,
+          "CREATE INDEX IF NOT EXISTS blocks_title_nocase_idx ON blocks(title COLLATE NOCASE)",
+          "creating search blocks title index");
+  execute(db,
+          "CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks "
+          "BEGIN "
+          "DELETE from blocks_fts where id = old.id; "
+          "END;",
+          "creating search delete trigger");
+  execute(db,
+          "CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks "
+          "BEGIN "
+          "INSERT INTO blocks_fts (id, title, page) VALUES (new.id, new.title, new.page); "
+          "END;",
+          "creating search insert trigger");
+  execute(db,
+          "CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE ON blocks "
+          "BEGIN "
+          "DELETE from blocks_fts where id = old.id; "
+          "INSERT INTO blocks_fts (id, title, page) VALUES (new.id, new.title, new.page); "
+          "END;",
+          "creating search update trigger");
+}
+
+CAMLprim value logseq_chat_search_index_open(value raw_path)
+{
+  CAMLparam1(raw_path);
+  sqlite3 *db = open_database(String_val(raw_path));
+  ensure_search_schema(db);
+  sqlite3_close(db);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value logseq_chat_search_index_upsert(value raw_path, value raw_rows)
+{
+  CAMLparam2(raw_path, raw_rows);
+  sqlite3 *db = open_database(String_val(raw_path));
+  ensure_search_schema(db);
+  sqlite3_stmt *statement = NULL;
+  const char *sql =
+    "INSERT INTO blocks (id, title, page) VALUES (?, ?, ?) "
+    "ON CONFLICT (id) DO UPDATE SET (title, page) = (excluded.title, excluded.page)";
+
+  execute(db, "begin immediate transaction", "starting search upsert");
+  if (sqlite3_prepare_v2(db, sql, -1, &statement, NULL) != SQLITE_OK) {
+    execute(db, "rollback transaction", "rolling back search upsert");
+    fail_sqlite(db, "preparing search upsert");
+  }
+  for (value cursor = raw_rows; cursor != Val_emptylist; cursor = Field(cursor, 1)) {
+    value row = Field(cursor, 0);
+    value id = Field(row, 0);
+    value title = Field(row, 1);
+    value page = Field(row, 2);
+    sqlite3_reset(statement);
+    sqlite3_clear_bindings(statement);
+    if (sqlite3_bind_text(statement, 1, String_val(id),
+                          caml_string_length(id), SQLITE_TRANSIENT) != SQLITE_OK
+        || sqlite3_bind_text(statement, 2, String_val(title),
+                             caml_string_length(title), SQLITE_TRANSIENT) != SQLITE_OK
+        || sqlite3_bind_text(statement, 3, String_val(page),
+                             caml_string_length(page), SQLITE_TRANSIENT) != SQLITE_OK
+        || sqlite3_step(statement) != SQLITE_DONE) {
+      sqlite3_finalize(statement);
+      execute(db, "rollback transaction", "rolling back search upsert");
+      fail_sqlite(db, "upserting search row");
+    }
+  }
+  sqlite3_finalize(statement);
+  execute(db, "commit transaction", "committing search upsert");
+  sqlite3_close(db);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value logseq_chat_search_index_delete(value raw_path, value raw_ids)
+{
+  CAMLparam2(raw_path, raw_ids);
+  sqlite3 *db = open_database(String_val(raw_path));
+  ensure_search_schema(db);
+  sqlite3_stmt *statement = NULL;
+  const char *sql = "DELETE from blocks WHERE id = ?";
+
+  execute(db, "begin immediate transaction", "starting search delete");
+  if (sqlite3_prepare_v2(db, sql, -1, &statement, NULL) != SQLITE_OK) {
+    execute(db, "rollback transaction", "rolling back search delete");
+    fail_sqlite(db, "preparing search delete");
+  }
+  for (value cursor = raw_ids; cursor != Val_emptylist; cursor = Field(cursor, 1)) {
+    value id = Field(cursor, 0);
+    sqlite3_reset(statement);
+    sqlite3_clear_bindings(statement);
+    if (sqlite3_bind_text(statement, 1, String_val(id),
+                          caml_string_length(id), SQLITE_TRANSIENT) != SQLITE_OK
+        || sqlite3_step(statement) != SQLITE_DONE) {
+      sqlite3_finalize(statement);
+      execute(db, "rollback transaction", "rolling back search delete");
+      fail_sqlite(db, "deleting search row");
+    }
+  }
+  sqlite3_finalize(statement);
+  execute(db, "commit transaction", "committing search delete");
+  sqlite3_close(db);
+  CAMLreturn(Val_unit);
+}
+
+/* Runs a query selecting exactly (id, page, title) with text-only binds and
+   returns the rows as a list of string triples. */
+CAMLprim value logseq_chat_search_index_query(value raw_path, value raw_sql, value raw_binds)
+{
+  CAMLparam3(raw_path, raw_sql, raw_binds);
+  CAMLlocal5(result, cell, row, id, page);
+  CAMLlocal3(title, reversed, next);
+  sqlite3 *db = open_database(String_val(raw_path));
+  ensure_search_schema(db);
+  sqlite3_stmt *statement = NULL;
+  result = Val_emptylist;
+
+  if (sqlite3_prepare_v2(db, String_val(raw_sql), -1, &statement, NULL) != SQLITE_OK) {
+    fail_sqlite(db, "preparing search query");
+  }
+  int index = 1;
+  for (value cursor = raw_binds; cursor != Val_emptylist; cursor = Field(cursor, 1)) {
+    value bind = Field(cursor, 0);
+    if (sqlite3_bind_text(statement, index, String_val(bind),
+                          caml_string_length(bind), SQLITE_TRANSIENT) != SQLITE_OK) {
+      sqlite3_finalize(statement);
+      fail_sqlite(db, "binding search query parameter");
+    }
+    index++;
+  }
+  int rc = SQLITE_OK;
+  while ((rc = sqlite3_step(statement)) == SQLITE_ROW) {
+    const char *id_text = (const char *)sqlite3_column_text(statement, 0);
+    const char *page_text = (const char *)sqlite3_column_text(statement, 1);
+    const char *title_text = (const char *)sqlite3_column_text(statement, 2);
+    id = caml_copy_string(id_text == NULL ? "" : id_text);
+    page = caml_copy_string(page_text == NULL ? "" : page_text);
+    title = caml_copy_string(title_text == NULL ? "" : title_text);
+    row = caml_alloc(3, 0);
+    Store_field(row, 0, id);
+    Store_field(row, 1, page);
+    Store_field(row, 2, title);
+    cell = caml_alloc(2, 0);
+    Store_field(cell, 0, row);
+    Store_field(cell, 1, result);
+    result = cell;
+  }
+  if (rc != SQLITE_DONE) {
+    sqlite3_finalize(statement);
+    fail_sqlite(db, "reading search query rows");
+  }
+  sqlite3_finalize(statement);
+  sqlite3_close(db);
+
+  /* Rows were accumulated in reverse order; restore query order. */
+  reversed = Val_emptylist;
+  for (value cursor = result; cursor != Val_emptylist; cursor = Field(cursor, 1)) {
+    next = caml_alloc(2, 0);
+    Store_field(next, 0, Field(cursor, 0));
+    Store_field(next, 1, reversed);
+    reversed = next;
+  }
+  CAMLreturn(reversed);
+}
+
 CAMLprim value logseq_chat_graph_store_read_row(value raw_path, value raw_addr)
 {
   CAMLparam2(raw_path, raw_addr);

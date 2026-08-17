@@ -227,6 +227,7 @@ struct ContentView: View {
     @State private var composerExpanded = false
     @State private var searchExpanded = false
     @State private var settingsPresented = false
+    @State private var searchPagePresented = false
     @State private var graphsPresented = false
     @State private var graphPasswordPresented = false
     @State private var graphPassword = ""
@@ -328,6 +329,11 @@ struct ContentView: View {
                     }
                 }
             )
+        }
+        .sheet(isPresented: $searchPagePresented) {
+            NodeSearchView(store: store) { hit in
+                openNodeRoute(hit.uuid)
+            }
         }
         .sheet(isPresented: $graphPasswordPresented) {
             NavigationStack {
@@ -586,25 +592,6 @@ struct ContentView: View {
 
     private var navigationMainContent: some View {
         mainContent
-            .platformSearchable(
-                enabled: searchPresented && !composerExpanded,
-                text: $searchText,
-                isPresented: $searchPresented,
-                prompt: "Search blocks"
-            )
-            .platformSearchFocused($searchFocused)
-            .onSubmit(of: .search) {
-                store.search(searchText)
-            }
-            .onChange(of: searchText) { oldQuery, query in
-                if !oldQuery.isEmpty && query.isEmpty {
-                    isRestoringSearchProjection = true
-                }
-                store.searchLocal(query)
-            }
-            .onChange(of: searchPresented) { _, presented in
-                handleSearchPresentationChanged(presented)
-            }
             .platformRootNavigationChromeHidden()
     }
     #endif
@@ -1198,12 +1185,6 @@ struct ContentView: View {
     private var header: some View {
         VStack(spacing: 0) {
             topBar
-            #if SKIP
-            if searchExpanded {
-                searchBar
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            #endif
         }
         .platformFloatingHeaderInset()
     }
@@ -1330,40 +1311,6 @@ struct ContentView: View {
         .platformCircleButtonShape()
         .accessibilityLabel("Settings")
         .accessibilityIdentifier("button.connection")
-    }
-
-    private var searchBar: some View {
-        HStack(spacing: 10) {
-            TextField("Search blocks", text: $searchText)
-                .textFieldStyle(.plain)
-                .submitLabel(.search)
-                .focused($searchFocused)
-                .onSubmit {
-                    store.search(searchText)
-                }
-                .onChange(of: searchText) { _, query in
-                    store.searchLocal(query)
-                }
-                .accessibilityIdentifier("field.search")
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                    store.searchLocal("")
-                } label: {
-                    IconImage(name: "close")
-                        .frame(width: 18, height: 18)
-                }
-                .platformGlassButtonStyle()
-                .platformCircleButtonShape()
-                .accessibilityLabel("Clear search")
-                .accessibilityIdentifier("button.search.clear")
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .platformGlassContainer()
-        .padding(.horizontal, 20)
-        .padding(.bottom, 10)
     }
 
     private var blockList: some View {
@@ -1940,17 +1887,14 @@ struct ContentView: View {
 
     #if !SKIP
     private func presentSearch() {
-        searchPresented = true
-        focusSearch()
+        composerExpanded = false
+        searchPagePresented = true
     }
     #endif
 
     private func expandSearch() {
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-            searchExpanded = true
-            composerExpanded = false
-        }
-        focusSearch()
+        composerExpanded = false
+        searchPagePresented = true
     }
 
     private func handleSearchPresentationChanged(_ presented: Bool) {

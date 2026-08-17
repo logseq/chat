@@ -23,6 +23,7 @@
   logseq_chat_pending_projection
   logseq_chat_ref_text
   logseq_chat_rpc
+  logseq_chat_search_index
   logseq_chat_snapshot
   logseq_chat_sse
   logseq_chat_sync_checkpoint
@@ -169,6 +170,11 @@
  (name logseq_chat_graph_read_test)
  (modules logseq_chat_graph_read_test)
  (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_search_index_test)
+ (modules logseq_chat_search_index_test)
+ (libraries logseq_chat_core unix))
 
 (test
  (name logseq_chat_pending_projection_test)

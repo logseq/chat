@@ -12,18 +12,29 @@ type t =
   ; mutable snapshot : Projection.snapshot
   ; prepared : (string, Ops.t) Hashtbl.t
   ; mutable journal_limit : int
+  ; search_index : Logseq_chat_search_index.t option
   }
+
+let refresh_search runtime =
+  Option.iter
+    (fun index ->
+      try Logseq_chat_search_index.refresh index runtime.snapshot.Projection.db with
+      | Failure _ -> ())
+    runtime.search_index
+;;
 
 let rebuild runtime =
   runtime.snapshot <-
     Projection.build
       ~server_t:runtime.server_t
       (Datascript.conn_db runtime.conn)
-      (Ops.list ~path:runtime.path)
+      (Ops.list ~path:runtime.path);
+  refresh_search runtime
 ;;
 
 let create
       ?(encrypt_title = fun value -> Ok value)
+      ?search_index_path
       ~path
       ~server_t
       conn
@@ -31,14 +42,24 @@ let create
   let snapshot =
     Projection.build ~server_t (Datascript.conn_db conn) (Ops.list ~path)
   in
-  { path
-  ; conn
-  ; encrypt_title
-  ; server_t
-  ; snapshot
-  ; prepared = Hashtbl.create 16
-  ; journal_limit = 7
-  }
+  let search_index =
+    Option.bind search_index_path (fun path ->
+      try Some (Logseq_chat_search_index.create ~path) with
+      | Failure _ -> None)
+  in
+  let runtime =
+    { path
+    ; conn
+    ; encrypt_title
+    ; server_t
+    ; snapshot
+    ; prepared = Hashtbl.create 16
+    ; journal_limit = 7
+    ; search_index
+    }
+  in
+  refresh_search runtime;
+  runtime
 ;;
 
 let db runtime = runtime.snapshot.db
@@ -156,6 +177,7 @@ let stage runtime operation =
      | Ops.Applied ->
        Ops.save ~path:runtime.path operation;
        runtime.snapshot <- candidate;
+       refresh_search runtime;
        Ok ()
      | Ops.Conflicted message -> Error message
      | Ops.Queued | Ops.Retryable | Ops.Submitted | Ops.Accepted _ ->
@@ -267,4 +289,12 @@ let journal_page_uuid runtime ~journal_day =
 
 let normalize_title runtime ~uuid title =
   Logseq_chat_graph_read.normalize_title_text runtime.snapshot.db ~uuid title
+;;
+
+let search runtime query =
+  match runtime.search_index with
+  | None -> []
+  | Some index ->
+    (try Logseq_chat_search_index.search_hits index runtime.snapshot.db query with
+     | Failure _ -> [])
 ;;

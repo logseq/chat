@@ -690,6 +690,57 @@ let () =
 ;;
 
 let () =
+  (* searchNodes projects sqlite search hits with page context and
+     breadcrumbs, and clears them for blank queries. *)
+  let hit =
+    Logseq_chat_search_index.
+      { uuid = "block-1"
+      ; title = "Search me"
+      ; is_page = false
+      ; page = Some Logseq_chat_graph_read.{ uuid = "page-1"; title = "Page one" }
+      ; breadcrumbs = [ Logseq_chat_model.{ uuid = "page-1"; title = "Page one" } ]
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_search:(fun query -> if String.equal query "search" then [ hit ] else [])
+      ()
+  in
+  let response =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"searchNodes","payload":"search"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     assert_equal "search query echoed" "search" (required_string "searchQuery" result);
+     let first = required_first_assoc "searchResults" result in
+     assert_equal "search hit uuid" "block-1" (required_string "uuid" first);
+     assert_equal "search hit title" "Search me" (required_string "title" first);
+     if required_bool "isPage" first then failwith "block hits must not be pages";
+     assert_equal
+       "search hit page"
+       "page-1"
+       (required_assoc "page" first |> required_string "uuid");
+     (match required_list "breadcrumbs" first with
+      | [ `Assoc crumb ] -> assert_equal "search breadcrumb" "Page one" (required_string "title" crumb)
+      | _ -> failwith "search hit should include breadcrumbs")
+   | _ -> failwith "searchNodes should return an RPC response");
+  let cleared =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"searchNodes","payload":""}}|}
+    |> from_string
+  in
+  match cleared with
+  | `Assoc fields ->
+    (match required_assoc "result" fields |> required_list "searchResults" with
+     | [] -> ()
+     | _ -> failwith "blank queries must clear search results")
+  | _ -> failwith "searchNodes should clear results"
+;;
+
+let () =
   (* A node that only exists in the local chat cache (for example a block
      created while offline) must still open from the cached data instead of
      failing with an endless spinner. *)

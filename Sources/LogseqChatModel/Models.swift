@@ -306,6 +306,43 @@ public struct LogseqSidebarPage: Codable, Hashable, Identifiable, Sendable {
     public var id: String { uuid }
 }
 
+public struct LogseqSearchHit: Codable, Hashable, Identifiable, Sendable {
+    public let uuid: String
+    public let title: String
+    public let isPage: Bool
+    public let page: LogseqSidebarPage?
+    public let breadcrumbs: [LogseqEntitySummary]
+
+    public var id: String { uuid }
+
+    public init(
+        uuid: String,
+        title: String,
+        isPage: Bool,
+        page: LogseqSidebarPage? = nil,
+        breadcrumbs: [LogseqEntitySummary] = []
+    ) {
+        self.uuid = uuid
+        self.title = title
+        self.isPage = isPage
+        self.page = page
+        self.breadcrumbs = breadcrumbs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case uuid, title, isPage, page, breadcrumbs
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        uuid = try values.decode(String.self, forKey: .uuid)
+        title = try values.decode(String.self, forKey: .title)
+        isPage = try values.decodeIfPresent(Bool.self, forKey: .isPage) ?? false
+        page = try values.decodeIfPresent(LogseqSidebarPage.self, forKey: .page)
+        breadcrumbs = try values.decodeIfPresent([LogseqEntitySummary].self, forKey: .breadcrumbs) ?? []
+    }
+}
+
 public struct LogseqNodeProjection: Codable, Identifiable {
     public let uuid: String
     public let isTag: Bool
@@ -469,6 +506,8 @@ public struct LogseqChatSnapshot: Codable {
     public let syncConnected: Bool?
     public let isSearching: Bool
     public let relatedBlocks: [LogseqBlock]?
+    public let searchQuery: String?
+    public let searchResults: [LogseqSearchHit]?
     public let nodeRoutes: [LogseqNodeProjection]
     public let taskStatuses: [LogseqTaskStatus]?
     public let isGraphEncrypted: Bool?
@@ -492,6 +531,8 @@ public struct LogseqChatSnapshot: Codable {
         selectedPageIsTag: Bool? = nil,
         appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
+        searchQuery: String? = nil,
+        searchResults: [LogseqSearchHit]? = nil,
         nodeRoutes: [LogseqNodeProjection] = [],
         taskStatuses: [LogseqTaskStatus]? = nil,
         isGraphEncrypted: Bool? = nil,
@@ -522,6 +563,8 @@ public struct LogseqChatSnapshot: Codable {
         self.syncConnected = syncConnected
         self.isSearching = isSearching
         self.relatedBlocks = relatedBlocks
+        self.searchQuery = searchQuery
+        self.searchResults = searchResults
         self.nodeRoutes = nodeRoutes
         self.taskStatuses = taskStatuses
         self.isGraphEncrypted = isGraphEncrypted
@@ -540,7 +583,7 @@ public struct LogseqChatSnapshot: Codable {
     private enum CodingKeys: String, CodingKey {
         case revision, query, blocks, selectedBlock, lastRefreshAt, graphName
         case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag, appliedServerT
-        case syncConnected, isSearching, relatedBlocks, nodeRoutes, taskStatuses
+        case syncConnected, isSearching, relatedBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
         case outlinerAutocompleteCandidates
@@ -568,6 +611,8 @@ public struct LogseqChatSnapshot: Codable {
         syncConnected = try values.decodeIfPresent(Bool.self, forKey: .syncConnected)
         isSearching = try values.decode(Bool.self, forKey: .isSearching)
         relatedBlocks = try values.decodeIfPresent([LogseqBlock].self, forKey: .relatedBlocks)
+        searchQuery = try values.decodeIfPresent(String.self, forKey: .searchQuery)
+        searchResults = try values.decodeIfPresent([LogseqSearchHit].self, forKey: .searchResults)
         nodeRoutes = try values.decodeIfPresent(
             [LogseqNodeProjection].self, forKey: .nodeRoutes
         ) ?? []

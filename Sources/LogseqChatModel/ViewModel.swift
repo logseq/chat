@@ -692,6 +692,17 @@ private struct OpenGraphPayload: Encodable {
         )
     }
 
+    public func searchNodes(_ query: String) {
+        searchGeneration += 1
+        let generation = searchGeneration
+        performAsync(
+            LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "searchNodes", payload: query)),
+            shouldApply: {
+                self.searchGeneration == generation
+            }
+        )
+    }
+
     public func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -1181,6 +1192,8 @@ private struct OpenGraphPayload: Encodable {
                 appliedServerT: snapshot.appliedServerT,
                 syncConnected: snapshot.syncConnected,
                 relatedBlocks: snapshot.relatedBlocks,
+                searchQuery: snapshot.searchQuery,
+                searchResults: snapshot.searchResults,
                 nodeRoutes: snapshot.nodeRoutes,
                 taskStatuses: snapshot.taskStatuses,
                 isGraphEncrypted: snapshot.isGraphEncrypted,
@@ -1221,6 +1234,8 @@ private struct OpenGraphPayload: Encodable {
             appliedServerT: result.appliedServerT,
             syncConnected: result.syncConnected,
             relatedBlocks: result.relatedBlocks,
+            searchQuery: result.searchQuery,
+            searchResults: result.searchResults,
             nodeRoutes: result.nodeRoutes,
             taskStatuses: result.taskStatuses ?? snapshot.taskStatuses,
             isGraphEncrypted: result.isGraphEncrypted,

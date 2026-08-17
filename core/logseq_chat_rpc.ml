@@ -78,6 +78,9 @@ type t =
   ; graph_node_references : (string -> Model.block list option) option
   ; graph_tag_objects : (string -> Model.block list option) option
   ; graph_normalize_title : (uuid:string -> string -> string) option
+  ; graph_search : (string -> Logseq_chat_search_index.hit list) option
+  ; mutable search_results : Logseq_chat_search_index.hit list
+  ; mutable search_query : string
   ; load_older_journals : (unit -> unit) option
   ; has_older_journals : (unit -> bool) option
   ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
@@ -305,6 +308,24 @@ let graph_json (graph : Api.graph) =
 
 let sidebar_page_json (page : Logseq_chat_graph_read.sidebar_page) =
   `Assoc [ "uuid", `String page.uuid; "title", `String page.title ]
+;;
+
+let search_hit_json (hit : Logseq_chat_search_index.hit) =
+  `Assoc
+    [ "uuid", `String hit.uuid
+    ; "title", `String hit.title
+    ; "isPage", `Bool hit.is_page
+    ; ( "page"
+      , match hit.page with
+        | Some page -> sidebar_page_json page
+        | None -> `Null )
+    ; ( "breadcrumbs"
+      , `List
+          (List.map
+             (fun (summary : Model.entity_summary) ->
+               `Assoc [ "uuid", `String summary.uuid; "title", `String summary.title ])
+             hit.breadcrumbs) )
+    ]
 ;;
 
 let pending_request_json session =
@@ -596,6 +617,8 @@ let snapshot session blocks =
          | None -> `Null)
       ; "relatedBlocks", `List (List.map block_json (snapshot_related_blocks session))
       ; "selectedPageIsTag", `Bool (selected_page_is_tag session)
+      ; "searchQuery", `String session.search_query
+      ; "searchResults", `List (List.map search_hit_json session.search_results)
       ; "nodeRoutes", node_routes_json session
       ; "lastRefreshAt",
         (match session.model.last_refresh_at with
@@ -790,6 +813,7 @@ let create
       ?graph_node_references
       ?graph_tag_objects
       ?graph_normalize_title
+      ?graph_search
       ?load_older_journals
       ?has_older_journals
       ?stage_operation
@@ -837,6 +861,9 @@ let create
   ; graph_node_references
   ; graph_tag_objects
   ; graph_normalize_title
+  ; graph_search
+  ; search_results = []
+  ; search_query = ""
   ; load_older_journals
   ; has_older_journals
   ; load_cached_graph_key
@@ -1936,6 +1963,14 @@ let dispatch session action payload =
   | "searchLocal" ->
     let query = Option.value payload ~default:"" in
     snapshot session (Model.search session.model query)
+  | "searchNodes" ->
+    let query = Option.value payload ~default:"" in
+    session.search_query <- query;
+    session.search_results <-
+      (if String.equal (String.trim query) ""
+       then []
+       else Option.fold ~none:[] ~some:(fun search -> search query) session.graph_search);
+    snapshot_visible session
   | "send" ->
     (match send_payload payload with
      | Error message -> failure ~code:"invalid_params" ~message

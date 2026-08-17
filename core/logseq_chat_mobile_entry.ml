@@ -36,14 +36,21 @@ let optional_bool fields name =
 ;;
 
 let graph_read_runtime ~graph_id ~active_path ~server_t ~e2ee conn =
+  (* The search index lives next to the graph database, matching Logseq's
+     per-graph <graph>/search/db.sqlite layout. *)
+  let search_index_path =
+    Filename.concat (Filename.dirname active_path) (Filename.concat "search" "db.sqlite")
+  in
   if e2ee
   then
     Logseq_chat_graph_runtime.create
       ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring ~graph_id)
+      ~search_index_path
       ~path:active_path
       ~server_t
       conn
-  else Logseq_chat_graph_runtime.create ~path:active_path ~server_t conn
+  else
+    Logseq_chat_graph_runtime.create ~search_index_path ~path:active_path ~server_t conn
 ;;
 
 let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
@@ -235,6 +242,12 @@ let graph_normalize_title ~uuid title =
   | None -> title
 ;;
 
+let graph_search query =
+  match !graph_runtime with
+  | Some runtime -> Logseq_chat_graph_runtime.search runtime.read_runtime query
+  | None -> []
+;;
+
 let load_older_journals () =
   Option.iter
     (fun runtime -> Logseq_chat_graph_runtime.load_older_journals runtime.read_runtime)
@@ -341,6 +354,7 @@ let create_session ?storage ?catalog_session () =
     ~graph_node_references
     ~graph_tag_objects
     ~graph_normalize_title
+    ~graph_search
     ~load_older_journals
     ~has_older_journals
     ~stage_operation
