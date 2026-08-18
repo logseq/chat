@@ -364,6 +364,26 @@ let () =
 ;;
 
 let () =
+  let path = Filename.temp_file "logseq-chat-runtime-restore" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      Ops.save ~path (save_title "stale" "Remote title" "Stale local edit");
+      Ops.save ~path (save_title "valid" "Old" "Valid local edit");
+      let runtime =
+        Runtime.create ~path ~server_t:42 (conn_from_db (base_db "Old"))
+      in
+      let ids =
+        Runtime.pending_operations runtime
+        |> List.map (fun operation -> operation.Ops.operation_id)
+      in
+      assert_bool
+        "startup restores only operations that remain valid against the graph"
+        (ids = [ "valid" ]))
+;;
+
+let () =
   with_runtime (fun _path _conn runtime ->
     let db = Runtime.db runtime in
     assert_bool "raw title reports missing entities and missing title attributes"

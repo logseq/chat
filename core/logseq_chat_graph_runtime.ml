@@ -66,10 +66,17 @@ let db runtime = runtime.snapshot.db
 let operation_statuses runtime = runtime.snapshot.statuses
 
 let pending_operations runtime =
+  let projected_states = Hashtbl.create (List.length runtime.snapshot.statuses) in
+  List.iter
+    (fun (operation_id, state) -> Hashtbl.replace projected_states operation_id state)
+    runtime.snapshot.statuses;
   Ops.list ~path:runtime.path
   |> List.filter (fun operation ->
     match operation.Ops.state with
-    | Ops.Queued | Ops.Retryable | Ops.Submitted -> true
+    | Ops.Queued | Ops.Retryable | Ops.Submitted ->
+      (match Hashtbl.find_opt projected_states operation.operation_id with
+       | Some (Ops.Conflicted _) -> false
+       | Some _ | None -> true)
     | Ops.Accepted _ | Ops.Applied | Ops.Conflicted _ -> false)
 ;;
 

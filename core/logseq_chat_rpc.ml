@@ -1364,18 +1364,13 @@ let enqueue_semantic session _config operation =
        Ok ())
 ;;
 
-let restore_semantic_queue session config =
+let restore_semantic_queue session _config =
   match session.semantic_active, session.semantic_queue, session.pending_operations with
   | None, [], Some pending_operations ->
-    pending_operations ()
-    |> List.iter (fun operation ->
-      match enqueue_semantic session config operation with
-      | Ok () -> ()
-      | Error message ->
-        debug
-          "could not restore semantic operation id=%s: %s"
-          operation.Pending_ops.operation_id
-          message)
+    session.semantic_queue <-
+      List.map
+        (fun operation -> { operation })
+        (pending_operations ())
   | Some _, _, _ | None, _ :: _, _ | None, [], None -> ()
 ;;
 

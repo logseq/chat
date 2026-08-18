@@ -1465,6 +1465,47 @@ let () =
 ;;
 
 let () =
+  let restore_stage_calls = ref 0 in
+  let pending_operations () =
+    List.init 200 (fun index ->
+      Logseq_chat_pending_ops.
+        { operation_id = "restored-" ^ string_of_int index
+        ; base_t = 42
+        ; state = Queued
+        ; intent =
+            Save_title
+              { uuid = "remote"
+              ; expected_title = "Old"
+              ; title = "Pending " ^ string_of_int index
+              }
+        })
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ remote_block "remote" "Old" ])
+      ~stage_operation:(fun _operation ->
+        incr restore_stage_calls;
+        Ok ())
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations
+      ()
+  in
+  configure_plain_graph session;
+  let request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+  in
+  if Option.is_none request then failwith "restored operations must remain syncable";
+  assert_int_equal
+    "durable operations are not restaged one by one during startup"
+    0
+    !restore_stage_calls
+;;
+
+let () =
   let staged = ref [] in
   let session =
     Logseq_chat_rpc.create
