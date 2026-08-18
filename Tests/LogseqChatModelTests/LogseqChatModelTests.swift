@@ -2141,7 +2141,7 @@ private let testEmptySnapshotJSON = """
             type: "textChanged", title: "new", caretUTF16Offset: 3
         ))
 
-        try await Task.sleep(for: .milliseconds(500))
+        try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.all.allSatisfy { !$0.contains("outlinerEvent") })
         try await waitUntil {
             recorder.all.contains { $0.contains("outlinerEvent") }
