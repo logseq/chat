@@ -1815,7 +1815,8 @@ let normalize_operation_titles session (operation : Pending_ops.t) =
     create_operations @ [ { operation with Pending_ops.intent } ]
 ;;
 
-let outliner_structure_source_matches state = function
+let outliner_structure_source_matches state payload =
+  match from_string payload with
   | `Assoc fields ->
     (match List.assoc_opt "type" fields, List.assoc_opt "uuid" fields with
      | Some (`String ("returnPressed" | "backspacePressed")), Some (`String uuid) ->
