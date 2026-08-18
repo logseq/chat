@@ -1815,9 +1815,20 @@ let normalize_operation_titles session (operation : Pending_ops.t) =
     create_operations @ [ { operation with Pending_ops.intent } ]
 ;;
 
+let outliner_structure_source_matches state = function
+  | `Assoc fields ->
+    (match List.assoc_opt "type" fields, List.assoc_opt "uuid" fields with
+     | Some (`String ("returnPressed" | "backspacePressed")), Some (`String uuid) ->
+       Option.equal String.equal (Outliner_state.editing_uuid state) (Some uuid)
+     | _ -> true)
+  | _ -> true
+;;
+
 let dispatch_outliner_event session payload =
   match outliner_message payload with
   | Error message -> failure ~code:"invalid_outliner_event" ~message
+  | Ok _ when not (outliner_structure_source_matches session.outliner_state payload) ->
+    outliner_patch ~changed_uuids:[] session (outliner_context session)
   | Ok message ->
     let context = outliner_context session in
     let previous_state = session.outliner_state in

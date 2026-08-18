@@ -180,6 +180,7 @@ private struct OpenGraphPayload: Encodable {
     private var outlinerProjectionGeneration = 0
     private var pendingOutlinerTransientEvent: LogseqOutlinerEvent?
     private var outlinerTransientFlushTask: Task<Void, Never>?
+    private var inFlightOutlinerStructureSources: Set<String> = []
 
     public convenience init(call: @escaping @Sendable (String) -> String) {
         self.init(call: call) { request in
@@ -869,17 +870,28 @@ private struct OpenGraphPayload: Encodable {
                 + "action=\(event.action ?? "nil")"
         )
         #endif
-        outlinerProjectionGeneration += 1
-        let generation = outlinerProjectionGeneration
         let isAtomicStructureEvent =
             (event.type == "returnPressed" && event.title != nil
                 && event.caretUTF16Offset != nil)
             || (event.type == "backspacePressed" && event.title != nil)
+        let structureSource = isAtomicStructureEvent ? event.uuid : nil
+        if let structureSource {
+            guard inFlightOutlinerStructureSources.insert(structureSource).inserted else {
+                return
+            }
+        }
+        outlinerProjectionGeneration += 1
+        let generation = outlinerProjectionGeneration
         if isAtomicStructureEvent {
             outlinerTransientFlushTask?.cancel()
             outlinerTransientFlushTask = nil
             pendingOutlinerTransientEvent = nil
-            enqueueOutlinerEvent(event, generation: generation, canBeSuperseded: false)
+            enqueueOutlinerEvent(
+                event,
+                generation: generation,
+                canBeSuperseded: false,
+                structureSource: structureSource
+            )
             return
         }
         let isTransient = event.type == "textChanged" || event.type == "caretMoved"
@@ -915,12 +927,18 @@ private struct OpenGraphPayload: Encodable {
     private func enqueueOutlinerEvent(
         _ event: LogseqOutlinerEvent,
         generation: Int,
-        canBeSuperseded: Bool
+        canBeSuperseded: Bool,
+        structureSource: String? = nil
     ) {
         let previous = outlinerEventTask
         outlinerEventTask = Task { [weak self] in
             _ = await previous?.value
             guard let self else { return }
+            defer {
+                if let structureSource {
+                    self.inFlightOutlinerStructureSources.remove(structureSource)
+                }
+            }
             if canBeSuperseded, self.outlinerProjectionGeneration != generation {
                 return
             }

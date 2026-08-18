@@ -2049,14 +2049,28 @@ let () =
          ; "title", `String "Hello"
          ; "caretUTF16Offset", `Int 5
          ]));
-  let first_split = dispatch_outliner session (`Assoc [ "type", `String "returnPressed" ]) in
+  let first_split =
+    dispatch_outliner
+      session
+      (`Assoc
+        [ "type", `String "returnPressed"
+        ; "uuid", `String "source"
+        ])
+  in
   assert_bounded_structural_patch "first split" first_split;
   let first_uuid =
     required_assoc "outlinerState" first_split
     |> required_assoc "editing"
     |> required_string "uuid"
   in
-  let second_split = dispatch_outliner session (`Assoc [ "type", `String "returnPressed" ]) in
+  let second_split =
+    dispatch_outliner
+      session
+      (`Assoc
+        [ "type", `String "returnPressed"
+        ; "uuid", `String first_uuid
+        ])
+  in
   assert_bounded_structural_patch "second split" second_split;
   let second_uuid =
     required_assoc "outlinerState" second_split
@@ -2068,6 +2082,7 @@ let () =
       session
       (`Assoc
         [ "type", `String "backspacePressed"
+        ; "uuid", `String second_uuid
         ; "selectionLength", `Int 0
         ])
   in
@@ -2078,11 +2093,27 @@ let () =
     (required_assoc "outlinerState" merged
      |> required_assoc "editing"
      |> required_string "uuid");
+  let stale_repeat =
+    dispatch_outliner
+      session
+      (`Assoc
+        [ "type", `String "backspacePressed"
+        ; "uuid", `String second_uuid
+        ; "selectionLength", `Int 0
+        ])
+  in
+  assert_equal
+    "a repeated backspace from the removed editor cannot merge another block"
+    first_uuid
+    (required_assoc "outlinerState" stale_repeat
+     |> required_assoc "editing"
+     |> required_string "uuid");
   let merged_again =
     dispatch_outliner
       session
       (`Assoc
         [ "type", `String "backspacePressed"
+        ; "uuid", `String first_uuid
         ; "selectionLength", `Int 0
         ])
   in

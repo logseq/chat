@@ -2248,6 +2248,32 @@ private let testEmptySnapshotJSON = """
         #expect(!event.contains("stale"))
     }
 
+    @Test @MainActor func repeatedBoundaryBackspaceFromOneEditorStagesOnlyOneMerge() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("backspacePressed") {
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        let boundaryBackspace = LogseqOutlinerEvent(
+            type: "backspacePressed",
+            uuid: "source",
+            title: "",
+            selectionLength: 0
+        )
+        store.outlinerEvent(boundaryBackspace)
+        store.outlinerEvent(boundaryBackspace)
+        store.outlinerEvent(boundaryBackspace)
+
+        try await Task.sleep(for: .milliseconds(700))
+        let mergeEvents = recorder.all.filter { $0.contains("backspacePressed") }
+        #expect(mergeEvents.count == 1)
+        #expect(mergeEvents[0].contains("\\\"uuid\\\":\\\"source\\\""))
+    }
+
     @Test @MainActor func atomicReturnSkipsAQueuedSupersededTypingRequest() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

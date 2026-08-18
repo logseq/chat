@@ -88,6 +88,7 @@ struct OutlinerView: View {
                         onReturn: { title, caret in
                             sendEvent(LogseqOutlinerEvent(
                                 type: "returnPressed",
+                                uuid: editing.uuid,
                                 title: title,
                                 caretUTF16Offset: caret
                             ))
@@ -95,6 +96,7 @@ struct OutlinerView: View {
                         onBackspace: { title, selectionLength in
                             sendEvent(LogseqOutlinerEvent(
                                 type: "backspacePressed",
+                                uuid: editing.uuid,
                                 title: title,
                                 selectionLength: selectionLength
                             ))
@@ -220,6 +222,7 @@ struct OutlinerView: View {
             onReturnAtCaret: { title, caret in
                 sendEvent(LogseqOutlinerEvent(
                     type: "returnPressed",
+                    uuid: row.block.uuid,
                     title: title,
                     caretUTF16Offset: caret
                 ))
@@ -227,6 +230,7 @@ struct OutlinerView: View {
             onBackspace: { title, selectionLength in
                 sendEvent(LogseqOutlinerEvent(
                     type: "backspacePressed",
+                    uuid: row.block.uuid,
                     title: title,
                     selectionLength: selectionLength
                 ))
