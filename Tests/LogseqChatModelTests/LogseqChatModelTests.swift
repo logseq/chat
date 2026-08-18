@@ -377,7 +377,8 @@ private let testEmptySnapshotJSON = """
         await store.configureAndSelectGraph(
             baseURL: "http://192.168.10.116:8787",
             token: "cached-token",
-            selectedGraphID: "plain-1"
+            selectedGraphID: "plain-1",
+            refreshGraphCatalog: true
         )
 
         #expect(recorder.all.count == 2)
@@ -386,6 +387,74 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.selectedGraphId == "plain-1")
         #expect(store.snapshot.graphName == "Sync 2")
         #expect(store.lastError == nil)
+    }
+
+    @Test @MainActor func selectedGraphColdStartDoesNotBlockCoreOnCatalogRefresh() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return #"{"apiVersion":1,"ok":true,"result":{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"isSearching":false},"error":null}"#
+        }
+
+        await store.configureAndSelectGraph(
+            baseURL: "http://192.168.10.116:8787",
+            token: "cached-token",
+            selectedGraphID: "plain-1"
+        )
+
+        #expect(recorder.all.count == 1)
+        #expect(recorder.all[0].contains("\"action\":\"configure\""))
+        #expect(!recorder.all[0].contains("refreshGraphCatalog"))
+    }
+
+    @Test @MainActor func authenticatedStartupDoesNotReopenAnAlreadyRestoredGraph() async throws {
+        let recorder = RequestRecorder()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logseq-chat-startup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let databaseURL = root.appendingPathComponent("logseq-chat.sqlite")
+        let graphDirectory = LogseqGraphLocalStorage.directoryURL(
+            databasePath: databaseURL.path,
+            graphID: "plain-1"
+        )
+        try FileManager.default.createDirectory(
+            at: graphDirectory,
+            withIntermediateDirectories: true
+        )
+        try Data([0]).write(to: graphDirectory.appendingPathComponent("graph.sqlite"))
+        try Data([0]).write(to: graphDirectory.appendingPathComponent("sync.checkpoint"))
+
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            let result: String
+            if request.contains("\"action\":\"openGraph\"") {
+                result = #"{"revision":2,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Sync 2","selectedGraphId":"plain-1","graphs":[{"id":"plain-1","name":"Sync 2","isEncrypted":false,"isReady":true}],"appliedServerT":42,"isSearching":false}"#
+            } else {
+                result = #"{"revision":1,"query":"","blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":null,"selectedGraphId":null,"graphs":[],"isSearching":false}"#
+            }
+            return #"{"apiVersion":1,"ok":true,"result":\#(result),"error":null}"#
+        }
+        store.open(path: databaseURL.path)
+        try await waitUntil { recorder.all.count == 1 }
+
+        let restored = await store.bootstrapSelectedGraph(
+            graphID: "plain-1",
+            baseURL: "http://127.0.0.1:8787",
+            accessToken: "",
+            allowSnapshotDownload: false
+        )
+        let authenticated = await store.bootstrapSelectedGraph(
+            graphID: "plain-1",
+            baseURL: "http://127.0.0.1:8787",
+            accessToken: "authenticated-token"
+        )
+        #expect(restored)
+        #expect(authenticated)
+
+        let openGraphRequests = recorder.all.filter {
+            $0.contains("\"action\":\"openGraph\"")
+        }
+        #expect(openGraphRequests.count == 1)
     }
 
     @Test @MainActor func cachedGraphRestoresWithoutNetworkWhenOffline() async throws {

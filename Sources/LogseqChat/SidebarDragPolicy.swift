@@ -49,7 +49,8 @@ enum SidebarDragPolicy {
     }
 
     static func blocksMainInteraction(isAnimating: Bool) -> Bool {
-        isAnimating
+        _ = isAnimating
+        return false
     }
 
     static func allowsSidebarInteraction(
@@ -57,6 +58,7 @@ enum SidebarDragPolicy {
         isDragging: Bool,
         isAnimating: Bool
     ) -> Bool {
-        isPresented && !isDragging && !isAnimating
+        _ = isAnimating
+        return isPresented && !isDragging
     }
 }

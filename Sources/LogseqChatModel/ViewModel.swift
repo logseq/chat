@@ -325,7 +325,7 @@ private struct OpenGraphPayload: Encodable {
 
     public func configureAndSelectGraph(
         baseURL: String, token: String, selectedGraphID: String?,
-        refreshGraphCatalog: Bool = true
+        refreshGraphCatalog: Bool = false
     ) async {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -464,6 +464,11 @@ private struct OpenGraphPayload: Encodable {
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(code: "database_not_open", message: "Open local storage before syncing")
             return false
+        }
+        if !forceSnapshot,
+           snapshot.selectedGraphId == graphID,
+           snapshot.appliedServerT != nil {
+            return true
         }
         do {
             let graphDirectory = LogseqGraphLocalStorage.directoryURL(

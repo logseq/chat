@@ -164,12 +164,12 @@ import Testing
         #expect(SidebarDragPolicy.locksScrolling(isDragging: true, isAnimating: true))
     }
 
-    @Test func animationBlocksTouchesWithoutReconfiguringTheOutlinerScrollView() {
+    @Test func closingAnimationKeepsTheNewPageInteractive() {
         #expect(!SidebarDragPolicy.disablesScrollEnvironment(
             isDragging: false,
             isAnimating: true
         ))
-        #expect(SidebarDragPolicy.blocksMainInteraction(
+        #expect(!SidebarDragPolicy.blocksMainInteraction(
             isAnimating: true
         ))
         #expect(!SidebarDragPolicy.blocksMainInteraction(
@@ -177,7 +177,7 @@ import Testing
         ))
     }
 
-    @Test func sidebarLinksAreInteractiveOnlyWhenFullyOpenAndIdle() {
+    @Test func sidebarLinksAreInteractiveAsSoonAsOpeningBegins() {
         #expect(SidebarDragPolicy.allowsSidebarInteraction(
             isPresented: true,
             isDragging: false,
@@ -188,7 +188,7 @@ import Testing
             isDragging: true,
             isAnimating: false
         ))
-        #expect(!SidebarDragPolicy.allowsSidebarInteraction(
+        #expect(SidebarDragPolicy.allowsSidebarInteraction(
             isPresented: true,
             isDragging: false,
             isAnimating: true

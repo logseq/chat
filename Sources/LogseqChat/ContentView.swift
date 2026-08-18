@@ -761,7 +761,7 @@ struct ContentView: View {
     }
 
     private func switchGraph(to graph: LogseqGraph) {
-        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+        guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
         if graph.id == store.snapshot.selectedGraphId {
@@ -773,7 +773,7 @@ struct ContentView: View {
     }
 
     private func openSidebarPage(_ page: LogseqSidebarPage) {
-        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+        guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
         graphsPresented = false
@@ -781,7 +781,7 @@ struct ContentView: View {
     }
 
     private func openJournals() {
-        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+        guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
         graphsPresented = false
@@ -789,7 +789,7 @@ struct ContentView: View {
     }
 
     private func openGraphs() {
-        guard sidebarMotion.isPresented, !sidebarMotion.isAnimating,
+        guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0 else { return }
         sidebarMotion.setPresented(false)
         graphsPresented = true
