@@ -2174,3 +2174,119 @@ let () =
     "merge-blocks"
     (required_string "outliner-op" merge_entry)
 ;;
+
+let () =
+  let today_page = Logseq_chat_graph_read.{ uuid = "journal-today"; title = "Today" } in
+  let source =
+    { (remote_block "journal-source" "Hello") with
+      Logseq_chat_model.page_id = today_page.uuid
+    ; parent_id = Some today_page.uuid
+    ; order = Some "a0"
+    ; journal = Some ("Today", 20260818)
+    }
+  in
+  let child =
+    { (remote_block "journal-child" "Child") with
+      Logseq_chat_model.page_id = today_page.uuid
+    ; parent_id = Some source.uuid
+    ; order = Some "a0"
+    ; journal = Some ("Today", 20260818)
+    }
+  in
+  let orders =
+    match Logseq_chat_fractional_order.n_between (Some "a0") None 20 with
+    | Ok orders -> orders
+    | Error message -> failwith message
+  in
+  let distant =
+    List.init 100 (fun journal_index ->
+      let page_id = "journal-" ^ string_of_int journal_index in
+      List.mapi
+        (fun block_index order ->
+          { (remote_block
+               (page_id ^ "-block-" ^ string_of_int block_index)
+               "Unrelated") with
+            Logseq_chat_model.page_id
+              = page_id
+          ; parent_id = Some page_id
+          ; order = Some order
+          ; journal = Some (page_id, 20260700 + journal_index)
+          })
+        orders)
+    |> List.concat
+  in
+  let today_blocks = ref [ source; child ] in
+  let full_graph_reads = ref 0 in
+  let page_reads = ref 0 in
+  let stage operation =
+    (match operation.Logseq_chat_pending_ops.intent with
+     | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
+       let original =
+         List.find
+           (fun (block : Logseq_chat_model.block) -> String.equal block.uuid uuid)
+           !today_blocks
+       in
+       today_blocks :=
+         List.map
+           (fun (block : Logseq_chat_model.block) ->
+             if String.equal block.uuid uuid then { block with title = before } else block)
+           !today_blocks
+         @ [ { original with
+               uuid = new_uuid
+             ; title = after
+             ; order = Some new_order
+             ; created_at
+             ; updated_at = created_at
+             } ]
+     | _ -> ());
+    Ok ()
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () ->
+        incr full_graph_reads;
+        Some (distant @ !today_blocks))
+      ~graph_page_blocks:(fun page_uuid ->
+        if not (String.equal page_uuid today_page.uuid)
+        then failwith "journal Enter loaded an unrelated page";
+        incr page_reads;
+        Some !today_blocks)
+      ~graph_node_destination:(fun uuid ->
+        if String.equal uuid source.uuid then Some (today_page, true) else None)
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  full_graph_reads := 0;
+  page_reads := 0;
+  let split =
+    dispatch_outliner
+      session
+      (`Assoc
+        [ "type", `String "returnPressed"
+        ; "uuid", `String source.uuid
+        ; "title", `String source.title
+        ; "caretUTF16Offset", `Int 5
+        ])
+  in
+  if !full_graph_reads <> 0
+  then failwith "journal Enter must not reload every journal block";
+  if !page_reads <> 2
+  then failwith "journal Enter must load only its page before and after staging";
+  (match required_list "outlinerRowSplices" split with
+   | [ `Assoc splice ] ->
+     assert_equal
+       "journal split inserts after the source subtree"
+       child.uuid
+       (required_string "afterBlockId" splice);
+     if List.length (required_list "rows" splice) <> 1
+     then failwith "journal split must return exactly one inserted row"
+   | _ -> failwith "journal split must return one anchored row splice")
+;;

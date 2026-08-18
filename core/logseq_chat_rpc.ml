@@ -403,6 +403,11 @@ let base_outliner_context session =
   outliner_context_with_blocks session blocks
 ;;
 
+let page_outliner_context session page_uuid =
+  Option.bind session.graph_page_blocks (fun load ->
+    Option.map (outliner_context_with_blocks session) (load page_uuid))
+;;
+
 let node_route_context session route =
   let graph_blocks =
     match session.graph_page_blocks with
@@ -757,6 +762,7 @@ let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.conte
 ;;
 
 let structural_outliner_patch
+      ?(anchored = false)
       session
       ~(before_context : Outliner_state.context)
       ~before_state
@@ -821,11 +827,26 @@ let structural_outliner_patch
         |> Array.to_list
         |> List.map (outliner_row_json session)
       in
-      [ `Assoc
-          [ "start", `Int start
-          ; "deleteCount", `Int delete_count
-          ; "rows", `List rows
+      let position =
+        if not anchored
+        then [ "start", `Int start ]
+        else if start > 0
+        then
+          [ ( "afterBlockId"
+            , `String before_rows.(start - 1).Outliner_state.block.Model.uuid )
           ]
+        else if before_length > 0
+        then
+          [ ( "beforeBlockId"
+            , `String before_rows.(0).Outliner_state.block.Model.uuid )
+          ]
+        else [ "start", `Int 0 ]
+      in
+      [ `Assoc
+          (position
+           @ [ "deleteCount", `Int delete_count
+             ; "rows", `List rows
+             ])
       ]
   in
   outliner_patch_result
@@ -1815,14 +1836,37 @@ let normalize_operation_titles session (operation : Pending_ops.t) =
     create_operations @ [ { operation with Pending_ops.intent } ]
 ;;
 
-let outliner_structure_source_matches state payload =
+let outliner_structure_source payload =
   match from_string payload with
   | `Assoc fields ->
     (match List.assoc_opt "type" fields, List.assoc_opt "uuid" fields with
      | Some (`String ("returnPressed" | "backspacePressed")), Some (`String uuid) ->
-       Option.equal String.equal (Outliner_state.editing_uuid state) (Some uuid)
-     | _ -> true)
-  | _ -> true
+       Some uuid
+     | _ -> None)
+  | _ -> None
+;;
+
+let outliner_structure_source_matches state payload =
+  match outliner_structure_source payload with
+  | Some uuid -> Option.equal String.equal (Outliner_state.editing_uuid state) (Some uuid)
+  | None -> true
+;;
+
+let aggregate_return_context session payload message =
+  match
+    session.selected_sidebar_page,
+    session.node_routes,
+    message,
+    outliner_structure_source payload,
+    session.graph_node_destination
+  with
+  | None, [], (Outliner_state.Return_pressed | Return_pressed_with_text _),
+    Some source_uuid, Some destination ->
+    Option.bind (destination source_uuid) (fun (page, _) ->
+      Option.map
+        (fun context -> context, page.Logseq_chat_graph_read.uuid)
+        (page_outliner_context session page.uuid))
+  | _ -> None
 ;;
 
 let dispatch_outliner_event session payload =
@@ -1831,7 +1875,11 @@ let dispatch_outliner_event session payload =
   | Ok _ when not (outliner_structure_source_matches session.outliner_state payload) ->
     outliner_patch ~changed_uuids:[] session (outliner_context session)
   | Ok message ->
-    let context = outliner_context session in
+    let context, aggregate_page_uuid =
+      match aggregate_return_context session payload message with
+      | Some (context, page_uuid) -> context, Some page_uuid
+      | None -> outliner_context session, None
+    in
     let previous_state = session.outliner_state in
     let next_state, commands = Outliner_state.update context previous_state message in
     let base_t = Option.bind session.sync_cursor (fun cursor -> cursor ()) |> Option.value ~default:(-1) in
@@ -1866,8 +1914,16 @@ let dispatch_outliner_event session payload =
        (match enqueue_result with
        | Error message -> failure ~code:"outliner_effect_failed" ~message
        | Ok () ->
-          let projected_context =
-            if interpreted.operations = [] then context else outliner_context session
+          let projected_context, projected_page_scoped =
+            if interpreted.operations = []
+            then context, Option.is_some aggregate_page_uuid
+            else
+              match aggregate_page_uuid with
+              | Some page_uuid ->
+                (match page_outliner_context session page_uuid with
+                 | Some context -> context, true
+                 | None -> outliner_context session, false)
+              | None -> outliner_context session, false
           in
           let next_state =
             List.fold_left
@@ -1900,8 +1956,11 @@ let dispatch_outliner_event session payload =
           match patch_uuids, session.node_routes with
           | Some changed_uuids, [] -> outliner_patch ~changed_uuids session projected_context
           | Some _, _ :: _ -> snapshot_visible session
+          | None, [] when Option.is_some aggregate_page_uuid && not projected_page_scoped ->
+            snapshot_visible session
           | None, [] ->
             structural_outliner_patch
+              ~anchored:projected_page_scoped
               session
               ~before_context:context
               ~before_state:previous_state

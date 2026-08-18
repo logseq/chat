@@ -298,12 +298,29 @@ public struct LogseqOutlineRow: Codable, Identifiable, Hashable {
 }
 
 public struct LogseqOutlinerRowSplice: Codable {
-    public let start: Int
+    public let start: Int?
+    public let afterBlockId: String?
+    public let beforeBlockId: String?
     public let deleteCount: Int
     public let rows: [LogseqOutlineRow]
 
     public init(start: Int, deleteCount: Int, rows: [LogseqOutlineRow]) {
-        self.start = start
+        self.start = Optional(start)
+        self.afterBlockId = nil
+        self.beforeBlockId = nil
+        self.deleteCount = deleteCount
+        self.rows = rows
+    }
+
+    public init(
+        afterBlockId: String? = nil,
+        beforeBlockId: String? = nil,
+        deleteCount: Int,
+        rows: [LogseqOutlineRow]
+    ) {
+        self.start = nil
+        self.afterBlockId = afterBlockId
+        self.beforeBlockId = beforeBlockId
         self.deleteCount = deleteCount
         self.rows = rows
     }

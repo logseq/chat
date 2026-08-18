@@ -2069,6 +2069,51 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.outlinerRows.map(\.block.uuid) == ["first", "inserted", "second"])
     }
 
+    @Test @MainActor func anchoredJournalSplitPreservesUnrelatedRowsAndSubtreeOrder() async throws {
+        let source = outlineBlockJSON(
+            uuid: "source", parentID: "today", order: "a0", createdAt: 1
+        )
+        let child = outlineBlockJSON(
+            uuid: "child", parentID: "source", order: "a0", createdAt: 2
+        )
+        let otherJournal = outlineBlockJSON(
+            uuid: "other-journal", parentID: "other", order: "a0", createdAt: 3
+        )
+        let inserted = """
+        {"uuid":"inserted","title":"inserted","pageId":"today","parentId":"today",\
+        "order":"a1","createdAt":4,"updatedAt":4,"syncStatus":"pending",\
+        "tags":[],"references":[]}
+        """
+        let store = LogseqChatStore { request in
+            if request.contains("outlinerEvent") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"",\
+                "blocks":[\(inserted)],"deletedBlockIds":[],"selectedBlock":null,\
+                "outlinerState":{"editing":{"uuid":"inserted","title":"inserted",\
+                "caretUTF16Offset":0},"selectedBlockIds":[],"autocomplete":null,\
+                "collapsedBlockIds":[],"zoomedBlockIds":[]},\
+                "outlinerRows":[],"outlinerRowSplices":[{"afterBlockId":"child",\
+                "deleteCount":0,"rows":[{"block":\(inserted),"depth":0,\
+                "hasChildren":false,"isCollapsed":false}]}],\
+                "isOutlinerPatch":true},"error":null}
+                """
+            }
+            return outlineSnapshotJSON(
+                blocks: [source, child, otherJournal],
+                appliedServerT: 51
+            )
+        }
+
+        store.refresh()
+        try await waitUntil { store.snapshot.outlinerRows.count == 3 }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "returnPressed"))
+        try await waitUntil { store.snapshot.outlinerRows.count == 4 }
+
+        #expect(store.snapshot.outlinerRows.map(\.block.uuid) == [
+            "source", "child", "inserted", "other-journal",
+        ])
+    }
+
     @Test @MainActor func structuralPatchDeletesOnlyTheAffectedRowRange() async throws {
         let first = outlineBlockJSON(
             uuid: "first", parentID: "page", order: "a0", createdAt: 1

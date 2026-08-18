@@ -1250,7 +1250,22 @@ private struct OpenGraphPayload: Encodable {
             var outlinerRows = snapshot.outlinerRows
             if !result.outlinerRowSplices.isEmpty {
                 for splice in result.outlinerRowSplices {
-                    let start = min(max(splice.start, 0), outlinerRows.count)
+                    let requestedStart: Int?
+                    if let afterBlockId = splice.afterBlockId,
+                       let anchor = outlinerRows.firstIndex(where: {
+                           $0.block.uuid == afterBlockId
+                       }) {
+                        requestedStart = anchor + 1
+                    } else if let beforeBlockId = splice.beforeBlockId,
+                              let anchor = outlinerRows.firstIndex(where: {
+                                  $0.block.uuid == beforeBlockId
+                              }) {
+                        requestedStart = anchor
+                    } else {
+                        requestedStart = splice.start
+                    }
+                    guard let requestedStart else { continue }
+                    let start = min(max(requestedStart, 0), outlinerRows.count)
                     let deleteEnd = min(
                         start + max(splice.deleteCount, 0),
                         outlinerRows.count
