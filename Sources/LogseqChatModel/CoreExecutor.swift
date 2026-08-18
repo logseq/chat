@@ -1,12 +1,19 @@
 import Foundation
 
 #if !SKIP
+enum LogseqChatCorePriority: Int, Sendable {
+    case maintenance
+    case normal
+    case interaction
+}
+
 final class LogseqChatCoreExecutor: @unchecked Sendable {
     static let shared = LogseqChatCoreExecutor()
 
     private struct Job: Sendable {
         let callCore: @Sendable (String) -> String
         let requestJSON: String
+        let priority: LogseqChatCorePriority
         let continuation: CheckedContinuation<String, Never>
     }
 
@@ -26,7 +33,11 @@ final class LogseqChatCoreExecutor: @unchecked Sendable {
             while jobs.isEmpty {
                 condition.wait()
             }
-            let job = jobs.removeFirst()
+            var selectedIndex = jobs.startIndex
+            for index in jobs.indices where jobs[index].priority.rawValue > jobs[selectedIndex].priority.rawValue {
+                selectedIndex = index
+            }
+            let job = jobs.remove(at: selectedIndex)
             condition.unlock()
             return job
         }
@@ -52,12 +63,14 @@ final class LogseqChatCoreExecutor: @unchecked Sendable {
 
     func call(
         _ callCore: @escaping @Sendable (String) -> String,
-        requestJSON: String
+        requestJSON: String,
+        priority: LogseqChatCorePriority = .normal
     ) async -> String {
         await withCheckedContinuation { continuation in
             state.enqueue(Job(
                 callCore: callCore,
                 requestJSON: requestJSON,
+                priority: priority,
                 continuation: continuation
             ))
         }

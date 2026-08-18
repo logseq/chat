@@ -1506,6 +1506,95 @@ let () =
 ;;
 
 let () =
+  let operation operation_id title =
+    Logseq_chat_pending_ops.
+      { operation_id
+      ; base_t = 42
+      ; state = Queued
+      ; intent = Save_title { uuid = "remote"; expected_title = "Old"; title }
+      }
+  in
+  let stale = operation "stale-head" "Stale" in
+  let valid = operation "valid-after-stale" "Valid" in
+  let pending = ref [ stale; valid ] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ remote_block "remote" "Old" ])
+      ~stage_operation:(fun _ -> Ok ())
+      ~prepare_operation:(fun operation ->
+        if String.equal operation.Logseq_chat_pending_ops.operation_id "stale-head"
+        then Error "block no longer exists"
+        else prepare_test_operation operation)
+      ~pending_operations:(fun () -> !pending)
+      ()
+  in
+  configure_plain_graph session;
+  let blocked =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+  in
+  if Option.is_some blocked then failwith "stale head should wait for graph reconciliation";
+  pending := [ valid ];
+  let request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> function
+    | Some request -> request
+    | None -> failwith "reconciled queue must advance past a stale head"
+  in
+  let entry = required_assoc "bodyObject" request |> required_first_assoc "txs" in
+  assert_equal
+    "reconciled queue advances to the next valid offline edit"
+    "valid-after-stale"
+    (required_string "tx-id" entry)
+;;
+
+let () =
+  let pending =
+    Logseq_chat_pending_ops.
+      { operation_id = "bounded-pending"
+      ; base_t = 42
+      ; state = Queued
+      ; intent = Save_title { uuid = "remote"; expected_title = "Old"; title = "Pending" }
+      }
+  in
+  let blocks =
+    remote_block "remote" "Old"
+    :: List.init 500 (fun index ->
+      remote_block ("tail-" ^ string_of_int index) ("Tail " ^ string_of_int index))
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some blocks)
+      ~stage_operation:(fun _ -> Ok ())
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations:(fun () -> [ pending ])
+      ()
+  in
+  configure_plain_graph session;
+  let response =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+  in
+  let result =
+    match from_string response with
+    | `Assoc fields -> required_assoc "result" fields
+    | _ -> failwith "pending sync response must be an object"
+  in
+  if
+    assoc "isPendingSyncPatch" result <> Some (`Bool true)
+    || required_list "blocks" result <> []
+    || String.length response >= 5_000
+  then failwith "pending sync returns a bounded state patch"
+;;
+
+let () =
   let staged = ref [] in
   let session =
     Logseq_chat_rpc.create

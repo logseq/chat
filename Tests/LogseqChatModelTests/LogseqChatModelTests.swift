@@ -475,6 +475,33 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.graphName == "Sync 2")
     }
 
+    @Test @MainActor func configurePayloadIsValidJSONForEveryTokenCharacter() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+        let token = "token\u{0001}\"\\suffix"
+
+        store.configure(
+            baseURL: "http://127.0.0.1:8787",
+            token: token,
+            graphID: "plain-1",
+            refreshAfterApply: false
+        )
+        try await waitUntil { recorder.all.count == 1 }
+
+        let outer = try? JSONSerialization.jsonObject(
+            with: Data(recorder.all[0].utf8)
+        ) as? [String: Any]
+        let params = outer?["params"] as? [String: Any]
+        let payload = params?["payload"] as? String
+        let decodedPayload = payload.flatMap {
+            try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        #expect(decodedPayload?["token"] as? String == token)
+    }
+
     @Test @MainActor func navigationAndRelatedActionsDispatchTheirExactCoreCommands() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
@@ -893,6 +920,38 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.first?.isPendingSync == false)
     }
 
+    @Test @MainActor func pendingSyncPatchPreservesTheOfflineEditedGraph() async throws {
+        let recorder = RequestRecorder()
+        let beginPatch = """
+        {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"pendingSyncRequest":{"id":1,"method":"POST","url":"https://api.example/capture","body":"{}","token":"access-token","filePath":null,"contentType":"application/json"},"hasPendingSemanticOperations":true,"isPendingSyncPatch":true},"error":null}
+        """
+        let completePatch = """
+        {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"pendingSyncRequest":null,"hasPendingSemanticOperations":false,"isPendingSyncPatch":true},"error":null}
+        """
+        let store = LogseqChatStore(
+            call: { call in
+                recorder.append(call)
+                if call.contains("\"action\":\"beginPendingSync\"") {
+                    return beginPatch
+                }
+                if call.contains("\"action\":\"completePendingSync\"") {
+                    return completePatch
+                }
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: nil)
+            },
+            pendingTransport: { _ in
+                LogseqPendingSyncResult(status: 201, body: #"{"uuid":"local-1"}"#, error: nil)
+            }
+        )
+
+        store.send("Offline capture")
+
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
+        }
+        #expect(store.snapshot.blocks.first?.title == "Offline capture")
+    }
+
     @Test @MainActor func sendDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
@@ -1252,6 +1311,40 @@ private let testEmptySnapshotJSON = """
             "finish open",
             "start searchNodes",
             "finish searchNodes",
+        ])
+    }
+
+    @Test @MainActor func interactiveNavigationJumpsAheadOfQueuedMaintenance() async throws {
+        let probe = CoreCallConcurrencyProbe()
+        let store = LogseqChatStore { request in
+            probe.call(request, delayingAction: "configure")
+        }
+
+        store.configure(
+            baseURL: "https://api-staging.logseq.io/first",
+            token: "token",
+            refreshAfterApply: false
+        )
+        try await waitUntil { probe.events.contains("start configure") }
+        store.configure(
+            baseURL: "https://api-staging.logseq.io/second",
+            token: "token",
+            refreshAfterApply: false
+        )
+        store.selectPage("page-1")
+
+        try await waitUntil(timeout: 2.0) {
+            probe.events.contains("finish selectPage")
+                && probe.events.filter { $0 == "finish configure" }.count == 2
+        }
+        #expect(probe.maximumConcurrentCalls == 1)
+        #expect(probe.events == [
+            "start configure",
+            "finish configure",
+            "start selectPage",
+            "finish selectPage",
+            "start configure",
+            "finish configure",
         ])
     }
 
@@ -1845,6 +1938,38 @@ private let testEmptySnapshotJSON = """
         #expect(elapsed < 0.1)
         try await waitUntil {
             recorder.all.contains { $0.contains("outlinerEvent") }
+        }
+    }
+
+    @Test @MainActor func burstyOutlinerMutationsScheduleOneTrailingPendingSync() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"beginPendingSync\"") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
+                "selectedBlock":null,"pendingSyncRequest":null,\
+                "hasPendingSemanticOperations":true,"isPendingSyncPatch":true},"error":null}
+                """
+            }
+            return """
+            {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
+            "selectedBlock":null,"outlinerRows":[],"hasPendingSemanticOperations":true,\
+            "isOutlinerPatch":true},"error":null}
+            """
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "indent"))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "outdent"))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "indent"))
+        try await waitUntil {
+            recorder.all.filter { $0.contains("\"action\":\"outlinerEvent\"") }.count == 3
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"beginPendingSync\"") })
+
+        try await waitUntil {
+            recorder.all.filter { $0.contains("\"action\":\"beginPendingSync\"") }.count == 1
         }
     }
 

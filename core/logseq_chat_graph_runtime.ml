@@ -23,12 +23,36 @@ let refresh_search runtime =
     runtime.search_index
 ;;
 
+let persist_projected_conflicts ~path operations statuses =
+  let persisted = Hashtbl.create (List.length operations) in
+  List.iter
+    (fun operation ->
+      Hashtbl.replace persisted operation.Ops.operation_id operation.Ops.state)
+    operations;
+  List.iter
+    (function
+      | operation_id, Ops.Conflicted message ->
+        (match Hashtbl.find_opt persisted operation_id with
+         | Some (Ops.Queued | Ops.Retryable | Ops.Submitted) ->
+           Ops.set_state ~path ~operation_id (Ops.Conflicted message)
+         | Some (Ops.Accepted _ | Ops.Applied | Ops.Conflicted _) | None -> ())
+      | _, (Ops.Queued | Ops.Submitted | Ops.Accepted _ | Ops.Retryable | Ops.Applied) -> ())
+    statuses
+;;
+
 let rebuild runtime =
-  runtime.snapshot <-
+  let operations = Ops.list ~path:runtime.path in
+  let snapshot =
     Projection.build
       ~server_t:runtime.server_t
       (Datascript.conn_db runtime.conn)
-      (Ops.list ~path:runtime.path);
+      operations
+  in
+  persist_projected_conflicts
+    ~path:runtime.path
+    operations
+    snapshot.statuses;
+  runtime.snapshot <- snapshot;
   refresh_search runtime
 ;;
 
@@ -39,9 +63,11 @@ let create
       ~server_t
       conn
   =
+  let operations = Ops.list ~path in
   let snapshot =
-    Projection.build ~server_t (Datascript.conn_db conn) (Ops.list ~path)
+    Projection.build ~server_t (Datascript.conn_db conn) operations
   in
+  persist_projected_conflicts ~path operations snapshot.statuses;
   let search_index =
     Option.bind search_index_path (fun path ->
       try Some (Logseq_chat_search_index.create ~path) with
@@ -154,18 +180,37 @@ let prepare_sync runtime operation =
 ;;
 
 let stage runtime operation =
+  let requested_operation = operation in
+  let existing = Ops.list ~path:runtime.path in
+  let replacing =
+    List.find_opt
+      (fun pending ->
+        String.equal pending.Ops.operation_id requested_operation.Ops.operation_id)
+      existing
+  in
   let operation =
     match Hashtbl.find_opt runtime.prepared operation.Ops.operation_id with
     | Some normalized -> { normalized with state = operation.state }
     | None -> operation
   in
-  let existing = Ops.list ~path:runtime.path in
-  let replacing =
-    List.exists
-      (fun pending -> String.equal pending.Ops.operation_id operation.Ops.operation_id)
-      existing
+  let transport_state = function
+    | Ops.Submitted | Ops.Accepted _ | Ops.Retryable -> true
+    | Ops.Queued | Ops.Applied | Ops.Conflicted _ -> false
   in
-  if not replacing && operation.base_t <> runtime.server_t
+  let state_only_update =
+    match replacing with
+    | Some existing ->
+      existing.base_t = requested_operation.base_t
+      && existing.intent = requested_operation.intent
+      && transport_state operation.state
+      && (match existing.state with Ops.Conflicted _ -> false | _ -> true)
+    | None -> false
+  in
+  if state_only_update
+  then (
+    Ops.save ~path:runtime.path operation;
+    Ok ())
+  else if Option.is_none replacing && operation.base_t <> runtime.server_t
   then Error "operation was created against a stale server cursor"
   else
     let candidate_ops =
@@ -193,17 +238,22 @@ let stage runtime operation =
 
 let safe_to_rebase = function
   | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _
-  | Ops.Create_tag _ -> true
-  | Ops.Insert_block _ | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _ -> false
+  | Ops.Create_tag _ | Ops.Insert_block _ | Ops.Move_block _ | Ops.Move_blocks _ -> true
+  | Ops.Delete_blocks _ -> false
 ;;
 
 let rebase runtime ~server_t ~operation_ids =
-  Ops.confirm ~path:runtime.path ~operation_ids;
+  let confirmed = Hashtbl.create (List.length operation_ids) in
+  List.iter (fun operation_id -> Hashtbl.replace confirmed operation_id ()) operation_ids;
   List.iter (Hashtbl.remove runtime.prepared) operation_ids;
   let authoritative = Datascript.conn_db runtime.conn in
   Ops.list ~path:runtime.path
   |> List.iter (fun operation ->
     match operation.Ops.state with
+    | _ when
+        Hashtbl.mem confirmed operation.operation_id
+        && Projection.satisfied authoritative operation.intent ->
+      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
     | Ops.Accepted accepted_t when accepted_t <= server_t ->
       Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
     | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent ->
@@ -218,7 +268,10 @@ let rebase runtime ~server_t ~operation_ids =
     | Ops.Accepted _ | Ops.Applied ->
       (match Projection.compile !projected operation.intent with
        | Ok tx -> projected := Datascript.db_with tx !projected
-       | Error _ -> ())
+       | Error message ->
+         Ops.save
+           ~path:runtime.path
+           { operation with state = Ops.Conflicted message })
     | Ops.Queued | Ops.Retryable | Ops.Submitted ->
       Hashtbl.remove runtime.prepared operation.operation_id;
       (match

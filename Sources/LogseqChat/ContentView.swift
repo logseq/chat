@@ -247,6 +247,7 @@ struct ContentView: View {
     #endif
     #endif
     @State private var hasAutoScrolledInitially = false
+    @State private var hasStartedContentTask = false
     @State private var draft = ""
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
@@ -268,20 +269,23 @@ struct ContentView: View {
     var body: some View {
         rootContent
         .task {
-            draft = persistedDraft
-            #if DEBUG
-            print("LogseqChat debug: content task started")
-            #endif
-            store.open(path: databasePath)
-            #if DEBUG
-            print("LogseqChat debug: local store opened")
-            #endif
-            await restoreCachedGraphIfAvailable()
-            await authentication.restore()
-            #if DEBUG
-            print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
-            #endif
-            connectWithCurrentAccessToken()
+            if !hasStartedContentTask {
+                hasStartedContentTask = true
+                draft = persistedDraft
+                #if DEBUG
+                print("LogseqChat debug: content task started")
+                #endif
+                store.open(path: databasePath)
+                #if DEBUG
+                print("LogseqChat debug: local store opened")
+                #endif
+                await restoreCachedGraphIfAvailable()
+                await authentication.restore()
+                #if DEBUG
+                print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
+                #endif
+                connectWithCurrentAccessToken()
+            }
             await store.runPendingSyncLoop()
         }
         .onChange(of: scenePhase) { _, phase in

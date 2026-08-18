@@ -894,6 +894,19 @@ let snapshot_visible session =
   snapshot session blocks
 ;;
 
+let pending_sync_patch session =
+  success
+    (`Assoc
+      [ "revision", `Int session.model.revision
+      ; "blocks", `List []
+      ; "selectedBlock", `Null
+      ; "pendingSyncRequest", pending_request_json session
+      ; "hasPendingSemanticOperations",
+        `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
+      ; "isPendingSyncPatch", `Bool true
+      ])
+;;
+
 let reconcile_authoritative_blocks session =
   match session.graph_blocks with
   | None -> ()
@@ -1365,13 +1378,19 @@ let enqueue_semantic session _config operation =
 ;;
 
 let restore_semantic_queue session _config =
-  match session.semantic_active, session.semantic_queue, session.pending_operations with
-  | None, [], Some pending_operations ->
+  match session.pending_operations with
+  | Some pending_operations ->
+    let active_operation_id =
+      Option.map
+        (fun active -> active.pending.operation.Pending_ops.operation_id)
+        session.semantic_active
+    in
     session.semantic_queue <-
-      List.map
-        (fun operation -> { operation })
-        (pending_operations ())
-  | Some _, _, _ | None, _ :: _, _ | None, [], None -> ()
+      pending_operations ()
+      |> List.filter (fun operation ->
+        active_operation_id <> Some operation.Pending_ops.operation_id)
+      |> List.map (fun operation -> { operation })
+  | None -> ()
 ;;
 
 let begin_pending_sync session config =
@@ -2143,18 +2162,22 @@ let dispatch session action payload =
      | None -> failure ~code:"invalid_params" ~message:"addAsset requires a JSON payload")
   | "beginPendingSync" ->
     (match session.config with
-     | None -> snapshot_visible session
+     | None -> pending_sync_patch session
      | Some config ->
        (match resolve_graph session config with
         | Ok config ->
           begin_pending_sync session config;
-          snapshot_visible session
-        | Error _ -> snapshot_visible session))
+          pending_sync_patch session
+        | Error _ -> pending_sync_patch session))
   | "completePendingSync" ->
     (match payload with
      | Some payload ->
+       let completing_semantic_operation = Option.is_some session.semantic_active in
        (match complete_pending_sync session payload with
-        | Ok () -> snapshot_visible session
+        | Ok () ->
+          if completing_semantic_operation
+          then pending_sync_patch session
+          else snapshot_visible session
         | Error message -> failure ~code:"invalid_pending_sync_completion" ~message)
      | None ->
        failure

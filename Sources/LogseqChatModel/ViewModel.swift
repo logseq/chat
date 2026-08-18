@@ -79,6 +79,12 @@ private struct LogseqPendingSyncCompletion: Encodable {
     let error: String?
 }
 
+private struct ConfigurePayload: Encodable {
+    let baseUrl: String
+    let graphId: String
+    let token: String
+}
+
 private struct UpdateBlockPayload: Encodable {
     let uuid: String
     let operationId: String
@@ -168,6 +174,7 @@ private struct OpenGraphPayload: Encodable {
     private var openedDatabasePath: String?
     private var mutationServerT: Int?
     private var pendingSyncTask: Task<Void, Never>?
+    private var pendingSyncDebounceTask: Task<Void, Never>?
     private var pendingSyncRequested = false
     private var outlinerEventTask: Task<Void, Never>?
     private var outlinerProjectionGeneration = 0
@@ -313,9 +320,10 @@ private struct OpenGraphPayload: Encodable {
     ) {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let payload = """
-        {"baseUrl":"\(Self.escape(baseURL))","graphId":"\(Self.escape(graphID ?? ""))","token":"\(Self.escape(token))"}
-        """
+        guard let payload = encodePayload(
+            ConfigurePayload(baseUrl: baseURL, graphId: graphID ?? "", token: token),
+            action: "configure"
+        ) else { return }
         performAsync(LogseqChatRPCRequest(method: "dispatch", params: LogseqChatRPCParams(action: "configure", payload: payload)), afterApply: {
             if refreshAfterApply {
                 self.refreshSoon()
@@ -329,9 +337,14 @@ private struct OpenGraphPayload: Encodable {
     ) async {
         let baseURL = Self.normalizedBaseURL(baseURL)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let payload = """
-        {"baseUrl":"\(Self.escape(baseURL))","graphId":"\(Self.escape(selectedGraphID ?? ""))","token":"\(Self.escape(token))"}
-        """
+        guard let payload = encodePayload(
+            ConfigurePayload(
+                baseUrl: baseURL,
+                graphId: selectedGraphID ?? "",
+                token: token
+            ),
+            action: "configure"
+        ) else { return }
         await performAsyncAndWait(
             LogseqChatRPCRequest(
                 method: "dispatch",
@@ -555,7 +568,7 @@ private struct OpenGraphPayload: Encodable {
             while let frame = try await stream.nextFrame() {
                 await dispatchRawAndWait("feedSSE", payload: frame)
                 if lastError != nil { break }
-                syncPending()
+                syncPendingSoon()
                 if lastError != nil { break }
                 if stopAfterFirstFrame { break }
             }
@@ -596,7 +609,7 @@ private struct OpenGraphPayload: Encodable {
                     for frame in frames {
                         await dispatchRawAndWait("feedSSE", payload: frame)
                         if lastError != nil { break }
-                        syncPending()
+                        syncPendingSoon()
                         if lastError != nil { break }
                         if stopAfterFirstFrame { break eventStream }
                     }
@@ -627,21 +640,14 @@ private struct OpenGraphPayload: Encodable {
         _ value: T,
         shouldApply: (() -> Bool)? = nil
     ) async {
-        do {
-            let data = try JSONEncoder().encode(value)
-            guard let payload = String(data: data, encoding: .utf8) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            await performAsyncAndWait(
-                LogseqChatRPCRequest(
-                    method: "dispatch",
-                    params: LogseqChatRPCParams(action: action, payload: payload)
-                ),
-                shouldApply: shouldApply
-            )
-        } catch {
-            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
-        }
+        guard let payload = encodePayload(value, action: action) else { return }
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: action, payload: payload)
+            ),
+            shouldApply: shouldApply
+        )
     }
 
     private func dispatchRawAndWait(_ action: String, payload: String? = nil) async {
@@ -734,25 +740,17 @@ private struct OpenGraphPayload: Encodable {
     }
 
     private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
-        do {
-            let payloadData = try JSONEncoder().encode(payloadValue)
-            guard let payload = String(data: payloadData, encoding: .utf8) else {
-                lastError = LogseqChatCoreError(code: "request_encoding", message: "Could not encode \(action) payload")
-                logger.error("Core request encoding failed: \(action) payload was not UTF-8")
-                return
-            }
-            let request = LogseqChatRPCRequest(
-                method: "dispatch",
-                params: LogseqChatRPCParams(action: action, payload: payload)
-            )
-            performAsyncThenSyncPending(request)
-        } catch {
-            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
-            logger.error("Core request encoding failed: \(action)")
-        }
+        guard let payload = encodePayload(payloadValue, action: action) else { return }
+        let request = LogseqChatRPCRequest(
+            method: "dispatch",
+            params: LogseqChatRPCParams(action: action, payload: payload)
+        )
+        performAsyncThenSyncPending(request)
     }
 
     public func syncPending() {
+        pendingSyncDebounceTask?.cancel()
+        pendingSyncDebounceTask = nil
         pendingSyncRequested = true
         guard pendingSyncTask == nil else { return }
         pendingSyncTask = Task { [weak self] in
@@ -895,7 +893,7 @@ private struct OpenGraphPayload: Encodable {
             }
             outlinerTransientFlushTask?.cancel()
             outlinerTransientFlushTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: 200_000_000)
                 guard !Task.isCancelled, let self else { return }
                 self.outlinerTransientFlushTask = nil
                 guard let pending = self.pendingOutlinerTransientEvent else { return }
@@ -935,8 +933,18 @@ private struct OpenGraphPayload: Encodable {
                 }
             )
             if self.snapshot.hasPendingSemanticOperations {
-                self.syncPending()
+                self.syncPendingSoon()
             }
+        }
+    }
+
+    private func syncPendingSoon() {
+        pendingSyncDebounceTask?.cancel()
+        pendingSyncDebounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.pendingSyncDebounceTask = nil
+            self.syncPending()
         }
     }
 
@@ -1009,7 +1017,8 @@ private struct OpenGraphPayload: Encodable {
         #if !SKIP
         let responseJSON = await LogseqChatCoreExecutor.shared.call(
             callCore,
-            requestJSON: requestJSON
+            requestJSON: requestJSON,
+            priority: Self.corePriority(for: actionName)
         )
         #else
         let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
@@ -1071,6 +1080,20 @@ private struct OpenGraphPayload: Encodable {
         }
     }
 
+    private func encodePayload<T: Encodable>(_ value: T, action: String) -> String? {
+        do {
+            let data = try JSONEncoder().encode(value)
+            guard let payload = String(data: data, encoding: .utf8) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            return payload
+        } catch {
+            lastError = LogseqChatCoreError(code: "request_encoding", message: "\(error)")
+            logger.error("Core request encoding failed: \(action)")
+            return nil
+        }
+    }
+
     private func apply(responseJSON: String, actionName: String = "sync") {
         #if DEBUG
         let applyStartedAt = Date()
@@ -1123,13 +1146,6 @@ private struct OpenGraphPayload: Encodable {
         }
     }
 
-    private static func escape(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-    }
-
     private static func normalizedBaseURL(_ value: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed == "https://staging-api.logseq.io" {
@@ -1145,7 +1161,58 @@ private struct OpenGraphPayload: Encodable {
         Int64(Date().timeIntervalSince1970 * 1000.0)
     }
 
+    #if !SKIP
+    private static func corePriority(for action: String) -> LogseqChatCorePriority {
+        switch action {
+        case "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
+             "select", "clearSelection", "loadOlderJournals", "loadBlockReferences",
+             "loadPageReferences", "loadTagObjects", "searchNodes", "send", "sendTask",
+             "addAsset", "updateBlock", "updateBlockStatus", "deleteBlock":
+            return .interaction
+        case "open", "configure", "refresh", "refreshGraphCatalog", "openGraph",
+             "importSnapshot", "startSSE", "feedSSE", "stopSSE", "beginPendingSync",
+             "completePendingSync", "cancelPendingSync":
+            return .maintenance
+        default:
+            return .normal
+        }
+    }
+    #endif
+
     private func mergedSnapshot(_ result: LogseqChatSnapshot) -> LogseqChatSnapshot {
+        if result.isPendingSyncPatch {
+            return LogseqChatSnapshot(
+                revision: result.revision,
+                blocks: snapshot.blocks,
+                selectedBlock: snapshot.selectedBlock,
+                lastRefreshAt: snapshot.lastRefreshAt,
+                graphName: snapshot.graphName,
+                selectedGraphId: snapshot.selectedGraphId,
+                graphs: snapshot.graphs,
+                favorites: snapshot.favorites,
+                recentPages: snapshot.recentPages,
+                selectedPage: snapshot.selectedPage,
+                selectedPageIsTag: snapshot.selectedPageIsTag,
+                selectedPageIsProperty: snapshot.selectedPageIsProperty,
+                appliedServerT: snapshot.appliedServerT,
+                syncConnected: snapshot.syncConnected,
+                relatedBlocks: snapshot.relatedBlocks,
+                searchQuery: snapshot.searchQuery,
+                searchResults: snapshot.searchResults,
+                nodeRoutes: snapshot.nodeRoutes,
+                taskStatuses: snapshot.taskStatuses,
+                isGraphEncrypted: snapshot.isGraphEncrypted,
+                isGraphUnlocked: snapshot.isGraphUnlocked,
+                pendingSyncRequest: result.pendingSyncRequest,
+                outlinerState: snapshot.outlinerState,
+                outlinerCommandRevision: snapshot.outlinerCommandRevision,
+                outlinerCommands: snapshot.outlinerCommands,
+                outlinerAutocompleteCandidates: snapshot.outlinerAutocompleteCandidates,
+                outlinerRows: snapshot.outlinerRows,
+                hasPendingSemanticOperations: result.hasPendingSemanticOperations,
+                hasOlderJournals: snapshot.hasOlderJournals
+            )
+        }
         if result.isOutlinerPatch {
             let deletedBlockIDs = Set(result.deletedBlockIds)
             let replacementBlocks = Dictionary(

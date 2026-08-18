@@ -711,15 +711,18 @@ let update context state message =
     match previous None rows with
     | None -> state, []
     | Some block ->
-      ( state
-      , [ Merge_backward
-            { uuid = editing.uuid
-            ; expected_title = editing.expected_title
-            ; title = editing.title
-            ; previous_uuid = block.uuid
-            ; expected_previous_title = block.title
-            }
-        ] )
+      (match find_block context editing.uuid with
+       | Some editing_block when String.equal editing_block.page_id block.page_id ->
+         ( state
+         , [ Merge_backward
+               { uuid = editing.uuid
+               ; expected_title = editing.expected_title
+               ; title = editing.title
+               ; previous_uuid = block.uuid
+               ; expected_previous_title = block.title
+               }
+           ] )
+       | Some _ | None -> state, [])
   in
   match message with
   | Tap_block uuid when not (String_set.is_empty state.selected) ->

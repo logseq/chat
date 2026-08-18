@@ -4,11 +4,11 @@ module Model = Logseq_chat_model
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
 
-let block ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
+let block ?(page_id = "page") ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
   Model.
     { uuid
     ; title
-    ; page_id = "page"
+    ; page_id
     ; parent_id
     ; order
     ; created_at = 0
@@ -294,6 +294,33 @@ let () =
            ; expected_previous_title = "Alpha"
            }
        ])
+;;
+
+let () =
+  let blocks =
+    [ block "journal-one" "First journal block"
+    ; block
+        ~page_id:"journal-two"
+        ~parent_id:(Some "journal-two")
+        ~order:(Some "a1")
+        "journal-two-block"
+        "Second journal block"
+    ]
+  in
+  let context = State.{ blocks; pages = []; tags = [] } in
+  let state, _ =
+    State.update context State.empty (Tap_block "journal-two-block")
+  in
+  let _, effects =
+    State.update
+      context
+      state
+      (Backspace_pressed_with_text
+         { title = "Second journal block"; selection_length = 0 })
+  in
+  assert_bool
+    "backspace never merges blocks across journal pages"
+    (effects = [])
 ;;
 
 let () =

@@ -539,6 +539,7 @@ public struct LogseqChatSnapshot: Codable {
     public let hasPendingSemanticOperations: Bool
     public let hasOlderJournals: Bool
     public let isOutlinerPatch: Bool
+    public let isPendingSyncPatch: Bool
 
     public init(
         revision: Int, blocks: [LogseqBlock], selectedBlock: LogseqBlock?,
@@ -566,7 +567,8 @@ public struct LogseqChatSnapshot: Codable {
         outlinerRowSplices: [LogseqOutlinerRowSplice] = [],
         hasPendingSemanticOperations: Bool = false,
         hasOlderJournals: Bool = false,
-        isOutlinerPatch: Bool = false
+        isOutlinerPatch: Bool = false,
+        isPendingSyncPatch: Bool = false
     ) {
         self.revision = revision
         self.blocks = blocks
@@ -600,6 +602,7 @@ public struct LogseqChatSnapshot: Codable {
         self.hasPendingSemanticOperations = hasPendingSemanticOperations
         self.hasOlderJournals = hasOlderJournals
         self.isOutlinerPatch = isOutlinerPatch
+        self.isPendingSyncPatch = isPendingSyncPatch
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -616,6 +619,7 @@ public struct LogseqChatSnapshot: Codable {
         case hasPendingSemanticOperations
         case hasOlderJournals
         case isOutlinerPatch
+        case isPendingSyncPatch
     }
 
     public init(from decoder: Decoder) throws {
@@ -660,6 +664,7 @@ public struct LogseqChatSnapshot: Codable {
         hasPendingSemanticOperations = try values.decodeIfPresent(Bool.self, forKey: .hasPendingSemanticOperations) ?? false
         hasOlderJournals = try values.decodeIfPresent(Bool.self, forKey: .hasOlderJournals) ?? false
         isOutlinerPatch = try values.decodeIfPresent(Bool.self, forKey: .isOutlinerPatch) ?? false
+        isPendingSyncPatch = try values.decodeIfPresent(Bool.self, forKey: .isPendingSyncPatch) ?? false
     }
 }
 

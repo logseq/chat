@@ -268,6 +268,36 @@ let () =
 
 let () =
   with_runtime (fun path conn runtime ->
+    let insert =
+      Ops.
+        { operation_id = "offline-insert"
+        ; base_t = 42
+        ; state = Queued
+        ; intent =
+            Insert_block
+              { uuid = "offline-new"
+              ; title = "Created offline"
+              ; page_uuid = "page"
+              ; parent_uuid = "page"
+              ; order = "a1"
+              ; created_at = 100
+              }
+        }
+    in
+    assert_bool "offline insert stages" (Runtime.stage runtime insert = Ok ());
+    ignore (reset_conn conn (base_db "Old"));
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+    assert_bool
+      "unrelated server progress preserves an offline insert"
+      (match Ops.list ~path with
+       | [ { Ops.operation_id = "offline-insert"; base_t = 43; state = Queued; _ } ] ->
+         Option.is_some
+           (entity (Runtime.db runtime) (Lookup_ref ("block/uuid", Uuid "offline-new")))
+       | _ -> false))
+;;
+
+let () =
+  with_runtime (fun path conn runtime ->
     let delete =
       Ops.
         { operation_id = "op-delete-conflict"
@@ -299,6 +329,20 @@ let () =
 
 let () =
   with_runtime (fun path conn runtime ->
+    assert_bool
+      "offline edit stages before confirmation"
+      (Runtime.stage runtime (save_title "premature-confirm" "Old" "Pending") = Ok ());
+    ignore (reset_conn conn (base_db "Old"));
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[ "premature-confirm" ];
+    assert_bool
+      "confirmation id cannot discard an edit absent from authoritative state"
+      (match Ops.list ~path with
+       | [ { Ops.operation_id = "premature-confirm"; _ } ] -> true
+       | _ -> false))
+;;
+
+let () =
+  with_runtime (fun path conn runtime ->
     let submitted = { (save_title "op-echo" "Old" "Pending") with state = Submitted } in
     assert_bool "submitted operation stages" (Runtime.stage runtime submitted = Ok ());
     ignore (reset_conn conn (base_db "Pending"));
@@ -323,6 +367,27 @@ let () =
     assert_bool "accepted operation is removed at accepted cursor" (Ops.list ~path = []);
     assert_bool "authoritative accepted value remains visible"
       (String.equal (title (Runtime.db runtime)) "Pending"))
+;;
+
+let () =
+  with_runtime (fun path _conn runtime ->
+    let submitted = save_title "state-only" "Old" "Pending" in
+    assert_bool
+      "operation stages before transport"
+      (Runtime.stage runtime submitted = Ok ());
+    Ops.save ~path (save_title "unrelated-late-row" "Old" "Other");
+    assert_bool
+      "transport state update does not replay the pending log"
+      (Runtime.stage runtime { submitted with state = Accepted 44 } = Ok ());
+    assert_bool
+      "accepted transport state is persisted"
+      (match
+         Ops.list ~path
+         |> List.find_opt (fun operation ->
+           String.equal operation.Ops.operation_id "state-only")
+       with
+       | Some { state = Accepted 44; _ } -> true
+       | _ -> false))
 ;;
 
 let () =
@@ -380,7 +445,16 @@ let () =
       in
       assert_bool
         "startup restores only operations that remain valid against the graph"
-        (ids = [ "valid" ]))
+        (ids = [ "valid" ]);
+      assert_bool
+        "startup persists projected conflicts instead of retrying them forever"
+        (match
+           Ops.list ~path
+           |> List.find_opt (fun operation ->
+             String.equal operation.Ops.operation_id "stale")
+         with
+         | Some { state = Conflicted _; _ } -> true
+         | _ -> false))
 ;;
 
 let () =
@@ -458,13 +532,12 @@ let () =
 ;;
 
 let () =
-  let structural =
+  let rebaseable_structural =
     [ Ops.Insert_block
         { uuid = "new"; title = ""; page_uuid = "page"; parent_uuid = "page"
         ; order = "a1"; created_at = 1 }
     ; Move_block { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a0" }
     ; Move_blocks { moves = [] }
-    ; Delete_blocks { uuids = [ "block" ] }
     ]
   in
   let semantic =
@@ -479,8 +552,9 @@ let () =
     ]
   in
   assert_bool "rebase safety is defined for every pending intent"
-    (List.for_all (fun intent -> not (Runtime.safe_to_rebase intent)) structural
-     && List.for_all Runtime.safe_to_rebase semantic)
+    (List.for_all Runtime.safe_to_rebase rebaseable_structural
+     && List.for_all Runtime.safe_to_rebase semantic
+     && not (Runtime.safe_to_rebase (Ops.Delete_blocks { uuids = [ "block" ] })))
 ;;
 
 let () =
@@ -491,7 +565,16 @@ let () =
     ignore (reset_conn conn (base_db "Old"));
     Runtime.rebase runtime ~server_t:42 ~operation_ids:[];
     assert_bool "rebase skips conflicts and replays only valid applied operations"
-      (String.equal (title (Runtime.db runtime)) "Applied"))
+      (String.equal (title (Runtime.db runtime)) "Applied");
+    assert_bool
+      "an applied operation that no longer compiles becomes a durable conflict"
+      (match
+         Ops.list ~path
+         |> List.find_opt (fun operation ->
+           String.equal operation.Ops.operation_id "bad-applied")
+       with
+       | Some { state = Conflicted _; _ } -> true
+       | _ -> false))
 ;;
 
 let () =
