@@ -305,7 +305,7 @@ public struct LogseqOutlinerRowSplice: Codable {
     public let rows: [LogseqOutlineRow]
 
     public init(start: Int, deleteCount: Int, rows: [LogseqOutlineRow]) {
-        self.start = Optional(start)
+        self.start = start
         self.afterBlockId = nil
         self.beforeBlockId = nil
         self.deleteCount = deleteCount
