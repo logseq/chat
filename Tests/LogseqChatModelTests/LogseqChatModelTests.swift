@@ -1307,10 +1307,10 @@ private let testEmptySnapshotJSON = """
         #expect(probe.events == [
             "start configure",
             "finish configure",
-            "start open",
-            "finish open",
             "start searchNodes",
             "finish searchNodes",
+            "start open",
+            "finish open",
         ])
     }
 
