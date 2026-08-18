@@ -138,6 +138,53 @@ let () =
 
 let () =
   let authoritative = base_db () in
+  let create =
+    operation
+      "op-create-tag"
+      42
+      (Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+  in
+  let save =
+    operation
+      "op-save-with-new-tag"
+      42
+      (Save_title { uuid = "block"; expected_title = "Old"; title = "New #[[new-tag]]" })
+  in
+  let snapshot = Projection.build ~server_t:42 authoritative [ create; save ] in
+  assert_string "created tag title" "Foobar" (title snapshot.db "new-tag");
+  assert_bool "created tag is an instance of logseq.class/Tag"
+    (match entid snapshot.db "block/uuid" (Uuid "new-tag"),
+           entid snapshot.db "db/ident" (Keyword "logseq.class/Tag") with
+     | Some tag_eid, Some class_eid ->
+       datoms snapshot.db Eavt ~e:tag_eid ~a:"block/tags" ()
+       |> Seq.exists (fun datom ->
+         Logseq_chat_datascript_value.ref_eid snapshot.db "block/tags" datom.v
+         = Some class_eid)
+     | _ -> false);
+  assert_bool "block links the freshly created tag"
+    (has_tag snapshot.db ~source:"block" ~target:"new-tag");
+  assert_bool "creating an already existing tag is a no-op"
+    (Projection.compile snapshot.db
+       (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+     = Ok []);
+  assert_bool "tag creation requires the graph Tag class"
+    (match
+       Projection.compile
+         (empty_db ~schema ())
+         (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+     with
+     | Error _ -> true
+     | Ok _ -> false);
+  assert_bool "tag creation is satisfied once the tag exists"
+    (Projection.satisfied snapshot.db
+       (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+     && not
+          (Projection.satisfied authoritative
+             (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })))
+;;
+
+let () =
+  let authoritative = base_db () in
   let op = operation "op-title" 42
       (Save_title { uuid = "block"; expected_title = "Old"; title = "New [[Project]]" }) in
   let snapshot = Projection.build ~server_t:42 authoritative [ op ] in

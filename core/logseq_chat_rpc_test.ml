@@ -1253,25 +1253,47 @@ let () =
   in
   if not (required_bool "isOutlinerPatch" saved)
   then failwith "saving an edited title must return a bounded patch";
-  (match required_list "blocks" saved, required_list "outlinerRows" saved with
-   | [ `Assoc block ], [ `Assoc row ] ->
+  (match required_list "blocks" saved with
+   | [ `Assoc block ] ->
      assert_equal "bounded saved block" "After" (required_string "title" block);
-     assert_equal
-       "bounded saved row"
-       "After"
-       (required_assoc "block" row |> required_string "title")
-   | _ -> failwith "a title save patch must contain exactly one block and one row");
+     if required_list "outlinerRows" saved <> []
+        || required_list "outlinerRowSplices" saved <> []
+     then failwith "a title save must update the existing row by block id"
+   | _ -> failwith "a title save patch must contain exactly one block");
   if List.length !staged <> 1 then failwith "closing the keyboard must stage one title save"
 ;;
 
 let () =
   let staged = ref [] in
+  let selected_block = remote_block "selected" "Selected" in
+  let unrelated_tail =
+    match Logseq_chat_fractional_order.n_between (Some "a0") None 100 with
+    | Error message -> failwith message
+    | Ok orders ->
+      List.mapi
+        (fun index order ->
+          { (remote_block ("delete-tail-" ^ string_of_int index) "Unrelated") with
+            Logseq_chat_model.order = Some order
+          })
+        orders
+  in
+  let projected = ref (selected_block :: unrelated_tail) in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~sync_cursor:(fun () -> Some 91)
-      ~graph_blocks:(fun () -> Some [ remote_block "selected" "Selected" ])
-      ~stage_operation:(fun operation -> staged := !staged @ [ operation ]; Ok ())
+      ~graph_blocks:(fun () -> Some !projected)
+      ~stage_operation:(fun operation ->
+        staged := !staged @ [ operation ];
+        (match operation.Logseq_chat_pending_ops.intent with
+         | Delete_blocks { uuids } ->
+           projected :=
+             List.filter
+               (fun (block : Logseq_chat_model.block) ->
+                 not (List.exists (String.equal block.uuid) uuids))
+               !projected
+         | _ -> ());
+        Ok ())
       ~prepare_operation:prepare_test_operation
       ()
   in
@@ -1297,6 +1319,19 @@ let () =
        ; intent = Delete_blocks { uuids = [ "selected" ] }
        ; _ } ] -> ()
    | _ -> failwith "confirmed outliner delete must stage one semantic operation");
+  if not (required_bool "isOutlinerPatch" confirmed)
+  then failwith "confirmed delete must use a bounded patch";
+  if required_list "blocks" confirmed <> [] || required_list "outlinerRows" confirmed <> []
+  then failwith "confirmed delete must not serialize unrelated page blocks";
+  (match required_list "deletedBlockIds" confirmed with
+   | [ `String "selected" ] -> ()
+   | _ -> failwith "confirmed delete patch must name only the deleted block");
+  (match required_list "outlinerRowSplices" confirmed with
+   | [ `Assoc splice ]
+     when required_int "start" splice = 0
+          && required_int "deleteCount" splice = 1
+          && required_list "rows" splice = [] -> ()
+   | _ -> failwith "confirmed delete must remove one bounded row range");
   let selected_ids =
     required_assoc "outlinerState" confirmed |> required_list "selectedBlockIds"
   in
@@ -1355,19 +1390,22 @@ let () =
       session
       (`Assoc [ "type", `String "toggleCollapsed"; "uuid", `String "parent" ])
   in
-  (match required_list "outlinerRows" collapsed with
-   | [ `Assoc parent_row; `Assoc sibling_row ] ->
+  if required_list "outlinerRows" collapsed <> []
+  then failwith "collapse must not return a full row projection";
+  (match required_list "outlinerRowSplices" collapsed with
+   | [ `Assoc splice ] ->
+     if required_int "start" splice <> 0 || required_int "deleteCount" splice <> 2
+     then failwith "collapse must replace only the parent and hidden child";
+     (match required_list "rows" splice with
+      | [ `Assoc parent_row ] ->
      assert_equal
        "collapsed first row"
        "parent"
        (required_assoc "block" parent_row |> required_string "uuid");
      if not (required_bool "isCollapsed" parent_row)
-     then failwith "collapsed row must expose reducer state";
-     assert_equal
-       "collapsed sibling row"
-       "sibling"
-       (required_assoc "block" sibling_row |> required_string "uuid")
-   | _ -> failwith "collapsed outliner rows must hide descendants");
+     then failwith "collapsed row must expose reducer state"
+      | _ -> failwith "collapse splice must insert only the collapsed parent")
+   | _ -> failwith "collapse must return one bounded row splice");
   let zoomed =
     dispatch_outliner
       session
@@ -1379,10 +1417,12 @@ let () =
      |> List.map (function `String value -> value | _ -> failwith "zoom path must contain strings"))
     <> [ "parent" ]
   then failwith "zoom snapshot must expose the full native navigation path";
-  (match required_list "outlinerRows" zoomed with
-   | [ `Assoc row ] ->
-     assert_equal "zoomed row" "parent" (required_assoc "block" row |> required_string "uuid")
-   | _ -> failwith "zoom must expose only the selected subtree")
+  (match required_list "outlinerRowSplices" zoomed with
+   | [ `Assoc splice ]
+     when required_int "start" splice = 1
+          && required_int "deleteCount" splice = 1
+          && required_list "rows" splice = [] -> ()
+   | _ -> failwith "zoom must remove only rows outside the selected subtree")
 ;;
 
 let () =
@@ -1781,7 +1821,18 @@ let () =
 
 let () =
   let source = remote_block "source" "Hello" in
-  let projected = ref [ source ] in
+  let unrelated_tail =
+    match Logseq_chat_fractional_order.n_between (Some "a0") None 100 with
+    | Error message -> failwith message
+    | Ok orders ->
+      List.mapi
+        (fun index order ->
+          { (remote_block ("unrelated-" ^ string_of_int index) "Unrelated") with
+            Logseq_chat_model.order = Some order
+          })
+        orders
+  in
+  let projected = ref (source :: unrelated_tail) in
   let server_t = ref 42 in
   let authoritative = Hashtbl.create 8 in
   let prepare_calls = ref 0 in
@@ -1844,6 +1895,19 @@ let () =
       ~prepare_operation:prepare
       ()
   in
+  let assert_bounded_structural_patch label response =
+    if not (required_bool "isOutlinerPatch" response)
+    then failwith (label ^ " must use an outliner patch");
+    if required_list "outlinerRows" response <> []
+    then failwith (label ^ " must not serialize the whole row projection");
+    if List.length (required_list "blocks" response) > 2
+    then failwith (label ^ " must include only changed blocks");
+    match required_list "outlinerRowSplices" response with
+    | [ `Assoc splice ] ->
+      if List.length (required_list "rows" splice) > 2
+      then failwith (label ^ " row splice grew with the unrelated page tail")
+    | _ -> failwith (label ^ " must describe one bounded row splice")
+  in
   configure_plain_graph session;
   ignore
     (dispatch_outliner session (`Assoc [ "type", `String "tapBlock"; "uuid", `String "source" ]));
@@ -1856,12 +1920,14 @@ let () =
          ; "caretUTF16Offset", `Int 5
          ]));
   let first_split = dispatch_outliner session (`Assoc [ "type", `String "returnPressed" ]) in
+  assert_bounded_structural_patch "first split" first_split;
   let first_uuid =
     required_assoc "outlinerState" first_split
     |> required_assoc "editing"
     |> required_string "uuid"
   in
   let second_split = dispatch_outliner session (`Assoc [ "type", `String "returnPressed" ]) in
+  assert_bounded_structural_patch "second split" second_split;
   let second_uuid =
     required_assoc "outlinerState" second_split
     |> required_assoc "editing"
@@ -1875,6 +1941,7 @@ let () =
         ; "selectionLength", `Int 0
         ])
   in
+  assert_bounded_structural_patch "first backward merge" merged;
   assert_equal
     "repeated structural edits keep the inline editor focused"
     first_uuid
@@ -1889,6 +1956,7 @@ let () =
         ; "selectionLength", `Int 0
         ])
   in
+  assert_bounded_structural_patch "second backward merge" merged_again;
   assert_equal
     "consecutive empty-block deletes use the latest pending projection"
     "source"

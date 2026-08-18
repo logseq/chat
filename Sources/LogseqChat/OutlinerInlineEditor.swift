@@ -100,16 +100,42 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
         case .applyModel:
+            let wasAwaitingHandoff = context.coordinator.isAwaitingBlockHandoff
+            let bufferedTyping = wasAwaitingHandoff
+                ? context.coordinator.pendingHandoffTyping : ""
+            context.coordinator.pendingHandoffTyping = ""
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
             let selection = textView.selectedRange
-            if textView.text != text {
-                textView.text = text
+            if wasAwaitingHandoff {
+                let merged = InlineEditorHandoffMerge.merged(
+                    modelText: text,
+                    desiredCaretUTF16Offset: desiredCaretUTF16Offset,
+                    bufferedTyping: bufferedTyping
+                )
+                if textView.text != merged.text {
+                    textView.text = merged.text
+                }
+                textView.selectedRange = NSRange(
+                    location: merged.caretUTF16Offset,
+                    length: 0
+                )
+                if !bufferedTyping.isEmpty {
+                    context.coordinator.localText = merged.text
+                    let onTextChange = context.coordinator.parent.onTextChange
+                    DispatchQueue.main.async {
+                        onTextChange(merged.text, merged.caretUTF16Offset)
+                    }
+                }
+            } else {
+                if textView.text != text {
+                    textView.text = text
+                }
+                textView.selectedRange = NSRange(
+                    location: min(desiredCaretUTF16Offset ?? selection.location, text.utf16.count),
+                    length: 0
+                )
             }
-            textView.selectedRange = NSRange(
-                location: min(desiredCaretUTF16Offset ?? selection.location, text.utf16.count),
-                length: 0
-            )
         }
         if !isSameBlock {
             #if DEBUG
@@ -143,6 +169,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var parent: NativeOutlinerTextView
         var localText: String?
         var isAwaitingBlockHandoff = false
+        var pendingHandoffTyping = ""
         var activeAccessibilityIdentifier: String
 
         init(parent: NativeOutlinerTextView) {
@@ -166,12 +193,21 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText replacement: String
         ) -> Bool {
+            if isAwaitingBlockHandoff {
+                // The core has not handed the editor to the new block yet;
+                // buffer keystrokes so nothing lands in the old block, then
+                // merge them into the new block at handoff.
+                if replacement.isEmpty {
+                    if !pendingHandoffTyping.isEmpty {
+                        pendingHandoffTyping.removeLast()
+                    }
+                } else if replacement != "\n" {
+                    pendingHandoffTyping += replacement
+                }
+                return false
+            }
             if replacement == "\n" {
                 var submittedText = textView.text ?? ""
-                let localText = InlineEditorReturnTransition.localText(
-                    text: submittedText,
-                    replacementRange: range
-                )
                 if range.length > 0 {
                     let value = submittedText as NSString
                     let selectionLocation = min(range.location, value.length)
@@ -181,9 +217,10 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                         with: ""
                     )
                 }
-                textView.text = localText
-                textView.selectedRange = NSRange(location: 0, length: 0)
-                self.localText = localText
+                // Leave the text view untouched until the core hands the
+                // editor off to the freshly created block; blanking it here
+                // makes the current block flash the caret suffix for a frame.
+                localText = textView.text
                 isAwaitingBlockHandoff = true
                 parent.onReturn(submittedText, range.location)
                 return false

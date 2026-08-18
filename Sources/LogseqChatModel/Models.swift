@@ -288,6 +288,25 @@ public struct LogseqOutlineRow: Codable, Identifiable, Hashable {
     public let hasChildren: Bool
     public let isCollapsed: Bool
     public var id: String { block.uuid }
+
+    public init(block: LogseqBlock, depth: Int, hasChildren: Bool, isCollapsed: Bool) {
+        self.block = block
+        self.depth = depth
+        self.hasChildren = hasChildren
+        self.isCollapsed = isCollapsed
+    }
+}
+
+public struct LogseqOutlinerRowSplice: Codable {
+    public let start: Int
+    public let deleteCount: Int
+    public let rows: [LogseqOutlineRow]
+
+    public init(start: Int, deleteCount: Int, rows: [LogseqOutlineRow]) {
+        self.start = start
+        self.deleteCount = deleteCount
+        self.rows = rows
+    }
 }
 
 public struct LogseqGraph: Codable, Hashable, Identifiable, Sendable {
@@ -343,6 +362,7 @@ public struct LogseqSearchHit: Codable, Hashable, Identifiable, Sendable {
 public struct LogseqNodeProjection: Codable, Identifiable {
     public let uuid: String
     public let isTag: Bool
+    public let isProperty: Bool
     public let page: LogseqSidebarPage
     public let blocks: [LogseqBlock]
     public let relatedBlocks: [LogseqBlock]
@@ -498,6 +518,7 @@ public struct LogseqChatSnapshot: Codable {
     public let recentPages: [LogseqSidebarPage]
     public let selectedPage: LogseqSidebarPage?
     public let selectedPageIsTag: Bool?
+    public let selectedPageIsProperty: Bool?
     public let appliedServerT: Int?
     public let syncConnected: Bool?
     public let relatedBlocks: [LogseqBlock]?
@@ -513,6 +534,8 @@ public struct LogseqChatSnapshot: Codable {
     public let outlinerCommands: [LogseqOutlinerCommand]
     public let outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate]
     public let outlinerRows: [LogseqOutlineRow]
+    public let deletedBlockIds: [String]
+    public let outlinerRowSplices: [LogseqOutlinerRowSplice]
     public let hasPendingSemanticOperations: Bool
     public let hasOlderJournals: Bool
     public let isOutlinerPatch: Bool
@@ -524,6 +547,7 @@ public struct LogseqChatSnapshot: Codable {
         favorites: [LogseqSidebarPage] = [], recentPages: [LogseqSidebarPage] = [],
         selectedPage: LogseqSidebarPage? = nil,
         selectedPageIsTag: Bool? = nil,
+        selectedPageIsProperty: Bool? = nil,
         appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
         searchQuery: String? = nil,
@@ -538,6 +562,8 @@ public struct LogseqChatSnapshot: Codable {
         outlinerCommands: [LogseqOutlinerCommand] = [],
         outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate] = [],
         outlinerRows: [LogseqOutlineRow] = [],
+        deletedBlockIds: [String] = [],
+        outlinerRowSplices: [LogseqOutlinerRowSplice] = [],
         hasPendingSemanticOperations: Bool = false,
         hasOlderJournals: Bool = false,
         isOutlinerPatch: Bool = false
@@ -553,6 +579,7 @@ public struct LogseqChatSnapshot: Codable {
         self.recentPages = recentPages
         self.selectedPage = selectedPage
         self.selectedPageIsTag = selectedPageIsTag
+        self.selectedPageIsProperty = selectedPageIsProperty
         self.appliedServerT = appliedServerT
         self.syncConnected = syncConnected
         self.relatedBlocks = relatedBlocks
@@ -568,6 +595,8 @@ public struct LogseqChatSnapshot: Codable {
         self.outlinerCommands = outlinerCommands
         self.outlinerAutocompleteCandidates = outlinerAutocompleteCandidates
         self.outlinerRows = outlinerRows
+        self.deletedBlockIds = deletedBlockIds
+        self.outlinerRowSplices = outlinerRowSplices
         self.hasPendingSemanticOperations = hasPendingSemanticOperations
         self.hasOlderJournals = hasOlderJournals
         self.isOutlinerPatch = isOutlinerPatch
@@ -575,12 +604,15 @@ public struct LogseqChatSnapshot: Codable {
 
     private enum CodingKeys: String, CodingKey {
         case revision, blocks, selectedBlock, lastRefreshAt, graphName
-        case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag, appliedServerT
+        case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag
+        case selectedPageIsProperty, appliedServerT
         case syncConnected, relatedBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
         case outlinerAutocompleteCandidates
         case outlinerRows
+        case deletedBlockIds
+        case outlinerRowSplices
         case hasPendingSemanticOperations
         case hasOlderJournals
         case isOutlinerPatch
@@ -599,6 +631,7 @@ public struct LogseqChatSnapshot: Codable {
         recentPages = try values.decodeIfPresent([LogseqSidebarPage].self, forKey: .recentPages) ?? []
         selectedPage = try values.decodeIfPresent(LogseqSidebarPage.self, forKey: .selectedPage)
         selectedPageIsTag = try values.decodeIfPresent(Bool.self, forKey: .selectedPageIsTag)
+        selectedPageIsProperty = try values.decodeIfPresent(Bool.self, forKey: .selectedPageIsProperty)
         appliedServerT = try values.decodeIfPresent(Int.self, forKey: .appliedServerT)
         syncConnected = try values.decodeIfPresent(Bool.self, forKey: .syncConnected)
         relatedBlocks = try values.decodeIfPresent([LogseqBlock].self, forKey: .relatedBlocks)
@@ -619,6 +652,11 @@ public struct LogseqChatSnapshot: Codable {
             forKey: .outlinerAutocompleteCandidates
         ) ?? []
         outlinerRows = try values.decodeIfPresent([LogseqOutlineRow].self, forKey: .outlinerRows) ?? []
+        deletedBlockIds = try values.decodeIfPresent([String].self, forKey: .deletedBlockIds) ?? []
+        outlinerRowSplices = try values.decodeIfPresent(
+            [LogseqOutlinerRowSplice].self,
+            forKey: .outlinerRowSplices
+        ) ?? []
         hasPendingSemanticOperations = try values.decodeIfPresent(Bool.self, forKey: .hasPendingSemanticOperations) ?? false
         hasOlderJournals = try values.decodeIfPresent(Bool.self, forKey: .hasOlderJournals) ?? false
         isOutlinerPatch = try values.decodeIfPresent(Bool.self, forKey: .isOutlinerPatch) ?? false

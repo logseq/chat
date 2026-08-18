@@ -207,6 +207,12 @@ let graph_node_is_tag uuid =
   | None -> false
 ;;
 
+let graph_node_is_property uuid =
+  match !graph_runtime with
+  | Some runtime -> Logseq_chat_graph_runtime.node_is_property runtime.read_runtime uuid
+  | None -> false
+;;
+
 let graph_page_blocks page_uuid =
   match !graph_runtime with
   | Some runtime ->
@@ -235,11 +241,11 @@ let graph_node_references uuid =
   | None -> None
 ;;
 
-let graph_normalize_title ~uuid title =
+let graph_normalize_titles ~uuid titles =
   match !graph_runtime with
   | Some runtime ->
-    Logseq_chat_graph_runtime.normalize_title runtime.read_runtime ~uuid title
-  | None -> title
+    Logseq_chat_graph_runtime.normalize_titles runtime.read_runtime ~uuid titles
+  | None -> titles, []
 ;;
 
 let graph_search query =
@@ -349,11 +355,12 @@ let create_session ?storage ?catalog_session () =
     ~graph_sidebar_pages
     ~graph_tag_pages
     ~graph_node_is_tag
+    ~graph_node_is_property
     ~graph_page_blocks
     ~graph_node_destination
     ~graph_node_references
     ~graph_tag_objects
-    ~graph_normalize_title
+    ~graph_normalize_titles
     ~graph_search
     ~load_older_journals
     ~has_older_journals

@@ -21,7 +21,11 @@ struct OutlinerView: View {
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
     let onLoadOlderJournals: () -> Void
     let relatedTitle: String?
+    let relatedEmptyTitle: String?
     let relatedBlocks: [LogseqBlock]
+    let relatedAccessibilityIdentifier: String
+    let showsEmptyPlaceholder: Bool
+    let onAddFirstBlock: (() -> Void)?
 
     var body: some View {
         let rowsByID = Dictionary(uniqueKeysWithValues: rows.map { ($0.block.uuid, $0) })
@@ -36,7 +40,11 @@ struct OutlinerView: View {
                         .padding(.bottom, 12)
                 }
                 if rows.isEmpty {
-                    EmptyBlocksView()
+                    if let onAddFirstBlock {
+                        AddFirstBlockButton(action: onAddFirstBlock)
+                    } else if showsEmptyPlaceholder {
+                        EmptyBlocksView()
+                    }
                 } else {
                     ForEach(visibleSections) { section in
                         sectionView(section, rowsByID: rowsByID)
@@ -54,14 +62,7 @@ struct OutlinerView: View {
                     .accessibilityIdentifier(OutlinerPaginationPolicy.accessibilityIdentifier)
                 }
                 if let relatedTitle {
-                    RelatedBlocksSection(
-                        title: relatedTitle,
-                        emptyTitle: nil,
-                        blocks: relatedBlocks,
-                        accessibilityIdentifier: "section.node.linked-references",
-                        onOpenMarkupLink: onOpenMarkupLink
-                    )
-                    .padding(.top, 26)
+                    relatedSection(title: relatedTitle)
                 }
                 Color.clear.frame(height: bottomPadding)
             }
@@ -132,7 +133,46 @@ struct OutlinerView: View {
         }
     }
 
-    private func blockRow(_ row: LogseqOutlineRow) -> some View {
+    // Tagged nodes and linked references reuse the outliner block row so they
+    // stay editable in place; rows that stand for whole pages navigate instead
+    // of opening the inline editor.
+    @ViewBuilder private func relatedSection(title: String) -> some View {
+        Text(verbatim: title)
+            .font(.title2.bold())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.top, 26)
+            .padding(.bottom, 8)
+            .accessibilityIdentifier(relatedAccessibilityIdentifier)
+        if relatedBlocks.isEmpty, let relatedEmptyTitle {
+            Text(verbatim: relatedEmptyTitle)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+        }
+        ForEach(RelatedBlockGrouping.groups(relatedBlocks)) { group in
+            if !group.breadcrumbs.isEmpty {
+                BlockBreadcrumb(
+                    summaries: group.breadcrumbs,
+                    onOpenMarkupLink: onOpenMarkupLink
+                )
+                .padding(.top, 10)
+                .padding(.horizontal, 8)
+            }
+            ForEach(group.blocks) { block in
+                blockRow(
+                    relatedRow(block),
+                    opensAsPage: block.uuid == block.pageId
+                )
+            }
+        }
+    }
+
+    private func relatedRow(_ block: LogseqBlock) -> LogseqOutlineRow {
+        LogseqOutlineRow(block: block, depth: 0, hasChildren: false, isCollapsed: false)
+    }
+
+    private func blockRow(_ row: LogseqOutlineRow, opensAsPage: Bool = false) -> some View {
         OutlinerBlockRow(
             row: row,
             statuses: statuses,
@@ -159,8 +199,12 @@ struct OutlinerView: View {
                 sendEvent(LogseqOutlinerEvent(type: "toggleCollapsed", uuid: row.block.uuid))
             },
             onEdit: {
-                onBeginInteraction()
-                sendEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: row.block.uuid))
+                if opensAsPage {
+                    onZoomBlock(row.block.uuid)
+                } else {
+                    onBeginInteraction()
+                    sendEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: row.block.uuid))
+                }
             },
             onLongPress: {
                 onBeginInteraction()
@@ -225,46 +269,6 @@ struct OutlinerView: View {
 
 }
 
-struct RelatedBlocksSection: View {
-    let title: String
-    let emptyTitle: String?
-    let blocks: [LogseqBlock]
-    let accessibilityIdentifier: String
-    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
-
-    var body: some View {
-        Text(verbatim: title)
-            .font(.title2.bold())
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
-            .accessibilityIdentifier(accessibilityIdentifier)
-        if blocks.isEmpty, let emptyTitle {
-            Text(verbatim: emptyTitle)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        ForEach(RelatedBlockGrouping.groups(blocks)) { group in
-            if !group.breadcrumbs.isEmpty {
-                BlockBreadcrumb(
-                    summaries: group.breadcrumbs,
-                    onOpenMarkupLink: onOpenMarkupLink
-                )
-                .padding(.top, 8)
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(group.blocks) { block in
-                    RelatedBlockRow(block: block, onOpenMarkupLink: onOpenMarkupLink)
-                    if block.uuid != group.blocks.last?.uuid {
-                        Divider()
-                    }
-                }
-            }
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
-        }
-    }
-}
-
 private struct BlockBreadcrumb: View {
     let summaries: [LogseqEntitySummary]
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
@@ -287,52 +291,6 @@ private struct BlockBreadcrumb: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("breadcrumb.related-blocks")
-    }
-}
-
-private struct RelatedBlockRow: View {
-    let block: LogseqBlock
-    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle()
-                .fill(Color.secondary.opacity(0.35))
-                .frame(width: 6, height: 6)
-            VStack(alignment: .leading, spacing: 5) {
-                #if !SKIP
-                Text(OutlinerMarkupAttributedString.make(
-                    nodes: block.markup,
-                    fallback: block.title.isEmpty ? "Untitled block" : block.title
-                ))
-                .environment(\.openURL, OpenURLAction { url in
-                    guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
-                    onOpenMarkupLink(link)
-                    return .handled
-                })
-                #else
-                Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
-                #endif
-                BlockTrailingTags(
-                    tags: BlockTagPresentationPolicy.trailingTags(
-                        tags: block.tags,
-                        markup: block.markup
-                    ),
-                    onOpenTag: { onOpenMarkupLink(.node(uuid: $0)) }
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        #if DEBUG
-        .onAppear {
-            print(
-                "LogseqChat debug: related block uuid=\(block.uuid) "
-                    + "markup=\(block.markup.count) refs=\(block.references.count) "
-                    + "tags=\(block.tags.count) breadcrumbs=\(block.breadcrumbs.count)"
-            )
-        }
-        #endif
     }
 }
 
@@ -547,10 +505,12 @@ struct OutlinerBlockRow: View, Equatable {
     }
 
     @ViewBuilder private var renderedTitle: some View {
+        // An empty block renders as a blank line (a space keeps the row
+        // height and tap target); accessibility still says "Untitled block".
         #if !SKIP
         Text(OutlinerMarkupAttributedString.make(
             nodes: row.block.markup,
-            fallback: row.block.title.isEmpty ? "Untitled block" : row.block.title
+            fallback: row.block.title.isEmpty ? " " : row.block.title
         ))
         .environment(\.openURL, OpenURLAction { url in
             guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
@@ -558,7 +518,7 @@ struct OutlinerBlockRow: View, Equatable {
             return .handled
         })
         #else
-        Text(verbatim: row.block.title.isEmpty ? "Untitled block" : row.block.title)
+        Text(verbatim: row.block.title.isEmpty ? " " : row.block.title)
         #endif
     }
 
@@ -906,6 +866,27 @@ struct ErrorBanner: View {
         .padding(14)
         .background(Color(red: 1.0, green: 0.90, blue: 0.90))
         .cornerRadius(16)
+    }
+}
+
+struct AddFirstBlockButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                Text(verbatim: "Add a block")
+                    .font(.body.weight(.medium))
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .padding(.horizontal, 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add a block")
+        .accessibilityIdentifier("button.outliner.add-first-block")
     }
 }
 

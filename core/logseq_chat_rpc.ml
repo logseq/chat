@@ -49,6 +49,7 @@ type semantic_active =
 type node_route =
   { uuid : string
   ; is_tag : bool
+  ; is_property : bool
   ; page : Logseq_chat_graph_read.sidebar_page
   ; zoom_to_block : bool
   ; related_blocks : Model.block list
@@ -72,12 +73,14 @@ type t =
   ; graph_sidebar_pages : (unit -> Logseq_chat_graph_read.sidebar_pages option) option
   ; graph_tag_pages : (unit -> Logseq_chat_graph_read.sidebar_page list option) option
   ; graph_node_is_tag : (string -> bool) option
+  ; graph_node_is_property : (string -> bool) option
   ; graph_page_blocks : (string -> Model.block list option) option
   ; graph_node_destination :
       (string -> (Logseq_chat_graph_read.sidebar_page * bool) option) option
   ; graph_node_references : (string -> Model.block list option) option
   ; graph_tag_objects : (string -> Model.block list option) option
-  ; graph_normalize_title : (uuid:string -> string -> string) option
+  ; graph_normalize_titles :
+      (uuid:string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Logseq_chat_search_index.hit list) option
   ; mutable search_results : Logseq_chat_search_index.hit list
   ; mutable search_query : string
@@ -424,6 +427,18 @@ let active_node_route session =
   match List.rev session.node_routes with route :: _ -> Some route | [] -> None
 ;;
 
+(* Related blocks (tagged nodes or linked references) are recomputed on every
+   projection so edits made to them stay visible; the list captured when the
+   route was opened is only the offline fallback. *)
+let node_route_related_blocks session route =
+  let fresh =
+    if route.is_tag
+    then Option.bind session.graph_tag_objects (fun load -> load route.uuid)
+    else Option.bind session.graph_node_references (fun load -> load route.uuid)
+  in
+  Option.value fresh ~default:route.related_blocks
+;;
+
 (* Resolve a node from the locally cached chat blocks when the graph db does
    not know the uuid yet (for example a freshly created block while offline). *)
 let model_node_destination session uuid =
@@ -445,10 +460,29 @@ let model_node_destination session uuid =
     Some (page, true)
 ;;
 
+(* Related blocks are editable in place, so the dispatch context must resolve
+   them even though they belong to other pages. The display contexts
+   (node_route_context / base_outliner_context) stay page-scoped. *)
+let with_extra_blocks context extra =
+  let missing =
+    List.filter
+      (fun (block : Model.block) ->
+        not
+          (List.exists
+             (fun (existing : Model.block) -> String.equal existing.uuid block.uuid)
+             context.Outliner_state.blocks))
+      extra
+  in
+  { context with Outliner_state.blocks = context.Outliner_state.blocks @ missing }
+;;
+
 let outliner_context session =
   match active_node_route session with
-  | Some route -> node_route_context session route
-  | None -> base_outliner_context session
+  | Some route ->
+    with_extra_blocks
+      (node_route_context session route)
+      (node_route_related_blocks session route)
+  | None -> with_extra_blocks (base_outliner_context session) session.related_blocks
 ;;
 
 let outliner_state_json state =
@@ -517,9 +551,11 @@ let node_routes_json session =
     `Assoc
       [ "uuid", `String route.uuid
       ; "isTag", `Bool route.is_tag
+      ; "isProperty", `Bool route.is_property
       ; "page", sidebar_page_json route.page
       ; "blocks", `List (List.map (visible_block_json session.model) context.blocks)
-      ; "relatedBlocks", `List (List.map block_json route.related_blocks)
+      ; "relatedBlocks",
+        `List (List.map block_json (node_route_related_blocks session route))
       ; "outlinerState", outliner_state_json state
       ; "outlinerRows", outliner_rows_json session context state
       ; "outlinerAutocompleteCandidates", outliner_candidates_json context state
@@ -589,6 +625,12 @@ let selected_page_is_tag session =
   | _ -> false
 ;;
 
+let selected_page_is_property session =
+  match session.selected_sidebar_page, session.graph_node_is_property with
+  | Some page, Some is_property -> is_property page.Logseq_chat_graph_read.uuid
+  | _ -> false
+;;
+
 let snapshot_related_blocks session =
   if selected_page_is_tag session
   then (
@@ -616,6 +658,7 @@ let snapshot session blocks =
          | None -> `Null)
       ; "relatedBlocks", `List (List.map block_json (snapshot_related_blocks session))
       ; "selectedPageIsTag", `Bool (selected_page_is_tag session)
+      ; "selectedPageIsProperty", `Bool (selected_page_is_property session)
       ; "searchQuery", `String session.search_query
       ; "searchResults", `List (List.map search_hit_json session.search_results)
       ; "nodeRoutes", node_routes_json session
@@ -662,35 +705,135 @@ let snapshot session blocks =
       ])
 ;;
 
-let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.context) =
-  let changed uuid = List.exists (String.equal uuid) changed_uuids in
-  let blocks = List.filter (fun (block : Model.block) -> changed block.uuid) context.blocks in
-  let rows =
-    Outliner_state.visible_rows context session.outliner_state
-    |> List.filter (fun row -> changed row.Outliner_state.block.uuid)
-    |> List.map (fun row ->
-      `Assoc
-        [ "block", visible_block_json session.model row.Outliner_state.block
-        ; "depth", `Int row.depth
-        ; "hasChildren", `Bool row.has_children
-        ; "isCollapsed", `Bool row.is_collapsed
-        ])
-  in
+let outliner_row_json session row =
+  `Assoc
+    [ "block", visible_block_json session.model row.Outliner_state.block
+    ; "depth", `Int row.depth
+    ; "hasChildren", `Bool row.has_children
+    ; "isCollapsed", `Bool row.is_collapsed
+    ]
+;;
+
+let outliner_patch_result
+      session
+      (context : Outliner_state.context)
+      ~blocks
+      ~deleted_block_ids
+      ~row_splices
+  =
   success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List (List.map (visible_block_json session.model) blocks)
+      ; "deletedBlockIds", `List (List.map (fun uuid -> `String uuid) deleted_block_ids)
       ; "selectedBlock", `Null
       ; "outlinerState", outliner_state_json session.outliner_state
       ; "outlinerAutocompleteCandidates",
-        outliner_candidates_json (outliner_context session) session.outliner_state
-      ; "outlinerRows", `List rows
+        outliner_candidates_json context session.outliner_state
+      ; "outlinerRows", `List []
+      ; "outlinerRowSplices", `List row_splices
       ; "outlinerCommandRevision", `Int session.outliner_revision
       ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
         `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
       ; "isOutlinerPatch", `Bool true
       ])
+;;
+
+let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.context) =
+  let changed = Hashtbl.create (List.length changed_uuids) in
+  List.iter (fun uuid -> Hashtbl.replace changed uuid ()) changed_uuids;
+  let blocks =
+    List.filter
+      (fun (block : Model.block) -> Hashtbl.mem changed block.uuid)
+      context.blocks
+  in
+  outliner_patch_result
+    session
+    context
+    ~blocks
+    ~deleted_block_ids:[]
+    ~row_splices:[]
+;;
+
+let structural_outliner_patch
+      session
+      ~(before_context : Outliner_state.context)
+      ~before_state
+      ~(after_context : Outliner_state.context)
+  =
+  let before_blocks = Hashtbl.create (List.length before_context.blocks) in
+  let after_blocks = Hashtbl.create (List.length after_context.blocks) in
+  List.iter
+    (fun (block : Model.block) -> Hashtbl.replace before_blocks block.uuid block)
+    before_context.blocks;
+  List.iter
+    (fun (block : Model.block) -> Hashtbl.replace after_blocks block.uuid block)
+    after_context.blocks;
+  let blocks =
+    List.filter
+      (fun (block : Model.block) ->
+        match Hashtbl.find_opt before_blocks block.uuid with
+        | Some previous -> previous <> block
+        | None -> true)
+      after_context.blocks
+  in
+  let deleted_block_ids =
+    List.filter_map
+      (fun (block : Model.block) ->
+        if Hashtbl.mem after_blocks block.uuid then None else Some block.uuid)
+      before_context.blocks
+  in
+  let before_rows =
+    Outliner_state.visible_rows before_context before_state |> Array.of_list
+  in
+  let after_rows =
+    Outliner_state.visible_rows after_context session.outliner_state |> Array.of_list
+  in
+  let before_length = Array.length before_rows in
+  let after_length = Array.length after_rows in
+  let rec common_prefix index =
+    if index < before_length
+       && index < after_length
+       && before_rows.(index) = after_rows.(index)
+    then common_prefix (index + 1)
+    else index
+  in
+  let start = common_prefix 0 in
+  let rec common_suffix count =
+    let before_index = before_length - count - 1 in
+    let after_index = after_length - count - 1 in
+    if before_index >= start
+       && after_index >= start
+       && before_rows.(before_index) = after_rows.(after_index)
+    then common_suffix (count + 1)
+    else count
+  in
+  let suffix = common_suffix 0 in
+  let delete_count = before_length - start - suffix in
+  let insert_count = after_length - start - suffix in
+  let row_splices =
+    if delete_count = 0 && insert_count = 0
+    then []
+    else
+      let rows =
+        Array.sub after_rows start insert_count
+        |> Array.to_list
+        |> List.map (outliner_row_json session)
+      in
+      [ `Assoc
+          [ "start", `Int start
+          ; "deleteCount", `Int delete_count
+          ; "rows", `List rows
+          ]
+      ]
+  in
+  outliner_patch_result
+    session
+    after_context
+    ~blocks
+    ~deleted_block_ids
+    ~row_splices
 ;;
 
 let snapshot_visible session =
@@ -793,11 +936,12 @@ let create
       ?graph_sidebar_pages
       ?graph_tag_pages
       ?graph_node_is_tag
+      ?graph_node_is_property
       ?graph_page_blocks
       ?graph_node_destination
       ?graph_node_references
       ?graph_tag_objects
-      ?graph_normalize_title
+      ?graph_normalize_titles
       ?graph_search
       ?load_older_journals
       ?has_older_journals
@@ -841,11 +985,12 @@ let create
   ; graph_sidebar_pages
   ; graph_tag_pages
   ; graph_node_is_tag
+  ; graph_node_is_property
   ; graph_page_blocks
   ; graph_node_destination
   ; graph_node_references
   ; graph_tag_objects
-  ; graph_normalize_title
+  ; graph_normalize_titles
   ; graph_search
   ; search_results = []
   ; search_query = ""
@@ -1588,6 +1733,10 @@ let outliner_message payload =
      | Ok "zoomIn" ->
        Result.map (fun uuid -> Outliner_state.Zoom_in uuid) (required_string "uuid" fields)
      | Ok "zoomOut" -> Ok Outliner_state.Zoom_out
+     | Ok "addRootBlock" ->
+       Result.map
+         (fun uuid -> Outliner_state.Add_root_block uuid)
+         (required_string "uuid" fields)
      | Ok "setTaskStatus" ->
        (match required_string "uuid" fields,
               optional_string "statusIdent" fields,
@@ -1605,30 +1754,51 @@ let outliner_message payload =
 
 (* Editor text keeps page and tag names readable; the stored titles use the
    uuid reference form. Rewrite the title payloads of freshly interpreted
-   operations before they are staged or synced. *)
+   operations before they are staged or synced. Hashtags that resolve to no
+   existing tag mint a fresh tag, staged as a Create_tag operation ahead of
+   the operation whose title references it. *)
 let normalize_operation_titles session (operation : Pending_ops.t) =
-  match session.graph_normalize_title with
-  | None -> operation
+  match session.graph_normalize_titles with
+  | None -> [ operation ]
   | Some normalize ->
+    let created = ref [] in
+    let normalize ~uuid titles =
+      let titles, new_tags = normalize ~uuid titles in
+      created := !created @ new_tags;
+      titles
+    in
     let intent =
       match operation.Pending_ops.intent with
       | Pending_ops.Save_title { uuid; expected_title; title } ->
-        Pending_ops.Save_title { uuid; expected_title; title = normalize ~uuid title }
+        (match normalize ~uuid [ title ] with
+         | [ title ] -> Pending_ops.Save_title { uuid; expected_title; title }
+         | _ -> operation.Pending_ops.intent)
       | Pending_ops.Insert_block record ->
-        Pending_ops.Insert_block
-          { record with title = normalize ~uuid:record.uuid record.title }
+        (match normalize ~uuid:record.uuid [ record.title ] with
+         | [ title ] -> Pending_ops.Insert_block { record with title }
+         | _ -> operation.Pending_ops.intent)
       | Pending_ops.Split_block record ->
-        Pending_ops.Split_block
-          { record with
-            before = normalize ~uuid:record.uuid record.before
-          ; after = normalize ~uuid:record.uuid record.after
-          }
+        (match normalize ~uuid:record.uuid [ record.before; record.after ] with
+         | [ before; after ] -> Pending_ops.Split_block { record with before; after }
+         | _ -> operation.Pending_ops.intent)
       | Pending_ops.Merge_backward record ->
-        Pending_ops.Merge_backward
-          { record with title = normalize ~uuid:record.uuid record.title }
+        (match normalize ~uuid:record.uuid [ record.title ] with
+         | [ title ] -> Pending_ops.Merge_backward { record with title }
+         | _ -> operation.Pending_ops.intent)
       | intent -> intent
     in
-    { operation with Pending_ops.intent }
+    let create_operations =
+      List.map
+        (fun (uuid, title) ->
+          Pending_ops.
+            { operation_id = fresh_squuid ()
+            ; base_t = operation.base_t
+            ; state = Queued
+            ; intent = Create_tag { uuid; title; created_at = now_ms () }
+            })
+        !created
+    in
+    create_operations @ [ { operation with Pending_ops.intent } ]
 ;;
 
 let dispatch_outliner_event session payload =
@@ -1636,14 +1806,15 @@ let dispatch_outliner_event session payload =
   | Error message -> failure ~code:"invalid_outliner_event" ~message
   | Ok message ->
     let context = outliner_context session in
-    let next_state, commands = Outliner_state.update context session.outliner_state message in
+    let previous_state = session.outliner_state in
+    let next_state, commands = Outliner_state.update context previous_state message in
     let base_t = Option.bind session.sync_cursor (fun cursor -> cursor ()) |> Option.value ~default:(-1) in
     (match
        Result.map
          (fun (interpreted : Outliner_effects.result) ->
            { interpreted with
              Outliner_effects.operations =
-               List.map (normalize_operation_titles session) interpreted.operations
+               List.concat_map (normalize_operation_titles session) interpreted.operations
            })
          (Outliner_effects.interpret
             ~base_t
@@ -1697,13 +1868,19 @@ let dispatch_outliner_event session payload =
                | Return_pressed | Return_pressed_with_text _ | Backspace_pressed _
                | Backspace_pressed_with_text _ | Drop_blocks _ | Confirm_delete
                | Set_task_status _ | Toggle_collapsed _ | Zoom_in _ | Zoom_out
-               | Operation_staged _ -> None)
+               | Add_root_block _ | Operation_staged _ -> None)
             | _ -> None
           in
           match patch_uuids, session.node_routes with
           | Some changed_uuids, [] -> outliner_patch ~changed_uuids session projected_context
           | Some _, _ :: _ -> snapshot_visible session
-          | None, _ -> snapshot_visible session))
+          | None, [] ->
+            structural_outliner_patch
+              session
+              ~before_context:context
+              ~before_state:previous_state
+              ~after_context:projected_context
+          | None, _ :: _ -> snapshot_visible session))
 ;;
 
 let dispatch session action payload =
@@ -1828,6 +2005,9 @@ let dispatch session action payload =
              (match destination with
         | Some (page, zoom_to_block) ->
           let is_tag = Option.fold ~none:false ~some:(fun check -> check uuid) session.graph_node_is_tag in
+          let is_property =
+            Option.fold ~none:false ~some:(fun check -> check uuid) session.graph_node_is_property
+          in
           let related_blocks =
             if is_tag
             then Option.bind session.graph_tag_objects (fun load -> load uuid)
@@ -1835,7 +2015,11 @@ let dispatch session action payload =
             else Option.bind session.graph_node_references (fun load -> load uuid)
                  |> Option.value ~default:[]
           in
-          let route = { uuid; is_tag; page; zoom_to_block; related_blocks; state = Outliner_state.empty } in
+          let route =
+            { uuid; is_tag; is_property; page; zoom_to_block; related_blocks
+            ; state = Outliner_state.empty
+            }
+          in
           push_node_route session route;
           snapshot_visible session
         | None -> failure ~code:"unknown_node" ~message:"The referenced node is not available")

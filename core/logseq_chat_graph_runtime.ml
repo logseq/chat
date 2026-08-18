@@ -123,8 +123,8 @@ let normalize_operation runtime operation =
         ; merged_title = Some (expected_previous_title ^ source_title)
         }
       )
-    | (Ops.Set_property _ | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _) as intent ->
-      Ok intent
+    | (Ops.Set_property _ | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
+      | Ops.Create_tag _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }
 ;;
@@ -185,7 +185,8 @@ let stage runtime operation =
 ;;
 
 let safe_to_rebase = function
-  | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _ -> true
+  | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _
+  | Ops.Create_tag _ -> true
   | Ops.Insert_block _ | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _ -> false
 ;;
 
@@ -277,6 +278,10 @@ let node_is_tag runtime uuid =
   Logseq_chat_graph_read.node_is_tag runtime.snapshot.db uuid
 ;;
 
+let node_is_property runtime uuid =
+  Logseq_chat_graph_read.node_is_property runtime.snapshot.db uuid
+;;
+
 let references_for_node runtime uuid =
   Logseq_chat_graph_read.references_for_node
     runtime.snapshot.db
@@ -287,8 +292,18 @@ let journal_page_uuid runtime ~journal_day =
   Logseq_chat_graph_read.journal_page_uuid runtime.snapshot.db ~journal_day
 ;;
 
-let normalize_title runtime ~uuid title =
-  Logseq_chat_graph_read.normalize_title_text runtime.snapshot.db ~uuid title
+let fresh_uuid () =
+  match Datascript.squuid () with
+  | Datascript.Uuid uuid -> uuid
+  | _ -> failwith "Datascript.squuid returned a non-UUID value"
+;;
+
+let normalize_titles runtime ~uuid titles =
+  Logseq_chat_graph_read.normalize_titles_creating_tags
+    runtime.snapshot.db
+    ~fresh_uuid
+    ~uuid
+    titles
 ;;
 
 let search runtime query =

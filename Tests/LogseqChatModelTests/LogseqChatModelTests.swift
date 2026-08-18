@@ -84,6 +84,7 @@ private let testEmptySnapshotJSON = """
         let projection = LogseqNodeProjection(
             uuid: "node-1",
             isTag: false,
+            isProperty: false,
             page: page,
             blocks: [block],
             relatedBlocks: [],
@@ -1822,10 +1823,7 @@ private let testEmptySnapshotJSON = """
                 "selectedBlock":null,"isSearching":false,\
                 "outlinerState":{"editing":null,"selectedBlockIds":[],\
                 "autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]},\
-                "outlinerRows":[{"block":{"uuid":"first",\
-                "title":"After","pageId":"page","parentId":"page","order":"a0",\
-                "createdAt":1,"updatedAt":2,"syncStatus":"pending","tags":[],\
-                "references":[]},"depth":0,"hasChildren":false,"isCollapsed":false}],\
+                "outlinerRows":[],"outlinerRowSplices":[],\
                 "isOutlinerPatch":true},"error":null}
                 """
             }
@@ -1839,6 +1837,75 @@ private let testEmptySnapshotJSON = """
 
         #expect(store.snapshot.blocks.map(\.title) == ["After", "second"])
         #expect(store.snapshot.outlinerRows.map(\.block.title) == ["After", "second"])
+    }
+
+    @Test @MainActor func structuralPatchInsertsOneRowWithoutReplacingTheLongPage() async throws {
+        let first = outlineBlockJSON(
+            uuid: "first", parentID: "page", order: "a0", createdAt: 1
+        )
+        let second = outlineBlockJSON(
+            uuid: "second", parentID: "page", order: "a2", createdAt: 2
+        )
+        let inserted = """
+        {"uuid":"inserted","title":"inserted","pageId":"page","parentId":"page",\
+        "order":"a1","createdAt":3,"updatedAt":3,"syncStatus":"pending",\
+        "tags":[],"references":[]}
+        """
+        let store = LogseqChatStore { request in
+            if request.contains("outlinerEvent") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"",\
+                "blocks":[\(inserted)],"deletedBlockIds":[],"selectedBlock":null,\
+                "outlinerState":{"editing":null,"selectedBlockIds":[],\
+                "autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]},\
+                "outlinerRows":[],"outlinerRowSplices":[{"start":1,"deleteCount":0,\
+                "rows":[{"block":\(inserted),"depth":0,"hasChildren":false,\
+                "isCollapsed":false}]}],"isOutlinerPatch":true},"error":null}
+                """
+            }
+            return outlineSnapshotJSON(blocks: [first, second], appliedServerT: 51)
+        }
+
+        store.refresh()
+        try await waitUntil { store.snapshot.outlinerRows.count == 2 }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "returnPressed"))
+        try await waitUntil { store.snapshot.outlinerRows.count == 3 }
+
+        #expect(store.snapshot.blocks.map(\.uuid) == ["first", "second", "inserted"])
+        #expect(store.snapshot.outlinerRows.map(\.block.uuid) == ["first", "inserted", "second"])
+    }
+
+    @Test @MainActor func structuralPatchDeletesOnlyTheAffectedRowRange() async throws {
+        let first = outlineBlockJSON(
+            uuid: "first", parentID: "page", order: "a0", createdAt: 1
+        )
+        let child = outlineBlockJSON(
+            uuid: "child", parentID: "first", order: "a0", createdAt: 2
+        )
+        let second = outlineBlockJSON(
+            uuid: "second", parentID: "page", order: "a1", createdAt: 3
+        )
+        let store = LogseqChatStore { request in
+            if request.contains("outlinerEvent") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"",\
+                "blocks":[],"deletedBlockIds":["first","child"],"selectedBlock":null,\
+                "outlinerState":{"editing":null,"selectedBlockIds":[],\
+                "autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]},\
+                "outlinerRows":[],"outlinerRowSplices":[{"start":0,"deleteCount":2,\
+                "rows":[]}],"isOutlinerPatch":true},"error":null}
+                """
+            }
+            return outlineSnapshotJSON(blocks: [first, child, second], appliedServerT: 51)
+        }
+
+        store.refresh()
+        try await waitUntil { store.snapshot.outlinerRows.count == 3 }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "confirmDelete"))
+        try await waitUntil { store.snapshot.outlinerRows.count == 1 }
+
+        #expect(store.snapshot.blocks.map(\.uuid) == ["second"])
+        #expect(store.snapshot.outlinerRows.map(\.block.uuid) == ["second"])
     }
 
     @Test @MainActor func supersededTypingProjectionDoesNotOverwriteTheEditor() async throws {

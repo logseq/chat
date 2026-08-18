@@ -91,6 +91,7 @@ type msg =
   | Toggle_collapsed of string
   | Zoom_in of string
   | Zoom_out
+  | Add_root_block of string
   | Operation_staged of Ops.intent
 
 type haptic =
@@ -127,6 +128,7 @@ type cmd =
       }
   | Pick_attachment of string
   | Take_photo of string
+  | Insert_root_block of { page_uuid : string }
   | Copy_text of string
   | Copy_references of string list
   | Copy_urls of string list
@@ -262,20 +264,42 @@ let autocomplete_candidates context request =
   let raw =
     match request.kind with
     | Node ->
-      context.pages
-      @ List.map
-          (fun (block : Model.block) -> { label = block.title; value = block.uuid })
-          context.blocks
-    | Tag -> context.tags
+      Seq.append
+        (List.to_seq context.pages)
+        (context.blocks
+         |> List.to_seq
+         |> Seq.map (fun (block : Model.block) ->
+           { label = block.title; value = block.uuid }))
+    | Tag -> List.to_seq context.tags
     | Property ->
-      List.map (fun value -> { label = value; value }) [ "status"; "tags"; "alias"; "priority" ]
+      [ "status"; "tags"; "alias"; "priority" ]
+      |> List.to_seq
+      |> Seq.map (fun value -> { label = value; value })
   in
-  let seen = Hashtbl.create (List.length raw) in
-  raw
-  |> List.filter (fun candidate ->
-    includes_case_insensitive candidate.label request.query
-    && if Hashtbl.mem seen candidate.value then false else (Hashtbl.add seen candidate.value (); true))
-  |> List.to_seq |> Seq.take 12 |> List.of_seq
+  let seen = Hashtbl.create 16 in
+  let matches =
+    raw
+    |> Seq.filter (fun candidate ->
+      includes_case_insensitive candidate.label request.query
+      && if Hashtbl.mem seen candidate.value then false else (Hashtbl.add seen candidate.value (); true))
+    |> Seq.take 12
+    |> List.of_seq
+  in
+  (* A hashtag query that matches no existing tag exactly offers to create
+     the tag; committing the block then mints and links it. *)
+  match request.kind with
+  | Tag ->
+    let query = String.trim request.query in
+    let query_key = String.lowercase_ascii query in
+    let has_exact =
+      List.exists
+        (fun candidate -> String.equal (String.lowercase_ascii candidate.label) query_key)
+        matches
+    in
+    if String.equal query "" || has_exact
+    then matches
+    else matches @ [ { label = "New tag: " ^ query; value = query } ]
+  | Node | Property -> matches
 ;;
 
 let contains_from value start needle =
@@ -339,6 +363,10 @@ let complete context editing kind value =
         match candidate_label context context.tags value with
         | Some label when Ref_text.plain_tag_label label -> "#" ^ label
         | Some label -> "#[[" ^ label ^ "]]"
+        (* A value that is neither a known tag nor a uuid is a brand-new tag
+           name typed by the user. *)
+        | None when (not (Ref_text.is_uuid value)) && Ref_text.plain_tag_label value ->
+          "#" ^ value
         | None -> "#[[" ^ value ^ "]]"
       in
       Option.map (fun index -> index, replacement) (String.rindex_opt prefix '#')
@@ -854,6 +882,9 @@ let update context state message =
     let state, effects = leave_interaction state in
     let zoomed = match List.rev state.zoomed with _ :: rest -> List.rev rest | [] -> [] in
     { state with zoomed }, effects @ [ Haptic Selection ]
+  | Add_root_block page_uuid ->
+    let state, effects = leave_interaction state in
+    state, effects @ [ Insert_root_block { page_uuid }; Haptic Impact ]
   | Operation_staged (Ops.Split_block { new_uuid; after; _ }) ->
     let expected_title, display =
       match find_block context new_uuid with
@@ -866,6 +897,23 @@ let update context state message =
             ; expected_title
             ; title = display
             ; caret = 0
+            }
+      ; selected = String_set.empty
+      ; autocomplete = None
+      }
+    , [] )
+  | Operation_staged (Ops.Insert_block { uuid; title; _ }) ->
+    let expected_title, display =
+      match find_block context uuid with
+      | Some block -> block.Model.title, display_block_title context block
+      | None -> title, title
+    in
+    ( { state with editing =
+          Some
+            { uuid
+            ; expected_title
+            ; title = display
+            ; caret = utf16_length display
             }
       ; selected = String_set.empty
       ; autocomplete = None

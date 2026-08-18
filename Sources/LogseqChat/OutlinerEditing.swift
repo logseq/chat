@@ -124,26 +124,42 @@ enum InlineEditorTextReconciliationDecision: Equatable {
 }
 
 enum InlineEditorTextReconciliationPolicy {
+    /// While a Return-key handoff is pending, the editor keeps showing the
+    /// full pre-split text at the old block position and applies the model
+    /// text only in the same render pass that moves the editor to the new
+    /// block, so the split appears atomically without flicker.
     static func decision(
         modelText: String,
         localText: String?,
         isSameBlock: Bool = true,
         isAwaitingBlockHandoff: Bool = false
     ) -> InlineEditorTextReconciliationDecision {
+        if isAwaitingBlockHandoff {
+            return isSameBlock ? .keepLocal : .applyModel
+        }
         guard let localText else { return .applyModel }
         if modelText == localText { return .acknowledgeLocal }
-        if !isSameBlock && !isAwaitingBlockHandoff { return .applyModel }
+        if !isSameBlock { return .applyModel }
         return .keepLocal
     }
 }
 
-enum InlineEditorReturnTransition {
-    static func localText(text: String, replacementRange: NSRange) -> String {
-        let value = text as NSString
-        let location = min(replacementRange.location, value.length)
-        let selectionLength = min(replacementRange.length, value.length - location)
-        let suffixStart = location + selectionLength
-        return value.substring(from: suffixStart)
+enum InlineEditorHandoffMerge {
+    /// Keystrokes swallowed while a Return handoff was pending are inserted
+    /// at the caret the core requested for the new block.
+    static func merged(
+        modelText: String,
+        desiredCaretUTF16Offset: Int?,
+        bufferedTyping: String
+    ) -> (text: String, caretUTF16Offset: Int) {
+        let value = modelText as NSString
+        let caret = min(max(desiredCaretUTF16Offset ?? value.length, 0), value.length)
+        guard !bufferedTyping.isEmpty else { return (modelText, caret) }
+        let text = value.replacingCharacters(
+            in: NSRange(location: caret, length: 0),
+            with: bufferedTyping
+        )
+        return (text, caret + (bufferedTyping as NSString).length)
     }
 }
 

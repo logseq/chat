@@ -63,6 +63,11 @@ type intent =
       ; merged_title : string option
       }
   | Delete_blocks of { uuids : string list }
+  | Create_tag of
+      { uuid : string
+      ; title : string
+      ; created_at : int
+      }
 
 type t =
   { operation_id : string
@@ -72,7 +77,7 @@ type t =
   }
 
 let outliner_op = function
-  | Save_title _ | Set_property _ -> "save-block"
+  | Save_title _ | Set_property _ | Create_tag _ -> "save-block"
   | Insert_block _ -> "insert-blocks"
   | Move_block _ | Move_blocks _ -> "move-blocks"
   | Split_block _ -> "split-block"
@@ -222,6 +227,13 @@ let intent_json = function
       ]
   | Delete_blocks { uuids } ->
     `Assoc [ "type", `String "delete-blocks"; "uuids", `List (List.map (fun uuid -> `String uuid) uuids) ]
+  | Create_tag { uuid; title; created_at } ->
+    `Assoc
+      [ "type", `String "create-tag"
+      ; "uuid", `String uuid
+      ; "title", `String title
+      ; "createdAt", `Int created_at
+      ]
 ;;
 
 let string fields name =
@@ -320,6 +332,15 @@ let intent_of_json = function
                     | _ -> (invalid_arg "invalid pending delete uuid" [@coverage off]))
                   values
               | _ -> (invalid_arg "invalid pending intent field: uuids" [@coverage off]))
+         }
+     | "create-tag" ->
+       Create_tag
+         { uuid = string fields "uuid"
+         ; title = string fields "title"
+         ; created_at =
+             (match List.assoc_opt "createdAt" fields with
+              | Some (`Int value) -> value
+              | _ -> (invalid_arg "invalid pending intent field: createdAt" [@coverage off]))
          }
      | kind -> invalid_arg ("unknown pending intent: " ^ kind))
   | _ -> invalid_arg "pending intent must be an object"

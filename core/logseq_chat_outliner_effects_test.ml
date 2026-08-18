@@ -258,6 +258,41 @@ let () =
      | _ -> false)
 ;;
 
+let () =
+  (* Adding the first block to an empty page starts at the first fractional
+     order and focuses the new block for editing. *)
+  (match
+     interpret
+       ~context:State.{ blocks = []; pages = []; tags = [] }
+       ~ids:[ "operation"; "new-root" ]
+       [ State.Insert_root_block { page_uuid = "page-1" } ]
+   with
+   | Ok
+       { operations =
+           [ { Ops.intent =
+                 Insert_block
+                   { uuid = "new-root"
+                   ; title = ""
+                   ; page_uuid = "page-1"
+                   ; parent_uuid = "page-1"
+                   ; order
+                   ; created_at = 100
+                   }
+             ; _
+             }
+           ]
+       ; platform = [ Effects.Focus_block "new-root" ]
+       } -> assert_bool "first root block gets a valid order" (String.length order > 0)
+   | _ -> fail "inserting the first root block must stage one focused insert");
+  (* Appending to a non-empty page orders the new block after the last root. *)
+  match
+    interpret ~ids:[ "operation"; "new-root" ] [ State.Insert_root_block { page_uuid = "page" } ]
+  with
+  | Ok { operations = [ { Ops.intent = Insert_block { order; _ }; _ } ]; _ } ->
+    assert_bool "appended root block sorts after existing roots" (String.compare order "a2" > 0)
+  | _ -> fail "inserting a root block on a populated page must stage one insert"
+;;
+
 let status ?ident uuid =
   Model.
     { uuid; ident; title = uuid; icon_type = None; icon_id = None; icon_color = None }

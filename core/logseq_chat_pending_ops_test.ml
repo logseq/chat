@@ -57,6 +57,7 @@ let intents =
       ; merged_title = None
       }
   ; Delete_blocks { uuids = [ "first"; "second" ] }
+  ; Create_tag { uuid = "tag"; title = "Project"; created_at = 42 }
   ]
 ;;
 
@@ -78,6 +79,7 @@ let () =
        ; "merge-blocks"
        ; "merge-blocks"
        ; "delete-blocks"
+       ; "save-block"
        ])
 ;;
 

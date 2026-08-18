@@ -493,33 +493,54 @@ import Testing
         ) == .applyModel)
     }
 
-    @Test func inlineEditorKeepsTypingBufferedAfterReturnDuringResponderHandoff() {
+    @Test func inlineEditorKeepsThePreSplitTextVisibleUntilTheHandoffArrives() {
+        // Same block, handoff pending: keep showing the full pre-split text so
+        // the current block does not flash the caret suffix.
         #expect(InlineEditorTextReconciliationPolicy.decision(
-            modelText: "suffix",
-            localText: "suffixchild",
-            isSameBlock: false,
+            modelText: "parent child",
+            localText: "parent child",
+            isSameBlock: true,
             isAwaitingBlockHandoff: true
         ) == .keepLocal)
+        // Handoff arrives with the new block: apply its text in the same
+        // render pass that moves the editor, so the split appears atomically.
         #expect(InlineEditorTextReconciliationPolicy.decision(
-            modelText: "suffixchild",
-            localText: "suffixchild",
+            modelText: "child",
+            localText: "parent child",
             isSameBlock: false,
             isAwaitingBlockHandoff: true
-        ) == .acknowledgeLocal)
+        ) == .applyModel)
+        #expect(InlineEditorTextReconciliationPolicy.decision(
+            modelText: "child",
+            localText: "child",
+            isSameBlock: false,
+            isAwaitingBlockHandoff: true
+        ) == .applyModel)
     }
 
-    @Test func returnTransitionImmediatelyPresentsTheNewBlockSuffix() {
-        #expect(InlineEditorReturnTransition.localText(
-            text: "parent child",
-            replacementRange: NSRange(location: 7, length: 0)
-        ) == "child")
-        #expect(InlineEditorReturnTransition.localText(
-            text: "parent selected child",
-            replacementRange: NSRange(location: 7, length: 9)
-        ) == "child")
-        #expect(InlineEditorReturnTransition.localText(
-            text: "abc",
-            replacementRange: NSRange(location: 99, length: 0)
-        ) == "")
+    @Test func typingBufferedDuringReturnHandoffLandsAtTheNewBlockCaret() {
+        let merged = InlineEditorHandoffMerge.merged(
+            modelText: "child",
+            desiredCaretUTF16Offset: 0,
+            bufferedTyping: "ab"
+        )
+        #expect(merged.text == "abchild")
+        #expect(merged.caretUTF16Offset == 2)
+
+        let untouched = InlineEditorHandoffMerge.merged(
+            modelText: "child",
+            desiredCaretUTF16Offset: 0,
+            bufferedTyping: ""
+        )
+        #expect(untouched.text == "child")
+        #expect(untouched.caretUTF16Offset == 0)
+
+        let clamped = InlineEditorHandoffMerge.merged(
+            modelText: "abc",
+            desiredCaretUTF16Offset: 99,
+            bufferedTyping: "x"
+        )
+        #expect(clamped.text == "abcx")
+        #expect(clamped.caretUTF16Offset == 4)
     }
 }

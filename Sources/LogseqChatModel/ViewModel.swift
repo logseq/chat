@@ -1142,14 +1142,58 @@ private struct OpenGraphPayload: Encodable {
 
     private func mergedSnapshot(_ result: LogseqChatSnapshot) -> LogseqChatSnapshot {
         if result.isOutlinerPatch {
-            let blocks = result.blocks.isEmpty ? snapshot.blocks : snapshot.blocks.map { block in
-                result.blocks.first { $0.uuid == block.uuid } ?? block
+            let deletedBlockIDs = Set(result.deletedBlockIds)
+            let replacementBlocks = Dictionary(
+                uniqueKeysWithValues: result.blocks.map { ($0.uuid, $0) }
+            )
+            var mergedBlockIDs = Set<String>()
+            var blocks = snapshot.blocks.compactMap { block -> LogseqBlock? in
+                guard !deletedBlockIDs.contains(block.uuid) else { return nil }
+                mergedBlockIDs.insert(block.uuid)
+                return replacementBlocks[block.uuid] ?? block
             }
-            let outlinerRows = result.outlinerRows.isEmpty ? snapshot.outlinerRows : snapshot.outlinerRows.map { row in
-                result.outlinerRows.first { $0.block.uuid == row.block.uuid } ?? row
+            for block in result.blocks where !mergedBlockIDs.contains(block.uuid) {
+                blocks.append(block)
+                mergedBlockIDs.insert(block.uuid)
             }
-            let selectedBlock = snapshot.selectedBlock.flatMap { selected in
-                result.blocks.first { $0.uuid == selected.uuid } ?? selected
+
+            var outlinerRows = snapshot.outlinerRows
+            if !result.outlinerRowSplices.isEmpty {
+                for splice in result.outlinerRowSplices {
+                    let start = min(max(splice.start, 0), outlinerRows.count)
+                    let deleteEnd = min(
+                        start + max(splice.deleteCount, 0),
+                        outlinerRows.count
+                    )
+                    outlinerRows.replaceSubrange(
+                        start..<deleteEnd,
+                        with: splice.rows
+                    )
+                }
+            } else if !result.outlinerRows.isEmpty {
+                let replacementRows = Dictionary(
+                    uniqueKeysWithValues: result.outlinerRows.map {
+                        ($0.block.uuid, $0)
+                    }
+                )
+                outlinerRows = outlinerRows.map { row in
+                    replacementRows[row.block.uuid] ?? row
+                }
+            }
+            outlinerRows = outlinerRows.compactMap { row in
+                guard !deletedBlockIDs.contains(row.block.uuid) else { return nil }
+                guard let block = replacementBlocks[row.block.uuid] else { return row }
+                return LogseqOutlineRow(
+                    block: block,
+                    depth: row.depth,
+                    hasChildren: row.hasChildren,
+                    isCollapsed: row.isCollapsed
+                )
+            }
+
+            let selectedBlock = snapshot.selectedBlock.flatMap { selected -> LogseqBlock? in
+                guard !deletedBlockIDs.contains(selected.uuid) else { return nil }
+                return replacementBlocks[selected.uuid] ?? selected
             }
             return LogseqChatSnapshot(
                 revision: snapshot.revision,
@@ -1163,6 +1207,7 @@ private struct OpenGraphPayload: Encodable {
                 recentPages: snapshot.recentPages,
                 selectedPage: snapshot.selectedPage,
                 selectedPageIsTag: snapshot.selectedPageIsTag,
+                selectedPageIsProperty: snapshot.selectedPageIsProperty,
                 appliedServerT: snapshot.appliedServerT,
                 syncConnected: snapshot.syncConnected,
                 relatedBlocks: snapshot.relatedBlocks,
@@ -1200,6 +1245,7 @@ private struct OpenGraphPayload: Encodable {
             recentPages: result.recentPages,
             selectedPage: result.selectedPage,
             selectedPageIsTag: result.selectedPageIsTag,
+            selectedPageIsProperty: result.selectedPageIsProperty,
             appliedServerT: result.appliedServerT,
             syncConnected: result.syncConnected,
             relatedBlocks: result.relatedBlocks,

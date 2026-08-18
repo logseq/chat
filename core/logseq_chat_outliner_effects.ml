@@ -190,6 +190,34 @@ let command ~base_t ~now ~fresh_uuid context = function
              ]
          ; platform = []
          })
+  | State.Insert_root_block { page_uuid } ->
+    let lower =
+      match List.rev (sorted_siblings context (Some page_uuid)) with
+      | last :: _ -> last.Model.order
+      | [] -> None
+    in
+    Result.bind (Order.between lower None) (fun order ->
+      let operation_id = fresh_uuid () in
+      let new_uuid = fresh_uuid () in
+      Ok
+        { operations =
+            [ Ops.
+                { operation_id
+                ; base_t
+                ; state = Queued
+                ; intent =
+                    Insert_block
+                      { uuid = new_uuid
+                      ; title = ""
+                      ; page_uuid
+                      ; parent_uuid = page_uuid
+                      ; order
+                      ; created_at = now ()
+                      }
+                }
+            ]
+        ; platform = [ Focus_block new_uuid ]
+        })
   | State.Pick_attachment uuid ->
     Ok { operations = []; platform = [ Pick_attachment uuid ] }
   | State.Take_photo uuid ->

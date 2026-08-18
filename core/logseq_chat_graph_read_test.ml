@@ -335,6 +335,14 @@ let () =
        conn
        [ entity "tag-class" [ "db/ident", One_value (Keyword "logseq.class/Tag") ]
        ; entity "asset-class" [ "db/ident", One_value (Keyword "logseq.class/Asset") ]
+       ; entity "property-class" [ "db/ident", One_value (Keyword "logseq.class/Property") ]
+       ; entity
+           "status-property"
+           [ "block/uuid", One_value (Uuid "status-property")
+           ; "block/name", One_value (String "status")
+           ; "block/title", One_value (String "Status")
+           ; "block/tags", Many_values [ Ref_to (Temp_id "property-class") ]
+           ]
        ; entity
            "page"
            [ "block/uuid", One_value (Uuid "page")
@@ -378,6 +386,14 @@ let () =
            ; "block/created-at", One_value (Instant 1)
            ]
        ; entity
+           "tagged-page"
+           [ "block/uuid", One_value (Uuid "tagged-page")
+           ; "block/name", One_value (String "tagged page")
+           ; "block/title", One_value (String "Tagged page")
+           ; "block/tags", Many_values [ Ref_to (Temp_id "grandchild-tag") ]
+           ; "block/created-at", One_value (Instant 3)
+           ]
+       ; entity
            "asset-child"
            [ "block/uuid", One_value (Uuid "asset-child")
            ; "block/name", One_value (String "asset child")
@@ -398,9 +414,21 @@ let () =
   let db = conn_db conn in
   if not (Logseq_chat_graph_read.node_is_tag db "child-tag")
   then failwith "a class that extends another tag must still use the tag node route";
+  if not (Logseq_chat_graph_read.node_is_property db "status-property")
+  then failwith "pages tagged #Property must be identified as property nodes";
+  if Logseq_chat_graph_read.node_is_property db "tagged-page"
+  then failwith "ordinary pages must not be identified as property nodes";
+  (* Tagged nodes are ordinary blocks and whole pages (like journals tagged
+     #Journal or property pages tagged #Property). *)
   (match Logseq_chat_graph_read.objects_for_tag db "parent-tag" with
-   | [ block ] when String.equal block.uuid "tagged-object" -> ()
-   | _ -> failwith "tagged nodes must include instances of transitively extending tags");
+   | [ block; page ]
+     when String.equal block.uuid "tagged-object"
+          && String.equal page.uuid "tagged-page"
+          && String.equal page.page_id "tagged-page"
+          && page.parent_id = None -> ()
+   | _ ->
+     failwith
+       "tagged nodes must include blocks and page entities of transitively extending tags");
   match Logseq_chat_graph_read.blocks_for_page db "page" with
   | blocks ->
     (match
@@ -899,5 +927,26 @@ let () =
   assert (String.equal (normalize "see [[Dup]] and #nothing") "see [[Dup]] and #nothing");
   (* Page names never satisfy a hashtag, and uuid forms pass through. *)
   assert (String.equal (normalize "#roadmap stays") "#roadmap stays");
-  assert (String.equal (normalize "kept [[roadmap-page-uuid]]") "kept [[roadmap-page-uuid]]")
+  assert (String.equal (normalize "kept [[roadmap-page-uuid]]") "kept [[roadmap-page-uuid]]");
+  (* Hashtags naming no existing tag mint one shared fresh tag per name. *)
+  let counter = ref 0 in
+  let fresh_uuid () = incr counter; "fresh-" ^ string_of_int !counter in
+  let titles, created =
+    Logseq_chat_graph_read.normalize_titles_creating_tags
+      db
+      ~fresh_uuid
+      ~uuid:"note-uuid"
+      [ "start #foobar"; "end #FooBar and #project" ]
+  in
+  assert (titles = [ "start #[[fresh-1]]"; "end #[[fresh-1]] and #[[project-tag-uuid]]" ]);
+  assert (created = [ "fresh-1", "foobar" ]);
+  (* Without new hashtags nothing is created. *)
+  let unchanged, none_created =
+    Logseq_chat_graph_read.normalize_titles_creating_tags
+      db
+      ~fresh_uuid
+      ~uuid:"note-uuid"
+      [ "plain #project" ]
+  in
+  assert (unchanged = [ "plain #[[project-tag-uuid]]" ] && none_created = [])
 ;;

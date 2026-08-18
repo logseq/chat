@@ -304,6 +304,45 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
   { favorites; recent_pages }
 ;;
 
+(* Tag objects can be pages (for example journals tagged #Journal or property
+   pages tagged #Property); represent them as page-level blocks so tagged-node
+   lists can show them. *)
+let page_block decrypt_title db eid =
+  match page_summary decrypt_title db eid with
+  | None -> None
+  | Some page ->
+    let created_at = Option.value (int_value (value db eid "block/created-at")) ~default:0 in
+    let updated_at =
+      Option.value (int_value (value db eid "block/updated-at")) ~default:created_at
+    in
+    let journal =
+      Option.map
+        (fun day -> page.title, day)
+        (int_value (value db eid "block/journal-day"))
+    in
+    Some
+      Model.
+        { uuid = page.uuid
+        ; title = page.title
+        ; page_id = page.uuid
+        ; parent_id = None
+        ; order = None
+        ; created_at
+        ; updated_at
+        ; sync_status = "synced"
+        ; tags = visible_tag_summaries decrypt_title db eid
+        ; references = []
+        ; breadcrumbs = []
+        ; status = None
+        ; is_asset = false
+        ; asset_type = None
+        ; asset_size = None
+        ; asset_checksum = None
+        ; local_path = None
+        ; journal
+        }
+;;
+
 let tag_pages ?(decrypt_title = fun value -> Ok value) db =
   match Datascript.entid db "db/ident" (Keyword "logseq.class/Tag") with
   | None -> []
@@ -324,6 +363,12 @@ let node_is_tag db uuid =
   match Datascript.entid db "block/uuid" (Uuid uuid) with
   | None -> false
   | Some eid -> entity_is_instance_of db eid "logseq.class/Tag"
+;;
+
+let node_is_property db uuid =
+  match Datascript.entid db "block/uuid" (Uuid uuid) with
+  | None -> false
+  | Some eid -> entity_is_instance_of db eid "logseq.class/Property"
 ;;
 
 (* Resolve a page or tag name to the uuid of the unique entity carrying it;
@@ -347,8 +392,9 @@ let unique_named_uuid ?(require_tag = false) db name =
 
 (* Editor text -> stored uuid form (Logseq's title-ref->id-ref): first match
    names against the block's existing refs and tags, then fall back to a
-   unique db-wide page or tag name. *)
-let normalize_title_text db ~uuid title =
+   unique db-wide page or tag name. Hashtag names that resolve to nothing are
+   offered to [create_tag], which may mint a uuid for a brand-new tag. *)
+let normalize_title_text ?(create_tag = fun _name -> None) db ~uuid title =
   let plain = fun value -> Ok value in
   let refs, tags =
     match Datascript.entid db "block/uuid" (Uuid uuid) with
@@ -378,8 +424,38 @@ let normalize_title_text db ~uuid title =
     ~resolve_tag:(fun name ->
       match known tags name with
       | Some uuid -> Some uuid
-      | None -> unique_named_uuid ~require_tag:true db name)
+      | None ->
+        (match unique_named_uuid ~require_tag:true db name with
+         | Some uuid -> Some uuid
+         | None -> create_tag name))
     title
+;;
+
+(* Normalize all title payloads of one operation together, minting a shared
+   fresh uuid for each hashtag that does not resolve to an existing tag. The
+   caller creates the returned (uuid, title) tags before applying the
+   operation. *)
+let normalize_titles_creating_tags db ~fresh_uuid ~uuid titles =
+  let created = ref [] in
+  let create_tag name =
+    let name = String.trim name in
+    let key = String.lowercase_ascii name in
+    if String.equal key ""
+    then None
+    else (
+      match
+        List.find_opt
+          (fun (_, existing) -> String.equal (String.lowercase_ascii existing) key)
+          !created
+      with
+      | Some (existing_uuid, _) -> Some existing_uuid
+      | None ->
+        let new_uuid = fresh_uuid () in
+        created := !created @ [ new_uuid, name ];
+        Some new_uuid)
+  in
+  let titles = List.map (normalize_title_text ~create_tag db ~uuid) titles in
+  titles, !created
 ;;
 
 let compare_blocks left right =
@@ -418,7 +494,18 @@ let node_destination ?(decrypt_title = fun value -> Ok value) db uuid =
       Option.map (fun page -> page, not is_page) (page_summary decrypt_title db page_eid))
 ;;
 
+(* Tagged nodes are ordinary blocks or whole pages (journals, property pages,
+   class instances); newest journals sort first, then blocks in outliner
+   order. *)
 let objects_for_tag ?(decrypt_title = fun value -> Ok value) db tag_uuid =
+  let journal_day (candidate : Model.block) =
+    match candidate.journal with Some (_, day) -> day | None -> 0
+  in
+  let compare_objects left right =
+    match compare (journal_day right) (journal_day left) with
+    | 0 -> compare_blocks left right
+    | order -> order
+  in
   match Datascript.entid db "block/uuid" (Uuid tag_uuid) with
   | None -> []
   | Some tag_eid ->
@@ -427,9 +514,12 @@ let objects_for_tag ?(decrypt_title = fun value -> Ok value) db tag_uuid =
     |> Seq.flat_map (Ds_value.datoms_by_ref db Aevt "block/tags")
     |> Seq.fold_left (fun eids datom -> Int_set.add datom.e eids) Int_set.empty
     |> Int_set.to_seq
-    |> Seq.filter_map (block decrypt_title db)
+    |> Seq.filter_map (fun eid ->
+      match block decrypt_title db eid with
+      | Some value -> Some value
+      | None -> page_block decrypt_title db eid)
     |> List.of_seq
-    |> List.sort compare_blocks
+    |> List.sort compare_objects
 ;;
 
 let references_for_node ?(decrypt_title = fun value -> Ok value) db node_uuid =

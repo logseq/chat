@@ -322,6 +322,26 @@ let rec compile db = function
     else if List.exists (page_entity db) roots
     then Error "ordinary block delete cannot delete a page"
     else Ok (List.map (fun eid -> RetractEntity (Entity_id eid)) (subtree db roots))
+  | Create_tag { uuid; title; created_at } ->
+    if Option.is_some (entid db "block/uuid" (Uuid uuid))
+    then Ok []
+    else if Option.is_none (entid db "db/ident" (Keyword "logseq.class/Tag"))
+    then Error "the graph does not define logseq.class/Tag"
+    else
+      Ok
+        [ Entity
+            { db_id = Some (Temp_id ("pending/" ^ uuid))
+            ; attrs =
+                [ "block/uuid", One_value (Uuid uuid)
+                ; "block/name", One_value (String (String.lowercase_ascii title))
+                ; "block/title", One_value (String title)
+                ; ( "block/tags"
+                  , Many_values [ Ref_to (Lookup_ref ("db/ident", Keyword "logseq.class/Tag")) ] )
+                ; "block/created-at", One_value (Int created_at)
+                ; "block/updated-at", One_value (Int created_at)
+                ]
+            }
+        ]
 ;;
 
 let rec satisfied db = function
@@ -356,6 +376,7 @@ let rec satisfied db = function
        = Some (Option.value merged_title ~default:(expected_previous_title ^ title))
   | Delete_blocks { uuids } ->
     List.for_all (fun uuid -> Option.is_none (entid db "block/uuid" (Uuid uuid))) uuids
+  | Create_tag { uuid; _ } -> Option.is_some (entid db "block/uuid" (Uuid uuid))
 ;;
 
 let build ~server_t authoritative operations =

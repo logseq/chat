@@ -542,37 +542,42 @@ struct ContentView: View {
     }
 
     @ViewBuilder private func nodeProjectionContent(_ projection: LogseqNodeProjection) -> some View {
-        if projection.isTag {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-            RelatedBlocksSection(
-                title: "Tagged nodes",
-                emptyTitle: projection.relatedBlocks.isEmpty ? "No tagged nodes" : nil,
-                blocks: projection.relatedBlocks,
-                accessibilityIdentifier: "section.tag.tagged-nodes",
-                onOpenMarkupLink: openMarkupLink
-            )
-                }
-                .padding()
-            }
-        } else {
-            OutlinerView(
-                rows: projection.outlinerRows,
-                sections: store.sections(for: projection),
-                editing: projection.outlinerState.editing,
-                selectedBlockIDs: Set(projection.outlinerState.selectedBlockIds),
-                statuses: availableTaskStatuses,
-                error: store.lastError,
-                hasOlderJournals: false,
-                topPadding: 16,
-                bottomPadding: blockListContentBottomPadding,
-                sendEvent: store.outlinerEvent,
-                onBeginInteraction: beginOutlinerInteraction,
-                onZoomBlock: openOutlinerNode,
-                onOpenMarkupLink: openMarkupLink,
-                onLoadOlderJournals: {},
-                relatedTitle: projection.relatedBlocks.isEmpty ? nil : "Linked references",
-                relatedBlocks: projection.relatedBlocks
+        OutlinerView(
+            rows: projection.outlinerRows,
+            sections: store.sections(for: projection),
+            editing: projection.outlinerState.editing,
+            selectedBlockIDs: Set(projection.outlinerState.selectedBlockIds),
+            statuses: availableTaskStatuses,
+            error: store.lastError,
+            hasOlderJournals: false,
+            topPadding: 16,
+            bottomPadding: blockListContentBottomPadding,
+            sendEvent: store.outlinerEvent,
+            onBeginInteraction: beginOutlinerInteraction,
+            onZoomBlock: openOutlinerNode,
+            onOpenMarkupLink: openMarkupLink,
+            onLoadOlderJournals: {},
+            relatedTitle: RelatedContentPolicy.sectionTitle(
+                isTag: projection.isTag,
+                hasBlocks: !projection.relatedBlocks.isEmpty
+            ),
+            relatedEmptyTitle: RelatedContentPolicy.emptyTitle(
+                isTag: projection.isTag,
+                hasBlocks: !projection.relatedBlocks.isEmpty
+            ),
+            relatedBlocks: projection.relatedBlocks,
+            relatedAccessibilityIdentifier: projection.isTag
+                ? "section.tag.tagged-nodes" : "section.node.linked-references",
+            showsEmptyPlaceholder: false,
+            onAddFirstBlock: nodeAddFirstBlock(projection)
+        )
+    }
+
+    private func nodeAddFirstBlock(_ projection: LogseqNodeProjection) -> (() -> Void)? {
+        guard !projection.isTag, !projection.isProperty else { return nil }
+        return {
+            store.outlinerEvent(
+                LogseqOutlinerEvent(type: "addRootBlock", uuid: projection.page.uuid)
             )
         }
     }
@@ -593,7 +598,7 @@ struct ContentView: View {
 
     private var sidebarContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
                 Menu {
                     ForEach(store.snapshot.graphs ?? []) { graph in
                         Button {
@@ -604,27 +609,33 @@ struct ContentView: View {
                         .disabled(!graph.isReady)
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: 8) {
                         Text(verbatim: graphSubtitle)
-                            .font(.headline)
-                            .fontWeight(.semibold)
+                            .font(.title3)
+                            .fontWeight(.bold)
                             .lineLimit(1)
-                        Spacer()
-                        Text(verbatim: "⌄")
+                            // Menus tint their label with the accent color;
+                            // the graph name should read as a heading.
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                            .fontWeight(.semibold)
                             .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.horizontal, 12)
                 }
                 .accessibilityLabel("Switch graph")
                 .accessibilityIdentifier("button.graph-switch")
-                .padding(.bottom, 20)
+                .padding(.bottom, 16)
 
                 ForEach(SidebarContentItem.allCases, id: \.rawValue) { item in
                     sidebarItem(item)
                 }
                 Spacer()
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 12)
             #if SKIP
             .padding(.top, SidebarChromeMetrics.androidHeaderTopPadding)
             #else
@@ -633,87 +644,116 @@ struct ContentView: View {
         }
     }
 
+    private var journalsIsCurrentDestination: Bool {
+        store.snapshot.selectedPage == nil
+    }
+
     @ViewBuilder private func sidebarItem(_ item: SidebarContentItem) -> some View {
         switch item {
         case .journals:
-            Button {
+            sidebarRow(
+                title: item.title,
+                systemImage: "calendar",
+                isSelected: journalsIsCurrentDestination,
+                identifier: item.accessibilityIdentifier
+            ) {
                 openJournals()
-            } label: {
-                HStack {
-                    Text(verbatim: item.title)
-                        .font(.body)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.001))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(item.accessibilityIdentifier)
         case .graphs:
-            Button {
+            sidebarRow(
+                title: item.title,
+                systemImage: "folder",
+                isSelected: false,
+                identifier: item.accessibilityIdentifier
+            ) {
                 openGraphs()
-            } label: {
-                HStack {
-                    Text(verbatim: item.title)
-                        .font(.body)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.001))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(item.accessibilityIdentifier)
         case .favorites:
             sidebarSection(
                 title: item.title,
+                systemImage: "star",
                 identifier: item.accessibilityIdentifier,
+                emptyTitle: "No favorites yet",
                 pages: store.snapshot.favorites
             )
         case .recent:
             sidebarSection(
                 title: item.title,
+                systemImage: "clock",
                 identifier: item.accessibilityIdentifier,
+                emptyTitle: "No recent pages",
                 pages: store.snapshot.recentPages
             )
         }
     }
 
+    private func sidebarRow(
+        title: String,
+        systemImage: String,
+        isSelected: Bool,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.subheadline)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 22)
+                Text(verbatim: title)
+                    .font(.body)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ? Color.accentColor.opacity(0.12) : Color.black.opacity(0.001)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
     private func sidebarSection(
         title: String,
+        systemImage: String,
         identifier: String,
+        emptyTitle: String,
         pages: [LogseqSidebarPage]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: title)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 4)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.caption2)
+                Text(verbatim: title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.top, 16)
+            .padding(.bottom, 6)
+            if pages.isEmpty {
+                Text(verbatim: emptyTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .opacity(0.7)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
             ForEach(pages) { page in
-                Button {
+                sidebarRow(
+                    title: page.title,
+                    systemImage: "doc.text",
+                    isSelected: store.snapshot.selectedPage?.uuid == page.uuid,
+                    identifier: "link.sidebar.page.\(page.uuid)"
+                ) {
                     openSidebarPage(page)
-                } label: {
-                    HStack {
-                        Text(verbatim: page.title)
-                            .font(.body)
-                            .lineLimit(1)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Color.black.opacity(0.001))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("link.sidebar.page.\(page.uuid)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -859,7 +899,11 @@ struct ContentView: View {
                     onOpenMarkupLink: openMarkupLink,
                     onLoadOlderJournals: store.loadOlderJournals,
                     relatedTitle: selectedTagPageRelatedTitle,
-                    relatedBlocks: selectedTagPageRelatedBlocks
+                    relatedEmptyTitle: nil,
+                    relatedBlocks: selectedTagPageRelatedBlocks,
+                    relatedAccessibilityIdentifier: "section.tag.tagged-nodes",
+                    showsEmptyPlaceholder: store.snapshot.selectedPage == nil,
+                    onAddFirstBlock: selectedPageAddFirstBlock
                 )
             } else {
                 blockList
@@ -877,6 +921,19 @@ struct ContentView: View {
 
     private var selectedTagPageRelatedTitle: String? {
         selectedTagPageRelatedBlocks.isEmpty ? nil : "Tagged nodes"
+    }
+
+    // Empty non-tag, non-property pages offer to create and edit their first
+    // block in place.
+    private var selectedPageAddFirstBlock: (() -> Void)? {
+        guard let selectedPage = store.snapshot.selectedPage,
+              store.snapshot.selectedPageIsTag != true,
+              store.snapshot.selectedPageIsProperty != true else { return nil }
+        return {
+            store.outlinerEvent(
+                LogseqOutlinerEvent(type: "addRootBlock", uuid: selectedPage.uuid)
+            )
+        }
     }
 
     private func markupTargetTitle(uuid: String) -> String? {
@@ -2341,7 +2398,7 @@ private struct BlockRow: View {
         #if !SKIP
         Text(OutlinerMarkupAttributedString.make(
             nodes: block.markup,
-            fallback: block.title.isEmpty ? "Untitled block" : block.title
+            fallback: block.title.isEmpty ? " " : block.title
         ))
         .environment(\.openURL, OpenURLAction { url in
             guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
@@ -2349,7 +2406,7 @@ private struct BlockRow: View {
             return .handled
         })
         #else
-        Text(verbatim: block.title.isEmpty ? "Untitled block" : block.title)
+        Text(verbatim: block.title.isEmpty ? " " : block.title)
         #endif
     }
 }

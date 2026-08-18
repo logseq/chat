@@ -613,6 +613,17 @@ let () =
     (List.length
        (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "project" })
      = 1);
+  assert_bool "an exact tag match offers no create candidate"
+    (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "Project" }
+     = [ State.{ label = "Project"; value = "project" } ]);
+  assert_bool "a novel tag query offers a create candidate"
+    (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "foobar" }
+     = [ State.{ label = "New tag: foobar"; value = "foobar" } ]);
+  assert_bool "an empty tag query offers no create candidate"
+    (State.autocomplete_candidates
+       State.{ blocks = []; pages = []; tags = [] }
+       State.{ kind = Tag; query = "" }
+     = []);
   assert_bool "property candidates are core-owned"
     (State.autocomplete_candidates candidates_context State.{ kind = Property; query = "prio" }
      = [ State.{ label = "priority"; value = "priority" } ]);
@@ -665,8 +676,13 @@ let completed_title kind title value =
 let () =
   assert_bool "node completion replaces the open token"
     (completed_title State.Node "[[Pr" "Project" = Some "[[Project]]");
-  assert_bool "tag completion without a known label keeps the uuid form"
-    (completed_title State.Tag "#ta" "tag" = Some "#[[tag]]");
+  assert_bool "tag completion with a brand-new plain name inserts a hashtag"
+    (completed_title State.Tag "#ta" "tag" = Some "#tag");
+  assert_bool "tag completion with an unknown uuid keeps the uuid form"
+    (completed_title State.Tag "#ta" "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
+     = Some "#[[018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8]]");
+  assert_bool "tag completion with a brand-new spaced name uses the bracket form"
+    (completed_title State.Tag "#ta" "two words" = Some "#[[two words]]");
   assert_bool "property completion replaces the current line"
     (completed_title State.Property "before\nsta::" "status" = Some "before\nstatus:: ");
   assert_bool "completion without its marker is ignored"
@@ -812,6 +828,25 @@ let () =
   assert_bool "staged split focuses its optimistic block title"
     (State.editing_uuid state = Some "new"
      && State.editing_title state = Some "lpha"
+     && effects = [])
+;;
+
+let () =
+  let state, effects = State.update context State.empty (Add_root_block "page-1") in
+  assert_bool "add root block stages a focused insert"
+    (state = State.empty
+     && effects
+        = [ State.Insert_root_block { page_uuid = "page-1" }; State.Haptic State.Impact ]);
+  let state, effects =
+    State.update context State.empty
+      (Operation_staged
+         (Logseq_chat_pending_ops.Insert_block
+            { uuid = "new-root"; title = ""; page_uuid = "page-1"
+            ; parent_uuid = "page-1"; order = "a0"; created_at = 1 }))
+  in
+  assert_bool "staged insert opens the editor on the new block"
+    (State.editing_uuid state = Some "new-root"
+     && State.editing_title state = Some ""
      && effects = [])
 ;;
 
