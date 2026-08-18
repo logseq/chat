@@ -391,6 +391,28 @@ let () =
 ;;
 
 let () =
+  with_runtime (fun _path _conn runtime ->
+    let started_at = Unix.gettimeofday () in
+    let previous = ref "Old" in
+    for index = 1 to 500 do
+      let title = "Offline " ^ string_of_int index in
+      let operation =
+        save_title
+          ("incremental-" ^ string_of_int index)
+          !previous
+          title
+      in
+      if Runtime.stage runtime operation <> Ok ()
+      then fail "incremental offline edit did not stage";
+      previous := title
+    done;
+    let elapsed = Unix.gettimeofday () -. started_at in
+    assert_bool
+      "staging a burst of offline edits stays bounded"
+      (elapsed < 0.5 && String.equal (title (Runtime.db runtime)) "Offline 500"))
+;;
+
+let () =
   with_runtime (fun path _conn runtime ->
     let invalid =
       Ops.

@@ -210,8 +210,24 @@ let stage runtime operation =
   then (
     Ops.save ~path:runtime.path operation;
     Ok ())
-  else if Option.is_none replacing && operation.base_t <> runtime.server_t
-  then Error "operation was created against a stale server cursor"
+  else if Option.is_none replacing
+  then
+    if operation.base_t <> runtime.server_t
+    then Error "operation was created against a stale server cursor"
+    else
+      (match Projection.compile runtime.snapshot.db operation.intent with
+       | Error message -> Error message
+       | Ok tx ->
+         Ops.save ~path:runtime.path operation;
+         runtime.snapshot <-
+           { runtime.snapshot with
+             db = Datascript.db_with tx runtime.snapshot.db
+           ; statuses =
+               runtime.snapshot.statuses
+               @ [ operation.operation_id, Ops.Applied ]
+           };
+         refresh_search runtime;
+         Ok ())
   else
     let candidate_ops =
       List.filter
