@@ -2862,7 +2862,29 @@ private struct ContentModeIcon: View {
     }
 }
 
-private struct AssetPreview: View {
+enum AssetPresentationKind: Equatable {
+    case image
+    case audio
+    case file
+}
+
+enum AssetPresentationPolicy {
+    static func kind(assetType: String?, localPath: String?) -> AssetPresentationKind {
+        let pathExtension = localPath.map { URL(fileURLWithPath: $0).pathExtension }
+        let normalizedType = (assetType ?? pathExtension ?? "").lowercased()
+        if normalizedType.hasPrefix("image/")
+            || ["jpg", "jpeg", "png", "gif", "heic", "webp"].contains(normalizedType) {
+            return .image
+        }
+        if normalizedType.hasPrefix("audio/")
+            || ["m4a", "mp3", "wav", "aac", "caf"].contains(normalizedType) {
+            return .audio
+        }
+        return .file
+    }
+}
+
+struct AssetPreview: View {
     let block: LogseqBlock
     let onOpen: (() -> Void)?
 
@@ -2873,7 +2895,7 @@ private struct AssetPreview: View {
             title: block.title,
             assetType: block.assetType
         ),
-           isImage,
+           presentationKind == .image,
            let image = UIImage(contentsOfFile: url.path) {
             Button { onOpen?() } label: {
                 VStack(alignment: .leading, spacing: 8) {
@@ -2885,12 +2907,13 @@ private struct AssetPreview: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("asset.preview.image")
         } else if let url = LocalAssetPath.resolve(
             block.localPath,
             title: block.title,
             assetType: block.assetType
         ),
-                  isAudio {
+                  presentationKind == .audio {
             VStack(alignment: .leading, spacing: 8) {
                 assetTitle
                 AssetAudioPlayer(path: url.path)
@@ -2904,19 +2927,8 @@ private struct AssetPreview: View {
         #endif
     }
 
-    private var normalizedType: String {
-        let pathExtension = block.localPath.map { URL(fileURLWithPath: $0).pathExtension }
-        return (block.assetType ?? pathExtension ?? "").lowercased()
-    }
-
-    private var isImage: Bool {
-        normalizedType.hasPrefix("image/")
-            || ["jpg", "jpeg", "png", "gif", "heic", "webp"].contains(normalizedType)
-    }
-
-    private var isAudio: Bool {
-        normalizedType.hasPrefix("audio/")
-            || ["m4a", "mp3", "wav", "aac", "caf"].contains(normalizedType)
+    private var presentationKind: AssetPresentationKind {
+        AssetPresentationPolicy.kind(assetType: block.assetType, localPath: block.localPath)
     }
 
     private var assetTitle: some View {
@@ -2930,7 +2942,7 @@ private struct AssetPreview: View {
     private var fileButton: some View {
         Button { onOpen?() } label: {
             HStack(spacing: 8) {
-                IconImage(name: isAudio ? "audio" : "paperclip")
+                IconImage(name: presentationKind == .audio ? "audio" : "paperclip")
                     .frame(width: 18, height: 18)
                 assetTitle
             }
@@ -2942,14 +2954,37 @@ private struct AssetPreview: View {
 #if !SKIP && os(iOS)
 private struct AssetAudioPlayer: View {
     @State private var player: AVPlayer
+    @State private var isPlaying = false
 
     init(path: String) {
         _player = State(initialValue: AVPlayer(url: URL(fileURLWithPath: path)))
     }
 
     var body: some View {
-        VideoPlayer(player: player)
-            .onDisappear { player.pause() }
+        Button {
+            if isPlaying {
+                player.pause()
+            } else {
+                player.play()
+            }
+            isPlaying.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .frame(width: 20, height: 20)
+                Text(verbatim: isPlaying ? "Pause audio" : "Play audio")
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("player.asset.audio")
+        .accessibilityLabel(isPlaying ? "Pause audio" : "Play audio")
+        .onDisappear {
+            player.pause()
+            isPlaying = false
+        }
     }
 }
 #endif

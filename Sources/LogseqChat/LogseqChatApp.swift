@@ -248,7 +248,7 @@ public struct LogseqChatRootView : View {
     }
 
     public func syncFromStoredConnection() async -> Bool {
-        openStore()
+        await waitForLocalLaunchLoad()
         let defaults = UserDefaults.standard
         let baseURL = defaults.string(forKey: "logseq.baseURL") ?? "http://127.0.0.1:8787"
         guard let graphID = defaults.string(forKey: "logseq.selectedGraphId"), !graphID.isEmpty else {

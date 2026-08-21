@@ -22,3 +22,18 @@ appId: com.logseq.chat
 - extendedWaitUntil:
     visible: "Audio-.*\\.m4a"
     timeout: 15000
+- assertVisible:
+    id: "player.asset.audio"
+- tapOn:
+    id: "player.asset.audio"
+- assertVisible: "Pause audio"
+- tapOn: "Pause audio"
+- assertVisible: "Play audio"
+- pressKey: Home
+- waitForAnimationToEnd
+- launchApp:
+    stopApp: false
+- waitForAnimationToEnd
+- assertVisible: "Audio-.*\\.m4a"
+- assertVisible:
+    id: "player.asset.audio"

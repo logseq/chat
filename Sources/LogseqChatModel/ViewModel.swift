@@ -185,6 +185,8 @@ private struct CreateSyncGraphPayload: Encodable {
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
     private var searchGeneration = 0
     private var openedDatabasePath: String?
+    private var activeGraphID: String?
+    private var debugDatabaseRoute = "unopened"
     private var mutationServerT: Int?
     private var pendingSyncTask: Task<Void, Never>?
     private var pendingSyncDebounceTask: Task<Void, Never>?
@@ -308,11 +310,23 @@ private struct CreateSyncGraphPayload: Encodable {
 
     public func open(path: String) {
         openedDatabasePath = path
+        activeGraphID = nil
+        debugDatabaseRoute = "catalog:\(path)"
+        #if DEBUG
+        print("LOGSEQ_DB_ROUTE request=open route=\(debugDatabaseRoute)")
+        logger.info("LOGSEQ_DB_ROUTE request=open route=\(debugDatabaseRoute)")
+        #endif
         performAsync(LogseqChatRPCRequest(method: "open", params: LogseqChatRPCParams(action: nil, path: path)))
     }
 
     public func openAndWait(path: String) async {
         openedDatabasePath = path
+        activeGraphID = nil
+        debugDatabaseRoute = "catalog:\(path)"
+        #if DEBUG
+        print("LOGSEQ_DB_ROUTE request=open_and_wait route=\(debugDatabaseRoute)")
+        logger.info("LOGSEQ_DB_ROUTE request=open_and_wait route=\(debugDatabaseRoute)")
+        #endif
         await performAsyncAndWait(
             LogseqChatRPCRequest(
                 method: "open",
@@ -345,6 +359,13 @@ private struct CreateSyncGraphPayload: Encodable {
         let startedAt = Date()
         openedDatabasePath = databasePath
         apply(responseJSON: responseJSON, actionName: actionName)
+        if actionName == "openGraph", let graphID = snapshot.selectedGraphId {
+            activeGraphID = graphID
+            debugDatabaseRoute = "graph:\(graphID)"
+            #if DEBUG
+            print("LOGSEQ_DB_ROUTE launch_applied route=\(debugDatabaseRoute)")
+            #endif
+        }
         let elapsedMilliseconds = Date().timeIntervalSince(startedAt) * 1_000
         print(
             "LOGSEQ_LAUNCH_APPLY_METRIC action=\(actionName) "
@@ -543,8 +564,16 @@ private struct CreateSyncGraphPayload: Encodable {
             return false
         }
         if !forceSnapshot,
+           activeGraphID == graphID,
            snapshot.selectedGraphId == graphID,
            snapshot.appliedServerT != nil {
+            #if DEBUG
+            print("LOGSEQ_DB_ROUTE bootstrap_early_return graph=\(graphID) route=\(debugDatabaseRoute)")
+            logger.info(
+                "LOGSEQ_DB_ROUTE bootstrap_early_return graph=\(graphID) "
+                    + "route=\(debugDatabaseRoute)"
+            )
+            #endif
             return true
         }
         do {
@@ -566,6 +595,11 @@ private struct CreateSyncGraphPayload: Encodable {
                FileManager.default.fileExists(atPath: checkpointURL.path) {
                 await dispatchEncodedAndWait("openGraph", openPayload)
                 if lastError == nil {
+                    activeGraphID = graphID
+                    debugDatabaseRoute = "graph:\(graphID)"
+                    #if DEBUG
+                    print("LOGSEQ_DB_ROUTE open_graph_applied route=\(debugDatabaseRoute)")
+                    #endif
                     return true
                 }
             }
@@ -609,6 +643,10 @@ private struct CreateSyncGraphPayload: Encodable {
                     params: LogseqChatRPCParams(action: "importSnapshot", payload: payloadString)
                 )
             )
+            if lastError == nil {
+                activeGraphID = graphID
+                debugDatabaseRoute = "graph:\(graphID)"
+            }
             return lastError == nil
         } catch {
             lastError = LogseqChatCoreError(code: "snapshot_download_failed", message: "\(error)")
@@ -798,6 +836,16 @@ private struct CreateSyncGraphPayload: Encodable {
         title: String, assetType: String, assetSize: Int,
         assetChecksum: String, localPath: String, targetBlockId: String? = nil
     ) -> String {
+        #if DEBUG
+        print(
+            "LOGSEQ_DB_ROUTE add_asset route=\(debugDatabaseRoute) "
+                + "snapshot_graph=\(snapshot.selectedGraphId ?? "none") path=\(localPath)"
+        )
+        logger.info(
+            "LOGSEQ_DB_ROUTE add_asset route=\(debugDatabaseRoute) "
+                + "snapshot_graph=\(snapshot.selectedGraphId ?? "none")"
+        )
+        #endif
         let now = Self.nowMilliseconds()
         let uuid = UUID().uuidString.lowercased()
         dispatchEncoded(
@@ -1233,6 +1281,13 @@ private struct CreateSyncGraphPayload: Encodable {
                 )
                 snapshot = mergedResult
                 lastError = nil
+                if actionName == "openGraph" {
+                    activeGraphID = mergedResult.selectedGraphId
+                    debugDatabaseRoute = "graph:\(activeGraphID ?? "unknown")"
+                } else if actionName == "open" {
+                    activeGraphID = nil
+                    debugDatabaseRoute = "catalog:\(openedDatabasePath ?? "unknown")"
+                }
             } else {
                 let error = response.error ?? LogseqChatCoreError(code: "unknown_core_error", message: "The core returned no snapshot")
                 #if DEBUG

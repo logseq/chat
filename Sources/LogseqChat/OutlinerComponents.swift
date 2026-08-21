@@ -5,6 +5,12 @@ import UIKit
 import UniformTypeIdentifiers
 #endif
 
+enum OutlinerBlockPresentationPolicy {
+    static func usesAssetPreview(isAsset: Bool) -> Bool {
+        isAsset
+    }
+}
+
 struct OutlinerView: View {
     let rows: [LogseqOutlineRow]
     let sections: [LogseqBlockSection]
@@ -400,6 +406,10 @@ struct OutlinerBlockRow: View, Equatable {
         return ident.hasSuffix(".done") || ident.hasSuffix(".canceled")
     }
 
+    private var usesAssetPreview: Bool {
+        OutlinerBlockPresentationPolicy.usesAssetPreview(isAsset: row.block.isAsset)
+    }
+
     var body: some View {
         #if !SKIP && os(iOS)
         rowContent
@@ -554,21 +564,25 @@ struct OutlinerBlockRow: View, Equatable {
                 )
                 #endif
             } else {
-                renderedTitle
-                    .font(.body)
-                    .strikethrough(isCompleted)
-                    .foregroundStyle(isCompleted ? .secondary : .primary)
-                    .frame(
-                        minHeight: OutlinerLayoutMetrics.titleLineHeight,
-                        alignment: .topLeading
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    #if !SKIP && os(iOS)
-                    .anchorPreference(
-                        key: OutlinerEditorAnchorPreferenceKey.self,
-                        value: .bounds
-                    ) { [row.block.uuid: $0] }
-                    #endif
+                if usesAssetPreview {
+                    AssetPreview(block: row.block, onOpen: nil)
+                } else {
+                    renderedTitle
+                        .font(.body)
+                        .strikethrough(isCompleted)
+                        .foregroundStyle(isCompleted ? .secondary : .primary)
+                        .frame(
+                            minHeight: OutlinerLayoutMetrics.titleLineHeight,
+                            alignment: .topLeading
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        #if !SKIP && os(iOS)
+                        .anchorPreference(
+                            key: OutlinerEditorAnchorPreferenceKey.self,
+                            value: .bounds
+                        ) { [row.block.uuid: $0] }
+                        #endif
+                }
             }
             BlockTrailingTags(
                 tags: BlockTagPresentationPolicy.trailingTags(
