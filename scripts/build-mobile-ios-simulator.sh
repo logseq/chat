@@ -33,6 +33,7 @@ sqlite_object="$core_build_dir/datascript_sqlite_stubs.o"
 graph_store_object="$core_build_dir/logseq_chat_graph_store_stubs.o"
 simulator_entitlements="$core_build_dir/simulator-entitlements.plist"
 signature_entitlements="$core_build_dir/simulator-signature-entitlements.plist"
+extension_build_dir="$core_build_dir/extensions/$configuration_name"
 app_dir="$repo_root/.build/LogseqChat.app"
 xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/$configuration_name-iphonesimulator/LogseqChat.app"
 
@@ -53,7 +54,9 @@ mkdir -p "$core_build_dir"
 plutil -create xml1 "$simulator_entitlements"
 plutil -insert application-identifier -string "${team_id}.com.logseq.chat" "$simulator_entitlements"
 plutil -insert keychain-access-groups -json "[\"${team_id}.com.logseq.chat\"]" "$simulator_entitlements"
+plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.logseq.chat"]' "$simulator_entitlements"
 plutil -create xml1 "$signature_entitlements"
+plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.logseq.chat"]' "$signature_entitlements"
 "$repo_root/scripts/build-mobile-ocaml-deps.sh" \
   "$target_prefix" \
   "$core_build_dir"
@@ -259,6 +262,18 @@ swift build \
   --triple "$triple" \
   --sdk "$sdk_path"
 
+xcodebuild \
+  -project "$repo_root/Darwin/LogseqChat.xcodeproj" \
+  -target LogseqChatShareExtension \
+  -target LogseqChatWidgets \
+  -configuration "$configuration_name" \
+  -sdk iphonesimulator \
+  -arch arm64 \
+  ONLY_ACTIVE_ARCH=YES \
+  CONFIGURATION_BUILD_DIR="$extension_build_dir" \
+  CODE_SIGNING_ALLOWED=NO \
+  build >/dev/null
+
 if [[ -d $app_dir ]]; then
   chmod -R u+w "$app_dir"
   rm -rf "$app_dir"
@@ -276,6 +291,27 @@ for bundle in "$swift_build_dir"/*.bundle; do
   [[ -d "$bundle" ]] || continue
   cp -R "$bundle" "$app_dir/"
 done
+
+plugins_dir="$app_dir/PlugIns"
+mkdir -p "$plugins_dir"
+for extension in LogseqChatShareExtension LogseqChatWidgets; do
+  extension_product="$extension_build_dir/$extension.appex"
+  [[ -d "$extension_product" ]] || die "missing simulator extension: $extension_product"
+  cp -R "$extension_product" "$plugins_dir/"
+done
+codesign \
+  --force \
+  --sign - \
+  --entitlements "$repo_root/Darwin/ShareExtension/ShareExtension.entitlements" \
+  --timestamp=none \
+  --generate-entitlement-der \
+  "$plugins_dir/LogseqChatShareExtension.appex"
+codesign \
+  --force \
+  --sign - \
+  --timestamp=none \
+  --generate-entitlement-der \
+  "$plugins_dir/LogseqChatWidgets.appex"
 
 logseq_resource_bundle="$app_dir/logseq-chat_LogseqChat.bundle"
 if [[ -d "$logseq_resource_bundle" ]]; then

@@ -72,6 +72,19 @@ fi
 
 ios_e2e_script="$repo_root/scripts/test-ios-e2e.sh"
 ios_e2e_suite_script="$repo_root/scripts/test-ios-e2e-suite.sh"
+simulator_build_script="$repo_root/scripts/build-mobile-ios-simulator.sh"
+
+for extension in LogseqChatShareExtension LogseqChatWidgets; do
+  if ! grep -Fq "$extension.appex" "$simulator_build_script"; then
+    echo "not ok - simulator build does not embed $extension" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+if ! grep -Fq 'PlugIns' "$simulator_build_script"; then
+  echo "not ok - simulator build does not create the app extension directory" >&2
+  failures=$((failures + 1))
+fi
 
 if ! grep -Fq \
   'base_url=${LOGSEQ_CHAT_E2E_BASE_URL:-http://127.0.0.1:8787}' \

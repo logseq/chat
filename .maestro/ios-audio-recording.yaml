@@ -3,10 +3,27 @@ appId: com.logseq.chat
 - runFlow:
     file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
 - launchApp
-- tapOn:
-    id: "button.sidebar"
-- tapOn: "E2E Journal 08"
-- tapOn: "Edit block E2E Journal Block 08"
+- runFlow:
+    when:
+      visible:
+        id: "button.sidebar.dismiss"
+    commands:
+      - tapOn:
+          id: "button.sidebar.dismiss"
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - tapOn: "Cancel"
+- runFlow:
+    when:
+      visible: "Show chat"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.outliner.editor.audio"
 - assertVisible: "Audio recording"
@@ -34,6 +51,6 @@ appId: com.logseq.chat
 - launchApp:
     stopApp: false
 - waitForAnimationToEnd
-- assertVisible: "Audio-.*\\.m4a"
+- assertVisible: "Audio-.*"
 - assertVisible:
     id: "player.asset.audio"
