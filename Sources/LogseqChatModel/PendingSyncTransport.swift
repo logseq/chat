@@ -1,7 +1,7 @@
 import Foundation
 
-enum LogseqPendingSyncHTTPTransport {
-    static func send(_ pending: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
+public enum LogseqPendingSyncHTTPTransport {
+    public static func send(_ pending: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
         #if SKIP
         return await AndroidPendingSyncTransport.send(request: pending)
         #else

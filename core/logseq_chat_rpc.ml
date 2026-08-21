@@ -88,6 +88,7 @@ type t =
   ; has_older_journals : (unit -> bool) option
   ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
   ; unlock_graph : (Api.config -> password:string -> (unit, string) result) option
+  ; provision_graph_key : (Api.config -> (unit, string) result) option
   ; graph_unlocked : (graph_id:string -> bool) option
   ; encrypt_title : (graph_id:string -> string -> (string, string) result) option
   ; encrypt_asset_file : (graph_id:string -> source_path:string -> (string * int, string) result) option
@@ -104,6 +105,7 @@ type t =
   ; mutable semantic_queue : semantic_pending list
   ; mutable semantic_active : semantic_active option
   ; mutable outliner_state : Outliner_state.t
+  ; mutable outliner_optimistic_blocks : Model.block list option
   ; mutable outliner_commands : Outliner_effects.platform_command list
   ; mutable outliner_revision : int
   ; save_graph_catalog : (string -> unit) option
@@ -304,6 +306,7 @@ let graph_json (graph : Api.graph) =
   `Assoc
     [ "id", `String graph.id
     ; "name", `String graph.name
+    ; "schemaVersion", Option.fold ~none:`Null ~some:(fun value -> `String value) graph.schema_version
     ; "isEncrypted", `Bool graph.e2ee
     ; "isReady", `Bool graph.ready
     ]
@@ -368,16 +371,17 @@ let autocomplete_kind_json = function
   | Property -> "property"
 ;;
 
-let outliner_context_with_blocks session blocks =
+let outliner_context_with_blocks ?sidebar_pages session blocks =
   let pages =
-    match session.graph_sidebar_pages with
-    | None -> []
-    | Some load ->
-      let sidebar =
+    let sidebar =
+      match sidebar_pages, session.graph_sidebar_pages with
+      | Some sidebar, _ -> sidebar
+      | None, None -> Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
+      | None, Some load ->
         Option.value
           (load ())
           ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
-      in
+    in
       sidebar.favorites @ sidebar.recent_pages
       |> List.map (fun page ->
         Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.uuid })
@@ -393,7 +397,16 @@ let outliner_context_with_blocks session blocks =
   Outliner_state.{ blocks; pages; tags }
 ;;
 
-let base_outliner_context session =
+let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
+  match session.outliner_optimistic_blocks, Outliner_state.editing_uuid session.outliner_state with
+  | Some cached, Some _ ->
+    List.filter
+      (fun (block : Model.block) -> String.equal block.page_id page_uuid)
+      cached
+  | None, _ | Some _, None -> live_blocks
+;;
+
+let base_outliner_context_live session =
   let blocks =
     match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
     | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
@@ -401,6 +414,28 @@ let base_outliner_context session =
     | _ -> []
   in
   outliner_context_with_blocks session blocks
+;;
+
+let base_outliner_context_with_blocks ?sidebar_pages session blocks =
+  let context = outliner_context_with_blocks ?sidebar_pages session blocks in
+  match session.selected_sidebar_page with
+  | None -> context
+  | Some page ->
+    { context with
+      Outliner_state.blocks =
+        page_blocks_with_optimistic_overlay session page.uuid context.blocks
+    }
+;;
+
+let base_outliner_context session =
+  let context = base_outliner_context_live session in
+  match session.selected_sidebar_page with
+  | None -> context
+  | Some page ->
+    { context with
+      Outliner_state.blocks =
+        page_blocks_with_optimistic_overlay session page.uuid context.blocks
+    }
 ;;
 
 let page_outliner_context session page_uuid =
@@ -442,6 +477,14 @@ let node_route_related_blocks session route =
     else Option.bind session.graph_node_references (fun load -> load route.uuid)
   in
   Option.value fresh ~default:route.related_blocks
+;;
+
+let node_route_linked_reference_blocks session route =
+  if route.is_tag
+  then
+    Option.bind session.graph_node_references (fun load -> load route.uuid)
+    |> Option.value ~default:[]
+  else []
 ;;
 
 (* Resolve a node from the locally cached chat blocks when the graph db does
@@ -486,8 +529,109 @@ let outliner_context session =
   | Some route ->
     with_extra_blocks
       (node_route_context session route)
-      (node_route_related_blocks session route)
+      (node_route_related_blocks session route @ node_route_linked_reference_blocks session route)
   | None -> with_extra_blocks (base_outliner_context session) session.related_blocks
+;;
+
+let rec project_outliner_intent blocks = function
+  | Pending_ops.Save_title { uuid; title; _ } ->
+    List.map
+      (fun (block : Model.block) ->
+        if String.equal block.uuid uuid then { block with title } else block)
+      blocks
+  | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
+    blocks
+    @ [ Model.
+          { uuid
+          ; title
+          ; page_id = page_uuid
+          ; parent_id = Some parent_uuid
+          ; order = Some order
+          ; created_at
+          ; updated_at = created_at
+          ; sync_status = "pending"
+          ; tags = []
+          ; references = []
+          ; breadcrumbs = []
+          ; status = None
+          ; is_asset = false
+          ; asset_type = None
+          ; asset_size = None
+          ; asset_checksum = None
+          ; local_path = None
+          ; journal = None
+          }
+      ]
+  | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
+    (match
+       List.find_opt
+         (fun (block : Model.block) -> String.equal block.uuid uuid)
+         blocks
+     with
+     | None -> blocks
+     | Some source ->
+       List.map
+         (fun (block : Model.block) ->
+           if String.equal block.uuid uuid then { block with title = before } else block)
+         blocks
+       @ [ { source with
+             uuid = new_uuid
+           ; title = after
+           ; order = Some new_order
+           ; created_at
+           ; updated_at = created_at
+           ; sync_status = "pending"
+           }
+         ])
+  | Merge_backward { uuid; title; previous_uuid; merged_title; _ } ->
+    let previous_title =
+      List.find_opt
+        (fun (block : Model.block) -> String.equal block.uuid previous_uuid)
+        blocks
+      |> Option.map (fun block -> block.Model.title)
+      |> Option.value ~default:""
+    in
+    let title = Option.value merged_title ~default:(previous_title ^ title) in
+    blocks
+    |> List.filter (fun (block : Model.block) -> not (String.equal block.uuid uuid))
+    |> List.map (fun (block : Model.block) ->
+      if String.equal block.uuid previous_uuid
+      then { block with title; sync_status = "pending" }
+      else block)
+  | Move_block move ->
+    List.map
+      (fun (block : Model.block) ->
+        if String.equal block.uuid move.uuid
+        then
+          { block with
+            page_id = move.page_uuid
+          ; parent_id = Some move.parent_uuid
+          ; order = Some move.order
+          ; sync_status = "pending"
+          }
+        else block)
+      blocks
+  | Move_blocks { moves } ->
+    List.fold_left
+      (fun blocks move -> project_outliner_intent blocks (Pending_ops.Move_block move))
+      blocks
+      moves
+  | Delete_blocks { uuids } ->
+    List.filter
+      (fun (block : Model.block) -> not (List.mem block.uuid uuids))
+      blocks
+  | Set_property _ | Create_tag _ | Create_journal _ | Add_tag _ -> blocks
+;;
+
+let project_outliner_operations context operations =
+  let blocks =
+    List.fold_left
+      (fun blocks (operation : Pending_ops.t) ->
+        project_outliner_intent blocks operation.intent)
+      context.Outliner_state.blocks
+      operations
+  in
+  { context with Outliner_state.blocks }
 ;;
 
 let outliner_state_json state =
@@ -518,11 +662,14 @@ let outliner_state_json state =
     ]
 ;;
 
-let outliner_rows_json session context state =
+let outliner_rows_json ?serialize_block session context state =
+  let serialize_block =
+    Option.value serialize_block ~default:(visible_block_json session.model)
+  in
   Outliner_state.visible_rows context state
   |> List.map (fun row ->
     `Assoc
-      [ "block", visible_block_json session.model row.Outliner_state.block
+      [ "block", serialize_block row.Outliner_state.block
       ; "depth", `Int row.depth
       ; "hasChildren", `Bool row.has_children
       ; "isCollapsed", `Bool row.is_collapsed
@@ -561,6 +708,8 @@ let node_routes_json session =
       ; "blocks", `List (List.map (visible_block_json session.model) context.blocks)
       ; "relatedBlocks",
         `List (List.map block_json (node_route_related_blocks session route))
+      ; "linkedReferenceBlocks",
+        `List (List.map block_json (node_route_linked_reference_blocks session route))
       ; "outlinerState", outliner_state_json state
       ; "outlinerRows", outliner_rows_json session context state
       ; "outlinerAutocompleteCandidates", outliner_candidates_json context state
@@ -646,22 +795,45 @@ let snapshot_related_blocks session =
   else session.related_blocks
 ;;
 
-let snapshot session blocks =
+let snapshot_linked_reference_blocks session =
+  if selected_page_is_tag session
+  then (
+    match session.selected_sidebar_page, session.graph_node_references with
+    | Some page, Some load ->
+      Option.value (load page.Logseq_chat_graph_read.uuid) ~default:[]
+    | _ -> [])
+  else []
+;;
+
+let snapshot session ~context_blocks blocks =
   let sidebar_pages =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
     |> Option.value ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
   in
   let base_state = Option.value session.node_base_state ~default:session.outliner_state in
-  let base_context = base_outliner_context session in
+  let base_context =
+    base_outliner_context_with_blocks ~sidebar_pages session context_blocks
+  in
+  let serialized_blocks = Hashtbl.create (List.length blocks) in
+  let serialize_block (block : Model.block) =
+    match Hashtbl.find_opt serialized_blocks block.uuid with
+    | Some json -> json
+    | None ->
+      let json = visible_block_json session.model block in
+      Hashtbl.add serialized_blocks block.uuid json;
+      json
+  in
   success
     (`Assoc
       [ "revision", `Int session.model.revision
-      ; "blocks", `List (List.map (visible_block_json session.model) blocks)
+      ; "blocks", `List (List.map serialize_block blocks)
       ; "selectedBlock",
         (match Model.selected_block session.model with
          | Some block -> block_json block
          | None -> `Null)
       ; "relatedBlocks", `List (List.map block_json (snapshot_related_blocks session))
+      ; "linkedReferenceBlocks",
+        `List (List.map block_json (snapshot_linked_reference_blocks session))
       ; "selectedPageIsTag", `Bool (selected_page_is_tag session)
       ; "selectedPageIsProperty", `Bool (selected_page_is_property session)
       ; "searchQuery", `String session.search_query
@@ -699,7 +871,7 @@ let snapshot session blocks =
       ; "outlinerAutocompleteCandidates",
         outliner_candidates_json base_context base_state
       ; "outlinerRows",
-        outliner_rows_json session base_context base_state
+        outliner_rows_json ~serialize_block session base_context base_state
       ; "outlinerCommandRevision", `Int session.outliner_revision
       ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
@@ -830,17 +1002,26 @@ let structural_outliner_patch
       let position =
         if not anchored
         then [ "start", `Int start ]
-        else if start > 0
-        then
-          [ ( "afterBlockId"
-            , `String before_rows.(start - 1).Outliner_state.block.Model.uuid )
-          ]
-        else if before_length > 0
-        then
-          [ ( "beforeBlockId"
-            , `String before_rows.(0).Outliner_state.block.Model.uuid )
-          ]
-        else [ "start", `Int 0 ]
+        else
+          let after_anchor =
+            if start > 0
+            then
+              [ ( "afterBlockId"
+                , `String before_rows.(start - 1).Outliner_state.block.Model.uuid )
+              ]
+            else []
+          in
+          let before_anchor =
+            if start < before_length
+            then
+              [ ( "beforeBlockId"
+                , `String before_rows.(start).Outliner_state.block.Model.uuid )
+              ]
+            else []
+          in
+          match after_anchor @ before_anchor with
+          | [] -> [ "start", `Int 0 ]
+          | anchors -> anchors
       in
       [ `Assoc
           (position
@@ -907,12 +1088,13 @@ let snapshot_visible session =
        | None -> Model.visible_blocks session.model)
     | None -> Model.visible_blocks session.model
   in
+  let context_blocks = blocks in
   let blocks =
     if Option.is_some session.selected_sidebar_page
     then blocks
     else Model.visible_from session.model blocks
   in
-  snapshot session blocks
+  snapshot session ~context_blocks blocks
 ;;
 
 let pending_sync_patch session =
@@ -984,6 +1166,7 @@ let create
       ?pending_operations
       ?load_cached_graph_key
       ?unlock_graph
+      ?provision_graph_key
       ?graph_unlocked
       ?encrypt_title
       ?encrypt_asset_file
@@ -1032,6 +1215,7 @@ let create
   ; has_older_journals
   ; load_cached_graph_key
   ; unlock_graph
+  ; provision_graph_key
   ; graph_unlocked
   ; encrypt_title
   ; encrypt_asset_file
@@ -1048,6 +1232,7 @@ let create
   ; semantic_queue = []
   ; semantic_active = None
   ; outliner_state = Outliner_state.empty
+  ; outliner_optimistic_blocks = None
   ; outliner_commands = []
   ; outliner_revision = 0
   ; save_graph_catalog
@@ -1634,6 +1819,7 @@ let fresh_squuid () =
 
 let reset_outliner session =
   session.outliner_state <- Outliner_state.empty;
+  session.outliner_optimistic_blocks <- None;
   session.outliner_commands <- [];
   session.outliner_revision <- session.outliner_revision + 1
 ;;
@@ -1918,12 +2104,9 @@ let dispatch_outliner_event session payload =
             if interpreted.operations = []
             then context, Option.is_some aggregate_page_uuid
             else
-              match aggregate_page_uuid with
-              | Some page_uuid ->
-                (match page_outliner_context session page_uuid with
-                 | Some context -> context, true
-                 | None -> outliner_context session, false)
-              | None -> outliner_context session, false
+              ( project_outliner_operations context interpreted.operations
+              , Option.is_some aggregate_page_uuid
+                || Option.is_some session.selected_sidebar_page )
           in
           let next_state =
             List.fold_left
@@ -1937,6 +2120,7 @@ let dispatch_outliner_event session payload =
               interpreted.operations
           in
           session.outliner_state <- next_state;
+          session.outliner_optimistic_blocks <- Some projected_context.blocks;
           session.outliner_commands <- interpreted.platform;
           session.outliner_revision <- session.outliner_revision + 1;
           let patch_uuids =
@@ -2042,6 +2226,72 @@ let dispatch session action payload =
         | Error message ->
           debug "graph catalog refresh failed: %s" message;
           snapshot_visible session))
+  | "createSyncGraph" ->
+    (match session.config, payload with
+     | Some config, Some payload ->
+       (try
+          match from_string payload with
+          | `Assoc fields ->
+            (match required_string "name" fields,
+                   List.assoc_opt "isEncrypted" fields with
+             | Ok name, Some (`Bool is_encrypted)
+               when not (String.equal (String.trim name) "") ->
+               let request =
+                 Api.create_graph_request
+                   config
+                   ~name:(String.trim name)
+                   ~schema_version:"65.33"
+                   ~e2ee:is_encrypted
+               in
+               (match session.send request with
+                | Ok response when response.status >= 200 && response.status < 300 ->
+                  let graph_id =
+                    match from_string response.body with
+                    | `Assoc response_fields ->
+                      (match List.assoc_opt "graph-id" response_fields with
+                       | Some (`String value) -> Some value
+                       | _ -> None)
+                    | _ -> None
+                  in
+                  let provision_result =
+                    match graph_id, is_encrypted, session.provision_graph_key with
+                    | Some graph_id, true, Some provision ->
+                      provision { config with graph_id; graph_name = Some (String.trim name) }
+                    | Some _, true, None -> Error "E2EE key provisioning is unavailable"
+                    | _ -> Ok ()
+                  in
+                  (match graph_id, provision_result with
+                   | Some _, Error message ->
+                     failure ~code:"graph_key_provision_failed" ~message
+                   | Some graph_id, Ok () ->
+                     (match discover_graphs session config with
+                      | Error message -> failure ~code:"graph_discovery_failed" ~message
+                      | Ok () ->
+                     session.config <-
+                       Some
+                         { config with
+                           graph_id
+                         ; graph_name = Some (String.trim name)
+                         };
+                     snapshot_visible session)
+                   | None, _ ->
+                     failure ~code:"graph_create_failed" ~message:"Graph creation returned no graph id"
+                  )
+                | Ok response ->
+                  failure
+                    ~code:"graph_create_failed"
+                    ~message:(if String.equal response.body "" then "Could not create graph" else response.body)
+                | Error message -> failure ~code:"graph_create_failed" ~message)
+             | Ok _, Some (`Bool _) ->
+               failure ~code:"invalid_params" ~message:"Graph name cannot be empty"
+             | _ ->
+               failure
+                 ~code:"invalid_params"
+                 ~message:"createSyncGraph requires a name and isEncrypted flag")
+          | _ -> failure ~code:"invalid_params" ~message:"createSyncGraph payload must be an object"
+        with error -> failure ~code:"invalid_json" ~message:(Printexc.to_string error))
+     | None, _ -> failure ~code:"graph_not_configured" ~message:"Configure Logseq before creating a graph"
+     | _, None -> failure ~code:"invalid_params" ~message:"createSyncGraph requires a payload")
   | "selectGraph" ->
     (match session.config, payload with
      | Some config, Some graph_id ->
@@ -2069,6 +2319,12 @@ let dispatch session action payload =
         | Some page ->
           clear_node_navigation session;
           session.selected_sidebar_page <- Some page;
+          session.related_blocks <-
+            (if selected_page_is_tag session
+             then []
+             else
+               Option.bind session.graph_node_references (fun load -> load page.uuid)
+               |> Option.value ~default:[]);
           reset_outliner session;
           snapshot_visible session
         | None -> failure ~code:"unknown_page" ~message:"The selected page is not available")

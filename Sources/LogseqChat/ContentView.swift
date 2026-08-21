@@ -27,33 +27,30 @@ private enum SidebarChromeMetrics {
 
 private struct SidebarMenuIcon: View {
     var body: some View {
-        VStack(spacing: 4) {
-            Capsule()
-                .frame(width: SidebarChromeMetrics.menuGlyphWidth, height: 2)
-            Capsule()
-                .frame(width: SidebarChromeMetrics.menuGlyphWidth, height: 2)
-            Capsule()
-                .frame(width: SidebarChromeMetrics.menuGlyphWidth, height: 2)
-        }
+        IconImage(
+            name: SidebarMenuIconPolicy.assetName,
+            size: SidebarMenuIconPolicy.assetSize
+        )
         .frame(
             width: SidebarChromeMetrics.menuVisualFrame,
             height: SidebarChromeMetrics.menuVisualFrame
         )
+        .foregroundStyle(.primary)
     }
 }
 
 @MainActor @Observable final class SidebarMotionState {
     var isPresented = false
     var isAnimating = false
-    var dragOffset: CGFloat = 0
+    var dragOffset: CGFloat = 0.0
 
-    func setPresented(_ presented: Bool) {
-        guard presented != isPresented || abs(dragOffset) > 0 else { return }
+    func setSidebarPresented(_ presented: Bool) {
+        guard presented != isPresented || abs(dragOffset) > 0.0 else { return }
         isAnimating = true
         #if SKIP
         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
             isPresented = presented
-            dragOffset = 0
+            dragOffset = 0.0
         }
         Task {
             try? await Task.sleep(for: .milliseconds(350))
@@ -81,17 +78,17 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let width = min(geometry.size.width * 0.84, 360)
-            let baseOffset = motion.isPresented ? width : 0
-            let contentOffset = min(max(baseOffset + motion.dragOffset, 0), width)
-            let progress = width > 0 ? contentOffset / width : 0
-            let isDragging = abs(motion.dragOffset) > 0
+            let width = min(geometry.size.width * 0.84, 360.0)
+            let baseOffset = motion.isPresented ? width : 0.0
+            let contentOffset = min(max(baseOffset + motion.dragOffset, 0.0), width)
+            let progress = width > 0.0 ? contentOffset / width : 0.0
+            let isDragging = abs(motion.dragOffset) > 0.0
 
             ZStack(alignment: .leading) {
                 #if SKIP
                 ComposeView { _ in
                     BackHandler(enabled: motion.isPresented) {
-                        motion.setPresented(false)
+                        motion.setSidebarPresented(false)
                     }
                 }
                 .frame(width: 0, height: 0)
@@ -111,7 +108,7 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
                     .background(Color.black.opacity(0.001))
                     .opacity(0.35 + (0.65 * progress))
                     .scaleEffect(0.96 + (0.04 * progress))
-                    .offset(x: -20 * (1 - progress))
+                    .offset(x: -20.0 * (1.0 - progress))
 
                 main
                     .platformSidebarSafeAreaPadding(
@@ -131,7 +128,7 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
                     .overlay {
                         if motion.isPresented {
                             Button {
-                                motion.setPresented(false)
+                                motion.setSidebarPresented(false)
                             } label: {
                                 Color.black.opacity(0.001)
                             }
@@ -140,8 +137,12 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
                             .accessibilityIdentifier("button.sidebar.dismiss")
                         }
                     }
+                    #if SKIP
+                    .background(Color.white.opacity(0.92))
+                    #else
                     .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 40 * progress))
+                    #endif
+                    .clipShape(RoundedRectangle(cornerRadius: 40.0 * progress))
                     .shadow(color: Color.black.opacity(0.18), radius: 16, x: -6)
                     .offset(x: contentOffset)
             }
@@ -194,7 +195,7 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
                     motion.dragOffset = 0
                     return
                 }
-                motion.setPresented(SidebarDragPolicy.presentedAfterDrag(
+                motion.setSidebarPresented(SidebarDragPolicy.presentedAfterDrag(
                     isPresented: motion.isPresented,
                     translationX: value.translation.width,
                     translationY: value.translation.height,
@@ -227,6 +228,10 @@ struct ContentView: View {
     @State private var graphsPresented = false
     @State private var graphPasswordPresented = false
     @State private var graphPassword = ""
+    @State private var createGraphPresented = false
+    @State private var newGraphName = ""
+    @State private var newGraphEncrypted = true
+    @State private var creatingGraph = false
     @State private var graphUnlockInProgress = false
     @State private var fileImporterPresented = false
     @State private var selectedTaskStatus: LogseqTaskStatus?
@@ -248,11 +253,13 @@ struct ContentView: View {
     #endif
     @State private var hasAutoScrolledInitially = false
     @State private var hasStartedContentTask = false
+    @State private var isLoadingGraph = true
     @State private var draft = ""
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
     @AppStorage("logseq.composerDraft") private var persistedDraft = ""
     @AppStorage("logseq.contentMode") private var contentModeRaw = LogseqContentMode.chat.rawValue
+    @AppStorage("logseq.appearance") private var appearance = "system"
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
@@ -268,6 +275,9 @@ struct ContentView: View {
 
     var body: some View {
         rootContent
+        .preferredColorScheme(
+            appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
+        )
         .task {
             if !hasStartedContentTask {
                 hasStartedContentTask = true
@@ -275,11 +285,20 @@ struct ContentView: View {
                 #if DEBUG
                 print("LogseqChat debug: content task started")
                 #endif
-                store.open(path: databasePath)
+                let graphLoadStartedAt = Date()
+                await LogseqChatRuntime.shared.waitForLocalLaunchLoad()
                 #if DEBUG
                 print("LogseqChat debug: local store opened")
                 #endif
-                await restoreCachedGraphIfAvailable()
+                let graphLoadMilliseconds = Date()
+                    .timeIntervalSince(graphLoadStartedAt) * 1_000
+                isLoadingGraph = false
+                #if DEBUG
+                print(
+                    "LogseqChat debug: graph loaded "
+                        + "ms=\(String(format: "%.2f", graphLoadMilliseconds))"
+                )
+                #endif
                 await authentication.restore()
                 #if DEBUG
                 print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
@@ -305,7 +324,7 @@ struct ContentView: View {
         .onChange(of: store.snapshot.outlinerCommandRevision) { _, _ in
             performOutlinerPlatformCommands()
         }
-        .onChange(of: store.snapshot.outlinerState.editing?.uuid) { _, uuid in
+        .onChange(of: outlinerEditing?.uuid) { _, uuid in
             if uuid == nil {
                 outlinerKeyboardDismissalPending = false
             }
@@ -331,7 +350,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $searchPagePresented) {
             NodeSearchView(store: store) { hit in
+                #if SKIP
+                store.openNode(hit.uuid)
+                #else
                 openNodeRoute(hit.uuid)
+                #endif
             }
         }
         .sheet(isPresented: $graphPasswordPresented) {
@@ -339,7 +362,7 @@ struct ContentView: View {
                 Form {
                     SecureField("Graph password", text: $graphPassword)
                         .textContentType(.password)
-                    if let error = store.lastError {
+                    if let error = presentedError {
                         Text(verbatim: error.message)
                             .foregroundStyle(.red)
                     }
@@ -357,6 +380,49 @@ struct ContentView: View {
                             unlockSelectedGraph()
                         }
                         .disabled(graphPassword.isEmpty || graphUnlockInProgress)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $createGraphPresented) {
+            NavigationStack {
+                Form {
+                    TextField("Graph name", text: $newGraphName)
+                        .accessibilityIdentifier("field.graph-name")
+                    Toggle("End-to-end encryption", isOn: $newGraphEncrypted)
+                        .accessibilityIdentifier("toggle.graph-encryption")
+                    Text("Encryption cannot be changed after the sync graph is created.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if let error = presentedError {
+                        Text(verbatim: error.message)
+                            .foregroundStyle(.red)
+                    }
+                }
+                .navigationTitle("Add sync graph")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { createGraphPresented = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Add") {
+                            creatingGraph = true
+                            Task {
+                                if await store.createSyncGraph(
+                                    name: newGraphName,
+                                    isEncrypted: newGraphEncrypted
+                                ) {
+                                    createGraphPresented = false
+                                    newGraphName = ""
+                                }
+                                creatingGraph = false
+                            }
+                        }
+                        .disabled(
+                            creatingGraph
+                                || newGraphName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                        .accessibilityIdentifier("button.graph-add.confirm")
                     }
                 }
             }
@@ -429,11 +495,15 @@ struct ContentView: View {
             }
             Text(verbatim: "Select a Logseq graph to download and sync on this device.")
                 .foregroundStyle(.secondary)
+            Button {
+                createGraphPresented = true
+            } label: { Text("Add sync graph") }
+            .accessibilityIdentifier("button.graph-add")
             if let message = authentication.errorMessage {
                 Text(verbatim: message)
                     .foregroundStyle(.red)
             }
-            if let error = store.lastError {
+            if let error = presentedError {
                 ErrorBanner(error: error)
             }
 
@@ -500,25 +570,25 @@ struct ContentView: View {
     @ViewBuilder private var sidebarMainPage: some View {
         #if SKIP
             mainContent
-            #else
-            NavigationStack(path: $appNavigationPath) {
-                navigationMainContent
-                    .navigationDestination(for: AppNavigationRoute.self) { route in
-                        appNavigationDestination(route)
-                    }
-            }
-            .onChange(of: appNavigationPath) { previousPath, path in
-                let closedNodes = AppNavigationPathPolicy.nodeCount(previousPath)
-                    - AppNavigationPathPolicy.nodeCount(path)
-                if closedNodes > 0 {
-                    for _ in 0..<closedNodes { store.closeNode() }
+        #else
+        NavigationStack(path: $appNavigationPath) {
+            navigationMainContent
+                .navigationDestination(for: AppNavigationRoute.self) { route in
+                    appNavigationDestination(route)
                 }
+        }
+        .onChange(of: appNavigationPath) { previousPath, path in
+            let closedNodes = AppNavigationPathPolicy.nodeCount(previousPath)
+                - AppNavigationPathPolicy.nodeCount(path)
+            if closedNodes > 0 {
+                for _ in 0..<closedNodes { store.closeNode() }
             }
-            #if os(iOS)
-            .overlay(alignment: .bottom) {
-                iosBottomChrome
-            }
-            #endif
+        }
+        #if os(iOS)
+        .overlay(alignment: .bottom) {
+            iosBottomChrome
+        }
+        #endif
         #endif
     }
 
@@ -552,7 +622,7 @@ struct ContentView: View {
             editing: projection.outlinerState.editing,
             selectedBlockIDs: Set(projection.outlinerState.selectedBlockIds),
             statuses: availableTaskStatuses,
-            error: store.lastError,
+            error: presentedError,
             hasOlderJournals: false,
             topPadding: 16,
             bottomPadding: blockListContentBottomPadding,
@@ -572,8 +642,10 @@ struct ContentView: View {
             relatedBlocks: projection.relatedBlocks,
             relatedAccessibilityIdentifier: projection.isTag
                 ? "section.tag.tagged-nodes" : "section.node.linked-references",
+            linkedReferenceBlocks: projection.linkedReferenceBlocks,
             showsEmptyPlaceholder: false,
-            onAddFirstBlock: nodeAddFirstBlock(projection)
+            onAddFirstBlock: nodeAddFirstBlock(projection),
+            isJournalHome: false
         )
     }
 
@@ -594,10 +666,42 @@ struct ContentView: View {
         return projection.blocks.first(where: { $0.uuid == uuid })?.title ?? projection.page.title
     }
 
-    private var navigationMainContent: some View {
+    @ViewBuilder private var navigationMainContent: some View {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            primaryContent
+                .background(appBackground)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    nativeHeaderToolbar
+                }
+        } else {
+            mainContent
+                .platformRootNavigationChromeHidden()
+        }
+        #else
         mainContent
             .platformRootNavigationChromeHidden()
+        #endif
     }
+
+    #if os(iOS)
+    @available(iOS 26.0, *)
+    @ToolbarContentBuilder private var nativeHeaderToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            headerLeadingControl
+                .buttonBorderShape(.circle)
+        }
+        ToolbarItem(placement: .principal) {
+            headerTitle
+        }
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            contentModeControl
+            syncIndicatorControl
+            settingsControl
+        }
+    }
+    #endif
     #endif
 
     private var sidebarContent: some View {
@@ -632,6 +736,7 @@ struct ContentView: View {
                 }
                 .accessibilityLabel("Switch graph")
                 .accessibilityIdentifier("button.graph-switch")
+                .tint(.primary)
                 .padding(.bottom, 16)
 
                 ForEach(SidebarContentItem.allCases, id: \.rawValue) { item in
@@ -766,8 +871,8 @@ struct ContentView: View {
 
     private func switchGraph(to graph: LogseqGraph) {
         guard sidebarMotion.isPresented,
-              abs(sidebarMotion.dragOffset) == 0 else { return }
-        sidebarMotion.setPresented(false)
+              abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        sidebarMotion.setSidebarPresented(false)
         if graph.id == store.snapshot.selectedGraphId {
             store.clearSelectedPage()
             return
@@ -778,24 +883,24 @@ struct ContentView: View {
 
     private func openSidebarPage(_ page: LogseqSidebarPage) {
         guard sidebarMotion.isPresented,
-              abs(sidebarMotion.dragOffset) == 0 else { return }
-        sidebarMotion.setPresented(false)
+              abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
         store.selectPage(page.uuid)
     }
 
     private func openJournals() {
         guard sidebarMotion.isPresented,
-              abs(sidebarMotion.dragOffset) == 0 else { return }
-        sidebarMotion.setPresented(false)
+              abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
         store.clearSelectedPage()
     }
 
     private func openGraphs() {
         guard sidebarMotion.isPresented,
-              abs(sidebarMotion.dragOffset) == 0 else { return }
-        sidebarMotion.setPresented(false)
+              abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        sidebarMotion.setSidebarPresented(false)
         graphsPresented = true
     }
 
@@ -882,9 +987,12 @@ struct ContentView: View {
                 graphs: store.snapshot.graphs ?? [],
                 databasePath: databasePath,
                 refresh: { store.refresh() },
+                add: { createGraphPresented = true },
                 open: openManagedGraph,
                 deleteGraph: deleteManagedGraph
             )
+        } else if let projection = activeSkipNodeProjection {
+            skipNodeProjectionContent(projection)
         } else {
             if presentedContentMode == .outliner {
                 OutlinerView(
@@ -893,8 +1001,9 @@ struct ContentView: View {
                     editing: presentedOutlinerEditing,
                     selectedBlockIDs: outlinerSelectedBlockIDs,
                     statuses: availableTaskStatuses,
-                    error: store.lastError,
-                    hasOlderJournals: store.snapshot.hasOlderJournals,
+                    error: presentedError,
+                    hasOlderJournals: store.snapshot.selectedPage == nil
+                        && store.snapshot.hasOlderJournals,
                     topPadding: blockListContentTopPadding,
                     bottomPadding: blockListContentBottomPadding,
                     sendEvent: store.outlinerEvent,
@@ -902,12 +1011,15 @@ struct ContentView: View {
                     onZoomBlock: openOutlinerNode,
                     onOpenMarkupLink: openMarkupLink,
                     onLoadOlderJournals: store.loadOlderJournals,
-                    relatedTitle: selectedTagPageRelatedTitle,
-                    relatedEmptyTitle: nil,
-                    relatedBlocks: selectedTagPageRelatedBlocks,
-                    relatedAccessibilityIdentifier: "section.tag.tagged-nodes",
-                    showsEmptyPlaceholder: store.snapshot.selectedPage == nil,
-                    onAddFirstBlock: selectedPageAddFirstBlock
+                    relatedTitle: selectedPageRelatedTitle,
+                    relatedEmptyTitle: selectedPageRelatedEmptyTitle,
+                    relatedBlocks: selectedPageRelatedBlocks,
+                    relatedAccessibilityIdentifier: selectedPageRelatedAccessibilityIdentifier,
+                    linkedReferenceBlocks: store.snapshot.linkedReferenceBlocks ?? [],
+                    showsEmptyPlaceholder: store.snapshot.selectedPage == nil
+                        && !isLoadingGraph,
+                    onAddFirstBlock: selectedPageAddFirstBlock,
+                    isJournalHome: store.snapshot.selectedPage == nil
                 )
             } else {
                 blockList
@@ -915,16 +1027,80 @@ struct ContentView: View {
         }
     }
 
-    // Tag (class) pages opened from the sidebar list their tagged objects, the
-    // same way tag node routes do.
-    private var selectedTagPageRelatedBlocks: [LogseqBlock] {
-        guard store.snapshot.selectedPage != nil,
-              store.snapshot.selectedPageIsTag == true else { return [] }
+    private var activeSkipNodeProjection: LogseqNodeProjection? {
+        #if SKIP
+        store.snapshot.nodeRoutes.last
+        #else
+        nil
+        #endif
+    }
+
+    private var activeNodeProjection: LogseqNodeProjection? {
+        store.snapshot.nodeRoutes.last
+    }
+
+    @ViewBuilder private func skipNodeProjectionContent(_ projection: LogseqNodeProjection) -> some View {
+        OutlinerView(
+            rows: projection.outlinerRows,
+            sections: store.sections(for: projection),
+            editing: projection.outlinerState.editing,
+            selectedBlockIDs: Set(projection.outlinerState.selectedBlockIds),
+            statuses: availableTaskStatuses,
+            error: presentedError,
+            hasOlderJournals: false,
+            topPadding: blockListContentTopPadding,
+            bottomPadding: blockListContentBottomPadding,
+            sendEvent: store.outlinerEvent,
+            onBeginInteraction: beginOutlinerInteraction,
+            onZoomBlock: openOutlinerNode,
+            onOpenMarkupLink: openMarkupLink,
+            onLoadOlderJournals: {},
+            relatedTitle: RelatedContentPolicy.sectionTitle(
+                isTag: projection.isTag,
+                hasBlocks: !projection.relatedBlocks.isEmpty
+            ),
+            relatedEmptyTitle: RelatedContentPolicy.emptyTitle(
+                isTag: projection.isTag,
+                hasBlocks: !projection.relatedBlocks.isEmpty
+            ),
+            relatedBlocks: projection.relatedBlocks,
+            relatedAccessibilityIdentifier: projection.isTag
+                ? "section.tag.tagged-nodes" : "section.node.linked-references",
+            linkedReferenceBlocks: projection.linkedReferenceBlocks,
+            showsEmptyPlaceholder: false,
+            onAddFirstBlock: (!projection.isTag && !projection.isProperty) ? {
+                store.outlinerEvent(
+                    LogseqOutlinerEvent(type: "addRootBlock", uuid: projection.page.uuid)
+                )
+            } : nil,
+            isJournalHome: false
+        )
+    }
+
+    // Sidebar pages keep the original selected-page interaction while showing
+    // the same related content as node projections.
+    private var selectedPageRelatedBlocks: [LogseqBlock] {
+        guard store.snapshot.selectedPage != nil else { return [] }
         return store.snapshot.relatedBlocks ?? []
     }
 
-    private var selectedTagPageRelatedTitle: String? {
-        selectedTagPageRelatedBlocks.isEmpty ? nil : "Tagged nodes"
+    private var selectedPageRelatedTitle: String? {
+        RelatedContentPolicy.sectionTitle(
+            isTag: store.snapshot.selectedPageIsTag == true,
+            hasBlocks: !selectedPageRelatedBlocks.isEmpty
+        )
+    }
+
+    private var selectedPageRelatedEmptyTitle: String? {
+        RelatedContentPolicy.emptyTitle(
+            isTag: store.snapshot.selectedPageIsTag == true,
+            hasBlocks: !selectedPageRelatedBlocks.isEmpty
+        )
+    }
+
+    private var selectedPageRelatedAccessibilityIdentifier: String {
+        store.snapshot.selectedPageIsTag == true
+            ? "section.tag.tagged-nodes" : "section.node.linked-references"
     }
 
     // Empty non-tag, non-property pages offer to create and edit their first
@@ -1003,7 +1179,7 @@ struct ContentView: View {
     #endif
 
     private var shouldShowComposer: Bool {
-        store.snapshot.selectedPage == nil
+        store.snapshot.selectedPage == nil || isNodePagePresented
     }
 
     private var shouldShowExpandedComposer: Bool {
@@ -1016,8 +1192,17 @@ struct ContentView: View {
             hasSelectedPage: store.snapshot.selectedPage != nil,
             composerExpanded: composerExpanded,
             hasOutlinerSelection: !outlinerSelectedBlockIDs.isEmpty,
-            isEditingOutlinerBlock: presentedOutlinerEditing != nil
+            isEditingOutlinerBlock: presentedOutlinerEditing != nil,
+            isNodePage: isNodePagePresented
         )
+    }
+
+    private var isNodePagePresented: Bool {
+        #if SKIP
+        !store.snapshot.nodeRoutes.isEmpty
+        #else
+        !appNavigationPath.isEmpty
+        #endif
     }
 
     private var graphSubtitle: String {
@@ -1040,7 +1225,7 @@ struct ContentView: View {
     }
 
     private var outlinerEditing: LogseqOutlinerEditing? {
-        store.snapshot.outlinerState.editing
+        activeNodeProjection?.outlinerState.editing ?? store.snapshot.outlinerState.editing
     }
 
     private var presentedOutlinerEditing: LogseqOutlinerEditing? {
@@ -1051,13 +1236,16 @@ struct ContentView: View {
     }
 
     private var outlinerSelectedBlockIDs: Set<String> {
-        Set(store.snapshot.outlinerState.selectedBlockIds)
+        Set(activeNodeProjection?.outlinerState.selectedBlockIds
+            ?? store.snapshot.outlinerState.selectedBlockIds)
     }
 
     private var zoomedOutlinerBlock: LogseqBlock? {
         guard presentedContentMode == .outliner,
-              let id = store.snapshot.outlinerState.zoomedBlockId else { return nil }
-        return store.snapshot.blocks.first(where: { $0.uuid == id })
+              let id = (activeNodeProjection?.outlinerState
+                ?? store.snapshot.outlinerState).zoomedBlockId else { return nil }
+        return (activeNodeProjection?.blocks ?? store.snapshot.blocks)
+            .first(where: { $0.uuid == id })
     }
 
     private var deleteConfirmationPresented: Binding<Bool> {
@@ -1114,7 +1302,7 @@ struct ContentView: View {
         }
     }
 
-    private func restoreCachedGraphIfAvailable() async {
+    private func loadSelectedGraphFromDiskIfAvailable() async {
         guard !selectedGraphID.isEmpty else { return }
         await store.configureAndSelectGraph(
             baseURL: baseURL,
@@ -1140,8 +1328,26 @@ struct ContentView: View {
             isGraphsPresented: graphsDestinationPresented
         ) {
             graphPicker
+        } else if isLoadingGraph, store.snapshot.blocks.isEmpty {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Loading journals")
+                .accessibilityIdentifier("journals.loading")
         } else {
-            appShell
+            ZStack(alignment: .topLeading) {
+                appShell
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityLabel("Journal graph load status")
+                    .accessibilityIdentifier("journals.graph-loaded")
+                if !isLoadingGraph {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .onAppear {
+                            LogseqChatAppDelegate.shared.onJournalsUIReady()
+                        }
+                }
+            }
         }
     }
 
@@ -1213,6 +1419,14 @@ struct ContentView: View {
             .ignoresSafeArea()
     }
 
+    private var presentedError: LogseqChatCoreError? {
+        guard let error = store.lastError,
+              AppErrorPresentationPolicy.shouldPresent(code: error.code) else {
+            return nil
+        }
+        return error
+    }
+
     private var platformAppBackground: Color {
         #if os(iOS) && !SKIP
         Color(uiColor: .systemGroupedBackground)
@@ -1232,68 +1446,74 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack(alignment: .center, spacing: 12) {
-            Button {
-                if zoomedOutlinerBlock != nil {
-                    #if SKIP
-                    store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
-                    #else
-                    let path = OutlinerNavigationPolicy.pathAfterBackButton(
-                        appNavigationPath
-                    )
-                    if path == appNavigationPath {
-                        store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
-                    } else {
-                        appNavigationPath = path
-                    }
-                    #endif
-                } else if sidebarActivationAvailable {
-                    sidebarMotion.setPresented(!sidebarMotion.isPresented)
-                }
-            } label: {
-                if zoomedOutlinerBlock != nil {
-                    OutlinerBackIcon()
-                        .stroke(style: StrokeStyle(lineWidth: 2.25, lineCap: .round, lineJoin: .round))
-                        .frame(width: 10, height: 18)
-                } else {
-                    SidebarMenuIcon()
-                }
-            }
-            .frame(
-                width: SidebarChromeMetrics.minimumHitTarget,
-                height: SidebarChromeMetrics.minimumHitTarget
-            )
-            .buttonStyle(.plain)
-            .disabled(zoomedOutlinerBlock == nil && !sidebarActivationAvailable)
-            .accessibilityLabel(zoomedOutlinerBlock == nil ? "Open sidebar" : "Back")
-            .accessibilityIdentifier(zoomedOutlinerBlock == nil ? "button.sidebar" : "button.outliner.zoom-out")
-            Text(verbatim: zoomedOutlinerBlock?.title ?? store.snapshot.selectedPage?.title ?? graphSubtitle)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            if LogseqContentMode.supportsModeSwitch(
-                hasSelectedPage: store.snapshot.selectedPage != nil
-            ) {
-                Button {
-                    finishOutlinerEditing()
-                    composerExpanded = false
-                    composerFocused = false
-                    contentMode = contentMode.toggled
-                } label: {
-                    ContentModeIcon(mode: contentMode.toggled)
-                }
-                .frame(width: 44, height: 44)
+            headerLeadingControl
                 .buttonStyle(.plain)
-                .accessibilityLabel(contentMode == .chat ? "Show outliner" : "Show chat")
-                .accessibilityIdentifier("button.content-mode")
-            }
-            syncIndicatorControl
-            settingsControl
+            headerTitle
+            Spacer()
+            contentModeControl
+            connectionControls
         }
         .padding(.horizontal, 20)
         .padding(.top, 0)
         .padding(.bottom, SidebarChromeMetrics.headerBottomPadding)
+    }
+
+    private var headerLeadingControl: some View {
+        Button {
+            if zoomedOutlinerBlock != nil {
+                #if SKIP
+                store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
+                #else
+                let path = OutlinerNavigationPolicy.pathAfterBackButton(
+                    appNavigationPath
+                )
+                if path == appNavigationPath {
+                    store.outlinerEvent(LogseqOutlinerEvent(type: "zoomOut"))
+                } else {
+                    appNavigationPath = path
+                }
+                #endif
+            } else if isNodePagePresented {
+                #if SKIP
+                store.closeNode()
+                #endif
+            } else if sidebarActivationAvailable {
+                sidebarMotion.setSidebarPresented(!sidebarMotion.isPresented)
+            }
+        } label: {
+            if zoomedOutlinerBlock != nil || isNodePagePresented {
+                OutlinerBackIcon()
+                    .stroke(style: StrokeStyle(lineWidth: 2.25, lineCap: .round, lineJoin: .round))
+                    .frame(width: 10, height: 18)
+            } else {
+                SidebarMenuIcon()
+            }
+        }
+        .frame(
+            width: SidebarChromeMetrics.minimumHitTarget,
+            height: SidebarChromeMetrics.minimumHitTarget
+        )
+        .foregroundStyle(.primary)
+        .disabled(zoomedOutlinerBlock == nil && !isNodePagePresented && !sidebarActivationAvailable)
+        .accessibilityLabel(
+            zoomedOutlinerBlock == nil && !isNodePagePresented ? "Open sidebar" : "Back"
+        )
+        .accessibilityIdentifier(
+            zoomedOutlinerBlock == nil && !isNodePagePresented
+                ? "button.sidebar" : "button.outliner.zoom-out"
+        )
+    }
+
+    private var headerTitle: some View {
+        Text(verbatim: AppHeaderPolicy.title(
+            zoomedBlockTitle: zoomedOutlinerBlock?.title,
+            selectedPageTitle: activeNodeProjection?.page.title
+                ?? store.snapshot.selectedPage?.title
+        ))
+        .font(.subheadline)
+        .fontWeight(.semibold)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
     }
 
     private var hasUnconfirmedSyncChanges: Bool {
@@ -1313,7 +1533,7 @@ struct ContentView: View {
 
     private var syncIndicatorLabel: String {
         if hasUnconfirmedSyncChanges {
-            return "Sync pending"
+            return "Syncing"
         }
         return store.snapshot.syncConnected == true ? "Synced" : "Not connected"
     }
@@ -1325,6 +1545,29 @@ struct ContentView: View {
         return store.snapshot.syncConnected == true ? "sync.connected" : "sync.disconnected"
     }
 
+    @ViewBuilder private var connectionControls: some View {
+        #if !SKIP
+        if #available(iOS 26.0, macOS 26.0, *) {
+            ControlGroup {
+                syncIndicatorControl
+                settingsControl
+            }
+            .controlGroupStyle(.navigation)
+        } else {
+            HStack(spacing: 0) {
+                syncIndicatorControl
+                settingsControl
+            }
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        #else
+        HStack(spacing: 0) {
+            syncIndicatorControl
+            settingsControl
+        }
+        #endif
+    }
+
     private var syncIndicatorControl: some View {
         Button {
             settingsPresented = true
@@ -1334,21 +1577,40 @@ struct ContentView: View {
                 .frame(width: 10, height: 10)
         }
         .frame(width: 44, height: 44)
-        .buttonStyle(.plain)
+        .foregroundStyle(.primary)
         .accessibilityLabel(syncIndicatorLabel)
         .accessibilityIdentifier(syncIndicatorAccessibilityIdentifier)
+    }
+
+    @ViewBuilder private var contentModeControl: some View {
+        if LogseqContentMode.supportsModeSwitch(
+            hasSelectedPage: store.snapshot.selectedPage != nil
+        ) {
+            Button {
+                finishOutlinerEditing()
+                composerExpanded = false
+                composerFocused = false
+                contentMode = contentMode.toggled
+            } label: {
+                ContentModeIcon(mode: contentMode.toggled)
+            }
+            .frame(width: 44, height: 44)
+            .buttonStyle(.plain)
+            .accessibilityLabel(contentMode == .chat ? "Show outliner" : "Show chat")
+            .accessibilityIdentifier("button.content-mode")
+        }
     }
 
     private var settingsControl: some View {
         Button {
             settingsPresented = true
         } label: {
-            IconImage(name: "more_horiz")
+            Image(systemName: HeaderControlPolicy.settingsSystemImage)
+                .font(.system(size: 20, weight: .medium))
                 .frame(width: 24, height: 24)
         }
-        .frame(width: 52, height: 52)
-        .platformGlassButtonStyle()
-        .platformCircleButtonShape()
+        .frame(width: 44, height: 44)
+        .foregroundStyle(.primary)
         .accessibilityLabel("Settings")
         .accessibilityIdentifier("button.connection")
     }
@@ -1360,10 +1622,10 @@ struct ContentView: View {
                     Color.clear
                         .frame(height: blockListContentTopPadding)
                         .id(Self.blockListTopID)
-                    if let error = store.lastError {
+                    if let error = presentedError {
                         ErrorBanner(error: error)
                     }
-                    if store.sections.isEmpty {
+                    if store.sections.isEmpty, !isLoadingGraph {
                         EmptyBlocksView()
                     } else {
                         ForEach(store.sections(for: LogseqContentMode.chat)) { section in
@@ -1463,7 +1725,8 @@ struct ContentView: View {
                 #endif
             case "confirmDelete":
                 let ids = Set(command.uuids ?? [])
-                blocksPendingDeletion = store.snapshot.blocks.filter { ids.contains($0.uuid) }
+                let blocks = activeNodeProjection?.blocks ?? store.snapshot.blocks
+                blocksPendingDeletion = blocks.filter { ids.contains($0.uuid) }
                 outlinerDeleteConfirmationPending = !blocksPendingDeletion.isEmpty
             case "setClipboardText":
                 #if !SKIP && os(iOS)
@@ -1630,7 +1893,8 @@ struct ContentView: View {
     }
 
     private var outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate] {
-        store.snapshot.outlinerAutocompleteCandidates
+        activeNodeProjection?.outlinerAutocompleteCandidates
+            ?? store.snapshot.outlinerAutocompleteCandidates
     }
 
     private func completeOutlinerAutocomplete(_ candidate: LogseqOutlinerAutocompleteCandidate) {
@@ -2090,18 +2354,32 @@ private struct ConnectionSettingsView: View {
     let apply: () -> Void
     let signOut: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("logseq.appearance") private var appearance = "system"
+    @AppStorage("logseq.editor.spellCheck") private var spellCheck = true
+    @AppStorage("logseq.editor.autoCorrection") private var autoCorrection = true
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Logseq API") {
+                Section("General") {
+                    Picker("Appearance", selection: $appearance) {
+                        Text("System").tag("system")
+                        Text("Light").tag("light")
+                        Text("Dark").tag("dark")
+                    }
+                }
+                Section("Editor") {
+                    Toggle("Spell check", isOn: $spellCheck)
+                    Toggle("Auto-correction", isOn: $autoCorrection)
+                }
+                Section("Sync") {
                     TextField("Base URL", text: $baseURL)
                         .accessibilityIdentifier("field.base-url")
                 }
                 #if !SKIP
                 if let graphDatabasePath {
                     let graphDatabaseURL = URL(fileURLWithPath: graphDatabasePath)
-                    Section("Graph Data") {
+                    Section("Advanced") {
                         ShareLink(item: graphDatabaseURL) {
                             Text("Export Graph SQLite DB")
                         }
@@ -2116,7 +2394,7 @@ private struct ConnectionSettingsView: View {
                     .accessibilityIdentifier("button.sign-out")
                 }
             }
-            .navigationTitle("Connection")
+            .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

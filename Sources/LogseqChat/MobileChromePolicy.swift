@@ -43,6 +43,36 @@ enum MobileChromePolicy {
     }
 }
 
+enum AppHeaderPolicy {
+    static func title(
+        zoomedBlockTitle: String?,
+        selectedPageTitle: String?
+    ) -> String {
+        zoomedBlockTitle ?? selectedPageTitle ?? "Journal"
+    }
+}
+
+enum HeaderControlPolicy {
+    static let settingsSystemImage = "ellipsis.circle"
+    static let usesNativeToolbarGroup = true
+    static let trailingGroupActionCount = 2
+}
+
+enum SidebarMenuIconPolicy {
+    static let assetName = "sidebar_toggle"
+    static let assetSize: CGFloat = 24.0
+    static let usesTemplateRendering = true
+    static let usesPrimaryStyle = true
+    static let usesCircularButtonShape = true
+    static let addsExplicitGlassStyleInsideToolbar = false
+}
+
+enum AppErrorPresentationPolicy {
+    static func shouldPresent(code: String) -> Bool {
+        code != "sse_connection_failed"
+    }
+}
+
 enum BottomChromePresentation: Equatable {
     case hidden
     case captureAndSearch
@@ -57,11 +87,12 @@ enum BottomChromePolicy {
         hasSelectedPage: Bool,
         composerExpanded: Bool,
         hasOutlinerSelection: Bool,
-        isEditingOutlinerBlock: Bool
+        isEditingOutlinerBlock: Bool,
+        isNodePage: Bool = false
     ) -> BottomChromePresentation {
         if contentMode == .outliner && hasOutlinerSelection { return .outlinerSelection }
         if contentMode == .outliner && isEditingOutlinerBlock { return .outlinerEditor }
-        if hasSelectedPage { return .hidden }
+        if hasSelectedPage && !isNodePage { return .hidden }
         if composerExpanded { return .expandedComposer }
         return .captureAndSearch
     }

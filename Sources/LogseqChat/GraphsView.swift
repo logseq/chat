@@ -5,6 +5,7 @@ struct GraphsView: View {
     let graphs: [LogseqGraph]
     let databasePath: String
     let refresh: () -> Void
+    let add: () -> Void
     let open: (LogseqGraph) -> Void
     let deleteGraph: (LogseqGraph) async throws -> Void
 
@@ -39,6 +40,20 @@ struct GraphsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("button.graphs.refresh")
+
+                Button {
+                    feedbackRevision += 1
+                    add()
+                } label: {
+                    HStack {
+                        Text("Add sync graph")
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .platformRectangularHitTarget()
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("button.graph-add")
 
                 Section("Local graphs:") {
                     if localGraphs.isEmpty {

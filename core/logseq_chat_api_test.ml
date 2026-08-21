@@ -241,6 +241,20 @@ let () =
     "graph key endpoint"
     "https://api.example/e2ee/graphs/graph-1/aes-key"
     (Logseq_chat_api.graph_key_request config).url;
+  let upsert = Logseq_chat_api.upsert_graph_key_request config ~encrypted_key:"wrapped" in
+  assert_equal "upsert graph key method" "POST" upsert.method_;
+  (match upsert.body with
+   | Some body ->
+     (match Yojson.Basic.from_string body with
+      | `Assoc fields ->
+        assert_equal
+          "upsert encrypted graph key"
+          "wrapped"
+          (match List.assoc_opt "encrypted-aes-key" fields with
+           | Some (`String value) -> value
+           | _ -> "")
+      | _ -> failwith "upsert graph key body must be an object")
+   | None -> failwith "upsert graph key body is missing");
   let key_pair =
     Logseq_chat_api.user_keys_from_body
       {|{"public-key":"public","encrypted-private-key":"private-package"}|}
@@ -253,10 +267,44 @@ let () =
 ;;
 
 let () =
+  let config =
+    Logseq_chat_api.
+      { base_url = "https://api.example.com/api"
+      ; graph_id = ""
+      ; graph_name = None
+      ; token = "token"
+      }
+  in
+  let request =
+    Logseq_chat_api.create_graph_request
+      config
+      ~name:"Private notes"
+      ~schema_version:"65.33"
+      ~e2ee:true
+  in
+  assert_equal "create graph method" "POST" request.method_;
+  assert_equal "create graph url" "https://api.example.com/graphs" request.url;
+  (match request.body with
+   | Some body ->
+     (match Yojson.Basic.from_string body with
+      | `Assoc fields ->
+        (match List.assoc_opt "graph-name" fields,
+               List.assoc_opt "schema-version" fields,
+               List.assoc_opt "graph-e2ee?" fields with
+         | Some (`String name), Some (`String schema), Some (`Bool true) ->
+           assert_equal "create graph name" "Private notes" name;
+           assert_equal "create graph schema" "65.33" schema
+         | _ -> failwith "create graph body must preserve name, schema, and encryption")
+      | _ -> failwith "create graph body must be an object")
+   | None -> failwith "create graph request must have a body")
+;;
+
+let () =
   let graphs =
     Logseq_chat_api.graphs_from_graphs_body
-      {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"encrypted-1","graph-name":"Encrypted","graph-e2ee?":true,"graph-ready-for-use?":false}]}|}
+      {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","schema-version":"65.33","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"encrypted-1","graph-name":"Encrypted","graph-e2ee?":true,"graph-ready-for-use?":false}]}|}
   in
+  assert_equal "graph schema version" "65.33" (Option.get (List.hd graphs).schema_version);
   match graphs with
   | [ plain; encrypted ] ->
     assert_equal "plain graph id" "plain-1" plain.Logseq_chat_api.id;

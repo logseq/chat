@@ -21,18 +21,22 @@ let logger: os.Logger = os.Logger(subsystem: "com.logseq.chat", category: "Logse
 ///
 /// The default implementation merely loads the `ContentView` for the app and logs a message.
 public struct LogseqChatRootView : View {
+    @State private var authentication = LogseqChatRuntime.shared.authentication
+
     public init() {
-        #if !SKIP && AppleAuth
-        LogseqAmplifyAuth.configure()
-        #endif
     }
 
     public var body: some View {
         #if !SKIP && AppleAuth
-        Authenticator { _ in
+        ZStack {
             appContent
+            if authentication.state == .signedOut {
+                Authenticator { _ in
+                    EmptyView()
+                }
+                .hidesSignUpButton()
+            }
         }
-        .hidesSignUpButton()
         #else
         appContent
         #endif
@@ -56,7 +60,7 @@ public struct LogseqChatRootView : View {
 }
 
 #if !SKIP && AppleAuth
-private enum LogseqAmplifyAuth {
+@MainActor enum LogseqAmplifyAuth {
     private static let configureOnce: Void = {
         let configuration = LogseqCognitoConfiguration.load()
         let outputs = AmplifyOutputsData(
@@ -95,8 +99,18 @@ private enum LogseqAmplifyAuth {
     public let store: LogseqChatStore
     public let authentication: LogseqAuthenticationStore
     let syncCoordinator = GraphSyncCoordinator()
+    private struct LocalLaunchResult: Sendable {
+        let catalogResponse: String
+        let graphResponse: String?
+        let isEncrypted: Bool?
+    }
+    private var localLaunchTask: Task<LocalLaunchResult, Never>?
+    private var didApplyLocalLaunchResult = false
 
     private init() {
+        try? FileManager.default.removeItem(
+            at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
+        )
         self.store = LogseqChatStore { request in
             LogseqChatCore.shared.logseq_chat_call(request)
         }
@@ -114,6 +128,119 @@ private enum LogseqAmplifyAuth {
         URL.documentsDirectory
             .appendingPathComponent("logseq-chat.sqlite")
             .path
+    }
+
+    public func startLocalLaunchLoad() {
+        guard localLaunchTask == nil else { return }
+        let graphID = UserDefaults.standard.string(forKey: "logseq.selectedGraphId") ?? ""
+        let databasePath = databasePath
+        let baseURL = UserDefaults.standard.string(forKey: "logseq.baseURL")
+            ?? "http://127.0.0.1:8787"
+        localLaunchTask = Task.detached(priority: .userInitiated) {
+            LogseqChatAppDelegate.shared.reportLaunchStage("local_load_started")
+            func configureGraph() async {
+                let payloadObject: [String: Any] = [
+                    "baseUrl": baseURL,
+                    "graphId": graphID,
+                    "token": ""
+                ]
+                guard let data = try? JSONSerialization.data(withJSONObject: payloadObject),
+                      let payload = String(data: data, encoding: .utf8) else { return }
+                _ = await LogseqChatStore.callForLaunch(
+                    LogseqChatRPCRequest(
+                        method: "dispatch",
+                        params: LogseqChatRPCParams(action: "configure", payload: payload)
+                    )
+                )
+                LogseqChatAppDelegate.shared.reportLaunchStage("graph_configured")
+            }
+
+            func openGraph(isEncrypted: Bool) async -> String? {
+                guard !graphID.isEmpty else { return nil }
+                let graphDirectory = LogseqGraphLocalStorage.directoryURL(
+                    databasePath: databasePath,
+                    graphID: graphID
+                )
+                let payloadObject: [String: Any] = [
+                    "graphId": graphID,
+                    "activePath": graphDirectory.appendingPathComponent("graph.sqlite").path,
+                    "checkpointPath": graphDirectory.appendingPathComponent("sync.checkpoint").path,
+                    "isEncrypted": isEncrypted
+                ]
+                guard let payloadData = try? JSONSerialization.data(withJSONObject: payloadObject),
+                      let payload = String(data: payloadData, encoding: .utf8) else { return nil }
+                LogseqChatAppDelegate.shared.reportLaunchStage("open_graph_started")
+                let response = await LogseqChatStore.callForLaunch(
+                    LogseqChatRPCRequest(
+                        method: "dispatch",
+                        params: LogseqChatRPCParams(action: "openGraph", payload: payload)
+                    )
+                )
+                LogseqChatAppDelegate.shared.reportLaunchStage("open_graph_returned")
+                return response
+            }
+
+            let catalogResponse = await LogseqChatStore.callForLaunch(
+                LogseqChatRPCRequest(
+                    method: "open",
+                    params: LogseqChatRPCParams(action: nil, path: databasePath)
+                )
+            )
+            LogseqChatAppDelegate.shared.reportLaunchStage("catalog_opened")
+            guard !graphID.isEmpty,
+                  let catalogData = catalogResponse.data(using: .utf8),
+                  let catalog = try? JSONDecoder().decode(
+                    LogseqChatRPCResponse.self,
+                    from: catalogData
+                  ) else {
+                return LocalLaunchResult(
+                    catalogResponse: catalogResponse,
+                    graphResponse: nil,
+                    isEncrypted: nil
+                )
+            }
+            let isEncrypted = catalog.result?.graphs?
+                .first(where: { $0.id == graphID })?.isEncrypted ?? false
+            await configureGraph()
+            let graphResponse = await openGraph(isEncrypted: isEncrypted)
+            return LocalLaunchResult(
+                catalogResponse: catalogResponse,
+                graphResponse: graphResponse,
+                isEncrypted: isEncrypted
+            )
+        }
+        Task { [weak self] in
+            await self?.applyLocalLaunchResultWhenReady()
+        }
+    }
+
+    public func waitForLocalLaunchLoad() async {
+        startLocalLaunchLoad()
+        await applyLocalLaunchResultWhenReady()
+    }
+
+    private func applyLocalLaunchResultWhenReady() async {
+        guard !didApplyLocalLaunchResult, let result = await localLaunchTask?.value else { return }
+        didApplyLocalLaunchResult = true
+        if let isEncrypted = result.isEncrypted {
+            UserDefaults.standard.set(isEncrypted, forKey: "logseq.selectedGraphEncrypted")
+        }
+        if let graphResponse = result.graphResponse {
+            store.applyLaunchResponse(
+                graphResponse,
+                actionName: "openGraph",
+                databasePath: databasePath
+            )
+            LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
+            LogseqChatAppDelegate.shared.reportLaunchStage("graph_loaded")
+        } else {
+            store.applyLaunchResponse(
+                result.catalogResponse,
+                actionName: "open",
+                databasePath: databasePath
+            )
+            LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
+        }
     }
 
     public func openStore() {
@@ -283,10 +410,11 @@ public final class LogseqChatAppDelegate : Sendable {
 
     private nonisolated(unsafe) var launchStartedAt: TimeInterval?
 
-    public func onInit() {
+    @MainActor public func onInit() {
         let now = Date().timeIntervalSince1970
         launchStartedAt = now
         print(String(format: "LOGSEQ_LAUNCH_METRIC start=%.6f", now))
+        LogseqChatRuntime.shared.startLocalLaunchLoad()
         logger.debug("onInit")
     }
 
@@ -299,9 +427,21 @@ public final class LogseqChatAppDelegate : Sendable {
         reportLaunchMetric("first_ui_rendered")
     }
 
+    public func onJournalsUIReady() {
+        reportLaunchMetric("journals_ui_ready")
+    }
+
+    public func launchElapsedMilliseconds() -> Double? {
+        guard let launchStartedAt else { return nil }
+        return (Date().timeIntervalSince1970 - launchStartedAt) * 1_000.0
+    }
+
+    public func reportLaunchStage(_ name: String) {
+        reportLaunchMetric(name)
+    }
+
     private func reportLaunchMetric(_ name: String) {
-        guard let launchStartedAt else { return }
-        let elapsedMilliseconds = (Date().timeIntervalSince1970 - launchStartedAt) * 1_000.0
+        guard let elapsedMilliseconds = launchElapsedMilliseconds() else { return }
         print(String(format: "LOGSEQ_LAUNCH_METRIC %@_ms=%.3f", name, elapsedMilliseconds))
     }
 

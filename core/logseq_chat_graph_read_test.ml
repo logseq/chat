@@ -223,6 +223,9 @@ let () =
     ; "block/tags", many ~value_type:RefType ()
     ; "block/refs", many ~value_type:RefType ()
     ; "block/created-at", one ~value_type:InstantType ()
+    ; "logseq.property/hide?", one ()
+    ; "logseq.property/deleted-at", one ~value_type:InstantType ()
+    ; "logseq.property/view-for", one ~value_type:RefType ()
     ]
   in
   let conn = create_conn ~schema () in
@@ -285,6 +288,42 @@ let () =
                ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
                ; "block/refs", Many_values [ Ref_to (Temp_id "node-page") ]
                ; "block/created-at", One_value (Instant 3)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "hidden-tagged-object")
+               ; "block/title", One_value (String "Hidden tagged object")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/tags", Many_values [ Ref_to (Temp_id "tag") ]
+               ; "logseq.property/hide?", One_value (Bool true)
+               ; "block/created-at", One_value (Instant 4)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "view-linked-reference")
+               ; "block/title", One_value (String "View linked reference")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/refs", Many_values [ Ref_to (Temp_id "node-page") ]
+               ; "logseq.property/view-for", One_value (Ref_to (Temp_id "tag"))
+               ; "block/created-at", One_value (Instant 5)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "recycled-linked-reference")
+               ; "block/title", One_value (String "Recycled linked reference")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/refs", Many_values [ Ref_to (Temp_id "node-page") ]
+               ; "logseq.property/deleted-at", One_value (Instant 6)
+               ; "block/created-at", One_value (Instant 6)
                ]
            }
        ]);

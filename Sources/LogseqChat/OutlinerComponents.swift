@@ -24,11 +24,20 @@ struct OutlinerView: View {
     let relatedEmptyTitle: String?
     let relatedBlocks: [LogseqBlock]
     let relatedAccessibilityIdentifier: String
+    let linkedReferenceBlocks: [LogseqBlock]
     let showsEmptyPlaceholder: Bool
     let onAddFirstBlock: (() -> Void)?
+    let isJournalHome: Bool
+    @State private var retainedEditorAnchorID: String? = nil
 
     var body: some View {
-        let rowsByID = Dictionary(uniqueKeysWithValues: rows.map { ($0.block.uuid, $0) })
+        GeometryReader { proxy in
+            outlinerContent(viewportHeight: proxy.size.height)
+        }
+    }
+
+    @ViewBuilder private func outlinerContent(viewportHeight: CGFloat) -> some View {
+        let rowsByID = rowIndex(rows)
         let visibleSections = sections.filter { section in
             section.blocks.contains(where: { rowsByID[$0.uuid] != nil })
         }
@@ -46,23 +55,43 @@ struct OutlinerView: View {
                         EmptyBlocksView()
                     }
                 } else {
-                    ForEach(visibleSections) { section in
-                        sectionView(section, rowsByID: rowsByID)
+                    ForEach(Array(visibleSections.enumerated()), id: \.element.id) { index, section in
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            sectionView(section, rowsByID: rowsByID)
+                        }
+                        .frame(
+                            minHeight: isJournalHome
+                                ? max(0, viewportHeight - topPadding - bottomPadding)
+                                : 0,
+                            alignment: .top
+                        )
+                        if isJournalHome, index < visibleSections.count - 1 {
+                            Divider()
+                                .accessibilityIdentifier("journal.divider")
+                        }
                     }
                 }
                 if hasOlderJournals {
-                    Button(OutlinerPaginationPolicy.buttonTitle) {
-                        onLoadOlderJournals()
-                    }
-                    .buttonStyle(.plain)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .padding(.vertical, 12)
-                    .accessibilityIdentifier(OutlinerPaginationPolicy.accessibilityIdentifier)
+                    Color.clear
+                        .frame(height: 1)
+                        .onAppear(perform: onLoadOlderJournals)
+                        .accessibilityHidden(true)
                 }
                 if let relatedTitle {
-                    relatedSection(title: relatedTitle)
+                    relatedSection(
+                        title: relatedTitle,
+                        emptyTitle: relatedEmptyTitle,
+                        blocks: relatedBlocks,
+                        accessibilityIdentifier: relatedAccessibilityIdentifier
+                    )
+                }
+                if !linkedReferenceBlocks.isEmpty {
+                    relatedSection(
+                        title: "Linked references",
+                        emptyTitle: nil,
+                        blocks: linkedReferenceBlocks,
+                        accessibilityIdentifier: "section.node.linked-references"
+                    )
                 }
                 Color.clear.frame(height: bottomPadding)
             }
@@ -72,7 +101,9 @@ struct OutlinerView: View {
         #if !SKIP && os(iOS)
         content.overlayPreferenceValue(OutlinerEditorAnchorPreferenceKey.self) { anchors in
             GeometryReader { proxy in
-                if let editing, let anchor = anchors[editing.uuid] {
+                if let editing,
+                   let anchor = anchors[editing.uuid]
+                    ?? retainedEditorAnchorID.flatMap({ anchors[$0] }) {
                     let frame = proxy[anchor]
                     OutlinerInlineEditor(
                         text: editing.title,
@@ -113,9 +144,20 @@ struct OutlinerView: View {
                 }
             }
         }
+        .onChange(of: editing?.uuid) { previousID, currentID in
+            retainedEditorAnchorID = previousID ?? currentID
+        }
         #else
         content
         #endif
+    }
+
+    private func rowIndex(_ rows: [LogseqOutlineRow]) -> [String: LogseqOutlineRow] {
+        var result: [String: LogseqOutlineRow] = [:]
+        for row in rows where result[row.block.uuid] == nil {
+            result[row.block.uuid] = row
+        }
+        return result
     }
 
     private func sectionView(
@@ -123,36 +165,64 @@ struct OutlinerView: View {
         rowsByID: [String: LogseqOutlineRow]
     ) -> some View {
         Group {
-            Text(verbatim: section.title)
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.horizontal, 8)
-                .padding(.top, 26)
-                .padding(.bottom, 12)
+            sectionTitle(section)
             ForEach(section.blocks.compactMap { rowsByID[$0.uuid] }) { row in
                 blockRow(row)
             }
         }
     }
 
+    @ViewBuilder private func sectionTitle(_ section: LogseqBlockSection) -> some View {
+        let pageUUID = OutlinerSectionNavigationPolicy.pageUUID(
+            isJournalHome: isJournalHome,
+            sectionBlockPageIDs: section.blocks.map(\.pageId)
+        )
+        if let pageUUID {
+            Button {
+                onZoomBlock(pageUUID)
+            } label: {
+                journalSectionTitle(section.title)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(section.title)")
+            .accessibilityIdentifier("button.journal.\(pageUUID)")
+        } else {
+            journalSectionTitle(section.title)
+        }
+    }
+
+    private func journalSectionTitle(_ title: String) -> some View {
+        Text(verbatim: title)
+            .font(.title2)
+            .fontWeight(.bold)
+            .padding(.horizontal, 8)
+            .padding(.top, 26)
+            .padding(.bottom, 12)
+    }
+
     // Tagged nodes and linked references reuse the outliner block row so they
     // stay editable in place; rows that stand for whole pages navigate instead
     // of opening the inline editor.
-    @ViewBuilder private func relatedSection(title: String) -> some View {
+    @ViewBuilder private func relatedSection(
+        title: String,
+        emptyTitle: String?,
+        blocks: [LogseqBlock],
+        accessibilityIdentifier: String
+    ) -> some View {
         Text(verbatim: title)
             .font(.title2.bold())
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.top, 26)
             .padding(.bottom, 8)
-            .accessibilityIdentifier(relatedAccessibilityIdentifier)
-        if relatedBlocks.isEmpty, let relatedEmptyTitle {
-            Text(verbatim: relatedEmptyTitle)
+            .accessibilityIdentifier(accessibilityIdentifier)
+        if blocks.isEmpty, let emptyTitle {
+            Text(verbatim: emptyTitle)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
         }
-        ForEach(RelatedBlockGrouping.groups(relatedBlocks)) { group in
+        ForEach(RelatedBlockGrouping.groups(blocks)) { group in
             if !group.breadcrumbs.isEmpty {
                 BlockBreadcrumb(
                     summaries: group.breadcrumbs,
@@ -283,7 +353,7 @@ private struct BlockBreadcrumb: View {
                 if index > 0 {
                     Image(systemName: "chevron.right")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                 }
                 Button(summary.title) {
                     onOpenMarkupLink(.node(uuid: summary.uuid))
@@ -367,9 +437,9 @@ struct OutlinerBlockRow: View, Equatable {
                 blockContent
                 collapseButton
             }
-            .padding(.leading, 7)
+            .padding(.leading, OutlinerLayoutMetrics.bulletContentSpacing)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, OutlinerLayoutMetrics.rowVerticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .topLeading) {
             depthGuides
@@ -383,7 +453,10 @@ struct OutlinerBlockRow: View, Equatable {
 
     private var depthSpacer: some View {
         Color.clear
-            .frame(width: CGFloat(row.depth) * OutlinerLayoutMetrics.indentation, height: 24)
+            .frame(
+                width: CGFloat(row.depth) * OutlinerLayoutMetrics.indentation,
+                height: OutlinerLayoutMetrics.depthSpacerHeight
+            )
     }
 
     private var depthGuides: some View {
@@ -419,7 +492,9 @@ struct OutlinerBlockRow: View, Equatable {
             height: OutlinerLayoutMetrics.bulletHitSize
         )
         .platformOutlinerFullRowHitTarget()
-        .onTapGesture(perform: onZoom)
+        .onTapGesture {
+            onZoom()
+        }
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(OutlinerAccessibilityTitle.zoom(blockTitle: row.block.title))
         .accessibilityIdentifier("button.outliner.zoom.\(row.block.uuid)")
@@ -457,7 +532,11 @@ struct OutlinerBlockRow: View, Equatable {
                 Text(verbatim: editingTitle.isEmpty ? " " : editingTitle)
                     .font(.body)
                     .foregroundStyle(.clear)
-                    .frame(maxWidth: .infinity, minHeight: 24, alignment: .topLeading)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: OutlinerLayoutMetrics.titleLineHeight,
+                        alignment: .topLeading
+                    )
                     .accessibilityHidden(true)
                     .anchorPreference(
                         key: OutlinerEditorAnchorPreferenceKey.self,
@@ -479,15 +558,25 @@ struct OutlinerBlockRow: View, Equatable {
                     .font(.body)
                     .strikethrough(isCompleted)
                     .foregroundStyle(isCompleted ? .secondary : .primary)
+                    .frame(
+                        minHeight: OutlinerLayoutMetrics.titleLineHeight,
+                        alignment: .topLeading
+                    )
                     .frame(maxWidth: .infinity, alignment: .leading)
-                BlockTrailingTags(
-                    tags: BlockTagPresentationPolicy.trailingTags(
-                        tags: row.block.tags,
-                        markup: row.block.markup
-                    ),
-                    onOpenTag: { onOpenMarkupLink(.node(uuid: $0)) }
-                )
+                    #if !SKIP && os(iOS)
+                    .anchorPreference(
+                        key: OutlinerEditorAnchorPreferenceKey.self,
+                        value: .bounds
+                    ) { [row.block.uuid: $0] }
+                    #endif
             }
+            BlockTrailingTags(
+                tags: BlockTagPresentationPolicy.trailingTags(
+                    tags: row.block.tags,
+                    markup: row.block.markup
+                ),
+                onOpenTag: { onOpenMarkupLink(.node(uuid: $0)) }
+            )
             syncStatus
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -511,27 +600,29 @@ struct OutlinerBlockRow: View, Equatable {
     @ViewBuilder private var renderedTitle: some View {
         // An empty block renders as a blank line (a space keeps the row
         // height and tap target); accessibility still says "Untitled block".
-        #if !SKIP
-        Text(OutlinerMarkupAttributedString.make(
-            nodes: row.block.markup,
-            fallback: row.block.title.isEmpty ? " " : row.block.title
-        ))
-        .environment(\.openURL, OpenURLAction { url in
-            guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
-            onOpenMarkupLink(link)
-            return .handled
-        })
-        #else
-        Text(verbatim: row.block.title.isEmpty ? " " : row.block.title)
-        #endif
+        if row.block.markup.count == 1,
+           let node = row.block.markup.first,
+           [LogseqMarkupNodeType.quote, .math, .codeBlock, .video, .iframe, .cloze].contains(node.type) {
+            OutlinerRichBlockContent(node: node, onOpenMarkupLink: onOpenMarkupLink)
+        } else {
+            #if !SKIP
+            Text(OutlinerMarkupAttributedString.make(
+                nodes: row.block.markup,
+                fallback: row.block.title.isEmpty ? " " : row.block.title
+            ))
+            .environment(\.openURL, OpenURLAction { url in
+                guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
+                onOpenMarkupLink(link)
+                return .handled
+            })
+            #else
+            Text(verbatim: row.block.title.isEmpty ? " " : row.block.title)
+            #endif
+        }
     }
 
     @ViewBuilder private var syncStatus: some View {
-        if row.block.isPendingSync || row.block.syncStatus == "submitted" {
-            Text(verbatim: "Pending")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        } else if row.block.isFailedSync {
+        if row.block.isFailedSync {
             Text(verbatim: "Sync failed")
                 .font(.caption2)
                 .foregroundStyle(.red)
@@ -578,7 +669,9 @@ enum OutlinerMarkupAttributedString {
             value.font = .system(.body, design: .monospaced)
             value.backgroundColor = Color.secondary.opacity(0.12)
             return value
-        case .emphasis:
+        case .codeBlock, .math, .cloze:
+            return AttributedString(node.text ?? "")
+        case .emphasis, .quote:
             var value = make(nodes: node.children, fallback: "")
             switch node.style {
             case "bold": value.font = .body.bold()
@@ -605,6 +698,8 @@ enum OutlinerMarkupAttributedString {
                 value.link = OutlinerMarkupLink.node(uuid: uuid).url
             }
             return value
+        case .video, .iframe:
+            return AttributedString(node.url ?? "")
         }
     }
 }
@@ -692,23 +787,35 @@ struct OutlinerAutocompleteBar: View {
     let onSelect: (LogseqOutlinerAutocompleteCandidate) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        ScrollView(
+            .vertical,
+            showsIndicators: OutlinerAutocompleteLayoutPolicy.height(
+                candidateCount: candidates.count
+            ) >= OutlinerAutocompleteLayoutPolicy.maximumHeight
+        ) {
+            LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(candidates.enumerated()), id: \.element.id) { index, candidate in
-                    Button(candidate.label) {
+                    Button {
                         onSelect(candidate)
+                    } label: {
+                        HStack {
+                            Text(verbatim: candidate.label)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.secondary.opacity(0.1))
-                    .clipShape(Capsule())
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("button.outliner.autocomplete.\(index)")
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(8)
         }
-        .frame(height: 38)
+        .frame(height: OutlinerAutocompleteLayoutPolicy.height(candidateCount: candidates.count))
         .accessibilityIdentifier("toolbar.outliner.autocomplete")
     }
 }
@@ -765,16 +872,25 @@ struct OutlinerEditorToolbar: View {
         Button {
             onAction(action)
         } label: {
-            Image(systemName: action.systemImageName)
-                .font(.system(size: OutlinerToolbarPolicy.iconSize, weight: .medium))
+            Group {
+                if action == .pageReference {
+                    Text(verbatim: "[[]]")
+                        .font(.system(size: 15, weight: .medium, design: .monospaced))
+                } else {
+                    Image(systemName: action.systemImageName)
+                        .font(.system(size: OutlinerToolbarPolicy.iconSize, weight: .medium))
+                }
+            }
                 .frame(
-                    width: OutlinerToolbarPolicy.iconBoxSize,
+                    width: action == .pageReference
+                        ? 36 : OutlinerToolbarPolicy.iconBoxSize,
                     height: OutlinerToolbarPolicy.iconBoxSize
                 )
                 .frame(width: OutlinerToolbarPolicy.editorItemWidth, height: 42)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(action.accessibilityTitle)
+        .accessibilityValue(action == .pageReference ? "[[]]" : "")
         .accessibilityIdentifier("button.outliner.editor.\(action.identifier)")
     }
 }

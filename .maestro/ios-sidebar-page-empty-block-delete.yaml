@@ -1,0 +1,34 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "section.sidebar.favorites"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- assertNotVisible: "Load earlier journals"
+- tapOn: "Edit block E2E Block Target"
+- inputText: " Test"
+- pressKey: ENTER
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: BACKSPACE
+- inputText: " merged"
+- assertVisible: "E2E Block Target Test merged"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- inputText: " continuous"
+- assertVisible: "E2E Block Target Test merged continuous"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertNotVisible: "outliner_effect_failed"

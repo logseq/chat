@@ -13,13 +13,21 @@ appId: com.logseq.chat
     id: "link.sidebar.graphs"
 - assertVisible:
     id: "screen.graphs"
-- assertVisible: "All graphs"
 - assertVisible: "Local graphs:"
 - assertVisible:
     id: "button.graphs.refresh"
-- swipe:
-    start: 0%, 50%
-    end: 75%, 50%
-    duration: 600
+- waitForAnimationToEnd
+- tapOn:
+    id: "button.graph-add"
+    retryTapIfNoChange: true
+- assertVisible: "Add sync graph"
+- assertVisible: "End-to-end encryption"
+- tapOn: "Cancel"
+- assertVisible:
+    id: "screen.graphs"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
 - assertNotVisible:
     id: "screen.graphs"

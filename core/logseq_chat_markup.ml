@@ -22,6 +22,18 @@ type t =
   | Text of string
   | Emphasis of emphasis * t list
   | Code of string
+  | Code_block of
+      { language : string option
+      ; code : string
+      }
+  | Quote of t list
+  | Math of
+      { expression : string
+      ; display : bool
+      }
+  | Video of string
+  | Iframe of string
+  | Cloze of string
   | Link of
       { url : string
       ; children : t list
@@ -32,6 +44,14 @@ type t =
 let rec debug_string = function
   | Text value -> Printf.sprintf "Text(%S)" value
   | Code value -> Printf.sprintf "Code(%S)" value
+  | Code_block { language; code } ->
+    Printf.sprintf "CodeBlock(%S,%S)" (Option.value language ~default:"") code
+  | Quote children ->
+    Printf.sprintf "Quote([%s])" (String.concat ";" (List.map debug_string children))
+  | Math { expression; display } -> Printf.sprintf "Math(%b,%S)" display expression
+  | Video url -> Printf.sprintf "Video(%S)" url
+  | Iframe url -> Printf.sprintf "Iframe(%S)" url
+  | Cloze text -> Printf.sprintf "Cloze(%S)" text
   | Node_ref target ->
     Printf.sprintf "Node(%S,%S)" target.uuid target.title
   | Tag_ref target -> Printf.sprintf "Tag(%S,%S)" target.uuid target.title
@@ -52,6 +72,26 @@ let emphasis_string = function
 let rec node_to_yojson = function
   | Text text -> `Assoc [ "type", `String "text"; "text", `String text ]
   | Code text -> `Assoc [ "type", `String "code"; "text", `String text ]
+  | Code_block { language; code } ->
+    `Assoc
+      [ "type", `String "codeBlock"
+      ; "text", `String code
+      ; "style", `String (Option.value language ~default:"")
+      ]
+  | Quote children ->
+    `Assoc
+      [ "type", `String "quote"
+      ; "children", `List (List.map node_to_yojson children)
+      ]
+  | Math { expression; display } ->
+    `Assoc
+      [ "type", `String "math"
+      ; "text", `String expression
+      ; "style", `String (if display then "display" else "inline")
+      ]
+  | Video url -> `Assoc [ "type", `String "video"; "url", `String url ]
+  | Iframe url -> `Assoc [ "type", `String "iframe"; "url", `String url ]
+  | Cloze text -> `Assoc [ "type", `String "cloze"; "text", `String text ]
   | Emphasis (style, children) ->
     `Assoc
       [ "type", `String "emphasis"
@@ -145,6 +185,35 @@ let append node nodes =
   | _ -> node :: nodes
 ;;
 
+let last_path_component value =
+  match
+    value
+    |> String.split_on_char '/'
+    |> List.filter (fun part -> not (String.equal part ""))
+    |> List.rev
+  with
+  | first :: _ -> Some first
+  | [] -> None
+;;
+
+let youtube_url value =
+  let value = String.trim value in
+  if String.starts_with ~prefix:"http://" value
+     || String.starts_with ~prefix:"https://" value
+  then value
+  else "https://www.youtube.com/watch?v=" ^ value
+;;
+
+let tweet_id value =
+  let value = String.trim value in
+  let without_query =
+    match String.split_on_char '?' value with first :: _ -> Some first | [] -> None
+  in
+  match Option.bind without_query last_path_component with
+  | Some id -> id
+  | None -> value
+;;
+
 let rec convert_nodes ~source ~references ~tags nodes =
   List.fold_left
     (fun converted (node, position) ->
@@ -160,6 +229,24 @@ and convert_node ~source ~references ~tags node position =
   | Inline.Plain value | Spaces value -> [ Text value ]
   | Break_Line | Hard_Break_Line -> [ Text "\n" ]
   | Code value | Verbatim value -> [ Code value ]
+  | Latex_Fragment (Inline expression) -> [ Math { expression; display = false } ]
+  | Latex_Fragment (Displayed expression) -> [ Math { expression; display = true } ]
+  | Macro { name; arguments = url :: _ } when String.equal (String.lowercase_ascii name) "video" ->
+    [ Video (String.trim url) ]
+  | Macro { name; arguments = url :: _ } when String.equal (String.lowercase_ascii name) "iframe" ->
+    [ Iframe (String.trim url) ]
+  | Macro { name; arguments = value :: _ } when String.equal (String.lowercase_ascii name) "youtube" ->
+    [ Video (youtube_url value) ]
+  | Macro { name; arguments = value :: _ } when String.equal (String.lowercase_ascii name) "vimeo" ->
+    [ Video ("https://player.vimeo.com/video/" ^ String.trim value) ]
+  | Macro { name; arguments = value :: _ } when String.equal (String.lowercase_ascii name) "bilibili" ->
+    [ Iframe ("https://player.bilibili.com/player.html?bvid=" ^ String.trim value) ]
+  | Macro { name; arguments = value :: _ }
+    when List.mem (String.lowercase_ascii name) [ "tweet"; "twitter" ] ->
+    [ Iframe ("https://platform.twitter.com/embed/Tweet.html?id=" ^ tweet_id value) ]
+  | Macro { name; arguments }
+    when String.equal (String.lowercase_ascii name) "cloze" ->
+    [ Cloze (String.concat ", " arguments |> String.trim) ]
   | Emphasis (style, children) ->
     [ Emphasis
         ( emphasis style
@@ -211,11 +298,44 @@ and convert_node ~source ~references ~tags node position =
   | _ -> raw ()
 ;;
 
+let parse_inline ~references ~tags source =
+  match Angstrom.parse_string ~consume:All (Inline.parse config) source with
+  | Ok nodes -> convert_nodes ~source ~references ~tags nodes
+  | Error _ -> [ Text source ]
+;;
+
+let fenced_code source =
+  if not (String.starts_with ~prefix:"```" source && String.ends_with ~suffix:"```" source)
+  then None
+  else
+    match String.index_opt source '\n' with
+    | None -> None
+    | Some newline ->
+      let language =
+        String.sub source 3 (newline - 3) |> String.trim |> function
+        | "" -> None
+        | value -> Some value
+      in
+      let code_length = String.length source - newline - 4 in
+      if code_length < 0
+      then None
+      else Some (Code_block { language; code = String.sub source (newline + 1) code_length })
+;;
+
 let parse ~references ~tags source =
   if String.equal source ""
   then []
   else
-    match Angstrom.parse_string ~consume:All (Inline.parse config) source with
-    | Ok nodes -> convert_nodes ~source ~references ~tags nodes
-    | Error _ -> [ Text source ]
+    match fenced_code source with
+    | Some node -> [ node ]
+    | None when String.starts_with ~prefix:"$$" source && String.ends_with ~suffix:"$$" source ->
+      [ Math
+          { expression = strip_wrapped ~left:"$$" ~right:"$$" source
+          ; display = true
+          }
+      ]
+    | None when String.starts_with ~prefix:">" source ->
+      let content = String.sub source 1 (String.length source - 1) |> String.trim in
+      [ Quote (parse_inline ~references ~tags content) ]
+    | None -> parse_inline ~references ~tags source
 ;;

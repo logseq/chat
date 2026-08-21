@@ -8,13 +8,15 @@ object AndroidGraphSnapshotTransport {
         baseURL: String,
         graphID: String,
         accessToken: String,
-        workingDirectory: String
+        workingDirectory: String,
+        schemaVersion: String
     ): LogseqGraphSnapshotArtifact = withContext(Dispatchers.IO) {
         val artifact = AndroidGraphSnapshotDownloader().downloadSnapshot(
             baseURL = baseURL,
             graphID = graphID,
             accessToken = accessToken,
-            workingDirectory = workingDirectory
+            workingDirectory = workingDirectory,
+            schemaVersion = schemaVersion
         )
         LogseqGraphSnapshotArtifact(
             metadataBody = artifact.metadataBody,

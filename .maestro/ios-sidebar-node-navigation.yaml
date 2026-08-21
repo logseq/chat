@@ -1,0 +1,26 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "section.sidebar.favorites"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- assertVisible: "Linked references"
+- assertVisible: "E2E Journal 08"
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "section.sidebar.recent"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- assertVisible: "Linked references"

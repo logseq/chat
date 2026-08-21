@@ -32,6 +32,12 @@ public enum LogseqMarkupNodeType: String, Codable, Hashable, Sendable {
     case text
     case emphasis
     case code
+    case codeBlock
+    case quote
+    case math
+    case video
+    case iframe
+    case cloze
     case link
     case nodeReference
     case tagReference
@@ -131,7 +137,8 @@ public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
         var identities = Set<String>()
         for status in catalog + builtIn {
             let identity = status.ident ?? status.uuid
-            if identities.insert(identity).inserted {
+            if !identities.contains(identity) {
+                identities.insert(identity)
                 result.append(status)
             }
         }
@@ -329,6 +336,7 @@ public struct LogseqOutlinerRowSplice: Codable {
 public struct LogseqGraph: Codable, Hashable, Identifiable, Sendable {
     public let id: String
     public let name: String
+    public let schemaVersion: String?
     public let isEncrypted: Bool
     public let isReady: Bool
 }
@@ -383,6 +391,7 @@ public struct LogseqNodeProjection: Codable, Identifiable {
     public let page: LogseqSidebarPage
     public let blocks: [LogseqBlock]
     public let relatedBlocks: [LogseqBlock]
+    public let linkedReferenceBlocks: [LogseqBlock]
     public let outlinerState: LogseqOutlinerState
     public let outlinerRows: [LogseqOutlineRow]
     public let outlinerAutocompleteCandidates: [LogseqOutlinerAutocompleteCandidate]
@@ -539,6 +548,7 @@ public struct LogseqChatSnapshot: Codable {
     public let appliedServerT: Int?
     public let syncConnected: Bool?
     public let relatedBlocks: [LogseqBlock]?
+    public let linkedReferenceBlocks: [LogseqBlock]?
     public let searchQuery: String?
     public let searchResults: [LogseqSearchHit]?
     public let nodeRoutes: [LogseqNodeProjection]
@@ -568,6 +578,7 @@ public struct LogseqChatSnapshot: Codable {
         selectedPageIsProperty: Bool? = nil,
         appliedServerT: Int? = nil, syncConnected: Bool? = nil,
         relatedBlocks: [LogseqBlock]? = nil,
+        linkedReferenceBlocks: [LogseqBlock]? = nil,
         searchQuery: String? = nil,
         searchResults: [LogseqSearchHit]? = nil,
         nodeRoutes: [LogseqNodeProjection] = [],
@@ -602,6 +613,7 @@ public struct LogseqChatSnapshot: Codable {
         self.appliedServerT = appliedServerT
         self.syncConnected = syncConnected
         self.relatedBlocks = relatedBlocks
+        self.linkedReferenceBlocks = linkedReferenceBlocks
         self.searchQuery = searchQuery
         self.searchResults = searchResults
         self.nodeRoutes = nodeRoutes
@@ -626,7 +638,7 @@ public struct LogseqChatSnapshot: Codable {
         case revision, blocks, selectedBlock, lastRefreshAt, graphName
         case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag
         case selectedPageIsProperty, appliedServerT
-        case syncConnected, relatedBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
+        case syncConnected, relatedBlocks, linkedReferenceBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
         case outlinerAutocompleteCandidates
@@ -656,6 +668,9 @@ public struct LogseqChatSnapshot: Codable {
         appliedServerT = try values.decodeIfPresent(Int.self, forKey: .appliedServerT)
         syncConnected = try values.decodeIfPresent(Bool.self, forKey: .syncConnected)
         relatedBlocks = try values.decodeIfPresent([LogseqBlock].self, forKey: .relatedBlocks)
+        linkedReferenceBlocks = try values.decodeIfPresent(
+            [LogseqBlock].self, forKey: .linkedReferenceBlocks
+        )
         searchQuery = try values.decodeIfPresent(String.self, forKey: .searchQuery)
         searchResults = try values.decodeIfPresent([LogseqSearchHit].self, forKey: .searchResults)
         nodeRoutes = try values.decodeIfPresent(

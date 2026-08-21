@@ -18,6 +18,9 @@ flows=(
   .maestro/ios-outliner-selection-toolbar.yaml
   .maestro/ios-outliner-hierarchy-navigation.yaml
   .maestro/ios-node-tag-navigation.yaml
+  .maestro/ios-sidebar-node-navigation.yaml
+  .maestro/ios-sidebar-page-empty-block-delete.yaml
+  .maestro/ios-rich-block-rendering.yaml
   .maestro/ios-outliner-drag.yaml
   .maestro/ios-graphs.yaml
   .maestro/ios-graphs-lifecycle.yaml
@@ -29,7 +32,10 @@ fi
 
 for flow in "${flows[@]}"; do
   echo "==> $flow"
-  if [[ $flow == .maestro/ios-node-tag-navigation.yaml ]]; then
+  if [[ $flow == .maestro/ios-node-tag-navigation.yaml \
+     || $flow == .maestro/ios-sidebar-node-navigation.yaml \
+     || $flow == .maestro/ios-sidebar-page-empty-block-delete.yaml \
+     || $flow == .maestro/ios-rich-block-rendering.yaml ]]; then
     LOGSEQ_CHAT_IOS_SKIP_BUILD=1 \
       LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH=1 \
       LOGSEQ_CHAT_IOS_E2E_FLOW="$flow" \

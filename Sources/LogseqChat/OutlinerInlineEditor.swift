@@ -58,7 +58,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
+        let textView = FocusRetainingTextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = .preferredFont(forTextStyle: .body)
@@ -66,6 +66,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         textView.textContainer.lineFragmentPadding = 0
         textView.isScrollEnabled = false
         textView.adjustsFontForContentSizeCategory = true
+        applyWritingAssistance(to: textView)
         textView.accessibilityIdentifier = accessibilityIdentifier
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.text = text
@@ -73,18 +74,12 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             location: min(desiredCaretUTF16Offset ?? text.utf16.count, text.utf16.count),
             length: 0
         )
-        DispatchQueue.main.async { [weak textView] in
-            guard let textView,
-                  InlineEditorFocusPolicy.shouldRequestFocus(
-                    isAttachedToWindow: textView.window != nil,
-                    isFirstResponder: textView.isFirstResponder
-                  ) else { return }
-            textView.becomeFirstResponder()
-        }
+        textView.requestFocusWhenAttached()
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        applyWritingAssistance(to: textView)
         context.coordinator.parent = self
         let isSameBlock = context.coordinator.activeAccessibilityIdentifier
             == accessibilityIdentifier
@@ -152,8 +147,16 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             isAttachedToWindow: textView.window != nil,
             isFirstResponder: textView.isFirstResponder
         ) {
-            textView.becomeFirstResponder()
+            (textView as? FocusRetainingTextView)?.requestFocusWhenAttached()
         }
+    }
+
+    private func applyWritingAssistance(to textView: UITextView) {
+        let defaults = UserDefaults.standard
+        let spellCheck = defaults.object(forKey: "logseq.editor.spellCheck") as? Bool ?? true
+        let autoCorrection = defaults.object(forKey: "logseq.editor.autoCorrection") as? Bool ?? true
+        textView.spellCheckingType = spellCheck ? .yes : .no
+        textView.autocorrectionType = autoCorrection ? .yes : .no
     }
 
     func sizeThatFits(
@@ -194,16 +197,34 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             replacementText replacement: String
         ) -> Bool {
             if isAwaitingBlockHandoff {
-                // The core has not handed the editor to the new block yet;
-                // buffer keystrokes so nothing lands in the old block, then
-                // merge them into the new block at handoff.
-                if replacement.isEmpty {
+                // Structure events are serialized and rebound to the latest
+                // editor by the store. Forward them immediately so fast
+                // Return/Backspace input is never swallowed during handoff.
+                if replacement == "\n" {
+                    parent.onReturn(textView.text, range.location)
+                } else if replacement.isEmpty, range.location == 0, range.length == 0 {
+                    parent.onBackspace(textView.text, range.length)
+                } else if replacement.isEmpty {
                     if !pendingHandoffTyping.isEmpty {
                         pendingHandoffTyping.removeLast()
                     }
-                } else if replacement != "\n" {
+                } else {
                     pendingHandoffTyping += replacement
                 }
+                return false
+            }
+            if let deletion = InlineEditorPairDeletion.deletingEmptyNodeReference(
+                from: textView.text ?? "",
+                range: range,
+                replacementText: replacement
+            ) {
+                textView.text = deletion.text
+                textView.selectedRange = NSRange(
+                    location: deletion.caretUTF16Offset,
+                    length: 0
+                )
+                localText = deletion.text
+                parent.onTextChange(deletion.text, deletion.caretUTF16Offset)
                 return false
             }
             if replacement == "\n" {
@@ -230,6 +251,34 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 return false
             }
             return true
+        }
+    }
+}
+
+private final class FocusRetainingTextView: UITextView {
+    private var focusPending = false
+
+    func requestFocusWhenAttached() {
+        guard !isFirstResponder else {
+            focusPending = false
+            return
+        }
+        focusPending = true
+        fulfillPendingFocus()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        fulfillPendingFocus()
+    }
+
+    private func fulfillPendingFocus() {
+        guard focusPending, window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.focusPending, self.window != nil else { return }
+            if self.becomeFirstResponder() {
+                self.focusPending = false
+            }
         }
     }
 }

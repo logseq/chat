@@ -268,6 +268,28 @@ private let testEmptySnapshotJSON = """
         )
         #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/snapshot/download")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
+
+        let cursor = try LogseqGraphSyncHTTP.snapshotCursorRequest(
+            baseURL: "http://127.0.0.1:8787/api",
+            graphID: "plain graph",
+            accessToken: "oauth-token"
+        )
+        #expect(cursor.url?.absoluteString == "http://127.0.0.1:8787/sync/plain%20graph/pull")
+        #expect(cursor.value(forHTTPHeaderField: "Authorization") == "Bearer oauth-token")
+    }
+
+    @Test func snapshotImportMetadataCombinesCurrentServerResponses() throws {
+        let body = try LogseqGraphSyncHTTP.importMetadataBody(
+            snapshotMetadataBody: #"{"ok":true,"key":"stream/graph.snapshot","url":"/sync/graph/snapshot/stream","content-encoding":"gzip"}"#,
+            pullBody: #"{"type":"pull/ok","t":48192,"txs":[]}"#,
+            schemaVersion: "65.33",
+            rowCount: 7
+        )
+        let json = try #require(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
+        #expect(json["t"] as? Int == 48192)
+        #expect(json["schema-version"] as? String == "65.33")
+        #expect(json["row-count"] as? Int == 7)
+        #expect(json["content-encoding"] as? String == "gzip")
     }
     #endif
 
@@ -2114,6 +2136,49 @@ private let testEmptySnapshotJSON = """
         ])
     }
 
+    @Test @MainActor func anchoredPatchUsesTheVisibleBeforeAnchorWithoutDuplicatingRows() async throws {
+        let source = outlineBlockJSON(
+            uuid: "source", title: "Before", parentID: "today", order: "a0", createdAt: 1
+        )
+        let otherJournal = outlineBlockJSON(
+            uuid: "other-journal", parentID: "other", order: "a0", createdAt: 2
+        )
+        let updatedSource = outlineBlockJSON(
+            uuid: "source", title: "After", parentID: "today", order: "a0", createdAt: 1
+        )
+        let inserted = outlineBlockJSON(
+            uuid: "inserted", parentID: "today", order: "a1", createdAt: 3
+        )
+        let store = LogseqChatStore { request in
+            if request.contains("outlinerEvent") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"query":"",\
+                "blocks":[\(updatedSource),\(inserted)],"deletedBlockIds":[],\
+                "selectedBlock":null,"outlinerState":{"editing":{"uuid":"inserted",\
+                "title":"","caretUTF16Offset":0},"selectedBlockIds":[],\
+                "autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]},\
+                "outlinerRows":[],"outlinerRowSplices":[{"afterBlockId":"not-loaded",\
+                "beforeBlockId":"source","deleteCount":1,"rows":[\
+                {"block":\(updatedSource),"depth":0,"hasChildren":false,"isCollapsed":false},\
+                {"block":\(inserted),"depth":0,"hasChildren":false,"isCollapsed":false}]}],\
+                "isOutlinerPatch":true},"error":null}
+                """
+            }
+            return outlineSnapshotJSON(blocks: [source, otherJournal], appliedServerT: 51)
+        }
+
+        store.refresh()
+        try await waitUntil { store.snapshot.outlinerRows.count == 2 }
+        store.outlinerEvent(LogseqOutlinerEvent(type: "returnPressed"))
+        try await waitUntil { store.snapshot.outlinerRows.count == 3 }
+
+        #expect(store.snapshot.outlinerRows.map(\.block.uuid) == [
+            "source", "inserted", "other-journal",
+        ])
+        #expect(Set(store.snapshot.outlinerRows.map(\.block.uuid)).count == 3)
+        #expect(store.snapshot.outlinerRows.first?.block.title == "After")
+    }
+
     @Test @MainActor func structuralPatchDeletesOnlyTheAffectedRowRange() async throws {
         let first = outlineBlockJSON(
             uuid: "first", parentID: "page", order: "a0", createdAt: 1
@@ -2293,12 +2358,17 @@ private let testEmptySnapshotJSON = """
         #expect(!event.contains("stale"))
     }
 
-    @Test @MainActor func repeatedBoundaryBackspaceFromOneEditorStagesOnlyOneMerge() async throws {
+    @Test @MainActor func repeatedBoundaryBackspaceRebasesAcrossTheLatestEmptyBlocks() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
             if request.contains("backspacePressed") {
-                Thread.sleep(forTimeInterval: 0.25)
+                let count = recorder.all.filter { $0.contains("backspacePressed") }.count
+                return outlinerEditingSnapshotJSON(
+                    revision: count,
+                    uuid: count == 1 ? "empty-2" : "empty-1",
+                    title: count == 1 ? "second" : "first"
+                )
             }
             return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
         }
@@ -2313,10 +2383,16 @@ private let testEmptySnapshotJSON = """
         store.outlinerEvent(boundaryBackspace)
         store.outlinerEvent(boundaryBackspace)
 
-        try await Task.sleep(for: .milliseconds(700))
+        try await waitUntil(timeout: 2.0) {
+            recorder.all.filter { $0.contains("backspacePressed") }.count == 3
+        }
         let mergeEvents = recorder.all.filter { $0.contains("backspacePressed") }
-        #expect(mergeEvents.count == 1)
+        #expect(mergeEvents.count == 3)
         #expect(mergeEvents[0].contains("\\\"uuid\\\":\\\"source\\\""))
+        #expect(mergeEvents[1].contains("\\\"uuid\\\":\\\"empty-2\\\""))
+        #expect(mergeEvents[2].contains("\\\"uuid\\\":\\\"empty-1\\\""))
+        #expect(mergeEvents[1].contains("\\\"title\\\":\\\"second\\\""))
+        #expect(mergeEvents[2].contains("\\\"title\\\":\\\"first\\\""))
     }
 
     @Test @MainActor func atomicReturnSkipsAQueuedSupersededTypingRequest() async throws {
@@ -2436,6 +2512,16 @@ private func outlinerSnapshotJSON(revision: Int, title: String) -> String {
     {"apiVersion":1,"ok":true,"result":{"revision":\(revision),"query":"","blocks":[],
     "selectedBlock":null,"lastRefreshAt":null,"isSearching":false,
     "outlinerState":{"editing":{"uuid":"block","title":"\(title)","caretUTF16Offset":3},
+    "selectedBlockIds":[],"autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]}},
+    "error":null}
+    """
+}
+
+private func outlinerEditingSnapshotJSON(revision: Int, uuid: String, title: String) -> String {
+    """
+    {"apiVersion":1,"ok":true,"result":{"revision":\(revision),"query":"","blocks":[],
+    "selectedBlock":null,"lastRefreshAt":null,"isSearching":false,
+    "outlinerState":{"editing":{"uuid":"\(uuid)","title":"\(title)","caretUTF16Offset":0},
     "selectedBlockIds":[],"autocomplete":null,"collapsedBlockIds":[],"zoomedBlockIds":[]}},
     "error":null}
     """

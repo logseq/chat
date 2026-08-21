@@ -1,0 +1,16 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- stopApp
+- launchApp
+- assertNotVisible: "No cached blocks"
+- assertVisible:
+    id: "journals.graph-loaded"
+- assertNotVisible:
+    id: "journals.loading"
+- repeat:
+    times: 12
+    commands:
+      - assertVisible: "Aug 21st, 2026"
+      - assertNotVisible: "No cached blocks"

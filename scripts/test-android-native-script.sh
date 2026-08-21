@@ -41,6 +41,8 @@ require_text "scripts/build-android-native.sh" "liblogseq_chat_core.so"
 require_text "scripts/build-android-native.sh" 'Android/app/src/main/jniLibs/$android_abi'
 require_text "scripts/build-android-native.sh" "logseq_chat_call"
 require_text "scripts/build-android-native.sh" "logseq_chat_https_android.c"
+require_text "scripts/build-android-native.sh" "logseq_chat_crypto_android.c"
+require_file "core/logseq_chat_crypto_android.c"
 for module in \
   logseq_chat_edn \
   logseq_chat_sync_protocol \
@@ -48,7 +50,11 @@ for module in \
   logseq_chat_sync_checkpoint \
   logseq_chat_snapshot \
   logseq_chat_entity_sync \
+  logseq_chat_datascript_value \
   logseq_chat_graph_read \
+  logseq_chat_e2ee \
+  logseq_chat_outliner_state \
+  logseq_chat_graph_runtime \
   logseq_chat_sse \
   logseq_chat_logseq_storage_codec \
   logseq_chat_graph_store \

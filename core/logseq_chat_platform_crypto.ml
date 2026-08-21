@@ -69,6 +69,18 @@ let crypto : Logseq_chat_e2ee.crypto =
                ; "ciphertext", `String (hex ciphertext)
                ])
             (binary_field "value"))
+    ; encrypt_graph_key =
+        (fun ~public_key ~plaintext ->
+          bind
+            (invoke
+               "encryptGraphKey"
+               [ "publicKey", `String (hex public_key)
+               ; "plaintext", `String (hex plaintext)
+               ])
+            (binary_field "value"))
+    ; random_bytes =
+        (fun count ->
+          bind (invoke "randomBytes" [ "count", `Int count ]) (binary_field "value"))
     ; encrypt_aes_gcm =
         (fun ~key ~plaintext ->
           bind

@@ -5,6 +5,13 @@ import Testing
 @testable import LogseqChat
 
 @Suite struct OutlinerEditingTests {
+    @Test func autocompleteHeightFitsItsRowsUntilTheScrollLimit() {
+        #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 0) == 0)
+        #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 1) == 60)
+        #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 3) == 148)
+        #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 20) == 220)
+    }
+
     @Test func chatAndOutlinerUseDifferentEditorSurfaces() {
         #expect(BlockEditingPolicy.presentation(for: LogseqContentMode.chat) == BlockEditPresentation.composer)
         #expect(BlockEditingPolicy.presentation(for: LogseqContentMode.outliner) == BlockEditPresentation.inline)
@@ -170,9 +177,31 @@ import Testing
         #expect(OutlinerLayoutMetrics.guideCenterX(level: 1) == 34)
     }
 
+    @Test func blockTitleAndBulletShareOneStableFirstLineHeight() {
+        #expect(OutlinerLayoutMetrics.titleLineHeight == OutlinerLayoutMetrics.bulletHitSize)
+        #expect(OutlinerLayoutMetrics.depthSpacerHeight == 0)
+        #expect(OutlinerLayoutMetrics.rowVerticalPadding == 5)
+        #expect(OutlinerLayoutMetrics.bulletContentSpacing == 2)
+    }
+
     @Test func olderJournalPaginationIsExplicitAndAccessible() {
         #expect(OutlinerPaginationPolicy.buttonTitle == "Load earlier journals")
         #expect(OutlinerPaginationPolicy.accessibilityIdentifier == "button.outliner.load-older-journals")
+    }
+
+    @Test func journalSectionTitlesNavigateToTheirPage() {
+        #expect(OutlinerSectionNavigationPolicy.pageUUID(
+            isJournalHome: true,
+            sectionBlockPageIDs: ["journal-page", "journal-page"]
+        ) == "journal-page")
+        #expect(OutlinerSectionNavigationPolicy.pageUUID(
+            isJournalHome: false,
+            sectionBlockPageIDs: ["ordinary-page"]
+        ) == nil)
+        #expect(OutlinerSectionNavigationPolicy.pageUUID(
+            isJournalHome: true,
+            sectionBlockPageIDs: []
+        ) == nil)
     }
 
     @Test func outlineControlsNameTheirBlockForAccessibleNavigation() {
@@ -417,6 +446,22 @@ import Testing
             hasOutlinerSelection: false,
             isEditingOutlinerBlock: false
         ) == .hidden)
+        #expect(BottomChromePolicy.presentation(
+            contentMode: LogseqContentMode.outliner,
+            hasSelectedPage: true,
+            composerExpanded: false,
+            hasOutlinerSelection: false,
+            isEditingOutlinerBlock: false,
+            isNodePage: true
+        ) == .captureAndSearch)
+        #expect(BottomChromePolicy.presentation(
+            contentMode: LogseqContentMode.outliner,
+            hasSelectedPage: true,
+            composerExpanded: true,
+            hasOutlinerSelection: false,
+            isEditingOutlinerBlock: false,
+            isNodePage: true
+        ) == .expandedComposer)
     }
 
     @Test func dropZoneMapsOnlyPointerGeometry() {
@@ -472,16 +517,37 @@ import Testing
         ))
     }
 
-    @Test func inlineEditorRequestsFocusOnlyWhenAttachedAndNotAlreadyFocused() {
+    @Test func inlineEditorKeepsAFocusRequestPendingUntilAttachment() {
         #expect(InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: true, isFirstResponder: false
         ))
-        #expect(!InlineEditorFocusPolicy.shouldRequestFocus(
+        #expect(InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: false, isFirstResponder: false
         ))
         #expect(!InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: true, isFirstResponder: true
         ))
+    }
+
+    @Test func richBlockPayloadsDecodeForNativeRenderingAndEmbeds() throws {
+        let nodes = try JSONDecoder().decode(
+            [LogseqMarkupNode].self,
+            from: Data("""
+            [
+              {"type":"quote","children":[{"type":"text","text":"Quoted"}]},
+              {"type":"math","text":"x^2","style":"display"},
+              {"type":"codeBlock","text":"let x = 1","style":"swift"},
+              {"type":"video","url":"https://youtu.be/dQw4w9WgXcQ"},
+              {"type":"iframe","url":"https://example.com/embed"}
+            ]
+            """.utf8)
+        )
+
+        #expect(nodes.count == 5)
+        #expect(nodes.compactMap(\.url) == [
+            "https://youtu.be/dQw4w9WgXcQ",
+            "https://example.com/embed",
+        ])
     }
 
 

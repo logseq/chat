@@ -56,9 +56,9 @@ struct OutlinerMarkupPresentation: Equatable {
         func append(_ nodes: [LogseqMarkupNode]) {
             for node in nodes {
                 switch node.type {
-                case .text, .code:
+                case .text, .code, .codeBlock, .math, .cloze:
                     text += node.text ?? ""
-                case .emphasis:
+                case .emphasis, .quote:
                     append(node.children)
                 case .link:
                     if node.children.isEmpty {
@@ -76,6 +76,8 @@ struct OutlinerMarkupPresentation: Equatable {
                     if let uuid = node.uuid {
                         links.append(.node(uuid: uuid))
                     }
+                case .video, .iframe:
+                    text += node.url ?? ""
                 }
             }
         }
@@ -99,8 +101,10 @@ enum BlockTagPresentationPolicy {
         let inlineIDs = inlineTagIDs(markup)
         var seen: Set<String> = []
         return tags.filter { tag in
-            !inlineIDs.contains(tag.uuid)
-                && seen.insert(tag.uuid).inserted
+            guard !inlineIDs.contains(tag.uuid) else { return false }
+            guard !seen.contains(tag.uuid) else { return false }
+            seen.insert(tag.uuid)
+            return true
         }
     }
 
@@ -152,14 +156,22 @@ enum InlineEditorHandoffMerge {
         desiredCaretUTF16Offset: Int?,
         bufferedTyping: String
     ) -> (text: String, caretUTF16Offset: Int) {
-        let value = modelText as NSString
-        let caret = min(max(desiredCaretUTF16Offset ?? value.length, 0), value.length)
+        let caret = min(max(desiredCaretUTF16Offset ?? modelText.count, 0), modelText.count)
         guard !bufferedTyping.isEmpty else { return (modelText, caret) }
+        #if SKIP
+        let prefix = String(modelText.prefix(caret))
+        let suffix = String(modelText.dropFirst(caret))
+        let text = prefix + bufferedTyping + suffix
+        return (text, caret + bufferedTyping.count)
+        #else
+        let value = modelText as NSString
+        let nsCaret = min(max(desiredCaretUTF16Offset ?? value.length, 0), value.length)
         let text = value.replacingCharacters(
-            in: NSRange(location: caret, length: 0),
+            in: NSRange(location: nsCaret, length: 0),
             with: bufferedTyping
         )
-        return (text, caret + (bufferedTyping as NSString).length)
+        return (text, nsCaret + (bufferedTyping as NSString).length)
+        #endif
     }
 }
 
@@ -168,7 +180,76 @@ enum InlineEditorFocusPolicy {
         isAttachedToWindow: Bool,
         isFirstResponder: Bool
     ) -> Bool {
-        isAttachedToWindow && !isFirstResponder
+        !isFirstResponder
+    }
+}
+
+#if !SKIP
+enum InlineEditorPairDeletion {
+    static func deletingEmptyNodeReference(
+        from text: String,
+        range: NSRange,
+        replacementText: String
+    ) -> (text: String, caretUTF16Offset: Int)? {
+        guard replacementText.isEmpty, range.length == 1, range.location > 0 else {
+            return nil
+        }
+        let value = text as NSString
+        let pairRange = NSRange(location: range.location - 1, length: 4)
+        guard NSMaxRange(pairRange) <= value.length,
+              value.substring(with: pairRange) == "[[]]" else {
+            return nil
+        }
+        return (
+            value.replacingCharacters(in: pairRange, with: ""),
+            pairRange.location
+        )
+    }
+}
+#endif
+
+enum OutlinerAutocompleteLayoutPolicy {
+    static let isVertical = true
+    static let maximumHeight: CGFloat = 220.0
+    static let rowHeight: CGFloat = 44.0
+    static let verticalPadding: CGFloat = 16.0
+
+    static func height(candidateCount: Int) -> CGFloat {
+        guard candidateCount > 0 else { return 0.0 }
+        return min(CGFloat(candidateCount) * rowHeight + verticalPadding, maximumHeight)
+    }
+}
+
+enum EmbeddedMediaPolicy {
+    static func safeURL(_ value: String?) -> URL? {
+        guard let value,
+              let url = URL(string: value),
+              url.scheme == "https" || url.scheme == "http" else { return nil }
+        return url
+    }
+
+    static func youtubeEmbedURL(_ url: URL) -> URL? {
+        let host = (url.host ?? "").lowercased()
+        var videoID: String?
+        if host == "youtu.be" || host == "www.youtu.be" {
+            videoID = url.pathComponents.dropFirst().first
+        } else if host == "youtube.com" || host == "www.youtube.com" || host == "m.youtube.com" {
+            if url.path == "/watch" {
+                videoID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                    .queryItems?.first(where: { $0.name == "v" })?.value
+            } else if url.pathComponents.count >= 3,
+                      ["embed", "shorts"].contains(url.pathComponents[1]) {
+                videoID = url.pathComponents[2]
+            }
+        }
+        guard let videoID, !videoID.isEmpty else { return nil }
+        return URL(string: "https://www.youtube.com/embed/\(videoID)")
+    }
+
+    static func webVideoEmbedURL(_ url: URL) -> URL? {
+        if let youtube = youtubeEmbedURL(url) { return youtube }
+        let host = (url.host ?? "").lowercased()
+        return host == "player.vimeo.com" ? url : nil
     }
 }
 
@@ -304,6 +385,10 @@ enum OutlinerLayoutMetrics {
     static let outerHorizontalInset: CGFloat = 8
     static let indentation: CGFloat = 22
     static let bulletHitSize: CGFloat = 24
+    static let titleLineHeight: CGFloat = bulletHitSize
+    static let depthSpacerHeight: CGFloat = 0
+    static let rowVerticalPadding: CGFloat = 5
+    static let bulletContentSpacing: CGFloat = 2
     static let rootBulletCenterX = bulletHitSize / 2
 
     static func bulletCenterX(depth: Int) -> CGFloat {
@@ -318,6 +403,16 @@ enum OutlinerLayoutMetrics {
 enum OutlinerPaginationPolicy {
     static let buttonTitle = "Load earlier journals"
     static let accessibilityIdentifier = "button.outliner.load-older-journals"
+}
+
+enum OutlinerSectionNavigationPolicy {
+    static func pageUUID(
+        isJournalHome: Bool,
+        sectionBlockPageIDs: [String]
+    ) -> String? {
+        guard isJournalHome else { return nil }
+        return sectionBlockPageIDs.first
+    }
 }
 
 enum OutlinerNavigationPolicy {

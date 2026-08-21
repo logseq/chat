@@ -71,6 +71,27 @@ let unlock t config ~password =
                         Ok (remember t ~graph_id:config.graph_id key)))))))
 ;;
 
+let provision t config =
+  bind
+    (response_body "fetch user E2EE keys" (t.fetch (Api.user_keys_request config)))
+    (fun user_keys_body ->
+      bind
+        (protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body user_keys_body))
+        (fun user_keys ->
+          bind
+            (E2ee.prepare_graph_key
+               ~crypto:t.crypto
+               ~public_key_package:user_keys.Api.public_key)
+            (fun (key, encrypted_key) ->
+              bind
+                (response_body
+                   "upload graph E2EE key"
+                   (t.fetch (Api.upsert_graph_key_request config ~encrypted_key)))
+                (fun _ ->
+                  bind (t.save ~graph_id:config.Api.graph_id ~key) (fun () ->
+                    Ok (remember t ~graph_id:config.graph_id key))))))
+;;
+
 let graph_key t ~graph_id =
   match Hashtbl.find_opt t.keys graph_id with
   | Some key -> Ok key

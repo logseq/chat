@@ -126,8 +126,8 @@ let () =
       in
       let conn = conn_from_db (empty_db ~schema () |> db_with tx) in
       let runtime = Runtime.create ~path ~server_t:42 conn in
-      assert_bool "journal projection starts with a bounded window"
-        (List.length (Runtime.blocks runtime) = 7 && Runtime.has_older_journals runtime);
+      assert_bool "journal launch projection contains only today's journal"
+        (List.length (Runtime.blocks runtime) = 1 && Runtime.has_older_journals runtime);
       Runtime.load_older_journals runtime;
       assert_bool "journal projection expands only when requested"
         (List.length (Runtime.blocks runtime) = 8 && not (Runtime.has_older_journals runtime)))
@@ -786,4 +786,54 @@ let () =
         (String.equal previous_title "Hello World");
       assert_bool "encrypted merge deletes the source in the projection"
         (Option.is_none (entid (Runtime.db runtime) "block/uuid" (Uuid "block"))))
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-today-journal" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      let conn = conn_from_db (empty_db ~schema ()) in
+      let now = int_of_float (Unix.gettimeofday () *. 1000.0) in
+      let today = Logseq_chat_model.journal_day_for_ms now in
+      let runtime = Runtime.create ~auto_create_today:true ~path ~server_t:42 conn in
+      let expected_page =
+        match Runtime.journal_page_uuid runtime ~journal_day:today with
+        | Some uuid -> uuid
+        | None -> fail "opening a graph creates today's journal"
+      in
+      assert_bool "a new journal contains one editable empty block"
+        (match Runtime.blocks_for_page runtime expected_page with
+         | [ block ] -> String.equal block.Logseq_chat_model.title ""
+         | _ -> false);
+      assert_bool "today's journal is one pending atomic operation"
+        (List.length (Runtime.pending_operations runtime) = 1);
+      let reopened = Runtime.create ~auto_create_today:true ~path ~server_t:42 conn in
+      assert_bool "reopening does not duplicate today's journal operation"
+        (List.length (Runtime.pending_operations reopened) = 1
+         && List.length (Runtime.blocks_for_page reopened expected_page) = 1))
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-existing-today-journal" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      let now = int_of_float (Unix.gettimeofday () *. 1000.0) in
+      let today = Logseq_chat_model.journal_day_for_ms now in
+      let db =
+        empty_db ~schema ()
+        |> db_with
+             [ Add (Entity_id 1, "block/uuid", Uuid "existing-today")
+             ; Add (Entity_id 1, "block/title", String "Today")
+             ; Add (Entity_id 1, "block/name", String "today")
+             ; Add (Entity_id 1, "block/journal-day", Int today)
+             ]
+      in
+      let runtime = Runtime.create ~auto_create_today:true ~path ~server_t:42 (conn_from_db db) in
+      assert_bool "an authoritative today journal is not recreated"
+        (Runtime.journal_page_uuid runtime ~journal_day:today = Some "existing-today"
+         && Runtime.pending_operations runtime = []))
 ;;

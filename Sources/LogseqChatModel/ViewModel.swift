@@ -155,6 +155,11 @@ private struct OpenGraphPayload: Encodable {
     let isEncrypted: Bool
 }
 
+private struct CreateSyncGraphPayload: Encodable {
+    let name: String
+    let isEncrypted: Bool
+}
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -180,7 +185,6 @@ private struct OpenGraphPayload: Encodable {
     private var outlinerProjectionGeneration = 0
     private var pendingOutlinerTransientEvent: LogseqOutlinerEvent?
     private var outlinerTransientFlushTask: Task<Void, Never>?
-    private var inFlightOutlinerStructureSources: Set<String> = []
 
     public convenience init(call: @escaping @Sendable (String) -> String) {
         self.init(call: call) { request in
@@ -299,6 +303,48 @@ private struct OpenGraphPayload: Encodable {
         performAsync(LogseqChatRPCRequest(method: "open", params: LogseqChatRPCParams(action: nil, path: path)))
     }
 
+    public func openAndWait(path: String) async {
+        openedDatabasePath = path
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "open",
+                params: LogseqChatRPCParams(action: nil, path: path)
+            )
+        )
+    }
+
+    public nonisolated static func callForLaunch(_ request: LogseqChatRPCRequest) async -> String {
+        guard let data = try? JSONEncoder().encode(request),
+              let requestJSON = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        #if !SKIP
+        return await LogseqChatCoreExecutor.shared.call(
+            { request in LogseqChatCore.shared.logseq_chat_call(request) },
+            requestJSON: requestJSON,
+            priority: .interaction
+        )
+        #else
+        return LogseqChatCore.shared.logseq_chat_call(requestJSON)
+        #endif
+    }
+
+    public func applyLaunchResponse(
+        _ responseJSON: String,
+        actionName: String,
+        databasePath: String
+    ) {
+        let startedAt = Date()
+        openedDatabasePath = databasePath
+        apply(responseJSON: responseJSON, actionName: actionName)
+        let elapsedMilliseconds = Date().timeIntervalSince(startedAt) * 1_000
+        print(
+            "LOGSEQ_LAUNCH_APPLY_METRIC action=\(actionName) "
+                + "bytes=\(responseJSON.utf8.count) "
+                + "elapsed_ms=\(String(format: "%.3f", elapsedMilliseconds))"
+        )
+    }
+
     public func resetToCatalog() async {
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(
@@ -392,6 +438,15 @@ private struct OpenGraphPayload: Encodable {
             ),
             afterApply: nil
         )
+    }
+
+    public func createSyncGraph(name: String, isEncrypted: Bool) async -> Bool {
+        guard let payload = encodePayload(
+            CreateSyncGraphPayload(name: name, isEncrypted: isEncrypted),
+            action: "createSyncGraph"
+        ) else { return false }
+        await dispatchRawAndWait("createSyncGraph", payload: payload)
+        return lastError == nil
     }
 
     public func selectPage(_ pageID: String) {
@@ -514,11 +569,17 @@ private struct OpenGraphPayload: Encodable {
                 baseURL: baseURL,
                 graphID: graphID,
                 accessToken: accessToken,
-                workingDirectory: graphDirectory.path
+                workingDirectory: graphDirectory.path,
+                schemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion
+                    ?? "65.33"
             )
             #else
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
-                baseURL: baseURL, graphID: graphID, accessToken: accessToken
+                baseURL: baseURL,
+                graphID: graphID,
+                accessToken: accessToken,
+                schemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion
+                    ?? "65.33"
             )
             #endif
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
@@ -874,12 +935,6 @@ private struct OpenGraphPayload: Encodable {
             (event.type == "returnPressed" && event.title != nil
                 && event.caretUTF16Offset != nil)
             || (event.type == "backspacePressed" && event.title != nil)
-        let structureSource = isAtomicStructureEvent ? event.uuid : nil
-        if let structureSource {
-            guard inFlightOutlinerStructureSources.insert(structureSource).inserted else {
-                return
-            }
-        }
         outlinerProjectionGeneration += 1
         let generation = outlinerProjectionGeneration
         if isAtomicStructureEvent {
@@ -889,12 +944,12 @@ private struct OpenGraphPayload: Encodable {
             enqueueOutlinerEvent(
                 event,
                 generation: generation,
-                canBeSuperseded: false,
-                structureSource: structureSource
+                canBeSuperseded: false
             )
             return
         }
-        let isTransient = event.type == "textChanged" || event.type == "caretMoved"
+        let isTransient = (event.type == "textChanged" || event.type == "caretMoved")
+            && !opensAutocompleteImmediately(event)
         if isTransient {
             if event.type == "caretMoved", var pending = pendingOutlinerTransientEvent,
                pending.type == "textChanged" {
@@ -905,7 +960,7 @@ private struct OpenGraphPayload: Encodable {
             }
             outlinerTransientFlushTask?.cancel()
             outlinerTransientFlushTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 200_000_000)
+                try? await Task.sleep(nanoseconds: 50_000_000)
                 guard !Task.isCancelled, let self else { return }
                 self.outlinerTransientFlushTask = nil
                 guard let pending = self.pendingOutlinerTransientEvent else { return }
@@ -927,25 +982,31 @@ private struct OpenGraphPayload: Encodable {
     private func enqueueOutlinerEvent(
         _ event: LogseqOutlinerEvent,
         generation: Int,
-        canBeSuperseded: Bool,
-        structureSource: String? = nil
+        canBeSuperseded: Bool
     ) {
         let previous = outlinerEventTask
         outlinerEventTask = Task { [weak self] in
             _ = await previous?.value
             guard let self else { return }
-            defer {
-                if let structureSource {
-                    self.inFlightOutlinerStructureSources.remove(structureSource)
-                }
-            }
             if canBeSuperseded, self.outlinerProjectionGeneration != generation {
                 return
             }
             let projectionIsCurrent = self.outlinerProjectionGeneration == generation
+            var dispatchedEvent = event
+            if event.type == "returnPressed" || event.type == "backspacePressed" {
+                let currentEditing = self.snapshot.nodeRoutes.last?.outlinerState.editing
+                    ?? self.snapshot.outlinerState.editing
+                if let currentEditing, event.uuid != currentEditing.uuid {
+                    dispatchedEvent.uuid = currentEditing.uuid
+                    dispatchedEvent.title = currentEditing.title
+                    if event.type == "returnPressed" {
+                        dispatchedEvent.caretUTF16Offset = currentEditing.caretUTF16Offset
+                    }
+                }
+            }
             await self.dispatchEncodedAndWait(
                 "outlinerEvent",
-                event,
+                dispatchedEvent,
                 shouldApply: {
                     !canBeSuperseded || projectionIsCurrent
                 }
@@ -954,6 +1015,15 @@ private struct OpenGraphPayload: Encodable {
                 self.syncPendingSoon()
             }
         }
+    }
+
+    private func opensAutocompleteImmediately(_ event: LogseqOutlinerEvent) -> Bool {
+        guard event.type == "textChanged", let title = event.title,
+              let caret = event.caretUTF16Offset else { return false }
+        let value = title as NSString
+        let location = min(max(caret, 0), value.length)
+        let prefix = value.substring(to: location)
+        return prefix.hasSuffix("#") || prefix.hasSuffix("[[") || prefix.hasSuffix("::")
     }
 
     private func syncPendingSoon() {
@@ -1187,7 +1257,7 @@ private struct OpenGraphPayload: Encodable {
              "loadPageReferences", "loadTagObjects", "searchNodes", "send", "sendTask",
              "addAsset", "updateBlock", "updateBlockStatus", "deleteBlock":
             return .interaction
-        case "open", "configure", "refresh", "refreshGraphCatalog", "openGraph",
+        case "open", "configure", "refresh", "refreshGraphCatalog", "createSyncGraph", "openGraph",
              "importSnapshot", "startSSE", "feedSSE", "stopSSE", "beginPendingSync",
              "completePendingSync", "cancelPendingSync":
             return .maintenance
@@ -1215,6 +1285,7 @@ private struct OpenGraphPayload: Encodable {
                 appliedServerT: snapshot.appliedServerT,
                 syncConnected: snapshot.syncConnected,
                 relatedBlocks: snapshot.relatedBlocks,
+                linkedReferenceBlocks: snapshot.linkedReferenceBlocks,
                 searchQuery: snapshot.searchQuery,
                 searchResults: snapshot.searchResults,
                 nodeRoutes: snapshot.nodeRoutes,
@@ -1237,7 +1308,7 @@ private struct OpenGraphPayload: Encodable {
                 uniqueKeysWithValues: result.blocks.map { ($0.uuid, $0) }
             )
             var mergedBlockIDs = Set<String>()
-            var blocks = snapshot.blocks.compactMap { block -> LogseqBlock? in
+            var blocks: [LogseqBlock] = snapshot.blocks.compactMap { block in
                 guard !deletedBlockIDs.contains(block.uuid) else { return nil }
                 mergedBlockIDs.insert(block.uuid)
                 return replacementBlocks[block.uuid] ?? block
@@ -1270,10 +1341,26 @@ private struct OpenGraphPayload: Encodable {
                         start + max(splice.deleteCount, 0),
                         outlinerRows.count
                     )
-                    outlinerRows.replaceSubrange(
-                        start..<deleteEnd,
-                        with: splice.rows
-                    )
+                    let insertedBlockIDs = Set(splice.rows.map { $0.block.uuid })
+                    var nextRows: [LogseqOutlineRow] = []
+                    var index = 0
+                    while index < start {
+                        if !insertedBlockIDs.contains(outlinerRows[index].block.uuid) {
+                            nextRows.append(outlinerRows[index])
+                        }
+                        index += 1
+                    }
+                    for row in splice.rows {
+                        nextRows.append(row)
+                    }
+                    index = deleteEnd
+                    while index < outlinerRows.count {
+                        if !insertedBlockIDs.contains(outlinerRows[index].block.uuid) {
+                            nextRows.append(outlinerRows[index])
+                        }
+                        index += 1
+                    }
+                    outlinerRows = nextRows
                 }
             } else if !result.outlinerRows.isEmpty {
                 let replacementRows = Dictionary(
@@ -1295,8 +1382,10 @@ private struct OpenGraphPayload: Encodable {
                     isCollapsed: row.isCollapsed
                 )
             }
+            var visibleRowIDs = Set<String>()
+            outlinerRows = outlinerRows.filter { visibleRowIDs.insert($0.block.uuid).inserted }
 
-            let selectedBlock = snapshot.selectedBlock.flatMap { selected -> LogseqBlock? in
+            let selectedBlock: LogseqBlock? = snapshot.selectedBlock.flatMap { selected in
                 guard !deletedBlockIDs.contains(selected.uuid) else { return nil }
                 return replacementBlocks[selected.uuid] ?? selected
             }
@@ -1316,6 +1405,7 @@ private struct OpenGraphPayload: Encodable {
                 appliedServerT: snapshot.appliedServerT,
                 syncConnected: snapshot.syncConnected,
                 relatedBlocks: snapshot.relatedBlocks,
+                linkedReferenceBlocks: snapshot.linkedReferenceBlocks,
                 searchQuery: snapshot.searchQuery,
                 searchResults: snapshot.searchResults,
                 nodeRoutes: snapshot.nodeRoutes,
@@ -1354,6 +1444,7 @@ private struct OpenGraphPayload: Encodable {
             appliedServerT: result.appliedServerT,
             syncConnected: result.syncConnected,
             relatedBlocks: result.relatedBlocks,
+            linkedReferenceBlocks: result.linkedReferenceBlocks,
             searchQuery: result.searchQuery,
             searchResults: result.searchResults,
             nodeRoutes: result.nodeRoutes,

@@ -68,6 +68,17 @@ type intent =
       ; title : string
       ; created_at : int
       }
+  | Create_journal of
+      { page_uuid : string
+      ; block_uuid : string
+      ; title : string
+      ; journal_day : int
+      ; created_at : int
+      }
+  | Add_tag of
+      { uuid : string
+      ; tag_uuid : string
+      }
 
 type t =
   { operation_id : string
@@ -77,8 +88,8 @@ type t =
   }
 
 let outliner_op = function
-  | Save_title _ | Set_property _ | Create_tag _ -> "save-block"
-  | Insert_block _ -> "insert-blocks"
+  | Save_title _ | Set_property _ | Create_tag _ | Add_tag _ -> "save-block"
+  | Insert_block _ | Create_journal _ -> "insert-blocks"
   | Move_block _ | Move_blocks _ -> "move-blocks"
   | Split_block _ -> "split-block"
   | Merge_backward _ -> "merge-blocks"
@@ -234,6 +245,21 @@ let intent_json = function
       ; "title", `String title
       ; "createdAt", `Int created_at
       ]
+  | Create_journal { page_uuid; block_uuid; title; journal_day; created_at } ->
+    `Assoc
+      [ "type", `String "create-journal"
+      ; "pageUuid", `String page_uuid
+      ; "blockUuid", `String block_uuid
+      ; "title", `String title
+      ; "journalDay", `Int journal_day
+      ; "createdAt", `Int created_at
+      ]
+  | Add_tag { uuid; tag_uuid } ->
+    `Assoc
+      [ "type", `String "add-tag"
+      ; "uuid", `String uuid
+      ; "tagUuid", `String tag_uuid
+      ]
 ;;
 
 let string fields name =
@@ -341,6 +367,25 @@ let intent_of_json = function
              (match List.assoc_opt "createdAt" fields with
               | Some (`Int value) -> value
               | _ -> (invalid_arg "invalid pending intent field: createdAt" [@coverage off]))
+         }
+     | "create-journal" ->
+       Create_journal
+         { page_uuid = string fields "pageUuid"
+         ; block_uuid = string fields "blockUuid"
+         ; title = string fields "title"
+         ; journal_day =
+             (match List.assoc_opt "journalDay" fields with
+              | Some (`Int value) -> value
+              | _ -> invalid_arg "invalid pending intent field: journalDay")
+         ; created_at =
+             (match List.assoc_opt "createdAt" fields with
+              | Some (`Int value) -> value
+              | _ -> invalid_arg "invalid pending intent field: createdAt")
+         }
+     | "add-tag" ->
+       Add_tag
+         { uuid = string fields "uuid"
+         ; tag_uuid = string fields "tagUuid"
          }
      | kind -> invalid_arg ("unknown pending intent: " ^ kind))
   | _ -> invalid_arg "pending intent must be an object"

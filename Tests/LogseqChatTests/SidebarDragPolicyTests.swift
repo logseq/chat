@@ -5,7 +5,7 @@ import Testing
     @Test @MainActor func motionStateCommitsTheDragWithoutOwningJournalContent() {
         let motion = SidebarMotionState()
         motion.dragOffset = 120
-        motion.setPresented(true)
+        motion.setSidebarPresented(true)
 
         #expect(motion.isPresented)
         #expect(motion.dragOffset == 0)

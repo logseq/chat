@@ -77,6 +77,18 @@ public enum LogseqGraphSyncHTTP {
         return request
     }
 
+    public static func snapshotCursorRequest(
+        baseURL: String, graphID: String, accessToken: String
+    ) throws -> URLRequest {
+        let url = try apiRoot(baseURL)
+            .appendingPathComponent("sync")
+            .appendingPathComponent(graphID)
+            .appendingPathComponent("pull")
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
     public static func eventsRequest(
         baseURL: String, graphID: String, appliedServerT: Int, accessToken: String
     ) throws -> URLRequest {
@@ -97,13 +109,20 @@ public enum LogseqGraphSyncHTTP {
 
     #if !SKIP
     public static func downloadSnapshot(
-        baseURL: String, graphID: String, accessToken: String
+        baseURL: String, graphID: String, accessToken: String, schemaVersion: String
     ) async throws -> LogseqGraphSnapshotArtifact {
         let metadataRequest = try snapshotMetadataRequest(
             baseURL: baseURL, graphID: graphID, accessToken: accessToken
         )
-        let (metadataData, metadataResponse) = try await URLSession.shared.data(for: metadataRequest)
+        let cursorRequest = try snapshotCursorRequest(
+            baseURL: baseURL, graphID: graphID, accessToken: accessToken
+        )
+        async let metadataResult = URLSession.shared.data(for: metadataRequest)
+        async let cursorResult = URLSession.shared.data(for: cursorRequest)
+        let (metadataData, metadataResponse) = try await metadataResult
+        let (cursorData, cursorResponse) = try await cursorResult
         try requireSuccess(metadataResponse)
+        try requireSuccess(cursorResponse)
         let metadata = try JSONDecoder().decode(SnapshotDownloadMetadata.self, from: metadataData)
         guard metadata.ok, let downloadURL = URL(string: metadata.url, relativeTo: metadataRequest.url) else {
             throw URLError(.cannotParseResponse)
@@ -112,6 +131,13 @@ public enum LogseqGraphSyncHTTP {
         downloadRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         let (temporaryURL, downloadResponse) = try await URLSession.shared.download(for: downloadRequest)
         try requireSuccess(downloadResponse)
+        guard let http = downloadResponse as? HTTPURLResponse,
+              let rowCountText = http.value(forHTTPHeaderField: "x-snapshot-row-count"),
+              let rowCount = Int(rowCountText), rowCount >= 0,
+              let snapshotMetadataBody = String(data: metadataData, encoding: .utf8),
+              let pullBody = String(data: cursorData, encoding: .utf8) else {
+            throw URLError(.cannotParseResponse)
+        }
         let ownedDownloadURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("logseq-graph-\(UUID().uuidString).download")
         try FileManager.default.moveItem(at: temporaryURL, to: ownedDownloadURL)
@@ -123,15 +149,47 @@ public enum LogseqGraphSyncHTTP {
             if snapshotURL != ownedDownloadURL {
                 try? FileManager.default.removeItem(at: ownedDownloadURL)
             }
-            guard let metadataBody = String(data: metadataData, encoding: .utf8) else {
-                try? FileManager.default.removeItem(at: snapshotURL)
-                throw URLError(.cannotDecodeContentData)
-            }
+            let metadataBody = try importMetadataBody(
+                snapshotMetadataBody: snapshotMetadataBody,
+                pullBody: pullBody,
+                schemaVersion: schemaVersion,
+                rowCount: rowCount
+            )
             return LogseqGraphSnapshotArtifact(metadataBody: metadataBody, filePath: snapshotURL.path)
         } catch {
             try? FileManager.default.removeItem(at: ownedDownloadURL)
             throw error
         }
+    }
+
+    static func importMetadataBody(
+        snapshotMetadataBody: String,
+        pullBody: String,
+        schemaVersion: String,
+        rowCount: Int
+    ) throws -> String {
+        guard rowCount >= 0,
+              !schemaVersion.isEmpty,
+              var metadata = try JSONSerialization.jsonObject(
+                with: Data(snapshotMetadataBody.utf8)
+              ) as? [String: Any],
+              metadata["ok"] as? Bool == true,
+              let pull = try JSONSerialization.jsonObject(
+                with: Data(pullBody.utf8)
+              ) as? [String: Any],
+              pull["type"] as? String == "pull/ok",
+              let cursor = pull["t"] as? Int,
+              cursor >= 0 else {
+            throw URLError(.cannotParseResponse)
+        }
+        metadata["t"] = cursor
+        metadata["schema-version"] = schemaVersion
+        metadata["row-count"] = rowCount
+        let data = try JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys])
+        guard let result = String(data: data, encoding: .utf8) else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        return result
     }
 
     static func decodeSnapshotFile(at inputURL: URL, contentEncoding: String?) throws -> URL {

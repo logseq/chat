@@ -53,6 +53,11 @@ let crypto calls =
         (fun ~private_key ~ciphertext ->
           calls := ("graph:" ^ private_key ^ ":" ^ ciphertext) :: !calls;
           Ok "graph-key")
+    ; encrypt_graph_key =
+        (fun ~public_key ~plaintext ->
+          calls := ("wrap:" ^ public_key ^ ":" ^ plaintext) :: !calls;
+          Ok "encrypted-graph-key")
+    ; random_bytes = (fun count -> Ok (String.make count 'k'))
     ; encrypt_aes_gcm =
         (fun ~key ~plaintext ->
           calls := ("seal:" ^ key ^ ":" ^ plaintext) :: !calls;
@@ -122,6 +127,21 @@ let test_protected_value_round_trip_keeps_transit_type () =
   | _ -> failwith "protected value lost its Transit type"
 ;;
 
+let test_prepare_graph_key_uses_logseq_transit_binary_envelopes () =
+  let calls = ref [] in
+  let public_key = Codec.to_string (Transit.Binary "public-key") in
+  let graph_key, encrypted =
+    E2ee.prepare_graph_key ~crypto:(crypto calls) ~public_key_package:public_key
+    |> expect_ok
+  in
+  expect_equal (String.make 32 'k') graph_key;
+  (match Codec.of_string encrypted with
+   | Transit.Binary "encrypted-graph-key" -> ()
+   | _ -> failwith "encrypted graph key is not Transit binary");
+  if not (List.mem ("wrap:public-key:" ^ String.make 32 'k') !calls)
+  then failwith "graph key was not RSA encrypted"
+;;
+
 let test_invalid_envelope_fails_closed () =
   match
     E2ee.decrypt_value
@@ -136,6 +156,7 @@ let test_invalid_envelope_fails_closed () =
 let () =
   test_unlock_current_private_key_package ();
   test_unlock_legacy_private_key_package ();
+  test_prepare_graph_key_uses_logseq_transit_binary_envelopes ();
   test_protected_value_round_trip_keeps_transit_type ();
   test_invalid_envelope_fails_closed ()
 ;;

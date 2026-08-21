@@ -17,11 +17,13 @@ let () =
           exit 1
         | Ok db ->
           let blocks = Logseq_chat_graph_read.blocks db in
+          let favorites = (Logseq_chat_graph_read.sidebar_pages db).favorites in
           Printf.printf
-            "Seeded iOS E2E graph: %s journals=%d visible-blocks=%d\n"
+            "Seeded iOS E2E graph: %s journals=%d visible-blocks=%d favorites=%d\n"
             path
             (Logseq_chat_graph_read.journal_page_count db)
-            (List.length blocks))
+            (List.length blocks)
+            (List.length favorites))
      | Error message ->
        prerr_endline message;
        exit 1)

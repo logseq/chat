@@ -12,10 +12,18 @@ toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolc
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
 team_id=${LOGSEQ_CHAT_SIMULATOR_TEAM_ID:-3K44EUN829}
+configuration=${LOGSEQ_CHAT_IOS_CONFIGURATION:-debug}
+[[ $configuration == debug || $configuration == release ]] \
+  || die "LOGSEQ_CHAT_IOS_CONFIGURATION must be debug or release"
+if [[ $configuration == release ]]; then
+  configuration_name=Release
+else
+  configuration_name=Debug
+fi
 sdk_path=$(xcrun --sdk iphonesimulator --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}-simulator"
 target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_build_dir="$repo_root/.build/arm64-apple-ios-simulator/debug"
+swift_build_dir="$repo_root/.build/arm64-apple-ios-simulator/$configuration"
 core_build_dir="$repo_root/_build/ios-core/simulator"
 core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"
@@ -26,10 +34,10 @@ graph_store_object="$core_build_dir/logseq_chat_graph_store_stubs.o"
 simulator_entitlements="$core_build_dir/simulator-entitlements.plist"
 signature_entitlements="$core_build_dir/simulator-signature-entitlements.plist"
 app_dir="$repo_root/.build/LogseqChat.app"
-xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/Debug-iphonesimulator/LogseqChat.app"
+xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/$configuration_name-iphonesimulator/LogseqChat.app"
 
 if [[ ${LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
-  echo "configuration=debug ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix"
+  echo "configuration=$configuration ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix"
   exit 0
 fi
 
@@ -244,6 +252,7 @@ fingerprinted_native_link_inputs="$native_link_dir/logseq_chat_runtime.o:$ffi_ob
 LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$fingerprinted_native_link_inputs" \
 LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
 swift build \
+  --configuration "$configuration" \
   --disable-keychain \
   --package-path "$repo_root" \
   --product LogseqChatShell \

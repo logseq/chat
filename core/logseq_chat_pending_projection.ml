@@ -23,6 +23,11 @@ let one_value db entity_ref attr =
 
 let string_value = function Some (String value) -> Some value | _ -> None
 
+let has_ref db eid attr target_eid =
+  datoms db Eavt ~e:eid ~a:attr ()
+  |> Seq.exists (fun datom -> Ds_value.ref_eid db attr datom.v = Some target_eid)
+;;
+
 let datascript_value = function
   | String_value value -> String value
   | Int_value value -> Int value
@@ -342,6 +347,44 @@ let rec compile db = function
                 ]
             }
         ]
+  | Create_journal { page_uuid; block_uuid; title; journal_day; created_at } ->
+    if Option.is_some (entid db "block/journal-day" (Int journal_day))
+    then Ok []
+    else
+      let page_id = Temp_id ("pending/" ^ page_uuid) in
+      Ok
+        [ Entity
+            { db_id = Some page_id
+            ; attrs =
+                [ "block/uuid", One_value (Uuid page_uuid)
+                ; "block/name", One_value (String (String.lowercase_ascii title))
+                ; "block/title", One_value (String title)
+                ; "block/journal-day", One_value (Int journal_day)
+                ; "block/created-at", One_value (Int created_at)
+                ; "block/updated-at", One_value (Int created_at)
+                ]
+            }
+        ; Entity
+            { db_id = Some (Temp_id ("pending/" ^ block_uuid))
+            ; attrs =
+                [ "block/uuid", One_value (Uuid block_uuid)
+                ; "block/title", One_value (String "")
+                ; "block/page", One_value (Ref_to page_id)
+                ; "block/parent", One_value (Ref_to page_id)
+                ; "block/order", One_value (String "a0")
+                ; "block/created-at", One_value (Int created_at)
+                ; "block/updated-at", One_value (Int created_at)
+                ]
+            }
+        ]
+  | Add_tag { uuid; tag_uuid } ->
+    (match entid db "block/uuid" (Uuid uuid), entid db "block/uuid" (Uuid tag_uuid) with
+     | Some block_eid, Some tag_eid ->
+       if has_ref db block_eid "block/tags" tag_eid
+       then Ok []
+       else Ok [ Add (lookup uuid, "block/tags", Ref tag_eid) ]
+     | None, _ -> Error "block no longer exists"
+     | _, None -> Error "tag no longer exists")
 ;;
 
 let rec satisfied db = function
@@ -377,6 +420,12 @@ let rec satisfied db = function
   | Delete_blocks { uuids } ->
     List.for_all (fun uuid -> Option.is_none (entid db "block/uuid" (Uuid uuid))) uuids
   | Create_tag { uuid; _ } -> Option.is_some (entid db "block/uuid" (Uuid uuid))
+  | Create_journal { journal_day; _ } ->
+    Option.is_some (entid db "block/journal-day" (Int journal_day))
+  | Add_tag { uuid; tag_uuid } ->
+    (match entid db "block/uuid" (Uuid uuid), entid db "block/uuid" (Uuid tag_uuid) with
+     | Some block_eid, Some tag_eid -> has_ref db block_eid "block/tags" tag_eid
+     | _ -> false)
 ;;
 
 let build ~server_t authoritative operations =

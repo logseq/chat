@@ -94,4 +94,40 @@ import LogseqChatModel
             newBlockIDs: ["old"]
         ))
     }
+
+    @Test func journalHomeUsesJournalAsItsHeading() {
+        #expect(AppHeaderPolicy.title(zoomedBlockTitle: nil, selectedPageTitle: nil) == "Journal")
+        #expect(AppHeaderPolicy.title(
+            zoomedBlockTitle: nil,
+            selectedPageTitle: "Project"
+        ) == "Project")
+        #expect(AppHeaderPolicy.title(
+            zoomedBlockTitle: "Focused block",
+            selectedPageTitle: "Project"
+        ) == "Focused block")
+    }
+
+    @Test func settingsUsesTheCircledEllipsisSystemSymbol() {
+        #expect(HeaderControlPolicy.settingsSystemImage == "ellipsis.circle")
+    }
+
+    @Test func iOS26GroupsOnlySyncAndSettingsInTheNativeToolbar() {
+        #expect(HeaderControlPolicy.usesNativeToolbarGroup)
+        #expect(HeaderControlPolicy.trailingGroupActionCount == 2)
+    }
+
+    @Test func sidebarToggleUsesTwoAsymmetricLinesInACircularPrimaryControl() {
+        #expect(SidebarMenuIconPolicy.assetName == "sidebar_toggle")
+        #expect(SidebarMenuIconPolicy.assetSize == 24)
+        #expect(SidebarMenuIconPolicy.usesTemplateRendering)
+        #expect(SidebarMenuIconPolicy.usesPrimaryStyle)
+        #expect(SidebarMenuIconPolicy.usesCircularButtonShape)
+        #expect(!SidebarMenuIconPolicy.addsExplicitGlassStyleInsideToolbar)
+    }
+
+    @Test func offlineSSEFailuresStayOutOfContentErrorBanners() {
+        #expect(!AppErrorPresentationPolicy.shouldPresent(code: "sse_connection_failed"))
+        #expect(AppErrorPresentationPolicy.shouldPresent(code: "snapshot_required"))
+        #expect(AppErrorPresentationPolicy.shouldPresent(code: "outliner_effect_failed"))
+    }
 }

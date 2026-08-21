@@ -190,6 +190,38 @@ let command ~base_t ~now ~fresh_uuid context = function
              ]
          ; platform = []
          })
+  | State.Assign_tag { uuid; value } ->
+    (match find_block context uuid with
+     | None -> Error "tag target block no longer exists"
+     | Some _ ->
+       let existing =
+         List.find_opt
+           (fun candidate -> String.equal candidate.State.value value)
+           context.tags
+       in
+       (match existing with
+        | Some candidate ->
+          Ok
+            { operations =
+                [ operation ~base_t ~fresh_uuid (Add_tag { uuid; tag_uuid = candidate.value }) ]
+            ; platform = []
+            }
+        | None ->
+          let title = String.trim value in
+          if String.equal title ""
+          then Error "tag title must not be empty"
+          else
+            let tag_uuid = fresh_uuid () in
+            Ok
+              { operations =
+                  [ operation
+                      ~base_t
+                      ~fresh_uuid
+                      (Create_tag { uuid = tag_uuid; title; created_at = now () })
+                  ; operation ~base_t ~fresh_uuid (Add_tag { uuid; tag_uuid })
+                  ]
+              ; platform = []
+              }))
   | State.Insert_root_block { page_uuid } ->
     let lower =
       match List.rev (sorted_siblings context (Some page_uuid)) with

@@ -1,0 +1,12 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- assertNotVisible: "Load earlier journals"
+- scrollUntilVisible:
+    element:
+      id: "journal.divider"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "journal.divider"

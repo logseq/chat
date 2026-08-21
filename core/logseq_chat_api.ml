@@ -34,6 +34,7 @@ type journal =
 type graph =
   { id : string
   ; name : string
+  ; schema_version : string option
   ; e2ee : bool
   ; ready : bool
   }
@@ -116,6 +117,22 @@ let graphs_request config =
   }
 ;;
 
+let create_graph_request config ~name ~schema_version ~e2ee =
+  { method_ = "POST"
+  ; url = Printf.sprintf "%s/graphs" (api_root config)
+  ; body =
+      Some
+        (to_string
+           (`Assoc
+             [ "graph-name", `String name
+             ; "schema-version", `String schema_version
+             ; "graph-e2ee?", `Bool e2ee
+             ; "graph-ready-for-use?", `Bool true
+             ]))
+  ; token = config.token
+  }
+;;
+
 let user_keys_request config =
   { method_ = "GET"
   ; url = Printf.sprintf "%s/e2ee/user-keys" (api_root config)
@@ -132,6 +149,18 @@ let graph_key_request config =
         (api_root config)
         (url_encode config.graph_id)
   ; body = None
+  ; token = config.token
+  }
+;;
+
+let upsert_graph_key_request config ~encrypted_key =
+  { method_ = "POST"
+  ; url =
+      Printf.sprintf
+        "%s/e2ee/graphs/%s/aes-key"
+        (api_root config)
+        (url_encode config.graph_id)
+  ; body = Some (to_string (`Assoc [ "encrypted-aes-key", `String encrypted_key ]))
   ; token = config.token
   }
 ;;
@@ -506,6 +535,10 @@ let graphs_from_graphs_body body =
               Some
                 { id = graph_id
                 ; name = graph_name
+                ; schema_version =
+                    (match List.assoc_opt "schema-version" graph_fields with
+                     | Some (`String value) when not (String.equal value "") -> Some value
+                     | _ -> None)
                 ; e2ee = bool_field ~safe_default:true "graph-e2ee?"
                 ; ready = bool_field ~safe_default:false "graph-ready-for-use?"
                 }

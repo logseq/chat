@@ -21,7 +21,7 @@ appId: com.logseq.chat
 - extendedWaitUntil:
     visible: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
     timeout: 30000
-- assertVisible: "Sync pending"
+- assertVisible: "Syncing"
 - stopApp
 - launchApp
 - extendedWaitUntil:
@@ -34,5 +34,5 @@ appId: com.logseq.chat
       text: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
     direction: DOWN
     timeout: 30000
-- assertVisible: "Sync pending"
+- assertVisible: "Syncing"
 - takeScreenshot: .maestro/screenshots/ios-offline-restart

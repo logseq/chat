@@ -35,7 +35,7 @@ enum SidebarDragPolicy {
         guard accepts(translationX: translationX, translationY: translationY) else {
             return isPresented
         }
-        let baseOffset = isPresented ? sidebarWidth : 0
+        let baseOffset = isPresented ? sidebarWidth : 0.0
         return baseOffset + predictedTranslationX > sidebarWidth * 0.5
     }
 

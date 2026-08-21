@@ -18,6 +18,8 @@ let crypto ?(private_result = Ok "private-key") () =
   E2ee.
     { decrypt_private_key = (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ -> private_result)
     ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Ok "remote-graph-key")
+    ; encrypt_graph_key = (fun ~public_key:_ ~plaintext:_ -> Error "unused")
+    ; random_bytes = (fun _ -> Error "unused")
     ; encrypt_aes_gcm =
         (fun ~key:_ ~plaintext:_ -> Ok ("iv", "ciphertext"))
     ; decrypt_aes_gcm =
@@ -163,6 +165,8 @@ let test_asset_codec_encrypts_binary_transit () =
     E2ee.
       { decrypt_private_key = (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ -> Error "unused")
       ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Error "unused")
+      ; encrypt_graph_key = (fun ~public_key:_ ~plaintext:_ -> Error "unused")
+      ; random_bytes = (fun _ -> Error "unused")
       ; encrypt_aes_gcm =
           (fun ~key ~plaintext ->
             expect_equal "cached-key" key;
@@ -190,10 +194,69 @@ let test_asset_codec_encrypts_binary_transit () =
    | _ -> failwith "asset encryption does not match Logseq Transit")
 ;;
 
+let test_provision_graph_key_uploads_and_caches_key () =
+  let requests = ref [] in
+  let saved = ref None in
+  let crypto =
+    E2ee.
+      { decrypt_private_key = (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ -> Error "unused")
+      ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Error "unused")
+      ; encrypt_graph_key = (fun ~public_key ~plaintext -> Ok (public_key ^ plaintext))
+      ; random_bytes = (fun count -> Ok (String.make count 'a'))
+      ; encrypt_aes_gcm = (fun ~key:_ ~plaintext:_ -> Error "unused")
+      ; decrypt_aes_gcm = (fun ~key:_ ~iv:_ ~ciphertext:_ -> Error "unused")
+      }
+  in
+  let public_key = Codec.to_string (Transit.Binary "public") in
+  let keyring =
+    Keyring.create
+      ~crypto
+      ~load:(fun ~graph_id:_ -> Ok None)
+      ~save:(fun ~graph_id:_ ~key -> saved := Some key; Ok ())
+      ~fetch:(fun request ->
+        requests := request :: !requests;
+        if String.ends_with ~suffix:"/user-keys" request.Api.url
+        then
+          Ok
+            Api.
+              { status = 200
+              ; body =
+                  Yojson.Basic.to_string
+                    (`Assoc
+                      [ "public-key", `String public_key
+                      ; "encrypted-private-key", `String "unused"
+                      ])
+              }
+        else Ok Api.{ status = 200; body = "{}" })
+  in
+  let provision_config =
+    Api.
+      { base_url = "https://api.example"
+      ; graph_id = "new-graph"
+      ; graph_name = None
+      ; token = "token"
+      }
+  in
+  let key = Keyring.provision keyring provision_config |> expect_ok in
+  expect_equal (String.make 32 'a') key;
+  (match !saved with
+   | Some value -> expect_equal key value
+   | None -> failwith "graph key was not cached");
+  let post = List.find (fun request -> String.equal request.Api.method_ "POST") !requests in
+  (match post.body with
+   | Some body ->
+     let encrypted = Api.graph_key_from_body body in
+     (match Codec.of_string encrypted with
+      | Transit.Binary value -> expect_equal ("public" ^ key) value
+      | _ -> failwith "uploaded graph key envelope is invalid")
+   | None -> failwith "graph key upload body is missing")
+;;
+
 let () =
   test_unlock_fetches_and_saves_graph_key ();
   test_cached_key_opens_offline ();
   test_wrong_password_does_not_save_key ();
   test_title_codec_uses_loaded_graph_key ();
-  test_asset_codec_encrypts_binary_transit ()
+  test_asset_codec_encrypts_binary_transit ();
+  test_provision_graph_key_uploads_and_caches_key ()
 ;;

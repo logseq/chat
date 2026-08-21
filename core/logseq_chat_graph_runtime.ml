@@ -13,13 +13,17 @@ type t =
   ; prepared : (string, Ops.t) Hashtbl.t
   ; mutable journal_limit : int
   ; search_index : Logseq_chat_search_index.t option
+  ; mutable search_index_is_fresh : bool
   }
 
 let refresh_search runtime =
   Option.iter
     (fun index ->
-      try Logseq_chat_search_index.refresh index runtime.snapshot.Projection.db with
-      | Failure _ -> ())
+      try
+        Logseq_chat_search_index.refresh index runtime.snapshot.Projection.db;
+        runtime.search_index_is_fresh <- true
+      with
+      | Failure _ -> runtime.search_index_is_fresh <- false)
     runtime.search_index
 ;;
 
@@ -56,7 +60,7 @@ let rebuild runtime =
   refresh_search runtime
 ;;
 
-let create
+let create_base
       ?(encrypt_title = fun value -> Ok value)
       ?search_index_path
       ~path
@@ -80,12 +84,40 @@ let create
     ; server_t
     ; snapshot
     ; prepared = Hashtbl.create 16
-    ; journal_limit = 7
+    ; journal_limit = 1
     ; search_index
+    ; search_index_is_fresh = false
     }
   in
-  refresh_search runtime;
   runtime
+;;
+
+let fresh_uuid () =
+  match Datascript.squuid () with
+  | Datascript.Uuid uuid -> uuid
+  | _ -> failwith "Datascript.squuid returned a non-UUID value"
+;;
+
+let journal_day_title journal_day =
+  let month_names =
+    [| "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"
+     ; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"
+    |]
+  in
+  let year = journal_day / 10_000 in
+  let month = (journal_day / 100) mod 100 in
+  let day = journal_day mod 100 in
+  let suffix =
+    if day mod 100 >= 11 && day mod 100 <= 13
+    then "th"
+    else
+      match day mod 10 with
+      | 1 -> "st"
+      | 2 -> "nd"
+      | 3 -> "rd"
+      | _ -> "th"
+  in
+  Printf.sprintf "%s %d%s, %04d" month_names.(month - 1) day suffix year
 ;;
 
 let db runtime = runtime.snapshot.db
@@ -157,7 +189,7 @@ let normalize_operation runtime operation =
         }
       )
     | (Ops.Set_property _ | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
-      | Ops.Create_tag _) as intent -> Ok intent
+      | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }
 ;;
@@ -252,9 +284,51 @@ let stage runtime operation =
        (Error "operation could not be projected" [@coverage off]))
 ;;
 
+let ensure_today_journal runtime =
+  let created_at = int_of_float (Unix.gettimeofday () *. 1000.0) in
+  let journal_day = Logseq_chat_model.journal_day_for_ms created_at in
+  match Logseq_chat_graph_read.journal_page_uuid runtime.snapshot.db ~journal_day with
+  | Some _ -> Ok ()
+  | None ->
+    let operation =
+      Ops.
+        { operation_id = fresh_uuid ()
+        ; base_t = runtime.server_t
+        ; state = Queued
+        ; intent =
+            Create_journal
+              { page_uuid = fresh_uuid ()
+              ; block_uuid = fresh_uuid ()
+              ; title = journal_day_title journal_day
+              ; journal_day
+              ; created_at
+              }
+        }
+    in
+    stage runtime operation
+;;
+
+let create
+      ?(encrypt_title = fun value -> Ok value)
+      ?search_index_path
+      ?(auto_create_today = false)
+      ~path
+      ~server_t
+      conn
+  =
+  let runtime = create_base ~encrypt_title ?search_index_path ~path ~server_t conn in
+  if auto_create_today
+  then (
+    match ensure_today_journal runtime with
+    | Ok () -> ()
+    | Error message -> failwith ("create today's journal: " ^ message));
+  runtime
+;;
+
 let safe_to_rebase = function
   | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _
-  | Ops.Create_tag _ | Ops.Insert_block _ | Ops.Move_block _ | Ops.Move_blocks _ -> true
+  | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
+  | Ops.Move_block _ | Ops.Move_blocks _ -> true
   | Ops.Delete_blocks _ -> false
 ;;
 
@@ -368,12 +442,6 @@ let journal_page_uuid runtime ~journal_day =
   Logseq_chat_graph_read.journal_page_uuid runtime.snapshot.db ~journal_day
 ;;
 
-let fresh_uuid () =
-  match Datascript.squuid () with
-  | Datascript.Uuid uuid -> uuid
-  | _ -> failwith "Datascript.squuid returned a non-UUID value"
-;;
-
 let normalize_titles runtime ~uuid titles =
   Logseq_chat_graph_read.normalize_titles_creating_tags
     runtime.snapshot.db
@@ -386,6 +454,7 @@ let search runtime query =
   match runtime.search_index with
   | None -> []
   | Some index ->
+    if not runtime.search_index_is_fresh then refresh_search runtime;
     (try Logseq_chat_search_index.search_hits index runtime.snapshot.db query with
      | Failure _ -> [])
 ;;

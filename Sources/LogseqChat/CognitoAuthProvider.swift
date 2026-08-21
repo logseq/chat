@@ -28,6 +28,7 @@ actor CognitoAuthProvider: LogseqCognitoProviding {
 
     func accessToken() async throws -> String? {
         #if !SKIP && AppleAuth
+        await LogseqAmplifyAuth.configure()
         let session = try await Amplify.Auth.fetchAuthSession()
         #if DEBUG
         print("LogseqChat debug: Amplify session fetched signedIn=\(session.isSignedIn)")
@@ -54,6 +55,7 @@ actor CognitoAuthProvider: LogseqCognitoProviding {
 
     func signIn(username: String, password: String) async throws -> String {
         #if !SKIP && AppleAuth
+        await LogseqAmplifyAuth.configure()
         let result = try await Amplify.Auth.signIn(username: username, password: password)
         guard result.isSignedIn else {
             throw CognitoAuthProviderError.incompleteSignIn
@@ -69,6 +71,7 @@ actor CognitoAuthProvider: LogseqCognitoProviding {
 
     func signOut() async throws {
         #if !SKIP && AppleAuth
+        await LogseqAmplifyAuth.configure()
         _ = await Amplify.Auth.signOut()
         #endif
     }

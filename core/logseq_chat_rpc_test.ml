@@ -148,6 +148,54 @@ let configure_encrypted_graph session =
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"\",\"token\":\"access\"}"}}|})
 ;;
 
+let () =
+  let created = ref false in
+  let provisioned = ref None in
+  let session =
+    Logseq_chat_rpc.create
+      ~send:(fun request ->
+        if String.equal request.Logseq_chat_api.method_ "POST"
+           && String.ends_with ~suffix:"/graphs" request.url
+        then (
+          created := true;
+          Ok Logseq_chat_api.{ status = 201; body = {|{"graph-id":"new-private"}|} })
+        else if String.ends_with ~suffix:"/graphs" request.url
+        then
+          Ok
+            Logseq_chat_api.
+              { status = 200
+              ; body =
+                  (if !created
+                   then
+                     {|{"graphs":[{"graph-id":"new-private","graph-name":"Private notes","schema-version":"65.33","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}
+                   else {|{"graphs":[]}|})
+              }
+        else Error ("unexpected request: " ^ request.url))
+      ~provision_graph_key:(fun config ->
+        provisioned := Some config.Logseq_chat_api.graph_id;
+        Ok ())
+      ()
+  in
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"https://api.example\",\"graphId\":\"\",\"token\":\"access\"}"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"createSyncGraph","payload":"{\"name\":\"Private notes\",\"isEncrypted\":true}"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     (match assoc "ok" fields with
+      | Some (`Bool true) -> ()
+      | _ -> failwith "encrypted graph creation should succeed")
+   | _ -> failwith "createSyncGraph should return an RPC response");
+  if !provisioned <> Some "new-private"
+  then failwith "encrypted graph creation must provision its AES key"
+;;
+
 let pending_request response =
   match from_string response with
   | `Assoc fields ->
@@ -664,6 +712,7 @@ let () =
       ; journal = None
       }
   in
+  let linked = { tagged with uuid = "reference-1"; title = "Links Task" } in
   let session =
     Logseq_chat_rpc.create
       ~graph_sidebar_pages:(fun () ->
@@ -672,6 +721,8 @@ let () =
       ~graph_node_is_tag:(String.equal tag_page.uuid)
       ~graph_tag_objects:(fun uuid ->
         if String.equal uuid tag_page.uuid then Some [ tagged ] else None)
+      ~graph_node_references:(fun uuid ->
+        if String.equal uuid tag_page.uuid then Some [ linked ] else None)
       ()
   in
   let response =
@@ -685,7 +736,64 @@ let () =
     if not (required_bool "selectedPageIsTag" result)
     then failwith "selecting a tag page must mark the projection as a tag";
     let related = required_first_assoc "relatedBlocks" result in
-    assert_equal "sidebar tag object" "task-1" (required_string "uuid" related)
+    assert_equal "sidebar tag object" "task-1" (required_string "uuid" related);
+    let linked_references = required_first_assoc "linkedReferenceBlocks" result in
+    assert_equal
+      "sidebar tag linked reference"
+      "reference-1"
+      (required_string "uuid" linked_references)
+  | _ -> failwith "selectPage should return an RPC response"
+;;
+
+let () =
+  (* Sidebar page selection keeps the original non-route interaction while
+     projecting the same linked references as a node view. *)
+  let page = Logseq_chat_graph_read.{ uuid = "page-1"; title = "Page one" } in
+  let reference =
+    Logseq_chat_model.
+      { uuid = "reference-1"
+      ; title = "Links Page one"
+      ; page_id = "journal-1"
+      ; parent_id = Some "journal-1"
+      ; order = Some "a0"
+      ; created_at = 1
+      ; updated_at = 1
+      ; sync_status = "synced"
+      ; tags = []
+      ; references = []
+      ; breadcrumbs = []
+      ; status = None
+      ; is_asset = false
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      ; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_sidebar_pages:(fun () ->
+        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+      ~graph_page_blocks:(fun _ -> Some [])
+      ~graph_node_references:(fun uuid ->
+        if String.equal uuid page.uuid then Some [ reference ] else None)
+      ()
+  in
+  let response =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectPage","payload":"page-1"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let result = required_assoc "result" fields in
+    if required_bool "selectedPageIsTag" result
+    then failwith "a regular sidebar page must not be projected as a tag";
+    let related = required_first_assoc "relatedBlocks" result in
+    assert_equal "sidebar linked reference" "reference-1" (required_string "uuid" related);
+    let routes = required_list "nodeRoutes" result in
+    if routes <> [] then failwith "sidebar page selection must not create a node route"
   | _ -> failwith "selectPage should return an RPC response"
 ;;
 
@@ -885,10 +993,17 @@ let () =
       ; journal = Some ("Aug 15th, 2026", 20260815)
       }
   in
+  let graph_blocks_calls = ref 0 in
+  let graph_sidebar_pages_calls = ref 0 in
   let session =
     Logseq_chat_rpc.create
       ~open_graph:(fun _payload -> Ok ())
-      ~graph_blocks:(fun () -> Some [ authoritative ])
+      ~graph_blocks:(fun () ->
+        incr graph_blocks_calls;
+        Some [ authoritative ])
+      ~graph_sidebar_pages:(fun () ->
+        incr graph_sidebar_pages_calls;
+        Some Logseq_chat_graph_read.{ favorites = []; recent_pages = [] })
       ()
   in
   let response =
@@ -899,6 +1014,14 @@ let () =
   in
   match response with
   | `Assoc fields ->
+    assert_int_equal
+      "openGraph reads its visible journal projection once"
+      1
+      !graph_blocks_calls;
+    assert_int_equal
+      "openGraph reads sidebar autocomplete pages once"
+      1
+      !graph_sidebar_pages_calls;
     let blocks = required_assoc "result" fields |> required_list "blocks" in
     (match blocks with
      | [ `Assoc block ] ->
@@ -1086,6 +1209,50 @@ let remote_block uuid title =
     ; local_path = None
     ; journal = None
     }
+;;
+
+let () =
+  (* Receiving authoritative sync while the inline editor is active must not
+     cancel editing or hide the remote change. *)
+  let authoritative = ref [ remote_block "editing-sync" "Local draft"; remote_block "remote-sync" "Before" ] in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_blocks:(fun () -> Some !authoritative)
+      ~feed_sse:(fun _ ->
+        authoritative := [ remote_block "editing-sync" "Local draft"; remote_block "remote-sync" "After" ];
+        Ok ())
+      ()
+  in
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"outlinerEvent","payload":"{\"type\":\"tapBlock\",\"uuid\":\"editing-sync\"}"}}|});
+  let synced =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"remote-change"}}|}
+    |> from_string
+  in
+  match synced with
+  | `Assoc fields ->
+    let result = required_assoc "result" fields in
+    let editing = required_assoc "editing" (required_assoc "outlinerState" result) in
+    assert_equal "sync preserves active editor" "editing-sync" (required_string "uuid" editing);
+    let rows = required_list "outlinerRows" result in
+    if not
+         (List.exists
+            (function
+              | `Assoc row ->
+                (match List.assoc_opt "block" row with
+                 | Some (`Assoc block) ->
+                   List.assoc_opt "uuid" block = Some (`String "remote-sync")
+                   && List.assoc_opt "title" block = Some (`String "After")
+                 | _ -> false)
+              | _ -> false)
+            rows)
+    then
+      failwith
+        ("sync received while editing must update the visible projection: "
+         ^ Yojson.Basic.to_string synced)
+  | _ -> failwith "feedSSE while editing should return a snapshot"
 ;;
 
 let prepare_test_operation operation =
@@ -2176,6 +2343,82 @@ let () =
 ;;
 
 let () =
+  (* Page-scoped structural editing must keep using the optimistic projection
+     when the page reader has not observed newly staged blocks yet. *)
+  let page = Logseq_chat_graph_read.{ uuid = "page-lag"; title = "Lagging page" } in
+  let source =
+    { (remote_block "page-source" "Hello") with
+      Logseq_chat_model.page_id = page.uuid
+    ; parent_id = Some page.uuid
+    ; order = Some "a0"
+    }
+  in
+  let interleaved_reference =
+    { (remote_block "other-page-reference" "Links lagging page") with
+      Logseq_chat_model.page_id = "other-page"
+    ; parent_id = Some "other-page"
+    ; order = Some "a1"
+    }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_sidebar_pages:(fun () ->
+        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+      ~graph_page_blocks:(fun uuid ->
+        if String.equal uuid page.uuid then Some [ source ] else None)
+      ~graph_node_references:(fun uuid ->
+        if String.equal uuid page.uuid then Some [ interleaved_reference ] else None)
+      ~stage_operation:(fun _ -> Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectPage","payload":"page-lag"}}|});
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  let editing_uuid response =
+    required_assoc "outlinerState" response
+    |> required_assoc "editing"
+    |> required_string "uuid"
+  in
+  let split uuid =
+    dispatch_outliner
+      session
+      (`Assoc [ "type", `String "returnPressed"; "uuid", `String uuid ])
+    |> editing_uuid
+  in
+  let merge uuid =
+    dispatch_outliner
+      session
+      (`Assoc
+        [ "type", `String "backspacePressed"
+        ; "uuid", `String uuid
+        ; "selectionLength", `Int 0
+        ])
+    |> editing_uuid
+  in
+  let first_empty = split source.uuid in
+  let second_empty = split first_empty in
+  session.semantic_queue <- [];
+  session.semantic_active <- None;
+  let first_empty_after_merge = merge second_empty in
+  assert_equal
+    "the first page-scoped delete focuses the previous optimistic block"
+    first_empty
+    first_empty_after_merge;
+  assert_equal
+    "consecutive page-scoped deletes survive a lagging page reader"
+    source.uuid
+    (merge first_empty_after_merge)
+;;
+
+let () =
   let today_page = Logseq_chat_graph_read.{ uuid = "journal-today"; title = "Today" } in
   let source =
     { (remote_block "journal-source" "Hello") with
@@ -2278,8 +2521,8 @@ let () =
   in
   if !full_graph_reads <> 0
   then failwith "journal Enter must not reload every journal block";
-  if !page_reads <> 2
-  then failwith "journal Enter must load only its page before and after staging";
+  if !page_reads <> 1
+  then failwith "journal Enter must load its page once before staging";
   (match required_list "outlinerRowSplices" split with
    | [ `Assoc splice ] ->
      assert_equal

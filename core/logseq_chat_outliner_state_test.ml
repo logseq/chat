@@ -64,10 +64,10 @@ let () =
      | Some { kind = Tag; query = "Pro" } -> true
      | _ -> false);
   let state, effects = State.update context state (Choose_autocomplete tag_uuid) in
-  assert_bool "tag completion shows the tag label in the editor"
-    (State.editing_title state = Some "Alpha #Project");
-  assert_bool "tag completion keeps editing active and requests selection feedback"
-    (State.editing_uuid state = Some "a" && effects = [ State.Haptic Selection ])
+  assert_bool "tag completion removes the inline token from the editor"
+    (State.editing_title state = Some "Alpha");
+  assert_bool "tag completion keeps editing active and emits a semantic tag command"
+    (State.editing_uuid state = Some "a" && List.length effects = 2)
 ;;
 
 let () =
@@ -82,8 +82,8 @@ let () =
   let state, _ = State.update context State.empty (Tap_block "a") in
   let state, _ = State.update context state (Text_changed { title = "Alpha #fav"; caret = 10 }) in
   let state, _ = State.update context state (Choose_autocomplete tag_uuid) in
-  assert_bool "tag completion brackets labels that cannot be bare hashtags"
-    (State.editing_title state = Some "Alpha #[[favorite book]]")
+  assert_bool "spaced tag completion also removes the inline token"
+    (State.editing_title state = Some "Alpha")
 ;;
 
 let () =
@@ -305,13 +305,19 @@ let () =
         ~order:(Some "a1")
         "journal-two-block"
         "Second journal block"
+    ; block
+        ~page_id:"journal-two"
+        ~parent_id:(Some "journal-two")
+        ~order:(Some "a2")
+        "journal-two-next"
+        "Next journal block"
     ]
   in
   let context = State.{ blocks; pages = []; tags = [] } in
   let state, _ =
     State.update context State.empty (Tap_block "journal-two-block")
   in
-  let _, effects =
+  let state, effects =
     State.update
       context
       state
@@ -319,8 +325,46 @@ let () =
          { title = "Second journal block"; selection_length = 0 })
   in
   assert_bool
-    "backspace never merges blocks across journal pages"
-    (effects = [])
+    "backspace deletes the first block of a journal without closing its editor"
+    (State.editing_uuid state = Some "journal-two-next"
+     && effects = [ State.Delete_blocks [ "journal-two-block" ] ])
+;;
+
+let () =
+  let blocks =
+    [ block "parent" "Parent"
+    ; block ~parent_id:(Some "parent") ~order:(Some "a0") "child" "Child"
+    ; block ~parent_id:(Some "parent") ~order:(Some "a1") "empty" ""
+    ]
+  in
+  let nested_context = State.{ blocks; pages = []; tags = [] } in
+  let state, _ = State.update nested_context State.empty (Tap_block "empty") in
+  let state, effects =
+    State.update nested_context state (Return_pressed_with_text { title = ""; caret = 0 })
+  in
+  assert_bool "return on the final empty child keeps that block focused"
+    (State.editing_uuid state = Some "empty");
+  assert_bool "return on the final empty child outdents instead of splitting"
+    (match effects with
+     | [ State.Move_blocks [ move ] ] ->
+       String.equal move.Logseq_chat_pending_ops.uuid "empty"
+       && String.equal move.parent_uuid "page"
+     | _ -> false)
+;;
+
+let () =
+  let blocks =
+    [ block "parent" "Parent"
+    ; block ~parent_id:(Some "parent") ~order:(Some "a0") "empty" ""
+    ; block ~parent_id:(Some "parent") ~order:(Some "a1") "following" "Following"
+    ]
+  in
+  let nested_context = State.{ blocks; pages = []; tags = [] } in
+  let state, _ = State.update nested_context State.empty (Tap_block "empty") in
+  let state, effects = State.update nested_context state Return_pressed in
+  assert_bool "an empty child that is not last still follows normal split behavior"
+    (State.editing_uuid state = None
+     && match effects with [ State.Split_at _ ] -> true | _ -> false)
 ;;
 
 let () =
@@ -679,10 +723,17 @@ let () =
     (Some State.{ kind = Tag; query = "tag" }) "text #tag";
   assert_autocomplete "tag token after newline"
     (Some State.{ kind = Tag; query = "tag" }) "text\n#tag";
-  assert_autocomplete "tag token inside a word is inactive" None "text#tag";
-  assert_autocomplete "tag query cannot contain spaces" None "#two words";
-  assert_bool "tag token helper rejects a query containing whitespace"
-    (State.token_request State.Tag '#' "#two words" = None
+  assert_autocomplete
+    "typing a tag marker immediately opens autocomplete"
+    (Some State.{ kind = Tag; query = "tag" })
+    "text#tag";
+  assert_autocomplete
+    "tag query supports spaces"
+    (Some State.{ kind = Tag; query = "two words" })
+    "#two words";
+  assert_bool "tag token helper allows spaces but stops at a newline"
+    (State.token_request State.Tag '#' "#two words"
+     = Some State.{ kind = Tag; query = "two words" }
      && State.token_request State.Tag '#' "#two\nwords" = None);
   assert_autocomplete "closed node token is inactive" None "[[Page]]";
   assert_autocomplete "legacy block token is inactive" None "((Block";
@@ -1046,8 +1097,8 @@ let () =
   let unchanged, effects =
     State.update context state (Backspace_pressed { selection_length = 0 })
   in
-  assert_bool "backspace at the first visible block cannot merge"
-    (unchanged = state && effects = []);
+  assert_bool "backspace deletes the first visible block and focuses its successor"
+    (State.editing_uuid unchanged = Some "b" && effects = [ State.Delete_blocks [ "a" ] ]);
   let collapsed, _ = State.update context State.empty (Toggle_collapsed "a") in
   let expanded, effects = State.update context collapsed (Toggle_collapsed "a") in
   assert_bool "second collapse toggle expands the block"

@@ -16,6 +16,7 @@ let schema =
   ; "block/title", one ~value_type:StringType ()
   ; "block/page", one ~value_type:RefType ~indexed:true ()
   ; "block/parent", one ~value_type:RefType ~indexed:true ()
+  ; "block/link", one ~value_type:RefType ~indexed:true ()
   ; "block/order", one ~value_type:StringType ()
   ; "block/refs", many ~value_type:RefType ()
   ; "block/tags", many ~value_type:RefType ()
@@ -35,8 +36,11 @@ let () =
   let db = conn_db conn in
   if Logseq_chat_graph_read.journal_page_count db <> 8
   then failwith "the E2E fixture must exercise journal pagination";
-  if List.length (Logseq_chat_graph_read.blocks db) <> 8
-  then failwith "the initial fixture window must contain seven pages and the link source";
+  (match (Logseq_chat_graph_read.sidebar_pages db).favorites with
+   | [ favorite ] when String.equal favorite.uuid (Seed.page_uuid 7) -> ()
+   | _ -> failwith "the E2E fixture must expose the target page as a favorite");
+  if List.length (Logseq_chat_graph_read.blocks db) <> 14
+  then failwith "the initial fixture window must contain links and rich block examples";
   if
     Logseq_chat_graph_read.blocks db
     |> List.exists (fun block -> String.equal block.Logseq_chat_model.uuid Seed.older_block_uuid)

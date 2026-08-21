@@ -16,3 +16,13 @@ build:
     - block: 'dependencies'
       contents:
         - 'api("com.amplifyframework.ui:authenticator:1.9.2")'
+        - 'implementation("com.github.gregcockroft:AndroidMath:v1.1.0")'
+        - 'implementation("dev.hossain:compose-highlight:0.32.0")'
+
+settings:
+  contents:
+    - block: 'dependencyResolutionManagement'
+      contents:
+        - block: 'repositories'
+          contents:
+            - 'maven("https://jitpack.io")'

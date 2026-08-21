@@ -11,6 +11,9 @@ type crypto =
       -> (string, string) result
   ; decrypt_graph_key :
       private_key:string -> ciphertext:string -> (string, string) result
+  ; encrypt_graph_key :
+      public_key:string -> plaintext:string -> (string, string) result
+  ; random_bytes : int -> (string, string) result
   ; encrypt_aes_gcm :
       key:string -> plaintext:string -> (string * string, string) result
   ; decrypt_aes_gcm :
@@ -60,6 +63,13 @@ let binary source =
   bind (protect "decode encrypted graph key" (fun () -> Codec.of_string source)) (function
     | Transit.Binary value -> Ok value
     | _ -> Error "encrypted graph key is not Transit binary")
+;;
+
+let prepare_graph_key ~crypto ~public_key_package =
+  bind (binary public_key_package) (fun public_key ->
+    bind (crypto.random_bytes 32) (fun graph_key ->
+      bind (crypto.encrypt_graph_key ~public_key ~plaintext:graph_key) (fun encrypted ->
+        Ok (graph_key, Codec.to_string (Transit.Binary encrypted)))))
 ;;
 
 let unlock_graph_key ~crypto ~password ~private_key_package:private_source ~encrypted_graph_key =

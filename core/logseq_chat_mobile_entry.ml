@@ -46,17 +46,31 @@ let graph_read_runtime ~graph_id ~active_path ~server_t ~e2ee conn =
     Logseq_chat_graph_runtime.create
       ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring ~graph_id)
       ~search_index_path
+      ~auto_create_today:true
       ~path:active_path
       ~server_t
       conn
   else
-    Logseq_chat_graph_runtime.create ~search_index_path ~path:active_path ~server_t conn
+    Logseq_chat_graph_runtime.create
+      ~search_index_path
+      ~auto_create_today:true
+      ~path:active_path
+      ~server_t
+      conn
 ;;
 
 let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
+  let started_at = Unix.gettimeofday () in
+  let report stage =
+    Printf.eprintf
+      "LOGSEQ_GRAPH_OPEN_METRIC stage=%s elapsed_ms=%.3f\n%!"
+      stage
+      ((Unix.gettimeofday () -. started_at) *. 1000.0)
+  in
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
   let ( let* ) = bind in
   let* checkpoint = Checkpoint.load checkpoint_path in
+  report "checkpoint_loaded";
   let* checkpoint =
     match checkpoint with
     | Some checkpoint when String.equal checkpoint.graph_id graph_id -> Ok checkpoint
@@ -64,11 +78,13 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
     | None -> Error "graph checkpoint is missing"
   in
   let* conn = Logseq_chat_graph_store.restore_conn ~path:active_path in
+  report "connection_restored";
   let* () =
     if e2ee
     then Result.map (fun _key -> ()) (E2ee_keyring.graph_key e2ee_keyring ~graph_id)
     else Ok ()
   in
+  report "encryption_ready";
   let state =
     Logseq_chat_sync_state.create
       ~graph_id
@@ -83,7 +99,9 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
       ~e2ee
       conn
   in
+  report "runtime_created";
   graph_runtime := Some { conn; state; checkpoint_path; graph_id; e2ee; read_runtime };
+  report "complete";
   Ok ()
 ;;
 
@@ -373,6 +391,8 @@ let create_session ?storage ?catalog_session () =
         (E2ee_keyring.load_cached e2ee_keyring ~graph_id))
     ~unlock_graph:(fun config ~password ->
       Result.map (fun _key -> ()) (E2ee_keyring.unlock e2ee_keyring config ~password))
+    ~provision_graph_key:(fun config ->
+      Result.map (fun _key -> ()) (E2ee_keyring.provision e2ee_keyring config))
     ~graph_unlocked:(fun ~graph_id ->
       Result.is_ok (E2ee_keyring.graph_key e2ee_keyring ~graph_id))
     ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring)

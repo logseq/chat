@@ -7,6 +7,18 @@ module Ref_text = Logseq_chat_ref_text
 let option_value_map option ~default ~f = match option with Some value -> f value | None -> default
 let list_last values = match List.rev values with value :: _ -> Some value | [] -> None
 
+let trim_right value =
+  let rec finish index =
+    if index < 0
+    then 0
+    else
+      match value.[index] with
+      | ' ' | '\t' | '\n' | '\r' -> finish (index - 1)
+      | _ -> index + 1
+  in
+  String.sub value 0 (finish (String.length value - 1))
+;;
+
 type autocomplete_kind =
   | Node
   | Tag
@@ -125,6 +137,10 @@ type cmd =
   | Set_task_status_value of
       { uuid : string
       ; status : Ops.semantic_value
+      }
+  | Assign_tag of
+      { uuid : string
+      ; value : string
       }
   | Pick_attachment of string
   | Take_photo of string
@@ -254,13 +270,31 @@ let last_substring value needle =
   if needle_length = 0 then None else loop 0 None
 ;;
 
+let contains_substring value needle =
+  let value_length = String.length value in
+  let needle_length = String.length needle in
+  let rec same_at start offset =
+    offset = needle_length
+    || (Char.equal value.[start + offset] needle.[offset] && same_at start (offset + 1))
+  in
+  let rec search start =
+    start + needle_length <= value_length
+    && (same_at start 0 || search (start + 1))
+  in
+  needle_length = 0 || search 0
+;;
+
+let includes_normalized_query value query =
+  String.equal query ""
+  || contains_substring (String.lowercase_ascii value) query
+;;
+
 let includes_case_insensitive value query =
-  let value = String.lowercase_ascii value in
-  let query = String.lowercase_ascii (String.trim query) in
-  String.equal query "" || Option.is_some (last_substring value query)
+  includes_normalized_query value (String.lowercase_ascii (String.trim query))
 ;;
 
 let autocomplete_candidates context request =
+  let normalized_query = String.lowercase_ascii (String.trim request.query) in
   let raw =
     match request.kind with
     | Node ->
@@ -280,7 +314,7 @@ let autocomplete_candidates context request =
   let matches =
     raw
     |> Seq.filter (fun candidate ->
-      includes_case_insensitive candidate.label request.query
+      includes_normalized_query candidate.label normalized_query
       && if Hashtbl.mem seen candidate.value then false else (Hashtbl.add seen candidate.value (); true))
     |> Seq.take 12
     |> List.of_seq
@@ -290,10 +324,9 @@ let autocomplete_candidates context request =
   match request.kind with
   | Tag ->
     let query = String.trim request.query in
-    let query_key = String.lowercase_ascii query in
     let has_exact =
       List.exists
-        (fun candidate -> String.equal (String.lowercase_ascii candidate.label) query_key)
+        (fun candidate -> String.equal (String.lowercase_ascii candidate.label) normalized_query)
         matches
     in
     if String.equal query "" || has_exact
@@ -310,9 +343,8 @@ let token_request kind marker prefix =
   match String.rindex_opt prefix marker with
   | None -> None
   | Some index ->
-    let valid_start = index = 0 || Char.equal prefix.[index - 1] ' ' || Char.equal prefix.[index - 1] '\n' in
     let query = String.sub prefix (index + 1) (String.length prefix - index - 1) in
-    if valid_start && not (String.exists (fun character -> character = ' ' || character = '\n') query)
+    if not (String.exists (fun character -> character = '\n') query)
     then Some { kind; query }
     else None
 ;;
@@ -380,6 +412,24 @@ let complete context editing kind value =
       let completed_prefix = String.sub title 0 (start + String.length replacement) in
       { editing with title; caret = utf16_length completed_prefix })
     completion
+;;
+
+let remove_tag_token editing =
+  let caret_byte = byte_index_of_utf16 editing.title editing.caret in
+  let prefix = String.sub editing.title 0 caret_byte in
+  match String.rindex_opt prefix '#' with
+  | None -> None
+  | Some start ->
+    let before = String.sub editing.title 0 start |> trim_right in
+    let suffix = String.sub editing.title caret_byte (String.length editing.title - caret_byte) in
+    let title =
+      if String.equal before "" || String.equal suffix ""
+      then before ^ suffix
+      else if suffix.[0] = ' ' || suffix.[0] = '\n'
+      then before ^ suffix
+      else before ^ " " ^ suffix
+    in
+    Some { editing with title; caret = utf16_length before }
 ;;
 
 (* The editor works on display text while [expected_title] stays in the
@@ -701,18 +751,45 @@ let update context state message =
         }
     ]
   in
-  let merge_backward editing =
-    let rows = visible_rows context state in
-    let rec previous candidate = function
-      | [] -> None
-      | row :: _ when String.equal row.block.Model.uuid editing.uuid -> candidate
-      | row :: rest -> previous (Some row.block) rest
+  let split_or_outdent editing =
+    let editing_block = find_block context editing.uuid in
+    let is_final_nested_empty =
+      match editing_block with
+      | Some block
+        when String.equal (String.trim editing.title) ""
+             && block.parent_id <> Some block.page_id ->
+        (match List.rev (sorted_siblings context block.parent_id) with
+         | last :: _ -> String.equal last.Model.uuid block.uuid
+         | [] -> false)
+      | Some _ | None -> false
     in
-    match previous None rows with
+    if not is_final_nested_empty
+    then split_editing editing
+    else
+      match outdent context (String_set.singleton editing.uuid) with
+      | Some moves ->
+        ( { state with editing = Some editing; autocomplete = None }
+        , commit_effect context (Some editing) @ [ Move_blocks moves ] )
+      | None -> split_editing editing
+  in
+  let merge_backward editing =
+    let rec neighbors previous = function
+      | [] -> previous, None
+      | row :: rest when String.equal row.block.Model.uuid editing.uuid ->
+        previous, Option.map (fun next -> next.block) (List.nth_opt rest 0)
+      | row :: rest -> neighbors (Some row.block) rest
+    in
+    match find_block context editing.uuid with
     | None -> state, []
-    | Some block ->
-      (match find_block context editing.uuid with
-       | Some editing_block when String.equal editing_block.page_id block.page_id ->
+    | Some editing_block ->
+      let rows =
+        visible_rows context state
+        |> List.filter (fun row ->
+          String.equal row.block.Model.page_id editing_block.page_id)
+      in
+      let previous, next = neighbors None rows in
+      (match previous with
+       | Some block when String.equal editing_block.page_id block.page_id ->
          ( state
          , [ Merge_backward
                { uuid = editing.uuid
@@ -722,7 +799,21 @@ let update context state message =
                ; expected_previous_title = block.title
                }
            ] )
-       | Some _ | None -> state, [])
+       | Some _ | None ->
+         (match next with
+          | Some block when String.equal editing_block.page_id block.page_id ->
+            let title = display_block_title context block in
+            ( { state with
+                editing = Some
+                    { uuid = block.uuid
+                    ; expected_title = block.title
+                    ; title
+                    ; caret = 0
+                    }
+              ; autocomplete = None
+              }
+            , [ Delete_blocks [ editing.uuid ] ] )
+          | Some _ | None -> state, []))
   in
   match message with
   | Tap_block uuid when not (String_set.is_empty state.selected) ->
@@ -763,19 +854,27 @@ let update context state message =
   | Choose_autocomplete value ->
     (match state.editing, state.autocomplete with
      | Some editing, Some autocomplete ->
-       (match complete context editing autocomplete.kind value with
-        | Some editing ->
-          { state with editing = Some editing; autocomplete = None }, [ Haptic Selection ]
-        | None -> state, [])
+       (match autocomplete.kind with
+        | Tag ->
+          (match remove_tag_token editing with
+           | Some editing ->
+             ( { state with editing = Some editing; autocomplete = None }
+             , [ Assign_tag { uuid = editing.uuid; value }; Haptic Selection ] )
+           | None -> state, [])
+        | Node | Property ->
+          (match complete context editing autocomplete.kind value with
+           | Some editing ->
+             { state with editing = Some editing; autocomplete = None }, [ Haptic Selection ]
+           | None -> state, []))
      | _ -> state, [])
   | Return_pressed ->
     (match state.editing with
      | None -> state, []
-     | Some editing -> split_editing editing)
+     | Some editing -> split_or_outdent editing)
   | Return_pressed_with_text { title; caret } ->
     (match state.editing with
      | None -> state, []
-     | Some editing -> split_editing { editing with title; caret })
+     | Some editing -> split_or_outdent { editing with title; caret })
   | Backspace_pressed { selection_length = 0 } ->
     (match state.editing with
      | Some editing when editing.caret = 0 -> merge_backward editing

@@ -116,6 +116,18 @@ private enum E2EECrypto {
         return try contents.element(tag: 0x04)
     }
 
+    static func unwrapSPKI(_ data: Data) throws -> Data {
+        var outer = DERReader(bytes: [UInt8](data))
+        let sequence = try outer.element(tag: 0x30)
+        var contents = DERReader(bytes: [UInt8](sequence))
+        _ = try contents.element(tag: 0x30)
+        let bitString = try contents.element(tag: 0x03)
+        guard bitString.first == 0 else {
+            throw E2EECryptoError.crypto("invalid SPKI bit string")
+        }
+        return bitString.dropFirst()
+    }
+
     static func rsaOAEPDecrypt(privateKeyData: Data, ciphertext: Data) throws -> Data {
         let attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeRSA,
@@ -144,6 +156,45 @@ private enum E2EECrypto {
             throw E2EECryptoError.crypto("RSA-OAEP decrypt failed")
         }
         return plaintext as Data
+    }
+
+    static func rsaOAEPEncrypt(publicKeyData: Data, plaintext: Data) throws -> Data {
+        let attributes: [CFString: Any] = [
+            kSecAttrKeyType: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass: kSecAttrKeyClassPublic,
+            kSecAttrKeySizeInBits: 4096,
+        ]
+        var error: Unmanaged<CFError>?
+        var key = SecKeyCreateWithData(publicKeyData as CFData, attributes as CFDictionary, &error)
+        if key == nil {
+            let pkcs1 = try unwrapSPKI(publicKeyData)
+            error = nil
+            key = SecKeyCreateWithData(pkcs1 as CFData, attributes as CFDictionary, &error)
+        }
+        guard let key else {
+            if let error { throw error.takeRetainedValue() }
+            throw E2EECryptoError.crypto("invalid RSA public key")
+        }
+        error = nil
+        guard let ciphertext = SecKeyCreateEncryptedData(
+            key,
+            .rsaEncryptionOAEPSHA256,
+            plaintext as CFData,
+            &error
+        ) else {
+            if let error { throw error.takeRetainedValue() }
+            throw E2EECryptoError.crypto("RSA-OAEP encrypt failed")
+        }
+        return ciphertext as Data
+    }
+
+    static func randomBytes(count: Int) throws -> Data {
+        guard count > 0 else { throw E2EECryptoError.invalidRequest("invalid byte count") }
+        var bytes = [UInt8](repeating: 0, count: count)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw E2EECryptoError.crypto("secure random generation failed")
+        }
+        return Data(bytes)
     }
 
     static func keychainQuery(graphID: String) -> [CFString: Any] {
@@ -211,6 +262,19 @@ private enum E2EECrypto {
                 ciphertext: try hexData(request["ciphertext"], field: "ciphertext")
             )
             return ["ok": true, "value": hex(plaintext)]
+
+        case "encryptGraphKey":
+            let ciphertext = try rsaOAEPEncrypt(
+                publicKeyData: try hexData(request["publicKey"], field: "publicKey"),
+                plaintext: try hexData(request["plaintext"], field: "plaintext")
+            )
+            return ["ok": true, "value": hex(ciphertext)]
+
+        case "randomBytes":
+            guard let count = request["count"] as? Int else {
+                throw E2EECryptoError.invalidRequest("missing byte count")
+            }
+            return ["ok": true, "value": hex(try randomBytes(count: count))]
 
         case "encryptAES":
             let (iv, ciphertext) = try aesSeal(

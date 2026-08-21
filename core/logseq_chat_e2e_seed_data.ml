@@ -35,7 +35,8 @@ let journal_entities =
             ; "block/title", One_value (String page_title)
             ; "block/journal-day", One_value (Int (20260809 + number))
             ; "block/created-at", One_value (Int (10_000 + number))
-            ; "block/updated-at", One_value (Int (10_000 + number))
+            ; ( "block/updated-at"
+              , One_value (Int (if number = 8 then 2_000_000_000_001 else 10_000 + number)) )
             ]
         }
     ; Entity
@@ -59,11 +60,63 @@ let journal_entities =
   |> List.concat
 ;;
 
+let rich_block_titles =
+  [ "> E2E Rich Quote"
+  ; "$$E = mc^2$$"
+  ; "```swift\nlet answer = 42\n```"
+  ; "{{video https://www.youtube.com/watch?v=dQw4w9WgXcQ}}"
+  ; "{{iframe https://example.com}}"
+  ]
+;;
+
+let rich_block_entities =
+  List.mapi
+    (fun index title ->
+      Entity
+        { db_id = Some (Temp_id ("e2e-rich-block-" ^ string_of_int index))
+        ; attrs =
+            [ "block/uuid", One_value (Uuid (block_uuid (100 + index)))
+            ; "block/title", One_value (String title)
+            ; "block/page", One_value (Ref_to (Temp_id "e2e-journal-8"))
+            ; "block/parent", One_value (Ref_to (Temp_id "e2e-journal-8"))
+            ; "block/order", One_value (String (Printf.sprintf "a%d" (index + 2)))
+            ; "block/created-at", One_value (Int (30_000 + index))
+            ; "block/updated-at", One_value (Int (30_000 + index))
+            ]
+        })
+    rich_block_titles
+;;
+
 let seed conn =
   try
     let tag_class_temp_id = "e2e-tag-class" in
     let tag_temp_id = "e2e-tag" in
     let trailing_tag_temp_id = "e2e-trailing-tag" in
+    let existing_favorites_page_eid =
+      Datascript.datoms
+        (conn_db conn)
+        Aevt
+        ~a:"block/name"
+        ~v:(String "$$$favorites")
+        ()
+      |> Seq.uncons
+      |> Option.map (fun (datom, _rest) -> datom.e)
+    in
+    let favorites_page_entities, favorites_page_reference =
+      match existing_favorites_page_eid with
+      | Some eid -> [], Ref eid
+      | None ->
+        ( [ Entity
+              { db_id = Some (Temp_id "e2e-favorites-page")
+              ; attrs =
+                  [ "block/uuid", One_value (Uuid "e2e00000-0000-4000-8000-000000000010")
+                  ; "block/name", One_value (String "$$$favorites")
+                  ; "block/title", One_value (String "Favorites")
+                  ]
+              }
+          ]
+        , Ref_to (Temp_id "e2e-favorites-page") )
+    in
     let source_title =
       Printf.sprintf
         "E2E links [[%s]] [[%s]] #[[%s]] and ((plain text))"
@@ -73,7 +126,19 @@ let seed conn =
     in
     let entities =
       journal_entities
+      @ rich_block_entities
+      @ favorites_page_entities
       @ [ Entity
+            { db_id = Some (Temp_id "e2e-favorite-page-target")
+            ; attrs =
+                [ "block/uuid", One_value (Uuid "e2e00000-0000-4000-8000-000000000011")
+                ; "block/title", One_value (String "")
+                ; "block/page", One_value favorites_page_reference
+                ; "block/link", One_value (Ref_to (Temp_id "e2e-journal-7"))
+                ; "block/order", One_value (String "a0")
+                ]
+            }
+        ; Entity
             { db_id = Some (Temp_id tag_class_temp_id)
             ; attrs = [ "db/ident", One_value (Keyword "logseq.class/Tag") ]
             }
@@ -126,6 +191,19 @@ let seed conn =
                       [ Ref_to (Temp_id tag_temp_id)
                       ; Ref_to (Temp_id trailing_tag_temp_id)
                       ] )
+                ]
+            }
+        ; Entity
+            { db_id = None
+            ; attrs =
+                [ "block/uuid", One_value (Uuid "e2e00000-0000-4000-8000-000000000006")
+                ; "block/title", One_value (String "E2E explicit tag page reference")
+                ; "block/page", One_value (Ref_to (Temp_id "e2e-journal-8"))
+                ; "block/parent", One_value (Ref_to (Temp_id "e2e-journal-8"))
+                ; "block/order", One_value (String "a8")
+                ; "block/created-at", One_value (Int 2_000_000_000_002)
+                ; "block/updated-at", One_value (Int 2_000_000_000_002)
+                ; "block/refs", Many_values [ Ref_to (Temp_id tag_temp_id) ]
                 ]
             }
         ]

@@ -466,12 +466,21 @@ let compare_blocks left right =
   | None, None -> compare left.created_at right.created_at
 ;;
 
+(* Match Logseq's related-content visibility rules: hidden or recycled nodes,
+   nodes below them, and view definition nodes are implementation details and
+   must not leak into linked references or class objects. *)
+let related_candidate_is_visible db eid =
+  not (page_is_hidden db Int_set.empty eid)
+  && Option.is_none (value db eid "logseq.property/view-for")
+;;
+
 let blocks_referencing ?(decrypt_title = fun value -> Ok value) db ~attr target_uuid =
   match Datascript.entid db "block/uuid" (Uuid target_uuid) with
   | None -> []
   | Some target_eid ->
     Ds_value.datoms_by_ref db Aevt attr target_eid
     |> List.of_seq
+    |> List.filter (fun datom -> related_candidate_is_visible db datom.e)
     |> List.filter_map (fun datom -> block decrypt_title db datom.e)
     |> List.sort compare_blocks
 ;;
@@ -514,6 +523,7 @@ let objects_for_tag ?(decrypt_title = fun value -> Ok value) db tag_uuid =
     |> Seq.flat_map (Ds_value.datoms_by_ref db Aevt "block/tags")
     |> Seq.fold_left (fun eids datom -> Int_set.add datom.e eids) Int_set.empty
     |> Int_set.to_seq
+    |> Seq.filter (related_candidate_is_visible db)
     |> Seq.filter_map (fun eid ->
       match block decrypt_title db eid with
       | Some value -> Some value
