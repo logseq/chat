@@ -67,8 +67,8 @@ struct OutlinerView: View {
                         }
                         .frame(
                             minHeight: isJournalHome
-                                ? max(0, viewportHeight - topPadding - bottomPadding)
-                                : 0,
+                                ? max(0.0, viewportHeight - topPadding - bottomPadding)
+                                : 0.0,
                             alignment: .top
                         )
                         if isJournalHome, index < visibleSections.count - 1 {

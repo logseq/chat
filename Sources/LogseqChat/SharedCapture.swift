@@ -84,14 +84,15 @@ public enum LogseqDeepLink: Sendable, Equatable {
 
     public init?(_ url: URL) {
         guard url.scheme?.lowercased() == "logseqchat" else { return nil }
-        if let payload = SharedCapturePayload(captureURL: url), let text = payload.blockText {
-            self = .captureText(text)
-            return
-        }
-        switch url.host?.lowercased() {
-        case "capture": self = .openCapture
-        case "journal": self = .openJournal
-        default: return nil
+        let payload = SharedCapturePayload(captureURL: url)
+        if payload != nil, payload!.blockText != nil {
+            self = .captureText(payload!.blockText!)
+        } else {
+            switch url.host?.lowercased() {
+            case "capture": self = .openCapture
+            case "journal": self = .openJournal
+            default: return nil
+            }
         }
     }
 }

@@ -48,8 +48,13 @@ struct OutlinerMarkupPresentation: Equatable {
     let plainText: String
     let links: [OutlinerMarkupLink]
 
-    static func make(nodes: [LogseqMarkupNode], fallback: String) -> Self {
-        guard !nodes.isEmpty else { return Self(plainText: fallback, links: []) }
+    static func make(
+        nodes: [LogseqMarkupNode],
+        fallback: String
+    ) -> OutlinerMarkupPresentation {
+        guard !nodes.isEmpty else {
+            return OutlinerMarkupPresentation(plainText: fallback, links: [])
+        }
         var text = ""
         var links: [OutlinerMarkupLink] = []
 
@@ -83,7 +88,7 @@ struct OutlinerMarkupPresentation: Equatable {
         }
 
         append(nodes)
-        return Self(plainText: text, links: links)
+        return OutlinerMarkupPresentation(plainText: text, links: links)
     }
 }
 
@@ -251,18 +256,16 @@ enum EmbeddedMediaPolicy {
             }
         }
         guard let videoID,
-              videoID.count == 11,
-              videoID.allSatisfy({
-                  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-".contains($0)
-              })
+              isValidYouTubeVideoID(videoID)
         else { return nil }
 
         let sourceQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        let start = sourceQuery
-            .first(where: { $0.name == "start" || $0.name == "t" })?
-            .value
-            .flatMap(Int.init)
-            .flatMap { $0 > 0 ? $0 : nil }
+        var start: Int?
+        if let rawStart = sourceQuery
+            .first(where: { $0.name == "start" || $0.name == "t" })?.value,
+           let parsedStart = Int(rawStart), parsedStart > 0 {
+            start = parsedStart
+        }
         var components = URLComponents()
         components.scheme = "https"
         components.host = "www.youtube-nocookie.com"
@@ -272,6 +275,15 @@ enum EmbeddedMediaPolicy {
             components.queryItems?.append(URLQueryItem(name: "start", value: String(start)))
         }
         return components.url
+    }
+
+    private static func isValidYouTubeVideoID(_ value: String) -> Bool {
+        guard value.count == 11 else { return false }
+        let allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        for character in value where !allowed.contains(character) {
+            return false
+        }
+        return true
     }
 
     static func webVideoEmbedURL(_ url: URL) -> URL? {
@@ -284,6 +296,10 @@ enum EmbeddedMediaPolicy {
         let host = (url.host ?? "").lowercased()
         guard youtubeHosts.contains(host) else { return [:] }
         return ["Referer": "https://logseq.com/"]
+    }
+
+    static func webReferer(for url: URL) -> String? {
+        webRequestHeaders(for: url)["Referer"]
     }
 }
 

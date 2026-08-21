@@ -15,6 +15,10 @@ dependencies {
     testImplementation("org.json:json:20251224")
 }
 
+configurations.configureEach {
+    exclude(group = "com.google.guava", module = "listenablefuture")
+}
+
 val repoRoot = rootProject.projectDir.parentFile
 
 tasks.register<Exec>("buildAndroidNativeCore") {

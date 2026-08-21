@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import LogseqChat
+import LogseqChatModel
 
 @Suite struct SharedCaptureTests {
     @Test func formatsSharedTextAndLinkAsOneJournalBlock() {
@@ -44,6 +45,16 @@ import Testing
         #expect(LogseqDeepLink(widgetURL) == .openCapture)
         #expect(LogseqDeepLink(populatedURL) == .captureText("From widget"))
         #expect(LogseqDeepLink(unrelatedURL) == .openJournal)
+    }
+
+    @Test @MainActor func captureEntryPointPublishesAPlatformNeutralUIRequest() {
+        let store = LogseqChatStore { _ in "{}" }
+
+        #expect(store.captureRequestRevision == 0)
+        store.requestCapture()
+        #expect(store.captureRequestRevision == 1)
+        store.requestCapture()
+        #expect(store.captureRequestRevision == 2)
     }
 
     @Test func normalizesAndroidSharedURLsIntoMarkdownLinks() {

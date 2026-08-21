@@ -255,10 +255,7 @@ public struct LogseqChatRootView : View {
             SharedCaptureInbox.shared.enqueueText(text)
             drainSharedCapturesIfReady()
         case .openCapture:
-            store.clearSelectedPage()
-            #if !SKIP
-            NotificationCenter.default.post(name: .logseqOpenCapture, object: nil)
-            #endif
+            store.requestCapture()
         case .openJournal:
             store.clearSelectedPage()
         }
@@ -384,12 +381,6 @@ public struct LogseqChatRootView : View {
         await syncCoordinator.cancelBackground()
     }
 }
-
-#if !SKIP
-extension Notification.Name {
-    static let logseqOpenCapture = Notification.Name("logseq.openCapture")
-}
-#endif
 
 struct LogseqCognitoConfiguration: Decodable {
     let region: String

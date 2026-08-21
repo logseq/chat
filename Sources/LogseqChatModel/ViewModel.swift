@@ -180,6 +180,7 @@ private struct CreateSyncGraphPayload: Encodable {
     public private(set) var lastError: LogseqChatCoreError?
     public private(set) var isRefreshing = false
     public private(set) var cursorAdvancedAfterMutation = false
+    public private(set) var captureRequestRevision = 0
 
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
@@ -541,6 +542,11 @@ private struct CreateSyncGraphPayload: Encodable {
             ),
             afterApply: nil
         )
+    }
+
+    public func requestCapture() {
+        clearSelectedPage()
+        captureRequestRevision += 1
     }
 
     public func loadOlderJournals() {
@@ -1509,7 +1515,11 @@ private struct CreateSyncGraphPayload: Encodable {
                 )
             }
             var visibleRowIDs = Set<String>()
-            outlinerRows = outlinerRows.filter { visibleRowIDs.insert($0.block.uuid).inserted }
+            outlinerRows = outlinerRows.filter { row in
+                guard !visibleRowIDs.contains(row.block.uuid) else { return false }
+                visibleRowIDs.insert(row.block.uuid)
+                return true
+            }
 
             let selectedBlock: LogseqBlock? = snapshot.selectedBlock.flatMap { selected in
                 guard !deletedBlockIDs.contains(selected.uuid) else { return nil }

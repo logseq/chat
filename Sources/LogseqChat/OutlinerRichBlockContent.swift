@@ -70,10 +70,11 @@ struct OutlinerRichBlockContent: View {
                 return .handled
             })
         #else
-        Text(verbatim: OutlinerMarkupPresentation.make(
+        let presentation = OutlinerMarkupPresentation.make(
             nodes: node.children,
             fallback: ""
-        ).plainText)
+        )
+        Text(verbatim: presentation.plainText)
         #endif
     }
 }
@@ -154,7 +155,7 @@ private struct NativeLatexView: View {
                 update: { view in view.latex = expression }
             )
         }
-        .frame(maxWidth: .infinity, minHeight: isDisplay ? 56 : 30, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: isDisplay ? 56.0 : 30.0, alignment: .leading)
         #else
         SwiftUIMath.Math(expression)
             .mathTypesettingStyle(isDisplay ? .display : .text)
@@ -236,17 +237,19 @@ private struct EmbeddedWebContent: View {
                         view.settings.javaScriptEnabled = true
                         view.settings.domStorageEnabled = true
                         view.settings.mediaPlaybackRequiresUserGesture = true
-                        view.loadUrl(
-                            url.absoluteString,
-                            EmbeddedMediaPolicy.webRequestHeaders(for: url)
+                        AndroidEmbeddedWebView.load(
+                            view: view,
+                            url: url.absoluteString,
+                            referer: EmbeddedMediaPolicy.webReferer(for: url)
                         )
                         return view
                     },
                     update: { view in
                         if view.url != url.absoluteString {
-                            view.loadUrl(
-                                url.absoluteString,
-                                EmbeddedMediaPolicy.webRequestHeaders(for: url)
+                            AndroidEmbeddedWebView.load(
+                                view: view,
+                                url: url.absoluteString,
+                                referer: EmbeddedMediaPolicy.webReferer(for: url)
                             )
                         }
                     }

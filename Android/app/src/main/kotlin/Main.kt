@@ -67,6 +67,7 @@ open class MainActivity: AppCompatActivity {
         UIApplication.launch(this)
         AndroidAssetImporter.initialize(this)
         AndroidAudioRecorder.initialize(this)
+        handleAppEntryPoint(intent)
         handleShareIntent(intent)
         enableEdgeToEdge()
 
@@ -111,7 +112,13 @@ open class MainActivity: AppCompatActivity {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleAppEntryPoint(intent)
         handleShareIntent(intent)
+    }
+
+    private fun handleAppEntryPoint(intent: Intent?) {
+        val deepLink = AndroidAppEntryPoints.canonicalDeepLink(intent?.dataString) ?: return
+        LogseqChatRuntime.shared.acceptSharedCaptureURL(URL(string = deepLink))
     }
 
     private fun handleShareIntent(intent: Intent?) {

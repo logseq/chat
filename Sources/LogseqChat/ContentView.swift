@@ -223,6 +223,7 @@ struct ContentView: View {
     @State private var authentication: LogseqAuthenticationStore
     private let syncCoordinator: GraphSyncCoordinator
     @State private var composerExpanded = false
+    @State private var handledCaptureRequestRevision = 0
     @State private var settingsPresented = false
     @State private var searchPagePresented = false
     @State private var graphsPresented = false
@@ -286,6 +287,9 @@ struct ContentView: View {
         .preferredColorScheme(
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
+        .onAppear {
+            applyCaptureRequestIfNeeded()
+        }
         .task {
             if !hasStartedContentTask {
                 hasStartedContentTask = true
@@ -334,12 +338,9 @@ struct ContentView: View {
                 outlinerKeyboardDismissalPending = false
             }
         }
-        #if !SKIP
-        .onReceive(NotificationCenter.default.publisher(for: .logseqOpenCapture)) { _ in
-            graphsPresented = false
-            expandComposer()
+        .onChange(of: store.captureRequestRevision) { _, _ in
+            applyCaptureRequestIfNeeded()
         }
-        #endif
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
                 baseURL: $baseURL,
@@ -520,6 +521,13 @@ struct ContentView: View {
             }
         }
         #endif
+    }
+
+    private func applyCaptureRequestIfNeeded() {
+        guard store.captureRequestRevision > handledCaptureRequestRevision else { return }
+        handledCaptureRequestRevision = store.captureRequestRevision
+        graphsPresented = false
+        expandComposer()
     }
 
     @ViewBuilder
