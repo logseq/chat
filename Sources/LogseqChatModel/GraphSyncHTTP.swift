@@ -109,7 +109,7 @@ public enum LogseqGraphSyncHTTP {
 
     #if !SKIP
     public static func downloadSnapshot(
-        baseURL: String, graphID: String, accessToken: String, schemaVersion: String
+        baseURL: String, graphID: String, accessToken: String
     ) async throws -> LogseqGraphSnapshotArtifact {
         let metadataRequest = try snapshotMetadataRequest(
             baseURL: baseURL, graphID: graphID, accessToken: accessToken
@@ -152,7 +152,6 @@ public enum LogseqGraphSyncHTTP {
             let metadataBody = try importMetadataBody(
                 snapshotMetadataBody: snapshotMetadataBody,
                 pullBody: pullBody,
-                schemaVersion: schemaVersion,
                 rowCount: rowCount
             )
             return LogseqGraphSnapshotArtifact(metadataBody: metadataBody, filePath: snapshotURL.path)
@@ -165,15 +164,15 @@ public enum LogseqGraphSyncHTTP {
     static func importMetadataBody(
         snapshotMetadataBody: String,
         pullBody: String,
-        schemaVersion: String,
         rowCount: Int
     ) throws -> String {
         guard rowCount >= 0,
-              !schemaVersion.isEmpty,
               var metadata = try JSONSerialization.jsonObject(
                 with: Data(snapshotMetadataBody.utf8)
               ) as? [String: Any],
               metadata["ok"] as? Bool == true,
+              let serverSchemaVersion = metadata["schema-version"] as? String,
+              !serverSchemaVersion.isEmpty,
               let pull = try JSONSerialization.jsonObject(
                 with: Data(pullBody.utf8)
               ) as? [String: Any],
@@ -183,7 +182,6 @@ public enum LogseqGraphSyncHTTP {
             throw URLError(.cannotParseResponse)
         }
         metadata["t"] = cursor
-        metadata["schema-version"] = schemaVersion
         metadata["row-count"] = rowCount
         let data = try JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys])
         guard let result = String(data: data, encoding: .utf8) else {

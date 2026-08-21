@@ -2497,6 +2497,7 @@ let dispatch session action payload =
         | Error message ->
           let code =
             if String.starts_with ~prefix:"snapshot required:" message
+               || String.equal message "sync schema mismatch"
             then "snapshot_required"
             else "sse_apply_failed"
           in

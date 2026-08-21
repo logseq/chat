@@ -21,8 +21,7 @@ class AndroidGraphSnapshotDownloader {
         baseURL: String,
         graphID: String,
         accessToken: String,
-        workingDirectory: String,
-        schemaVersion: String
+        workingDirectory: String
     ): AndroidDownloadedSnapshot {
         val metadataURL = snapshotMetadataURL(baseURL, graphID)
         val metadataBody = readMetadata(metadataURL, accessToken)
@@ -34,6 +33,9 @@ class AndroidGraphSnapshotDownloader {
         }
         if (!metadata.optBoolean("ok", false)) {
             throw AndroidGraphSnapshotTransportException("Snapshot metadata did not report success")
+        }
+        if (metadata.optString("schema-version").isBlank()) {
+            throw AndroidGraphSnapshotTransportException("Snapshot metadata schema version is invalid")
         }
         val snapshotURL = try {
             URL(metadataURL, metadata.getString("url"))
@@ -78,7 +80,6 @@ class AndroidGraphSnapshotDownloader {
                 throw AndroidGraphSnapshotTransportException("Snapshot cursor metadata is invalid")
             }
             metadata.put("t", pull.getInt("t"))
-            metadata.put("schema-version", schemaVersion)
             metadata.put("row-count", rowCount)
             return AndroidDownloadedSnapshot(metadata.toString(), snapshot.absolutePath)
         } catch (error: Exception) {

@@ -1307,6 +1307,26 @@ let remote_block uuid title =
 ;;
 
 let () =
+  let session =
+    Logseq_chat_rpc.create ~feed_sse:(fun _ -> Error "sync schema mismatch") ()
+  in
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"remote-change"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    let error = required_assoc "error" fields in
+    assert_equal
+      "schema mismatch recovery code"
+      "snapshot_required"
+      (required_string "code" error)
+  | _ -> failwith "schema mismatch should request a fresh snapshot"
+;;
+
+let () =
   (* Receiving authoritative sync while the inline editor is active must not
      cancel editing or hide the remote change. *)
   let authoritative = ref [ remote_block "editing-sync" "Local draft"; remote_block "remote-sync" "Before" ] in

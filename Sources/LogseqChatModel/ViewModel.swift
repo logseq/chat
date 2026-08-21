@@ -618,17 +618,13 @@ private struct CreateSyncGraphPayload: Encodable {
                 baseURL: baseURL,
                 graphID: graphID,
                 accessToken: accessToken,
-                workingDirectory: graphDirectory.path,
-                schemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion
-                    ?? "65.33"
+                workingDirectory: graphDirectory.path
             )
             #else
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL,
                 graphID: graphID,
-                accessToken: accessToken,
-                schemaVersion: snapshot.graphs?.first(where: { $0.id == graphID })?.schemaVersion
-                    ?? "65.33"
+                accessToken: accessToken
             )
             #endif
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
@@ -1096,9 +1092,14 @@ private struct CreateSyncGraphPayload: Encodable {
     private func opensAutocompleteImmediately(_ event: LogseqOutlinerEvent) -> Bool {
         guard event.type == "textChanged", let title = event.title,
               let caret = event.caretUTF16Offset else { return false }
+        #if SKIP
+        let location = min(max(caret, 0), title.count)
+        let prefix = title.substring(0, location)
+        #else
         let value = title as NSString
         let location = min(max(caret, 0), value.length)
         let prefix = value.substring(to: location)
+        #endif
         return prefix.hasSuffix("#") || prefix.hasSuffix("[[") || prefix.hasSuffix("::")
     }
 

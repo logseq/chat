@@ -34,7 +34,7 @@ class AndroidGraphSnapshotTransportTests {
             metadata = { exchange, baseURL ->
                 metadataAuthorization.set(exchange.requestHeaders.getFirst("Authorization"))
                 metadataPath.set(exchange.requestURI.rawPath)
-                val body = """{"ok":true,"url":"$baseURL/file","t":42,"schema-version":1,"row-count":1,"content-encoding":"gzip"}"""
+                val body = """{"ok":true,"url":"$baseURL/file","t":42,"schema-version":"65.33","row-count":1,"content-encoding":"gzip"}"""
                 respond(exchange, 200, body.toByteArray())
             },
             snapshot = { exchange ->
@@ -56,6 +56,7 @@ class AndroidGraphSnapshotTransportTests {
         assertEquals("Bearer access-token", snapshotAuthorization.get())
         assertEquals("snapshot-transit-data", File(artifact.filePath).readText())
         assertTrue(artifact.metadataBody.contains("\"t\":42"))
+        assertTrue(artifact.metadataBody.contains("\"schema-version\":\"65.33\""))
         assertEquals(1, directory.listFiles()?.size)
     }
 
@@ -63,7 +64,7 @@ class AndroidGraphSnapshotTransportTests {
     fun keepsIdentityEncodedSnapshotWithoutDecompression() {
         val server = server(
             metadata = { exchange, _ ->
-                val body = """{"ok":true,"url":"/file","t":7,"schema-version":1,"row-count":1,"content-encoding":"identity"}"""
+                val body = """{"ok":true,"url":"/file","t":7,"schema-version":"65.33","row-count":1,"content-encoding":"identity"}"""
                 respond(exchange, 200, body.toByteArray())
             },
             snapshot = { exchange -> respond(exchange, 200, "plain-snapshot".toByteArray()) }
@@ -103,7 +104,7 @@ class AndroidGraphSnapshotTransportTests {
     fun removesPartialDownloadWhenSnapshotRequestFails() {
         val server = server(
             metadata = { exchange, baseURL ->
-                val body = """{"ok":true,"url":"$baseURL/file","t":9,"schema-version":1,"row-count":1,"content-encoding":"gzip"}"""
+                val body = """{"ok":true,"url":"$baseURL/file","t":9,"schema-version":"65.33","row-count":1,"content-encoding":"gzip"}"""
                 respond(exchange, 200, body.toByteArray())
             },
             snapshot = { exchange -> respond(exchange, 500, "failed".toByteArray()) }

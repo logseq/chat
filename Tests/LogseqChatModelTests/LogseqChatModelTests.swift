@@ -88,7 +88,8 @@ private let testEmptySnapshotJSON = """
             page: page,
             blocks: [block],
             relatedBlocks: [],
-            outlinerState: .empty,
+            linkedReferenceBlocks: [],
+            outlinerState: LogseqOutlinerState.empty,
             outlinerRows: [row],
             outlinerAutocompleteCandidates: []
         )
@@ -280,9 +281,8 @@ private let testEmptySnapshotJSON = """
 
     @Test func snapshotImportMetadataCombinesCurrentServerResponses() throws {
         let body = try LogseqGraphSyncHTTP.importMetadataBody(
-            snapshotMetadataBody: #"{"ok":true,"key":"stream/graph.snapshot","url":"/sync/graph/snapshot/stream","content-encoding":"gzip"}"#,
+            snapshotMetadataBody: #"{"ok":true,"key":"stream/graph.snapshot","url":"/sync/graph/snapshot/stream","schema-version":"65.33","content-encoding":"gzip"}"#,
             pullBody: #"{"type":"pull/ok","t":48192,"txs":[]}"#,
-            schemaVersion: "65.33",
             rowCount: 7
         )
         let json = try #require(JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any])
@@ -290,6 +290,16 @@ private let testEmptySnapshotJSON = """
         #expect(json["schema-version"] as? String == "65.33")
         #expect(json["row-count"] as? Int == 7)
         #expect(json["content-encoding"] as? String == "gzip")
+    }
+
+    @Test func snapshotImportMetadataRequiresTheAuthoritativeServerSchema() throws {
+        #expect(throws: URLError.self) {
+            try LogseqGraphSyncHTTP.importMetadataBody(
+                snapshotMetadataBody: #"{"ok":true,"url":"/sync/graph/snapshot/stream"}"#,
+                pullBody: #"{"type":"pull/ok","t":10,"txs":[]}"#,
+                rowCount: 0
+            )
+        }
     }
     #endif
 
@@ -2496,12 +2506,13 @@ private let testEmptySnapshotJSON = """
 
 private func outlineBlockJSON(
     uuid: String,
+    title: String? = nil,
     parentID: String,
     order: String,
     createdAt: Int
 ) -> String {
     """
-    {"uuid":"\(uuid)","title":"\(uuid)","pageId":"page",\
+    {"uuid":"\(uuid)","title":"\(title ?? uuid)","pageId":"page",\
     "parentId":"\(parentID)","order":"\(order)","createdAt":\(createdAt),\
     "updatedAt":\(createdAt),"syncStatus":"synced"}
     """
