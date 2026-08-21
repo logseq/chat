@@ -20,6 +20,8 @@ type graph_runtime =
   }
 
 let graph_runtime : graph_runtime option ref = ref None
+let projection_session : Logseq_chat_sqlite.session option ref = ref None
+let sqlite_session : Logseq_chat_sqlite.session option ref = ref None
 let sse_parser = ref (Logseq_chat_sse.create ())
 
 let required_string fields name =
@@ -351,6 +353,28 @@ let encrypt_asset_file ~graph_id ~source_path =
 
 let graph_catalog_address = "logseq-chat/graph-catalog/v1"
 
+let model_for_graph ~graph_id =
+  match !graph_runtime with
+  | Some runtime when String.equal runtime.graph_id graph_id ->
+    Option.iter Logseq_chat_sqlite.close !projection_session;
+    let path =
+      Filename.concat (Filename.dirname runtime.checkpoint_path) "projection.sqlite"
+    in
+    let projection = Logseq_chat_sqlite.open_session path in
+    let projection_storage = Logseq_chat_sqlite.storage projection in
+    if projection_storage.storage_list_addresses () = []
+    then
+      Option.iter
+        (fun catalog ->
+          Logseq_chat_sqlite.migrate_datascript_storage
+            ~source:catalog
+            ~destination:projection)
+        !sqlite_session;
+    projection_session := Some projection;
+    Logseq_chat_model.create ~storage:projection_storage ()
+  | _ -> Logseq_chat_model.create ()
+;;
+
 let create_session ?storage ?catalog_session () =
   Logseq_chat_rpc.create
     ?storage
@@ -366,6 +390,7 @@ let create_session ?storage ?catalog_session () =
          catalog_session)
     ~open_graph
     ~import_snapshot
+    ~model_for_graph
     ~start_sse
     ~feed_sse
     ~sync_cursor
@@ -401,7 +426,6 @@ let create_session ?storage ?catalog_session () =
     ()
 ;;
 let session = ref (create_session ())
-let sqlite_session : Logseq_chat_sqlite.session option ref = ref None
 
 let assoc name fields = List.assoc_opt name fields
 
@@ -413,12 +437,13 @@ let open_database request =
        (match assoc "path" params with
         | Some (`String path) ->
           Option.iter Logseq_chat_sqlite.close !sqlite_session;
+          Option.iter Logseq_chat_sqlite.close !projection_session;
+          projection_session := None;
           graph_runtime := None;
           let opened = Logseq_chat_sqlite.open_session path in
           sqlite_session := Some opened;
           session :=
             create_session
-              ~storage:(Logseq_chat_sqlite.storage opened)
               ~catalog_session:opened
               ();
           Some (Logseq_chat_rpc.call !session {|{"apiVersion":1,"method":"snapshot","params":{}}|})

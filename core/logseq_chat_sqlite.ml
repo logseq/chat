@@ -107,3 +107,20 @@ let storage session : Ds.storage =
         sqlite_delete session.path addresses)
   }
 ;;
+
+let migrate_datascript_storage ~source ~destination =
+  let source_storage = storage source in
+  let destination_storage = storage destination in
+  let entries =
+    source_storage.storage_list_addresses ()
+    |> List.filter_map (fun address ->
+      Option.map
+        (fun payload -> address, payload)
+        (source_storage.storage_restore address))
+  in
+  match entries with
+  | [] -> ()
+  | _ ->
+    destination_storage.storage_store entries;
+    source_storage.storage_delete (List.map fst entries)
+;;

@@ -61,7 +61,7 @@ type node_route =
   }
 
 type t =
-  { model : Model.t
+  { mutable model : Model.t
   ; mutable config : Api.config option
   ; mutable available_graphs : Api.graph list
   ; mutable related_blocks : Model.block list
@@ -70,6 +70,7 @@ type t =
   ; mutable node_base_state : Outliner_state.t option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
+  ; model_for_graph : (graph_id:string -> Model.t) option
   ; start_sse : (unit -> unit) option
   ; feed_sse : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
@@ -1161,6 +1162,7 @@ let create
       ?storage
       ?open_graph
       ?import_snapshot
+      ?model_for_graph
       ?start_sse
       ?feed_sse
       ?sync_cursor
@@ -1211,6 +1213,7 @@ let create
   ; node_base_state = None
   ; open_graph
   ; import_snapshot
+  ; model_for_graph
   ; start_sse
   ; feed_sse
   ; sync_cursor
@@ -1534,7 +1537,6 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
     else (
       let upload =
         Api.asset_upload_request
-          ?page_id
           pump.config
           ~uuid:block.uuid
           ~file_name:block.title
@@ -2198,6 +2200,28 @@ let dispatch_outliner_event session payload =
           | None, _ :: _ -> snapshot_visible session))
 ;;
 
+let switch_graph_model session payload =
+  match session.model_for_graph with
+  | None -> Ok ()
+  | Some model_for_graph ->
+    (try
+       match from_string payload with
+       | `Assoc fields ->
+         (match List.assoc_opt "graphId" fields with
+          | Some (`String graph_id) when not (String.equal graph_id "") ->
+            session.model <- model_for_graph ~graph_id;
+            session.pending_sync <- None;
+            session.semantic_queue <- [];
+            session.semantic_active <- None;
+            clear_node_navigation session;
+            session.selected_sidebar_page <- None;
+            reset_outliner session;
+            Ok ()
+          | _ -> Error "graph storage payload requires graphId")
+       | _ -> Error "graph storage payload must be an object"
+     with error -> Error (Printexc.to_string error))
+;;
+
 let dispatch session action payload =
   match action with
   | "outlinerEvent" ->
@@ -2438,7 +2462,10 @@ let dispatch session action payload =
     (match session.import_snapshot, payload with
      | Some import_snapshot, Some payload ->
        (match import_snapshot payload with
-        | Ok () -> snapshot_visible session
+        | Ok () ->
+          (match switch_graph_model session payload with
+           | Ok () -> snapshot_visible session
+           | Error message -> failure ~code:"graph_projection_failed" ~message)
         | Error message -> failure ~code:"snapshot_import_failed" ~message)
      | None, _ -> failure ~code:"snapshot_import_unavailable" ~message:"Snapshot import is unavailable"
      | _, None -> failure ~code:"invalid_params" ~message:"importSnapshot requires a JSON payload")
@@ -2446,7 +2473,10 @@ let dispatch session action payload =
     (match session.open_graph, payload with
      | Some open_graph, Some payload ->
        (match open_graph payload with
-        | Ok () -> snapshot_visible session
+        | Ok () ->
+          (match switch_graph_model session payload with
+           | Ok () -> snapshot_visible session
+           | Error message -> failure ~code:"graph_projection_failed" ~message)
         | Error message -> failure ~code:"graph_open_failed" ~message)
      | None, _ -> failure ~code:"graph_open_unavailable" ~message:"Graph storage is unavailable"
      | _, None -> failure ~code:"invalid_params" ~message:"openGraph requires a JSON payload")

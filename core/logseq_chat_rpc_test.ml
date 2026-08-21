@@ -1128,6 +1128,39 @@ let () =
 ;;
 
 let () =
+  let target =
+    Logseq_chat_model.
+      { uuid = "editing-block"; title = "Editing"; page_id = "local-page"
+      ; parent_id = Some "local-page"; order = None; created_at = 1; updated_at = 1
+      ; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
+      ; status = None; is_asset = false; asset_type = None; asset_size = None
+      ; asset_checksum = None; local_path = None; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~graph_blocks:(fun () -> Some [ target ])
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"targeted-upload\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
+  let request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  let url = required_string "url" request in
+  if contains url "page-id="
+  then failwith "plain asset upload must let the server resolve today's page"
+;;
+
+let () =
   let authoritative_blocks = ref [] in
   let session =
     Logseq_chat_rpc.create
@@ -2593,5 +2626,50 @@ let () =
        (required_string "afterBlockId" splice);
      if List.length (required_list "rows" splice) <> 1
      then failwith "journal split must return exactly one inserted row"
-   | _ -> failwith "journal split must return one anchored row splice")
+  | _ -> failwith "journal split must return one anchored row splice")
+;;
+
+let () =
+  let graph_a_model = Logseq_chat_model.create () in
+  let graph_b_model = Logseq_chat_model.create () in
+  let session =
+    Logseq_chat_rpc.create
+      ~open_graph:(fun _ -> Ok ())
+      ~model_for_graph:(fun ~graph_id ->
+        if String.equal graph_id "graph-a" then graph_a_model else graph_b_model)
+      ()
+  in
+  let open_graph graph_id =
+    let payload =
+      Yojson.Basic.to_string
+        (`Assoc
+          [ "graphId", `String graph_id
+          ; "activePath", `String ("/graphs/" ^ graph_id ^ "/graph.sqlite")
+          ; "checkpointPath", `String ("/graphs/" ^ graph_id ^ "/sync.checkpoint")
+          ])
+    in
+    let request =
+      Yojson.Basic.to_string
+        (`Assoc
+          [ "apiVersion", `Int 1
+          ; "method", `String "dispatch"
+          ; ( "params"
+            , `Assoc [ "action", `String "openGraph"; "payload", `String payload ] )
+          ])
+    in
+    ignore (Logseq_chat_rpc.call session request)
+  in
+  open_graph "graph-a";
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"graph-a-asset\",\"title\":\"photo.jpg\",\"now\":1,\"assetType\":\"jpg\",\"assetSize\":4,\"assetChecksum\":\"abcd\",\"localPath\":\"Assets/photo.jpg\"}"}}|});
+  if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
+  then failwith "graph A should contain its pending asset";
+  open_graph "graph-b";
+  if Logseq_chat_model.pending_blocks session.model <> []
+  then failwith "graph B must not inherit graph A's optimistic projection";
+  open_graph "graph-a";
+  if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
+  then failwith "switching back should restore graph A's optimistic projection"
 ;;

@@ -281,3 +281,51 @@ let () =
            | _ -> failwith "cached graph RPC response is missing result")
         | _ -> failwith "cached graph RPC response is not an object"))
 ;;
+
+let () =
+  with_temp_db (fun source_path ->
+    with_temp_db (fun destination_path ->
+      let source = Logseq_chat_sqlite.open_session source_path in
+      let destination = Logseq_chat_sqlite.open_session destination_path in
+      Fun.protect
+        ~finally:(fun () ->
+          Logseq_chat_sqlite.close source;
+          Logseq_chat_sqlite.close destination)
+        (fun () ->
+          let catalog = {|{"graphs":[]}|} in
+          Logseq_chat_sqlite.store_string
+            source
+            ~address:"logseq-chat/graph-catalog/v1"
+            catalog;
+          let legacy_model =
+            Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage source) ()
+          in
+          Logseq_chat_model.cache_local_asset
+            legacy_model
+            ~uuid:"legacy-asset"
+            ~title:"photo.jpg"
+            ~asset_type:"jpg"
+            ~asset_size:4
+            ~asset_checksum:"abcd"
+            ~local_path:"Assets/photo.jpg"
+            ~now:1;
+          Logseq_chat_sqlite.migrate_datascript_storage ~source ~destination;
+          let migrated =
+            Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage destination) ()
+          in
+          assert_bool
+            "legacy optimistic data should migrate into the graph projection"
+            (List.length (Logseq_chat_model.pending_blocks migrated) = 1);
+          let emptied_source =
+            Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage source) ()
+          in
+          assert_bool
+            "legacy optimistic data should be removed from app-level storage"
+            (Logseq_chat_model.pending_blocks emptied_source = []);
+          assert_bool
+            "graph catalog metadata should remain in app-level storage"
+            (Logseq_chat_sqlite.restore_string
+               source
+               ~address:"logseq-chat/graph-catalog/v1"
+             = Some catalog))))
+;;
