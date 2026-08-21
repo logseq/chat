@@ -428,10 +428,7 @@ private struct CreateSyncGraphPayload: Encodable {
             )
         )
         guard lastError == nil else { return }
-        if !token.isEmpty {
-            syncPending()
-        }
-        if selectedGraphID != nil {
+        if let selectedGraphID {
             if refreshGraphCatalog && !token.isEmpty {
                 await performAsyncAndWait(
                     LogseqChatRPCRequest(
@@ -439,6 +436,13 @@ private struct CreateSyncGraphPayload: Encodable {
                         params: LogseqChatRPCParams(action: "refreshGraphCatalog")
                     )
                 )
+                guard
+                    lastError == nil,
+                    snapshot.graphs?.contains(where: { $0.id == selectedGraphID }) == true
+                else { return }
+            }
+            if !token.isEmpty {
+                syncPending()
             }
             return
         }

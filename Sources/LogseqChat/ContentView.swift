@@ -1385,13 +1385,27 @@ struct ContentView: View {
                 print("LogseqChat debug: access token acquired; configuring \(baseURL)")
                 #endif
                 logger.info("Configuring graph sync connection")
+                let requestedGraphID = selectedGraphID
                 await store.configureAndSelectGraph(
                     baseURL: baseURL,
                     token: accessToken,
-                    selectedGraphID: selectedGraphID.isEmpty ? nil : selectedGraphID
+                    selectedGraphID: requestedGraphID.isEmpty ? nil : requestedGraphID,
+                    refreshGraphCatalog: !requestedGraphID.isEmpty
                 )
-                if !selectedGraphID.isEmpty {
-                    beginGraphAccess(selectedGraphID)
+                if !requestedGraphID.isEmpty,
+                   store.snapshot.graphs?.contains(where: { $0.id == requestedGraphID }) != true {
+                    await syncCoordinator.stopForeground()
+                    selectedGraphID = ""
+                    await store.resetToCatalog()
+                    await store.configureAndSelectGraph(
+                        baseURL: baseURL,
+                        token: accessToken,
+                        selectedGraphID: nil
+                    )
+                    return
+                }
+                if !requestedGraphID.isEmpty {
+                    beginGraphAccess(requestedGraphID)
                 }
             } catch {
                 #if DEBUG

@@ -8,13 +8,17 @@ import Testing
         let recorder = PendingSyncRequestRecorder()
         let store = LogseqChatStore { request in
             recorder.append(request)
-            return #"{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null},"error":null}"#
+            return Self.snapshot(
+                selectedGraphID: "graph-1",
+                graphIDs: ["graph-1"]
+            )
         }
 
         await store.configureAndSelectGraph(
             baseURL: "https://api-staging.logseq.io",
             token: "access-token",
-            selectedGraphID: "graph-1"
+            selectedGraphID: "graph-1",
+            refreshGraphCatalog: true
         )
 
         try await waitUntil {
@@ -27,7 +31,50 @@ import Testing
         let pendingIndex = try #require(
             requests.firstIndex { $0.contains("\"action\":\"beginPendingSync\"") }
         )
-        #expect(configureIndex < pendingIndex)
+        let catalogIndex = try #require(
+            requests.firstIndex { $0.contains("\"action\":\"refreshGraphCatalog\"") }
+        )
+        #expect(configureIndex < catalogIndex)
+        #expect(catalogIndex < pendingIndex)
+    }
+
+    @Test @MainActor func inaccessibleCachedGraphDoesNotStartPendingSync() async throws {
+        let recorder = PendingSyncRequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"refreshGraphCatalog\"") {
+                return Self.snapshot(
+                    selectedGraphID: "graph-1",
+                    graphIDs: ["graph-2"]
+                )
+            }
+            return Self.snapshot(
+                selectedGraphID: "graph-1",
+                graphIDs: ["graph-1"]
+            )
+        }
+
+        await store.configureAndSelectGraph(
+            baseURL: "https://api-staging.logseq.io",
+            token: "access-token",
+            selectedGraphID: "graph-1",
+            refreshGraphCatalog: true
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(recorder.all.contains { $0.contains("\"action\":\"refreshGraphCatalog\"") })
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"beginPendingSync\"") })
+    }
+
+    private static func snapshot(selectedGraphID: String, graphIDs: [String]) -> String {
+        let graphs = graphIDs.map {
+            "{\"id\":\"\($0)\",\"name\":\"\($0)\",\"isEncrypted\":false,\"isReady\":true}"
+        }.joined(separator: ",")
+        return "{\"apiVersion\":1,\"ok\":true,\"result\":{\"revision\":1,"
+            + "\"query\":\"\",\"blocks\":[],\"selectedBlock\":null,"
+            + "\"lastRefreshAt\":null,\"graphName\":\"\(selectedGraphID)\","
+            + "\"selectedGraphId\":\"\(selectedGraphID)\",\"graphs\":[\(graphs)],"
+            + "\"isSearching\":false},\"error\":null}"
     }
 
     @Test func pendingAssetUploadResolvesStoredPathAgainstDocumentsDirectory() throws {
