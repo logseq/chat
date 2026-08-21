@@ -144,6 +144,7 @@ let () =
   let cases =
     [ State.Haptic State.Selection, Effects.Haptic State.Selection
     ; State.Pick_attachment "first", Effects.Pick_attachment "first"
+    ; State.Record_audio "first", Effects.Record_audio "first"
     ; State.Take_photo "first", Effects.Take_photo "first"
     ; State.Copy_text "First", Effects.Set_clipboard_text "First"
     ; State.Copy_references [ "first" ], Effects.Set_clipboard_references [ "first" ]

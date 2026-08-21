@@ -535,6 +535,7 @@ let () =
       (effects = [ expected; State.Haptic State.Impact ])
   in
   assert_media Camera (State.Take_photo "a");
+  assert_media Audio (State.Record_audio "a");
   assert_media Attachment (State.Pick_attachment "a")
 ;;
 

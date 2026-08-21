@@ -10,9 +10,14 @@
     <false/>
     <key>NSCameraUsageDescription</key>
     <string>Capture photos to add to your Logseq journal.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record audio to add to your Logseq graph.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Transcribe your audio recordings on this device.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>
+        <string>audio</string>
     </array>
 </dict>
 </plist>

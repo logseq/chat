@@ -12,6 +12,7 @@ type platform_command =
   | Set_clipboard_urls of string list
   | Pick_attachment of string
   | Take_photo of string
+  | Record_audio of string
 
 type result =
   { operations : Ops.t list
@@ -254,6 +255,8 @@ let command ~base_t ~now ~fresh_uuid context = function
     Ok { operations = []; platform = [ Pick_attachment uuid ] }
   | State.Take_photo uuid ->
     Ok { operations = []; platform = [ Take_photo uuid ] }
+  | State.Record_audio uuid ->
+    Ok { operations = []; platform = [ Record_audio uuid ] }
   | State.Copy_text text ->
     Ok { operations = []; platform = [ Set_clipboard_text text ] }
   | State.Copy_references uuids ->

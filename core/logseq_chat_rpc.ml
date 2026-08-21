@@ -13,6 +13,10 @@ type pending_transport =
 
 type pending_operation =
   | Create_block of Model.block
+  | Move_created_asset of
+      { block : Model.block
+      ; remote_uuid : string
+      }
   | Update_title of Model.block
   | Update_status of Model.block
   | Create_journal of
@@ -398,12 +402,22 @@ let outliner_context_with_blocks ?sidebar_pages session blocks =
 ;;
 
 let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
-  match session.outliner_optimistic_blocks, Outliner_state.editing_uuid session.outliner_state with
-  | Some cached, Some _ ->
-    List.filter
-      (fun (block : Model.block) -> String.equal block.page_id page_uuid)
-      cached
-  | None, _ | Some _, None -> live_blocks
+  let base =
+    match session.outliner_optimistic_blocks, Outliner_state.editing_uuid session.outliner_state with
+    | Some cached, Some _ ->
+      List.filter
+        (fun (block : Model.block) -> String.equal block.page_id page_uuid)
+        cached
+    | None, _ | Some _, None -> live_blocks
+  in
+  let known = Hashtbl.create (List.length base) in
+  List.iter (fun (block : Model.block) -> Hashtbl.replace known block.uuid ()) base;
+  let local_only =
+    Model.unsynced_blocks session.model
+    |> List.filter (fun (block : Model.block) ->
+      String.equal block.page_id page_uuid && not (Hashtbl.mem known block.uuid))
+  in
+  base @ local_only
 ;;
 
 let base_outliner_context_live session =
@@ -744,6 +758,8 @@ let outliner_command_json = function
     `Assoc [ "type", `String "pickAttachment"; "uuid", `String uuid ]
   | Take_photo uuid ->
     `Assoc [ "type", `String "takePhoto"; "uuid", `String uuid ]
+  | Record_audio uuid ->
+    `Assoc [ "type", `String "recordAudio"; "uuid", `String uuid ]
 ;;
 
 let selected_graph session =
@@ -1471,7 +1487,9 @@ and prepare_pending_creation session pump (block : Model.block) =
               ~operation:(Create_journal { block; encrypted_title = title; page_id; journal_day })
               ();
             Ok ()))
-  else prepare_pending_create_request session pump block ~title:block.title ~page_id:None
+  else
+    let page_id = Option.map (fun _ -> block.page_id) block.parent_id in
+    prepare_pending_create_request session pump block ~title:block.title ~page_id
 
 and prepare_pending_create_request session pump (block : Model.block) ~title ~page_id =
   match block.status, block.local_path, block.asset_type, block.asset_size, block.asset_checksum with
@@ -1516,6 +1534,7 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
     else (
       let upload =
         Api.asset_upload_request
+          ?page_id
           pump.config
           ~uuid:block.uuid
           ~file_name:block.title
@@ -1532,10 +1551,16 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
         ();
       Ok ())
   | None, None, None, None, None ->
+    let request =
+      match block.parent_id with
+      | Some parent_uuid when not (String.equal parent_uuid block.page_id) ->
+        Api.child_block_request pump.config ~parent_uuid ~uuid:block.uuid title
+      | _ -> Api.capture_request ?page_id pump.config ~uuid:block.uuid title
+    in
     set_pending_active
       session
       pump
-      ~transport:(Json_request (Api.capture_request ?page_id pump.config ~uuid:block.uuid title))
+      ~transport:(Json_request request)
       ~operation:(Create_block block)
       ();
     Ok ()
@@ -1697,18 +1722,37 @@ let complete_pending_active session pump (active : pending_active) response =
        debug "pending creation response failed uuid=%s message=%s" block.uuid message;
        finish_pending_block session pump block ~succeeded:false
      | Ok remote_uuid ->
-       let sync_status =
-         if pending_block_unchanged session block then "submitted" else "pending"
-       in
-       ignore
-         (Model.reconcile_created_block
-            ~sync_status
-            session.model
-            ~local_uuid:block.uuid
-            ~remote_uuid);
-       pump.active <- None;
-       prepare_pending_next session pump)
+       (match block.local_path, block.parent_id with
+        | Some _, Some parent_uuid ->
+          set_pending_active
+            session
+            pump
+            ~transport:(Json_request (Api.move_block_request pump.config ~uuid:remote_uuid ~target_uuid:parent_uuid))
+            ~operation:(Move_created_asset { block; remote_uuid })
+            ()
+        | _ ->
+          let sync_status =
+            if pending_block_unchanged session block then "submitted" else "pending"
+          in
+          ignore
+            (Model.reconcile_created_block
+               ~sync_status
+               session.model
+               ~local_uuid:block.uuid
+               ~remote_uuid);
+          pump.active <- None;
+          prepare_pending_next session pump))
   | Create_block block -> finish_pending_block session pump block ~succeeded:false
+  | Move_created_asset { block; remote_uuid } when succeeded ->
+    let sync_status =
+      if pending_block_unchanged session block then "submitted" else "pending"
+    in
+    ignore
+      (Model.reconcile_created_block
+         ~sync_status session.model ~local_uuid:block.uuid ~remote_uuid);
+    pump.active <- None;
+    prepare_pending_next session pump
+  | Move_created_asset { block; _ } -> finish_pending_block session pump block ~succeeded:false
 ;;
 
 let complete_pending_sync session payload =
@@ -1775,6 +1819,7 @@ let complete_pending_sync session payload =
                   debug "pending transport failed id=%d message=%s" active.id message;
                   (match active.operation with
                    | Create_block block | Update_title block | Update_status block
+                   | Move_created_asset { block; _ }
                    | Create_journal { block; _ } ->
                      finish_pending_block session pump block ~succeeded:false));
                Ok ()
@@ -1883,6 +1928,7 @@ let toolbar_action = function
   | "tag" -> Ok Tag_action
   | "pageReference" -> Ok Page_reference
   | "camera" -> Ok Camera
+  | "audio" -> Ok Audio
   | "attachment" -> Ok Attachment
   | "hideKeyboard" -> Ok Hide_keyboard
   | "copy" -> Ok Copy
@@ -2477,16 +2523,51 @@ let dispatch session action payload =
           (match required_string "uuid" fields, required_string "title" fields,
                  optional_int "now" fields, required_string "assetType" fields,
                  optional_int "assetSize" fields, required_string "assetChecksum" fields,
-                 required_string "localPath" fields with
+                 required_string "localPath" fields, optional_string "targetBlockId" fields with
            | Ok uuid, Ok title, Ok now, Ok asset_type, Ok (Some asset_size),
-             Ok asset_checksum, Ok local_path ->
+             Ok asset_checksum, Ok local_path, Ok target_block_id ->
+             let now = Option.value now ~default:(now_ms ()) in
+             Option.iter
+               (fun target_uuid ->
+                 if Option.is_none (Model.read_block session.model target_uuid)
+                 then
+                   let context = base_outliner_context session in
+                   match
+                     List.find_opt
+                       (fun (block : Model.block) -> String.equal block.uuid target_uuid)
+                       context.blocks
+                   with
+                   | Some target -> Model.upsert_blocks session.model [ target ] ~refresh_time:now
+                   | None -> ())
+               target_block_id;
              Model.cache_local_asset session.model ~uuid ~title ~asset_type ~asset_size
-               ~asset_checksum ~local_path ~now:(Option.value now ~default:(now_ms ()));
+               ~asset_checksum ~local_path ?target_block_id
+               ~now;
              snapshot_visible session
            | _ -> failure ~code:"invalid_params" ~message:"addAsset requires complete file metadata")
         | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
      | None -> failure ~code:"invalid_params" ~message:"addAsset requires a JSON payload")
+  | "addChildBlock" ->
+    (match payload with
+     | Some payload ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields, required_string "title" fields,
+                 required_string "parentId" fields, optional_int "now" fields with
+           | Ok uuid, Ok title, Ok parent_id, Ok now ->
+             (match
+                Model.cache_local_child session.model ~uuid ~title ~parent_id
+                  ~now:(Option.value now ~default:(now_ms ()))
+              with
+              | Ok () -> snapshot_visible session
+              | Error message -> failure ~code:"invalid_params" ~message)
+           | Error message, _, _, _ | _, Error message, _, _
+           | _, _, Error message, _ | _, _, _, Error message ->
+             failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"addChildBlock payload must be an object"
+        | exception _ -> failure ~code:"invalid_json" ~message:"addChildBlock payload must be valid JSON")
+     | None -> failure ~code:"invalid_params" ~message:"addChildBlock requires a JSON payload")
   | "beginPendingSync" ->
     (match session.config with
      | None -> pending_sync_patch session

@@ -1,0 +1,24 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Journal 08"
+- tapOn: "Edit block E2E Journal Block 08"
+- tapOn:
+    id: "button.outliner.editor.audio"
+- assertVisible: "Audio recording"
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: "Stop recording"
+    timeout: 10000
+- tapOn: "Stop recording"
+- extendedWaitUntil:
+    visible: "Audio-.*\\.m4a"
+    timeout: 15000

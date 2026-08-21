@@ -219,6 +219,25 @@ let capture_request ?page_id config ~uuid text =
   }
 ;;
 
+let child_block_request config ~parent_uuid ~uuid text =
+  { method_ = "POST"
+  ; url =
+      Printf.sprintf
+        "%s/api/v1/graphs/%s/blocks/%s/children"
+        (api_root config)
+        (url_encode config.graph_id)
+        (url_encode parent_uuid)
+  ; body =
+      Some
+        (to_string
+           (`Assoc
+             [ "position", `String "append"
+             ; "blocks", `List [ `Assoc [ "uuid", `String uuid; "title", `String text ] ]
+             ]))
+  ; token = config.token
+  }
+;;
+
 let task_request ?page_id config ~uuid ~status text =
   { method_ = "POST"
   ; url = Printf.sprintf "%s/api/v1/graphs/%s/tasks" (api_root config) (url_encode config.graph_id)
@@ -235,19 +254,41 @@ let task_request ?page_id config ~uuid ~status text =
   }
 ;;
 
-let asset_upload_request config ~uuid ~file_name ~size ~checksum ~file_path ~content_type =
+let asset_upload_request ?page_id config ~uuid ~file_name ~size ~checksum ~file_path ~content_type =
   { request =
       { method_ = "POST"
       ; url =
           Printf.sprintf
-            "%s/api/v1/graphs/%s/assets?uuid=%s&file-name=%s&size=%d&checksum=%s"
+            "%s/api/v1/graphs/%s/assets?uuid=%s&file-name=%s&size=%d&checksum=%s%s"
             (api_root config) (url_encode config.graph_id) (url_encode uuid)
             (url_encode file_name) size (url_encode checksum)
+            (match page_id with
+             | Some page_id -> "&page-id=" ^ url_encode page_id
+             | None -> "")
       ; body = None
       ; token = config.token
       }
   ; file_path
   ; content_type
+  }
+;;
+
+let move_block_request config ~uuid ~target_uuid =
+  { method_ = "POST"
+  ; url =
+      Printf.sprintf
+        "%s/api/v1/graphs/%s/block-moves"
+        (api_root config)
+        (url_encode config.graph_id)
+  ; body =
+      Some
+        (to_string
+           (`Assoc
+             [ "block-ids", `List [ `String uuid ]
+             ; "target-id", `String target_uuid
+             ; "position", `String "last-child"
+             ]))
+  ; token = config.token
   }
 ;;
 

@@ -234,6 +234,11 @@ struct ContentView: View {
     @State private var creatingGraph = false
     @State private var graphUnlockInProgress = false
     @State private var fileImporterPresented = false
+    @State private var pendingAssetTargetBlockID: String?
+    #if SKIP
+    @State private var androidAudioRecorderPresented = false
+    @State private var androidAudioRecorderTargetBlockID: String?
+    #endif
     @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var editingBlock: LogseqBlock?
     @State private var blocksPendingDeletion: [LogseqBlock] = []
@@ -249,6 +254,8 @@ struct ContentView: View {
     @State private var photoPickerPresented = false
     #if os(iOS)
     @State private var cameraPresented = false
+    @State private var audioRecorderPresented = false
+    @State private var audioRecorderTargetBlockID: String?
     @State private var previewAssetURL: URL?
     #endif
     #endif
@@ -472,10 +479,42 @@ struct ContentView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $audioRecorderPresented) {
+            AudioRecorderSheet(targetBlockID: audioRecorderTargetBlockID) { asset, targetBlockID in
+                let assetUUID = store.addAsset(
+                    title: asset.title,
+                    assetType: AudioRecordingPolicy.fileExtension,
+                    assetSize: asset.size,
+                    assetChecksum: asset.checksum,
+                    localPath: LocalAssetPath.storedPath(asset.path),
+                    targetBlockId: targetBlockID
+                )
+                audioRecorderTargetBlockID = nil
+                return assetUUID
+            } onTranscript: { assetUUID, transcript in
+                store.addChildBlock(transcript, parentId: assetUUID)
+            }
+        }
         .quickLookPreview($previewAssetURL)
         #endif
         .onChange(of: selectedPhotoItems) { _, items in
             importPhotos(items)
+        }
+        #endif
+        #if SKIP
+        .sheet(isPresented: $androidAudioRecorderPresented) {
+            AndroidAudioRecorderSheet(targetBlockID: androidAudioRecorderTargetBlockID) {
+                title, type, size, checksum, path, targetBlockID in
+                store.addAsset(
+                    title: title,
+                    assetType: type,
+                    assetSize: size,
+                    assetChecksum: checksum,
+                    localPath: path,
+                    targetBlockId: targetBlockID
+                )
+                androidAudioRecorderTargetBlockID = nil
+            }
         }
         #endif
     }
@@ -1809,12 +1848,24 @@ struct ContentView: View {
                 }.joined(separator: "\n")
                 #endif
             case "pickAttachment":
+                pendingAssetTargetBlockID = command.uuid
                 fileImporterPresented = true
             case "takePhoto":
                 #if !SKIP && os(iOS)
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                    pendingAssetTargetBlockID = command.uuid
                     cameraPresented = true
                 }
+                #endif
+            case "recordAudio":
+                #if SKIP
+                androidAudioRecorderTargetBlockID = command.uuid
+                androidAudioRecorderPresented = true
+                #else
+                #if !SKIP && os(iOS)
+                audioRecorderTargetBlockID = command.uuid
+                audioRecorderPresented = true
+                #endif
                 #endif
             case "focusBlock":
                 break
@@ -2045,9 +2096,19 @@ struct ContentView: View {
                             Text("File")
                         }
                     }
+                    Button {
+                        androidAudioRecorderTargetBlockID = nil
+                        androidAudioRecorderPresented = true
+                    } label: {
+                        HStack {
+                            IconImage(name: "audio")
+                            Text("Audio recording")
+                        }
+                    }
                     #else
                     // Bottom-anchored iOS menus place the first action nearest the trigger.
                     Button {
+                        pendingAssetTargetBlockID = nil
                         fileImporterPresented = true
                     } label: {
                         HStack {
@@ -2057,6 +2118,7 @@ struct ContentView: View {
                     }
                     #if os(iOS)
                     Button {
+                        pendingAssetTargetBlockID = nil
                         cameraPresented = true
                     } label: {
                         HStack {
@@ -2067,6 +2129,7 @@ struct ContentView: View {
                     .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
                     #endif
                     Button {
+                        pendingAssetTargetBlockID = nil
                         photoPickerPresented = true
                     } label: {
                         HStack {
@@ -2074,6 +2137,17 @@ struct ContentView: View {
                             Text("Photo")
                         }
                     }
+                    #if os(iOS)
+                    Button {
+                        audioRecorderTargetBlockID = nil
+                        audioRecorderPresented = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "mic")
+                            Text("Audio recording")
+                        }
+                    }
+                    #endif
                     #endif
                 } label: {
                     IconImage(name: "plus", size: 24)
@@ -2336,7 +2410,8 @@ struct ContentView: View {
             assetType: metadata.assetType,
             assetSize: metadata.size,
             assetChecksum: metadata.checksum,
-            localPath: LocalAssetPath.storedPath(metadata.path)
+            localPath: LocalAssetPath.storedPath(metadata.path),
+            targetBlockId: pendingAssetTargetBlockID
         )
     }
 

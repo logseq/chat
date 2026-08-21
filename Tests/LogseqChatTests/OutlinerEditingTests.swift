@@ -135,14 +135,14 @@ import Testing
 
     @Test func editorToolbarMatchesCurrentLogseqMobileOrderAndSymbols() {
         let expected: [OutlinerToolbarAction] = [
-            .task, .outdent, .indent, .tag, .camera, .attachment,
+            .task, .outdent, .indent, .tag, .camera, .audio, .attachment,
             .pageReference,
         ]
         #expect(OutlinerToolbarPolicy.editorActions == expected)
         #expect(OutlinerToolbarPolicy.trailingEditorAction == .hideKeyboard)
         #expect(OutlinerToolbarPolicy.editorActions.map(\.systemImageName) == [
             "checkmark.square", "arrow.left", "arrow.right", "number", "camera",
-            "paperclip", "parentheses",
+            "mic", "paperclip", "parentheses",
         ])
         #expect(OutlinerToolbarPolicy.trailingEditorAction.systemImageName == "keyboard.chevron.compact.down")
     }
@@ -522,6 +522,7 @@ import Testing
             .tag: ("tag", "number", "Tag", true),
             .pageReference: ("pageReference", "parentheses", "Page reference", true),
             .camera: ("camera", "camera", "Photo", false),
+            .audio: ("audio", "mic", "Record audio", false),
             .attachment: ("attachment", "paperclip", "Upload asset", false),
             .hideKeyboard: ("hideKeyboard", "keyboard.chevron.compact.down", "Hide keyboard", false),
             .copy: ("copy", "doc.on.doc", "Copy", false),
@@ -544,6 +545,18 @@ import Testing
             #expect(action.accessibilityTitle == contract.2)
             #expect(action.preservesInlineEditorFocus == contract.3)
         }
+    }
+
+    @Test func audioRecordingMatchesLogseqMobileLimitsAndFormatting() {
+        #expect(AudioRecordingPolicy.maximumDurationSeconds == 600)
+        #expect(AudioRecordingPolicy.elapsedTitle(seconds: 0) == "00:00")
+        #expect(AudioRecordingPolicy.elapsedTitle(seconds: 599) == "09:59")
+        #expect(AudioRecordingPolicy.elapsedTitle(seconds: 600) == "10:00")
+        #expect(AudioRecordingPolicy.fileExtension == "m4a")
+        #expect(AudioRecordingPolicy.fileName(stamp: "2026-08-22 00-32-18") ==
+            "Audio-2026-08-22 00-32-18.m4a")
+        #expect(AudioRecordingPolicy.supportsTranscription(iOSMajorVersion: 25) == false)
+        #expect(AudioRecordingPolicy.supportsTranscription(iOSMajorVersion: 26))
     }
 
     @Test func structuralEditingCommandsKeepTheInlineEditorFocused() {

@@ -180,6 +180,7 @@ let () =
     (Option.value tx_batch.body ~default:"");
   let upload =
     Logseq_chat_api.asset_upload_request
+      ~page_id:"page-target"
       config
       ~uuid:"client-asset"
       ~file_name:"photo.jpg"
@@ -193,6 +194,20 @@ let () =
   if upload.request.body <> None then failwith "asset bytes must not be encoded in request JSON";
   if not (contains upload.request.url "?uuid=client-asset&")
   then failwith "asset upload must preserve the local block uuid in the query";
+  if not (contains upload.request.url "&page-id=page-target")
+  then failwith "asset upload must preserve the target page in the query";
+  let move =
+    Logseq_chat_api.move_block_request
+      config ~uuid:"client-asset" ~target_uuid:"editing-block"
+  in
+  assert_equal
+    "asset child move URL"
+    "https://api.example/api/v1/graphs/graph-1/block-moves"
+    move.url;
+  assert_equal
+    "asset child move body"
+    {|{"block-ids":["client-asset"],"target-id":"editing-block","position":"last-child"}|}
+    (Option.value move.body ~default:"");
   let encrypted_upload =
     Logseq_chat_api.encrypted_asset_upload_request
       config

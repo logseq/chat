@@ -270,6 +270,7 @@ enum OutlinerToolbarAction: Hashable {
     case tag
     case pageReference
     case camera
+    case audio
     case attachment
     case hideKeyboard
     case copy
@@ -288,6 +289,7 @@ enum OutlinerToolbarAction: Hashable {
         case .tag: return "tag"
         case .pageReference: return "pageReference"
         case .camera: return "camera"
+        case .audio: return "audio"
         case .attachment: return "attachment"
         case .hideKeyboard: return "hideKeyboard"
         case .copy: return "copy"
@@ -306,6 +308,7 @@ enum OutlinerToolbarAction: Hashable {
         case .indent: return "arrow.right"
         case .tag: return "number"
         case .camera: return "camera"
+        case .audio: return "mic"
         case .attachment: return "paperclip"
         case .pageReference: return "parentheses"
         case .hideKeyboard: return "keyboard.chevron.compact.down"
@@ -327,6 +330,7 @@ enum OutlinerToolbarAction: Hashable {
         case .tag: return "Tag"
         case .pageReference: return "Page reference"
         case .camera: return "Photo"
+        case .audio: return "Record audio"
         case .attachment: return "Upload asset"
         case .hideKeyboard: return "Hide keyboard"
         case .copy: return "Copy"
@@ -343,7 +347,7 @@ enum OutlinerToolbarAction: Hashable {
         switch self {
         case .task, .outdent, .indent, .tag, .pageReference:
             return true
-        case .camera, .attachment, .hideKeyboard, .copy, .delete,
+        case .camera, .audio, .attachment, .hideKeyboard, .copy, .delete,
              .copyReference, .copyURL, .unselect, .undo, .redo:
             return false
         }
@@ -359,7 +363,7 @@ enum OutlinerToolbarPolicy {
     static let captionHeight: CGFloat = 14
 
     static let editorActions: [OutlinerToolbarAction] = [
-        .task, .outdent, .indent, .tag, .camera, .attachment,
+        .task, .outdent, .indent, .tag, .camera, .audio, .attachment,
         .pageReference,
     ]
 

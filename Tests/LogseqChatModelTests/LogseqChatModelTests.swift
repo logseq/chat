@@ -595,12 +595,13 @@ private let testEmptySnapshotJSON = """
             return testEmptySnapshotJSON
         }
         store.sendTask("Follow up", status: LogseqTaskStatus.todo)
-        store.addAsset(
+        let assetUUID = store.addAsset(
             title: "photo.jpg",
             assetType: "jpg",
             assetSize: 2048,
             assetChecksum: "abc",
-            localPath: "/documents/photo.jpg"
+            localPath: "/documents/photo.jpg",
+            targetBlockId: "editing-block"
         )
         #expect(store.snapshot.blocks.isEmpty)
         try await waitUntil {
@@ -611,6 +612,18 @@ private let testEmptySnapshotJSON = """
             recorder.all.last { $0.contains("\"action\":\"addAsset\"") }
         )
         #expect(UUID(uuidString: try #require(extractSendUUID(from: assetRequest))) != nil)
+        #expect(assetUUID == extractSendUUID(from: assetRequest))
+        #expect(assetRequest.contains(#"\"targetBlockId\":\"editing-block\""#))
+
+        let transcriptUUID = store.addChildBlock("Transcript", parentId: assetUUID)
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"addChildBlock\"") }
+        }
+        let transcriptRequest = try #require(
+            recorder.all.last { $0.contains("\"action\":\"addChildBlock\"") }
+        )
+        #expect(transcriptUUID == extractSendUUID(from: transcriptRequest))
+        #expect(transcriptRequest.contains(#"\"parentId\":\"\#(assetUUID)\""#))
     }
 
     @Test @MainActor func updateBlockTitleAppliesCoreSnapshot() async throws {

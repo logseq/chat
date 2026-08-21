@@ -64,6 +64,7 @@ open class MainActivity: AppCompatActivity {
         logger.info("starting activity")
         UIApplication.launch(this)
         AndroidAssetImporter.initialize(this)
+        AndroidAudioRecorder.initialize(this)
         enableEdgeToEdge()
 
         setContent {

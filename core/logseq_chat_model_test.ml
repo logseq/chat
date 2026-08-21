@@ -186,6 +186,39 @@ let assert_task_and_asset_metadata_persist () =
   assert_equal "asset local path" "/documents/voice.m4a" (Option.get asset.local_path)
 ;;
 
+let assert_targeted_asset_is_a_child_of_the_editing_block () =
+  let model = Logseq_chat_model.create () in
+  let parent =
+    { (block ~uuid:"editing-block" ~title:"Editing" ~page_id:"page-target" ~created_at:100) with
+      parent_id = Some "page-target"
+    }
+  in
+  Logseq_chat_model.upsert_blocks model [ parent ] ~refresh_time:100;
+  Logseq_chat_model.cache_local_asset
+    model
+    ~uuid:"audio-asset"
+    ~title:"Audio.m4a"
+    ~asset_type:"m4a"
+    ~asset_size:4096
+    ~asset_checksum:"checksum"
+    ~local_path:"/documents/Audio.m4a"
+    ~target_block_id:"editing-block"
+    ~now:200;
+  let asset = Option.get (Logseq_chat_model.read_block model "audio-asset") in
+  assert_equal "targeted asset page" "page-target" asset.page_id;
+  assert_equal "targeted asset parent" "editing-block" (Option.get asset.parent_id)
+  ;
+  (match
+     Logseq_chat_model.cache_local_child
+       model ~uuid:"transcript" ~title:"Transcript" ~parent_id:"audio-asset" ~now:201
+   with
+   | Ok () -> ()
+   | Error message -> failwith message);
+  let transcript = Option.get (Logseq_chat_model.read_block model "transcript") in
+  assert_equal "transcript page" "page-target" transcript.page_id;
+  assert_equal "transcript parent" "audio-asset" (Option.get transcript.parent_id)
+;;
+
 let assert_uploaded_asset_reconciles_server_uuid () =
   let model = Logseq_chat_model.create () in
   Logseq_chat_model.cache_local_asset
@@ -338,6 +371,7 @@ let () =
   assert_journal_blocks_follow_page_tree_and_outliner_order ();
   assert_partial_search_result_preserves_journal_relation ();
   assert_task_and_asset_metadata_persist ();
+  assert_targeted_asset_is_a_child_of_the_editing_block ();
   assert_uploaded_asset_reconciles_server_uuid ();
   assert_remote_refresh_preserves_synced_local_asset_metadata ();
   assert_created_block_reconciles_server_uuid ();

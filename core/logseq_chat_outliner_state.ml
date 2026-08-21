@@ -57,6 +57,7 @@ type toolbar_action =
   | Tag_action
   | Page_reference
   | Camera
+  | Audio
   | Attachment
   | Hide_keyboard
   | Copy
@@ -144,6 +145,7 @@ type cmd =
       }
   | Pick_attachment of string
   | Take_photo of string
+  | Record_audio of string
   | Insert_root_block of { page_uuid : string }
   | Copy_text of string
   | Copy_references of string list
@@ -931,6 +933,8 @@ let update context state message =
        { state with editing = Some editing; autocomplete = autocomplete_for editing.title editing.caret }, [ Haptic Impact ])
   | Toolbar Camera ->
     (match state.editing with Some editing -> state, [ Take_photo editing.uuid; Haptic Impact ] | None -> state, [])
+  | Toolbar Audio ->
+    (match state.editing with Some editing -> state, [ Record_audio editing.uuid; Haptic Impact ] | None -> state, [])
   | Toolbar Attachment ->
     (match state.editing with Some editing -> state, [ Pick_attachment editing.uuid; Haptic Impact ] | None -> state, [])
   | Toolbar Copy ->

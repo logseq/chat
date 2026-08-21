@@ -54,6 +54,7 @@ let () =
     ; "tag", Tag_action
     ; "pageReference", Page_reference
     ; "camera", Camera
+    ; "audio", Audio
     ; "attachment", Attachment
     ; "hideKeyboard", Hide_keyboard
     ; "copy", Copy
@@ -551,6 +552,45 @@ let () =
        assert_int_equal "created at" 1_776_000_000_000 (required_int "createdAt" block)
      | _ -> failwith "expected one returned block")
   | _ -> failwith "expected RPC response object"
+;;
+
+let () =
+  let parent =
+    Logseq_chat_model.
+      { uuid = "page-parent"; title = "Parent"; page_id = "selected-page"
+      ; parent_id = Some "selected-page"; order = Some "a0"; created_at = 1; updated_at = 1
+      ; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
+      ; status = None; is_asset = false; asset_type = None; asset_size = None
+      ; asset_checksum = None; local_path = None; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_page_blocks:(fun page_id ->
+        if String.equal page_id "selected-page" then Some [ parent ] else Some [])
+      ()
+  in
+  session.selected_sidebar_page <-
+    Some Logseq_chat_graph_read.{ uuid = "selected-page"; title = "Selected page" };
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"visible-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"page-parent\"}"}}|}
+    |> from_string
+  in
+  let fields = match response with `Assoc fields -> fields | _ -> failwith "missing RPC response" in
+  let result = required_assoc "result" fields in
+  let rows = required_list "outlinerRows" result in
+  if
+    not
+      (List.exists
+         (function
+           | `Assoc fields ->
+             let block = required_assoc "block" fields in
+             String.equal (required_string "uuid" block) "visible-asset"
+           | _ -> false)
+         rows)
+  then failwith "targeted local asset must appear immediately on a selected page"
 ;;
 
 let () =
@@ -1063,6 +1103,28 @@ let () =
     "addAsset"
     {|{"uuid":"asset-local","title":"photo.jpg","now":1776000000001,"assetType":"jpg","assetSize":2048,"assetChecksum":"abc","localPath":"/documents/photo.jpg"}|}
     "asset-local"
+;;
+
+let () =
+  let session = Logseq_chat_rpc.create () in
+  Logseq_chat_model.upsert_blocks
+    session.model
+    [ Logseq_chat_model.
+        { uuid = "editing-block"; title = "Editing"; page_id = "target-page"
+        ; parent_id = Some "target-page"; order = None; created_at = 1; updated_at = 1
+        ; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
+        ; status = None; is_asset = false; asset_type = None; asset_size = None
+        ; asset_checksum = None; local_path = None; journal = None
+        }
+    ]
+    ~refresh_time:1;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"targeted-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
+  let asset = Option.get (Logseq_chat_model.read_block session.model "targeted-asset") in
+  assert_equal "RPC targeted asset page" "target-page" asset.page_id;
+  assert_equal "RPC targeted asset parent" "editing-block" (Option.get asset.parent_id)
 ;;
 
 let () =

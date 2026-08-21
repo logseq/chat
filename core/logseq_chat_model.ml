@@ -573,15 +573,38 @@ let cache_local_task model ~uuid ~title ~status ~now =
     ~refresh_time:now
 ;;
 
-let cache_local_asset model ~uuid ~title ~asset_type ~asset_size ~asset_checksum ~local_path ~now =
-  let page_id = journal_page_id_for_ms now in
-  upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
+let cache_local_asset ?target_block_id model ~uuid ~title ~asset_type ~asset_size ~asset_checksum ~local_path ~now =
+  let target = Option.bind target_block_id (read_block model) in
+  let page_id =
+    match target with
+    | Some block -> block.page_id
+    | None -> journal_page_id_for_ms now
+  in
+  if Option.is_none target
+  then upsert_journal_page model ~uuid:page_id ~journal_day:(journal_day_for_ms now);
   upsert_blocks model
-    [ { uuid; title; page_id; parent_id = None; order = None; created_at = now
+    [ { uuid; title; page_id; parent_id = Option.map (fun block -> block.uuid) target
+      ; order = None; created_at = now
       ; updated_at = now; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
       ; status = None; is_asset = true; asset_type = Some asset_type; asset_size = Some asset_size
       ; asset_checksum = Some asset_checksum; local_path = Some local_path; journal = None } ]
     ~refresh_time:now
+;;
+
+let cache_local_child model ~uuid ~title ~parent_id ~now =
+  match read_block model parent_id with
+  | None -> Error ("unknown parent block: " ^ parent_id)
+  | Some parent ->
+    upsert_blocks model
+      [ { uuid; title; page_id = parent.page_id; parent_id = Some parent_id; order = None
+        ; created_at = now; updated_at = now; sync_status = "pending"; tags = []
+        ; references = []; breadcrumbs = []; status = None; is_asset = false
+        ; asset_type = None; asset_size = None; asset_checksum = None; local_path = None
+        ; journal = None
+        }
+      ]
+      ~refresh_time:now;
+    Ok ()
 ;;
 
 let pending_blocks model =

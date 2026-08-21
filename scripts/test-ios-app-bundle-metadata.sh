@@ -54,6 +54,9 @@ check_plist "scene manifest supports multiple scenes" "true" -c "Print :UIApplic
 check_plist "indirect input support is present" "true" -c "Print :UIApplicationSupportsIndirectInputEvents"
 check_plist "portrait orientation is present" "UIInterfaceOrientationPortrait" -c "Print :UISupportedInterfaceOrientations:2"
 check_plist "background fetch mode is present" "fetch" -c "Print :UIBackgroundModes:0"
+check_plist "background audio mode is present" "audio" -c "Print :UIBackgroundModes:1"
+check_plist_exists "microphone usage description is present" -c "Print :NSMicrophoneUsageDescription"
+check_plist_exists "speech usage description is present" -c "Print :NSSpeechRecognitionUsageDescription"
 check_plist "background refresh task identifier is present" "com.logseq.chat.refresh" -c "Print :BGTaskSchedulerPermittedIdentifiers:0"
 
 if [[ $failures -ne 0 ]]; then

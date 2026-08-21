@@ -137,6 +137,14 @@ private struct AddAssetPayload: Encodable {
     let assetSize: Int
     let assetChecksum: String
     let localPath: String
+    let targetBlockId: String?
+}
+
+private struct AddChildBlockPayload: Encodable {
+    let uuid: String
+    let title: String
+    let parentId: String
+    let now: Int64
 }
 
 private struct ImportSnapshotPayload: Encodable {
@@ -786,19 +794,32 @@ private struct CreateSyncGraphPayload: Encodable {
         dispatchEncoded("sendTask", SendTaskPayload(text: trimmed, uuid: uuid, now: now, status: statusPayload))
     }
 
-    public func addAsset(
+    @discardableResult public func addAsset(
         title: String, assetType: String, assetSize: Int,
-        assetChecksum: String, localPath: String
-    ) {
+        assetChecksum: String, localPath: String, targetBlockId: String? = nil
+    ) -> String {
         let now = Self.nowMilliseconds()
         let uuid = UUID().uuidString.lowercased()
         dispatchEncoded(
             "addAsset",
             AddAssetPayload(
                 uuid: uuid, title: title, now: now, assetType: assetType,
-                assetSize: assetSize, assetChecksum: assetChecksum, localPath: localPath
+                assetSize: assetSize, assetChecksum: assetChecksum, localPath: localPath,
+                targetBlockId: targetBlockId
             )
         )
+        return uuid
+    }
+
+    @discardableResult public func addChildBlock(_ title: String, parentId: String) -> String {
+        let uuid = UUID().uuidString.lowercased()
+        dispatchEncoded(
+            "addChildBlock",
+            AddChildBlockPayload(
+                uuid: uuid, title: title, parentId: parentId, now: Self.nowMilliseconds()
+            )
+        )
+        return uuid
     }
 
     private func dispatchEncoded<T: Encodable>(_ action: String, _ payloadValue: T) {
@@ -1255,7 +1276,7 @@ private struct CreateSyncGraphPayload: Encodable {
         case "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
              "select", "clearSelection", "loadOlderJournals", "loadBlockReferences",
              "loadPageReferences", "loadTagObjects", "searchNodes", "send", "sendTask",
-             "addAsset", "updateBlock", "updateBlockStatus", "deleteBlock":
+             "addAsset", "addChildBlock", "updateBlock", "updateBlockStatus", "deleteBlock":
             return .interaction
         case "open", "configure", "refresh", "refreshGraphCatalog", "createSyncGraph", "openGraph",
              "importSnapshot", "startSSE", "feedSSE", "stopSSE", "beginPendingSync",
