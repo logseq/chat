@@ -316,11 +316,8 @@ struct ContentView: View {
             await store.runPendingSyncLoop()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                store.syncPending()
-                if authentication.state == .signedIn, !selectedGraphID.isEmpty {
-                    beginGraphAccess(selectedGraphID)
-                }
+            if phase == .active, authentication.state == .signedIn {
+                connectWithCurrentAccessToken()
             }
         }
         .onChange(of: store.snapshot.selectedGraphId) { _, graphID in

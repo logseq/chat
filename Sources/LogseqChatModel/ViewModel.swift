@@ -428,6 +428,9 @@ private struct CreateSyncGraphPayload: Encodable {
             )
         )
         guard lastError == nil else { return }
+        if !token.isEmpty {
+            syncPending()
+        }
         if selectedGraphID != nil {
             if refreshGraphCatalog && !token.isEmpty {
                 await performAsyncAndWait(
