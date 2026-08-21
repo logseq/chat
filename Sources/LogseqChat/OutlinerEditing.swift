@@ -430,11 +430,83 @@ enum AppNavigationRoute: Hashable {
     case node(String)
 }
 
+struct NodeNavigationPreview {
+    let title: String
+    let rows: [LogseqOutlineRow]
+    let sections: [LogseqBlockSection]
+}
+
+enum NodeNavigationPreviewPolicy {
+    static func make(
+        uuid: String,
+        rows: [LogseqOutlineRow],
+        sections: [LogseqBlockSection],
+        linkedTitle: String?
+    ) -> NodeNavigationPreview {
+        let matchingSections = sections.filter { section in
+            section.blocks.contains { $0.pageId == uuid }
+        }
+        let matchingBlockIDs = Set(
+            matchingSections.flatMap(\.blocks).map(\.uuid)
+        )
+        let matchingRows = rows.filter { matchingBlockIDs.contains($0.block.uuid) }
+        let targetBlock = rows.first { $0.block.uuid == uuid }?.block
+        let title = matchingSections.first?.title
+            ?? targetBlock?.title
+            ?? linkedTitle
+            ?? "Untitled"
+        return NodeNavigationPreview(
+            title: title,
+            rows: matchingRows,
+            sections: matchingSections
+        )
+    }
+}
+
 enum AppNavigationPathPolicy {
     static func nodeCount(_ path: [AppNavigationRoute]) -> Int { path.count }
 
     static func shouldAppend(_ route: AppNavigationRoute, to path: [AppNavigationRoute]) -> Bool {
         path.last != route
+    }
+
+    static func pathAfterRequest(
+        _ route: AppNavigationRoute,
+        in path: [AppNavigationRoute]
+    ) -> [AppNavigationRoute] {
+        shouldAppend(route, to: path) ? path + [route] : path
+    }
+
+    static func pathAfterResolution(
+        _ route: AppNavigationRoute,
+        resolved: Bool,
+        in path: [AppNavigationRoute]
+    ) -> [AppNavigationRoute] {
+        guard !resolved,
+              let index = path.lastIndex(of: route) else { return path }
+        var result = path
+        result.remove(at: index)
+        return result
+    }
+
+    static func coreCloseCount(
+        previousPath: [AppNavigationRoute],
+        path: [AppNavigationRoute],
+        projectedNodeCount: Int
+    ) -> Int {
+        let presentedCloseCount = max(0, nodeCount(previousPath) - nodeCount(path))
+        let projectedExcess = max(0, projectedNodeCount - nodeCount(path))
+        return min(presentedCloseCount, projectedExcess)
+    }
+
+    static func shouldKeepResolvedProjection(
+        _ route: AppNavigationRoute,
+        requestedDepth: Int,
+        in path: [AppNavigationRoute]
+    ) -> Bool {
+        requestedDepth > 0
+            && path.count >= requestedDepth
+            && path[requestedDepth - 1] == route
     }
 }
 

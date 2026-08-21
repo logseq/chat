@@ -242,6 +242,7 @@ struct ContentView: View {
     @State private var sidebarMotion = SidebarMotionState()
     @State private var appNavigationPath: [AppNavigationRoute] = []
     @State private var pendingNodeRoutes: Set<AppNavigationRoute> = []
+    @State private var nodeNavigationPreviews: [String: NodeNavigationPreview] = [:]
     #if !SKIP
     @State private var taskStatusPickerPresented = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
@@ -578,10 +579,19 @@ struct ContentView: View {
                 }
         }
         .onChange(of: appNavigationPath) { previousPath, path in
-            let closedNodes = AppNavigationPathPolicy.nodeCount(previousPath)
-                - AppNavigationPathPolicy.nodeCount(path)
+            let closedNodes = AppNavigationPathPolicy.coreCloseCount(
+                previousPath: previousPath,
+                path: path,
+                projectedNodeCount: store.snapshot.nodeRoutes.count
+            )
             if closedNodes > 0 {
                 for _ in 0..<closedNodes { store.closeNode() }
+            }
+            let activeNodeIDs = Set(path.map { route in
+                switch route { case let .node(uuid): uuid }
+            })
+            nodeNavigationPreviews = nodeNavigationPreviews.filter {
+                activeNodeIDs.contains($0.key)
             }
         }
         #if os(iOS)
@@ -603,9 +613,10 @@ struct ContentView: View {
         Group {
             if let projection = store.snapshot.nodeRoutes.last(where: { $0.uuid == uuid }) {
                 nodeProjectionContent(projection)
+            } else if let preview = nodeNavigationPreviews[uuid] {
+                nodeNavigationPreviewContent(preview)
             } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Color.clear
             }
         }
         .background(appBackground)
@@ -613,6 +624,33 @@ struct ContentView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+
+    private func nodeNavigationPreviewContent(_ preview: NodeNavigationPreview) -> some View {
+        OutlinerView(
+            rows: preview.rows,
+            sections: preview.sections,
+            editing: nil,
+            selectedBlockIDs: [],
+            statuses: availableTaskStatuses,
+            error: nil,
+            hasOlderJournals: false,
+            topPadding: 16,
+            bottomPadding: blockListContentBottomPadding,
+            sendEvent: { _ in },
+            onBeginInteraction: {},
+            onZoomBlock: openOutlinerNode,
+            onOpenMarkupLink: openMarkupLink,
+            onLoadOlderJournals: {},
+            relatedTitle: nil,
+            relatedEmptyTitle: nil,
+            relatedBlocks: [],
+            relatedAccessibilityIdentifier: "section.node.linked-references",
+            linkedReferenceBlocks: [],
+            showsEmptyPlaceholder: false,
+            onAddFirstBlock: nil,
+            isJournalHome: false
+        )
     }
 
     @ViewBuilder private func nodeProjectionContent(_ projection: LogseqNodeProjection) -> some View {
@@ -660,7 +698,9 @@ struct ContentView: View {
 
     private func nodeProjectionTitle(uuid: String) -> String {
         guard let projection = store.snapshot.nodeRoutes.last(where: { $0.uuid == uuid }) else {
-            return markupTargetTitle(uuid: uuid) ?? "Node"
+            return nodeNavigationPreviews[uuid]?.title
+                ?? markupTargetTitle(uuid: uuid)
+                ?? "Untitled"
         }
         if projection.isTag { return "#\(projection.page.title)" }
         return projection.blocks.first(where: { $0.uuid == uuid })?.title ?? projection.page.title
@@ -1117,7 +1157,8 @@ struct ContentView: View {
     }
 
     private func markupTargetTitle(uuid: String) -> String? {
-        for block in store.snapshot.blocks {
+        let blocks = store.snapshot.blocks + store.snapshot.nodeRoutes.flatMap(\.blocks)
+        for block in blocks {
             if let target = (block.references + block.tags).first(where: { $0.uuid == uuid }) {
                 return target.title
             }
@@ -1165,15 +1206,38 @@ struct ContentView: View {
         #if DEBUG
         print("LogseqChat debug: opening node route target=\(route) currentDepth=\(appNavigationPath.count)")
         #endif
+        let previewSource = activeNodeProjection
+        nodeNavigationPreviews[uuid] = NodeNavigationPreviewPolicy.make(
+            uuid: uuid,
+            rows: previewSource?.outlinerRows ?? store.snapshot.outlinerRows,
+            sections: previewSource.map(store.sections(for:))
+                ?? store.sections(for: LogseqContentMode.outliner),
+            linkedTitle: markupTargetTitle(uuid: uuid)
+        )
         pendingNodeRoutes.insert(route)
-        // Navigate only after the core resolved the node from local data, so
-        // an unknown node can never leave an endless spinner behind.
+        let requestedPath = AppNavigationPathPolicy.pathAfterRequest(
+            route,
+            in: appNavigationPath
+        )
+        let requestedDepth = requestedPath.count
+        appNavigationPath = requestedPath
         store.openNode(uuid) { resolved in
             pendingNodeRoutes.remove(route)
-            guard resolved,
-                  AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath)
-            else { return }
-            appNavigationPath.append(route)
+            if !resolved { nodeNavigationPreviews.removeValue(forKey: uuid) }
+            if resolved,
+               !AppNavigationPathPolicy.shouldKeepResolvedProjection(
+                   route,
+                   requestedDepth: requestedDepth,
+                   in: appNavigationPath
+               ) {
+                store.closeNode()
+                return
+            }
+            appNavigationPath = AppNavigationPathPolicy.pathAfterResolution(
+                route,
+                resolved: resolved,
+                in: appNavigationPath
+            )
         }
     }
     #endif

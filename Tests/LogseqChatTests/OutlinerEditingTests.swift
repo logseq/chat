@@ -1,6 +1,6 @@
 import CoreGraphics
 import Foundation
-import LogseqChatModel
+@testable import LogseqChatModel
 import Testing
 @testable import LogseqChat
 
@@ -265,6 +265,165 @@ import Testing
         #expect(!AppNavigationPathPolicy.shouldAppend(tag, to: [node, tag]))
         #expect(AppNavigationPathPolicy.shouldAppend(tag, to: [node]))
         #expect(AppNavigationPathPolicy.shouldAppend(node, to: []))
+    }
+
+    @Test func outlinerNodeNavigationPresentsImmediatelyBeforeCoreResolution() {
+        let journal = AppNavigationRoute.node("journal")
+        let link = AppNavigationRoute.node("linked-node")
+
+        #expect(AppNavigationPathPolicy.pathAfterRequest(journal, in: []) == [journal])
+        #expect(
+            AppNavigationPathPolicy.pathAfterRequest(link, in: [journal])
+                == [journal, link]
+        )
+    }
+
+    @Test func journalNavigationPreviewUsesVisibleTitleAndRowsBeforeCoreResolution() {
+        let journalBlock = LogseqBlock(
+            uuid: "journal-block",
+            title: "Journal content",
+            pageId: "journal-page",
+            parentId: nil,
+            createdAt: 1,
+            updatedAt: 1,
+            syncStatus: "synced",
+            journalTitle: "Aug 21st, 2026",
+            journalDay: 20260821
+        )
+        let otherBlock = LogseqBlock(
+            uuid: "other-block",
+            title: "Other content",
+            pageId: "other-page",
+            parentId: nil,
+            createdAt: 1,
+            updatedAt: 1,
+            syncStatus: "synced",
+            journalTitle: "Aug 20th, 2026",
+            journalDay: 20260820
+        )
+        let journalSection = LogseqBlockSection(
+            id: "20260821",
+            title: "Aug 21st, 2026",
+            blocks: [journalBlock]
+        )
+        let otherSection = LogseqBlockSection(
+            id: "20260820",
+            title: "Aug 20th, 2026",
+            blocks: [otherBlock]
+        )
+
+        let preview = NodeNavigationPreviewPolicy.make(
+            uuid: "journal-page",
+            rows: [
+                LogseqOutlineRow(
+                    block: journalBlock, depth: 0, hasChildren: false, isCollapsed: false
+                ),
+                LogseqOutlineRow(
+                    block: otherBlock, depth: 0, hasChildren: false, isCollapsed: false
+                ),
+            ],
+            sections: [journalSection, otherSection],
+            linkedTitle: nil
+        )
+
+        #expect(preview.title == "Aug 21st, 2026")
+        #expect(preview.rows.map(\.block.uuid) == ["journal-block"])
+        #expect(preview.sections.map(\.id) == ["20260821"])
+    }
+
+    @Test func linkedNodeNavigationPreviewNeverFallsBackToGenericNodeOrSpinner() {
+        let preview = NodeNavigationPreviewPolicy.make(
+            uuid: "linked-page",
+            rows: [],
+            sections: [],
+            linkedTitle: "Linked page"
+        )
+        let untitledPreview = NodeNavigationPreviewPolicy.make(
+            uuid: "unknown-page",
+            rows: [],
+            sections: [],
+            linkedTitle: nil
+        )
+
+        #expect(preview.title == "Linked page")
+        #expect(preview.rows.isEmpty)
+        #expect(preview.sections.isEmpty)
+        #expect(untitledPreview.title == "Untitled")
+    }
+
+    @Test func repeatedFastOutlinerNavigationDoesNotAppendDuplicateRoutes() {
+        let route = AppNavigationRoute.node("node")
+        #expect(AppNavigationPathPolicy.pathAfterRequest(route, in: [route]) == [route])
+    }
+
+    @Test func unresolvedOptimisticNodeRouteIsRemovedWithoutPoppingNewerRoutes() {
+        let parent = AppNavigationRoute.node("parent")
+        let unresolved = AppNavigationRoute.node("missing")
+        let newer = AppNavigationRoute.node("newer")
+
+        #expect(
+            AppNavigationPathPolicy.pathAfterResolution(
+                unresolved,
+                resolved: false,
+                in: [parent, unresolved]
+            ) == [parent]
+        )
+        #expect(
+            AppNavigationPathPolicy.pathAfterResolution(
+                unresolved,
+                resolved: false,
+                in: [parent, unresolved, newer]
+            ) == [parent, newer]
+        )
+        #expect(
+            AppNavigationPathPolicy.pathAfterResolution(
+                unresolved,
+                resolved: true,
+                in: [parent, unresolved]
+            ) == [parent, unresolved]
+        )
+    }
+
+    @Test func optimisticRollbackDoesNotCloseAnExistingCoreNodeProjection() {
+        let parent = AppNavigationRoute.node("parent")
+        let optimistic = AppNavigationRoute.node("optimistic")
+
+        #expect(AppNavigationPathPolicy.coreCloseCount(
+            previousPath: [parent, optimistic],
+            path: [parent],
+            projectedNodeCount: 1
+        ) == 0)
+        #expect(AppNavigationPathPolicy.coreCloseCount(
+            previousPath: [parent, optimistic],
+            path: [parent],
+            projectedNodeCount: 2
+        ) == 1)
+        #expect(AppNavigationPathPolicy.coreCloseCount(
+            previousPath: [parent, optimistic],
+            path: [],
+            projectedNodeCount: 2
+        ) == 2)
+    }
+
+    @Test func resolvedNodeProjectionClosesWhenUserAlreadyNavigatedBack() {
+        let parent = AppNavigationRoute.node("parent")
+        let child = AppNavigationRoute.node("child")
+
+        #expect(AppNavigationPathPolicy.shouldKeepResolvedProjection(
+            child,
+            requestedDepth: 2,
+            in: [parent, child]
+        ))
+        #expect(!AppNavigationPathPolicy.shouldKeepResolvedProjection(
+            child,
+            requestedDepth: 2,
+            in: [parent]
+        ))
+        #expect(!AppNavigationPathPolicy.shouldKeepResolvedProjection(
+            child,
+            requestedDepth: 2,
+            in: [parent, AppNavigationRoute.node("newer")]
+        ))
     }
 
     @Test func relatedContentUsesLogseqSectionNamesForPopulatedNodeAndTagViews() {

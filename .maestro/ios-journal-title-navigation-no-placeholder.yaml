@@ -1,0 +1,32 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    notVisible:
+      id: "button.sidebar.dismiss"
+    timeout: 10000
+- runFlow:
+    when:
+      visible: "Show outliner"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- extendedWaitUntil:
+    visible:
+      id: "button.journal.00000001-2026-0821-0000-000000000000"
+    timeout: 30000
+- tapOn:
+    id: "button.journal.00000001-2026-0821-0000-000000000000"
+- assertVisible:
+    id: "BackButton"
+- assertVisible: "Aug 21st, 2026"
+- assertVisible: "E2E anchor A.*"
+- assertNotVisible: "Node"
+- assertNotVisible: "In progress"
