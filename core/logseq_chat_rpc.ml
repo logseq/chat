@@ -1518,7 +1518,10 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
               Api.encrypted_asset_upload_request
                 pump.config
                 ~uuid:block.uuid
-                ~file_name:block.title
+                ~file_name:
+                  (Api.asset_file_name
+                     ~file_name:block.title
+                     ~asset_type)
                 ~title
                 ~page_id
                 ~size:asset_size
@@ -1539,7 +1542,7 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
         Api.asset_upload_request
           pump.config
           ~uuid:block.uuid
-          ~file_name:block.title
+          ~file_name:(Api.asset_file_name ~file_name:block.title ~asset_type)
           ~size:asset_size
           ~checksum
           ~file_path:source_path
@@ -1626,30 +1629,33 @@ let restore_semantic_queue session _config =
   | None -> ()
 ;;
 
-let begin_pending_sync session config =
-  restore_semantic_queue session config;
-  activate_semantic_request session config;
-  match session.semantic_active, session.pending_sync with
-  | Some _, _ -> ()
-  | None, Some _ -> ()
-  | None, None ->
-    let authoritative = Hashtbl.create 64 in
-    Option.iter
-      (fun blocks ->
-        List.iter
-          (fun (block : Model.block) -> Hashtbl.replace authoritative block.uuid ())
-          blocks)
-      (Option.bind session.graph_blocks (fun graph_blocks -> graph_blocks ()));
-    let pump =
-      { config
-      ; remaining = Model.pending_blocks session.model
-      ; authoritative
-      ; resolved_journal_pages = Hashtbl.create 8
-      ; active = None
-      }
-    in
-    session.pending_sync <- Some pump;
-    prepare_pending_next session pump
+let begin_pending_sync session (config : Api.config) =
+  if String.equal (String.trim config.token) ""
+  then ()
+  else (
+    restore_semantic_queue session config;
+    activate_semantic_request session config;
+    match session.semantic_active, session.pending_sync with
+    | Some _, _ -> ()
+    | None, Some _ -> ()
+    | None, None ->
+      let authoritative = Hashtbl.create 64 in
+      Option.iter
+        (fun blocks ->
+          List.iter
+            (fun (block : Model.block) -> Hashtbl.replace authoritative block.uuid ())
+            blocks)
+        (Option.bind session.graph_blocks (fun graph_blocks -> graph_blocks ()));
+      let pump =
+        { config
+        ; remaining = Model.pending_blocks session.model
+        ; authoritative
+        ; resolved_journal_pages = Hashtbl.create 8
+        ; active = None
+        }
+      in
+      session.pending_sync <- Some pump;
+      prepare_pending_next session pump)
 ;;
 
 let finish_semantic_active session active ~succeeded ~accepted_t =
@@ -2558,6 +2564,7 @@ let dispatch session action payload =
            | Ok uuid, Ok title, Ok now, Ok asset_type, Ok (Some asset_size),
              Ok asset_checksum, Ok local_path, Ok target_block_id ->
              let now = Option.value now ~default:(now_ms ()) in
+             let asset_type = Api.normalize_asset_type asset_type in
              Option.iter
                (fun target_uuid ->
                  if Option.is_none (Model.read_block session.model target_uuid)

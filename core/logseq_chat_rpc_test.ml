@@ -1161,6 +1161,62 @@ let () =
 ;;
 
 let () =
+  let session =
+    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"}}|});
+  let asset = Option.get (Logseq_chat_model.read_block session.model "shared-image") in
+  assert_equal "shared asset stores normalized type" "jpeg" (Option.get asset.asset_type);
+  let request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  let url = required_string "url" request in
+  if not (contains url "file-name=IMG_0002.jpeg")
+  then failwith "shared asset upload must include a normalized file extension";
+  assert_equal
+    "shared asset upload content type"
+    "image/jpeg"
+    (required_string "contentType" request)
+;;
+
+let () =
+  let session = Logseq_chat_rpc.create () in
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"https://api.example\",\"graphId\":\"plain-1\",\"token\":\"\"}"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"offline-shared-image\",\"title\":\"IMG_0002.JPG\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"}}|});
+  let request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+  in
+  if Option.is_some request
+  then failwith "pending asset sync must wait for authenticated configuration";
+  configure_plain_graph session;
+  let authenticated_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+  in
+  if Option.is_none authenticated_request
+  then failwith "pending asset sync must resume after authenticated configuration"
+;;
+
+let () =
   let authoritative_blocks = ref [] in
   let session =
     Logseq_chat_rpc.create

@@ -191,6 +191,18 @@ let () =
   in
   assert_equal "asset upload path" "/documents/photo.jpg" upload.file_path;
   assert_equal "asset content type" "image/jpeg" upload.content_type;
+  assert_equal
+    "shared image MIME normalizes to an asset extension"
+    "jpeg"
+    (Logseq_chat_api.normalize_asset_type "image/jpeg");
+  assert_equal
+    "shared image title gains the normalized extension"
+    "IMG_0002.jpeg"
+    (Logseq_chat_api.asset_file_name ~file_name:"IMG_0002" ~asset_type:"image/jpeg");
+  assert_equal
+    "shared image MIME remains a valid upload content type"
+    "image/jpeg"
+    (Logseq_chat_api.content_type_for_asset_type "image/jpeg");
   if upload.request.body <> None then failwith "asset bytes must not be encoded in request JSON";
   if not (contains upload.request.url "?uuid=client-asset&")
   then failwith "asset upload must preserve the local block uuid in the query";

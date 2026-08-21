@@ -340,14 +340,48 @@ let created_block_uuid_from_body body =
   | _ -> failwith "creation response must be an object"
 ;;
 
-let content_type_for_asset_type = function
+let normalize_asset_type value =
+  match String.lowercase_ascii (String.trim value) with
+  | "image/jpeg" -> "jpeg"
+  | "image/jpg" -> "jpg"
+  | "image/png" -> "png"
+  | "image/gif" -> "gif"
+  | "image/heic" -> "heic"
+  | "image/webp" -> "webp"
+  | "audio/mp4" | "audio/m4a" | "audio/x-m4a" -> "m4a"
+  | "audio/mpeg" -> "mp3"
+  | "audio/wav" | "audio/x-wav" -> "wav"
+  | "application/pdf" -> "pdf"
+  | "application/octet-stream" -> "bin"
+  | value ->
+    (match String.index_opt value '/' with
+     | Some index when index + 1 < String.length value ->
+       let suffix = String.sub value (index + 1) (String.length value - index - 1) in
+       if String.starts_with ~prefix:"x-" suffix
+       then String.sub suffix 2 (String.length suffix - 2)
+       else suffix
+     | _ -> value)
+;;
+
+let asset_file_name ~file_name ~asset_type =
+  if not (String.equal (Filename.extension file_name) "")
+  then file_name
+  else
+    let extension = normalize_asset_type asset_type in
+    if String.equal extension "" then file_name else file_name ^ "." ^ extension
+;;
+
+let content_type_for_asset_type asset_type =
+  match normalize_asset_type asset_type with
   | "jpg" | "jpeg" -> "image/jpeg"
   | "png" -> "image/png"
   | "gif" -> "image/gif"
   | "heic" -> "image/heic"
+  | "webp" -> "image/webp"
   | "m4a" -> "audio/mp4"
   | "mp3" -> "audio/mpeg"
   | "wav" -> "audio/wav"
+  | "pdf" -> "application/pdf"
   | _ -> "application/octet-stream"
 ;;
 
