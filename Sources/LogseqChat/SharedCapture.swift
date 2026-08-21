@@ -189,6 +189,19 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+@MainActor public enum ShortcutCapture {
+    @discardableResult public static func enqueue(
+        _ text: String,
+        inbox: SharedCaptureInbox = .shared,
+        id: String = UUID().uuidString.lowercased()
+    ) -> Bool {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        inbox.enqueueText(text, id: id)
+        return true
+    }
+}
+
 #if !SKIP
 public enum SharedCaptureStorage {
     public static let appGroupIdentifier = "group.com.logseq.chat"

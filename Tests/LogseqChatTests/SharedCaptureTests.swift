@@ -86,6 +86,20 @@ import Testing
         #expect(inbox.pendingItems().isEmpty)
     }
 
+    @Test @MainActor func shortcutCaptureQueuesTrimmedTextForTheJournal() {
+        let suiteName = "ShortcutCaptureTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        #if !SKIP
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        #endif
+        let inbox = SharedCaptureInbox(defaults: defaults)
+
+        #expect(ShortcutCapture.enqueue("  Remember this  ", inbox: inbox, id: "shortcut-1"))
+        #expect(inbox.pendingItems() == [.text(id: "shortcut-1", text: "Remember this")])
+        #expect(!ShortcutCapture.enqueue("  \n", inbox: inbox, id: "shortcut-2"))
+        #expect(inbox.pendingItems().count == 1)
+    }
+
     @Test @MainActor func processorStopsAtFailureAndRetriesWithoutReordering() async {
         let suiteName = "SharedCaptureProcessorTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

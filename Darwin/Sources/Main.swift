@@ -1,5 +1,8 @@
 import SwiftUI
 import LogseqChat
+#if os(iOS)
+import AppIntents
+#endif
 
 private typealias AppRootView = LogseqChatRootView
 private typealias AppDelegate = LogseqChatAppDelegate
@@ -88,3 +91,41 @@ typealias AppType = NSApplication
     #endif
 
 }
+
+#if os(iOS)
+@available(iOS 17.0, *)
+struct CaptureToJournalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Capture to Journal"
+    static let description = IntentDescription("Add text to today's Logseq journal.")
+    static let openAppWhenRun = true
+
+    @Parameter(
+        title: "Text",
+        requestValueDialog: IntentDialog("What would you like to capture?")
+    )
+    var text: String
+
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard ShortcutCapture.enqueue(text) else {
+            return .result(dialog: "Enter some text to capture.")
+        }
+        LogseqChatRuntime.shared.processSharedCaptures()
+        return .result(dialog: "Added to today's journal.")
+    }
+}
+
+@available(iOS 17.0, *)
+struct LogseqAppShortcuts: AppShortcutsProvider {
+    static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: CaptureToJournalIntent(),
+            phrases: [
+                "Capture in \(.applicationName)",
+                "Add to my \(.applicationName) journal"
+            ],
+            shortTitle: "Capture",
+            systemImageName: "square.and.pencil"
+        )
+    }
+}
+#endif
