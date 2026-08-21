@@ -56,6 +56,9 @@ public struct LogseqChatRootView : View {
             .task {
                 logger.info("Skip app logs are viewable in the Xcode console for iOS; Android logs can be viewed in Studio or using adb logcat")
             }
+            .onOpenURL { url in
+                LogseqChatRuntime.shared.acceptSharedCaptureURL(url)
+            }
     }
 }
 
@@ -106,6 +109,7 @@ public struct LogseqChatRootView : View {
     }
     private var localLaunchTask: Task<LocalLaunchResult, Never>?
     private var didApplyLocalLaunchResult = false
+    private var sharedCaptureTask: Task<Void, Never>?
 
     private init() {
         try? FileManager.default.removeItem(
@@ -240,6 +244,84 @@ public struct LogseqChatRootView : View {
                 databasePath: databasePath
             )
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
+        }
+        drainSharedCapturesIfReady()
+    }
+
+    public func acceptSharedCaptureURL(_ url: URL) {
+        guard let payload = SharedCapturePayload(captureURL: url) else { return }
+        SharedCaptureInbox.shared.enqueue(payload: payload)
+        drainSharedCapturesIfReady()
+    }
+
+    public func acceptSharedText(_ text: String) {
+        SharedCaptureInbox.shared.enqueueText(text)
+        drainSharedCapturesIfReady()
+    }
+
+    public func acceptSharedAsset(
+        title: String,
+        assetType: String,
+        size: Int,
+        checksum: String,
+        stagedFileName: String
+    ) {
+        let asset = SharedCaptureAsset(
+            title: title,
+            assetType: assetType,
+            size: size,
+            checksum: checksum,
+            stagedFileName: stagedFileName
+        )
+        SharedCaptureInbox.shared.enqueue(.asset(
+            id: UUID().uuidString.lowercased(),
+            asset: asset
+        ))
+        drainSharedCapturesIfReady()
+    }
+
+    public func processSharedCaptures() {
+        drainSharedCapturesIfReady()
+    }
+
+    private func drainSharedCapturesIfReady() {
+        guard didApplyLocalLaunchResult, sharedCaptureTask == nil else { return }
+        sharedCaptureTask = Task { [weak self] in
+            guard let self else { return }
+            await SharedCaptureProcessor.process(inbox: SharedCaptureInbox.shared) { item in
+                switch item.kind {
+                case .text:
+                    guard let text = item.captureText else { return true }
+                    return await self.store.captureSharedText(text, id: item.id)
+                case .asset:
+                    guard let asset = item.captureAsset else { return true }
+                    #if !SKIP
+                    guard let imported = try? SharedCaptureAssetImporter.importAsset(
+                        asset,
+                        sharedDirectory: SharedCaptureStorage.sharedDirectory,
+                        documentsDirectory: .documentsDirectory
+                    ) else { return false }
+                    return await self.store.captureSharedAsset(
+                        id: item.id,
+                        title: imported.title,
+                        assetType: imported.assetType,
+                        assetSize: imported.size,
+                        assetChecksum: imported.checksum,
+                        localPath: imported.localPath
+                    )
+                    #else
+                    return await self.store.captureSharedAsset(
+                        id: item.id,
+                        title: asset.title,
+                        assetType: asset.assetType,
+                        assetSize: asset.size,
+                        assetChecksum: asset.checksum,
+                        localPath: asset.stagedFileName
+                    )
+                    #endif
+                }
+            }
+            self.sharedCaptureTask = nil
         }
     }
 
@@ -445,7 +527,8 @@ public final class LogseqChatAppDelegate : Sendable {
         print(String(format: "LOGSEQ_LAUNCH_METRIC %@_ms=%.3f", name, elapsedMilliseconds))
     }
 
-    public func onResume() {
+    @MainActor public func onResume() {
+        LogseqChatRuntime.shared.processSharedCaptures()
         logger.debug("onResume")
     }
 

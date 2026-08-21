@@ -30,7 +30,7 @@ let package = Package(
     platforms: [.iOS(.v17), .macOS(.v14)],
     products: [
         .executable(name: "LogseqChatShell", targets: ["LogseqChatShell"]),
-        .library(name: "LogseqChat", type: .dynamic, targets: ["LogseqChat"]),
+        .library(name: "LogseqChat", type: .static, targets: ["LogseqChat"]),
         .library(name: "LogseqChatModel", type: .dynamic, targets: ["LogseqChatModel"]),
     ],
     traits: [

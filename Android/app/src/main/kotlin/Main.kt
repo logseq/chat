@@ -7,7 +7,9 @@ import skip.ui.*
 
 import android.Manifest
 import android.app.Application
+import android.content.Intent
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.SystemBarStyle
@@ -65,6 +67,7 @@ open class MainActivity: AppCompatActivity {
         UIApplication.launch(this)
         AndroidAssetImporter.initialize(this)
         AndroidAudioRecorder.initialize(this)
+        handleShareIntent(intent)
         enableEdgeToEdge()
 
         setContent {
@@ -103,6 +106,41 @@ open class MainActivity: AppCompatActivity {
     override fun onResume() {
         super.onResume()
         AppDelegate.shared.onResume()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null || (intent.action != Intent.ACTION_SEND &&
+                intent.action != Intent.ACTION_SEND_MULTIPLE)) return
+
+        AndroidSharePayload.normalized(
+            text = intent.getStringExtra(Intent.EXTRA_TEXT),
+            title = intent.getStringExtra(Intent.EXTRA_TITLE)
+        )?.let { LogseqChatRuntime.shared.acceptSharedText(it.blockText) }
+
+        sharedUris(intent).forEach { uri ->
+            AndroidAssetImporter.importSharedAsset(uri) { title, type, size, checksum, path ->
+                LogseqChatRuntime.shared.acceptSharedAsset(
+                    title = title,
+                    assetType = type,
+                    size = size,
+                    checksum = checksum,
+                    stagedFileName = path
+                )
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun sharedUris(intent: Intent): List<Uri> {
+        val multiple = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+        if (!multiple.isNullOrEmpty()) return multiple
+        return listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM))
     }
 
     override fun onPause() {

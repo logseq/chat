@@ -823,6 +823,21 @@ private struct CreateSyncGraphPayload: Encodable {
         }
     }
 
+    public func captureSharedText(_ text: String, id: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        lastError = nil
+        mutationServerT = snapshot.appliedServerT
+        cursorAdvancedAfterMutation = false
+        await dispatchEncodedAndWait(
+            "send",
+            SendBlockPayload(text: trimmed, uuid: id, now: Self.nowMilliseconds())
+        )
+        guard lastError == nil else { return false }
+        syncPending()
+        return true
+    }
+
     public func sendTask(_ text: String, status: LogseqTaskStatus) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -860,6 +875,33 @@ private struct CreateSyncGraphPayload: Encodable {
             )
         )
         return uuid
+    }
+
+    public func captureSharedAsset(
+        id: String,
+        title: String,
+        assetType: String,
+        assetSize: Int,
+        assetChecksum: String,
+        localPath: String
+    ) async -> Bool {
+        lastError = nil
+        await dispatchEncodedAndWait(
+            "addAsset",
+            AddAssetPayload(
+                uuid: id,
+                title: title,
+                now: Self.nowMilliseconds(),
+                assetType: assetType,
+                assetSize: assetSize,
+                assetChecksum: assetChecksum,
+                localPath: localPath,
+                targetBlockId: nil
+            )
+        )
+        guard lastError == nil else { return false }
+        syncPending()
+        return true
     }
 
     @discardableResult public func addChildBlock(_ title: String, parentId: String) -> String {

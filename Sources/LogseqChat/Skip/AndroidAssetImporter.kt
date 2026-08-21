@@ -20,8 +20,10 @@ object AndroidAssetImporter {
     private var cameraLauncher: ActivityResultLauncher<Void?>? = null
     private var callback: ((String, String, Int, String, String) -> Unit)? = null
     private lateinit var context: Context
+    private var activity: ComponentActivity? = null
 
     fun initialize(activity: ComponentActivity) {
+        this.activity = activity
         context = activity.applicationContext
         photoLauncher = activity.registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             deliver(uris.mapNotNull(::importAsset))
@@ -32,6 +34,17 @@ object AndroidAssetImporter {
         cameraLauncher = activity.registerForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
             deliver(listOfNotNull(bitmap?.let(::importCameraPhoto)))
         }
+    }
+
+    fun importSharedAsset(uri: Uri, callback: (String, String, Int, String, String) -> Unit) {
+        Thread {
+            val asset = importAsset(uri)
+            activity?.runOnUiThread {
+                if (asset != null) {
+                    callback(asset.title, asset.contentType, asset.size, asset.checksum, asset.path)
+                }
+            }
+        }.start()
     }
 
     fun pickPhotos(callback: (String, String, Int, String, String) -> Unit) {
