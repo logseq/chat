@@ -109,7 +109,7 @@ object AndroidAudioRecorder {
             next.setAudioSource(MediaRecorder.AudioSource.MIC)
             next.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             next.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            next.setAudioSamplingRate(44_100)
+            next.setAudioSamplingRate(16_000)
             next.setAudioChannels(1)
             next.setOutputFile(file.absolutePath)
             next.setMaxDuration(AudioRecordingPolicy.maximumDurationSeconds * 1000)

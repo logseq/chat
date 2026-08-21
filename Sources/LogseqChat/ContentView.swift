@@ -509,7 +509,7 @@ struct ContentView: View {
         .sheet(isPresented: $androidAudioRecorderPresented) {
             AndroidAudioRecorderSheet(targetBlockID: androidAudioRecorderTargetBlockID) {
                 title, type, size, checksum, path, targetBlockID in
-                store.addAsset(
+                let assetUUID = store.addAsset(
                     title: title,
                     assetType: type,
                     assetSize: size,
@@ -518,6 +518,9 @@ struct ContentView: View {
                     targetBlockId: targetBlockID
                 )
                 androidAudioRecorderTargetBlockID = nil
+                return assetUUID
+            } onTranscript: { assetUUID, transcript in
+                store.addChildBlock(transcript, parentId: assetUUID)
             }
         }
         #endif

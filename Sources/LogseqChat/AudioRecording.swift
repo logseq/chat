@@ -247,9 +247,11 @@ import SwiftUI
 
 struct AndroidAudioRecorderSheet: View {
     let targetBlockID: String?
-    let onSave: (String, String, Int, String, String, String?) -> Void
+    let onSave: (String, String, Int, String, String, String?) -> String
+    let onTranscript: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var isRecording = false
+    @State private var transcriptionEnabled = true
     @State private var errorMessage: String?
 
     var body: some View {
@@ -260,10 +262,20 @@ struct AndroidAudioRecorderSheet: View {
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
                 }
+                if AndroidAudioTranscriber.isSupported() {
+                    Toggle("Transcribe recording", isOn: $transcriptionEnabled)
+                }
                 Button("Stop recording") {
                     AndroidAudioRecorder.stop { title, type, size, checksum, path in
-                        onSave(title, type, size, checksum, path, targetBlockID)
+                        let assetUUID = onSave(title, type, size, checksum, path, targetBlockID)
                         dismiss()
+                        if transcriptionEnabled && AndroidAudioTranscriber.isSupported() {
+                            AndroidAudioTranscriber.transcribe(path) { transcript in
+                                if !transcript.isEmpty {
+                                    onTranscript(assetUUID, transcript)
+                                }
+                            } onError: { _ in }
+                        }
                     } onError: { message in
                         errorMessage = message
                     }

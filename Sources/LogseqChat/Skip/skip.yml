@@ -18,6 +18,7 @@ build:
         - 'api("com.amplifyframework.ui:authenticator:1.9.2")'
         - 'implementation("com.github.gregcockroft:AndroidMath:v1.1.0")'
         - 'implementation("dev.hossain:compose-highlight:0.27.0")'
+        - 'implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")'
 
 settings:
   contents:
