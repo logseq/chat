@@ -334,6 +334,12 @@ struct ContentView: View {
                 outlinerKeyboardDismissalPending = false
             }
         }
+        #if !SKIP
+        .onReceive(NotificationCenter.default.publisher(for: .logseqOpenCapture)) { _ in
+            graphsPresented = false
+            expandComposer()
+        }
+        #endif
         .sheet(isPresented: $settingsPresented) {
             ConnectionSettingsView(
                 baseURL: $baseURL,

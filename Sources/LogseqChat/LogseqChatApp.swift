@@ -249,9 +249,19 @@ public struct LogseqChatRootView : View {
     }
 
     public func acceptSharedCaptureURL(_ url: URL) {
-        guard let payload = SharedCapturePayload(captureURL: url) else { return }
-        SharedCaptureInbox.shared.enqueue(payload: payload)
-        drainSharedCapturesIfReady()
+        guard let deepLink = LogseqDeepLink(url) else { return }
+        switch deepLink {
+        case .captureText(let text):
+            SharedCaptureInbox.shared.enqueueText(text)
+            drainSharedCapturesIfReady()
+        case .openCapture:
+            store.clearSelectedPage()
+            #if !SKIP
+            NotificationCenter.default.post(name: .logseqOpenCapture, object: nil)
+            #endif
+        case .openJournal:
+            store.clearSelectedPage()
+        }
     }
 
     public func acceptSharedText(_ text: String) {
@@ -374,6 +384,12 @@ public struct LogseqChatRootView : View {
         await syncCoordinator.cancelBackground()
     }
 }
+
+#if !SKIP
+extension Notification.Name {
+    static let logseqOpenCapture = Notification.Name("logseq.openCapture")
+}
+#endif
 
 struct LogseqCognitoConfiguration: Decodable {
     let region: String

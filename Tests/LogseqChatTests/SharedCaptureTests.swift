@@ -36,6 +36,16 @@ import Testing
         #expect(SharedCapturePayload(captureURL: url)?.blockText == "new\nExample")
     }
 
+    @Test func distinguishesWidgetCaptureFromPopulatedQuickCaptureLinks() throws {
+        let widgetURL = try #require(URL(string: "logseqchat://capture"))
+        let populatedURL = try #require(URL(string: "logseqchat://capture?text=From%20widget"))
+        let unrelatedURL = try #require(URL(string: "logseqchat://journal"))
+
+        #expect(LogseqDeepLink(widgetURL) == .openCapture)
+        #expect(LogseqDeepLink(populatedURL) == .captureText("From widget"))
+        #expect(LogseqDeepLink(unrelatedURL) == .openJournal)
+    }
+
     @Test func normalizesAndroidSharedURLsIntoMarkdownLinks() {
         #expect(SharedCapturePayload(sharedText: "https://example.com/article", title: "Example").blockText
             == "[Example](https://example.com/article)")

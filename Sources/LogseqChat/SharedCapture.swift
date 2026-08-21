@@ -77,6 +77,25 @@ public struct SharedCapturePayload: Sendable, Equatable {
     }
 }
 
+public enum LogseqDeepLink: Sendable, Equatable {
+    case captureText(String)
+    case openCapture
+    case openJournal
+
+    public init?(_ url: URL) {
+        guard url.scheme?.lowercased() == "logseqchat" else { return nil }
+        if let payload = SharedCapturePayload(captureURL: url), let text = payload.blockText {
+            self = .captureText(text)
+            return
+        }
+        switch url.host?.lowercased() {
+        case "capture": self = .openCapture
+        case "journal": self = .openJournal
+        default: return nil
+        }
+    }
+}
+
 public struct SharedCaptureAsset: Codable, Sendable, Equatable {
     public let title: String
     public let assetType: String
