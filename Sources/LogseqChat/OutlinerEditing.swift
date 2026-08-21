@@ -221,6 +221,14 @@ enum OutlinerAutocompleteLayoutPolicy {
 }
 
 enum EmbeddedMediaPolicy {
+    private static let youtubeHosts = [
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+    ]
+
     static func safeURL(_ value: String?) -> URL? {
         guard let value,
               let url = URL(string: value),
@@ -233,23 +241,49 @@ enum EmbeddedMediaPolicy {
         var videoID: String?
         if host == "youtu.be" || host == "www.youtu.be" {
             videoID = url.pathComponents.dropFirst().first
-        } else if host == "youtube.com" || host == "www.youtube.com" || host == "m.youtube.com" {
+        } else if youtubeHosts.contains(host) {
             if url.path == "/watch" {
                 videoID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                     .queryItems?.first(where: { $0.name == "v" })?.value
             } else if url.pathComponents.count >= 3,
-                      ["embed", "shorts"].contains(url.pathComponents[1]) {
+                      ["embed", "shorts", "live"].contains(url.pathComponents[1]) {
                 videoID = url.pathComponents[2]
             }
         }
-        guard let videoID, !videoID.isEmpty else { return nil }
-        return URL(string: "https://www.youtube.com/embed/\(videoID)")
+        guard let videoID,
+              videoID.count == 11,
+              videoID.allSatisfy({
+                  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-".contains($0)
+              })
+        else { return nil }
+
+        let sourceQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let start = sourceQuery
+            .first(where: { $0.name == "start" || $0.name == "t" })?
+            .value
+            .flatMap(Int.init)
+            .flatMap { $0 > 0 ? $0 : nil }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "www.youtube-nocookie.com"
+        components.path = "/embed/\(videoID)"
+        components.queryItems = [URLQueryItem(name: "playsinline", value: "1")]
+        if let start {
+            components.queryItems?.append(URLQueryItem(name: "start", value: String(start)))
+        }
+        return components.url
     }
 
     static func webVideoEmbedURL(_ url: URL) -> URL? {
         if let youtube = youtubeEmbedURL(url) { return youtube }
         let host = (url.host ?? "").lowercased()
         return host == "player.vimeo.com" ? url : nil
+    }
+
+    static func webRequestHeaders(for url: URL) -> [String: String] {
+        let host = (url.host ?? "").lowercased()
+        guard youtubeHosts.contains(host) else { return [:] }
+        return ["Referer": "https://logseq.com/"]
     }
 }
 

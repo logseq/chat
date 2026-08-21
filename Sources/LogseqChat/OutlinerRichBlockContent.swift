@@ -235,12 +235,19 @@ private struct EmbeddedWebContent: View {
                         let view = WebView(context)
                         view.settings.javaScriptEnabled = true
                         view.settings.domStorageEnabled = true
-                        view.loadUrl(url.absoluteString)
+                        view.settings.mediaPlaybackRequiresUserGesture = true
+                        view.loadUrl(
+                            url.absoluteString,
+                            EmbeddedMediaPolicy.webRequestHeaders(for: url)
+                        )
                         return view
                     },
                     update: { view in
                         if view.url != url.absoluteString {
-                            view.loadUrl(url.absoluteString)
+                            view.loadUrl(
+                                url.absoluteString,
+                                EmbeddedMediaPolicy.webRequestHeaders(for: url)
+                            )
                         }
                     }
                 )
@@ -271,7 +278,11 @@ private struct AppleWebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.loadedURL != url else { return }
         context.coordinator.loadedURL = url
-        webView.load(URLRequest(url: url))
+        var request = URLRequest(url: url)
+        for (field, value) in EmbeddedMediaPolicy.webRequestHeaders(for: url) {
+            request.setValue(value, forHTTPHeaderField: field)
+        }
+        webView.load(request)
     }
 
     final class Coordinator {

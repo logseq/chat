@@ -722,6 +722,41 @@ import Testing
         ])
     }
 
+    @Test func youtubeLinksNormalizeToPrivacyEnhancedInlineEmbeds() throws {
+        let videoID = "dQw4w9WgXcQ"
+        let sources = [
+            "https://youtu.be/\(videoID)",
+            "https://www.youtube.com/watch?v=\(videoID)",
+            "https://m.youtube.com/shorts/\(videoID)",
+            "https://youtube.com/live/\(videoID)",
+            "https://www.youtube-nocookie.com/embed/\(videoID)",
+        ]
+
+        for source in sources {
+            let url = try #require(URL(string: source))
+            let embed = try #require(EmbeddedMediaPolicy.youtubeEmbedURL(url))
+            let components = try #require(URLComponents(url: embed, resolvingAgainstBaseURL: false))
+            #expect(components.host == "www.youtube-nocookie.com")
+            #expect(components.path == "/embed/\(videoID)")
+            #expect(components.queryItems?.contains(URLQueryItem(name: "playsinline", value: "1")) == true)
+        }
+    }
+
+    @Test func youtubeEmbedsPreserveNumericStartTimeAndRejectInvalidIDs() throws {
+        let timed = try #require(URL(string: "https://youtu.be/dQw4w9WgXcQ?t=43"))
+        let embed = try #require(EmbeddedMediaPolicy.youtubeEmbedURL(timed))
+        let components = try #require(URLComponents(url: embed, resolvingAgainstBaseURL: false))
+
+        #expect(components.queryItems?.contains(URLQueryItem(name: "start", value: "43")) == true)
+        #expect(EmbeddedMediaPolicy.webRequestHeaders(for: embed)["Referer"] == "https://logseq.com/")
+        #expect(EmbeddedMediaPolicy.youtubeEmbedURL(
+            try #require(URL(string: "https://youtube.com/watch?v=not-valid"))
+        ) == nil)
+        #expect(EmbeddedMediaPolicy.youtubeEmbedURL(
+            try #require(URL(string: "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ"))
+        ) == nil)
+    }
+
 
     @Test func inlineEditorAppliesTheNewBlockDuringResponderHandoff() {
         #expect(InlineEditorTextReconciliationPolicy.decision(

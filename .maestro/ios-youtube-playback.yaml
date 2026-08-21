@@ -1,0 +1,47 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Show chat"
+    commands:
+      - tapOn:
+          id: "button.content-mode"
+- runFlow:
+    when:
+      visible:
+        id: "button.composer.expand"
+    commands:
+      - tapOn:
+          id: "button.composer.expand"
+- tapOn:
+    id: "field.composer"
+- inputText: "{{youtube dQw4w9WgXcQ}}"
+- tapOn:
+    id: "button.send"
+- tapOn:
+    text: "Show outliner"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.video"
+    direction: UP
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- swipe:
+    direction: UP
+    duration: 800
+- extendedWaitUntil:
+    visible:
+      id: "block.rich.video"
+    timeout: 30000
+- assertVisible:
+    id: "block.rich.video"
+- assertNotVisible: "Video unavailable"
+- tapOn:
+    id: "block.rich.video"
