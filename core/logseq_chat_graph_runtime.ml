@@ -60,6 +60,62 @@ let rebuild runtime =
   refresh_search runtime
 ;;
 
+let safe_to_rebase = function
+  | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _
+  | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
+  | Ops.Move_block _ | Ops.Move_blocks _ -> true
+  | Ops.Delete_blocks _ -> false
+;;
+
+let rebase_operations runtime ~server_t ~operation_ids =
+  let confirmed = Hashtbl.create (List.length operation_ids) in
+  List.iter (fun operation_id -> Hashtbl.replace confirmed operation_id ()) operation_ids;
+  List.iter (Hashtbl.remove runtime.prepared) operation_ids;
+  let authoritative = Datascript.conn_db runtime.conn in
+  Ops.list ~path:runtime.path
+  |> List.iter (fun operation ->
+    match operation.Ops.state with
+    | _ when
+        Hashtbl.mem confirmed operation.operation_id
+        && Projection.satisfied authoritative operation.intent ->
+      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
+    | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent ->
+      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
+    | _ -> ());
+  runtime.server_t <- server_t;
+  let projected = ref authoritative in
+  Ops.list ~path:runtime.path
+  |> List.iter (fun (operation : Ops.t) ->
+    match operation.state with
+    | Ops.Conflicted _ -> ()
+    | Ops.Accepted _ | Ops.Applied ->
+      (match Projection.compile !projected operation.intent with
+       | Ok tx -> projected := Datascript.db_with tx !projected
+       | Error message ->
+         Ops.save
+           ~path:runtime.path
+           { operation with state = Ops.Conflicted message })
+    | Ops.Queued | Ops.Retryable | Ops.Submitted ->
+      Hashtbl.remove runtime.prepared operation.operation_id;
+      (match
+         if operation.base_t <> server_t && not (safe_to_rebase operation.intent)
+         then Error "the server changed while the structural operation was pending"
+         else Projection.compile !projected operation.intent
+       with
+       | Error message ->
+         Ops.save
+           ~path:runtime.path
+           { operation with base_t = server_t; state = Ops.Conflicted message }
+       | Ok tx ->
+         projected := Datascript.db_with tx !projected;
+         if operation.base_t <> server_t
+         then
+           Ops.save
+             ~path:runtime.path
+             { operation with base_t = server_t; state = Ops.Queued }));
+  rebuild runtime
+;;
+
 let create_base
       ?(encrypt_title = fun value -> Ok value)
       ?search_index_path
@@ -89,6 +145,7 @@ let create_base
     ; search_index_is_fresh = false
     }
   in
+  rebase_operations runtime ~server_t ~operation_ids:[];
   runtime
 ;;
 
@@ -153,8 +210,7 @@ let normalize_expected_title _runtime db ~uuid ~expected =
   if String.equal current expected then Ok current else Error "title changed on the server"
 ;;
 
-let normalize_operation runtime operation =
-  let db = Datascript.conn_db runtime.conn in
+let normalize_operation_against runtime db operation =
   let intent =
     match operation.Ops.intent with
     | Ops.Save_title { uuid; expected_title; title } ->
@@ -194,17 +250,42 @@ let normalize_operation runtime operation =
   intent >>| fun intent -> { operation with Ops.intent }
 ;;
 
+let normalize_operation runtime operation =
+  normalize_operation_against runtime (Datascript.conn_db runtime.conn) operation
+;;
+
+let db_before_operation runtime operation_id =
+  let authoritative = Datascript.conn_db runtime.conn in
+  let rec collect_previous reversed = function
+    | [] -> authoritative
+    | operation :: _ when String.equal operation.Ops.operation_id operation_id ->
+      (Projection.build
+         ~server_t:runtime.server_t
+         authoritative
+         (List.rev reversed)).db
+    | operation :: rest -> collect_previous (operation :: reversed) rest
+  in
+  collect_previous [] (Ops.list ~path:runtime.path)
+;;
+
 let prepare_sync runtime operation =
+  let operation =
+    Ops.list ~path:runtime.path
+    |> List.find_opt (fun persisted ->
+      String.equal persisted.Ops.operation_id operation.Ops.operation_id)
+    |> Option.value ~default:operation
+  in
   if operation.Ops.base_t <> runtime.server_t
   then Error "operation was created against a stale server cursor"
   else
-    normalize_operation runtime operation
+    let db = db_before_operation runtime operation.operation_id in
+    normalize_operation_against runtime db operation
     >>= fun normalized ->
-    Projection.compile (Datascript.conn_db runtime.conn) normalized.intent
+    Projection.compile db normalized.intent
     >>= fun tx ->
     Logseq_chat_sync_tx.encode
       ~encrypt_protected:runtime.encrypt_title
-      (Datascript.conn_db runtime.conn)
+      db
       tx
     >>| fun wire ->
     Hashtbl.replace runtime.prepared operation.operation_id normalized;
@@ -212,16 +293,16 @@ let prepare_sync runtime operation =
 ;;
 
 let stage runtime operation =
-  let requested_operation = operation in
   let existing = Ops.list ~path:runtime.path in
   let replacing =
     List.find_opt
       (fun pending ->
-        String.equal pending.Ops.operation_id requested_operation.Ops.operation_id)
+        String.equal pending.Ops.operation_id operation.Ops.operation_id)
       existing
   in
+  let prepared = Hashtbl.find_opt runtime.prepared operation.Ops.operation_id in
   let operation =
-    match Hashtbl.find_opt runtime.prepared operation.Ops.operation_id with
+    match prepared with
     | Some normalized -> { normalized with state = operation.state }
     | None -> operation
   in
@@ -231,19 +312,20 @@ let stage runtime operation =
   in
   let state_only_update =
     match replacing with
-    | Some existing ->
-      existing.base_t = requested_operation.base_t
-      && existing.intent = requested_operation.intent
-      && transport_state operation.state
-      && (match existing.state with Ops.Conflicted _ -> false | _ -> true)
-    | None -> false
+    | Some existing
+      when transport_state operation.state
+           && (match existing.state with Ops.Conflicted _ -> false | _ -> true) ->
+      let intent =
+        match prepared with Some normalized -> normalized.intent | None -> existing.intent
+      in
+      Some { existing with state = operation.state; intent }
+    | Some _ | None -> None
   in
-  if state_only_update
-  then (
+  match state_only_update with
+  | Some operation ->
     Ops.save ~path:runtime.path operation;
-    Ok ())
-  else if Option.is_none replacing
-  then
+    Ok ()
+  | None when Option.is_none replacing ->
     if operation.base_t <> runtime.server_t
     then Error "operation was created against a stale server cursor"
     else
@@ -260,7 +342,7 @@ let stage runtime operation =
            };
          refresh_search runtime;
          Ok ())
-  else
+  | None ->
     let candidate_ops =
       List.filter
         (fun pending -> not (String.equal pending.Ops.operation_id operation.operation_id))
@@ -329,60 +411,7 @@ let create
   runtime
 ;;
 
-let safe_to_rebase = function
-  | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _
-  | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
-  | Ops.Move_block _ | Ops.Move_blocks _ -> true
-  | Ops.Delete_blocks _ -> false
-;;
-
-let rebase runtime ~server_t ~operation_ids =
-  let confirmed = Hashtbl.create (List.length operation_ids) in
-  List.iter (fun operation_id -> Hashtbl.replace confirmed operation_id ()) operation_ids;
-  List.iter (Hashtbl.remove runtime.prepared) operation_ids;
-  let authoritative = Datascript.conn_db runtime.conn in
-  Ops.list ~path:runtime.path
-  |> List.iter (fun operation ->
-    match operation.Ops.state with
-    | _ when
-        Hashtbl.mem confirmed operation.operation_id
-        && Projection.satisfied authoritative operation.intent ->
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
-    | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent ->
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
-    | _ -> ());
-  runtime.server_t <- server_t;
-  let projected = ref authoritative in
-  Ops.list ~path:runtime.path
-  |> List.iter (fun (operation : Ops.t) ->
-    match operation.state with
-    | Ops.Conflicted _ -> ()
-    | Ops.Accepted _ | Ops.Applied ->
-      (match Projection.compile !projected operation.intent with
-       | Ok tx -> projected := Datascript.db_with tx !projected
-       | Error message ->
-         Ops.save
-           ~path:runtime.path
-           { operation with state = Ops.Conflicted message })
-    | Ops.Queued | Ops.Retryable | Ops.Submitted ->
-      Hashtbl.remove runtime.prepared operation.operation_id;
-      (match
-         if operation.base_t <> server_t && not (safe_to_rebase operation.intent)
-         then Error "the server changed while the structural operation was pending"
-         else Projection.compile !projected operation.intent
-       with
-       | Error message ->
-         Ops.save
-           ~path:runtime.path
-           { operation with base_t = server_t; state = Ops.Conflicted message }
-       | Ok tx ->
-         projected := Datascript.db_with tx !projected;
-         if operation.base_t <> server_t
-         then
-           Ops.save
-             ~path:runtime.path
-             { operation with base_t = server_t; state = Ops.Queued }));
-  rebuild runtime
+let rebase = rebase_operations
 ;;
 
 let blocks runtime =

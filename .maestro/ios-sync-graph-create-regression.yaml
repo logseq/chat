@@ -12,10 +12,25 @@ appId: com.logseq.chat
       - tapOn:
           text: "Sign In"
           index: 1
+- runFlow:
+    when:
+      visible:
+        id: "button.sidebar"
+    commands:
+      - tapOn:
+          id: "button.sidebar"
+      - tapOn:
+          id: "link.sidebar.graphs"
+      - tapOn:
+          id: "button.graph-add"
+- runFlow:
+    when:
+      visible: "Choose a graph"
+    commands:
+      - tapOn: "Add sync graph"
 - extendedWaitUntil:
-    visible: "Choose a graph"
+    visible: "Add sync graph"
     timeout: 60000
-- tapOn: "Add sync graph"
 - tapOn:
     id: "field.graph-name"
 - inputText: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"
@@ -30,6 +45,7 @@ appId: com.logseq.chat
     timeout: 60000
 - assertNotVisible: "No cached blocks"
 - assertNotVisible: "snapshot_download_failed"
+- assertNotVisible: "snapshot required"
 - assertVisible:
     id: "list.outliner"
 - assertNotVisible:
@@ -39,13 +55,37 @@ appId: com.logseq.chat
 - assertVisible: "First synced block"
 - assertVisible:
     id: "toolbar.outliner.editor"
+- extendedWaitUntil:
+    visible: "Syncing"
+    timeout: 2000
+- extendedWaitUntil:
+    visible: "Synced"
+    timeout: 3000
+- tapOn:
+    id: "button.outliner.editor.task"
+- assertNotVisible: "outliner_effect_failed"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- extendedWaitUntil:
+    visible: "Synced"
+    timeout: 3000
 - tapOn: "Hide keyboard"
+- assertNotVisible: "snapshot required"
 - tapOn: "Edit block First synced block"
 - eraseText: 100
 - inputText: "Edited synced block"
 - tapOn: "Hide keyboard"
 - assertVisible: "Edited synced block"
+- assertNotVisible: "snapshot required"
+- extendedWaitUntil:
+    visible: "Synced"
+    timeout: 3000
 - extendedWaitUntil:
     visible:
       id: "sync.connected"
     timeout: 10000
+- tapOn:
+    id: "sync.connected"
+- assertVisible: "Sync status"
+- assertVisible: "Up to date"
+- assertVisible: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"

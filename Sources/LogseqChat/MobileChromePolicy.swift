@@ -57,6 +57,7 @@ enum HeaderControlPolicy {
     static let usesNativeToolbarGroup = true
     static let showsContentModeControl = false
     static let trailingGroupActionCount = 2
+    static let syncIndicatorOpensStatusSheet = true
 }
 
 enum SidebarMenuIconPolicy {
@@ -72,7 +73,42 @@ enum SidebarMenuIconPolicy {
 
 enum AppErrorPresentationPolicy {
     static func shouldPresent(code: String) -> Bool {
-        code != "sse_connection_failed"
+        code != "sse_connection_failed" && code != "snapshot_required"
+    }
+}
+
+enum SyncIndicatorPolicy {
+    static func hasUnconfirmedChanges(
+        hasPendingSemanticOperations: Bool,
+        hasPendingTransportRequest: Bool,
+        cachedBlockStatuses: [String?]
+    ) -> Bool {
+        hasPendingSemanticOperations
+            || hasPendingTransportRequest
+            || cachedBlockStatuses.contains { $0 == "failed" }
+    }
+}
+
+enum SyncStatusDetailPolicy {
+    static func summary(
+        isConnected: Bool,
+        hasPendingChanges: Bool,
+        hasFailedChanges: Bool
+    ) -> String {
+        if hasFailedChanges { return "Sync needs attention" }
+        if hasPendingChanges {
+            return isConnected ? "Saving changes" : "Waiting for connection"
+        }
+        return isConnected ? "Up to date" : "Not connected"
+    }
+}
+
+enum SyncConnectionPolicy {
+    static func isAvailable(
+        isConnected: Bool,
+        snapshotRefreshDeferred: Bool
+    ) -> Bool {
+        isConnected || snapshotRefreshDeferred
     }
 }
 

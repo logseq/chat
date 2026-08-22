@@ -402,13 +402,40 @@ let outliner_context_with_blocks ?sidebar_pages session blocks =
   Outliner_state.{ blocks; pages; tags }
 ;;
 
+let merge_live_block_metadata
+      (optimistic : Model.block)
+      (live : Model.block)
+  =
+  { optimistic with
+    updated_at = live.updated_at
+  ; sync_status = live.sync_status
+  ; tags = live.tags
+  ; references = live.references
+  ; breadcrumbs = live.breadcrumbs
+  ; status = live.status
+  ; is_asset = live.is_asset
+  ; asset_type = live.asset_type
+  ; asset_size = live.asset_size
+  ; asset_checksum = live.asset_checksum
+  ; local_path = live.local_path
+  ; journal = live.journal
+  }
+;;
+
 let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
   let base =
     match session.outliner_optimistic_blocks, Outliner_state.editing_uuid session.outliner_state with
     | Some cached, Some _ ->
-      List.filter
-        (fun (block : Model.block) -> String.equal block.page_id page_uuid)
-        cached
+      let live_by_uuid = Hashtbl.create (List.length live_blocks) in
+      List.iter
+        (fun (block : Model.block) -> Hashtbl.replace live_by_uuid block.uuid block)
+        live_blocks;
+      cached
+      |> List.filter (fun (block : Model.block) -> String.equal block.page_id page_uuid)
+      |> List.map (fun block ->
+        match Hashtbl.find_opt live_by_uuid block.Model.uuid with
+        | Some live -> merge_live_block_metadata block live
+        | None -> block)
     | None, _ | Some _, None -> live_blocks
   in
   let known = Hashtbl.create (List.length base) in
@@ -822,6 +849,13 @@ let snapshot_linked_reference_blocks session =
   else []
 ;;
 
+let has_pending_operations session =
+  session.semantic_queue <> []
+  || Option.is_some session.semantic_active
+  || Option.is_some session.pending_sync
+  || Logseq_chat_model.pending_blocks session.model <> []
+;;
+
 let snapshot session ~context_blocks blocks =
   let sidebar_pages =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
@@ -892,7 +926,7 @@ let snapshot session ~context_blocks blocks =
       ; "outlinerCommandRevision", `Int session.outliner_revision
       ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
-        `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
+        `Bool (has_pending_operations session)
       ; "hasOlderJournals",
         `Bool (Option.fold ~none:false ~some:(fun read -> read ()) session.has_older_journals)
       ; "isOutlinerPatch", `Bool false
@@ -929,7 +963,7 @@ let outliner_patch_result
       ; "outlinerCommandRevision", `Int session.outliner_revision
       ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
-        `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
+        `Bool (has_pending_operations session)
       ; "isOutlinerPatch", `Bool true
       ])
 ;;
@@ -1122,7 +1156,7 @@ let pending_sync_patch session =
       ; "selectedBlock", `Null
       ; "pendingSyncRequest", pending_request_json session
       ; "hasPendingSemanticOperations",
-        `Bool (session.semantic_queue <> [] || Option.is_some session.semantic_active)
+        `Bool (has_pending_operations session)
       ; "isPendingSyncPatch", `Bool true
       ])
 ;;
@@ -2013,6 +2047,7 @@ let outliner_message payload =
          (fun value -> Outliner_state.Choose_autocomplete value)
          (required_string "value" fields)
      | Ok "confirmDelete" -> Ok Outliner_state.Confirm_delete
+     | Ok "saveEditing" -> Ok Outliner_state.Save_editing
      | Ok "cancelEditing" -> Ok Outliner_state.Cancel_editing
      | Ok "toggleCollapsed" ->
        Result.map
@@ -2197,7 +2232,7 @@ let dispatch_outliner_event session payload =
             | [] ->
               (match message with
                | Tap_block _ | Long_press_block _ | Text_changed _ | Caret_moved _
-               | Choose_autocomplete _ | Cancel_editing | Toolbar _ -> Some []
+               | Choose_autocomplete _ | Save_editing | Cancel_editing | Toolbar _ -> Some []
                | Return_pressed | Return_pressed_with_text _ | Backspace_pressed _
                | Backspace_pressed_with_text _ | Drop_blocks _ | Confirm_delete
                | Set_task_status _ | Toggle_collapsed _ | Zoom_in _ | Zoom_out

@@ -103,6 +103,90 @@ let () =
 ;;
 
 let () =
+  with_runtime (fun _path _conn runtime ->
+    let first = save_title "accepted-title" "Old" "First" in
+    assert_bool "first title stages" (Runtime.stage runtime first = Ok ());
+    assert_bool "first title becomes accepted"
+      (Runtime.stage runtime { first with state = Accepted 43 } = Ok ());
+    let second = save_title "next-title" "First" "Second" in
+    assert_bool "dependent title stages on the accepted projection"
+      (Runtime.stage runtime second = Ok ());
+    assert_bool "dependent title prepares without waiting for a snapshot"
+      (match Runtime.prepare_sync runtime second with Ok ("save-block", _) -> true | _ -> false))
+;;
+
+let () =
+  with_runtime (fun path _conn runtime ->
+    let first = save_title "in-flight-title" "Old" "First" in
+    let stale_second = save_title "queued-during-flight" "First" "Second" in
+    assert_bool "in-flight title stages" (Runtime.stage runtime first = Ok ());
+    assert_bool "dependent edit stages against the optimistic projection"
+      (Runtime.stage runtime stale_second = Ok ());
+    assert_bool "in-flight title becomes accepted"
+      (Runtime.stage runtime { first with state = Accepted 43 } = Ok ());
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+    assert_bool "a stale queue copy prepares from its rebased persisted operation"
+      (match Runtime.prepare_sync runtime stale_second with
+       | Ok ("save-block", _) -> true
+       | _ -> false);
+    assert_bool "a stale completion updates only transport state"
+      (Runtime.stage runtime { stale_second with state = Retryable } = Ok ());
+    assert_bool "a stale completion cannot roll back the persisted cursor"
+      (match
+         List.find_opt
+           (fun operation -> String.equal operation.Ops.operation_id stale_second.operation_id)
+           (Ops.list ~path)
+       with
+       | Some operation -> operation.base_t = 43 && operation.state = Retryable
+       | None -> false))
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-reopen" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      Ops.save
+        ~path
+        { (save_title "retry-after-reopen" "Old" "New") with
+          base_t = 42
+        ; state = Retryable
+        };
+      let runtime = Runtime.create_base ~path ~server_t:43 (conn_from_db (base_db "Old")) in
+      assert_bool "reopening rebases a safe retryable operation"
+        (match Ops.list ~path with
+         | [ { Ops.base_t = 43; state = Queued; _ } ] -> true
+         | _ -> false);
+      assert_bool "the rebased operation prepares immediately after reopen"
+        (match Runtime.pending_operations runtime with
+         | [ operation ] ->
+           (match Runtime.prepare_sync runtime operation with Ok ("save-block", _) -> true | _ -> false)
+         | _ -> false))
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-reopen-delete" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      Ops.save
+        ~path
+        Ops.
+          { operation_id = "unsafe-delete-after-reopen"
+          ; base_t = 42
+          ; state = Retryable
+          ; intent = Delete_blocks { uuids = [ "block" ] }
+          };
+      ignore (Runtime.create_base ~path ~server_t:43 (conn_from_db (base_db "Old")));
+      assert_bool "reopening conflicts an unsafe stale structural operation"
+        (match Ops.list ~path with
+         | [ { Ops.base_t = 43; state = Conflicted _; _ } ] -> true
+         | _ -> false))
+;;
+
+let () =
   let path = Filename.temp_file "logseq-chat-journal-window" ".sqlite" in
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)

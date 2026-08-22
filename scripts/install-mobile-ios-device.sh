@@ -3,6 +3,10 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ios_device_config=${LOGSEQ_CHAT_IOS_CONFIG:-$repo_root/.logseq-chat-ios-device.env}
+if [[ -f $ios_device_config ]]; then
+  source "$ios_device_config"
+fi
 bundle_id=${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}
 device=${LOGSEQ_CHAT_IOS_DEVICE:-iPhone}
 launch_app=${LOGSEQ_CHAT_IOS_LAUNCH:-1}

@@ -181,6 +181,7 @@ private struct CreateSyncGraphPayload: Encodable {
     public private(set) var isRefreshing = false
     public private(set) var cursorAdvancedAfterMutation = false
     public private(set) var captureRequestRevision = 0
+    public private(set) var isSnapshotRefreshDeferred = false
 
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
@@ -196,6 +197,7 @@ private struct CreateSyncGraphPayload: Encodable {
     private var outlinerProjectionGeneration = 0
     private var pendingOutlinerTransientEvent: LogseqOutlinerEvent?
     private var outlinerTransientFlushTask: Task<Void, Never>?
+    private var outlinerAutosaveTask: Task<Void, Never>?
 
     public convenience init(call: @escaping @Sendable (String) -> String) {
         self.init(call: call) { request in
@@ -610,6 +612,7 @@ private struct CreateSyncGraphPayload: Encodable {
                 if lastError == nil {
                     activeGraphID = graphID
                     debugDatabaseRoute = "graph:\(graphID)"
+                    isSnapshotRefreshDeferred = false
                     #if DEBUG
                     print("LOGSEQ_DB_ROUTE open_graph_applied route=\(debugDatabaseRoute)")
                     #endif
@@ -634,6 +637,17 @@ private struct CreateSyncGraphPayload: Encodable {
             )
             #endif
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
+            let isEditingOutlinerBlock = snapshot.outlinerState.editing != nil
+                || snapshot.nodeRoutes.last?.outlinerState.editing != nil
+            guard LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
+                forceSnapshot: forceSnapshot,
+                isEditingOutlinerBlock: isEditingOutlinerBlock,
+                hasPendingLocalChanges: snapshot.hasPendingSemanticOperations
+                    || snapshot.pendingSyncRequest != nil
+            ) else {
+                isSnapshotRefreshDeferred = true
+                return true
+            }
             let payload = ImportSnapshotPayload(
                 graphId: graphID,
                 activePath: activeURL.path,
@@ -655,9 +669,11 @@ private struct CreateSyncGraphPayload: Encodable {
             if lastError == nil {
                 activeGraphID = graphID
                 debugDatabaseRoute = "graph:\(graphID)"
+                isSnapshotRefreshDeferred = false
             }
             return lastError == nil
         } catch {
+            isSnapshotRefreshDeferred = false
             lastError = LogseqChatCoreError(code: "snapshot_download_failed", message: "\(error)")
             return false
         }
@@ -690,10 +706,15 @@ private struct CreateSyncGraphPayload: Encodable {
                 if stopAfterFirstFrame { break }
             }
             let streamError = lastError
+            if streamError?.code == "snapshot_required" {
+                lastError = nil
+            }
             await dispatchRawAndWait("stopSSE")
             if let streamError {
+                if streamError.code == "snapshot_required" {
+                    return true
+                }
                 lastError = streamError
-                return streamError.code == "snapshot_required"
             }
         } catch {
             await dispatchRawAndWait("stopSSE")
@@ -734,10 +755,15 @@ private struct CreateSyncGraphPayload: Encodable {
                 }
             }
             let streamError = lastError
+            if streamError?.code == "snapshot_required" {
+                lastError = nil
+            }
             await dispatchRawAndWait("stopSSE")
             if let streamError {
+                if streamError.code == "snapshot_required" {
+                    return true
+                }
                 lastError = streamError
-                return streamError.code == "snapshot_required"
             }
         } catch {
             await dispatchRawAndWait("stopSSE")
@@ -753,6 +779,7 @@ private struct CreateSyncGraphPayload: Encodable {
     }
 
     public func deferSnapshotRefreshWhileEditing() {
+        isSnapshotRefreshDeferred = true
         if lastError?.code == "snapshot_required" {
             lastError = nil
         }
@@ -943,7 +970,13 @@ private struct CreateSyncGraphPayload: Encodable {
         guard pendingSyncTask == nil else { return }
         pendingSyncTask = Task { [weak self] in
             await self?.runPendingSyncPump()
-            self?.pendingSyncTask = nil
+            guard let self else { return }
+            self.pendingSyncTask = nil
+            if LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
+                requestedWhileFinishing: self.pendingSyncRequested
+            ) {
+                self.syncPending()
+            }
         }
     }
 
@@ -1057,11 +1090,19 @@ private struct CreateSyncGraphPayload: Encodable {
                 + "action=\(event.action ?? "nil")"
         )
         #endif
+        if event.type == "textChanged" {
+            scheduleOutlinerAutosave()
+        } else if event.type != "caretMoved" {
+            outlinerAutosaveTask?.cancel()
+            outlinerAutosaveTask = nil
+        }
         let isAtomicStructureEvent =
             (event.type == "returnPressed" && event.title != nil
                 && event.caretUTF16Offset != nil)
             || (event.type == "backspacePressed" && event.title != nil)
-        outlinerProjectionGeneration += 1
+        if event.type == "textChanged" || isAtomicStructureEvent {
+            outlinerProjectionGeneration += 1
+        }
         let generation = outlinerProjectionGeneration
         if isAtomicStructureEvent {
             outlinerTransientFlushTask?.cancel()
@@ -1138,7 +1179,11 @@ private struct CreateSyncGraphPayload: Encodable {
                 }
             )
             if self.snapshot.hasPendingSemanticOperations {
-                self.syncPendingSoon()
+                self.syncPendingSoon(
+                    delayNanoseconds: LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+                        eventType: event.type
+                    )
+                )
             }
         }
     }
@@ -1157,10 +1202,24 @@ private struct CreateSyncGraphPayload: Encodable {
         return prefix.hasSuffix("#") || prefix.hasSuffix("[[") || prefix.hasSuffix("::")
     }
 
-    private func syncPendingSoon() {
+    private func scheduleOutlinerAutosave() {
+        outlinerAutosaveTask?.cancel()
+        outlinerAutosaveTask = Task { [weak self] in
+            try? await Task.sleep(
+                nanoseconds: LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+                    eventType: "textChanged"
+                )
+            )
+            guard !Task.isCancelled, let self else { return }
+            self.outlinerAutosaveTask = nil
+            self.outlinerEvent(LogseqOutlinerEvent(type: "saveEditing"))
+        }
+    }
+
+    private func syncPendingSoon(delayNanoseconds: UInt64 = 150_000_000) {
         pendingSyncDebounceTask?.cancel()
         pendingSyncDebounceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
             guard !Task.isCancelled, let self else { return }
             self.pendingSyncDebounceTask = nil
             self.syncPending()

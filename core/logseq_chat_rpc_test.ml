@@ -234,10 +234,17 @@ let () =
       ()
   in
   configure_plain_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"First title\",\"uuid\":\"async-local\",\"now\":1776000000000}"}}|});
+  let capture_response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"First title\",\"uuid\":\"async-local\",\"now\":1776000000000}"}}|}
+  in
+  (match from_string capture_response with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     if not (required_bool "hasPendingSemanticOperations" result)
+     then failwith "pending block writes must publish live pending state"
+   | _ -> failwith "capture response must be an RPC object");
   let request =
     Logseq_chat_rpc.call
       session
@@ -1584,10 +1591,7 @@ let () =
   let saved =
     dispatch_outliner
       session
-      (`Assoc
-        [ "type", `String "toolbar"
-        ; "action", `String "hideKeyboard"
-        ])
+      (`Assoc [ "type", `String "saveEditing" ])
   in
   if not (required_bool "isOutlinerPatch" saved)
   then failwith "saving an edited title must return a bounded patch";
@@ -1598,7 +1602,16 @@ let () =
         || required_list "outlinerRowSplices" saved <> []
      then failwith "a title save must update the existing row by block id"
    | _ -> failwith "a title save patch must contain exactly one block");
-  if List.length !staged <> 1 then failwith "closing the keyboard must stage one title save"
+  let state = required_assoc "outlinerState" saved in
+  (match List.assoc_opt "editing" state with
+   | Some (`Assoc editing) ->
+     assert_equal "autosave keeps editing" "bounded-save" (required_string "uuid" editing)
+   | _ -> failwith "autosave must keep the block in editing mode");
+  if List.length !staged <> 1 then failwith "idle autosave must stage one title save";
+  ignore
+    (dispatch_outliner session (`Assoc [ "type", `String "saveEditing" ]));
+  if List.length !staged <> 1
+  then failwith "a staged title must become the editing session's new expected title"
 ;;
 
 let () =
@@ -2613,6 +2626,66 @@ let () =
     "consecutive page-scoped deletes survive a lagging page reader"
     source.uuid
     (merge first_empty_after_merge)
+;;
+
+let () =
+  (* Editing keeps local structure, but live properties must replace stale
+     metadata in the optimistic overlay before staging another property edit. *)
+  let page = Logseq_chat_graph_read.{ uuid = "status-page"; title = "Status page" } in
+  let source =
+    { (remote_block "status-source" "Task") with
+      Logseq_chat_model.page_id = page.uuid
+    ; parent_id = Some page.uuid
+    ; order = Some "a0"
+    }
+  in
+  let todo =
+    Logseq_chat_model.
+      { uuid = "status-todo"
+      ; ident = Some "logseq.property/status.todo"
+      ; title = "Todo"
+      ; icon_type = None
+      ; icon_id = None
+      ; icon_color = None
+      }
+  in
+  let live_blocks = ref [ source ] in
+  let staged = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_sidebar_pages:(fun () ->
+        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+      ~graph_page_blocks:(fun uuid ->
+        if String.equal uuid page.uuid then Some !live_blocks else None)
+      ~stage_operation:(fun operation -> staged := !staged @ [ operation ]; Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectPage","payload":"status-page"}}|});
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  live_blocks := [ { source with Logseq_chat_model.status = Some todo } ];
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc
+         [ "type", `String "setTaskStatus"
+         ; "uuid", `String source.uuid
+         ; "statusIdent", `String "logseq.property/status.doing"
+         ]));
+  match !staged with
+  | [ { Logseq_chat_pending_ops.intent =
+          Set_property
+            { expected = Some (Ref_ident "logseq.property/status.todo"); _ }
+      ; _ } ] -> ()
+  | _ -> failwith "editing must stage task status against live property metadata"
 ;;
 
 let () =

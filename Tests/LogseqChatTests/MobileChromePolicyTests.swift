@@ -115,6 +115,7 @@ import LogseqChatModel
         #expect(HeaderControlPolicy.usesNativeToolbarGroup)
         #expect(!HeaderControlPolicy.showsContentModeControl)
         #expect(HeaderControlPolicy.trailingGroupActionCount == 2)
+        #expect(HeaderControlPolicy.syncIndicatorOpensStatusSheet)
     }
 
     @Test func sidebarToggleUsesTwoAsymmetricLinesInACircularPrimaryControl() {
@@ -129,7 +130,56 @@ import LogseqChatModel
 
     @Test func offlineSSEFailuresStayOutOfContentErrorBanners() {
         #expect(!AppErrorPresentationPolicy.shouldPresent(code: "sse_connection_failed"))
-        #expect(AppErrorPresentationPolicy.shouldPresent(code: "snapshot_required"))
+        #expect(!AppErrorPresentationPolicy.shouldPresent(code: "snapshot_required"))
         #expect(AppErrorPresentationPolicy.shouldPresent(code: "outliner_effect_failed"))
+    }
+
+    @Test func syncIndicatorUsesLivePumpStateInsteadOfCachedBlockStatus() {
+        #expect(!SyncIndicatorPolicy.hasUnconfirmedChanges(
+            hasPendingSemanticOperations: false,
+            hasPendingTransportRequest: false,
+            cachedBlockStatuses: ["pending", "submitted", "synced", nil]
+        ))
+        #expect(SyncIndicatorPolicy.hasUnconfirmedChanges(
+            hasPendingSemanticOperations: true,
+            hasPendingTransportRequest: false,
+            cachedBlockStatuses: []
+        ))
+        #expect(SyncIndicatorPolicy.hasUnconfirmedChanges(
+            hasPendingSemanticOperations: false,
+            hasPendingTransportRequest: true,
+            cachedBlockStatuses: []
+        ))
+        #expect(SyncIndicatorPolicy.hasUnconfirmedChanges(
+            hasPendingSemanticOperations: false,
+            hasPendingTransportRequest: false,
+            cachedBlockStatuses: ["failed"]
+        ))
+    }
+
+    @Test func syncStatusSummaryExplainsTheCurrentState() {
+        #expect(SyncStatusDetailPolicy.summary(
+            isConnected: true, hasPendingChanges: false, hasFailedChanges: false
+        ) == "Up to date")
+        #expect(SyncStatusDetailPolicy.summary(
+            isConnected: true, hasPendingChanges: true, hasFailedChanges: false
+        ) == "Saving changes")
+        #expect(SyncStatusDetailPolicy.summary(
+            isConnected: false, hasPendingChanges: true, hasFailedChanges: false
+        ) == "Waiting for connection")
+        #expect(SyncStatusDetailPolicy.summary(
+            isConnected: true, hasPendingChanges: false, hasFailedChanges: true
+        ) == "Sync needs attention")
+    }
+
+    @Test func deferredSnapshotRefreshKeepsTheSyncConnectionAvailableWhileEditing() {
+        #expect(SyncConnectionPolicy.isAvailable(
+            isConnected: false,
+            snapshotRefreshDeferred: true
+        ))
+        #expect(!SyncConnectionPolicy.isAvailable(
+            isConnected: false,
+            snapshotRefreshDeferred: false
+        ))
     }
 }

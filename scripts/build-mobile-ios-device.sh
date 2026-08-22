@@ -3,6 +3,10 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ios_device_config=${LOGSEQ_CHAT_IOS_CONFIG:-$repo_root/.logseq-chat-ios-device.env}
+if [[ -f $ios_device_config ]]; then
+  source "$ios_device_config"
+fi
 toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
 deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
@@ -44,7 +48,7 @@ case "$build_configuration" in
 esac
 
 if [[ ${LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
-  echo "configuration=$build_configuration swift-build-dir=$swift_build_dir ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix"
+  echo "configuration=$build_configuration swift-build-dir=$swift_build_dir ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix profile=$profile signing-identity=$signing_identity"
   exit 0
 fi
 

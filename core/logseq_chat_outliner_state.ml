@@ -96,6 +96,7 @@ type msg =
       }
   | Choose_autocomplete of string
   | Confirm_delete
+  | Save_editing
   | Cancel_editing
   | Set_task_status of
       { uuid : string
@@ -917,6 +918,7 @@ let update context state message =
   | Toolbar Hide_keyboard ->
     ( { state with editing = None; autocomplete = None }
     , commit_effect context state.editing @ [ Haptic Impact ] )
+  | Save_editing -> state, commit_effect context state.editing
   | Cancel_editing ->
     { state with editing = None; autocomplete = None }, commit_effect context state.editing
   | Toolbar Tag_action ->
@@ -1041,5 +1043,10 @@ let update context state message =
          ; autocomplete = None
          }
        , [] ))
+  | Operation_staged (Ops.Save_title { uuid; title; _ }) ->
+    (match state.editing with
+     | Some editing when String.equal editing.uuid uuid ->
+       { state with editing = Some { editing with expected_title = title } }, []
+     | Some _ | None -> state, [])
   | Operation_staged _ -> state, []
 ;;

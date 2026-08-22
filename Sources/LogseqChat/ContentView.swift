@@ -225,6 +225,7 @@ struct ContentView: View {
     @State private var composerExpanded = false
     @State private var handledCaptureRequestRevision = 0
     @State private var settingsPresented = false
+    @State private var syncStatusPresented = false
     @State private var searchPagePresented = false
     @State private var graphsPresented = false
     @State private var graphPasswordPresented = false
@@ -357,6 +358,18 @@ struct ContentView: View {
                         store.configure(baseURL: baseURL, token: "", refreshAfterApply: false)
                     }
                 }
+            )
+        }
+        .sheet(isPresented: $syncStatusPresented) {
+            SyncStatusView(
+                graphName: syncStatusGraphName,
+                summary: syncStatusSummary,
+                isConnected: syncConnectionAvailable,
+                hasPendingChanges: hasUnconfirmedSyncChanges,
+                cursor: store.snapshot.appliedServerT,
+                errorMessage: presentedError?.message,
+                syncNow: { store.syncPending() },
+                close: { syncStatusPresented = false }
             )
         }
         .sheet(isPresented: $searchPagePresented) {
@@ -1650,15 +1663,36 @@ struct ContentView: View {
     }
 
     private var hasUnconfirmedSyncChanges: Bool {
-        store.snapshot.blocks.contains { block in
-            block.syncStatus == "pending"
-                || block.syncStatus == "submitted"
-                || block.syncStatus == "failed"
+        SyncIndicatorPolicy.hasUnconfirmedChanges(
+            hasPendingSemanticOperations: store.snapshot.hasPendingSemanticOperations,
+            hasPendingTransportRequest: store.snapshot.pendingSyncRequest != nil,
+            cachedBlockStatuses: store.snapshot.blocks.map(\.syncStatus)
+        )
+    }
+
+    private var hasFailedSyncChanges: Bool {
+        store.snapshot.blocks.contains(where: \.isFailedSync)
+    }
+
+    private var syncStatusGraphName: String {
+        if let graphName = store.snapshot.graphName, !graphName.isEmpty {
+            return graphName
         }
+        let graphID = store.snapshot.selectedGraphId ?? selectedGraphID
+        return store.snapshot.graphs?.first(where: { $0.id == graphID })?.name
+            ?? graphID
+    }
+
+    private var syncStatusSummary: String {
+        SyncStatusDetailPolicy.summary(
+            isConnected: syncConnectionAvailable,
+            hasPendingChanges: hasUnconfirmedSyncChanges,
+            hasFailedChanges: hasFailedSyncChanges
+        )
     }
 
     private var syncIndicatorColor: Color {
-        if store.snapshot.syncConnected == true && !hasUnconfirmedSyncChanges {
+        if syncConnectionAvailable && !hasUnconfirmedSyncChanges {
             return .green
         }
         return .yellow
@@ -1668,14 +1702,21 @@ struct ContentView: View {
         if hasUnconfirmedSyncChanges {
             return "Syncing"
         }
-        return store.snapshot.syncConnected == true ? "Synced" : "Not connected"
+        return syncConnectionAvailable ? "Synced" : "Not connected"
+    }
+
+    private var syncConnectionAvailable: Bool {
+        SyncConnectionPolicy.isAvailable(
+            isConnected: store.snapshot.syncConnected == true,
+            snapshotRefreshDeferred: store.isSnapshotRefreshDeferred
+        )
     }
 
     private var syncIndicatorAccessibilityIdentifier: String {
         if store.cursorAdvancedAfterMutation {
             return "sync.cursor-advanced"
         }
-        return store.snapshot.syncConnected == true ? "sync.connected" : "sync.disconnected"
+        return syncConnectionAvailable ? "sync.connected" : "sync.disconnected"
     }
 
     @ViewBuilder private var connectionControls: some View {
@@ -1703,7 +1744,7 @@ struct ContentView: View {
 
     private var syncIndicatorControl: some View {
         Button {
-            settingsPresented = true
+            syncStatusPresented = true
         } label: {
             Circle()
                 .fill(syncIndicatorColor)
@@ -2745,6 +2786,66 @@ extension View {
         #endif
     }
 
+}
+
+private struct SyncStatusView: View {
+    let graphName: String
+    let summary: String
+    let isConnected: Bool
+    let hasPendingChanges: Bool
+    let cursor: Int?
+    let errorMessage: String?
+    let syncNow: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    statusRow(label: "Status", value: summary)
+                    statusRow(label: "Graph", value: graphName)
+                    statusRow(
+                        label: "Connection",
+                        value: isConnected ? "Connected" : "Disconnected"
+                    )
+                    statusRow(
+                        label: "Local changes",
+                        value: hasPendingChanges ? "Waiting to save" : "Saved"
+                    )
+                    statusRow(
+                        label: "Server cursor",
+                        value: cursor.map(String.init) ?? "Unavailable"
+                    )
+                }
+                if let errorMessage, !errorMessage.isEmpty {
+                    Section("Last error") {
+                        Text(verbatim: errorMessage)
+                            .foregroundStyle(.red)
+                    }
+                }
+                Section {
+                    Button("Sync now", action: syncNow)
+                        .accessibilityIdentifier("button.sync-now")
+                }
+            }
+            .navigationTitle("Sync status")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: close)
+                }
+            }
+        }
+    }
+
+    private func statusRow(label: String, value: String) -> some View {
+        HStack {
+            Text(verbatim: label)
+            Spacer()
+            Text(verbatim: value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
 }
 
 private struct BlockRow: View {

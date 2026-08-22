@@ -352,6 +352,39 @@ private let testEmptySnapshotJSON = """
             snapshotRequired: false,
             isEditingOutlinerBlock: false
         ))
+        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
+            forceSnapshot: true,
+            isEditingOutlinerBlock: true,
+            hasPendingLocalChanges: false
+        ))
+        #expect(LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
+            forceSnapshot: true,
+            isEditingOutlinerBlock: false,
+            hasPendingLocalChanges: false
+        ))
+        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
+            forceSnapshot: true,
+            isEditingOutlinerBlock: false,
+            hasPendingLocalChanges: true
+        ))
+    }
+
+    @Test func outlinerTypingAutosavesAfterOneSecondOfIdle() {
+        #expect(LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+            eventType: "textChanged"
+        ) == 1_000_000_000)
+        #expect(LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+            eventType: "toolbar"
+        ) == 150_000_000)
+    }
+
+    @Test func pendingPumpRestartsWhenWorkArrivesDuringTaskCleanup() {
+        #expect(LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
+            requestedWhileFinishing: true
+        ))
+        #expect(!LogseqPendingSyncPumpPolicy.shouldRestartAfterFinishing(
+            requestedWhileFinishing: false
+        ))
     }
 
     #if !SKIP
@@ -2013,9 +2046,10 @@ private let testEmptySnapshotJSON = """
                 "hasPendingSemanticOperations":true,"isPendingSyncPatch":true},"error":null}
                 """
             }
+            let hasPending = request.contains("\"type\":\"saveEditing\"")
             return """
             {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
-            "selectedBlock":null,"outlinerRows":[],"hasPendingSemanticOperations":true,\
+            "selectedBlock":null,"outlinerRows":[],"hasPendingSemanticOperations":\(hasPending),\
             "isOutlinerPatch":true},"error":null}
             """
         }
@@ -2030,6 +2064,49 @@ private let testEmptySnapshotJSON = """
         #expect(!recorder.all.contains { $0.contains("\"action\":\"beginPendingSync\"") })
 
         try await waitUntil {
+            recorder.all.filter { $0.contains("\"action\":\"beginPendingSync\"") }.count == 1
+        }
+    }
+
+    @Test @MainActor func outlinerTypingResetsTheOneSecondServerAutosaveTimer() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"beginPendingSync\"") {
+                return """
+                {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
+                "selectedBlock":null,"pendingSyncRequest":null,\
+                "hasPendingSemanticOperations":true,"isPendingSyncPatch":true},"error":null}
+                """
+            }
+            return """
+            {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
+            "selectedBlock":null,"outlinerRows":[],"hasPendingSemanticOperations":true,\
+            "isOutlinerPatch":true},"error":null}
+            """
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "first", caretUTF16Offset: 5
+        ))
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"title\":\"first\"") }
+        }
+        try await Task.sleep(for: .milliseconds(700))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "second", caretUTF16Offset: 6
+        ))
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"title\":\"second\"") }
+        }
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(!recorder.all.contains { $0.contains("\"type\":\"saveEditing\"") })
+        #expect(!recorder.all.contains { $0.contains("\"action\":\"beginPendingSync\"") })
+
+        try await waitUntil(timeout: 2.0) {
+            recorder.all.filter { $0.contains("\"type\":\"saveEditing\"") }.count == 1
+        }
+        try await waitUntil(timeout: 2.0) {
             recorder.all.filter { $0.contains("\"action\":\"beginPendingSync\"") }.count == 1
         }
     }
@@ -2347,6 +2424,34 @@ private let testEmptySnapshotJSON = """
         let textIndex = try #require(events.firstIndex { $0.contains("textChanged") })
         let commandIndex = try #require(events.firstIndex { $0.contains("indent") })
         #expect(textIndex < commandIndex)
+    }
+
+    @Test @MainActor func hideKeyboardCannotDropTypingAlreadyQueuedBehindCoreWork() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("tapBlock") {
+                Thread.sleep(forTimeInterval: 0.30)
+            }
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(type: "tapBlock", uuid: "source"))
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "must be saved", caretUTF16Offset: 13
+        ))
+        try await Task.sleep(for: .milliseconds(100))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "hideKeyboard"))
+
+        try await waitUntil(timeout: 2.0) {
+            recorder.all.contains { $0.contains("hideKeyboard") }
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        let textIndex = try #require(events.firstIndex {
+            $0.contains("textChanged") && $0.contains("must be saved")
+        })
+        let hideIndex = try #require(events.firstIndex { $0.contains("hideKeyboard") })
+        #expect(textIndex < hideIndex)
     }
 
     @Test @MainActor func atomicReturnDropsPendingTypingAndUsesOneCoreRequest() async throws {

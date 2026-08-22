@@ -234,6 +234,22 @@ check_rejects \
   "device build requires a provisioning profile" \
   "set LOGSEQ_CHAT_IOS_PROFILE to a development provisioning profile for com.logseq.chat" \
   env -u LOGSEQ_CHAT_IOS_PROFILE \
+    LOGSEQ_CHAT_IOS_CONFIG=/tmp/logseq-chat-missing-device-config \
+    "$repo_root/scripts/build-mobile-ios-device.sh"
+
+fake_device_config=$(mktemp /tmp/logseq-chat-ios-device-config.XXXXXX)
+cat >"$fake_device_config" <<'CONFIG'
+LOGSEQ_CHAT_IOS_PROFILE=/tmp/logseq-chat-development.mobileprovision
+LOGSEQ_CHAT_IOS_SIGNING_IDENTITY="Apple Development: Tiansheng Qin (T6PA4U4765)"
+CONFIG
+
+check_succeeds \
+  "device build remembers local signing defaults" \
+  "profile=/tmp/logseq-chat-development.mobileprovision signing-identity=Apple Development: Tiansheng Qin (T6PA4U4765)" \
+  env -u LOGSEQ_CHAT_IOS_PROFILE \
+    -u LOGSEQ_CHAT_IOS_SIGNING_IDENTITY \
+    LOGSEQ_CHAT_IOS_CONFIG="$fake_device_config" \
+    LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
 
 check_succeeds \
@@ -261,6 +277,7 @@ check_rejects \
   "device install requires a provisioning profile" \
   "set LOGSEQ_CHAT_IOS_PROFILE to a development provisioning profile for com.logseq.chat" \
   env -u LOGSEQ_CHAT_IOS_PROFILE \
+    LOGSEQ_CHAT_IOS_CONFIG=/tmp/logseq-chat-missing-device-config \
     "$repo_root/scripts/install-mobile-ios-device.sh"
 
 fake_profile=$(mktemp /tmp/logseq-chat-fake-mobileprovision.XXXXXX)
