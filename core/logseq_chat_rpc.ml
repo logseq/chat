@@ -92,6 +92,9 @@ type t =
   ; graph_review_flashcard :
       (uuid:string -> rating:Flashcards.rating -> now:int -> operation_id:string
        -> (unit, string) result) option
+  ; graph_set_page_favorite :
+      (page_uuid:string -> favorite:bool -> operation_id:string -> now:int
+       -> (unit, string) result) option
   ; mutable flashcards : Flashcards.due_card list
   ; mutable search_results : Logseq_chat_search_index.hit list
   ; mutable search_query : string
@@ -163,6 +166,13 @@ let optional_int name fields =
   | Some (`Int value) -> Ok (Some value)
   | Some `Null | None -> Ok None
   | Some _ -> Error ("field must be an integer: " ^ name)
+;;
+
+let required_bool name fields =
+  match assoc name fields with
+  | Some (`Bool value) -> Ok value
+  | Some _ -> Error ("field must be a boolean: " ^ name)
+  | None -> Error ("missing field: " ^ name)
 ;;
 
 let required_string_list name fields =
@@ -680,7 +690,8 @@ let rec project_outliner_intent blocks = function
     List.filter
       (fun (block : Model.block) -> not (List.mem block.uuid uuids))
       blocks
-  | Set_property _ | Set_properties _ | Create_tag _ | Create_journal _ | Add_tag _ -> blocks
+  | Set_property _ | Set_properties _ | Create_tag _ | Create_journal _ | Add_tag _
+  | Set_favorite _ -> blocks
 ;;
 
 let project_outliner_operations context operations =
@@ -1240,6 +1251,7 @@ let create
       ?graph_search
       ?graph_due_flashcards
       ?graph_review_flashcard
+      ?graph_set_page_favorite
       ?load_older_journals
       ?has_older_journals
       ?stage_operation
@@ -1293,6 +1305,7 @@ let create
   ; graph_search
   ; graph_due_flashcards
   ; graph_review_flashcard
+  ; graph_set_page_favorite
   ; flashcards = []
   ; search_results = []
   ; search_query = ""
@@ -2604,6 +2617,31 @@ let dispatch session action payload =
           failure ~code:"invalid_json" ~message:"reviewFlashcard payload must be valid JSON")
      | None, _ -> failure ~code:"invalid_params" ~message:"reviewFlashcard requires a payload"
      | _, None -> failure ~code:"flashcards_unavailable" ~message:"No graph is open")
+  | "setPageFavorite" ->
+    (match payload, session.graph_set_page_favorite, session.config with
+     | Some payload, Some set_favorite, Some config ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "pageUuid" fields,
+                 required_bool "favorite" fields,
+                 required_string "operationId" fields,
+                 optional_int "now" fields with
+           | Ok page_uuid, Ok favorite, Ok operation_id, Ok requested_now ->
+             let now = Option.value requested_now ~default:(now_ms ()) in
+             (match set_favorite ~page_uuid ~favorite ~operation_id ~now with
+              | Ok () ->
+                restore_semantic_queue session config;
+                snapshot_visible session
+              | Error message -> failure ~code:"set_page_favorite_failed" ~message)
+           | Error message, _, _, _ | _, Error message, _, _
+           | _, _, Error message, _ | _, _, _, Error message ->
+             failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"setPageFavorite payload must be an object"
+        | exception _ ->
+          failure ~code:"invalid_json" ~message:"setPageFavorite payload must be valid JSON")
+     | None, _, _ -> failure ~code:"invalid_params" ~message:"setPageFavorite requires a payload"
+     | _, None, _ -> failure ~code:"set_page_favorite_unavailable" ~message:"No graph is open"
+     | _, _, None -> failure ~code:"graph_not_configured" ~message:"Select a graph first")
   | "unlockGraph" ->
     (match session.config, session.unlock_graph, payload with
      | Some config, Some unlock_graph, Some password when selected_graph_is_encrypted session ->

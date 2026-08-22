@@ -1,5 +1,6 @@
 module Ops = Logseq_chat_pending_ops
 module Projection = Logseq_chat_pending_projection
+module Order = Logseq_chat_fractional_order
 
 let ( >>= ) = Result.bind
 let ( >>| ) result f = Result.map f result
@@ -58,6 +59,7 @@ let affected_uuids db = function
   | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
   | Ops.Delete_blocks { uuids } -> subtree_uuids db uuids
   | Ops.Create_journal { page_uuid; block_uuid; _ } -> [ page_uuid; block_uuid ]
+  | Ops.Set_favorite { page_uuid; favorite_uuid; _ } -> [ page_uuid; favorite_uuid ]
 ;;
 
 let rec semantic_value = function
@@ -150,7 +152,7 @@ let safe_to_rebase = function
   | Ops.Save_title _ | Ops.Set_property _ | Ops.Set_properties _
   | Ops.Split_block _ | Ops.Merge_backward _
   | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
-  | Ops.Move_block _ | Ops.Move_blocks _ -> true
+  | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Set_favorite _ -> true
   | Ops.Delete_blocks _ -> false
 ;;
 
@@ -333,7 +335,8 @@ let normalize_operation_against runtime db operation =
       )
     | (Ops.Set_property _ | Ops.Set_properties _
       | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
-      | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _) as intent -> Ok intent
+      | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _
+      | Ops.Set_favorite _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }
 ;;
@@ -577,6 +580,51 @@ let blocks_for_page runtime page_uuid =
 let sidebar_pages runtime =
   Logseq_chat_graph_read.sidebar_pages
     runtime.snapshot.db
+;;
+
+let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
+  let db = runtime.snapshot.db in
+  let current = Logseq_chat_graph_read.page_is_favorite db page_uuid in
+  if current = favorite
+  then Ok ()
+  else if favorite
+  then
+    Order.between (Logseq_chat_graph_read.last_favorite_order db) None
+    >>= fun order ->
+    stage
+      runtime
+      Ops.
+        { operation_id
+        ; base_t = runtime.server_t
+        ; state = Queued
+        ; intent =
+            Set_favorite
+              { page_uuid
+              ; favorite_uuid = fresh_uuid ()
+              ; favorite
+              ; order
+              ; created_at = now
+              }
+        }
+  else
+    match Logseq_chat_graph_read.favorite_block_uuid db page_uuid with
+    | None -> Ok ()
+    | Some favorite_uuid ->
+      stage
+        runtime
+        Ops.
+          { operation_id
+          ; base_t = runtime.server_t
+          ; state = Queued
+          ; intent =
+              Set_favorite
+                { page_uuid
+                ; favorite_uuid
+                ; favorite
+                ; order = ""
+                ; created_at = now
+                }
+          }
 ;;
 
 let node_destination runtime uuid =

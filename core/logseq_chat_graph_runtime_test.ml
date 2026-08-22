@@ -24,6 +24,7 @@ let schema =
   ; "block/name", one ~value_type:StringType ~indexed:true ()
   ; "block/page", one ~value_type:RefType ~indexed:true ()
   ; "block/parent", one ~value_type:RefType ~indexed:true ()
+  ; "block/link", one ~value_type:RefType ~indexed:true ()
   ; "block/order", one ~value_type:StringType ~indexed:true ()
   ; "block/refs", many ~value_type:RefType ~indexed:true ()
   ; "block/tags", many ~value_type:RefType ~indexed:true ()
@@ -79,6 +80,59 @@ let save_title id expected title =
     ; state = Queued
     ; intent = Save_title { uuid = "block"; expected_title = expected; title }
     }
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-favorite" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      let db =
+        base_db "Old"
+        |> db_with
+             [ Add (Entity_id 20, "block/uuid", Uuid "favorites-page")
+             ; Add (Entity_id 20, "block/title", String "Favorites")
+             ; Add (Entity_id 20, "block/name", String "$$$favorites")
+             ]
+      in
+      let runtime = Runtime.create ~path ~server_t:42 (conn_from_db db) in
+      assert_bool "favorite operation stages successfully"
+        (Runtime.set_page_favorite
+           runtime
+           ~page_uuid:"page"
+           ~favorite:true
+           ~operation_id:"favorite-op"
+           ~now:100
+         = Ok ());
+      assert_bool "favorite operation updates the sidebar immediately"
+        (match (Runtime.sidebar_pages runtime).favorites with
+         | [ page ] -> String.equal page.Logseq_chat_graph_read.uuid "page"
+         | _ -> false);
+      assert_bool "favorite operation persists as one semantic pending operation"
+        (match Runtime.pending_operations runtime with
+         | [ { Ops.operation_id = "favorite-op"; intent = Set_favorite { favorite = true; _ }; _ } ] -> true
+         | _ -> false);
+      let rec contains_keyword expected = function
+        | Transit.Keyword value -> String.equal value expected
+        | Transit.Array values | Transit.List values | Transit.Set values ->
+          List.exists (contains_keyword expected) values
+        | Transit.Map entries ->
+          List.exists
+            (fun (key, value) ->
+              contains_keyword expected key || contains_keyword expected value)
+            entries
+        | Transit.Tagged (_, value) -> contains_keyword expected value
+        | _ -> false
+      in
+      assert_bool "favorite operation encodes as an insert-block transaction"
+        (match Runtime.pending_operations runtime with
+         | [ operation ] ->
+           (match Runtime.prepare_sync runtime operation with
+            | Ok ("insert-blocks", wire) ->
+              contains_keyword "block/link" (Transit.of_string wire)
+            | _ -> false)
+         | _ -> false))
 ;;
 
 let () =

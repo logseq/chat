@@ -78,7 +78,9 @@ if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 ]]; then
   data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
   graph_database=""
   for _ in {1..120}; do
-    graph_database=$(find "$data_container/Documents/graphs" -name graph.sqlite -type f | head -1)
+    if [[ -d $data_container/Documents/graphs ]]; then
+      graph_database=$(find "$data_container/Documents/graphs" -name graph.sqlite -type f | head -1)
+    fi
     if [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]]; then
       break
     fi

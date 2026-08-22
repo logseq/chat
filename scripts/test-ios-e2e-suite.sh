@@ -19,6 +19,7 @@ flows=(
   .maestro/ios-outliner-hierarchy-navigation.yaml
   .maestro/ios-node-tag-navigation.yaml
   .maestro/ios-sidebar-node-navigation.yaml
+  .maestro/ios-page-favorite.yaml
   .maestro/ios-sidebar-page-empty-block-delete.yaml
   .maestro/ios-rich-block-rendering.yaml
   .maestro/ios-outliner-drag.yaml
@@ -35,6 +36,7 @@ for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow == .maestro/ios-node-tag-navigation.yaml \
      || $flow == .maestro/ios-sidebar-node-navigation.yaml \
+     || $flow == .maestro/ios-page-favorite.yaml \
      || $flow == .maestro/ios-sidebar-page-empty-block-delete.yaml \
      || $flow == .maestro/ios-rich-block-rendering.yaml ]]; then
     LOGSEQ_CHAT_IOS_SKIP_BUILD=1 \

@@ -256,11 +256,46 @@ let page_summary decrypt_title db eid =
   | _ -> None
 ;;
 
+let favorite_page_eid db =
+  Datascript.datoms db Aevt ~a:"block/name" ~v:(String "$$$favorites") ()
+  |> Seq.uncons
+  |> Option.map (fun (datom, _rest) -> datom.e)
+;;
+
+let favorite_block_eid db page_uuid =
+  match favorite_page_eid db, Datascript.entid db "block/uuid" (Uuid page_uuid) with
+  | Some favorites_eid, Some page_eid ->
+    Ds_value.datoms_by_ref db Aevt "block/page" favorites_eid
+    |> Seq.find_map (fun datom ->
+      match Ds_value.optional_ref_eid db "block/link" (value db datom.e "block/link") with
+      | Some linked_eid when linked_eid = page_eid -> Some datom.e
+      | Some _ | None -> None)
+  | _ -> None
+;;
+
+let favorite_block_uuid db page_uuid =
+  Option.bind (favorite_block_eid db page_uuid) (uuid_for_eid db)
+;;
+
+let page_is_favorite db page_uuid = Option.is_some (favorite_block_eid db page_uuid)
+
+let last_favorite_order db =
+  match favorite_page_eid db with
+  | None -> None
+  | Some favorites_eid ->
+    Ds_value.datoms_by_ref db Aevt "block/page" favorites_eid
+    |> Seq.filter_map (fun datom -> string_value (value db datom.e "block/order"))
+    |> Seq.fold_left
+         (fun latest order ->
+           match latest with
+           | Some current when String.compare current order >= 0 -> latest
+           | Some _ | None -> Some order)
+         None
+;;
+
 let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
   let favorites =
-    Datascript.datoms db Aevt ~a:"block/name" ~v:(String "$$$favorites") ()
-    |> Seq.uncons
-    |> Option.map (fun (favorite_page, _rest) -> favorite_page.e)
+    favorite_page_eid db
     |> Option.fold ~none:[] ~some:(fun favorite_page_eid ->
       Ds_value.datoms_by_ref db Aevt "block/page" favorite_page_eid
       |> List.of_seq

@@ -1,0 +1,34 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- tapOn:
+    id: "button.connection"
+- tapOn: "Remove from Favorites"
+- tapOn:
+    id: "button.connection"
+- assertVisible: "Add to Favorites"
+- tapOn: "Add to Favorites"
+- tapOn:
+    id: "button.connection"
+- assertVisible: "Remove from Favorites"
+- stopApp
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- tapOn:
+    id: "button.connection"
+- assertVisible: "Remove from Favorites"

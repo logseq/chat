@@ -16,6 +16,7 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - tapOn:
     id: "button.connection"
+- tapOn: "Settings"
 - assertVisible: "Connection"
 - assertVisible:
     id: "field.base-url"

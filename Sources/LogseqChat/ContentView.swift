@@ -1393,6 +1393,15 @@ struct ContentView: View {
         )
     }
 
+    private var favoriteTargetPage: LogseqSidebarPage? {
+        activeNodeProjection?.page ?? store.snapshot.selectedPage
+    }
+
+    private var favoriteTargetIsFavorite: Bool {
+        guard let target = favoriteTargetPage else { return false }
+        return store.snapshot.favorites.contains(where: { $0.uuid == target.uuid })
+    }
+
     private var outlinerEditing: LogseqOutlinerEditing? {
         activeNodeProjection?.outlinerState.editing ?? store.snapshot.outlinerState.editing
     }
@@ -1801,8 +1810,19 @@ struct ContentView: View {
     }
 
     private var settingsControl: some View {
-        Button {
-            settingsPresented = true
+        Menu {
+            if let target = favoriteTargetPage {
+                Button(favoriteTargetIsFavorite ? "Remove from Favorites" : "Add to Favorites") {
+                    store.setPageFavorite(
+                        pageUUID: target.uuid,
+                        favorite: !favoriteTargetIsFavorite
+                    )
+                }
+                .accessibilityIdentifier("button.page-favorite")
+            }
+            Button("Settings") {
+                settingsPresented = true
+            }
         } label: {
             Image(systemName: HeaderControlPolicy.settingsSystemImage)
                 .font(.system(size: 20, weight: .medium))
@@ -1810,7 +1830,7 @@ struct ContentView: View {
         }
         .frame(width: 44, height: 44)
         .foregroundStyle(.primary)
-        .accessibilityLabel("Settings")
+        .accessibilityLabel("More")
         .accessibilityIdentifier("button.connection")
     }
 

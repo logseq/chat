@@ -93,6 +93,13 @@ type intent =
       { uuid : string
       ; tag_uuid : string
       }
+  | Set_favorite of
+      { page_uuid : string
+      ; favorite_uuid : string
+      ; favorite : bool
+      ; order : string
+      ; created_at : int
+      }
 
 type t =
   { operation_id : string
@@ -104,6 +111,8 @@ type t =
 let outliner_op = function
   | Save_title _ | Set_property _ | Set_properties _ | Create_tag _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_journal _ -> "insert-blocks"
+  | Set_favorite { favorite = true; _ } -> "insert-blocks"
+  | Set_favorite { favorite = false; _ } -> "delete-blocks"
   | Move_block _ | Move_blocks _ -> "move-blocks"
   | Split_block _ -> "split-block"
   | Merge_backward _ -> "merge-blocks"
@@ -313,6 +322,15 @@ let intent_json = function
       ; "uuid", `String uuid
       ; "tagUuid", `String tag_uuid
       ]
+  | Set_favorite { page_uuid; favorite_uuid; favorite; order; created_at } ->
+    `Assoc
+      [ "type", `String "set-favorite"
+      ; "pageUuid", `String page_uuid
+      ; "favoriteUuid", `String favorite_uuid
+      ; "favorite", `Bool favorite
+      ; "order", `String order
+      ; "createdAt", `Int created_at
+      ]
 ;;
 
 let string fields name =
@@ -462,6 +480,20 @@ let intent_of_json = function
        Add_tag
          { uuid = string fields "uuid"
          ; tag_uuid = string fields "tagUuid"
+         }
+     | "set-favorite" ->
+       Set_favorite
+         { page_uuid = string fields "pageUuid"
+         ; favorite_uuid = string fields "favoriteUuid"
+         ; favorite =
+             (match List.assoc_opt "favorite" fields with
+              | Some (`Bool value) -> value
+              | _ -> invalid_arg "invalid pending intent field: favorite")
+         ; order = string fields "order"
+         ; created_at =
+             (match List.assoc_opt "createdAt" fields with
+              | Some (`Int value) -> value
+              | _ -> invalid_arg "invalid pending intent field: createdAt")
          }
      | kind -> invalid_arg ("unknown pending intent: " ^ kind))
   | _ -> invalid_arg "pending intent must be an object"

@@ -279,6 +279,30 @@ private let testEmptySnapshotJSON = """
         }
     }
 
+    @Test @MainActor func settingPageFavoriteStagesOneSemanticOperation() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+
+        store.setPageFavorite(
+            pageUUID: "page-1",
+            favorite: true,
+            now: 1_776_000_000_000,
+            operationID: "favorite-1"
+        )
+
+        try await waitUntil {
+            recorder.all.contains {
+                $0.contains("\"action\":\"setPageFavorite\"")
+                    && $0.contains("page-1")
+                    && $0.contains("\"favorite\":true")
+                    && $0.contains("favorite-1")
+            }
+        }
+    }
+
     @Test @MainActor func selectingGraphUsesExplicitGraphID() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

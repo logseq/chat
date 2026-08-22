@@ -27,6 +27,7 @@ let schema =
   ; "block/name", one ~value_type:StringType ~indexed:true ()
   ; "block/page", one ~value_type:RefType ~indexed:true ()
   ; "block/parent", one ~value_type:RefType ~indexed:true ()
+  ; "block/link", one ~value_type:RefType ~indexed:true ()
   ; "block/order", one ~value_type:StringType ~indexed:true ()
   ; "block/refs", many ~value_type:RefType ~indexed:true ()
   ; "block/tags", many ~value_type:RefType ~indexed:true ()
@@ -105,6 +106,55 @@ let base_db () =
        ; Add (Entity_id 10, "block/order", String "a0")
        ; Add (Entity_id 10, "block/refs", Ref 3)
        ; Add (Entity_id 10, "block/tags", Ref 5) ]
+;;
+
+let () =
+  let db =
+    base_db ()
+    |> db_with
+         [ Add (Entity_id 20, "block/uuid", Uuid "favorites-page")
+         ; Add (Entity_id 20, "block/title", String "Favorites")
+         ; Add (Entity_id 20, "block/name", String "$$$favorites")
+         ]
+  in
+  let favorite =
+    Ops.Set_favorite
+      { page_uuid = "project"
+      ; favorite_uuid = "favorite-project"
+      ; favorite = true
+      ; order = "a0"
+      ; created_at = 100
+      }
+  in
+  let favorited =
+    match Projection.compile db favorite with
+    | Ok tx -> db_with tx db
+    | Error message -> fail "favorite projection" message
+  in
+  assert_bool "favorite operation is satisfied after projection"
+    (Projection.satisfied favorited favorite);
+  assert_bool "favorite projection appears in sidebar"
+    (match (Logseq_chat_graph_read.sidebar_pages favorited).favorites with
+     | [ page ] -> String.equal page.uuid "project"
+     | _ -> false);
+  let unfavorite =
+    Ops.Set_favorite
+      { page_uuid = "project"
+      ; favorite_uuid = "favorite-project"
+      ; favorite = false
+      ; order = "a0"
+      ; created_at = 100
+      }
+  in
+  let unfavorited =
+    match Projection.compile favorited unfavorite with
+    | Ok tx -> db_with tx favorited
+    | Error message -> fail "unfavorite projection" message
+  in
+  assert_bool "unfavorite operation is satisfied after projection"
+    (Projection.satisfied unfavorited unfavorite);
+  assert_bool "unfavorite projection leaves sidebar"
+    ((Logseq_chat_graph_read.sidebar_pages unfavorited).favorites = [])
 ;;
 
 let () =
@@ -997,7 +1047,11 @@ let () =
       ; operation "06-merge" 42
           (Merge_backward { uuid = "split"; expected_title = "ld"; title = "ld"; previous_uuid = "block";
                             expected_previous_title = "O"; merged_title = None })
-      ; operation "07-delete" 42 (Delete_blocks { uuids = [ "block"; "new" ] }) ]
+      ; operation "07-delete" 42 (Delete_blocks { uuids = [ "block"; "new" ] })
+      ; operation "08-favorite" 42
+          (Set_favorite
+             { page_uuid = "project"; favorite_uuid = "favorite-project"; favorite = true
+             ; order = "a0"; created_at = 9 }) ]
     in
     List.iter (Ops.save ~path) operations;
     assert_bool "all semantic intents round trip in insertion order" (Ops.list ~path = operations);
@@ -1008,7 +1062,7 @@ let () =
     in
     Ops.save ~path replacement;
     let restored = Ops.list ~path in
-    assert_bool "operation-id upsert does not duplicate or reorder" (List.length restored = 8);
+    assert_bool "operation-id upsert does not duplicate or reorder" (List.length restored = 9);
     assert_bool "operation-id upsert replaces payload" (List.hd restored = replacement))
 ;;
 

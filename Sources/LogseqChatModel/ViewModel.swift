@@ -175,6 +175,13 @@ private struct ReviewFlashcardPayload: Encodable {
     let operationId: String
 }
 
+private struct SetPageFavoritePayload: Encodable {
+    let pageUuid: String
+    let favorite: Bool
+    let operationId: String
+    let now: Int64
+}
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -594,6 +601,23 @@ private struct ReviewFlashcardPayload: Encodable {
                 rating: rating,
                 now: now ?? Self.nowMilliseconds(),
                 operationId: operationID ?? UUID().uuidString.lowercased()
+            )
+        )
+    }
+
+    public func setPageFavorite(
+        pageUUID: String,
+        favorite: Bool,
+        now: Int64? = nil,
+        operationID: String? = nil
+    ) {
+        dispatchEncoded(
+            "setPageFavorite",
+            SetPageFavoritePayload(
+                pageUuid: pageUUID,
+                favorite: favorite,
+                operationId: operationID ?? UUID().uuidString.lowercased(),
+                now: now ?? Self.nowMilliseconds()
             )
         )
     }

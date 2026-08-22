@@ -3040,6 +3040,61 @@ let () =
 ;;
 
 let () =
+  let favorite = ref false in
+  let calls = ref [] in
+  let page = Logseq_chat_graph_read.{ uuid = "page-favorite"; title = "Favorite me" } in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~graph_sidebar_pages:(fun () ->
+        Some
+          Logseq_chat_graph_read.
+            { favorites = (if !favorite then [ page ] else [])
+            ; recent_pages = [ page ]
+            })
+      ~graph_set_page_favorite:(fun ~page_uuid ~favorite:value ~operation_id ~now ->
+        calls := (page_uuid, value, operation_id, now) :: !calls;
+        favorite := value;
+        Ok ())
+      ()
+  in
+  configure_plain_graph session;
+  let set value operation_id =
+    let payload =
+      Yojson.Basic.to_string
+        (`Assoc
+          [ "pageUuid", `String page.uuid
+          ; "favorite", `Bool value
+          ; "operationId", `String operation_id
+          ; "now", `Int 100
+          ])
+    in
+    Logseq_chat_rpc.call
+      session
+      (Yojson.Basic.to_string
+         (`Assoc
+           [ "apiVersion", `Int 1
+           ; "method", `String "dispatch"
+           ; ( "params"
+             , `Assoc [ "action", `String "setPageFavorite"; "payload", `String payload ] )
+           ]))
+    |> from_string
+  in
+  let favorited = set true "favorite-op" in
+  (match favorited with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     if List.length (required_list "favorites" result) <> 1
+     then failwith "favoriting a page must update the sidebar snapshot immediately"
+   | _ -> failwith "setPageFavorite should return an RPC response");
+  ignore (set false "unfavorite-op");
+  (match List.rev !calls with
+   | [ ("page-favorite", true, "favorite-op", 100)
+     ; ("page-favorite", false, "unfavorite-op", 100) ] -> ()
+   | _ -> failwith "setPageFavorite must preserve the requested semantic operation")
+;;
+
+let () =
   let now = 1_776_000_000_000 in
   let reviewed = ref None in
   let due_card =

@@ -28,6 +28,21 @@ let has_ref db eid attr target_eid =
   |> Seq.exists (fun datom -> Ds_value.ref_eid db attr datom.v = Some target_eid)
 ;;
 
+let favorite_page_eid db =
+  datoms db Aevt ~a:"block/name" ~v:(String "$$$favorites") ()
+  |> Seq.uncons
+  |> Option.map (fun (datom, _rest) -> datom.e)
+;;
+
+let favorite_block_eid db page_uuid =
+  match favorite_page_eid db, entid db "block/uuid" (Uuid page_uuid) with
+  | Some favorites_eid, Some page_eid ->
+    datoms db Aevt ~a:"block/page" ~v:(Ref favorites_eid) ()
+    |> Seq.find_map (fun datom ->
+      if has_ref db datom.e "block/link" page_eid then Some datom.e else None)
+  | _ -> None
+;;
+
 let rec datascript_value = function
   | String_value value -> String value
   | Int_value value -> Int value
@@ -471,6 +486,33 @@ let rec compile db = function
        else Ok [ Add (lookup uuid, "block/tags", Ref tag_eid) ]
      | None, _ -> Error "block no longer exists"
      | _, None -> Error "tag no longer exists")
+  | Set_favorite { page_uuid; favorite_uuid; favorite; order; created_at } ->
+    (match favorite_page_eid db, entid db "block/uuid" (Uuid page_uuid) with
+     | None, _ -> Error "favorites page is missing"
+     | _, None -> Error "page no longer exists"
+     | Some favorites_eid, Some page_eid ->
+       (match favorite, favorite_block_eid db page_uuid with
+        | true, Some _ | false, None -> Ok []
+        | false, Some favorite_eid -> Ok [ RetractEntity (Entity_id favorite_eid) ]
+        | true, None ->
+          if Option.is_some (entid db "block/uuid" (Uuid favorite_uuid))
+          then Error "favorite block UUID already exists"
+          else
+            Ok
+              [ Entity
+                  { db_id = Some (Temp_id ("pending/" ^ favorite_uuid))
+                  ; attrs =
+                      [ "block/uuid", One_value (Uuid favorite_uuid)
+                      ; "block/title", One_value (String "")
+                      ; "block/page", One_value (Ref favorites_eid)
+                      ; "block/parent", One_value (Ref favorites_eid)
+                      ; "block/link", One_value (Ref page_eid)
+                      ; "block/order", One_value (String order)
+                      ; "block/created-at", One_value (Int created_at)
+                      ; "block/updated-at", One_value (Int created_at)
+                      ]
+                  }
+              ]))
 ;;
 
 let rec satisfied db = function
@@ -526,6 +568,8 @@ let rec satisfied db = function
     (match entid db "block/uuid" (Uuid uuid), entid db "block/uuid" (Uuid tag_uuid) with
      | Some block_eid, Some tag_eid -> has_ref db block_eid "block/tags" tag_eid
      | _ -> false)
+  | Set_favorite { page_uuid; favorite; _ } ->
+    Option.is_some (favorite_block_eid db page_uuid) = favorite
 ;;
 
 let build ~server_t authoritative operations =
