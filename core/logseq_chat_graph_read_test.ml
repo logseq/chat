@@ -56,6 +56,7 @@ let () =
     ; "block/parent", one ~value_type:RefType ()
     ; "block/created-at", one ~value_type:InstantType ()
     ; "block/journal-day", one ()
+    ; "logseq.property/deleted-at", one ~value_type:InstantType ()
     ]
   in
   let conn = create_conn ~schema () in
@@ -203,10 +204,40 @@ let () =
   then failwith "journal reads must honor the bounded newest-first window";
   if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 2
   then failwith "journal pagination must expose whether older pages remain";
+  ignore
+    (transact_conn
+       conn
+       [ Add
+           ( Lookup_ref ("block/uuid", Uuid next_page_uuid)
+           , "logseq.property/deleted-at"
+           , Instant 6 )
+       ]);
+  if Logseq_chat_graph_read.recent_journal_page_ids (conn_db conn) <> [
+       Option.get (entid (conn_db conn) "block/uuid" (Uuid page_uuid))
+     ]
+  then failwith "recycled journals must be excluded from the journal window";
+  if List.exists
+       (fun (block : Logseq_chat_model.block) -> block.page_id = next_page_uuid)
+       (Logseq_chat_graph_read.blocks (conn_db conn))
+  then failwith "blocks below a recycled journal must not remain visible";
+  if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 1
+  then failwith "recycled journals must not count toward pagination";
+  if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260817 <> None
+  then failwith "recycled journals must not resolve as today's journal";
+  Logseq_chat_graph_read.update_projection
+    projection
+    (conn_db conn)
+    (change
+       ~upserts:
+         [ { Protocol.id = identity next_page_uuid
+           ; attrs =
+               [ Transit.Keyword "logseq.property/deleted-at", Transit.Date 6L ]
+           }
+         ]
+       6);
   match Logseq_chat_graph_read.projection_blocks projection with
-  | [ old_block; new_block ]
-    when old_block.uuid = second_uuid && new_block.uuid = next_block_uuid -> ()
-  | _ -> failwith "a journal-page change did not rebuild the projection"
+  | [ old_block ] when old_block.uuid = second_uuid -> ()
+  | _ -> failwith "recycling a journal did not evict its blocks from the projection"
 ;;
 
 let () =

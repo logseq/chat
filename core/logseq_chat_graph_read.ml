@@ -594,7 +594,8 @@ let recent_journal_page_ids ?(limit = 7) db =
     |> List.of_seq
     |> List.filter_map (fun datom ->
       match datom.v with
-      | Int day -> Some (day, datom.e)
+      | Int day when not (page_is_hidden db Int_set.empty datom.e) ->
+        Some (day, datom.e)
       | _ -> None)
     |> List.sort (fun (left, _) (right, _) -> compare right left)
     |> take limit
@@ -603,14 +604,20 @@ let recent_journal_page_ids ?(limit = 7) db =
 
 let journal_page_count db =
   Datascript.datoms db Aevt ~a:"block/journal-day" ()
-  |> Seq.fold_left (fun count _ -> count + 1) 0
+  |> Seq.fold_left
+       (fun count datom ->
+         if page_is_hidden db Int_set.empty datom.e then count else count + 1)
+       0
 ;;
 
 let journal_page_uuid db ~journal_day =
   Datascript.datoms db Aevt ~a:"block/journal-day" ()
   |> Seq.find_map (fun datom ->
     match datom.v with
-    | Int day when day = journal_day -> uuid_for_eid db datom.e
+    | Int day
+      when day = journal_day
+           && not (page_is_hidden db Int_set.empty datom.e) ->
+      uuid_for_eid db datom.e
     | _ -> None)
 ;;
 
@@ -674,14 +681,6 @@ let identity = function
   | _ -> None
 ;;
 
-let has_journal_day (entity : Logseq_chat_sync_protocol.entity) =
-  List.exists
-    (function
-      | Transit_core.Json.Keyword "block/journal-day", _ -> true
-      | _ -> false)
-    entity.attrs
-;;
-
 let refresh_block projection db uuid =
   match Datascript.entid db "block/uuid" (Uuid uuid) with
   | None -> Hashtbl.remove projection.blocks_by_uuid uuid
@@ -700,15 +699,6 @@ let refresh_block projection db uuid =
 ;;
 
 let update_projection projection db (change : Logseq_chat_sync_protocol.change_set) =
-  let deleted_uuids =
-    List.fold_left
-      (fun uuids identity_value ->
-        match identity identity_value with
-        | Some (`Uuid uuid) -> String_set.add uuid uuids
-        | Some (`Ident _) | None -> uuids)
-      String_set.empty
-      change.deleted
-  in
   let changed_uuids, changed_idents =
     List.fold_left
       (fun (uuids, idents) (entity : Logseq_chat_sync_protocol.entity) ->
@@ -729,11 +719,7 @@ let update_projection projection db (change : Logseq_chat_sync_protocol.change_s
       (changed_uuids, changed_idents)
       change.deleted
   in
-  let current_journal_deleted =
-    Hashtbl.to_seq_values projection.blocks_by_uuid
-    |> Seq.exists (fun (block : Model.block) -> String_set.mem block.page_id deleted_uuids)
-  in
-  if List.exists has_journal_day change.upserts || current_journal_deleted
+  if not (Int_set.equal projection.recent_pages (recent_pages db))
   then rebuild_projection projection db
   else (
     let affected = ref changed_uuids in
