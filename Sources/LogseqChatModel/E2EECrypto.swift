@@ -48,6 +48,8 @@ private struct DERReader {
 
 private enum E2EECrypto {
     static let keychainService = "com.logseq.chat.e2ee.graph-key"
+    static let passwordKeychainService = "com.logseq.chat.e2ee.password"
+    static let passwordKeychainAccount = "current-account"
 
     static func hexData(_ value: Any?, field: String) throws -> Data {
         guard let text = value as? String, text.count.isMultiple(of: 2) else {
@@ -132,18 +134,23 @@ private enum E2EECrypto {
         let attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeRSA,
             kSecAttrKeyClass: kSecAttrKeyClassPrivate,
-            kSecAttrKeySizeInBits: 4096,
         ]
+        let externalKeyData = (try? unwrapPKCS8(privateKeyData)) ?? privateKeyData
         var error: Unmanaged<CFError>?
-        var key = SecKeyCreateWithData(privateKeyData as CFData, attributes as CFDictionary, &error)
-        if key == nil {
-            let pkcs1 = try unwrapPKCS8(privateKeyData)
-            error = nil
-            key = SecKeyCreateWithData(pkcs1 as CFData, attributes as CFDictionary, &error)
-        }
+        let key = SecKeyCreateWithData(
+            externalKeyData as CFData,
+            attributes as CFDictionary,
+            &error
+        )
         guard let key else {
             if let error { throw error.takeRetainedValue() }
             throw E2EECryptoError.crypto("invalid RSA private key")
+        }
+        let blockSize = SecKeyGetBlockSize(key)
+        guard ciphertext.count == blockSize else {
+            throw E2EECryptoError.crypto(
+                "invalid RSA ciphertext size: expected \(blockSize), got \(ciphertext.count)"
+            )
         }
         error = nil
         guard let plaintext = SecKeyCreateDecryptedData(
@@ -152,7 +159,15 @@ private enum E2EECrypto {
             ciphertext as CFData,
             &error
         ) else {
-            if let error { throw error.takeRetainedValue() }
+            if let error {
+                print(
+                    "LogseqChat E2EE RSA-OAEP decrypt failed "
+                        + "privateKeyBytes=\(privateKeyData.count) "
+                        + "externalKeyBytes=\(externalKeyData.count) "
+                        + "ciphertextBytes=\(ciphertext.count) "
+                        + "blockBytes=\(blockSize) error=\(error.takeRetainedValue())"
+                )
+            }
             throw E2EECryptoError.crypto("RSA-OAEP decrypt failed")
         }
         return plaintext as Data
@@ -162,15 +177,14 @@ private enum E2EECrypto {
         let attributes: [CFString: Any] = [
             kSecAttrKeyType: kSecAttrKeyTypeRSA,
             kSecAttrKeyClass: kSecAttrKeyClassPublic,
-            kSecAttrKeySizeInBits: 4096,
         ]
+        let externalKeyData = (try? unwrapSPKI(publicKeyData)) ?? publicKeyData
         var error: Unmanaged<CFError>?
-        var key = SecKeyCreateWithData(publicKeyData as CFData, attributes as CFDictionary, &error)
-        if key == nil {
-            let pkcs1 = try unwrapSPKI(publicKeyData)
-            error = nil
-            key = SecKeyCreateWithData(pkcs1 as CFData, attributes as CFDictionary, &error)
-        }
+        let key = SecKeyCreateWithData(
+            externalKeyData as CFData,
+            attributes as CFDictionary,
+            &error
+        )
         guard let key else {
             if let error { throw error.takeRetainedValue() }
             throw E2EECryptoError.crypto("invalid RSA public key")
@@ -231,6 +245,44 @@ private enum E2EECrypto {
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = result as? Data else {
             throw E2EECryptoError.crypto("Keychain load failed: \(status)")
+        }
+        return data
+    }
+
+    static func passwordQuery() -> [CFString: Any] {
+        [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: passwordKeychainService,
+            kSecAttrAccount: passwordKeychainAccount,
+            kSecUseDataProtectionKeychain: true,
+        ]
+    }
+
+    static func savePassword(_ password: Data) throws {
+        var query = passwordQuery()
+        let update = [kSecValueData: password] as CFDictionary
+        let status = SecItemUpdate(query as CFDictionary, update)
+        if status == errSecItemNotFound {
+            query[kSecValueData] = password
+            query[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            let addStatus = SecItemAdd(query as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw E2EECryptoError.crypto("E2EE password save failed: \(addStatus)")
+            }
+        } else if status != errSecSuccess {
+            throw E2EECryptoError.crypto("E2EE password update failed: \(status)")
+        }
+    }
+
+    static func loadPassword() throws -> Data? {
+        var query = passwordQuery()
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw E2EECryptoError.crypto("E2EE password load failed: \(status)")
         }
         return data
     }
@@ -304,6 +356,16 @@ private enum E2EECrypto {
             }
             if let key = try loadKey(graphID: graphID) {
                 return ["ok": true, "value": hex(key)]
+            }
+            return ["ok": true, "value": NSNull()]
+
+        case "saveE2EEPassword":
+            try savePassword(try hexData(request["password"], field: "password"))
+            return ["ok": true]
+
+        case "loadE2EEPassword":
+            if let password = try loadPassword() {
+                return ["ok": true, "value": hex(password)]
             }
             return ["ok": true, "value": NSNull()]
 

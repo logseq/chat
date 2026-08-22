@@ -7,6 +7,8 @@ let e2ee_keyring =
     ~crypto:Logseq_chat_platform_crypto.crypto
     ~load:Logseq_chat_platform_crypto.load_graph_key
     ~save:Logseq_chat_platform_crypto.save_graph_key
+    ~load_password:Logseq_chat_platform_crypto.load_e2ee_password
+    ~save_password:Logseq_chat_platform_crypto.save_e2ee_password
     ~fetch:Logseq_chat_http.send
 ;;
 
@@ -432,10 +434,10 @@ let create_session ?storage ?catalog_session () =
     ~stage_operation
     ~prepare_operation
     ~pending_operations
-    ~load_cached_graph_key:(fun ~graph_id ->
+    ~load_cached_graph_key:(fun config ->
       Result.map
         (fun _key -> ())
-        (E2ee_keyring.load_cached e2ee_keyring ~graph_id))
+        (E2ee_keyring.load_cached e2ee_keyring config))
     ~unlock_graph:(fun config ~password ->
       Result.map (fun _key -> ()) (E2ee_keyring.unlock e2ee_keyring config ~password))
     ~provision_graph_key:(fun config ->

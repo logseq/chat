@@ -542,8 +542,8 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
-      ~load_cached_graph_key:(fun ~graph_id ->
-        loaded := graph_id :: !loaded;
+      ~load_cached_graph_key:(fun config ->
+        loaded := config.Logseq_chat_api.graph_id :: !loaded;
         Error "not cached")
       ~graph_unlocked:(fun ~graph_id:_ -> !unlocked)
       ()

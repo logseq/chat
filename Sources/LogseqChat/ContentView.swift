@@ -385,14 +385,14 @@ struct ContentView: View {
         .sheet(isPresented: $graphPasswordPresented) {
             NavigationStack {
                 Form {
-                    SecureField("Graph password", text: $graphPassword)
+                    SecureField("E2EE password", text: $graphPassword)
                         .textContentType(.password)
                     if let error = presentedError {
                         Text(verbatim: error.message)
                             .foregroundStyle(.red)
                     }
                 }
-                .navigationTitle("Unlock graph")
+                .navigationTitle("Unlock encrypted graphs")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {

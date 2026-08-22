@@ -6,12 +6,23 @@ type t =
   { crypto : E2ee.crypto
   ; load : graph_id:string -> (string option, string) result
   ; save : graph_id:string -> key:string -> (unit, string) result
+  ; load_password : unit -> (string option, string) result
+  ; save_password : password:string -> (unit, string) result
   ; fetch : Api.request -> (Api.response, string) result
   ; keys : (string, string) Hashtbl.t
+  ; mutable private_key : string option
   }
 
-let create ~crypto ~load ~save ~fetch =
-  { crypto; load; save; fetch; keys = Hashtbl.create 4 }
+let create ~crypto ~load ~save ~load_password ~save_password ~fetch =
+  { crypto
+  ; load
+  ; save
+  ; load_password
+  ; save_password
+  ; fetch
+  ; keys = Hashtbl.create 4
+  ; private_key = None
+  }
 ;;
 
 let bind result f =
@@ -38,16 +49,25 @@ let remember t ~graph_id key =
   key
 ;;
 
-let load_cached t ~graph_id =
-  match Hashtbl.find_opt t.keys graph_id with
-  | Some key -> Ok key
-  | None ->
-    bind (t.load ~graph_id) (function
-      | Some key -> Ok (remember t ~graph_id key)
-      | None -> Error "encrypted graph key is not cached")
+let fetch_graph_key t config =
+  bind
+    (response_body "fetch graph E2EE key" (t.fetch (Api.graph_key_request config)))
+    (fun body -> protect "decode graph E2EE key" (fun () -> Api.graph_key_from_body body))
 ;;
 
-let unlock t config ~password =
+let remember_graph_key t config key =
+  bind (t.save ~graph_id:config.Api.graph_id ~key) (fun () ->
+    Ok (remember t ~graph_id:config.graph_id key))
+;;
+
+let unlock_with_private_key t config ~private_key =
+  bind (fetch_graph_key t config) (fun encrypted_graph_key ->
+    bind
+      (E2ee.decrypt_graph_key ~crypto:t.crypto ~private_key ~encrypted_graph_key)
+      (remember_graph_key t config))
+;;
+
+let unlock_with_password t config ~password ~persist_password =
   bind
     (response_body "fetch user E2EE keys" (t.fetch (Api.user_keys_request config)))
     (fun user_keys_body ->
@@ -55,20 +75,42 @@ let unlock t config ~password =
         (protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body user_keys_body))
         (fun user_keys ->
           bind
-            (response_body "fetch graph E2EE key" (t.fetch (Api.graph_key_request config)))
-            (fun graph_key_body ->
-              bind
-                (protect "decode graph E2EE key" (fun () -> Api.graph_key_from_body graph_key_body))
-                (fun encrypted_graph_key ->
-                  bind
-                    (E2ee.unlock_graph_key
-                       ~crypto:t.crypto
-                       ~password
-                       ~private_key_package:user_keys.Api.encrypted_private_key
-                       ~encrypted_graph_key)
-                    (fun key ->
-                      bind (t.save ~graph_id:config.Api.graph_id ~key) (fun () ->
-                        Ok (remember t ~graph_id:config.graph_id key)))))))
+            (E2ee.decrypt_private_key
+               ~crypto:t.crypto
+               ~password
+               ~private_key_package:user_keys.Api.encrypted_private_key)
+            (fun private_key ->
+              bind (fetch_graph_key t config) (fun encrypted_graph_key ->
+                bind
+                  (E2ee.decrypt_graph_key ~crypto:t.crypto ~private_key ~encrypted_graph_key)
+                  (fun key ->
+                    let save_password =
+                      if persist_password then t.save_password ~password else Ok ()
+                    in
+                    bind save_password (fun () ->
+                      bind (remember_graph_key t config key) (fun key ->
+                        t.private_key <- Some private_key;
+                        Ok key)))))))
+;;
+
+let load_cached t config =
+  let graph_id = config.Api.graph_id in
+  match Hashtbl.find_opt t.keys graph_id with
+  | Some key -> Ok key
+  | None ->
+    bind (t.load ~graph_id) (function
+      | Some key -> Ok (remember t ~graph_id key)
+      | None ->
+        (match t.private_key with
+         | Some private_key -> unlock_with_private_key t config ~private_key
+         | None ->
+           bind (t.load_password ()) (function
+             | Some password -> unlock_with_password t config ~password ~persist_password:false
+             | None -> Error "E2EE password is not cached")))
+;;
+
+let unlock t config ~password =
+  unlock_with_password t config ~password ~persist_password:true
 ;;
 
 let provision t config =

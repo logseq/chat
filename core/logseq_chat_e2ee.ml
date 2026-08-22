@@ -72,18 +72,24 @@ let prepare_graph_key ~crypto ~public_key_package =
         Ok (graph_key, Codec.to_string (Transit.Binary encrypted)))))
 ;;
 
-let unlock_graph_key ~crypto ~password ~private_key_package:private_source ~encrypted_graph_key =
+let decrypt_private_key ~crypto ~password ~private_key_package:private_source =
   bind (private_key_package private_source) (fun package ->
-    bind (binary encrypted_graph_key) (fun encrypted_graph_key ->
-      bind
-        (crypto.decrypt_private_key
-           ~password
-           ~iterations:package.iterations
-           ~salt:package.salt
-           ~iv:package.iv
-           ~ciphertext:package.ciphertext)
-        (fun private_key ->
-          crypto.decrypt_graph_key ~private_key ~ciphertext:encrypted_graph_key)))
+    crypto.decrypt_private_key
+      ~password
+      ~iterations:package.iterations
+      ~salt:package.salt
+      ~iv:package.iv
+      ~ciphertext:package.ciphertext)
+;;
+
+let decrypt_graph_key ~crypto ~private_key ~encrypted_graph_key =
+  bind (binary encrypted_graph_key) (fun ciphertext ->
+    crypto.decrypt_graph_key ~private_key ~ciphertext)
+;;
+
+let unlock_graph_key ~crypto ~password ~private_key_package ~encrypted_graph_key =
+  bind (decrypt_private_key ~crypto ~password ~private_key_package) (fun private_key ->
+    decrypt_graph_key ~crypto ~private_key ~encrypted_graph_key)
 ;;
 
 let encrypt_value ~crypto ~graph_key value =

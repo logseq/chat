@@ -117,3 +117,17 @@ let load_graph_key ~graph_id =
     | Some `Null | None -> Ok None
     | Some _ -> Error "platform crypto returned invalid cached graph key")
 ;;
+
+let save_e2ee_password ~password =
+  bind
+    (invoke "saveE2EEPassword" [ "password", `String (hex password) ])
+    (fun _ -> Ok ())
+;;
+
+let load_e2ee_password () =
+  bind (invoke "loadE2EEPassword" []) (fun fields ->
+    match List.assoc_opt "value" fields with
+    | Some (`String value) -> Result.map Option.some (unhex value)
+    | Some `Null | None -> Ok None
+    | Some _ -> Error "platform crypto returned invalid cached E2EE password")
+;;

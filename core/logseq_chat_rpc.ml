@@ -97,7 +97,7 @@ type t =
   ; mutable search_query : string
   ; load_older_journals : (unit -> unit) option
   ; has_older_journals : (unit -> bool) option
-  ; load_cached_graph_key : (graph_id:string -> (unit, string) result) option
+  ; load_cached_graph_key : (Api.config -> (unit, string) result) option
   ; unlock_graph : (Api.config -> password:string -> (unit, string) result) option
   ; provision_graph_key : (Api.config -> (unit, string) result) option
   ; graph_unlocked : (graph_id:string -> bool) option
@@ -2367,7 +2367,8 @@ let dispatch session action payload =
                   session.available_graphs,
                 session.load_cached_graph_key
               with
-              | Some _, Some load -> ignore (load ~graph_id)
+              | Some _, Some load ->
+                Option.iter (fun config -> ignore (load config)) session.config
               | _ -> ());
              snapshot_visible session
            | _ ->
@@ -2486,7 +2487,8 @@ let dispatch session action payload =
           if graph.e2ee
           then
             Option.iter
-              (fun load -> ignore (load ~graph_id:graph.id))
+              (fun load ->
+                Option.iter (fun config -> ignore (load config)) session.config)
               session.load_cached_graph_key;
           snapshot_visible session)
      | _ -> failure ~code:"invalid_params" ~message:"selectGraph requires a graph id")
