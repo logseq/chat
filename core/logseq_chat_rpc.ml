@@ -558,25 +558,64 @@ let node_route_linked_reference_blocks session route =
   else []
 ;;
 
-(* Resolve a node from the locally cached chat blocks when the graph db does
-   not know the uuid yet (for example a freshly created block while offline). *)
-let model_node_destination session uuid =
-  match Model.read_block session.model uuid with
-  | None -> None
-  | Some block when String.equal block.Model.page_id "" -> None
-  | Some block ->
-    let page_title =
-      match Model.block_journal_metadata session.model block with
-      | Some (title, _) when not (String.equal (String.trim title) "") -> title
-      | _ ->
-        (match block.Model.breadcrumbs with
-         | first :: _ -> first.Model.title
-         | [] -> block.Model.title)
-    in
-    let page : Logseq_chat_graph_read.sidebar_page =
-      { uuid = block.Model.page_id; title = page_title }
-    in
-    Some (page, true)
+(* Resolve against the same projected blocks that produced the visible UI.
+   This keeps optimistic/local blocks and their page headers navigable while a
+   graph transport refresh is rebuilding its dedicated destination lookup. *)
+let projected_node_destination session uuid =
+  let graph_blocks =
+    Option.bind session.graph_blocks (fun load -> load ())
+    |> Option.value ~default:[]
+  in
+  let selected_page_blocks =
+    match session.selected_sidebar_page, session.graph_page_blocks with
+    | Some page, Some load -> Option.value (load page.uuid) ~default:[]
+    | None, _ | _, None -> []
+  in
+  let routed_blocks =
+    session.node_routes
+    |> List.concat_map (fun route -> (node_route_context session route).blocks)
+  in
+  let optimistic_blocks = Option.value session.outliner_optimistic_blocks ~default:[] in
+  let blocks =
+    graph_blocks
+    @ selected_page_blocks
+    @ routed_blocks
+    @ session.related_blocks
+    @ optimistic_blocks
+    @ Model.all_blocks session.model
+  in
+  let candidate =
+    match List.find_opt (fun (block : Model.block) -> String.equal block.uuid uuid) blocks with
+    | Some block -> Some (block, true)
+    | None ->
+      Option.map
+        (fun block -> block, false)
+        (List.find_opt (fun (block : Model.block) -> String.equal block.page_id uuid) blocks)
+  in
+  Option.bind candidate (fun (block, zoom_to_block) ->
+    if String.equal block.Model.page_id ""
+    then None
+    else
+      let page_title =
+        match block.Model.journal with
+        | Some (title, _) when not (String.equal (String.trim title) "") -> title
+        | _ ->
+          (match
+             List.find_opt
+               (fun (summary : Model.entity_summary) ->
+                 String.equal summary.uuid block.page_id)
+               block.breadcrumbs
+           with
+           | Some summary -> summary.title
+           | None ->
+             (match Model.journal_metadata session.model block.page_id with
+              | Some (title, _) when not (String.equal (String.trim title) "") -> title
+              | _ -> block.title))
+      in
+      let page : Logseq_chat_graph_read.sidebar_page =
+        { uuid = block.Model.page_id; title = page_title }
+      in
+      Some (page, zoom_to_block))
 ;;
 
 (* Related blocks are editable in place, so the dispatch context must resolve
@@ -2539,7 +2578,7 @@ let dispatch session action payload =
                  Option.bind session.graph_node_destination (fun resolve -> resolve uuid)
                with
                | Some _ as resolved -> resolved
-               | None -> model_node_destination session uuid
+               | None -> projected_node_destination session uuid
              in
              (match destination with
         | Some (page, zoom_to_block) ->

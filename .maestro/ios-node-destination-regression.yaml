@@ -35,6 +35,14 @@ appId: com.logseq.chat
     point: "50%,50%"
 - tapOn:
     id: "BackButton"
+- tapOn:
+    id: "button.journal.*"
+    index: 0
+- assertVisible:
+    id: "BackButton"
+- assertNotVisible: "unknown_node"
+- tapOn:
+    id: "BackButton"
 - tapOn: "Edit block Untitled block"
 - inputText: "E2E destination regression"
 - tapOn:
@@ -44,4 +52,10 @@ appId: com.logseq.chat
     id: "BackButton"
 - assertVisible:
     id: "button.connection"
+- assertNotVisible: "unknown_node"
+- tapOn:
+    id: "BackButton"
+- tapOn: "Zoom into E2E destination regression"
+- assertVisible:
+    id: "BackButton"
 - assertNotVisible: "unknown_node"

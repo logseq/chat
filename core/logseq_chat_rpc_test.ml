@@ -963,6 +963,71 @@ let () =
 ;;
 
 let () =
+  (* Navigation must resolve from the same projected blocks that produced the
+     visible UI. A transport refresh can make the dedicated destination index
+     temporarily unavailable while the current projection is still valid. *)
+  let page_uuid = "projected-page" in
+  let projected =
+    Logseq_chat_model.
+      { uuid = "projected-block"
+      ; title = "Projected block"
+      ; page_id = page_uuid
+      ; parent_id = Some page_uuid
+      ; order = Some "a0"
+      ; created_at = 1
+      ; updated_at = 1
+      ; sync_status = "pending"
+      ; tags = []
+      ; references = []
+      ; breadcrumbs = [ { uuid = page_uuid; title = "Projected page" } ]
+      ; status = None
+      ; is_asset = false
+      ; asset_type = None
+      ; asset_size = None
+      ; asset_checksum = None
+      ; local_path = None
+      ; journal = None
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~graph_blocks:(fun () -> Some [ projected ])
+      ~graph_page_blocks:(fun uuid ->
+        if String.equal uuid page_uuid then Some [ projected ] else Some [])
+      ~graph_node_destination:(fun _ -> None)
+      ()
+  in
+  let open_node uuid =
+    Logseq_chat_rpc.call session
+      (Printf.sprintf
+         {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"%s\"}"}}|}
+         uuid)
+    |> from_string
+  in
+  let assert_opened ~uuid ~zoomed response =
+    match response with
+    | `Assoc fields ->
+      let route = required_assoc "result" fields |> required_first_assoc "nodeRoutes" in
+      assert_equal "projected route id" uuid (required_string "uuid" route);
+      assert_equal
+        "projected route page"
+        page_uuid
+        (required_assoc "page" route |> required_string "uuid");
+      let zoomed_ids = required_assoc "outlinerState" route |> required_list "zoomedBlockIds" in
+      if zoomed
+      then (match zoomed_ids with [ `String "projected-block" ] -> () | _ -> failwith "projected block must zoom")
+      else if zoomed_ids <> []
+      then failwith "projected page must not zoom"
+    | _ -> failwith "visible projected nodes must remain navigable"
+  in
+  assert_opened ~uuid:page_uuid ~zoomed:false (open_node page_uuid);
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"closeNode"}}|});
+  assert_opened ~uuid:"projected-block" ~zoomed:true (open_node "projected-block")
+;;
+
+let () =
   (* A node that only exists in the local chat cache (for example a block
      created while offline) must still open from the cached data instead of
      failing with an endless spinner. *)
