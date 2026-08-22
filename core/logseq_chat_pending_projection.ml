@@ -340,16 +340,21 @@ let rec compile db = function
     then Ok []
     else if Option.is_none (entid db "db/ident" (Keyword "logseq.class/Tag"))
     then Error "the graph does not define logseq.class/Tag"
+    else if Option.is_none (entid db "db/ident" (Keyword "logseq.class/Root"))
+    then Error "the graph does not define logseq.class/Root"
     else
       Ok
         [ Entity
             { db_id = Some (Temp_id ("pending/" ^ uuid))
             ; attrs =
                 [ "block/uuid", One_value (Uuid uuid)
+                ; "db/ident", One_value (Keyword ("user.class/tag-" ^ uuid))
                 ; "block/name", One_value (String (String.lowercase_ascii title))
                 ; "block/title", One_value (String title)
                 ; ( "block/tags"
                   , Many_values [ Ref_to (Lookup_ref ("db/ident", Keyword "logseq.class/Tag")) ] )
+                ; ( "logseq.property.class/extends"
+                  , Many_values [ Ref_to (Lookup_ref ("db/ident", Keyword "logseq.class/Root")) ] )
                 ; "block/created-at", One_value (Int created_at)
                 ; "block/updated-at", One_value (Int created_at)
                 ]

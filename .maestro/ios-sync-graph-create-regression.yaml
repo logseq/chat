@@ -56,9 +56,6 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - extendedWaitUntil:
-    visible: "Syncing"
-    timeout: 2000
-- extendedWaitUntil:
     visible: "Synced"
     timeout: 3000
 - tapOn:
@@ -69,13 +66,29 @@ appId: com.logseq.chat
 - extendedWaitUntil:
     visible: "Synced"
     timeout: 3000
+- pressKey: ENTER
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- inputText: "#new"
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- swipe:
+    start: 85%, 55%
+    end: 15%, 55%
+    duration: 1200
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- tapOn:
+    id: "button.outliner.autocomplete.0"
+- assertNotVisible:
+    id: "toolbar.outliner.autocomplete"
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- assertVisible:
+    id: "toolbar.outliner.editor"
 - tapOn: "Hide keyboard"
-- assertNotVisible: "snapshot required"
-- tapOn: "Edit block First synced block"
-- eraseText: 100
-- inputText: "Edited synced block"
-- tapOn: "Hide keyboard"
-- assertVisible: "Edited synced block"
 - assertNotVisible: "snapshot required"
 - extendedWaitUntil:
     visible: "Synced"

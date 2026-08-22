@@ -578,6 +578,9 @@ private struct CreateSyncGraphPayload: Encodable {
             lastError = LogseqChatCoreError(code: "database_not_open", message: "Open local storage before syncing")
             return false
         }
+        if forceSnapshot {
+            isSnapshotRefreshDeferred = true
+        }
         if !forceSnapshot,
            activeGraphID == graphID,
            snapshot.selectedGraphId == graphID,
@@ -669,7 +672,7 @@ private struct CreateSyncGraphPayload: Encodable {
             if lastError == nil {
                 activeGraphID = graphID
                 debugDatabaseRoute = "graph:\(graphID)"
-                isSnapshotRefreshDeferred = false
+                isSnapshotRefreshDeferred = forceSnapshot
             }
             return lastError == nil
         } catch {
@@ -698,6 +701,7 @@ private struct CreateSyncGraphPayload: Encodable {
             defer { stream.close() }
             await dispatchRawAndWait("startSSE")
             guard lastError == nil else { return false }
+            isSnapshotRefreshDeferred = false
             while let frame = try await stream.nextFrame() {
                 await dispatchRawAndWait("feedSSE", payload: frame)
                 if lastError != nil { break }
@@ -735,6 +739,7 @@ private struct CreateSyncGraphPayload: Encodable {
             }
             await dispatchRawAndWait("startSSE")
             guard lastError == nil else { return false }
+            isSnapshotRefreshDeferred = false
             var transportBuffer = LogseqGraphSSETransportBuffer()
             var networkChunk = Data()
             networkChunk.reserveCapacity(16 * 1024)
@@ -1090,9 +1095,7 @@ private struct CreateSyncGraphPayload: Encodable {
                 + "action=\(event.action ?? "nil")"
         )
         #endif
-        if event.type == "textChanged" {
-            scheduleOutlinerAutosave()
-        } else if event.type != "caretMoved" {
+        if event.type != "textChanged" && event.type != "caretMoved" {
             outlinerAutosaveTask?.cancel()
             outlinerAutosaveTask = nil
         }
@@ -1141,6 +1144,11 @@ private struct CreateSyncGraphPayload: Encodable {
         outlinerTransientFlushTask = nil
         if let pending = pendingOutlinerTransientEvent {
             pendingOutlinerTransientEvent = nil
+            if event.type == "toolbar" && event.action == "task" {
+                enqueueOutlinerEvent(event, generation: generation, canBeSuperseded: false)
+                enqueueOutlinerEvent(pending, generation: generation, canBeSuperseded: false)
+                return
+            }
             enqueueOutlinerEvent(pending, generation: generation, canBeSuperseded: false)
         }
         enqueueOutlinerEvent(event, generation: generation, canBeSuperseded: false)
@@ -1178,6 +1186,18 @@ private struct CreateSyncGraphPayload: Encodable {
                     !canBeSuperseded || projectionIsCurrent
                 }
             )
+            if event.type == "textChanged" {
+                let autocomplete = self.snapshot.nodeRoutes.last?.outlinerState.autocomplete
+                    ?? self.snapshot.outlinerState.autocomplete
+                if autocomplete == nil {
+                    self.scheduleOutlinerAutosave()
+                } else {
+                    self.outlinerAutosaveTask?.cancel()
+                    self.outlinerAutosaveTask = nil
+                }
+            } else if event.type == "chooseAutocomplete" {
+                self.scheduleOutlinerAutosave()
+            }
             if self.snapshot.hasPendingSemanticOperations {
                 self.syncPendingSoon(
                     delayNanoseconds: LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(

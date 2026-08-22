@@ -1999,7 +1999,7 @@ let () =
 
 let () =
   let persisted = ref [] in
-  let stage operation =
+  let stage (operation : Logseq_chat_pending_ops.t) =
     persisted :=
       List.filter
         (fun pending ->
@@ -2136,6 +2136,70 @@ let () =
   in
   assert_equal "split operation identity" "op-split" (required_string "tx-id" entry);
   assert_equal "split outliner op" "split-block" (required_string "outliner-op" entry)
+;;
+
+let () =
+  let persisted = ref [] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    persisted :=
+      List.filter
+        (fun current ->
+          current.Logseq_chat_pending_ops.operation_id <> operation.operation_id)
+        !persisted
+      @ [ operation ];
+    Ok ()
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ remote_block "source" "Old" ])
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations:(fun () ->
+        List.filter
+          (fun operation ->
+            match operation.Logseq_chat_pending_ops.state with
+            | Queued | Retryable | Submitted -> true
+            | Accepted _ | Applied | Conflicted _ -> false)
+          !persisted)
+      ()
+  in
+  configure_plain_graph session;
+  List.iter
+    (fun operation -> ignore (stage operation))
+    [ Logseq_chat_pending_ops.
+        { operation_id = "first"
+        ; base_t = 42
+        ; state = Queued
+        ; intent = Save_title { uuid = "source"; expected_title = "Old"; title = "First" }
+        }
+    ; { operation_id = "second"
+      ; base_t = 42
+      ; state = Queued
+      ; intent = Save_title { uuid = "source"; expected_title = "First"; title = "Second" }
+      }
+    ];
+  let first =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  let completion =
+    Logseq_chat_rpc.call session
+      (Printf.sprintf
+         {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":200,\"body\":\"{\\\"t\\\":43}\",\"error\":null}"}}|}
+         (required_int "id" first))
+    |> pending_request
+  in
+  match completion with
+  | Some request ->
+    let entry = required_assoc "bodyObject" request |> required_first_assoc "txs" in
+    assert_equal
+      "accepted optimistic edits immediately release the next queued operation"
+      "second"
+      (required_string "tx-id" entry)
+  | None -> failwith "accepted optimistic edit left the dependent queue waiting for a snapshot"
 ;;
 
 let () =
@@ -2686,6 +2750,65 @@ let () =
             { expected = Some (Ref_ident "logseq.property/status.todo"); _ }
       ; _ } ] -> ()
   | _ -> failwith "editing must stage task status against live property metadata"
+;;
+
+let () =
+  let page = Logseq_chat_graph_read.{ uuid = "task-page"; title = "Task page" } in
+  let todo =
+    Logseq_chat_model.
+      { uuid = "status-todo"
+      ; ident = Some "logseq.property/status.todo"
+      ; title = "Todo"
+      ; icon_type = None
+      ; icon_id = None
+      ; icon_color = None
+      }
+  in
+  let source =
+    { (remote_block "task-source" "Todo") with
+      Logseq_chat_model.page_id = page.uuid
+    ; parent_id = Some page.uuid
+    ; order = Some "a0"
+    ; status = Some todo
+    }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_sidebar_pages:(fun () ->
+        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+      ~graph_page_blocks:(fun uuid ->
+        if String.equal uuid page.uuid then Some [ source ] else None)
+      ~stage_operation:(fun _ -> Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectPage","payload":"task-page"}}|});
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  let response =
+    dispatch_outliner
+      session
+      (`Assoc [ "type", `String "returnPressed"; "uuid", `String source.uuid ])
+  in
+  let inserted =
+    required_list "blocks" response
+    |> List.filter_map (function
+      | `Assoc fields when required_string "uuid" fields <> source.uuid -> Some fields
+      | _ -> None)
+  in
+  match inserted with
+  | [ fields ] ->
+    (match assoc "status" fields with
+     | Some `Null | None -> ()
+     | _ -> failwith "a block created from a TODO block must not inherit its task status")
+  | _ -> failwith "splitting a TODO block must return exactly one new block"
 ;;
 
 let () =

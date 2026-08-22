@@ -623,6 +623,7 @@ let rec project_outliner_intent blocks = function
            ; created_at
            ; updated_at = created_at
            ; sync_status = "pending"
+           ; status = None
            }
          ])
   | Merge_backward { uuid; title; previous_uuid; merged_title; _ } ->
@@ -1610,7 +1611,7 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
   | _ -> Error "pending block has incomplete semantic REST metadata"
 ;;
 
-let activate_semantic_request session config =
+let activate_semantic_request ?t_before session config =
   match session.semantic_active, session.semantic_queue, session.prepare_operation with
   | Some _, _, _ | None, [], _ -> ()
   | None, pending :: rest, Some prepare ->
@@ -1622,8 +1623,11 @@ let activate_semantic_request session config =
          message
      | Ok (outliner_op, tx) ->
        let t_before =
-         Option.bind session.sync_cursor (fun cursor -> cursor ())
-         |> Option.value ~default:pending.operation.base_t
+         Option.value
+           t_before
+           ~default:
+             (Option.bind session.sync_cursor (fun cursor -> cursor ())
+              |> Option.value ~default:pending.operation.base_t)
        in
        let request =
          Api.tx_batch_request
@@ -1710,13 +1714,11 @@ let finish_semantic_active session active ~succeeded ~accepted_t =
       ignore (stage { active.pending.operation with state }))
     session.stage_operation;
   session.semantic_active <- None;
-  let authoritative_caught_up =
-    match accepted_t, Option.bind session.sync_cursor (fun cursor -> cursor ()) with
-    | Some accepted_t, Some current_t -> current_t >= accepted_t
-    | _ -> false
-  in
-  if succeeded && authoritative_caught_up
-  then Option.iter (activate_semantic_request session) session.config
+  if succeeded
+  then
+    Option.iter
+      (fun config -> activate_semantic_request ?t_before:accepted_t session config)
+      session.config
 ;;
 
 let cleanup_pending_active session (active : pending_active) =

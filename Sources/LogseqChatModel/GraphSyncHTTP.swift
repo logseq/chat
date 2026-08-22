@@ -65,7 +65,8 @@ public enum LogseqGraphSnapshotRefreshPolicy {
         isEditingOutlinerBlock: Bool,
         hasPendingLocalChanges: Bool
     ) -> Bool {
-        !forceSnapshot || (!isEditingOutlinerBlock && !hasPendingLocalChanges)
+        _ = hasPendingLocalChanges
+        return !forceSnapshot || !isEditingOutlinerBlock
     }
 }
 

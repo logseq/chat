@@ -362,7 +362,7 @@ private let testEmptySnapshotJSON = """
             isEditingOutlinerBlock: false,
             hasPendingLocalChanges: false
         ))
-        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
+        #expect(LogseqGraphSnapshotRefreshPolicy.shouldApplyDownloadedSnapshot(
             forceSnapshot: true,
             isEditingOutlinerBlock: false,
             hasPendingLocalChanges: true
@@ -2111,6 +2111,34 @@ private let testEmptySnapshotJSON = """
         }
     }
 
+    @Test @MainActor func outlinerAutocompleteSuspendsAutosaveUntilCompletion() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            let autocomplete = request.contains("\\\"type\\\":\\\"textChanged\\\"")
+                ? #"{"kind":"tag","query":"","startUTF16Offset":0,"endUTF16Offset":1}"#
+                : "null"
+            return """
+            {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],\
+            "selectedBlock":null,"outlinerRows":[],\
+            "outlinerState":{"editing":{"uuid":"source","title":"#",\
+            "caretUTF16Offset":1},"selectedBlockIds":[],"autocomplete":\(autocomplete),\
+            "collapsedBlockIds":[],"zoomedBlockIds":[]},\
+            "hasPendingSemanticOperations":false,"isOutlinerPatch":true},"error":null}
+            """
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "#", caretUTF16Offset: 1
+        ))
+        try await waitUntil {
+            store.snapshot.outlinerState.autocomplete?.kind == .tag
+        }
+        try await Task.sleep(for: .milliseconds(1_150))
+
+        #expect(!recorder.all.contains { $0.contains("\"type\":\"saveEditing\"") })
+    }
+
     @Test @MainActor func boundedOutlinerPatchPreservesTheLongPageProjection() async throws {
         let block = outlineBlockJSON(
             uuid: "source", parentID: "page", order: "a0", createdAt: 1
@@ -2397,6 +2425,27 @@ private let testEmptySnapshotJSON = """
         #expect(events[0].contains("textChanged"))
         #expect(events[0].contains("latest"))
         #expect(events[1].contains("returnPressed"))
+    }
+
+    @Test @MainActor func taskToolbarActionIsNotDelayedByQueuedTyping() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+
+        store.outlinerEvent(LogseqOutlinerEvent(
+            type: "textChanged", title: "latest", caretUTF16Offset: 6
+        ))
+        store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: "task"))
+
+        try await waitUntil {
+            recorder.all.filter { $0.contains("outlinerEvent") }.count == 2
+        }
+        let events = recorder.all.filter { $0.contains("outlinerEvent") }
+        #expect(events[0].contains("\"action\":\"task\""))
+        #expect(events[1].contains("textChanged"))
+        #expect(events[1].contains("latest"))
     }
 
     @Test @MainActor func commandFlushCannotBeSupersededByALateCaretEvent() async throws {

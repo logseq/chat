@@ -32,6 +32,7 @@ let schema =
   ; "block/tags", many ~value_type:RefType ~indexed:true ()
   ; "block/journal-day", one ~value_type:NumberType ~indexed:true ()
   ; "logseq.property/status", one ~value_type:RefType ~indexed:true ()
+  ; "logseq.property.class/extends", many ~value_type:RefType ~indexed:true ()
   ; "user.property/effort", one ~value_type:NumberType ~indexed:true ()
   ; "user.property/label", one ~value_type:StringType ~indexed:true ()
   ; "user.property/enabled", one ~indexed:true () ]
@@ -92,6 +93,7 @@ let base_db () =
        ; Add (Entity_id 3, "block/title", String "Old ref")
        ; Add (Entity_id 3, "block/name", String "old ref")
        ; Add (Entity_id 4, "db/ident", Keyword "logseq.class/Tag")
+       ; Add (Entity_id 6, "db/ident", Keyword "logseq.class/Root")
        ; Add (Entity_id 5, "block/uuid", Uuid "non-inline-tag")
        ; Add (Entity_id 5, "block/title", String "Non-inline")
        ; Add (Entity_id 5, "block/name", String "non-inline")
@@ -169,6 +171,27 @@ let () =
        |> Seq.exists (fun datom ->
          Logseq_chat_datascript_value.ref_eid snapshot.db "block/tags" datom.v
          = Some class_eid)
+     | _ -> false);
+  assert_bool "created tag has a canonical user class ident"
+    (match entid snapshot.db "block/uuid" (Uuid "new-tag") with
+     | Some tag_eid ->
+       datoms snapshot.db Eavt ~e:tag_eid ~a:"db/ident" ()
+       |> Seq.exists (fun datom ->
+         match datom.v with
+         | Keyword ident -> String.starts_with ~prefix:"user.class/" ident
+         | _ -> false)
+     | None -> false);
+  assert_bool "created tag extends logseq.class/Root"
+    (match entid snapshot.db "block/uuid" (Uuid "new-tag"),
+           entid snapshot.db "db/ident" (Keyword "logseq.class/Root") with
+     | Some tag_eid, Some root_eid ->
+       datoms snapshot.db Eavt ~e:tag_eid ~a:"logseq.property.class/extends" ()
+       |> Seq.exists (fun datom ->
+         Logseq_chat_datascript_value.ref_eid
+           snapshot.db
+           "logseq.property.class/extends"
+           datom.v
+         = Some root_eid)
      | _ -> false);
   assert_bool "block links the freshly created tag"
     (has_tag snapshot.db ~source:"block" ~target:"new-tag");
