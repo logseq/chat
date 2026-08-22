@@ -20,6 +20,7 @@ flows=(
   .maestro/ios-node-tag-navigation.yaml
   .maestro/ios-sidebar-node-navigation.yaml
   .maestro/ios-page-favorite.yaml
+  .maestro/ios-settings-theme-parity.yaml
   .maestro/ios-sidebar-page-empty-block-delete.yaml
   .maestro/ios-rich-block-rendering.yaml
   .maestro/ios-outliner-drag.yaml

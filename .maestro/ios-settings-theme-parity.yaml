@@ -1,0 +1,54 @@
+appId: com.logseq.chat
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "Enter your username"
+    commands:
+      - tapOn: "Enter your username"
+      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - tapOn: "Enter your password"
+      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - tapOn:
+          text: "Sign In"
+          index: 1
+- extendedWaitUntil:
+    visible:
+      text: "More"
+    timeout: 60000
+- tapOn: "More"
+- tapOn: "Settings"
+- assertVisible:
+    id: "screen.settings"
+- assertVisible: "Theme"
+- assertVisible: "Language"
+- assertVisible: "Editor"
+- assertVisible: "Sync server"
+- scrollUntilVisible:
+    element:
+      text: "About"
+    direction: DOWN
+- assertVisible: "Version.*"
+- assertVisible: "Revision.*"
+- assertVisible: "Check log"
+- scrollUntilVisible:
+    element:
+      text: "Community"
+    direction: DOWN
+- assertVisible: "Report bug"
+- scrollUntilVisible:
+    element:
+      text: "Discord community"
+    direction: DOWN
+- assertVisible: "Discord community"
+- scrollUntilVisible:
+    element:
+      text: "Forum"
+    direction: DOWN
+- assertVisible: "Forum"
+- scrollUntilVisible:
+    element:
+      text: "GitHub"
+    direction: DOWN
+- assertVisible: "GitHub"
+- tapOn: "Cancel"

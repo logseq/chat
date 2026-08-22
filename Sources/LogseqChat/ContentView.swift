@@ -138,7 +138,7 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
                         }
                     }
                     #if SKIP
-                    .background(Color.white.opacity(0.92))
+                    .background(Color.primary.opacity(0.04))
                     #else
                     .background(.ultraThinMaterial)
                     #endif
@@ -271,7 +271,9 @@ struct ContentView: View {
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
     @AppStorage("logseq.composerDraft") private var persistedDraft = ""
     @AppStorage("logseq.appearance") private var appearance = "system"
+    @AppStorage("logseq.language") private var language = "system"
     @FocusState private var composerFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
 
     init(
@@ -284,11 +286,26 @@ struct ContentView: View {
         self.syncCoordinator = syncCoordinator
     }
 
+    private var preferredLocale: Locale {
+        language == "system" ? Locale.current : Locale(identifier: language)
+    }
+
+    private var themePalette: LogseqThemePalette {
+        LogseqThemePolicy.palette(
+            mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+            systemIsDark: colorScheme == .dark
+        )
+    }
+
     var body: some View {
         rootContent
         .preferredColorScheme(
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
+        .environment(\.locale, preferredLocale)
+        .tint(LogseqThemePolicy.accent)
+        .foregroundStyle(themePalette.primaryText)
+        .background(themePalette.background.ignoresSafeArea())
         .onAppear {
             applyCaptureRequestIfNeeded()
         }
@@ -635,7 +652,7 @@ struct ContentView: View {
                                 }
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.white.opacity(0.7))
+                                .background(themePalette.surface)
                                 .cornerRadius(16)
                             }
                             .disabled(!graph.isReady)
@@ -1667,13 +1684,7 @@ struct ContentView: View {
     }
 
     private var platformAppBackground: Color {
-        #if os(iOS) && !SKIP
-        Color(uiColor: .systemGroupedBackground)
-        #elseif os(macOS) && !SKIP
-        Color(nsColor: .windowBackgroundColor)
-        #else
-        Color(red: 0.95, green: 0.96, blue: 0.96)
-        #endif
+        themePalette.background
     }
 
     private var header: some View {
@@ -2659,46 +2670,108 @@ private struct ConnectionSettingsView: View {
     let apply: () -> Void
     let signOut: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("logseq.appearance") private var appearance = "system"
+    @AppStorage("logseq.language") private var language = "system"
     @AppStorage("logseq.editor.spellCheck") private var spellCheck = true
     @AppStorage("logseq.editor.autoCorrection") private var autoCorrection = true
+    @State private var logPresented = false
+
+    private var palette: LogseqThemePalette {
+        LogseqThemePolicy.palette(
+            mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+            systemIsDark: colorScheme == .dark
+        )
+    }
+
+    private var normalizedBaseURL: String? {
+        LogseqSettingsPolicy.normalizedSyncServerURL(baseURL)
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("General") {
-                    Picker("Appearance", selection: $appearance) {
-                        Text("System").tag("system")
-                        Text("Light").tag("light")
-                        Text("Dark").tag("dark")
-                    }
-                }
-                Section("Editor") {
-                    Toggle("Spell check", isOn: $spellCheck)
-                    Toggle("Auto-correction", isOn: $autoCorrection)
-                }
-                Section("Sync") {
-                    TextField("Base URL", text: $baseURL)
-                        .accessibilityIdentifier("field.base-url")
-                }
-                #if !SKIP
-                if let graphDatabasePath {
-                    let graphDatabaseURL = URL(fileURLWithPath: graphDatabasePath)
-                    Section("Advanced") {
-                        ShareLink(item: graphDatabaseURL) {
-                            Text("Export Graph SQLite DB")
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    settingsSection(Text("General")) {
+                        HStack {
+                            Text("Theme")
+                            Spacer()
+                            Picker("Theme", selection: $appearance) {
+                                Text("System").tag("system")
+                                Text("Light").tag("light")
+                                Text("Dark").tag("dark")
+                            }
+                            .labelsHidden()
                         }
-                        .accessibilityIdentifier("button.export-graph-database")
+                        Divider()
+                        HStack {
+                            Text("Language")
+                            Spacer()
+                            Picker("Language", selection: $language) {
+                                ForEach(LogseqSettingsPolicy.languages) { choice in
+                                    languageLabel(choice).tag(choice.id)
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                    }
+                    settingsSection(Text("Editor")) {
+                        Toggle("Spell check", isOn: $spellCheck)
+                        Divider()
+                        Toggle("Auto-correction", isOn: $autoCorrection)
+                    }
+                    settingsSection(Text("Sync server")) {
+                        TextField("Server URL", text: $baseURL)
+                            .accessibilityIdentifier("field.base-url")
+                        if !baseURL.isEmpty, normalizedBaseURL == nil {
+                            Text("Enter a valid HTTP or HTTPS URL.")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    #if !SKIP
+                    if let graphDatabasePath {
+                        let graphDatabaseURL = URL(fileURLWithPath: graphDatabasePath)
+                        settingsSection(Text("Advanced")) {
+                            ShareLink(item: graphDatabaseURL) {
+                                Text("Export Graph SQLite DB")
+                            }
+                            .accessibilityIdentifier("button.export-graph-database")
+                        }
+                    }
+                    #endif
+                    settingsSection(Text("About")) {
+                        settingsValueRow(Text("Version"), value: LogseqSettingsPolicy.version)
+                        Divider()
+                        settingsValueRow(Text("Revision"), value: LogseqSettingsPolicy.revision)
+                        Divider()
+                        Button("Check log") {
+                            logPresented = true
+                        }
+                    }
+                    settingsSection(Text("Community")) {
+                        ForEach(LogseqSettingsPolicy.communityLinks) { destination in
+                            Link(destination: destination.url) {
+                                communityLabel(destination.title)
+                            }
+                            if destination.id != LogseqSettingsPolicy.communityLinks.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                    settingsSection(nil) {
+                        Button("Sign Out", role: .destructive) {
+                            signOut()
+                        }
+                        .accessibilityIdentifier("button.sign-out")
                     }
                 }
-                #endif
-                Section {
-                    Button("Sign Out", role: .destructive) {
-                        signOut()
-                    }
-                    .accessibilityIdentifier("button.sign-out")
-                }
+                .padding(20)
             }
+            .background(palette.background.ignoresSafeArea())
+            .foregroundStyle(palette.primaryText)
+            .tint(LogseqThemePolicy.accent)
+            .accessibilityIdentifier("screen.settings")
             .navigationTitle("Settings")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -2709,12 +2782,78 @@ private struct ConnectionSettingsView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply") {
+                        guard let normalizedBaseURL else { return }
+                        baseURL = normalizedBaseURL
                         apply()
                     }
-                    .disabled(baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(normalizedBaseURL == nil)
                     .accessibilityIdentifier("button.connection.apply")
                 }
             }
+            .sheet(isPresented: $logPresented) {
+                NavigationStack {
+                    ScrollView {
+                        Text("Runtime diagnostics are available in the system console.")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(20)
+                    }
+                    .background(palette.background.ignoresSafeArea())
+                    .navigationTitle("Log")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { logPresented = false }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func settingsSection<Content: View>(
+        _ title: Text?,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title {
+                title
+                    .font(.headline)
+                    .foregroundStyle(palette.secondaryText)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    private func settingsValueRow(_ title: Text, value: String) -> some View {
+        HStack {
+            title
+            Spacer()
+            Text(value)
+                .foregroundStyle(palette.secondaryText)
+        }
+    }
+
+    private func languageLabel(_ choice: LogseqLanguageChoice) -> Text {
+        choice.id == "system" ? Text("System") : Text(verbatim: choice.title)
+    }
+
+    private func communityLabel(_ title: String) -> Text {
+        switch title {
+        case "Report bug":
+            return Text("Report bug")
+        case "Discord community":
+            return Text("Discord community")
+        case "Forum":
+            return Text("Forum")
+        case "GitHub":
+            return Text("GitHub")
+        default:
+            return Text(verbatim: title)
         }
     }
 }
@@ -2837,7 +2976,7 @@ extension View {
             self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
         #else
-        self.background(Color.white.opacity(0.9))
+        self.background(Color.primary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         #endif
     }
@@ -2850,7 +2989,7 @@ extension View {
             self.background(.ultraThinMaterial)
         }
         #else
-        self.background(Color.white.opacity(0.82))
+        self.background(Color.primary.opacity(0.08))
             .cornerRadius(26)
         #endif
     }
@@ -3029,7 +3168,7 @@ private struct BlockRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(Color.white.opacity(0.72))
+        .background(Color.primary.opacity(0.06))
         .cornerRadius(18)
         .onTapGesture {
             onEdit?()
