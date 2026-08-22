@@ -57,11 +57,21 @@ public enum LogseqPendingSyncHTTPTransport {
         #else
         do {
             guard let url = URL(string: pending.url) else {
+                LogseqRuntimeLog.shared.append(
+                    level: .error,
+                    source: .core,
+                    message: "Invalid pending sync URL"
+                )
                 return LogseqPendingSyncResult(status: nil, body: nil, error: "Invalid pending sync URL")
             }
             let uploadURL: URL?
             if let filePath = pending.filePath {
                 guard let resolvedURL = LogseqPendingSyncFilePath.resolve(filePath) else {
+                    LogseqRuntimeLog.shared.append(
+                        level: .error,
+                        source: .core,
+                        message: "Pending sync asset file does not exist: \(filePath)"
+                    )
                     return LogseqPendingSyncResult(
                         status: nil,
                         body: nil,
@@ -103,6 +113,13 @@ public enum LogseqPendingSyncHTTPTransport {
                 return LogseqPendingSyncResult(status: nil, body: nil, error: "Pending sync response was not HTTP")
             }
             let responseBody = String(data: data, encoding: .utf8) ?? ""
+            if !(200..<300).contains(http.statusCode) {
+                LogseqRuntimeLog.shared.append(
+                    level: .error,
+                    source: .core,
+                    message: "Pending sync HTTP \(http.statusCode): \(responseBody)"
+                )
+            }
             if uploadURL != nil,
                LogseqPendingSyncDuplicateAssetResolver.isDuplicate(
                    status: http.statusCode,
@@ -132,6 +149,11 @@ public enum LogseqPendingSyncHTTPTransport {
                 error: nil
             )
         } catch {
+            LogseqRuntimeLog.shared.append(
+                level: .error,
+                source: .core,
+                message: "Pending sync transport failed: \(error)"
+            )
             #if DEBUG
             print("LOGSEQ_ASSET_SYNC transport_error id=\(pending.id) error=\(error)")
             #endif

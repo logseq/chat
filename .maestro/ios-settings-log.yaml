@@ -1,0 +1,33 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.connection"
+- tapOn: "Settings"
+- assertVisible:
+    id: "screen.settings"
+- tapOn: "Check log"
+- assertVisible:
+    id: "screen.runtime-log"
+- assertVisible:
+    id: "button.log-errors"
+- assertVisible:
+    id: "button.log-order"
+- assertVisible:
+    id: "button.log-source"
+- assertVisible:
+    id: "button.log-copy"
+- extendedWaitUntil:
+    visible: "INFO"
+    timeout: 10000
+- assertNotVisible: "Runtime diagnostics are available in the system console."
+- tapOn:
+    id: "button.log-source"
+- tapOn:
+    id: "button.log-errors"
+- tapOn:
+    id: "button.log-order"
+- tapOn:
+    id: "button.log-copy"

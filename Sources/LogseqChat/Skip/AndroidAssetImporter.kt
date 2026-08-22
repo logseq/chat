@@ -3,6 +3,7 @@ package logseq.chat
 import android.content.Context
 import android.content.Intent
 import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -107,6 +108,11 @@ object AndroidAssetImporter {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }.onFailure { android.util.Log.e("LogseqChat", "Could not share node", it) }
+    }
+
+    fun copyText(text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Logseq diagnostics", text))
     }
 
     private fun resolveFile(path: String): File? {

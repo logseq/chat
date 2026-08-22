@@ -18,6 +18,7 @@ private struct LogseqModelLogger {
     #endif
 
     func info(_ message: String) {
+        LogseqRuntimeLog.shared.append(level: .info, source: .core, message: message)
         #if os(Android)
         print(message)
         #else
@@ -26,6 +27,7 @@ private struct LogseqModelLogger {
     }
 
     func error(_ message: String) {
+        LogseqRuntimeLog.shared.append(level: .error, source: .core, message: message)
         #if os(Android)
         print(message)
         #else

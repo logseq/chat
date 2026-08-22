@@ -3096,3 +3096,17 @@ private func waitUntilAsync(
 struct TestData : Codable, Hashable {
     var testModuleName: String
 }
+
+@Suite(.serialized) struct LogseqRuntimeLogTests {
+    @Test func boundsFiltersAndOrdersRuntimeRecords() {
+        let log = LogseqRuntimeLog(capacity: 2)
+        log.append(level: .info, source: .ui, message: "first", timestampMilliseconds: 1)
+        log.append(level: .error, source: .core, message: "second", timestampMilliseconds: 2)
+        log.append(level: .info, source: .core, message: "third", timestampMilliseconds: 3)
+
+        #expect(log.records().map(\.message) == ["second", "third"])
+        #expect(log.records(source: .core, errorsOnly: true).map(\.message) == ["second"])
+        #expect(log.records(source: .core, newestFirst: true).map(\.message) == ["third", "second"])
+        #expect(log.exportText().contains("ERROR core second"))
+    }
+}

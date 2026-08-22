@@ -9,6 +9,8 @@ import UniformTypeIdentifiers
 import AVKit
 import QuickLook
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 #endif
 #if SKIP
@@ -1559,7 +1561,7 @@ struct ContentView: View {
                 #if DEBUG
                 print("LogseqChat debug: access token request failed: \(error.localizedDescription)")
                 #endif
-                logger.error("Could not acquire Cognito access token: \(error.localizedDescription, privacy: .public)")
+                logger.error("Could not acquire Cognito access token: \(error.localizedDescription)")
             }
         }
     }
@@ -2585,7 +2587,7 @@ struct ContentView: View {
                     )
                     addImportedAsset(metadata)
                 } catch {
-                    logger.error("Photo import failed: \(String(describing: error), privacy: .public)")
+                    logger.error("Photo import failed: \(String(describing: error))")
                 }
             }
         }
@@ -2605,7 +2607,7 @@ struct ContentView: View {
                 )
                 addImportedAsset(metadata)
             } catch {
-                logger.error("Camera import failed: \(String(describing: error), privacy: .public)")
+                logger.error("Camera import failed: \(String(describing: error))")
             }
         }
     }
@@ -2630,7 +2632,7 @@ struct ContentView: View {
                     let metadata = try await Self.persistImportedAsset(url)
                     addImportedAsset(metadata)
                 } catch {
-                    logger.error("Asset import failed: \(String(describing: error), privacy: .public)")
+                    logger.error("Asset import failed: \(String(describing: error))")
                 }
             }
         }
@@ -2821,19 +2823,8 @@ private struct ConnectionSettingsView: View {
                 }
             }
             .sheet(isPresented: $logPresented) {
-                NavigationStack {
-                    ScrollView {
-                        Text("Runtime diagnostics are available in the system console.")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(20)
-                    }
-                    .background(palette.background.ignoresSafeArea())
-                    .navigationTitle("Log")
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { logPresented = false }
-                        }
-                    }
+                RuntimeLogView(palette: palette) {
+                    logPresented = false
                 }
             }
         }
@@ -2885,6 +2876,108 @@ private struct ConnectionSettingsView: View {
         default:
             return Text(verbatim: title)
         }
+    }
+}
+
+private struct RuntimeLogView: View {
+    let palette: LogseqThemePalette
+    let dismiss: () -> Void
+    @State private var source = LogseqRuntimeLogSource.ui
+    @State private var errorsOnly = false
+    @State private var newestFirst = false
+    @State private var refreshRevision = 0
+
+    private var records: [LogseqRuntimeLogRecord] {
+        _ = refreshRevision
+        return LogseqRuntimeLog.shared.records(
+            source: source,
+            errorsOnly: errorsOnly,
+            newestFirst: newestFirst
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        Button(errorsOnly ? "All" : "Errors only") {
+                            errorsOnly.toggle()
+                        }
+                        .accessibilityIdentifier("button.log-errors")
+                        Button(newestFirst ? "Oldest first" : "Newest first") {
+                            newestFirst.toggle()
+                        }
+                        .accessibilityIdentifier("button.log-order")
+                        Button(source == .ui ? "Core log" : "UI log") {
+                            source = source == .ui ? .core : .ui
+                        }
+                        .accessibilityIdentifier("button.log-source")
+                        Button("Copy") {
+                            copy(records.map(runtimeLogLine).joined(separator: "\n"))
+                        }
+                        .accessibilityIdentifier("button.log-copy")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        if records.isEmpty {
+                            Text("No log entries")
+                                .foregroundStyle(palette.secondaryText)
+                        } else {
+                            ForEach(records) { record in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(verbatim: record.level.rawValue.uppercased())
+                                            .fontWeight(.semibold)
+                                            .foregroundStyle(record.level == .error ? .red : palette.secondaryText)
+                                        Text(
+                                            Date(timeIntervalSince1970: Double(record.timestampMilliseconds) / 1_000),
+                                            style: .time
+                                        )
+                                        .foregroundStyle(palette.secondaryText)
+                                    }
+                                    Text(verbatim: record.message)
+                                }
+                                .font(.caption)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Divider()
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(palette.background.ignoresSafeArea())
+            .foregroundStyle(palette.primaryText)
+            .navigationTitle("Log")
+            .accessibilityIdentifier("screen.runtime-log")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Refresh") { refreshRevision += 1 }
+                        .accessibilityIdentifier("button.log-refresh")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss)
+                }
+            }
+        }
+    }
+
+    private func runtimeLogLine(_ record: LogseqRuntimeLogRecord) -> String {
+        "\(record.timestampMilliseconds) \(record.level.rawValue.uppercased()) \(record.source.rawValue) \(record.message)"
+    }
+
+    private func copy(_ text: String) {
+        #if SKIP
+        AndroidAssetImporter.copyText(text: text)
+        #elseif os(iOS)
+        UIPasteboard.general.string = text
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
     }
 }
 

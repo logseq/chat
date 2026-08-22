@@ -14,8 +14,40 @@ import AWSCognitoAuthPlugin
 import UIKit
 #endif
 
-/// A logger for the LogseqChat module.
-let logger: os.Logger = os.Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
+struct LogseqAppLogger {
+    #if !SKIP
+    private let systemLogger = os.Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
+    #endif
+
+    func debug(_ message: String) {
+        LogseqRuntimeLog.shared.append(level: .debug, source: .ui, message: message)
+        #if SKIP
+        print(message)
+        #else
+        systemLogger.debug("\(message, privacy: .public)")
+        #endif
+    }
+
+    func info(_ message: String) {
+        LogseqRuntimeLog.shared.append(level: .info, source: .ui, message: message)
+        #if SKIP
+        print(message)
+        #else
+        systemLogger.info("\(message, privacy: .public)")
+        #endif
+    }
+
+    func error(_ message: String) {
+        LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: message)
+        #if SKIP
+        print(message)
+        #else
+        systemLogger.error("\(message, privacy: .public)")
+        #endif
+    }
+}
+
+let logger = LogseqAppLogger()
 
 /// The shared top-level view for the app, loaded from the platform-specific App delegates below.
 ///
@@ -86,7 +118,7 @@ public struct LogseqChatRootView : View {
             try Amplify.add(plugin: AWSCognitoAuthPlugin())
             try Amplify.configure(outputs)
         } catch {
-            logger.error("Could not configure Amplify Auth: \(String(describing: error), privacy: .public)")
+            logger.error("Could not configure Amplify Auth: \(String(describing: error))")
         }
     }()
 
@@ -428,7 +460,7 @@ public enum LogseqChatBackgroundRefresh {
             try BGTaskScheduler.shared.submit(request)
             logger.debug("Scheduled background refresh")
         } catch {
-            logger.error("Could not schedule background refresh: \(String(describing: error), privacy: .public)")
+            logger.error("Could not schedule background refresh: \(String(describing: error))")
         }
         #endif
     }
