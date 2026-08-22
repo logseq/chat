@@ -17,13 +17,31 @@ appId: com.logseq.chat
     index: 0
 - assertVisible:
     id: "BackButton"
+- assertVisible:
+    id: "button.connection"
 - assertNotVisible: "unknown_node"
+- tapOn:
+    id: "button.connection"
+- extendedWaitUntil:
+    visible:
+      id: "button.page-favorite"
+    timeout: 10000
+- assertVisible:
+    id: "button.page-share"
+- assertVisible:
+    id: "button.page-delete"
+- assertNotVisible: "Settings"
+- tapOn:
+    point: "50%,50%"
 - tapOn:
     id: "BackButton"
 - tapOn: "Edit block Untitled block"
 - inputText: "E2E destination regression"
-- tapOn: "Hide keyboard"
+- tapOn:
+    id: "button.send"
 - tapOn: "Zoom into E2E destination regression"
 - assertVisible:
     id: "BackButton"
+- assertVisible:
+    id: "button.connection"
 - assertNotVisible: "unknown_node"

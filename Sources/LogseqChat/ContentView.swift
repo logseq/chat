@@ -738,6 +738,12 @@ struct ContentView: View {
         .navigationTitle(nodeProjectionTitle(uuid: uuid))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                syncIndicatorControl
+                settingsControl
+            }
+        }
         #endif
     }
 
