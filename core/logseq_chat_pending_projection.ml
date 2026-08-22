@@ -22,6 +22,7 @@ let one_value db entity_ref attr =
 ;;
 
 let string_value = function Some (String value) -> Some value | _ -> None
+let bool_value = function Some (Bool value) -> Some value | _ -> None
 
 let has_ref db eid attr target_eid =
   datoms db Eavt ~e:eid ~a:attr ()
@@ -30,6 +31,12 @@ let has_ref db eid attr target_eid =
 
 let favorite_page_eid db =
   datoms db Aevt ~a:"block/name" ~v:(String "$$$favorites") ()
+  |> Seq.uncons
+  |> Option.map (fun (datom, _rest) -> datom.e)
+;;
+
+let recycle_page_eid db =
+  datoms db Aevt ~a:"block/name" ~v:(String "recycle") ()
   |> Seq.uncons
   |> Option.map (fun (datom, _rest) -> datom.e)
 ;;
@@ -513,6 +520,51 @@ let rec compile db = function
                       ]
                   }
               ]))
+  | Delete_page { page_uuid; order; deleted_at } ->
+    (match entid db "block/uuid" (Uuid page_uuid), recycle_page_eid db with
+     | None, _ -> Error "page no longer exists"
+     | _, None -> Error "Recycle page is missing"
+     | Some page_eid, Some recycle_eid ->
+       let already_recycled =
+         Option.is_some (one_value db (Entity_id page_eid) "logseq.property/deleted-at")
+         && Ds_value.optional_ref_eid
+              db
+              "block/parent"
+              (one_value db (Entity_id page_eid) "block/parent")
+            = Some recycle_eid
+       in
+       if already_recycled
+       then Ok []
+       else if
+         bool_value (one_value db (Entity_id page_eid) "logseq.property/built-in?") = Some true
+         || bool_value (one_value db (Entity_id page_eid) "logseq.property/hide?") = Some true
+       then Error "Built-in page cannot be deleted"
+       else
+         let preserved_parent =
+           match one_value db (Entity_id page_eid) "block/parent" with
+           | Some (Ref parent_eid) | Some (Int parent_eid) ->
+             [ "logseq.property.recycle/original-parent", One_value (Ref parent_eid) ]
+           | Some _ | None -> []
+         in
+         let preserved_order =
+           match one_value db (Entity_id page_eid) "block/order" with
+           | Some (String original_order) ->
+             [ "logseq.property.recycle/original-order", One_value (String original_order) ]
+           | Some _ | None -> []
+         in
+         Ok
+           [ Entity
+               { db_id = Some (lookup page_uuid)
+               ; attrs =
+                   [ "block/parent", One_value (Ref recycle_eid)
+                   ; "block/order", One_value (String order)
+                   ; "logseq.property/deleted-at", One_value (Instant deleted_at)
+                   ; "logseq.property.recycle/original-page", One_value (Ref page_eid)
+                   ]
+                   @ preserved_parent
+                   @ preserved_order
+               }
+           ])
 ;;
 
 let rec satisfied db = function
@@ -570,6 +622,16 @@ let rec satisfied db = function
      | _ -> false)
   | Set_favorite { page_uuid; favorite; _ } ->
     Option.is_some (favorite_block_eid db page_uuid) = favorite
+  | Delete_page { page_uuid; _ } ->
+    (match entid db "block/uuid" (Uuid page_uuid), recycle_page_eid db with
+     | Some page_eid, Some recycle_eid ->
+       Option.is_some (one_value db (Entity_id page_eid) "logseq.property/deleted-at")
+       && Ds_value.optional_ref_eid
+            db
+            "block/parent"
+            (one_value db (Entity_id page_eid) "block/parent")
+          = Some recycle_eid
+     | _ -> false)
 ;;
 
 let build ~server_t authoritative operations =

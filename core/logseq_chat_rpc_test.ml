@@ -3091,7 +3091,55 @@ let () =
   (match List.rev !calls with
    | [ ("page-favorite", true, "favorite-op", 100)
      ; ("page-favorite", false, "unfavorite-op", 100) ] -> ()
-   | _ -> failwith "setPageFavorite must preserve the requested semantic operation")
+  | _ -> failwith "setPageFavorite must preserve the requested semantic operation")
+;;
+
+let () =
+  let deleted = ref None in
+  let page = Logseq_chat_graph_read.{ uuid = "page-delete"; title = "Delete me" } in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~graph_sidebar_pages:(fun () ->
+        Some
+          Logseq_chat_graph_read.
+            { favorites = []
+            ; recent_pages = (if Option.is_some !deleted then [] else [ page ])
+            })
+      ~graph_delete_page:(fun ~page_uuid ~operation_id ~now ->
+        deleted := Some (page_uuid, operation_id, now);
+        Ok ())
+      ()
+  in
+  configure_plain_graph session;
+  let payload =
+    Yojson.Basic.to_string
+      (`Assoc
+        [ "pageUuid", `String page.uuid
+        ; "operationId", `String "delete-page-op"
+        ; "now", `Int 100
+        ])
+  in
+  let response =
+    Logseq_chat_rpc.call
+      session
+      (Yojson.Basic.to_string
+         (`Assoc
+           [ "apiVersion", `Int 1
+           ; "method", `String "dispatch"
+           ; "params", `Assoc [ "action", `String "deletePage"; "payload", `String payload ]
+           ]))
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     if required_list "recentPages" result <> []
+     then failwith "deleting a page must update the sidebar snapshot immediately"
+   | _ -> failwith "deletePage should return an RPC response");
+  match !deleted with
+  | Some ("page-delete", "delete-page-op", 100) -> ()
+  | _ -> failwith "deletePage must preserve page UUID, operation ID, and time"
 ;;
 
 let () =

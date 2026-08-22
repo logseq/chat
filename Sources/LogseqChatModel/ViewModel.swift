@@ -182,6 +182,12 @@ private struct SetPageFavoritePayload: Encodable {
     let now: Int64
 }
 
+private struct DeletePagePayload: Encodable {
+    let pageUuid: String
+    let operationId: String
+    let now: Int64
+}
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -616,6 +622,21 @@ private struct SetPageFavoritePayload: Encodable {
             SetPageFavoritePayload(
                 pageUuid: pageUUID,
                 favorite: favorite,
+                operationId: operationID ?? UUID().uuidString.lowercased(),
+                now: now ?? Self.nowMilliseconds()
+            )
+        )
+    }
+
+    public func deletePage(
+        pageUUID: String,
+        now: Int64? = nil,
+        operationID: String? = nil
+    ) {
+        dispatchEncoded(
+            "deletePage",
+            DeletePagePayload(
+                pageUuid: pageUUID,
                 operationId: operationID ?? UUID().uuidString.lowercased(),
                 now: now ?? Self.nowMilliseconds()
             )

@@ -262,6 +262,26 @@ let favorite_page_eid db =
   |> Option.map (fun (datom, _rest) -> datom.e)
 ;;
 
+let recycle_page_eid db =
+  Datascript.datoms db Aevt ~a:"block/name" ~v:(String "recycle") ()
+  |> Seq.uncons
+  |> Option.map (fun (datom, _rest) -> datom.e)
+;;
+
+let last_recycle_order db =
+  match recycle_page_eid db with
+  | None -> None
+  | Some recycle_eid ->
+    Ds_value.datoms_by_ref db Aevt "block/parent" recycle_eid
+    |> Seq.filter_map (fun datom -> string_value (value db datom.e "block/order"))
+    |> Seq.fold_left
+         (fun latest order ->
+           match latest with
+           | Some current when String.compare current order >= 0 -> latest
+           | Some _ | None -> Some order)
+         None
+;;
+
 let favorite_block_eid db page_uuid =
   match favorite_page_eid db, Datascript.entid db "block/uuid" (Uuid page_uuid) with
   | Some favorites_eid, Some page_eid ->

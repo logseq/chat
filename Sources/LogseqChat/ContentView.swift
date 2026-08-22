@@ -245,6 +245,7 @@ struct ContentView: View {
     @State private var selectedTaskStatus: LogseqTaskStatus?
     @State private var editingBlock: LogseqBlock?
     @State private var blocksPendingDeletion: [LogseqBlock] = []
+    @State private var pagePendingDeletion: LogseqSidebarPage?
     @State private var outlinerDeleteConfirmationPending = false
     @State private var outlinerKeyboardDismissalPending = false
     @State private var sidebarMotion = SidebarMotionState()
@@ -471,6 +472,30 @@ struct ContentView: View {
             }
         } message: {
             Text(verbatim: "This deletes the block and all of its children. Pages use Recycle instead.")
+        }
+        .alert("Delete page?", isPresented: pageDeleteConfirmationPresented) {
+            Button("Delete", role: .destructive) {
+                guard let page = pagePendingDeletion else { return }
+                let closesNodeRoute = isNodePagePresented
+                store.deletePage(pageUUID: page.uuid)
+                pagePendingDeletion = nil
+                if closesNodeRoute {
+                    #if SKIP
+                    store.closeNode()
+                    #else
+                    appNavigationPath = OutlinerNavigationPolicy.pathAfterBackButton(
+                        appNavigationPath
+                    )
+                    #endif
+                } else {
+                    store.clearSelectedPage()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pagePendingDeletion = nil
+            }
+        } message: {
+            Text("The page will be moved to Recycle.")
         }
         #if !SKIP
         .fileImporter(
@@ -1394,7 +1419,8 @@ struct ContentView: View {
     }
 
     private var favoriteTargetPage: LogseqSidebarPage? {
-        activeNodeProjection?.page ?? store.snapshot.selectedPage
+        guard !graphsPresented, !flashcardsPresented else { return nil }
+        return activeNodeProjection?.page ?? store.snapshot.selectedPage
     }
 
     private var favoriteTargetIsFavorite: Bool {
@@ -1431,6 +1457,21 @@ struct ContentView: View {
             get: { !blocksPendingDeletion.isEmpty },
             set: { if !$0 { blocksPendingDeletion = [] } }
         )
+    }
+
+    private var pageDeleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { pagePendingDeletion != nil },
+            set: { if !$0 { pagePendingDeletion = nil } }
+        )
+    }
+
+    private func nodeShareText(_ page: LogseqSidebarPage) -> String {
+        let lines = (activeNodeProjection?.blocks ?? store.snapshot.blocks)
+            .map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { "- \($0)" }
+        return ([page.title] + lines).joined(separator: "\n")
     }
 
     private var databasePath: String {
@@ -1812,16 +1853,25 @@ struct ContentView: View {
     private var settingsControl: some View {
         Menu {
             if let target = favoriteTargetPage {
-                Button(favoriteTargetIsFavorite ? "Remove from Favorites" : "Add to Favorites") {
+                Button(favoriteTargetIsFavorite ? "Unfavorite" : "Favorite") {
                     store.setPageFavorite(
                         pageUUID: target.uuid,
                         favorite: !favoriteTargetIsFavorite
                     )
                 }
                 .accessibilityIdentifier("button.page-favorite")
-            }
-            Button("Settings") {
-                settingsPresented = true
+                ShareLink(item: nodeShareText(target)) {
+                    Text("Share")
+                }
+                .accessibilityIdentifier("button.page-share")
+                Button("Delete", role: .destructive) {
+                    pagePendingDeletion = target
+                }
+                .accessibilityIdentifier("button.page-delete")
+            } else {
+                Button("Settings") {
+                    settingsPresented = true
+                }
             }
         } label: {
             Image(systemName: HeaderControlPolicy.settingsSystemImage)

@@ -60,6 +60,7 @@ let affected_uuids db = function
   | Ops.Delete_blocks { uuids } -> subtree_uuids db uuids
   | Ops.Create_journal { page_uuid; block_uuid; _ } -> [ page_uuid; block_uuid ]
   | Ops.Set_favorite { page_uuid; favorite_uuid; _ } -> [ page_uuid; favorite_uuid ]
+  | Ops.Delete_page { page_uuid; _ } -> [ page_uuid ]
 ;;
 
 let rec semantic_value = function
@@ -152,7 +153,7 @@ let safe_to_rebase = function
   | Ops.Save_title _ | Ops.Set_property _ | Ops.Set_properties _
   | Ops.Split_block _ | Ops.Merge_backward _
   | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
-  | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Set_favorite _ -> true
+  | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Set_favorite _ | Ops.Delete_page _ -> true
   | Ops.Delete_blocks _ -> false
 ;;
 
@@ -336,7 +337,7 @@ let normalize_operation_against runtime db operation =
     | (Ops.Set_property _ | Ops.Set_properties _
       | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
       | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _
-      | Ops.Set_favorite _) as intent -> Ok intent
+      | Ops.Set_favorite _ | Ops.Delete_page _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }
 ;;
@@ -625,6 +626,19 @@ let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
                 ; created_at = now
                 }
           }
+;;
+
+let delete_page runtime ~page_uuid ~operation_id ~now =
+  Order.between (Logseq_chat_graph_read.last_recycle_order runtime.snapshot.db) None
+  >>= fun order ->
+  stage
+    runtime
+    Ops.
+      { operation_id
+      ; base_t = runtime.server_t
+      ; state = Queued
+      ; intent = Delete_page { page_uuid; order; deleted_at = now }
+      }
 ;;
 
 let node_destination runtime uuid =

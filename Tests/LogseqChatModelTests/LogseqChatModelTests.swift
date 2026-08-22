@@ -303,6 +303,28 @@ private let testEmptySnapshotJSON = """
         }
     }
 
+    @Test @MainActor func deletingPageStagesOneSemanticOperation() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+
+        store.deletePage(
+            pageUUID: "page-1",
+            now: 1_776_000_000_000,
+            operationID: "delete-page-1"
+        )
+
+        try await waitUntil {
+            recorder.all.contains {
+                $0.contains("\"action\":\"deletePage\"")
+                    && $0.contains("page-1")
+                    && $0.contains("delete-page-1")
+            }
+        }
+    }
+
     @Test @MainActor func selectingGraphUsesExplicitGraphID() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

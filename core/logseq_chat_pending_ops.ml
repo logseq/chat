@@ -100,6 +100,11 @@ type intent =
       ; order : string
       ; created_at : int
       }
+  | Delete_page of
+      { page_uuid : string
+      ; order : string
+      ; deleted_at : int
+      }
 
 type t =
   { operation_id : string
@@ -117,6 +122,7 @@ let outliner_op = function
   | Split_block _ -> "split-block"
   | Merge_backward _ -> "merge-blocks"
   | Delete_blocks _ -> "delete-blocks"
+  | Delete_page _ -> "delete-page"
 ;;
 
 external store_raw
@@ -331,6 +337,13 @@ let intent_json = function
       ; "order", `String order
       ; "createdAt", `Int created_at
       ]
+  | Delete_page { page_uuid; order; deleted_at } ->
+    `Assoc
+      [ "type", `String "delete-page"
+      ; "pageUuid", `String page_uuid
+      ; "order", `String order
+      ; "deletedAt", `Int deleted_at
+      ]
 ;;
 
 let string fields name =
@@ -494,6 +507,15 @@ let intent_of_json = function
              (match List.assoc_opt "createdAt" fields with
               | Some (`Int value) -> value
               | _ -> invalid_arg "invalid pending intent field: createdAt")
+         }
+     | "delete-page" ->
+       Delete_page
+         { page_uuid = string fields "pageUuid"
+         ; order = string fields "order"
+         ; deleted_at =
+             (match List.assoc_opt "deletedAt" fields with
+              | Some (`Int value) -> value
+              | _ -> invalid_arg "invalid pending intent field: deletedAt")
          }
      | kind -> invalid_arg ("unknown pending intent: " ^ kind))
   | _ -> invalid_arg "pending intent must be an object"

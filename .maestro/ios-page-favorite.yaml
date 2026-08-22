@@ -12,14 +12,21 @@ appId: com.logseq.chat
     timeout: 30000
 - tapOn:
     id: "button.connection"
-- tapOn: "Remove from Favorites"
+- assertVisible: "Unfavorite"
+- assertVisible: "Share"
+- assertVisible: "Delete"
+- assertNotVisible: "Settings"
+- tapOn: "Unfavorite"
 - tapOn:
     id: "button.connection"
-- assertVisible: "Add to Favorites"
-- tapOn: "Add to Favorites"
+- assertVisible: "Favorite"
+- tapOn: "Favorite"
 - tapOn:
     id: "button.connection"
-- assertVisible: "Remove from Favorites"
+- assertVisible: "Unfavorite"
+- tapOn: "Delete"
+- assertVisible: "Delete page?"
+- tapOn: "Cancel"
 - stopApp
 - launchApp
 - tapOn:
@@ -31,4 +38,16 @@ appId: com.logseq.chat
     timeout: 30000
 - tapOn:
     id: "button.connection"
-- assertVisible: "Remove from Favorites"
+- assertVisible: "Unfavorite"
+- tapOn: "Delete"
+- assertVisible: "Delete page?"
+- tapOn:
+    text: "Delete"
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 10000
+- tapOn:
+    id: "button.sidebar"
+- assertNotVisible: "E2E Page Target"

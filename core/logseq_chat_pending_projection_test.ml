@@ -32,6 +32,12 @@ let schema =
   ; "block/refs", many ~value_type:RefType ~indexed:true ()
   ; "block/tags", many ~value_type:RefType ~indexed:true ()
   ; "block/journal-day", one ~value_type:NumberType ~indexed:true ()
+  ; "logseq.property/built-in?", one ~indexed:true ()
+  ; "logseq.property/hide?", one ~indexed:true ()
+  ; "logseq.property/deleted-at", one ~value_type:InstantType ~indexed:true ()
+  ; "logseq.property.recycle/original-parent", one ~value_type:RefType ~indexed:true ()
+  ; "logseq.property.recycle/original-page", one ~value_type:RefType ~indexed:true ()
+  ; "logseq.property.recycle/original-order", one ~value_type:StringType ~indexed:true ()
   ; "logseq.property/status", one ~value_type:RefType ~indexed:true ()
   ; "logseq.property.class/extends", many ~value_type:RefType ~indexed:true ()
   ; "user.property/effort", one ~value_type:NumberType ~indexed:true ()
@@ -155,6 +161,69 @@ let () =
     (Projection.satisfied unfavorited unfavorite);
   assert_bool "unfavorite projection leaves sidebar"
     ((Logseq_chat_graph_read.sidebar_pages unfavorited).favorites = [])
+;;
+
+let () =
+  let db =
+    base_db ()
+    |> db_with
+         [ Add (Entity_id 1, "block/parent", Ref 6)
+         ; Add (Entity_id 1, "block/order", String "a1")
+         ; Add (Entity_id 30, "block/uuid", Uuid "recycle-page")
+         ; Add (Entity_id 30, "block/title", String "Recycle")
+         ; Add (Entity_id 30, "block/name", String "recycle")
+         ; Add (Entity_id 30, "logseq.property/built-in?", Bool true)
+         ; Add (Entity_id 30, "logseq.property/hide?", Bool true)
+         ]
+  in
+  let intent =
+    Ops.Delete_page
+      { page_uuid = "page"
+      ; order = "a0"
+      ; deleted_at = 100
+      }
+  in
+  let recycled =
+    match Projection.compile db intent with
+    | Ok tx -> db_with tx db
+    | Error message -> fail "page recycle projection" message
+  in
+  assert_bool "page recycle is satisfied after projection"
+    (Projection.satisfied recycled intent);
+  assert_bool "recycled page is hidden from recent pages"
+    (not
+       (List.exists
+          (fun page -> String.equal page.Logseq_chat_graph_read.uuid "page")
+          (Logseq_chat_graph_read.sidebar_pages recycled).recent_pages));
+  assert_bool "recycled page is no longer a node destination"
+    (Logseq_chat_graph_read.node_destination recycled "page" = None);
+  assert_bool "page recycle preserves its original parent"
+    (Logseq_chat_datascript_value.optional_ref_eid
+       recycled
+       "logseq.property.recycle/original-parent"
+       (Datascript.datoms
+          recycled
+          Eavt
+          ~e:(Option.get (Datascript.entid recycled "block/uuid" (Uuid "page")))
+          ~a:"logseq.property.recycle/original-parent"
+          ()
+        |> Seq.uncons
+        |> Option.map (fun (datom, _) -> datom.v))
+     = Some 6);
+  assert_bool "page recycle preserves its original page and order"
+    (Logseq_chat_datascript_value.optional_ref_eid
+       recycled
+       "logseq.property.recycle/original-page"
+       (Datascript.datoms
+          recycled
+          Eavt
+          ~e:(Option.get (Datascript.entid recycled "block/uuid" (Uuid "page")))
+          ~a:"logseq.property.recycle/original-page"
+          ()
+        |> Seq.uncons
+        |> Option.map (fun (datom, _) -> datom.v))
+     = Datascript.entid recycled "block/uuid" (Uuid "page")
+     && title recycled "page" = "Page")
 ;;
 
 let () =
@@ -1051,7 +1120,9 @@ let () =
       ; operation "08-favorite" 42
           (Set_favorite
              { page_uuid = "project"; favorite_uuid = "favorite-project"; favorite = true
-             ; order = "a0"; created_at = 9 }) ]
+             ; order = "a0"; created_at = 9 })
+      ; operation "09-delete-page" 42
+          (Delete_page { page_uuid = "project"; order = "a1"; deleted_at = 10 }) ]
     in
     List.iter (Ops.save ~path) operations;
     assert_bool "all semantic intents round trip in insertion order" (Ops.list ~path = operations);
@@ -1062,7 +1133,7 @@ let () =
     in
     Ops.save ~path replacement;
     let restored = Ops.list ~path in
-    assert_bool "operation-id upsert does not duplicate or reorder" (List.length restored = 9);
+    assert_bool "operation-id upsert does not duplicate or reorder" (List.length restored = 10);
     assert_bool "operation-id upsert replaces payload" (List.hd restored = replacement))
 ;;
 

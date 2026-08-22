@@ -308,6 +308,17 @@ let graph_set_page_favorite ~page_uuid ~favorite ~operation_id ~now =
   | None -> Error "graph runtime is not open"
 ;;
 
+let graph_delete_page ~page_uuid ~operation_id ~now =
+  match !graph_runtime with
+  | Some runtime ->
+    Logseq_chat_graph_runtime.delete_page
+      runtime.read_runtime
+      ~page_uuid
+      ~operation_id
+      ~now
+  | None -> Error "graph runtime is not open"
+;;
+
 let load_older_journals () =
   Option.iter
     (fun runtime -> Logseq_chat_graph_runtime.load_older_journals runtime.read_runtime)
@@ -442,6 +453,7 @@ let create_session ?storage ?catalog_session () =
     ~graph_due_flashcards
     ~graph_review_flashcard
     ~graph_set_page_favorite
+    ~graph_delete_page
     ~load_older_journals
     ~has_older_journals
     ~stage_operation

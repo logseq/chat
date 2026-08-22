@@ -33,6 +33,12 @@ let schema =
   ; "block/updated-at", one ~value_type:NumberType ~indexed:true () ]
   @ [ "logseq.property/status", one ~value_type:RefType ~indexed:true () ]
   @ [ "logseq.property.class/extends", many ~value_type:RefType ~indexed:true ()
+    ; "logseq.property/built-in?", one ~indexed:true ()
+    ; "logseq.property/hide?", one ~indexed:true ()
+    ; "logseq.property/deleted-at", one ~value_type:InstantType ~indexed:true ()
+    ; "logseq.property.recycle/original-parent", one ~value_type:RefType ~indexed:true ()
+    ; "logseq.property.recycle/original-page", one ~value_type:RefType ~indexed:true ()
+    ; "logseq.property.recycle/original-order", one ~value_type:StringType ~indexed:true ()
     ; "logseq.property.fsrs/due", one ~indexed:true ()
     ; "logseq.property.fsrs/state", one ~indexed:true ()
     ]
@@ -133,6 +139,59 @@ let () =
               contains_keyword "block/link" (Transit.of_string wire)
             | _ -> false)
          | _ -> false))
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-delete-page" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      let db =
+        base_db "Old"
+        |> db_with
+             [ Retract (Entity_id 1, "block/journal-day", Some (Int 20260816))
+             ; Add (Entity_id 20, "block/uuid", Uuid "recycle-page")
+             ; Add (Entity_id 20, "block/title", String "Recycle")
+             ; Add (Entity_id 20, "block/name", String "recycle")
+             ; Add (Entity_id 20, "logseq.property/built-in?", Bool true)
+             ; Add (Entity_id 20, "logseq.property/hide?", Bool true)
+             ]
+      in
+      let runtime = Runtime.create ~path ~server_t:42 (conn_from_db db) in
+      assert_bool "page deletion stages successfully"
+        (Runtime.delete_page
+           runtime
+           ~page_uuid:"page"
+           ~operation_id:"delete-page-op"
+           ~now:100
+         = Ok ());
+      assert_bool "page deletion hides the page immediately"
+        (not
+           (List.exists
+              (fun page -> String.equal page.Logseq_chat_graph_read.uuid "page")
+              (Runtime.sidebar_pages runtime).recent_pages));
+      assert_bool "page deletion persists one semantic page operation"
+        (match Runtime.pending_operations runtime with
+         | [ { Ops.operation_id = "delete-page-op"; intent = Delete_page { page_uuid = "page"; _ }; _ } ] -> true
+         | _ -> false);
+      assert_bool "page deletion encodes as the Logseq delete-page operation"
+        (match Runtime.pending_operations runtime with
+         | [ operation ] ->
+           (match Runtime.prepare_sync runtime operation with
+            | Ok ("delete-page", wire) -> String.contains wire 'd'
+            | _ -> false)
+         | _ -> false);
+      assert_bool "built-in pages cannot be deleted"
+        (match
+           Runtime.delete_page
+             runtime
+             ~page_uuid:"recycle-page"
+             ~operation_id:"delete-built-in"
+             ~now:101
+         with
+         | Error _ -> true
+         | Ok () -> false))
 ;;
 
 let () =

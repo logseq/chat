@@ -95,6 +95,8 @@ type t =
   ; graph_set_page_favorite :
       (page_uuid:string -> favorite:bool -> operation_id:string -> now:int
        -> (unit, string) result) option
+  ; graph_delete_page :
+      (page_uuid:string -> operation_id:string -> now:int -> (unit, string) result) option
   ; mutable flashcards : Flashcards.due_card list
   ; mutable search_results : Logseq_chat_search_index.hit list
   ; mutable search_query : string
@@ -691,7 +693,7 @@ let rec project_outliner_intent blocks = function
       (fun (block : Model.block) -> not (List.mem block.uuid uuids))
       blocks
   | Set_property _ | Set_properties _ | Create_tag _ | Create_journal _ | Add_tag _
-  | Set_favorite _ -> blocks
+  | Set_favorite _ | Delete_page _ -> blocks
 ;;
 
 let project_outliner_operations context operations =
@@ -1252,6 +1254,7 @@ let create
       ?graph_due_flashcards
       ?graph_review_flashcard
       ?graph_set_page_favorite
+      ?graph_delete_page
       ?load_older_journals
       ?has_older_journals
       ?stage_operation
@@ -1306,6 +1309,7 @@ let create
   ; graph_due_flashcards
   ; graph_review_flashcard
   ; graph_set_page_favorite
+  ; graph_delete_page
   ; flashcards = []
   ; search_results = []
   ; search_query = ""
@@ -2641,6 +2645,29 @@ let dispatch session action payload =
           failure ~code:"invalid_json" ~message:"setPageFavorite payload must be valid JSON")
      | None, _, _ -> failure ~code:"invalid_params" ~message:"setPageFavorite requires a payload"
      | _, None, _ -> failure ~code:"set_page_favorite_unavailable" ~message:"No graph is open"
+     | _, _, None -> failure ~code:"graph_not_configured" ~message:"Select a graph first")
+  | "deletePage" ->
+    (match payload, session.graph_delete_page, session.config with
+     | Some payload, Some delete_page, Some config ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "pageUuid" fields,
+                 required_string "operationId" fields,
+                 optional_int "now" fields with
+           | Ok page_uuid, Ok operation_id, Ok requested_now ->
+             let now = Option.value requested_now ~default:(now_ms ()) in
+             (match delete_page ~page_uuid ~operation_id ~now with
+              | Ok () ->
+                restore_semantic_queue session config;
+                snapshot_visible session
+              | Error message -> failure ~code:"delete_page_failed" ~message)
+           | Error message, _, _ | _, Error message, _ | _, _, Error message ->
+             failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"deletePage payload must be an object"
+        | exception _ ->
+          failure ~code:"invalid_json" ~message:"deletePage payload must be valid JSON")
+     | None, _, _ -> failure ~code:"invalid_params" ~message:"deletePage requires a payload"
+     | _, None, _ -> failure ~code:"delete_page_unavailable" ~message:"No graph is open"
      | _, _, None -> failure ~code:"graph_not_configured" ~message:"Select a graph first")
   | "unlockGraph" ->
     (match session.config, session.unlock_graph, payload with
