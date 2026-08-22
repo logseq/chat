@@ -1318,7 +1318,7 @@ private struct DeletePagePayload: Encodable {
         }
     }
 
-    private func syncPendingSoon(delayNanoseconds: UInt64 = 150_000_000) {
+    private func syncPendingSoon(delayNanoseconds: UInt64 = UInt64(150_000_000)) {
         pendingSyncDebounceTask?.cancel()
         pendingSyncDebounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: delayNanoseconds)

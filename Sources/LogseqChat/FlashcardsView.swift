@@ -43,19 +43,27 @@ enum FlashcardPresentation {
 
     private static func replacingLegacyClozes(in value: String, reveal: Bool) -> String {
         var result = ""
-        var remaining = value[...]
-        while let start = remaining.range(
-            of: "{{cloze ",
-            options: String.CompareOptions.caseInsensitive
-        ),
-              let end = remaining[start.upperBound...].range(of: "}}") {
-            result += String(remaining[..<start.lowerBound])
-            let answer = String(remaining[start.upperBound..<end.lowerBound])
-                .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        var isFirstSection = true
+        for section in value.components(separatedBy: "{{") {
+            if isFirstSection {
+                result += section
+                isFirstSection = false
+                continue
+            }
+            let closingParts = section.components(separatedBy: "}}")
+            guard closingParts.count > 1,
+                  let header = closingParts.first,
+                  header.lowercased().hasPrefix("cloze ") else {
+                result += "{{" + section
+                continue
+            }
+            let answer = header.components(separatedBy: " ")
+                .dropFirst()
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             result += reveal ? answer : "[…]"
-            remaining = remaining[end.upperBound...]
+            result += closingParts.dropFirst().joined(separator: "}}")
         }
-        result += String(remaining)
         return result
     }
 }

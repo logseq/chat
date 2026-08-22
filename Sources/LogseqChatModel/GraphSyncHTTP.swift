@@ -74,9 +74,9 @@ public enum LogseqOutlinerAutosavePolicy {
     public static func serverSyncDelayNanoseconds(eventType: String) -> UInt64 {
         switch eventType {
         case "textChanged", "returnPressed", "backspacePressed":
-            return 1_000_000_000
+            return UInt64(1_000_000_000)
         default:
-            return 150_000_000
+            return UInt64(150_000_000)
         }
     }
 }

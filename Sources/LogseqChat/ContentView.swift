@@ -3091,7 +3091,7 @@ private struct SyncStatusView: View {
                     )
                     statusRow(
                         label: "Server cursor",
-                        value: cursor.map(String.init) ?? "Unavailable"
+                        value: cursor.map { String($0) } ?? "Unavailable"
                     )
                 }
                 if let errorMessage, !errorMessage.isEmpty {

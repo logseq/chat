@@ -26,4 +26,13 @@ import LogseqChatModel
             == "The capital is Paris.")
         #expect(FlashcardPresentation.containsCloze(nodes: [], fallback: title))
     }
+
+    @Test func legacyClozeParsingIsCaseInsensitiveAndHandlesMultipleAnswers() {
+        let title = "{{CLOZE First}} then {{cloze Second answer}}."
+
+        #expect(FlashcardPresentation.text(nodes: [], fallback: title, revealCloze: false)
+            == "[…] then […].")
+        #expect(FlashcardPresentation.text(nodes: [], fallback: title, revealCloze: true)
+            == "First then Second answer.")
+    }
 }
