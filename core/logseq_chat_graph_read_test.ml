@@ -357,6 +357,25 @@ let () =
                ; "block/created-at", One_value (Instant 6)
                ]
            }
+       ; Entity
+           { db_id = Some (Temp_id "hidden-parent")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "hidden-parent")
+               ; "block/title", One_value (String "Hidden parent")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "node-page"))
+               ; "logseq.property/hide?", One_value (Bool true)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "hidden-child")
+               ; "block/title", One_value (String "Hidden child")
+               ; "block/page", One_value (Ref_to (Temp_id "node-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "hidden-parent"))
+               ]
+           }
        ]);
   let db = conn_db conn in
   (match Logseq_chat_graph_read.node_destination db page_uuid with
@@ -365,6 +384,9 @@ let () =
   (match Logseq_chat_graph_read.node_destination db block_uuid with
    | Some (page, true) when page.uuid = page_uuid -> ()
    | _ -> failwith "an ordinary block node reference did not resolve to its containing page");
+  if Logseq_chat_graph_read.node_destination db "hidden-parent" <> None
+     || Logseq_chat_graph_read.node_destination db "hidden-child" <> None
+  then failwith "hidden blocks must not remain node navigation destinations";
   (match Logseq_chat_graph_read.objects_for_tag db tag_uuid with
    | [ block ]
      when block.uuid = object_uuid

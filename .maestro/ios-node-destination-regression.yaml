@@ -1,0 +1,29 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    notVisible:
+      id: "button.sidebar.dismiss"
+    timeout: 10000
+- tapOn:
+    id: "button.journal.*"
+    index: 0
+- assertVisible:
+    id: "BackButton"
+- assertNotVisible: "unknown_node"
+- tapOn:
+    id: "BackButton"
+- tapOn: "Edit block Untitled block"
+- inputText: "E2E destination regression"
+- tapOn: "Hide keyboard"
+- tapOn: "Zoom into E2E destination regression"
+- assertVisible:
+    id: "BackButton"
+- assertNotVisible: "unknown_node"

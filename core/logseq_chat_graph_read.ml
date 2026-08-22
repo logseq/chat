@@ -545,6 +545,7 @@ let blocks_for_page ?(decrypt_title = fun value -> Ok value) db page_uuid =
 let node_destination ?(decrypt_title = fun value -> Ok value) db uuid =
   match Datascript.entid db "block/uuid" (Uuid uuid) with
   | None -> None
+  | Some eid when page_is_hidden db Int_set.empty eid -> None
   | Some eid ->
     let is_page = Option.is_some (string_value (value db eid "block/name")) in
     let page_eid =

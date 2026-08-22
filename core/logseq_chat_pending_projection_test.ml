@@ -197,6 +197,8 @@ let () =
           (Logseq_chat_graph_read.sidebar_pages recycled).recent_pages));
   assert_bool "recycled page is no longer a node destination"
     (Logseq_chat_graph_read.node_destination recycled "page" = None);
+  assert_bool "a block below a recycled page is no longer a node destination"
+    (Logseq_chat_graph_read.node_destination recycled "block" = None);
   assert_bool "page recycle preserves its original parent"
     (Logseq_chat_datascript_value.optional_ref_eid
        recycled
