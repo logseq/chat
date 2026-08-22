@@ -27,6 +27,53 @@ let refresh_search runtime =
     runtime.search_index
 ;;
 
+let rec subtree_uuids db roots =
+  match roots with
+  | [] -> []
+  | uuid :: rest ->
+    (match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with
+     | None -> uuid :: subtree_uuids db rest
+     | Some eid ->
+       let children =
+         Datascript.datoms db Datascript.Aevt ~a:"block/parent" ~v:(Datascript.Ref eid) ()
+         |> Seq.filter_map (fun datom ->
+           match
+             Datascript.datoms db Datascript.Eavt ~e:datom.Datascript.e ~a:"block/uuid" ()
+             |> Seq.uncons
+           with
+           | Some ({ Datascript.v = Datascript.Uuid child; _ }, _) -> Some child
+           | _ -> None)
+         |> List.of_seq
+       in
+       uuid :: subtree_uuids db (children @ rest))
+;;
+
+let affected_uuids db = function
+  | Ops.Save_title { uuid; _ } | Ops.Set_property { uuid; _ }
+  | Ops.Insert_block { uuid; _ } | Ops.Move_block { uuid; _ }
+  | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } -> [ uuid ]
+  | Ops.Move_blocks { moves } -> List.map (fun (move : Ops.move) -> move.uuid) moves
+  | Ops.Split_block { uuid; new_uuid; _ } -> [ uuid; new_uuid ]
+  | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
+  | Ops.Delete_blocks { uuids } -> subtree_uuids db uuids
+  | Ops.Create_journal { page_uuid; block_uuid; _ } -> [ page_uuid; block_uuid ]
+;;
+
+let refresh_search_affected runtime ~before intent =
+  match runtime.search_index with
+  | None -> ()
+  | Some index when runtime.search_index_is_fresh ->
+    (try
+       Logseq_chat_search_index.refresh_uuids
+         index
+         ~before
+         ~after:runtime.snapshot.Projection.db
+         (affected_uuids before intent)
+     with
+     | Failure _ -> runtime.search_index_is_fresh <- false)
+  | Some _ -> ()
+;;
+
 let persist_projected_conflicts ~path operations statuses =
   let persisted = Hashtbl.create (List.length operations) in
   List.iter
@@ -293,7 +340,12 @@ let prepare_sync runtime operation =
 ;;
 
 let stage runtime operation =
-  let existing = Ops.list ~path:runtime.path in
+  let operation_is_known =
+    List.exists
+      (fun (operation_id, _) -> String.equal operation_id operation.Ops.operation_id)
+      runtime.snapshot.statuses
+  in
+  let existing = if operation_is_known then Ops.list ~path:runtime.path else [] in
   let replacing =
     List.find_opt
       (fun pending ->
@@ -332,6 +384,7 @@ let stage runtime operation =
       (match Projection.compile runtime.snapshot.db operation.intent with
        | Error message -> Error message
        | Ok tx ->
+         let before = runtime.snapshot.db in
          Ops.save ~path:runtime.path operation;
          runtime.snapshot <-
            { runtime.snapshot with
@@ -340,7 +393,7 @@ let stage runtime operation =
                runtime.snapshot.statuses
                @ [ operation.operation_id, Ops.Applied ]
            };
-         refresh_search runtime;
+         refresh_search_affected runtime ~before operation.intent;
          Ok ())
   | None ->
     let candidate_ops =
@@ -357,9 +410,10 @@ let stage runtime operation =
     in
     (match List.assoc operation.operation_id candidate.statuses with
      | Ops.Applied ->
+       let before = runtime.snapshot.db in
        Ops.save ~path:runtime.path operation;
        runtime.snapshot <- candidate;
-       refresh_search runtime;
+       refresh_search_affected runtime ~before operation.intent;
        Ok ()
      | Ops.Conflicted message -> Error message
      | Ops.Queued | Ops.Retryable | Ops.Submitted | Ops.Accepted _ ->

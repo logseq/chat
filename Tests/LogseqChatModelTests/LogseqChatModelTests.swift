@@ -374,6 +374,12 @@ private let testEmptySnapshotJSON = """
             eventType: "textChanged"
         ) == 1_000_000_000)
         #expect(LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+            eventType: "returnPressed"
+        ) == 1_000_000_000)
+        #expect(LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+            eventType: "backspacePressed"
+        ) == 1_000_000_000)
+        #expect(LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
             eventType: "toolbar"
         ) == 150_000_000)
     }

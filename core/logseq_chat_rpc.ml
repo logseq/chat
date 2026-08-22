@@ -1805,6 +1805,23 @@ let complete_pending_active session pump (active : pending_active) response =
 
 let complete_pending_sync session payload =
   let invalid message = Error message in
+  let completion_id =
+    match from_string payload with
+    | `Assoc fields ->
+      (match assoc "id" fields with
+       | Some (`Int id) when id > 0 -> Some id
+       | _ -> None)
+    | _ -> None
+  in
+  let is_stale expected_id =
+    Option.fold ~none:false ~some:(fun id -> id < expected_id) completion_id
+  in
+  let is_finished =
+    Option.fold
+      ~none:false
+      ~some:(fun id -> id <= session.next_pending_request_id)
+      completion_id
+  in
   let parsed_completion expected_id =
     match from_string payload with
     | `Assoc fields ->
@@ -1842,6 +1859,7 @@ let complete_pending_sync session payload =
     | _ -> invalid "pending sync completion must be an object"
   in
   match session.semantic_active, session.pending_sync with
+  | Some active, _ when is_stale active.id -> Ok ()
   | Some active, _ ->
     (try
        Result.map
@@ -1849,10 +1867,13 @@ let complete_pending_sync session payload =
            finish_semantic_active session active ~succeeded ~accepted_t)
          (parsed_completion active.id)
      with error -> invalid ("invalid pending sync completion: " ^ Printexc.to_string error))
+  | None, None when is_finished -> Ok ()
   | None, None -> invalid "pending sync is not active"
   | None, Some pump ->
     (match pump.active with
+     | None when is_finished -> Ok ()
      | None -> invalid "pending sync has no active request"
+     | Some active when is_stale active.id -> Ok ()
      | Some active ->
        (try
           match from_string payload with

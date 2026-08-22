@@ -203,67 +203,100 @@ let create ~path =
    page row), titles have uuid refs replaced with display names, journal
    pages append their journal day. Hidden, built-in, closed-value, blank and
    oversized titles are skipped. *)
-let rows_of_db db =
-  let value eid attr =
-    Datascript.datoms db Eavt ~e:eid ~a:attr ()
-    |> Seq.uncons
-    |> Option.map (fun (datom, _) -> datom.v)
-  in
-  let string_value = function
-    | Some (String text) -> Some text
-    | _ -> None
-  in
-  let uuid_value = function
-    | Some (Uuid text) | Some (String text) -> Some text
-    | _ -> None
-  in
+let value db eid attr =
+  Datascript.datoms db Eavt ~e:eid ~a:attr ()
+  |> Seq.uncons
+  |> Option.map (fun (datom, _) -> datom.v)
+;;
+
+let string_value = function
+  | Some (String text) -> Some text
+  | _ -> None
+;;
+
+let uuid_value = function
+  | Some (Uuid text) | Some (String text) -> Some text
+  | _ -> None
+;;
+
+let row_of_eid db eid =
   let title_for_uuid uuid =
     match Datascript.entid db "block/uuid" (Uuid uuid) with
     | None -> None
     | Some eid ->
-      (match string_value (value eid "block/title") with
+      (match string_value (value db eid "block/title") with
        | Some title when not (String.equal (String.trim title) "") -> Some title
        | _ -> None)
   in
-  Datascript.datoms db Aevt ~a:"block/uuid" ()
-  |> Seq.filter_map (fun datom ->
-    let eid = datom.e in
-    match uuid_value (Some datom.v), string_value (value eid "block/title") with
-    | Some uuid, Some title when not (String.equal (String.trim title) "") ->
-      let hidden =
-        match
-          value eid "logseq.property/built-in?", value eid "block/closed-value-property"
-        with
-        | Some (Bool true), _ | _, Some _ -> true
-        | _ ->
-          Logseq_chat_graph_read.page_is_hidden
-            db
-            Logseq_chat_graph_read.Int_set.empty
-            eid
+  match uuid_value (value db eid "block/uuid"), string_value (value db eid "block/title") with
+  | Some uuid, Some title when not (String.equal (String.trim title) "") ->
+    let hidden =
+      match
+        value db eid "logseq.property/built-in?",
+        value db eid "block/closed-value-property"
+      with
+      | Some (Bool true), _ | _, Some _ -> true
+      | _ ->
+        Logseq_chat_graph_read.page_is_hidden
+          db
+          Logseq_chat_graph_read.Int_set.empty
+          eid
+    in
+    if hidden || utf8_length title > 10000
+    then None
+    else (
+      let is_page = Option.is_some (string_value (value db eid "block/name")) in
+      let page_uuid =
+        if is_page
+        then uuid
+        else (
+          match Ds_value.optional_ref_eid db "block/page" (value db eid "block/page") with
+          | Some page_eid ->
+            Option.value (uuid_value (value db page_eid "block/uuid")) ~default:uuid
+          | None -> uuid)
       in
-      if hidden || utf8_length title > 10000
-      then None
-      else (
-        let is_page = Option.is_some (string_value (value eid "block/name")) in
-        let page_uuid =
-          if is_page
-          then uuid
-          else (
-            match Ds_value.optional_ref_eid db "block/page" (value eid "block/page") with
-            | Some page_eid -> Option.value (uuid_value (value page_eid "block/uuid")) ~default:uuid
-            | None -> uuid)
-        in
-        let title =
-          Ref_text.to_text ~tag_title:title_for_uuid ~ref_title:title_for_uuid title
-        in
-        let title =
-          match value eid "block/journal-day" with
-          | Some (Int day) | Some (Instant day) -> title ^ " " ^ string_of_int day
-          | _ -> title
-        in
-        Some (uuid, title, page_uuid))
-    | _ -> None)
+      let title = Ref_text.to_text ~tag_title:title_for_uuid ~ref_title:title_for_uuid title in
+      let title =
+        match value db eid "block/journal-day" with
+        | Some (Int day) | Some (Instant day) -> title ^ " " ^ string_of_int day
+        | _ -> title
+      in
+      Some (uuid, title, page_uuid))
+  | _ -> None
+;;
+
+let row_for_uuid db uuid =
+  Option.bind (Datascript.entid db "block/uuid" (Uuid uuid)) (row_of_eid db)
+;;
+
+let rows_of_db db =
+  Datascript.datoms db Aevt ~a:"block/uuid" ()
+  |> Seq.filter_map (fun datom -> row_of_eid db datom.e)
   |> List.of_seq
+;;
+
+let referring_uuids db uuid =
+  match Datascript.entid db "block/uuid" (Uuid uuid) with
+  | None -> []
+  | Some eid ->
+    Datascript.datoms db Aevt ~a:"block/refs" ~v:(Ref eid) ()
+    |> Seq.filter_map (fun datom -> uuid_value (value db datom.e "block/uuid"))
+    |> List.of_seq
+;;
+
+let refresh_uuids t ~before ~after uuids =
+  let affected = Hashtbl.create (List.length uuids * 2) in
+  let add uuid = Hashtbl.replace affected uuid () in
+  List.iter
+    (fun uuid ->
+      add uuid;
+      List.iter add (referring_uuids before uuid);
+      List.iter add (referring_uuids after uuid))
+    uuids;
+  let affected = Hashtbl.to_seq_keys affected |> List.of_seq in
+  if affected <> [] then search_delete t.path affected;
+  let wanted = List.filter_map (row_for_uuid after) affected in
+  if wanted <> [] then search_upsert t.path wanted
 ;;
 
 (* Diff the wanted rows against the stored index so refresh stays cheap and

@@ -470,6 +470,57 @@ let () =
 ;;
 
 let () =
+  let session =
+    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Canceled request\",\"uuid\":\"canceled-pending\",\"now\":1776000000000}"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"cancelPendingSync"}}|});
+  let late =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"canceled-pending\\\"}\",\"error\":null}"}}|}
+    |> from_string
+  in
+  match late with
+  | `Assoc fields when required_bool "ok" fields -> ()
+  | _ -> failwith "a completion arriving after cancellation must be an idempotent no-op"
+;;
+
+let () =
+  let session =
+    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Duplicate completion\",\"uuid\":\"duplicate-pending\",\"now\":1776000000000}"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
+  let completion =
+    {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"duplicate-pending\\\"}\",\"error\":null}"}}|}
+  in
+  ignore (Logseq_chat_rpc.call session completion);
+  let duplicate = Logseq_chat_rpc.call session completion |> from_string in
+  match duplicate with
+  | `Assoc fields when required_bool "ok" fields -> ()
+  | _ -> failwith "a duplicate completion must be an idempotent no-op"
+;;
+
+let () =
   let unlocked = ref false in
   let loaded = ref [] in
   let session =

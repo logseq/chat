@@ -280,6 +280,109 @@ let () =
 ;;
 
 let () =
+  let graph_path = Filename.temp_file "logseq-chat-runtime-search" ".sqlite" in
+  let search_path = Filename.temp_file "logseq-chat-runtime-search-index" ".sqlite" in
+  let cleanup path = if Sys.file_exists path then Sys.remove path in
+  Fun.protect
+    ~finally:(fun () ->
+      cleanup graph_path;
+      cleanup search_path;
+      cleanup (search_path ^ "-shm");
+      cleanup (search_path ^ "-wal"))
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging graph_path;
+      let runtime =
+        Runtime.create
+          ~path:graph_path
+          ~search_index_path:search_path
+          ~server_t:42
+          (conn_from_db (base_db "Old"))
+      in
+      ignore (Runtime.search runtime "Old");
+      assert_bool "the initial search index is ready" runtime.search_index_is_fresh;
+      assert_bool "editing stages while a search index is open"
+        (Runtime.stage runtime (save_title "lazy-search-title" "Old" "Pending") = Ok ());
+      assert_bool
+        "hot-path editing keeps the search index current incrementally"
+        runtime.search_index_is_fresh;
+      assert_bool
+        "search sees the incrementally indexed optimistic title"
+        (Runtime.search runtime "Pending"
+         |> List.exists (fun hit -> String.equal hit.Logseq_chat_search_index.uuid "block"));
+      let split =
+        Ops.
+          { operation_id = "incremental-search-split"
+          ; base_t = 42
+          ; state = Queued
+          ; intent =
+              Split_block
+                { uuid = "block"
+                ; expected_title = "Pending"
+                ; before = "Head"
+                ; after = "Tail"
+                ; new_uuid = "incremental-search-new"
+                ; new_order = "a1"
+                ; created_at = 100
+                }
+          }
+      in
+      assert_bool "a split stages while the incremental index is open"
+        (Runtime.stage runtime split = Ok ());
+      assert_bool "a split keeps the incremental index ready" runtime.search_index_is_fresh;
+      assert_bool "the split block is searchable without a full refresh"
+        (Runtime.search runtime "Tail"
+         |> List.exists (fun hit ->
+           String.equal hit.Logseq_chat_search_index.uuid "incremental-search-new")))
+;;
+
+let () =
+  let graph_path = Filename.temp_file "logseq-chat-runtime-ref-search" ".sqlite" in
+  let search_path = Filename.temp_file "logseq-chat-runtime-ref-search-index" ".sqlite" in
+  let cleanup path = if Sys.file_exists path then Sys.remove path in
+  Fun.protect
+    ~finally:(fun () ->
+      cleanup graph_path;
+      cleanup search_path;
+      cleanup (search_path ^ "-shm");
+      cleanup (search_path ^ "-wal"))
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging graph_path;
+      let db =
+        base_db "[[target]]"
+        |> db_with
+             [ Add (Entity_id 2, "block/uuid", Uuid "target")
+             ; Add (Entity_id 2, "block/title", String "Target")
+             ; Add (Entity_id 2, "block/name", String "target")
+             ; Add (Entity_id 10, "block/refs", Ref 2)
+             ]
+      in
+      let runtime =
+        Runtime.create
+          ~path:graph_path
+          ~search_index_path:search_path
+          ~server_t:42
+          (conn_from_db db)
+      in
+      ignore (Runtime.search runtime "Target");
+      let rename =
+        Ops.
+          { operation_id = "incremental-reference-rename"
+          ; base_t = 42
+          ; state = Queued
+          ; intent = Save_title { uuid = "target"; expected_title = "Target"; title = "Renamed" }
+          }
+      in
+      assert_bool "a referenced page rename stages" (Runtime.stage runtime rename = Ok ());
+      assert_bool "a referenced page rename keeps the incremental index ready"
+        runtime.search_index_is_fresh;
+      let renamed_hits = Runtime.search runtime "Renamed" in
+      assert_bool "the renamed page is incrementally searchable"
+        (List.exists (fun hit -> String.equal hit.Logseq_chat_search_index.uuid "target") renamed_hits);
+      assert_bool "blocks referring to the renamed page are reindexed incrementally"
+        (List.exists (fun hit -> String.equal hit.Logseq_chat_search_index.uuid "block") renamed_hits))
+;;
+
+let () =
   with_runtime (fun _path conn runtime ->
     assert_bool "valid operation stages" (Runtime.stage runtime (save_title "op-title" "Old" "Pending") = Ok ());
     ignore (reset_conn conn (base_db "Remote"));
