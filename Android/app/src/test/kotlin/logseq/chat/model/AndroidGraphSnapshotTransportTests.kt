@@ -39,7 +39,12 @@ class AndroidGraphSnapshotTransportTests {
             },
             snapshot = { exchange ->
                 snapshotAuthorization.set(exchange.requestHeaders.getFirst("Authorization"))
-                respond(exchange, 200, gzip(snapshot))
+                respond(
+                    exchange,
+                    200,
+                    gzip(snapshot),
+                    headers = mapOf("x-snapshot-row-count" to "1")
+                )
             }
         )
         val directory = temporaryDirectory()
@@ -67,7 +72,14 @@ class AndroidGraphSnapshotTransportTests {
                 val body = """{"ok":true,"url":"/file","t":7,"schema-version":"65.33","row-count":1,"content-encoding":"identity"}"""
                 respond(exchange, 200, body.toByteArray())
             },
-            snapshot = { exchange -> respond(exchange, 200, "plain-snapshot".toByteArray()) }
+            snapshot = { exchange ->
+                respond(
+                    exchange,
+                    200,
+                    "plain-snapshot".toByteArray(),
+                    headers = mapOf("x-snapshot-row-count" to "1")
+                )
+            }
         )
         val directory = temporaryDirectory()
 
@@ -132,14 +144,26 @@ class AndroidGraphSnapshotTransportTests {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val baseURL = "http://127.0.0.1:${server.address.port}"
         server.createContext("/") { exchange ->
-            if (exchange.requestURI.path == "/file") snapshot(exchange) else metadata(exchange, baseURL)
+            when {
+                exchange.requestURI.path == "/file" -> snapshot(exchange)
+                exchange.requestURI.path.endsWith("/pull") -> {
+                    respond(exchange, 200, """{"type":"pull/ok","t":42}""".toByteArray())
+                }
+                else -> metadata(exchange, baseURL)
+            }
         }
         server.start()
         servers.add(server)
         return TestServer(baseURL)
     }
 
-    private fun respond(exchange: HttpExchange, status: Int, body: ByteArray) {
+    private fun respond(
+        exchange: HttpExchange,
+        status: Int,
+        body: ByteArray,
+        headers: Map<String, String> = emptyMap()
+    ) {
+        headers.forEach { (name, value) -> exchange.responseHeaders.set(name, value) }
         exchange.sendResponseHeaders(status, body.size.toLong())
         exchange.responseBody.use { it.write(body) }
     }
