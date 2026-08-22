@@ -50,6 +50,7 @@ let rec subtree_uuids db roots =
 
 let affected_uuids db = function
   | Ops.Save_title { uuid; _ } | Ops.Set_property { uuid; _ }
+  | Ops.Set_properties { uuid; _ }
   | Ops.Insert_block { uuid; _ } | Ops.Move_block { uuid; _ }
   | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } -> [ uuid ]
   | Ops.Move_blocks { moves } -> List.map (fun (move : Ops.move) -> move.uuid) moves
@@ -57,6 +58,27 @@ let affected_uuids db = function
   | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
   | Ops.Delete_blocks { uuids } -> subtree_uuids db uuids
   | Ops.Create_journal { page_uuid; block_uuid; _ } -> [ page_uuid; block_uuid ]
+;;
+
+let rec semantic_value = function
+  | Datascript.String value -> Ok (Ops.String_value value)
+  | Datascript.Int value -> Ok (Ops.Int_value value)
+  | Datascript.Instant value -> Ok (Ops.Instant_value value)
+  | Datascript.Float value -> Ok (Ops.Float_value value)
+  | Datascript.Bool value -> Ok (Ops.Bool_value value)
+  | Datascript.Keyword value -> Ok (Ops.Keyword_value value)
+  | Datascript.Map entries ->
+    List.fold_left
+      (fun result (key, value) ->
+        result >>= fun converted ->
+        match key with
+        | Datascript.Keyword key ->
+          semantic_value value >>| fun value -> (key, value) :: converted
+        | _ -> Error "flashcard state contains a non-keyword key")
+      (Ok [])
+      entries
+    >>| fun entries -> Ops.Map_value (List.rev entries)
+  | _ -> Error "flashcard state contains an unsupported value"
 ;;
 
 let refresh_search_affected runtime ~before intent =
@@ -91,7 +113,8 @@ let persist_projected_conflicts ~path operations statuses =
     statuses
 ;;
 
-let rebuild runtime =
+let rebuild ?(changed_uuids = []) runtime =
+  let before = runtime.snapshot.Projection.db in
   let operations = Ops.list ~path:runtime.path in
   let snapshot =
     Projection.build
@@ -104,17 +127,34 @@ let rebuild runtime =
     operations
     snapshot.statuses;
   runtime.snapshot <- snapshot;
-  refresh_search runtime
+  match runtime.search_index with
+  | Some index when runtime.search_index_is_fresh ->
+    let pending_uuids =
+      operations
+      |> List.concat_map (fun operation ->
+        affected_uuids before operation.Ops.intent
+        @ affected_uuids snapshot.db operation.intent)
+    in
+    (try
+       Logseq_chat_search_index.refresh_uuids
+         index
+         ~before
+         ~after:snapshot.db
+         (changed_uuids @ pending_uuids)
+     with
+     | Failure _ -> runtime.search_index_is_fresh <- false)
+  | Some _ | None -> ()
 ;;
 
 let safe_to_rebase = function
-  | Ops.Save_title _ | Ops.Set_property _ | Ops.Split_block _ | Ops.Merge_backward _
+  | Ops.Save_title _ | Ops.Set_property _ | Ops.Set_properties _
+  | Ops.Split_block _ | Ops.Merge_backward _
   | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
   | Ops.Move_block _ | Ops.Move_blocks _ -> true
   | Ops.Delete_blocks _ -> false
 ;;
 
-let rebase_operations runtime ~server_t ~operation_ids =
+let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
   let confirmed = Hashtbl.create (List.length operation_ids) in
   List.iter (fun operation_id -> Hashtbl.replace confirmed operation_id ()) operation_ids;
   List.iter (Hashtbl.remove runtime.prepared) operation_ids;
@@ -160,7 +200,7 @@ let rebase_operations runtime ~server_t ~operation_ids =
            Ops.save
              ~path:runtime.path
              { operation with base_t = server_t; state = Ops.Queued }));
-  rebuild runtime
+  rebuild ~changed_uuids runtime
 ;;
 
 let create_base
@@ -291,7 +331,8 @@ let normalize_operation_against runtime db operation =
         ; merged_title = Some (expected_previous_title ^ source_title)
         }
       )
-    | (Ops.Set_property _ | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
+    | (Ops.Set_property _ | Ops.Set_properties _
+      | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
       | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }
@@ -472,6 +513,51 @@ let blocks runtime =
   Logseq_chat_graph_read.blocks
     ~journal_limit:runtime.journal_limit
     runtime.snapshot.db
+;;
+
+let due_flashcards runtime ~now =
+  Logseq_chat_flashcards.due_cards runtime.snapshot.db ~now
+;;
+
+let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
+  let db = runtime.snapshot.db in
+  match Logseq_chat_flashcards.card_for_uuid db ~now uuid with
+  | None -> Error "block is not a flashcard"
+  | Some due_card ->
+    let repeated = Logseq_chat_flashcards.repeat ~now due_card.card rating in
+    let eid = Datascript.entid db "block/uuid" (Datascript.Uuid uuid) in
+    let current attr =
+      Option.bind eid (fun eid -> Logseq_chat_graph_read.value db eid attr)
+    in
+    let semantic_option value =
+      match value with
+      | None -> Ok None
+      | Some value -> semantic_value value >>| Option.some
+    in
+    semantic_option (current "logseq.property.fsrs/state") >>= fun expected_state ->
+    semantic_option (current "logseq.property.fsrs/due") >>= fun expected_due ->
+    semantic_value (Logseq_chat_flashcards.state_value repeated) >>= fun state ->
+    stage
+      runtime
+      Ops.
+        { operation_id
+        ; base_t = runtime.server_t
+        ; state = Queued
+        ; intent =
+            Set_properties
+              { uuid
+              ; changes =
+                  [ { attr = "logseq.property.fsrs/state"
+                    ; expected = expected_state
+                    ; value = Some state
+                    }
+                  ; { attr = "logseq.property.fsrs/due"
+                    ; expected = expected_due
+                    ; value = Some (Instant_value repeated.due)
+                    }
+                  ]
+              }
+        }
 ;;
 
 let has_older_journals runtime =

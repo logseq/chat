@@ -14,4 +14,5 @@
   melange-edn-native
   melange-transit-native
   mldoc
+  ocaml-fsrs
   yojson))

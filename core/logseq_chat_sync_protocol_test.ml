@@ -41,6 +41,8 @@ let () =
     if change.t_before <> 41 || change.t <> 42 then fail "cursor changed";
     if change.operation_ids <> [ "op-delete"; "op-title" ]
     then fail "operation identities were not preserved";
+    if Logseq_chat_sync_protocol.changed_block_uuids change <> [ uuid ]
+    then fail "changed block UUIDs were not extracted for incremental indexing";
     (match change.upserts with
      | [ entity ] ->
        (match entity.id with

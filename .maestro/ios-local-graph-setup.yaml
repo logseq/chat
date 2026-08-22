@@ -14,9 +14,9 @@ appId: com.logseq.chat
           index: 1
 - runFlow:
     when:
-      visible: "sync 2"
+      visible: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
     commands:
-      - tapOn: "sync 2"
+      - tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"

@@ -168,6 +168,13 @@ private struct CreateSyncGraphPayload: Encodable {
     let isEncrypted: Bool
 }
 
+private struct ReviewFlashcardPayload: Encodable {
+    let uuid: String
+    let rating: String
+    let now: Int64
+    let operationId: String
+}
+
 @MainActor @Observable public final class LogseqChatStore {
     public private(set) var snapshot = LogseqChatSnapshot(
         revision: 0,
@@ -558,6 +565,36 @@ private struct CreateSyncGraphPayload: Encodable {
                 params: LogseqChatRPCParams(action: "loadOlderJournals")
             ),
             afterApply: nil
+        )
+    }
+
+    public func loadFlashcards(now: Int64? = nil) {
+        performAsync(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(
+                    action: "loadFlashcards",
+                    payload: String(now ?? Self.nowMilliseconds())
+                )
+            ),
+            afterApply: nil
+        )
+    }
+
+    public func reviewFlashcard(
+        uuid: String,
+        rating: String,
+        now: Int64? = nil,
+        operationID: String? = nil
+    ) {
+        dispatchEncoded(
+            "reviewFlashcard",
+            ReviewFlashcardPayload(
+                uuid: uuid,
+                rating: rating,
+                now: now ?? Self.nowMilliseconds(),
+                operationId: operationID ?? UUID().uuidString.lowercased()
+            )
         )
     }
 
@@ -1505,6 +1542,7 @@ private struct CreateSyncGraphPayload: Encodable {
                 linkedReferenceBlocks: snapshot.linkedReferenceBlocks,
                 searchQuery: snapshot.searchQuery,
                 searchResults: snapshot.searchResults,
+                flashcards: snapshot.flashcards,
                 nodeRoutes: snapshot.nodeRoutes,
                 taskStatuses: snapshot.taskStatuses,
                 isGraphEncrypted: snapshot.isGraphEncrypted,
@@ -1629,6 +1667,7 @@ private struct CreateSyncGraphPayload: Encodable {
                 linkedReferenceBlocks: snapshot.linkedReferenceBlocks,
                 searchQuery: snapshot.searchQuery,
                 searchResults: snapshot.searchResults,
+                flashcards: snapshot.flashcards,
                 nodeRoutes: snapshot.nodeRoutes,
                 taskStatuses: snapshot.taskStatuses,
                 isGraphEncrypted: snapshot.isGraphEncrypted,
@@ -1668,6 +1707,7 @@ private struct CreateSyncGraphPayload: Encodable {
             linkedReferenceBlocks: result.linkedReferenceBlocks,
             searchQuery: result.searchQuery,
             searchResults: result.searchResults,
+            flashcards: result.flashcards,
             nodeRoutes: result.nodeRoutes,
             taskStatuses: result.taskStatuses ?? snapshot.taskStatuses,
             isGraphEncrypted: result.isGraphEncrypted,

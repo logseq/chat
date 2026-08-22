@@ -28,24 +28,50 @@ let has_ref db eid attr target_eid =
   |> Seq.exists (fun datom -> Ds_value.ref_eid db attr datom.v = Some target_eid)
 ;;
 
-let datascript_value = function
+let rec datascript_value = function
   | String_value value -> String value
   | Int_value value -> Int value
+  | Instant_value value -> Instant value
+  | Float_value value -> Float value
   | Bool_value value -> Bool value
+  | Keyword_value value -> Keyword value
+  | Map_value entries ->
+    Map (List.map (fun (key, value) -> Keyword key, datascript_value value) entries)
   | Ref_uuid uuid -> Ref_to (lookup uuid)
   | Ref_ident ident -> Ref_to (Lookup_ref ("db/ident", Keyword ident))
+;;
+
+let rec semantic_value_equal_value db left right =
+  match left, right with
+  | String value, String_value expected -> String.equal value expected
+  | Int value, Int_value expected -> value = expected
+  | Instant value, Instant_value expected -> value = expected
+  | Float value, Float_value expected -> Float.equal value expected
+  | Int value, Float_value expected -> Float.equal (Float.of_int value) expected
+  | Bool value, Bool_value expected -> value = expected
+  | Keyword value, Keyword_value expected -> String.equal value expected
+  | Map entries, Map_value expected ->
+    List.length entries = List.length expected
+    && List.for_all
+         (fun (key, expected_value) ->
+           List.exists
+             (fun (actual_key, actual_value) ->
+               match actual_key with
+               | Keyword actual_key ->
+                 String.equal actual_key key
+                 && semantic_value_equal_value db actual_value expected_value
+               | _ -> false)
+             entries)
+         expected
+  | (Ref eid | Int eid), Ref_uuid uuid -> entid db "block/uuid" (Uuid uuid) = Some eid
+  | (Ref eid | Int eid), Ref_ident ident -> entid db "db/ident" (Keyword ident) = Some eid
+  | _ -> false
 ;;
 
 let semantic_value_equal db left right =
   match left, right with
   | None, None -> true
-  | Some (String value), Some (String_value expected) -> String.equal value expected
-  | Some (Int value), Some (Int_value expected) -> value = expected
-  | Some (Bool value), Some (Bool_value expected) -> value = expected
-  | Some ((Ref eid | Int eid)), Some (Ref_uuid uuid) ->
-    entid db "block/uuid" (Uuid uuid) = Some eid
-  | Some ((Ref eid | Int eid)), Some (Ref_ident ident) ->
-    entid db "db/ident" (Keyword ident) = Some eid
+  | Some value, Some expected -> semantic_value_equal_value db value expected
   | _ -> false
 ;;
 
@@ -272,6 +298,26 @@ let rec compile db = function
           [ (match value with
              | Some value -> Add (lookup uuid, attr, datascript_value value)
              | None -> RetractAttr (lookup uuid, attr)) ]
+  | Set_properties { uuid; changes } ->
+    if changes = []
+    then Error "property changes cannot be empty"
+    else if Option.is_none (entid db "block/uuid" (Uuid uuid))
+    then Error "block no longer exists"
+    else if
+      not
+        (List.for_all
+           (fun { attr; expected; _ } ->
+             semantic_value_equal db (one_value db (lookup uuid) attr) expected)
+           changes)
+    then Error "property changed on the server"
+    else
+      Ok
+        (List.map
+           (fun { attr; value; _ } ->
+             match value with
+             | Some value -> Add (lookup uuid, attr, datascript_value value)
+             | None -> RetractAttr (lookup uuid, attr))
+           changes)
   | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
     if Option.is_some (entid db "block/uuid" (Uuid uuid))
     then Error "inserted block UUID already exists"
@@ -432,6 +478,12 @@ let rec satisfied db = function
     string_value (one_value db (lookup uuid) "block/title") = Some title
   | Set_property { uuid; attr; value; _ } ->
     semantic_value_equal db (one_value db (lookup uuid) attr) value
+  | Set_properties { uuid; changes } ->
+    changes <> []
+    && List.for_all
+         (fun { attr; value; _ } ->
+           semantic_value_equal db (one_value db (lookup uuid) attr) value)
+         changes
   | Insert_block { uuid; title; page_uuid; parent_uuid; order; _ } ->
     Option.is_some (entid db "block/uuid" (Uuid uuid))
     && string_value (one_value db (lookup uuid) "block/title") = Some title

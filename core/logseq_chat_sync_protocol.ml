@@ -26,6 +26,19 @@ type event =
   | Graph_changes of change_set
   | Reset of reset
 
+let changed_block_uuids change =
+  let seen = Hashtbl.create (List.length change.upserts + List.length change.deleted) in
+  let collect identity =
+    match identity with
+    | Value.Array [ Value.Keyword "block/uuid"; Value.Uuid uuid ] ->
+      Hashtbl.replace seen uuid ()
+    | _ -> ()
+  in
+  List.iter (fun (entity : entity) -> collect entity.id) change.upserts;
+  List.iter collect change.deleted;
+  Hashtbl.to_seq_keys seen |> List.of_seq
+;;
+
 let map_value key fields = List.assoc_opt (Value.Keyword key) fields
 
 let required key decode fields =

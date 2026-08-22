@@ -4,6 +4,7 @@ module Model = Logseq_chat_model
 module Api = Logseq_chat_api
 module Http = Logseq_chat_http
 module Pending_ops = Logseq_chat_pending_ops
+module Flashcards = Logseq_chat_flashcards
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
 
@@ -87,6 +88,11 @@ type t =
   ; graph_normalize_titles :
       (uuid:string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Logseq_chat_search_index.hit list) option
+  ; graph_due_flashcards : (now:int -> Flashcards.due_card list) option
+  ; graph_review_flashcard :
+      (uuid:string -> rating:Flashcards.rating -> now:int -> operation_id:string
+       -> (unit, string) result) option
+  ; mutable flashcards : Flashcards.due_card list
   ; mutable search_results : Logseq_chat_search_index.hit list
   ; mutable search_query : string
   ; load_older_journals : (unit -> unit) option
@@ -287,6 +293,17 @@ let block_json (block : Model.block) =
      match block.parent_id with
      | Some parent_id -> [ "parentId", `String parent_id ]
      | None -> [])
+;;
+
+let flashcard_json (due_card : Flashcards.due_card) =
+  `Assoc
+    [ "block", block_json due_card.block
+    ; "children", `List (List.map block_json due_card.children)
+    ; "due", `Int due_card.card.due
+    ; "repetitions", `Int due_card.card.reps
+    ; "lapses", `Int due_card.card.lapses
+    ; "state", `String (Flashcards.state_keyword due_card.card.state)
+    ]
 ;;
 
 let visible_block_json model (block : Model.block) =
@@ -663,7 +680,7 @@ let rec project_outliner_intent blocks = function
     List.filter
       (fun (block : Model.block) -> not (List.mem block.uuid uuids))
       blocks
-  | Set_property _ | Create_tag _ | Create_journal _ | Add_tag _ -> blocks
+  | Set_property _ | Set_properties _ | Create_tag _ | Create_journal _ | Add_tag _ -> blocks
 ;;
 
 let project_outliner_operations context operations =
@@ -890,6 +907,7 @@ let snapshot session ~context_blocks blocks =
       ; "selectedPageIsProperty", `Bool (selected_page_is_property session)
       ; "searchQuery", `String session.search_query
       ; "searchResults", `List (List.map search_hit_json session.search_results)
+      ; "flashcards", `List (List.map flashcard_json session.flashcards)
       ; "nodeRoutes", node_routes_json session
       ; "lastRefreshAt",
         (match session.model.last_refresh_at with
@@ -1193,6 +1211,14 @@ let reconcile_authoritative_blocks session =
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
+let flashcard_rating = function
+  | "again" -> Ok Flashcards.Again
+  | "hard" -> Ok Flashcards.Hard
+  | "good" -> Ok Flashcards.Good
+  | "easy" -> Ok Flashcards.Easy
+  | _ -> Error "rating must be again, hard, good, or easy"
+;;
+
 let create
       ?storage
       ?open_graph
@@ -1212,6 +1238,8 @@ let create
       ?graph_tag_objects
       ?graph_normalize_titles
       ?graph_search
+      ?graph_due_flashcards
+      ?graph_review_flashcard
       ?load_older_journals
       ?has_older_journals
       ?stage_operation
@@ -1263,6 +1291,9 @@ let create
   ; graph_tag_objects
   ; graph_normalize_titles
   ; graph_search
+  ; graph_due_flashcards
+  ; graph_review_flashcard
+  ; flashcards = []
   ; search_results = []
   ; search_query = ""
   ; load_older_journals
@@ -2290,6 +2321,7 @@ let switch_graph_model session payload =
             session.pending_sync <- None;
             session.semantic_queue <- [];
             session.semantic_active <- None;
+            session.flashcards <- [];
             clear_node_navigation session;
             session.selected_sidebar_page <- None;
             reset_outliner session;
@@ -2526,6 +2558,50 @@ let dispatch session action payload =
   | "loadOlderJournals" ->
     Option.iter (fun load -> load ()) session.load_older_journals;
     snapshot_visible session
+  | "loadFlashcards" ->
+    let now =
+      match payload with
+      | Some value -> Option.value (int_of_string_opt value) ~default:(now_ms ())
+      | None -> now_ms ()
+    in
+    session.flashcards <-
+      Option.fold
+        ~none:[]
+        ~some:(fun load -> load ~now)
+        session.graph_due_flashcards;
+    snapshot_visible session
+  | "reviewFlashcard" ->
+    (match payload, session.graph_review_flashcard with
+     | Some payload, Some review ->
+       (match from_string payload with
+        | `Assoc fields ->
+          (match required_string "uuid" fields,
+                 required_string "rating" fields,
+                 optional_int "now" fields,
+                 required_string "operationId" fields with
+           | Ok uuid, Ok rating, Ok requested_now, Ok operation_id ->
+             (match flashcard_rating rating with
+              | Error message -> failure ~code:"invalid_params" ~message
+              | Ok rating ->
+                let now = Option.value requested_now ~default:(now_ms ()) in
+                (match review ~uuid ~rating ~now ~operation_id with
+                 | Error message -> failure ~code:"flashcard_review_failed" ~message
+                 | Ok () ->
+                   Option.iter (restore_semantic_queue session) session.config;
+                   session.flashcards <-
+                     Option.fold
+                       ~none:[]
+                       ~some:(fun load -> load ~now)
+                       session.graph_due_flashcards;
+                   snapshot_visible session))
+           | Error message, _, _, _ | _, Error message, _, _
+           | _, _, Error message, _ | _, _, _, Error message ->
+             failure ~code:"invalid_params" ~message)
+        | _ -> failure ~code:"invalid_params" ~message:"reviewFlashcard payload must be an object"
+        | exception _ ->
+          failure ~code:"invalid_json" ~message:"reviewFlashcard payload must be valid JSON")
+     | None, _ -> failure ~code:"invalid_params" ~message:"reviewFlashcard requires a payload"
+     | _, None -> failure ~code:"flashcards_unavailable" ~message:"No graph is open")
   | "unlockGraph" ->
     (match session.config, session.unlock_graph, payload with
      | Some config, Some unlock_graph, Some password when selected_graph_is_encrypted session ->

@@ -224,6 +224,22 @@ let () =
 ;;
 
 let () =
+  let response =
+    Logseq_chat_rpc.call
+      (Logseq_chat_rpc.create ())
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"loadFlashcards","payload":"1776000000000"}}|}
+    |> from_string
+  in
+  match response with
+  | `Assoc fields ->
+    if not (required_bool "ok" fields) then failwith "loading flashcards should succeed";
+    let result = required_assoc "result" fields in
+    if required_list "flashcards" result <> []
+    then failwith "a session without an open graph has no due flashcards"
+  | _ -> failwith "loadFlashcards should return an RPC response"
+;;
+
+let () =
   let legacy_send_count = ref 0 in
   let session =
     Logseq_chat_rpc.create
@@ -3021,4 +3037,46 @@ let () =
   open_graph "graph-a";
   if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
   then failwith "switching back should restore graph A's optimistic projection"
+;;
+
+let () =
+  let now = 1_776_000_000_000 in
+  let reviewed = ref None in
+  let due_card =
+    Logseq_chat_flashcards.
+      { block = remote_block "flashcard" "Question {{cloze answer}}"
+      ; children = []
+      ; card = new_card ~now
+      }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~graph_due_flashcards:(fun ~now:_ -> if Option.is_some !reviewed then [] else [ due_card ])
+      ~graph_review_flashcard:(fun ~uuid ~rating ~now ~operation_id ->
+        reviewed := Some (uuid, rating, now, operation_id);
+        Ok ())
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"loadFlashcards","payload":"1776000000000"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"reviewFlashcard","payload":"{\"uuid\":\"flashcard\",\"rating\":\"good\",\"now\":1776000000000,\"operationId\":\"review-op\"}"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     if not (required_bool "ok" fields) then failwith "reviewing a flashcard should succeed";
+     let result = required_assoc "result" fields in
+     if required_list "flashcards" result <> []
+     then failwith "reviewed card must immediately leave the due queue"
+   | _ -> failwith "reviewFlashcard should return an RPC response");
+  match !reviewed with
+  | Some ("flashcard", Logseq_chat_flashcards.Good, value, "review-op") when value = now -> ()
+  | _ -> failwith "reviewFlashcard must preserve UUID, rating, time, and operation id"
 ;;

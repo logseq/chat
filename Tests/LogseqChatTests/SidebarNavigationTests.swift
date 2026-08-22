@@ -3,12 +3,14 @@ import Testing
 
 @Suite struct SidebarNavigationTests {
     @Test func journalsAppearsBeforeDynamicPageSections() {
-        let expected: [SidebarContentItem] = [.journals, .graphs, .favorites, .recent]
+        let expected: [SidebarContentItem] = [.journals, .flashcards, .graphs, .favorites, .recent]
         #expect(SidebarContentItem.allCases == expected)
         #expect(SidebarContentItem.journals.title == "Journals")
         #expect(SidebarContentItem.journals.accessibilityIdentifier == "link.sidebar.journals")
         #expect(SidebarContentItem.graphs.title == "Graphs")
         #expect(SidebarContentItem.graphs.accessibilityIdentifier == "link.sidebar.graphs")
+        #expect(SidebarContentItem.flashcards.title == "Flashcards")
+        #expect(SidebarContentItem.flashcards.accessibilityIdentifier == "link.sidebar.flashcards")
         #expect(SidebarContentItem.favorites.title == "Favorites")
         #expect(SidebarContentItem.favorites.accessibilityIdentifier == "section.sidebar.favorites")
         #expect(SidebarContentItem.recent.title == "Recent")
@@ -22,8 +24,12 @@ import Testing
         #expect(SidebarDestinationPolicy.presentation(
             for: SidebarContentItem.graphs
         ) == SidebarPrimaryPresentation.graphs)
+        #expect(SidebarDestinationPolicy.presentation(
+            for: SidebarContentItem.flashcards
+        ) == SidebarPrimaryPresentation.flashcards)
         #expect(SidebarDestinationPolicy.closesSidebar(for: SidebarContentItem.journals))
         #expect(SidebarDestinationPolicy.closesSidebar(for: SidebarContentItem.graphs))
+        #expect(SidebarDestinationPolicy.closesSidebar(for: SidebarContentItem.flashcards))
         #expect(!SidebarDestinationPolicy.pushesNavigation(for: SidebarContentItem.journals))
         #expect(!SidebarDestinationPolicy.pushesNavigation(for: SidebarContentItem.graphs))
     }

@@ -148,7 +148,7 @@ public struct LogseqTaskStatus: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-public struct LogseqBlock: Codable, Identifiable, Hashable {
+public struct LogseqBlock: Codable, Identifiable, Hashable, Sendable {
     public let uuid: String
     public let title: String
     public let pageId: String
@@ -534,6 +534,46 @@ public struct LogseqOutlinerEvent: Encodable, Sendable {
     }
 }
 
+public struct LogseqFlashcard: Codable, Identifiable, Hashable, Sendable {
+    public let block: LogseqBlock
+    public let children: [LogseqBlock]
+    public let due: Int64
+    public let repetitions: Int
+    public let lapses: Int
+    public let state: String
+    public var id: String { block.uuid }
+
+    public init(
+        block: LogseqBlock,
+        children: [LogseqBlock] = [],
+        due: Int64,
+        repetitions: Int,
+        lapses: Int,
+        state: String
+    ) {
+        self.block = block
+        self.children = children
+        self.due = due
+        self.repetitions = repetitions
+        self.lapses = lapses
+        self.state = state
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case block, children, due, repetitions, lapses, state
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        block = try values.decode(LogseqBlock.self, forKey: .block)
+        children = try values.decodeIfPresent([LogseqBlock].self, forKey: .children) ?? []
+        due = try values.decode(Int64.self, forKey: .due)
+        repetitions = try values.decode(Int.self, forKey: .repetitions)
+        lapses = try values.decode(Int.self, forKey: .lapses)
+        state = try values.decode(String.self, forKey: .state)
+    }
+}
+
 public struct LogseqChatSnapshot: Codable {
     public let revision: Int
     public let blocks: [LogseqBlock]
@@ -553,6 +593,7 @@ public struct LogseqChatSnapshot: Codable {
     public let linkedReferenceBlocks: [LogseqBlock]?
     public let searchQuery: String?
     public let searchResults: [LogseqSearchHit]?
+    public let flashcards: [LogseqFlashcard]
     public let nodeRoutes: [LogseqNodeProjection]
     public let taskStatuses: [LogseqTaskStatus]?
     public let isGraphEncrypted: Bool?
@@ -583,6 +624,7 @@ public struct LogseqChatSnapshot: Codable {
         linkedReferenceBlocks: [LogseqBlock]? = nil,
         searchQuery: String? = nil,
         searchResults: [LogseqSearchHit]? = nil,
+        flashcards: [LogseqFlashcard] = [],
         nodeRoutes: [LogseqNodeProjection] = [],
         taskStatuses: [LogseqTaskStatus]? = nil,
         isGraphEncrypted: Bool? = nil,
@@ -618,6 +660,7 @@ public struct LogseqChatSnapshot: Codable {
         self.linkedReferenceBlocks = linkedReferenceBlocks
         self.searchQuery = searchQuery
         self.searchResults = searchResults
+        self.flashcards = flashcards
         self.nodeRoutes = nodeRoutes
         self.taskStatuses = taskStatuses
         self.isGraphEncrypted = isGraphEncrypted
@@ -640,7 +683,7 @@ public struct LogseqChatSnapshot: Codable {
         case revision, blocks, selectedBlock, lastRefreshAt, graphName
         case selectedGraphId, graphs, favorites, recentPages, selectedPage, selectedPageIsTag
         case selectedPageIsProperty, appliedServerT
-        case syncConnected, relatedBlocks, linkedReferenceBlocks, searchQuery, searchResults, nodeRoutes, taskStatuses
+        case syncConnected, relatedBlocks, linkedReferenceBlocks, searchQuery, searchResults, flashcards, nodeRoutes, taskStatuses
         case isGraphEncrypted, isGraphUnlocked, pendingSyncRequest
         case outlinerState, outlinerCommandRevision, outlinerCommands
         case outlinerAutocompleteCandidates
@@ -675,6 +718,7 @@ public struct LogseqChatSnapshot: Codable {
         )
         searchQuery = try values.decodeIfPresent(String.self, forKey: .searchQuery)
         searchResults = try values.decodeIfPresent([LogseqSearchHit].self, forKey: .searchResults)
+        flashcards = try values.decodeIfPresent([LogseqFlashcard].self, forKey: .flashcards) ?? []
         nodeRoutes = try values.decodeIfPresent(
             [LogseqNodeProjection].self, forKey: .nodeRoutes
         ) ?? []

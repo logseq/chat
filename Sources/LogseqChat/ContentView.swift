@@ -228,6 +228,7 @@ struct ContentView: View {
     @State private var syncStatusPresented = false
     @State private var searchPagePresented = false
     @State private var graphsPresented = false
+    @State private var flashcardsPresented = false
     @State private var graphPasswordPresented = false
     @State private var graphPassword = ""
     @State private var createGraphPresented = false
@@ -542,6 +543,7 @@ struct ContentView: View {
         guard store.captureRequestRevision > handledCaptureRequestRevision else { return }
         handledCaptureRequestRevision = store.captureRequestRevision
         graphsPresented = false
+        flashcardsPresented = false
         expandComposer()
     }
 
@@ -858,7 +860,7 @@ struct ContentView: View {
     }
 
     private var journalsIsCurrentDestination: Bool {
-        store.snapshot.selectedPage == nil
+        !graphsPresented && !flashcardsPresented && store.snapshot.selectedPage == nil
     }
 
     @ViewBuilder private func sidebarItem(_ item: SidebarContentItem) -> some View {
@@ -872,11 +874,20 @@ struct ContentView: View {
             ) {
                 openJournals()
             }
+        case .flashcards:
+            sidebarRow(
+                title: item.title,
+                assetImage: "flashcards",
+                isSelected: flashcardsPresented,
+                identifier: item.accessibilityIdentifier
+            ) {
+                openFlashcards()
+            }
         case .graphs:
             sidebarRow(
                 title: item.title,
                 systemImage: "folder",
-                isSelected: false,
+                isSelected: graphsPresented,
                 identifier: item.accessibilityIdentifier
             ) {
                 openGraphs()
@@ -902,17 +913,24 @@ struct ContentView: View {
 
     private func sidebarRow(
         title: String,
-        systemImage: String,
+        systemImage: String? = nil,
+        assetImage: String? = nil,
         isSelected: Bool,
         identifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.subheadline)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .frame(width: 22)
+                Group {
+                    if let assetImage {
+                        IconImage(name: assetImage, size: 18)
+                    } else if let systemImage {
+                        Image(systemName: systemImage)
+                            .font(.subheadline)
+                    }
+                }
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .frame(width: 22)
                 Text(verbatim: title)
                     .font(.body)
                     .fontWeight(isSelected ? .semibold : .regular)
@@ -990,6 +1008,7 @@ struct ContentView: View {
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
         sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
+        flashcardsPresented = false
         store.selectPage(page.uuid)
     }
 
@@ -998,6 +1017,16 @@ struct ContentView: View {
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
         sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
+        flashcardsPresented = false
+        store.clearSelectedPage()
+    }
+
+    private func openFlashcards() {
+        guard sidebarMotion.isPresented,
+              abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        sidebarMotion.setSidebarPresented(false)
+        graphsPresented = false
+        flashcardsPresented = true
         store.clearSelectedPage()
     }
 
@@ -1005,11 +1034,13 @@ struct ContentView: View {
         guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
         sidebarMotion.setSidebarPresented(false)
+        flashcardsPresented = false
         graphsPresented = true
     }
 
     private func openManagedGraph(_ graph: LogseqGraph) {
         graphsPresented = false
+        flashcardsPresented = false
         if graph.id == store.snapshot.selectedGraphId,
            LogseqGraphLocalStorage.isDownloaded(databasePath: databasePath, graphID: graph.id) {
             store.clearSelectedPage()
@@ -1094,6 +1125,14 @@ struct ContentView: View {
                 add: { createGraphPresented = true },
                 open: openManagedGraph,
                 deleteGraph: deleteManagedGraph
+            )
+        } else if flashcardsPresented {
+            FlashcardsView(
+                cards: store.snapshot.flashcards,
+                load: { store.loadFlashcards() },
+                review: { card, rating in
+                    store.reviewFlashcard(uuid: card.block.uuid, rating: rating)
+                }
             )
         } else if let projection = activeSkipNodeProjection {
             skipNodeProjectionContent(projection)
@@ -1307,7 +1346,9 @@ struct ContentView: View {
     #endif
 
     private var shouldShowComposer: Bool {
-        store.snapshot.selectedPage == nil || isNodePagePresented
+        !graphsPresented
+            && !flashcardsPresented
+            && (store.snapshot.selectedPage == nil || isNodePagePresented)
     }
 
     private var shouldShowExpandedComposer: Bool {
@@ -1321,7 +1362,8 @@ struct ContentView: View {
             composerExpanded: composerExpanded,
             hasOutlinerSelection: !outlinerSelectedBlockIDs.isEmpty,
             isEditingOutlinerBlock: presentedOutlinerEditing != nil,
-            isNodePage: isNodePagePresented
+            isNodePage: isNodePagePresented,
+            showsComposer: shouldShowComposer
         )
     }
 
@@ -1651,11 +1693,13 @@ struct ContentView: View {
     }
 
     private var headerTitle: some View {
-        Text(verbatim: AppHeaderPolicy.title(
-            zoomedBlockTitle: zoomedOutlinerBlock?.title,
-            selectedPageTitle: activeNodeProjection?.page.title
-                ?? store.snapshot.selectedPage?.title
-        ))
+        Text(verbatim: flashcardsPresented
+            ? "Flashcards"
+            : AppHeaderPolicy.title(
+                zoomedBlockTitle: zoomedOutlinerBlock?.title,
+                selectedPageTitle: activeNodeProjection?.page.title
+                    ?? store.snapshot.selectedPage?.title
+            ))
         .font(.subheadline)
         .fontWeight(.semibold)
         .foregroundStyle(.secondary)

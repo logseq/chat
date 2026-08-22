@@ -2,6 +2,7 @@ open Datascript
 
 module Ops = Logseq_chat_pending_ops
 module Runtime = Logseq_chat_graph_runtime
+module Search = Logseq_chat_search_index
 module Transit = Transit_native.Transit.Json
 
 let fail label = failwith label
@@ -25,10 +26,15 @@ let schema =
   ; "block/parent", one ~value_type:RefType ~indexed:true ()
   ; "block/order", one ~value_type:StringType ~indexed:true ()
   ; "block/refs", many ~value_type:RefType ~indexed:true ()
+  ; "block/tags", many ~value_type:RefType ~indexed:true ()
   ; "block/journal-day", one ~value_type:NumberType ~indexed:true ()
   ; "block/created-at", one ~value_type:NumberType ~indexed:true ()
   ; "block/updated-at", one ~value_type:NumberType ~indexed:true () ]
   @ [ "logseq.property/status", one ~value_type:RefType ~indexed:true () ]
+  @ [ "logseq.property.class/extends", many ~value_type:RefType ~indexed:true ()
+    ; "logseq.property.fsrs/due", one ~indexed:true ()
+    ; "logseq.property.fsrs/state", one ~indexed:true ()
+    ]
 ;;
 
 let base_db title =
@@ -100,6 +106,43 @@ let () =
       (Runtime.references_for_node runtime "missing" = []);
     assert_bool "pending op is stored beside graph kvs"
       (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-title" ]))
+;;
+
+let () =
+  let now = 1_776_000_000_000 in
+  let path = Filename.temp_file "logseq-chat-flashcard-runtime" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      let db =
+        base_db "Remember this"
+        |> db_with
+             [ Add (Entity_id 20, "db/ident", Keyword "logseq.class/Card")
+             ; Add (Entity_id 10, "block/tags", Ref 20)
+             ]
+      in
+      let runtime = Runtime.create ~path ~server_t:42 (conn_from_db db) in
+      assert_bool "new Card blocks are initially due"
+        (match Runtime.due_flashcards runtime ~now with
+         | [ card ] -> String.equal card.Logseq_chat_flashcards.block.uuid "block"
+         | _ -> false);
+      assert_bool "rating a flashcard stages one atomic optimistic operation"
+        (Runtime.review_flashcard
+           runtime
+           ~uuid:"block"
+           ~rating:Logseq_chat_flashcards.Good
+           ~now
+           ~operation_id:"review-card"
+         = Ok ());
+      assert_bool "reviewed card immediately leaves the due queue"
+        (Runtime.due_flashcards runtime ~now = []);
+      assert_bool "one pending operation contains both FSRS properties"
+        (match Ops.list ~path with
+         | [ { intent = Set_properties { uuid = "block"; changes }; _ } ] ->
+           List.map (fun (change : Ops.property_change) -> change.attr) changes
+           = [ "logseq.property.fsrs/state"; "logseq.property.fsrs/due" ]
+         | _ -> false))
 ;;
 
 let () =
@@ -333,6 +376,51 @@ let () =
         (Runtime.search runtime "Tail"
          |> List.exists (fun hit ->
            String.equal hit.Logseq_chat_search_index.uuid "incremental-search-new")))
+;;
+
+let () =
+  let graph_path = Filename.temp_file "logseq-chat-runtime-remote-search" ".sqlite" in
+  let search_path = Filename.temp_file "logseq-chat-runtime-remote-search-index" ".sqlite" in
+  let cleanup path = if Sys.file_exists path then Sys.remove path in
+  Fun.protect
+    ~finally:(fun () ->
+      cleanup graph_path;
+      cleanup search_path;
+      cleanup (search_path ^ "-shm");
+      cleanup (search_path ^ "-wal"))
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging graph_path;
+      let conn = conn_from_db (base_db "Old") in
+      let runtime =
+        Runtime.create
+          ~path:graph_path
+          ~search_index_path:search_path
+          ~server_t:42
+          conn
+      in
+      ignore (Runtime.search runtime "Old");
+      let index = Option.get runtime.search_index in
+      Search.search_upsert
+        search_path
+        [ "search-sentinel", "incremental sentinel", "search-sentinel" ];
+      ignore
+        (transact_conn
+           conn
+           [ Add (Lookup_ref ("block/uuid", Uuid "block"), "block/title", String "Remote") ]);
+      Runtime.rebase
+        runtime
+        ~server_t:43
+        ~operation_ids:[]
+        ~changed_uuids:[ "block" ];
+      assert_bool
+        "remote changes update only their affected FTS rows"
+        (Runtime.search runtime "Remote"
+         |> List.exists (fun hit -> String.equal hit.Search.uuid "block"));
+      assert_bool
+        "remote incremental refresh does not scan and reconcile the whole index"
+        (Search.search index "incremental sentinel"
+         |> List.exists (fun (hit : Search.result) ->
+           String.equal hit.Search.uuid "search-sentinel")))
 ;;
 
 let () =

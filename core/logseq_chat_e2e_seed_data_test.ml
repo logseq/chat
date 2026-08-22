@@ -39,7 +39,7 @@ let () =
   (match (Logseq_chat_graph_read.sidebar_pages db).favorites with
    | [ favorite ] when String.equal favorite.uuid (Seed.page_uuid 7) -> ()
    | _ -> failwith "the E2E fixture must expose the target page as a favorite");
-  if List.length (Logseq_chat_graph_read.blocks db) <> 14
+  if List.length (Logseq_chat_graph_read.blocks db) <> 16
   then failwith "the initial fixture window must contain links and rich block examples";
   if
     Logseq_chat_graph_read.blocks db
@@ -80,4 +80,12 @@ let () =
     |> List.exists (fun block -> String.equal block.Logseq_chat_model.title "E2E Child Tag Object")
     |> not
   then failwith "parent tagged nodes must include objects of extending tags"
+  else
+    match Logseq_chat_flashcards.due_cards db ~now:2_000_000_100_000 with
+    | [ card ]
+      when String.equal card.block.uuid "e2e00000-0000-4000-8000-000000000020"
+           && String.equal card.block.title "The capital of France is {{cloze Paris}}"
+           && List.map (fun child -> child.Logseq_chat_model.title) card.children
+              = [ "Paris is the answer" ] -> ()
+    | _ -> failwith "the E2E fixture must expose a due Logseq Card with its answer"
 ;;

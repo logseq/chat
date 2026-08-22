@@ -127,8 +127,10 @@ enum BottomChromePolicy {
         composerExpanded: Bool,
         hasOutlinerSelection: Bool,
         isEditingOutlinerBlock: Bool,
-        isNodePage: Bool = false
+        isNodePage: Bool = false,
+        showsComposer: Bool = true
     ) -> BottomChromePresentation {
+        if !showsComposer { return .hidden }
         if contentMode == .outliner && hasOutlinerSelection { return .outlinerSelection }
         if contentMode == .outliner && isEditingOutlinerBlock { return .outlinerEditor }
         if hasSelectedPage && !isNodePage { return .hidden }

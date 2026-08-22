@@ -11,9 +11,19 @@ type state =
 type semantic_value =
   | String_value of string
   | Int_value of int
+  | Instant_value of int
+  | Float_value of float
   | Bool_value of bool
+  | Keyword_value of string
+  | Map_value of (string * semantic_value) list
   | Ref_uuid of string
   | Ref_ident of string
+
+type property_change =
+  { attr : string
+  ; expected : semantic_value option
+  ; value : semantic_value option
+  }
 
 type move =
   { uuid : string
@@ -33,6 +43,10 @@ type intent =
       ; attr : string
       ; expected : semantic_value option
       ; value : semantic_value option
+      }
+  | Set_properties of
+      { uuid : string
+      ; changes : property_change list
       }
   | Insert_block of
       { uuid : string
@@ -88,7 +102,7 @@ type t =
   }
 
 let outliner_op = function
-  | Save_title _ | Set_property _ | Create_tag _ | Add_tag _ -> "save-block"
+  | Save_title _ | Set_property _ | Set_properties _ | Create_tag _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_journal _ -> "insert-blocks"
   | Move_block _ | Move_blocks _ -> "move-blocks"
   | Split_block _ -> "split-block"
@@ -144,18 +158,42 @@ let state_of_string value =
   | _ -> Retryable
 ;;
 
-let semantic_value_json = function
+let rec semantic_value_json = function
   | String_value value -> `Assoc [ "type", `String "string"; "value", `String value ]
   | Int_value value -> `Assoc [ "type", `String "int"; "value", `Int value ]
+  | Instant_value value -> `Assoc [ "type", `String "instant"; "value", `Int value ]
+  | Float_value value -> `Assoc [ "type", `String "float"; "value", `Float value ]
   | Bool_value value -> `Assoc [ "type", `String "bool"; "value", `Bool value ]
+  | Keyword_value value -> `Assoc [ "type", `String "keyword"; "value", `String value ]
+  | Map_value entries ->
+    `Assoc
+      [ "type", `String "map"
+      ; ( "value"
+        , `List
+            (List.map
+               (fun (key, value) ->
+                 `Assoc [ "key", `String key; "value", semantic_value_json value ])
+               entries) )
+      ]
   | Ref_uuid value -> `Assoc [ "type", `String "ref-uuid"; "value", `String value ]
   | Ref_ident value -> `Assoc [ "type", `String "ref-ident"; "value", `String value ]
 ;;
 
-let semantic_value_of_json = function
+let rec semantic_value_of_json = function
   | `Assoc [ "type", `String "string"; "value", `String value ] -> String_value value
   | `Assoc [ "type", `String "int"; "value", `Int value ] -> Int_value value
+  | `Assoc [ "type", `String "instant"; "value", `Int value ] -> Instant_value value
+  | `Assoc [ "type", `String "float"; "value", `Float value ] -> Float_value value
+  | `Assoc [ "type", `String "float"; "value", `Int value ] -> Float_value (Float.of_int value)
   | `Assoc [ "type", `String "bool"; "value", `Bool value ] -> Bool_value value
+  | `Assoc [ "type", `String "keyword"; "value", `String value ] -> Keyword_value value
+  | `Assoc [ "type", `String "map"; "value", `List entries ] ->
+    Map_value
+      (List.map
+         (function
+           | `Assoc [ "key", `String key; "value", value ] -> key, semantic_value_of_json value
+           | _ -> invalid_arg "invalid pending semantic map entry")
+         entries)
   | `Assoc [ "type", `String "ref-uuid"; "value", `String value ] -> Ref_uuid value
   | `Assoc [ "type", `String "ref-ident"; "value", `String value ] -> Ref_ident value
   | _ -> invalid_arg "invalid pending semantic value"
@@ -179,6 +217,21 @@ let intent_json = function
       ; "attr", `String attr
       ; "expected", option_json semantic_value_json expected
       ; "value", option_json semantic_value_json value
+      ]
+  | Set_properties { uuid; changes } ->
+    `Assoc
+      [ "type", `String "set-properties"
+      ; "uuid", `String uuid
+      ; ( "changes"
+        , `List
+            (List.map
+               (fun { attr; expected; value } ->
+                 `Assoc
+                   [ "attr", `String attr
+                   ; "expected", option_json semantic_value_json expected
+                   ; "value", option_json semantic_value_json value
+                   ])
+               changes) )
       ]
   | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
     `Assoc
@@ -283,6 +336,29 @@ let intent_of_json = function
          ; attr = string fields "attr"
          ; expected = option_value semantic_value_of_json (List.assoc "expected" fields)
          ; value = option_value semantic_value_of_json (List.assoc "value" fields)
+         }
+     | "set-properties" ->
+       Set_properties
+         { uuid = string fields "uuid"
+         ; changes =
+             (match List.assoc_opt "changes" fields with
+              | Some (`List changes) ->
+                List.map
+                  (function
+                    | `Assoc change_fields ->
+                      { attr = string change_fields "attr"
+                      ; expected =
+                          option_value
+                            semantic_value_of_json
+                            (List.assoc "expected" change_fields)
+                      ; value =
+                          option_value
+                            semantic_value_of_json
+                            (List.assoc "value" change_fields)
+                      }
+                    | _ -> invalid_arg "invalid pending property change")
+                  changes
+              | _ -> invalid_arg "invalid pending intent field: changes")
          }
      | "insert-block" ->
        Insert_block

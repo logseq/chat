@@ -221,6 +221,64 @@ private let testEmptySnapshotJSON = """
         #expect((object["recentPages"] as? [Any])?.isEmpty == true)
     }
 
+    @Test func snapshotDecodesDueFlashcards() throws {
+        let data = Data(#"{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Test","flashcards":[{"block":{"uuid":"card-1","title":"Question {{cloze answer}}","pageId":"page","createdAt":1,"updatedAt":1,"syncStatus":"synced","isAsset":false},"children":[{"uuid":"answer-1","title":"Child answer","pageId":"page","parentId":"card-1","createdAt":1,"updatedAt":1,"syncStatus":"synced","isAsset":false}],"due":1776000000000,"repetitions":3,"lapses":1,"state":"review"}]}"#.utf8)
+        let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
+
+        #expect(snapshot.flashcards.count == 1)
+        #expect(snapshot.flashcards.first?.block.uuid == "card-1")
+        #expect(snapshot.flashcards.first?.due == 1_776_000_000_000)
+        #expect(snapshot.flashcards.first?.repetitions == 3)
+        #expect(snapshot.flashcards.first?.lapses == 1)
+        #expect(snapshot.flashcards.first?.state == "review")
+        #expect(snapshot.flashcards.first?.children.first?.title == "Child answer")
+    }
+
+    @Test @MainActor func loadingFlashcardsUsesTheRequestedReviewTime() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            if request.contains("\"action\":\"loadFlashcards\"") {
+                return #"{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Test","flashcards":[{"block":{"uuid":"card-1","title":"Question","pageId":"page","createdAt":1,"updatedAt":1,"syncStatus":"synced","isAsset":false},"children":[],"due":1776000000000,"repetitions":0,"lapses":0,"state":"new"}]}}"#
+            }
+            return testEmptySnapshotJSON
+        }
+
+        store.loadFlashcards(now: 1_776_000_000_000)
+
+        try await waitUntil {
+            store.snapshot.flashcards.count == 1 && recorder.all.contains {
+                $0.contains("\"action\":\"loadFlashcards\"")
+                    && $0.contains("\"payload\":\"1776000000000\"")
+            }
+        }
+        #expect(store.snapshot.flashcards.first?.block.uuid == "card-1")
+    }
+
+    @Test @MainActor func reviewingFlashcardStagesOneAtomicSemanticOperation() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return testEmptySnapshotJSON
+        }
+
+        store.reviewFlashcard(
+            uuid: "card-1",
+            rating: "good",
+            now: 1_776_000_000_000,
+            operationID: "review-1"
+        )
+
+        try await waitUntil {
+            recorder.all.contains {
+                $0.contains("\"action\":\"reviewFlashcard\"")
+                    && $0.contains("card-1")
+                    && $0.contains("good")
+                    && $0.contains("review-1")
+            }
+        }
+    }
+
     @Test @MainActor func selectingGraphUsesExplicitGraphID() async throws {
         let recorder = RequestRecorder()
         let store = LogseqChatStore { request in

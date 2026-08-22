@@ -99,6 +99,8 @@ else
   "$repo_root/core/logseq_chat_ref_text.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_read.cmx \
   "$repo_root/core/logseq_chat_graph_read.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_flashcards.cmx \
+  "$repo_root/core/logseq_chat_flashcards.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_search_index.cmx \
   "$repo_root/core/logseq_chat_search_index.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sse.cmx \
@@ -141,6 +143,7 @@ else
   logseq_chat_entity_sync.cmx \
   logseq_chat_ref_text.cmx \
   logseq_chat_graph_read.cmx \
+  logseq_chat_flashcards.cmx \
   logseq_chat_search_index.cmx \
   logseq_chat_sse.cmx \
   logseq_chat_api.cmx \

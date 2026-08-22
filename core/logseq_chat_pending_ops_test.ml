@@ -21,6 +21,25 @@ let intents =
       }
   ; Set_property
       { uuid = "block"; attr = "user.property/flag"; expected = None; value = None }
+  ; Set_properties
+      { uuid = "block"
+      ; changes =
+          [ { attr = "logseq.property.fsrs/due"
+            ; expected = None
+            ; value = Some (Int_value 86_400_000)
+            }
+          ; { attr = "logseq.property.fsrs/state"
+            ; expected = None
+            ; value =
+                Some
+                  (Map_value
+                     [ "state", Keyword_value "learning"
+                     ; "stability", Float_value 0.4
+                     ; "reps", Int_value 1
+                     ])
+            }
+          ]
+      }
   ; Insert_block
       { uuid = "new"
       ; title = "New"
@@ -72,6 +91,7 @@ let () =
      = [ "save-block"
        ; "save-block"
        ; "save-block"
+       ; "save-block"
        ; "insert-blocks"
        ; "move-blocks"
        ; "move-blocks"
@@ -87,9 +107,18 @@ let () =
   let values =
     [ String_value "text"
     ; Int_value 42
+    ; Instant_value 1_776_000_000_000
     ; Bool_value true
     ; Ref_uuid "uuid"
     ; Ref_ident "db/ident"
+    ; Float_value 0.4
+    ; Keyword_value "learning"
+    ; Map_value
+        [ "state", Keyword_value "learning"
+        ; "stability", Float_value 0.4
+        ; "nested", Map_value [ "reps", Int_value 1 ]
+        ; "last-repeat", Instant_value 1_776_000_000_000
+        ]
     ]
   in
   List.iter
@@ -156,7 +185,7 @@ let () =
   assert_invalid "split createdAt must be an integer"
     (fun () ->
       let fields =
-        match intent_json (List.nth intents 6) with
+        match intent_json (List.nth intents 7) with
         | `Assoc fields ->
           ("createdAt", `String "invalid") :: List.remove_assoc "createdAt" fields
         | _ -> assert false
@@ -165,14 +194,14 @@ let () =
   assert_invalid "merged title must be a string or null"
     (fun () ->
       let fields =
-        match intent_json (List.nth intents 7) with
+        match intent_json (List.nth intents 8) with
         | `Assoc fields ->
           ("mergedTitle", `Int 1) :: List.remove_assoc "mergedTitle" fields
         | _ -> assert false
       in
       intent_of_json (assoc fields));
   assert_bool "missing merged title remains compatible with older pending rows"
-    (match intent_json (List.nth intents 7) with
+    (match intent_json (List.nth intents 8) with
      | `Assoc fields ->
        (match intent_of_json (assoc (List.remove_assoc "mergedTitle" fields)) with
         | Merge_backward { merged_title = None; _ } -> true

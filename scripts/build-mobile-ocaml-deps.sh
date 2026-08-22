@@ -16,6 +16,7 @@ datascript_source="$source_root/datascript-ocaml"
 persistent_set_source="$source_root/persistent-sorted-set-ocaml"
 melange_edn_source="$source_root/melange-edn"
 melange_transit_source="$source_root/melange-transit"
+ocaml_fsrs_source="$source_root/ocaml-fsrs"
 ptime_source="$source_root/ptime"
 yojson_source="$source_root/yojson"
 mldoc_checkout="$repo_root/Vendor/mldoc"
@@ -25,6 +26,7 @@ datascript_revision=3e9bee227686ba8608fc3fb027c4ebe30961360f
 persistent_set_revision=f95398e77a1a003f65ecf201c4aede961e52e929
 melange_edn_revision=a1410a31b57b5e42f152357d0303635685501bc6
 melange_transit_revision=898bc1418e8e6405f53d659209d932cddc6e3070
+ocaml_fsrs_revision=65e243d822a5dc18d50300300a2aa629cdd1beaf
 ptime_revision=fc8e8dab8f417558d882e6989b080d9f2100f8b6
 yojson_revision=b2193e8e0c88c6501710d08b836b3219673383f3
 mldoc_revision=bedae990097fff9251cde34e685bc3cec13c01a3
@@ -55,6 +57,8 @@ build_fingerprint=$(
       "$persistent_set_revision" \
       "$melange_edn_revision" \
       "$melange_transit_revision" \
+      "$ocaml_fsrs_revision" \
+      "timedesc-3.1.2" \
       "$ptime_revision" \
       "$yojson_revision" \
       "$mldoc_revision"
@@ -102,6 +106,10 @@ clone_revision \
   https://github.com/tiensonqin/melange-transit.git \
   "$melange_transit_revision" \
   "$melange_transit_source"
+clone_revision \
+  https://github.com/chaosarium/ocaml-fsrs.git \
+  "$ocaml_fsrs_revision" \
+  "$ocaml_fsrs_source"
 clone_revision \
   https://github.com/dbuenzli/ptime.git \
   "$ptime_revision" \
@@ -294,6 +302,64 @@ done
 "$ocamlopt" -I "$object_dir" -c "$xmlm_source/xmlm.mli" -o xmlm.cmi
 "$ocamlopt" -I "$object_dir" -c "$xmlm_source/xmlm.ml" -o xmlm.cmx
 
+# ocaml-fsrs is pinned upstream and uses Timedesc for scheduler timestamps.
+# Build Timedesc as pure OCaml with the no-TZDB/UTC implementations because
+# review scheduling only needs absolute timestamps and spans on mobile.
+timedesc_lib="$host_dependency_lib/timedesc"
+timedesc_tzdb_lib="$host_dependency_lib/timedesc-tzdb"
+timedesc_tzlocal_lib="$host_dependency_lib/timedesc-tzlocal"
+"$ocamlopt" -I "$object_dir" -c \
+  "$timedesc_tzdb_lib/timedesc_tzdb.mli" -o timedesc_tzdb.cmi
+"$ocamlopt" -I "$object_dir" -c \
+  "$timedesc_tzdb_lib/none/timedesc_tzdb.ml" -o timedesc_tzdb.cmx
+"$ocamlopt" -I "$object_dir" -c \
+  "$timedesc_tzlocal_lib/timedesc_tzlocal.mli" -o timedesc_tzlocal.cmi
+"$ocamlopt" -I "$object_dir" -c \
+  "$timedesc_tzlocal_lib/utc/timedesc_tzlocal.ml" -o timedesc_tzlocal.cmx
+"$ocamlopt" -I "$object_dir" -no-alias-deps -w -49 -c \
+  "$timedesc_lib/timedesc__.ml" -o timedesc__.cmx
+timedesc_sources=$(find "$timedesc_lib" -maxdepth 1 \
+  \( -name '*.ml' -o -name '*.mli' \) \
+  ! -name 'timedesc.ml' ! -name 'timedesc.mli' ! -name 'timedesc__.ml' \
+  -print)
+timedesc_ordered=$("$ocamldep" -open Timedesc__ -sort $timedesc_sources)
+: >"$object_dir/timedesc-link-objects.txt"
+for source in $timedesc_ordered; do
+  source_file=$(basename "$source")
+  source_name=${source_file%.*}
+  module_name="${source_name^}"
+  case "$source" in
+    *.mli)
+      "$ocamlopt" -I "$object_dir" -open Timedesc__ -c "$source" \
+        -o "timedesc__${module_name}.cmi"
+      ;;
+    *.ml)
+      "$ocamlopt" -I "$object_dir" -open Timedesc__ -c "$source" \
+        -o "timedesc__${module_name}.cmx"
+      printf '%s\n' "$object_dir/timedesc__${module_name}.cmx" \
+        >>"$object_dir/timedesc-link-objects.txt"
+      ;;
+  esac
+done
+"$ocamlopt" -I "$object_dir" -open Timedesc__ -c \
+  "$timedesc_lib/timedesc.mli" -o timedesc.cmi
+"$ocamlopt" -I "$object_dir" -open Timedesc__ -c \
+  "$timedesc_lib/timedesc.ml" -o timedesc.cmx
+
+opam exec --switch="$opam_switch" -- \
+  dune build --root "$ocaml_fsrs_source" src/fsrs.cmxa
+ocaml_fsrs_build="$ocaml_fsrs_source/_build/default/src"
+ocaml_fsrs_sources=$(find "$ocaml_fsrs_build" -maxdepth 1 -name '*.pp.ml' -print)
+ocaml_fsrs_ordered=$(opam exec --switch="$opam_switch" -- \
+  ocamldep -sort $ocaml_fsrs_sources)
+: >"$object_dir/ocaml-fsrs-link-objects.txt"
+for source in $ocaml_fsrs_ordered; do
+  source_name=$(basename "$source" .pp.ml)
+  "$ocamlopt" -I "$object_dir" -c "$source" -o "${source_name}.cmx"
+  printf '%s\n' "$object_dir/${source_name}.cmx" \
+    >>"$object_dir/ocaml-fsrs-link-objects.txt"
+done
+
 mldoc_build="$mldoc_source/_build/default/lib"
 "$ocamlopt" -I "$object_dir" -no-alias-deps -w -49 -c \
   -impl "$mldoc_build/mldoc__.ml-gen" -o mldoc__.cmx
@@ -365,10 +431,22 @@ for object in \
   angstrom.cmx \
   stringext.cmx \
   uri.cmx \
-  xmlm.cmx \
-  mldoc__.cmx; do
+  xmlm.cmx; do
   printf '%s\n' "$object_dir/$object" >>"$object_dir/link-objects.txt"
 done
+printf '%s\n' \
+  "$object_dir/timedesc_tzdb.cmx" \
+  "$object_dir/timedesc_tzlocal.cmx" \
+  "$object_dir/timedesc__.cmx" \
+  >>"$object_dir/link-objects.txt"
+while IFS= read -r object; do
+  printf '%s\n' "$object" >>"$object_dir/link-objects.txt"
+done <"$object_dir/timedesc-link-objects.txt"
+printf '%s\n' "$object_dir/timedesc.cmx" >>"$object_dir/link-objects.txt"
+while IFS= read -r object; do
+  printf '%s\n' "$object" >>"$object_dir/link-objects.txt"
+done <"$object_dir/ocaml-fsrs-link-objects.txt"
+printf '%s\n' "$object_dir/mldoc__.cmx" >>"$object_dir/link-objects.txt"
 while IFS= read -r object; do
   printf '%s\n' "$object" >>"$object_dir/link-objects.txt"
 done <"$object_dir/mldoc-link-objects.txt"

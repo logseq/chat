@@ -5,6 +5,8 @@ let source_uuid = "e2e00000-0000-4000-8000-000000000002"
 let older_block_uuid = "e2e00000-0000-4000-8000-000000000003"
 let trailing_tag_uuid = "e2e00000-0000-4000-8000-000000000004"
 let child_tag_uuid = "e2e00000-0000-4000-8000-000000000005"
+let flashcard_uuid = "e2e00000-0000-4000-8000-000000000020"
+let flashcard_answer_uuid = "e2e00000-0000-4000-8000-000000000021"
 
 let page_uuid index =
   Printf.sprintf "e2e10000-0000-4000-8000-%012d" index
@@ -204,6 +206,36 @@ let seed conn =
                 ; "block/created-at", One_value (Int 2_000_000_000_002)
                 ; "block/updated-at", One_value (Int 2_000_000_000_002)
                 ; "block/refs", Many_values [ Ref_to (Temp_id tag_temp_id) ]
+                ]
+            }
+        ; Entity
+            { db_id = Some (Temp_id "e2e-card-class")
+            ; attrs = [ "db/ident", One_value (Keyword "logseq.class/Card") ]
+            }
+        ; Entity
+            { db_id = Some (Temp_id "e2e-flashcard")
+            ; attrs =
+                [ "block/uuid", One_value (Uuid flashcard_uuid)
+                ; ( "block/title"
+                  , One_value (String "The capital of France is {{cloze Paris}}") )
+                ; "block/page", One_value (Ref_to (Temp_id "e2e-journal-8"))
+                ; "block/parent", One_value (Ref_to (Temp_id "e2e-journal-8"))
+                ; "block/order", One_value (String "a9")
+                ; "block/created-at", One_value (Int 40_000)
+                ; "block/updated-at", One_value (Int 40_000)
+                ; "block/tags", Many_values [ Ref_to (Temp_id "e2e-card-class") ]
+                ]
+            }
+        ; Entity
+            { db_id = None
+            ; attrs =
+                [ "block/uuid", One_value (Uuid flashcard_answer_uuid)
+                ; "block/title", One_value (String "Paris is the answer")
+                ; "block/page", One_value (Ref_to (Temp_id "e2e-journal-8"))
+                ; "block/parent", One_value (Ref_to (Temp_id "e2e-flashcard"))
+                ; "block/order", One_value (String "a0")
+                ; "block/created-at", One_value (Int 40_001)
+                ; "block/updated-at", One_value (Int 40_001)
                 ]
             }
         ]

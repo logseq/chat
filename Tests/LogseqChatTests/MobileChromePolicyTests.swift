@@ -80,6 +80,17 @@ import LogseqChatModel
         ) == .expandedComposer)
     }
 
+    @Test func screensWithoutCaptureHideBottomChrome() {
+        #expect(BottomChromePolicy.presentation(
+            contentMode: LogseqContentMode.outliner,
+            hasSelectedPage: false,
+            composerExpanded: false,
+            hasOutlinerSelection: false,
+            isEditingOutlinerBlock: false,
+            showsComposer: false
+        ) == .hidden)
+    }
+
     @Test func onlyNewBlocksScrollTheListToTheBottom() {
         #expect(BlockListUpdatePolicy.shouldScrollToBottom(
             oldBlockIDs: ["old"],

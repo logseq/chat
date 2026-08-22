@@ -11,6 +11,7 @@ depends: [
   "melange-edn-native"
   "melange-transit-native"
   "mldoc"
+  "ocaml-fsrs"
   "yojson"
 ]
 pin-depends: [
@@ -19,6 +20,7 @@ pin-depends: [
   ["persistent_sorted_set_ocaml.dev" "git+https://github.com/logseq/persistent-sorted-set-ocaml.git#main"]
   ["melange-transit-core.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-native.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
+  ["ocaml-fsrs.0.1.0-alpha3" "git+https://github.com/chaosarium/ocaml-fsrs.git#65e243d822a5dc18d50300300a2aa629cdd1beaf"]
 ]
 build: [
   ["dune" "subst"] {dev}

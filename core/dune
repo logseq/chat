@@ -11,6 +11,7 @@
   logseq_chat_fractional_order
   logseq_chat_graph_store
   logseq_chat_graph_read
+  logseq_chat_flashcards
   logseq_chat_graph_runtime
   logseq_chat_http
   logseq_chat_logseq_storage_codec
@@ -36,6 +37,7 @@
   melange-edn-native
   melange-transit-core
   melange-transit-native
+  ocaml-fsrs
   yojson
   mldoc
   str
@@ -169,6 +171,11 @@
 (test
  (name logseq_chat_graph_read_test)
  (modules logseq_chat_graph_read_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_flashcards_test)
+ (modules logseq_chat_flashcards_test)
  (libraries logseq_chat_core))
 
 (test

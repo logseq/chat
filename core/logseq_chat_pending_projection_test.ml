@@ -455,6 +455,48 @@ let () =
 ;;
 
 let () =
+  let authoritative = base_db () in
+  let state =
+    Ops.Map_value
+      [ "state", Ops.Keyword_value "learning"
+      ; "stability", Ops.Float_value 0.4
+      ; "reps", Ops.Int_value 1
+      ]
+  in
+  let intent =
+    Ops.Set_properties
+      { uuid = "block"
+      ; changes =
+          [ { attr = "logseq.property.fsrs/state"; expected = None; value = Some state }
+          ; { attr = "logseq.property.fsrs/due"; expected = None
+            ; value = Some (Ops.Int_value 1_776_000_060_000) }
+          ]
+      }
+  in
+  let projected =
+    match Projection.compile authoritative intent with
+    | Ok tx -> db_with tx authoritative
+    | Error message -> failwith ("flashcard properties must compile atomically: " ^ message)
+  in
+  assert_bool "flashcard state and due project in one operation"
+    (Projection.semantic_value_equal
+       projected
+       (Projection.one_value projected (lookup "block") "logseq.property.fsrs/state")
+       (Some state)
+     && Projection.semantic_value_equal
+          projected
+          (Projection.one_value projected (lookup "block") "logseq.property.fsrs/due")
+          (Some (Ops.Int_value 1_776_000_060_000)));
+  let changed =
+    db_with
+      [ Add (lookup "block", "logseq.property.fsrs/due", Int 99) ]
+      authoritative
+  in
+  assert_bool "one stale flashcard property rejects the whole atomic review"
+    (match Projection.compile changed intent with Error _ -> true | Ok _ -> false)
+;;
+
+let () =
   let authoritative =
     base_db ()
     |> db_with

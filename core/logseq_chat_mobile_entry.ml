@@ -190,7 +190,9 @@ let feed_sse chunk =
                    Logseq_chat_graph_runtime.rebase
                      runtime.read_runtime
                      ~server_t:change.t
-                     ~operation_ids:change.operation_ids;
+                     ~operation_ids:change.operation_ids
+                     ~changed_uuids:
+                       (Logseq_chat_sync_protocol.changed_block_uuids change);
                    apply_frames rest)))
   in
   apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
@@ -272,6 +274,24 @@ let graph_search query =
   match !graph_runtime with
   | Some runtime -> Logseq_chat_graph_runtime.search runtime.read_runtime query
   | None -> []
+;;
+
+let graph_due_flashcards ~now =
+  match !graph_runtime with
+  | Some runtime -> Logseq_chat_graph_runtime.due_flashcards runtime.read_runtime ~now
+  | None -> []
+;;
+
+let graph_review_flashcard ~uuid ~rating ~now ~operation_id =
+  match !graph_runtime with
+  | Some runtime ->
+    Logseq_chat_graph_runtime.review_flashcard
+      runtime.read_runtime
+      ~uuid
+      ~rating
+      ~now
+      ~operation_id
+  | None -> Error "graph runtime is not open"
 ;;
 
 let load_older_journals () =
@@ -405,6 +425,8 @@ let create_session ?storage ?catalog_session () =
     ~graph_tag_objects
     ~graph_normalize_titles
     ~graph_search
+    ~graph_due_flashcards
+    ~graph_review_flashcard
     ~load_older_journals
     ~has_older_journals
     ~stage_operation
