@@ -595,11 +595,11 @@ struct OutlinerBlockRow: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .platformOutlinerFullRowHitTarget()
-        .onTapGesture {
-            if !isEditing {
-                onEdit()
-            }
-        }
+        .outlinerTapToEdit(
+            isEnabled: !isEditing
+                && !OutlinerRichMarkupPolicy.containsInteractive(row.block.markup),
+            onEdit: onEdit
+        )
         .onLongPressGesture(minimumDuration: 0.45) {
             onLongPress()
         }
@@ -614,10 +614,12 @@ struct OutlinerBlockRow: View, Equatable {
     @ViewBuilder private var renderedTitle: some View {
         // An empty block renders as a blank line (a space keeps the row
         // height and tap target); accessibility still says "Untitled block".
-        if row.block.markup.count == 1,
-           let node = row.block.markup.first,
-           [LogseqMarkupNodeType.quote, .math, .codeBlock, .video, .iframe, .cloze].contains(node.type) {
-            OutlinerRichBlockContent(node: node, onOpenMarkupLink: onOpenMarkupLink)
+        if OutlinerRichMarkupPolicy.containsRich(row.block.markup) {
+            OutlinerMixedRichMarkupContent(
+                nodes: row.block.markup,
+                fallback: row.block.title.isEmpty ? " " : row.block.title,
+                onOpenMarkupLink: onOpenMarkupLink
+            )
         } else {
             #if !SKIP
             Text(OutlinerMarkupAttributedString.make(
@@ -663,6 +665,49 @@ struct OutlinerBlockRow: View, Equatable {
     }
 }
 
+private struct OutlinerMixedRichMarkupContent: View {
+    let nodes: [LogseqMarkupNode]
+    let fallback: String
+    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+
+    private var chunks: [[LogseqMarkupNode]] {
+        OutlinerRichMarkupPolicy.chunks(nodes)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(0..<chunks.count, id: \.self) { index in
+                let chunk = chunks[index]
+                if chunk.count == 1,
+                   let node = chunk.first,
+                   OutlinerRichMarkupPolicy.isRich(node.type) {
+                    OutlinerRichBlockContent(
+                        node: node,
+                        onOpenMarkupLink: onOpenMarkupLink
+                    )
+                } else {
+                    inlineContent(chunk)
+                        .accessibilityIdentifier("block.rich.inline.\(index)")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func inlineContent(_ chunk: [LogseqMarkupNode]) -> some View {
+        #if !SKIP
+        Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
+            .environment(\.openURL, OpenURLAction { url in
+                guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
+                onOpenMarkupLink(link)
+                return .handled
+            })
+        #else
+        let presentation = OutlinerMarkupPresentation.make(nodes: chunk, fallback: fallback)
+        Text(verbatim: presentation.plainText)
+        #endif
+    }
+}
+
 #if !SKIP
 enum OutlinerMarkupAttributedString {
     static func make(nodes: [LogseqMarkupNode], fallback: String) -> AttributedString {
@@ -685,6 +730,8 @@ enum OutlinerMarkupAttributedString {
             return value
         case .codeBlock, .math, .cloze:
             return AttributedString(node.text ?? "")
+        case .youtubeTimestamp:
+            return AttributedString("◷ " + (node.text ?? ""))
         case .emphasis, .quote:
             var value = make(nodes: node.children, fallback: "")
             switch node.style {
@@ -759,6 +806,17 @@ private struct OutlinerEditorAnchorPreferenceKey: PreferenceKey {
 #endif
 
 private extension View {
+    @ViewBuilder func outlinerTapToEdit(
+        isEnabled: Bool,
+        onEdit: @escaping () -> Void
+    ) -> some View {
+        if isEnabled {
+            onTapGesture { onEdit() }
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder func platformOutlinerAccessibilityContainer() -> some View {
         #if !SKIP
         accessibilityElement(children: .contain)

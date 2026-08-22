@@ -52,6 +52,8 @@ struct OutlinerRichBlockContent: View {
                 EmbeddedVideo(url: EmbeddedMediaPolicy.safeURL(node.url))
             case .iframe:
                 EmbeddedWebContent(url: EmbeddedMediaPolicy.safeURL(node.url))
+            case .youtubeTimestamp:
+                YouTubeTimestamp(label: node.text ?? "")
             case .cloze:
                 InteractiveCloze(text: node.text ?? "")
             default:
@@ -76,6 +78,26 @@ struct OutlinerRichBlockContent: View {
         )
         Text(verbatim: presentation.plainText)
         #endif
+    }
+}
+
+private struct YouTubeTimestamp: View {
+    let label: String
+    @State private var unavailablePresented = false
+
+    var body: some View {
+        Text(verbatim: "◷ " + label)
+            .foregroundStyle(.tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            #if !SKIP
+            .contentShape(Rectangle())
+            #endif
+            .onTapGesture { unavailablePresented = true }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("YouTube timestamp " + label)
+            .alert("YouTube timestamps aren't available on mobile", isPresented: $unavailablePresented) {
+                Button("OK", role: .cancel) {}
+            }
     }
 }
 

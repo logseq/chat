@@ -160,7 +160,31 @@ let () =
     (embed
        "{{twitter https://x.com/logseq/status/1234567890}}"
        "iframe"
-       "https://platform.twitter.com/embed/Tweet.html?id=1234567890")
+       "https://platform.twitter.com/embed/Tweet.html?id=1234567890");
+  let timestamp source expected_label expected_seconds =
+    match markup_json source with
+    | `List [ `Assoc fields ] ->
+      List.assoc_opt "type" fields = Some (`String "youtubeTimestamp")
+      && List.assoc_opt "text" fields = Some (`String expected_label)
+      && List.assoc_opt "style" fields = Some (`String expected_seconds)
+    | _ -> false
+  in
+  assert_bool "YouTube timestamp seconds are rendered"
+    (timestamp "{{youtube-timestamp 83}}" "01:23" "83");
+  assert_bool "YouTube timestamp clock values are rendered"
+    (timestamp "{{youtube-timestamp 01:01:23}}" "01:01:23" "3683")
+;;
+
+let () =
+  match markup_json "Before {{video https://cdn.example.com/demo.mp4}} after" with
+  | `List [ `Assoc before; `Assoc video; `Assoc after ] ->
+    assert_bool "mixed rich markup keeps leading text"
+      (List.assoc_opt "text" before = Some (`String "Before "));
+    assert_bool "mixed rich markup keeps the embedded node"
+      (List.assoc_opt "type" video = Some (`String "video"));
+    assert_bool "mixed rich markup keeps trailing text"
+      (List.assoc_opt "text" after = Some (`String " after"))
+  | _ -> failwith "mixed rich markup must preserve text around embedded nodes"
 ;;
 
 let () =

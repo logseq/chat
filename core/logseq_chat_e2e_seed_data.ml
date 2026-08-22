@@ -68,6 +68,8 @@ let rich_block_titles =
   ; "```swift\nlet answer = 42\n```"
   ; "{{video https://www.youtube.com/watch?v=dQw4w9WgXcQ}}"
   ; "{{iframe https://example.com}}"
+  ; "E2E before {{video https://www.youtube.com/watch?v=dQw4w9WgXcQ}} E2E after"
+  ; "{{youtube-timestamp 01:23}}"
   ]
 ;;
 

@@ -36,7 +36,7 @@ enum FlashcardPresentation {
             return node.children.map { text(node: $0, revealCloze: revealCloze) }.joined()
         case .video, .iframe:
             return node.url ?? ""
-        case .text, .code, .codeBlock, .math:
+        case .text, .code, .codeBlock, .math, .youtubeTimestamp:
             return node.text ?? ""
         }
     }

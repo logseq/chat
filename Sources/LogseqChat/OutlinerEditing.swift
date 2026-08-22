@@ -61,7 +61,7 @@ struct OutlinerMarkupPresentation: Equatable {
         func append(_ nodes: [LogseqMarkupNode]) {
             for node in nodes {
                 switch node.type {
-                case .text, .code, .codeBlock, .math, .cloze:
+                case .text, .code, .codeBlock, .math, .cloze, .youtubeTimestamp:
                     text += node.text ?? ""
                 case .emphasis, .quote:
                     append(node.children)
@@ -89,6 +89,54 @@ struct OutlinerMarkupPresentation: Equatable {
 
         append(nodes)
         return OutlinerMarkupPresentation(plainText: text, links: links)
+    }
+}
+
+enum OutlinerRichMarkupPolicy {
+    static func isRich(_ type: LogseqMarkupNodeType) -> Bool {
+        switch type {
+        case .quote, .math, .codeBlock, .video, .iframe, .youtubeTimestamp, .cloze:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func containsRich(_ nodes: [LogseqMarkupNode]) -> Bool {
+        nodes.contains { isRich($0.type) }
+    }
+
+    static func containsInteractive(_ nodes: [LogseqMarkupNode]) -> Bool {
+        nodes.contains { node in
+            switch node.type {
+            case .video, .iframe, .youtubeTimestamp, .cloze:
+                return true
+            default:
+                return containsInteractive(node.children)
+            }
+        }
+    }
+
+    static func chunks(_ nodes: [LogseqMarkupNode]) -> [[LogseqMarkupNode]] {
+        var result: [[LogseqMarkupNode]] = []
+        var inline: [LogseqMarkupNode] = []
+
+        func flushInline() {
+            guard !inline.isEmpty else { return }
+            result.append(inline)
+            inline.removeAll(keepingCapacity: true)
+        }
+
+        for node in nodes {
+            if isRich(node.type) {
+                flushInline()
+                result.append([node])
+            } else {
+                inline.append(node)
+            }
+        }
+        flushInline()
+        return result
     }
 }
 

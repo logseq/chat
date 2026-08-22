@@ -59,3 +59,32 @@ appId: com.logseq.chat
     centerElement: true
 - assertVisible:
     id: "block.rich.iframe"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.inline.2"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "block.rich.inline.0"
+- assertVisible:
+    id: "block.rich.inline.2"
+- assertVisible:
+    id: "block.rich.video"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.youtubeTimestamp"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "block.rich.youtubeTimestamp"
+- assertVisible: "YouTube timestamp 01:23"
+- tapOn:
+    id: "block.rich.youtubeTimestamp"
+- assertVisible: "YouTube timestamps aren't available on mobile"
+- tapOn: "OK"

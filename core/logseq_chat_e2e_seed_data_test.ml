@@ -39,7 +39,7 @@ let () =
   (match (Logseq_chat_graph_read.sidebar_pages db).favorites with
    | [ favorite ] when String.equal favorite.uuid (Seed.page_uuid 7) -> ()
    | _ -> failwith "the E2E fixture must expose the target page as a favorite");
-  if List.length (Logseq_chat_graph_read.blocks db) <> 16
+  if List.length (Logseq_chat_graph_read.blocks db) <> 18
   then failwith "the initial fixture window must contain links and rich block examples";
   if
     Logseq_chat_graph_read.blocks db

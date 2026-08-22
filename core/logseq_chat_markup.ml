@@ -33,6 +33,10 @@ type t =
       }
   | Video of string
   | Iframe of string
+  | Youtube_timestamp of
+      { seconds : int
+      ; label : string
+      }
   | Cloze of string
   | Link of
       { url : string
@@ -51,6 +55,8 @@ let rec debug_string = function
   | Math { expression; display } -> Printf.sprintf "Math(%b,%S)" display expression
   | Video url -> Printf.sprintf "Video(%S)" url
   | Iframe url -> Printf.sprintf "Iframe(%S)" url
+  | Youtube_timestamp { seconds; label } ->
+    Printf.sprintf "YoutubeTimestamp(%d,%S)" seconds label
   | Cloze text -> Printf.sprintf "Cloze(%S)" text
   | Node_ref target ->
     Printf.sprintf "Node(%S,%S)" target.uuid target.title
@@ -91,6 +97,12 @@ let rec node_to_yojson = function
       ]
   | Video url -> `Assoc [ "type", `String "video"; "url", `String url ]
   | Iframe url -> `Assoc [ "type", `String "iframe"; "url", `String url ]
+  | Youtube_timestamp { seconds; label } ->
+    `Assoc
+      [ "type", `String "youtubeTimestamp"
+      ; "text", `String label
+      ; "style", `String (string_of_int seconds)
+      ]
   | Cloze text -> `Assoc [ "type", `String "cloze"; "text", `String text ]
   | Emphasis (style, children) ->
     `Assoc
@@ -204,6 +216,47 @@ let youtube_url value =
   else "https://www.youtube.com/watch?v=" ^ value
 ;;
 
+let youtube_timestamp value =
+  let value = String.trim value in
+  let parse_number value =
+    try
+      let number = int_of_string value in
+      if number < 0 then None else Some number
+    with
+    | Failure _ -> None
+  in
+  let seconds =
+    match String.split_on_char ':' value with
+    | [ total ] -> parse_number total
+    | [ minutes; seconds ] ->
+      Option.bind (parse_number minutes) (fun minutes ->
+        Option.bind (parse_number seconds) (fun seconds ->
+          if minutes <= 59 && seconds <= 59
+          then Some ((minutes * 60) + seconds)
+          else None))
+    | [ hours; minutes; seconds ] ->
+      Option.bind (parse_number hours) (fun hours ->
+        Option.bind (parse_number minutes) (fun minutes ->
+          Option.bind (parse_number seconds) (fun seconds ->
+            if minutes <= 59 && seconds <= 59
+            then Some ((hours * 3600) + (minutes * 60) + seconds)
+            else None)))
+    | _ -> None
+  in
+  Option.map
+    (fun seconds ->
+      let hours = seconds / 3600 in
+      let minutes = seconds mod 3600 / 60 in
+      let remainder = seconds mod 60 in
+      let label =
+        if hours > 0
+        then Printf.sprintf "%02d:%02d:%02d" hours minutes remainder
+        else Printf.sprintf "%02d:%02d" minutes remainder
+      in
+      Youtube_timestamp { seconds; label })
+    seconds
+;;
+
 let tweet_id value =
   let value = String.trim value in
   let without_query =
@@ -237,6 +290,9 @@ and convert_node ~source ~references ~tags node position =
     [ Iframe (String.trim url) ]
   | Macro { name; arguments = value :: _ } when String.equal (String.lowercase_ascii name) "youtube" ->
     [ Video (youtube_url value) ]
+  | Macro { name; arguments = value :: _ }
+    when String.equal (String.lowercase_ascii name) "youtube-timestamp" ->
+    Option.to_list (youtube_timestamp value)
   | Macro { name; arguments = value :: _ } when String.equal (String.lowercase_ascii name) "vimeo" ->
     [ Video ("https://player.vimeo.com/video/" ^ String.trim value) ]
   | Macro { name; arguments = value :: _ } when String.equal (String.lowercase_ascii name) "bilibili" ->
