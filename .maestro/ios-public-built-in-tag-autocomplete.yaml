@@ -1,0 +1,12 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn: "Edit block First synced block"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- inputText: "#"
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- assertVisible: "Card"

@@ -96,17 +96,18 @@ let entity_summaries decrypt_title db eid attr =
     Option.bind (Ds_value.ref_eid db attr datom.v) (entity_summary decrypt_title db))
 ;;
 
+let tag_is_visible_in_node db eid =
+  match value db eid "logseq.property.class/hide-from-node" with
+  | Some (Bool true) -> false
+  | _ -> true
+;;
+
 let visible_tag_summaries decrypt_title db eid =
   Datascript.datoms db Eavt ~e:eid ~a:"block/tags" ()
   |> List.of_seq
   |> List.filter_map (fun datom ->
     Option.bind (Ds_value.ref_eid db "block/tags" datom.v) (fun tag_eid ->
-      let internal =
-        match value db tag_eid "db/ident" with
-        | Some (Keyword ident) -> String.starts_with ~prefix:"logseq." ident
-        | _ -> false
-      in
-      if internal
+      if not (tag_is_visible_in_node db tag_eid)
       then None
       else
         if entity_is_instance_of db tag_eid "logseq.class/Tag"
@@ -350,12 +351,9 @@ let tag_pages ?(decrypt_title = fun value -> Ok value) db =
     Ds_value.datoms_by_ref db Aevt "block/tags" tag_class_eid
     |> List.of_seq
     |> List.filter_map (fun datom ->
-      let internal =
-        match value db datom.e "db/ident" with
-        | Some (Keyword ident) -> String.starts_with ~prefix:"logseq." ident
-        | _ -> false
-      in
-      if internal then None else page_summary decrypt_title db datom.e)
+      if tag_is_visible_in_node db datom.e
+      then page_summary decrypt_title db datom.e
+      else None)
     |> List.sort_uniq (fun left right -> String.compare left.uuid right.uuid)
 ;;
 

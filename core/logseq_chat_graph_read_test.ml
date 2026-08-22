@@ -573,6 +573,7 @@ let () =
     ; "block/journal-day", one ()
     ; "block/refs", many ~value_type:RefType ()
     ; "block/tags", many ~value_type:RefType ()
+    ; "logseq.property.class/hide-from-node", one ()
     ; "db/ident", one ~value_type:KeywordType ~unique:(Some Identity) ()
     ]
   in
@@ -620,6 +621,16 @@ let () =
                ]
            }
        ; Entity
+           { db_id = Some (Temp_id "public-built-in-tag")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "public-built-in-tag")
+               ; "block/name", One_value (String "card")
+               ; "block/title", One_value (String "Card")
+               ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
+               ; "db/ident", One_value (Keyword "logseq.class/Card")
+               ]
+           }
+       ; Entity
            { db_id = Some (Temp_id "internal-tag")
            ; attrs =
                [ "block/uuid", One_value (Uuid "internal-tag")
@@ -627,6 +638,7 @@ let () =
                ; "block/title", One_value (String "Task")
                ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
                ; "db/ident", One_value (Keyword "logseq.class/Task")
+               ; "logseq.property.class/hide-from-node", One_value (Bool true)
                ]
            }
        ; Entity
@@ -642,14 +654,23 @@ let () =
                      [ Ref_to (Temp_id "page-target"); Ref_to (Temp_id "block-target") ] )
                ; ( "block/tags"
                  , Many_values
-                     [ Ref_to (Temp_id "tag-target"); Ref_to (Temp_id "internal-tag") ] )
+                     [ Ref_to (Temp_id "tag-target")
+                     ; Ref_to (Temp_id "public-built-in-tag")
+                     ; Ref_to (Temp_id "internal-tag")
+                     ] )
                ]
            }
        ]);
   let db = conn_db conn in
-  (match Logseq_chat_graph_read.tag_pages db with
-   | [ tag ] when tag.uuid = "tag-target" && tag.title = "Project" -> ()
-   | _ -> failwith "tag autocomplete pages must contain only user Tag entities");
+  (match
+     Logseq_chat_graph_read.tag_pages db
+     |> List.map (fun (tag : Logseq_chat_graph_read.sidebar_page) -> tag.uuid, tag.title)
+     |> List.sort compare
+   with
+   | [ "public-built-in-tag", "Card"; "tag-target", "Project" ] -> ()
+   | _ ->
+     failwith
+       "tag autocomplete pages must include public built-ins and hide internal tags");
   match
     Logseq_chat_graph_read.blocks db
     |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
@@ -669,8 +690,12 @@ let () =
          ; "page-target", "Page target"
          ]
     then failwith "node references must resolve page and ordinary-block targets";
-    if summaries block.tags <> [ "tag-target", "Project" ]
-    then failwith "tags must resolve through DB graph tag entities";
+    if
+      summaries block.tags
+      <> [ "public-built-in-tag", "Card"; "tag-target", "Project" ]
+    then
+      failwith
+        "visible tags must include public built-ins and hide internal tags";
     let projection = Logseq_chat_graph_read.create_projection (conn_db conn) in
     ignore
       (transact_conn

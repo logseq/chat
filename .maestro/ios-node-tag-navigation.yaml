@@ -49,6 +49,7 @@ appId: com.logseq.chat
 - inputText: "#"
 - assertVisible:
     id: "toolbar.outliner.autocomplete"
+- assertVisible: "Card"
 - inputText: "E2E Pro"
 - tapOn:
     id: "button.outliner.autocomplete.0"
