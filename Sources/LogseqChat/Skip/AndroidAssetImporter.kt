@@ -2,6 +2,7 @@ package logseq.chat
 
 import android.content.Context
 import android.content.Intent
+import android.content.ClipData
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -13,6 +14,7 @@ import androidx.core.content.FileProvider
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import skip.lib.Array as SkipArray
 
 object AndroidAssetImporter {
     private var photoLauncher: ActivityResultLauncher<Array<String>>? = null
@@ -64,7 +66,7 @@ object AndroidAssetImporter {
 
     fun openFile(path: String, contentType: String) {
         runCatching {
-            val file = File(path)
+            val file = resolveFile(path) ?: error("Asset file does not exist: $path")
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val mimeType = if (contentType.contains('/')) {
                 contentType
@@ -78,6 +80,41 @@ object AndroidAssetImporter {
             }
             context.startActivity(Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }.onFailure { android.util.Log.e("LogseqChat", "Could not open asset", it) }
+    }
+
+    fun share(text: String, paths: SkipArray<String>) {
+        runCatching {
+            val uris = ArrayList(paths.mapNotNull { path ->
+                resolveFile(path)?.let { file ->
+                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                }
+            }.distinct())
+            val intent = if (uris.isEmpty()) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    clipData = ClipData.newUri(context.contentResolver, "Logseq assets", uris.first()).also { clip ->
+                        uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+                    }
+                }
+            }
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { android.util.Log.e("LogseqChat", "Could not share node", it) }
+    }
+
+    private fun resolveFile(path: String): File? {
+        val direct = File(path)
+        if (direct.isFile) return direct
+        val relative = File(context.filesDir, path)
+        if (relative.isFile) return relative
+        return File(File(context.filesDir, "Assets"), direct.name).takeIf(File::isFile)
     }
 
     private fun deliver(assets: List<ImportedAsset>) {

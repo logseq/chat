@@ -1,0 +1,21 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- tapOn:
+    id: "button.connection"
+- tapOn: "Share"
+- extendedWaitUntil:
+    visible: "Copy"
+    timeout: 10000
+- assertVisible: "Copy"
+- swipe:
+    direction: DOWN

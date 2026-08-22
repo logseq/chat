@@ -19,6 +19,7 @@ flows=(
   .maestro/ios-outliner-hierarchy-navigation.yaml
   .maestro/ios-node-tag-navigation.yaml
   .maestro/ios-sidebar-node-navigation.yaml
+  .maestro/ios-page-share.yaml
   .maestro/ios-page-favorite.yaml
   .maestro/ios-settings-theme-parity.yaml
   .maestro/ios-sidebar-page-empty-block-delete.yaml
@@ -37,6 +38,7 @@ for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow == .maestro/ios-node-tag-navigation.yaml \
      || $flow == .maestro/ios-sidebar-node-navigation.yaml \
+     || $flow == .maestro/ios-page-share.yaml \
      || $flow == .maestro/ios-page-favorite.yaml \
      || $flow == .maestro/ios-sidebar-page-empty-block-delete.yaml \
      || $flow == .maestro/ios-rich-block-rendering.yaml ]]; then

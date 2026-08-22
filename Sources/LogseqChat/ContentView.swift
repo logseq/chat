@@ -261,6 +261,7 @@ struct ContentView: View {
     @State private var audioRecorderPresented = false
     @State private var audioRecorderTargetBlockID: String?
     @State private var previewAssetURL: URL?
+    @State private var nodeSharePayload: NodeSharePayload?
     #endif
     #endif
     @State private var hasAutoScrolledInitially = false
@@ -400,6 +401,11 @@ struct ContentView: View {
                 #endif
             }
         }
+        #if !SKIP && os(iOS)
+        .sheet(item: $nodeSharePayload) { payload in
+            NodeShareSheet(items: payload.items)
+        }
+        #endif
         .sheet(isPresented: $graphPasswordPresented) {
             NavigationStack {
                 Form {
@@ -1484,11 +1490,11 @@ struct ContentView: View {
     }
 
     private func nodeShareText(_ page: LogseqSidebarPage) -> String {
-        let lines = (activeNodeProjection?.blocks ?? store.snapshot.blocks)
-            .map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .map { "- \($0)" }
-        return ([page.title] + lines).joined(separator: "\n")
+        NodeSharePolicy.text(pageTitle: page.title, blocks: nodeShareBlocks)
+    }
+
+    private var nodeShareBlocks: [LogseqBlock] {
+        activeNodeProjection?.blocks ?? store.snapshot.blocks
     }
 
     private var databasePath: String {
@@ -1871,10 +1877,28 @@ struct ContentView: View {
                     )
                 }
                 .accessibilityIdentifier("button.page-favorite")
+                #if !SKIP && os(iOS)
+                Button("Share") {
+                    nodeSharePayload = NodeSharePayload(
+                        pageTitle: target.title,
+                        blocks: nodeShareBlocks
+                    )
+                }
+                .accessibilityIdentifier("button.page-share")
+                #elseif SKIP
+                Button("Share") {
+                    AndroidAssetImporter.share(
+                        text: nodeShareText(target),
+                        paths: NodeSharePolicy.localAssetPaths(blocks: nodeShareBlocks)
+                    )
+                }
+                .accessibilityIdentifier("button.page-share")
+                #else
                 ShareLink(item: nodeShareText(target)) {
                     Text("Share")
                 }
                 .accessibilityIdentifier("button.page-share")
+                #endif
                 Button("Delete", role: .destructive) {
                     pagePendingDeletion = target
                 }
@@ -3275,7 +3299,7 @@ struct AssetPreview: View {
     }
 
     private var fileButton: some View {
-        Button { onOpen?() } label: {
+        Button { openFile() } label: {
             HStack(spacing: 8) {
                 IconImage(name: presentationKind == .audio ? "audio" : "paperclip")
                     .frame(width: 18, height: 18)
@@ -3283,6 +3307,20 @@ struct AssetPreview: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func openFile() {
+        if let onOpen {
+            onOpen()
+            return
+        }
+        #if SKIP
+        guard let path = block.localPath, !path.isEmpty else { return }
+        AndroidAssetImporter.openFile(
+            path: path,
+            contentType: block.assetType ?? "application/octet-stream"
+        )
+        #endif
     }
 }
 
