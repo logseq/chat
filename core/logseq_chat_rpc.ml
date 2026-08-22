@@ -1263,6 +1263,10 @@ let discover_graphs session config =
   match session.send (Api.graphs_request config) with
   | Error message -> Error message
   | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
+    debug
+      "graph discovery failed status=%d body=%S"
+      response.Api.status
+      response.Api.body;
     Error ("Logseq graphs API returned HTTP " ^ string_of_int response.Api.status)
   | Ok response ->
     (try
@@ -1773,20 +1777,29 @@ let complete_pending_sync session payload =
          (match assoc "error" fields, assoc "status" fields with
           | Some (`String message), _ when not (String.equal message "") -> Ok (false, None)
           | _, Some (`Int status) ->
-            let accepted_t =
+            let rejected, accepted_t =
               match assoc "body" fields with
               | Some (`String body) ->
                 (try
                    match from_string body with
                    | `Assoc body_fields ->
-                     (match assoc "acceptedT" body_fields, assoc "t" body_fields with
-                      | Some (`Int accepted_t), _ | _, Some (`Int accepted_t) -> Some accepted_t
-                      | _ -> None)
-                   | _ -> None
-                 with _ -> None)
-              | _ -> None
+                     let rejected =
+                       assoc "type" body_fields = Some (`String "tx/reject")
+                     in
+                     let accepted_t =
+                       match assoc "acceptedT" body_fields, assoc "t" body_fields with
+                       | Some (`Int accepted_t), _ | _, Some (`Int accepted_t) ->
+                         Some accepted_t
+                       | _ -> None
+                     in
+                     rejected, accepted_t
+                   | _ -> false, None
+                 with _ -> false, None)
+              | _ -> false, None
             in
-            Ok (status >= 200 && status < 300, accepted_t)
+            Ok
+              ( status >= 200 && status < 300 && not rejected
+              , if rejected then None else accepted_t )
           | _ -> invalid "pending transport returned no HTTP status")
        | Some (`Int _) -> invalid "pending sync request id does not match"
        | _ -> invalid "pending sync completion requires id")

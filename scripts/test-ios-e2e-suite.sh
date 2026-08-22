@@ -24,6 +24,7 @@ flows=(
   .maestro/ios-outliner-drag.yaml
   .maestro/ios-graphs.yaml
   .maestro/ios-graphs-lifecycle.yaml
+  .maestro/ios-sync-graph-create-regression.yaml
 )
 
 if [[ ${LOGSEQ_CHAT_IOS_SKIP_BUILD:-0} != 1 ]]; then

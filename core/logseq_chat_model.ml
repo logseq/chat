@@ -262,14 +262,18 @@ let block_journal_metadata model block =
     else Some (string_attr model.db (block_ref block.page_id) "page/title" "", journal_day)
 ;;
 
-let is_recent_feed_block model block =
-  not (String.equal (String.trim block.title) "")
-  && block.page_id <> ""
+let is_journal_feed_block model block =
+  block.page_id <> ""
   &&
   match block_journal_metadata model block with
   | Some (_, journal_day) ->
     journal_day <= journal_day_for_ms (int_of_float (Unix.gettimeofday () *. 1000.0))
   | None -> false
+;;
+
+let is_recent_feed_block model block =
+  not (String.equal (String.trim block.title) "")
+  && is_journal_feed_block model block
 ;;
 
 let compare_recent left right =
@@ -327,11 +331,14 @@ let outliner_preorder ~page_id blocks =
   ordered @ remaining
 ;;
 
-let journal_blocks model blocks =
+let journal_blocks ?(include_empty = false) model blocks =
   let by_page = Hashtbl.create 8 in
   List.iter
     (fun block ->
-      if is_recent_feed_block model block
+      if
+        (if include_empty
+         then is_journal_feed_block model block
+         else is_recent_feed_block model block)
       then (
         let page_blocks = Option.value (Hashtbl.find_opt by_page block.page_id) ~default:[] in
         Hashtbl.replace by_page block.page_id (block :: page_blocks)))
@@ -702,8 +709,8 @@ let visible_blocks model = recent_blocks model
 
 let visible_from model blocks =
   blocks
-  |> List.filter (is_recent_feed_block model)
+  |> List.filter (is_journal_feed_block model)
   |> List.sort compare_recent
   |> take 100
-  |> journal_blocks model
+  |> journal_blocks ~include_empty:true model
 ;;

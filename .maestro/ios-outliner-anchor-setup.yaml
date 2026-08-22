@@ -16,8 +16,6 @@ appId: com.logseq.chat
 - tapOn: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible:
     id: "button.composer.expand"
-- tapOn:
-    id: "button.content-mode"
 - assertVisible:
     id: "list.outliner"
 - scrollUntilVisible:

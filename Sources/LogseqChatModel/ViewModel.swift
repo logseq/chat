@@ -752,6 +752,12 @@ private struct CreateSyncGraphPayload: Encodable {
         #endif
     }
 
+    public func deferSnapshotRefreshWhileEditing() {
+        if lastError?.code == "snapshot_required" {
+            lastError = nil
+        }
+    }
+
     private func dispatchEncodedAndWait<T: Encodable>(
         _ action: String,
         _ value: T,

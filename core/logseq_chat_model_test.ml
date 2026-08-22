@@ -81,6 +81,20 @@ let assert_recent_blocks_excludes_pages_and_empty_blocks () =
   | blocks -> failwith (Printf.sprintf "expected one recent block, got %d" (List.length blocks))
 ;;
 
+let assert_visible_graph_blocks_keep_empty_outliner_rows () =
+  let model = Logseq_chat_model.create () in
+  let empty =
+    { (block ~uuid:"empty-block" ~title:"" ~page_id:"journal-1" ~created_at:100) with
+      journal = Some ("Aug 22nd, 2026", 20260822)
+    }
+  in
+  match Logseq_chat_model.visible_from model [ empty ] with
+  | [ block ] -> assert_equal "editable empty graph block" "empty-block" block.uuid
+  | blocks ->
+    failwith
+      (Printf.sprintf "expected one editable empty graph block, got %d" (List.length blocks))
+;;
+
 let assert_recent_blocks_require_a_current_or_past_journal_page () =
   let model = Logseq_chat_model.create () in
   let block uuid page_id created_at =
@@ -367,6 +381,7 @@ let () =
   assert_recent_blocks_limit_and_order ();
   assert_refresh_preserves_existing_created_at_when_remote_omits_it ();
   assert_recent_blocks_excludes_pages_and_empty_blocks ();
+  assert_visible_graph_blocks_keep_empty_outliner_rows ();
   assert_recent_blocks_require_a_current_or_past_journal_page ();
   assert_journal_blocks_follow_page_tree_and_outliner_order ();
   assert_partial_search_result_preserves_journal_relation ();

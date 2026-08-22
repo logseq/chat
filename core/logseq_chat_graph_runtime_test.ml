@@ -803,6 +803,14 @@ let () =
         | Some uuid -> uuid
         | None -> fail "opening a graph creates today's journal"
       in
+      let expected_journal_uuid =
+        Printf.sprintf
+          "00000001-%04d-%04d-0000-000000000000"
+          (today / 10_000)
+          (today mod 10_000)
+      in
+      assert_bool "today's journal uses Logseq's canonical UUID"
+        (String.equal expected_page expected_journal_uuid);
       assert_bool "a new journal contains one editable empty block"
         (match Runtime.blocks_for_page runtime expected_page with
          | [ block ] -> String.equal block.Logseq_chat_model.title ""
@@ -836,4 +844,40 @@ let () =
       assert_bool "an authoritative today journal is not recreated"
         (Runtime.journal_page_uuid runtime ~journal_day:today = Some "existing-today"
          && Runtime.pending_operations runtime = []))
+;;
+
+let () =
+  let path = Filename.temp_file "logseq-chat-partial-today-journal" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      let conn = conn_from_db (empty_db ~schema ()) in
+      let runtime = Runtime.create ~auto_create_today:true ~path ~server_t:42 conn in
+      let operation, page_uuid, block_uuid, title, journal_day =
+        match Ops.list ~path with
+        | [ ({ intent = Create_journal { page_uuid; block_uuid; title; journal_day; _ }; _ }
+              as operation) ] ->
+          operation, page_uuid, block_uuid, title, journal_day
+        | _ -> fail "today journal operation is missing"
+      in
+      assert_bool "today journal transport is accepted"
+        (Runtime.stage runtime { operation with state = Accepted 43 } = Ok ());
+      let page_only =
+        empty_db ~schema ()
+        |> db_with
+             [ Add (Entity_id 1, "block/uuid", Uuid page_uuid)
+             ; Add (Entity_id 1, "block/title", String title)
+             ; Add (Entity_id 1, "block/name", String (String.lowercase_ascii title))
+             ; Add (Entity_id 1, "block/journal-day", Int journal_day)
+             ]
+      in
+      ignore (reset_conn conn page_only);
+      Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+      assert_bool "accepted partial journal remains pending until its first block arrives"
+        (List.length (Ops.list ~path) = 1);
+      assert_bool "accepted partial journal keeps its first block visible"
+        (match Runtime.blocks_for_page runtime page_uuid with
+         | [ block ] -> String.equal block.Logseq_chat_model.uuid block_uuid
+         | _ -> false))
 ;;

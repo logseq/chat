@@ -267,7 +267,6 @@ struct ContentView: View {
     @AppStorage("logseq.baseURL") private var baseURL = "http://127.0.0.1:8787"
     @AppStorage("logseq.selectedGraphId") private var selectedGraphID = ""
     @AppStorage("logseq.composerDraft") private var persistedDraft = ""
-    @AppStorage("logseq.contentMode") private var contentModeRaw = LogseqContentMode.chat.rawValue
     @AppStorage("logseq.appearance") private var appearance = "system"
     @FocusState private var composerFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -789,7 +788,6 @@ struct ContentView: View {
             headerTitle
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            contentModeControl
             syncIndicatorControl
             settingsControl
         }
@@ -1331,8 +1329,7 @@ struct ContentView: View {
     }
 
     private var contentMode: LogseqContentMode {
-        get { LogseqContentMode(rawValue: contentModeRaw) ?? .chat }
-        nonmutating set { contentModeRaw = newValue.rawValue }
+        LogseqContentMode.defaultMode
     }
 
     private var presentedContentMode: LogseqContentMode {
@@ -1504,7 +1501,13 @@ struct ContentView: View {
                         baseURL: baseURL,
                         accessToken: freshAccessToken
                     )
-                    if snapshotRequired {
+                    let shouldRefreshSnapshot = LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
+                        snapshotRequired: snapshotRequired,
+                        isEditingOutlinerBlock: store.snapshot.outlinerState.editing != nil
+                    )
+                    if snapshotRequired && !shouldRefreshSnapshot {
+                        store.deferSnapshotRefreshWhileEditing()
+                    } else if shouldRefreshSnapshot {
                         guard let refreshedToken = try? await authentication.accessToken() else { return }
                         guard await store.bootstrapSelectedGraph(
                             graphID: graphID,
@@ -1581,7 +1584,6 @@ struct ContentView: View {
                 .buttonStyle(.plain)
             headerTitle
             Spacer()
-            contentModeControl
             connectionControls
         }
         .padding(.horizontal, 20)
@@ -1711,25 +1713,6 @@ struct ContentView: View {
         .foregroundStyle(.primary)
         .accessibilityLabel(syncIndicatorLabel)
         .accessibilityIdentifier(syncIndicatorAccessibilityIdentifier)
-    }
-
-    @ViewBuilder private var contentModeControl: some View {
-        if LogseqContentMode.supportsModeSwitch(
-            hasSelectedPage: store.snapshot.selectedPage != nil
-        ) {
-            Button {
-                finishOutlinerEditing()
-                composerExpanded = false
-                composerFocused = false
-                contentMode = contentMode.toggled
-            } label: {
-                ContentModeIcon(mode: contentMode.toggled)
-            }
-            .frame(width: 44, height: 44)
-            .buttonStyle(.plain)
-            .accessibilityLabel(contentMode == .chat ? "Show outliner" : "Show chat")
-            .accessibilityIdentifier("button.content-mode")
-        }
     }
 
     private var settingsControl: some View {
@@ -2857,36 +2840,6 @@ private struct BlockRow: View {
         #else
         Text(verbatim: block.title.isEmpty ? " " : block.title)
         #endif
-    }
-}
-
-private struct ContentModeIcon: View {
-    let mode: LogseqContentMode
-
-    var body: some View {
-        Group {
-            if mode == .outliner {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(0..<3, id: \.self) { _ in
-                        HStack(spacing: 4) {
-                            Circle().frame(width: 4, height: 4)
-                            Capsule().frame(width: 14, height: 2)
-                        }
-                    }
-                }
-            } else {
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(lineWidth: 1.8)
-                    .frame(width: 21, height: 17)
-                    .overlay {
-                        VStack(spacing: 3) {
-                            Capsule().frame(width: 12, height: 1.5)
-                            Capsule().frame(width: 9, height: 1.5)
-                        }
-                    }
-            }
-        }
-        .frame(width: 22, height: 22)
     }
 }
 

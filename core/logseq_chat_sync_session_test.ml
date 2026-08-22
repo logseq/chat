@@ -227,3 +227,57 @@ let () =
           fail "encrypted snapshot" "obsolete ciphertext row remained in local SQLite"
         | _ -> ()))
 ;;
+
+let () =
+  let open Datascript in
+  let one ?value_type () =
+    { unique = None
+    ; cardinality = One
+    ; value_type
+    ; indexed = false
+    ; is_component = false
+    ; no_history = false
+    ; doc = None
+    ; tuple_attrs = None
+    ; tuple_types = None
+    }
+  in
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "logseq.property/built-in?", one ()
+    ]
+  in
+  let db =
+    Datascript.empty_db ~schema ()
+    |> Datascript.db_with
+         [ Add (Entity_id 1, "block/title", String "cipher:Private title")
+         ; Add
+             ( Entity_id 2
+             , "block/uuid"
+             , Uuid "00000002-0000-0000-0000-000000000001" )
+         ; Add (Entity_id 2, "block/title", String "root tag")
+         ]
+  in
+  let decrypt value =
+    if String.starts_with ~prefix:"cipher:" value
+    then Ok (String.sub value 7 (String.length value - 7))
+    else Error "expected encrypted snapshot title"
+  in
+  let plaintext =
+    expect_ok
+      "preserve canonical built-in titles in encrypted snapshots"
+      (Session.plaintext_snapshot_db decrypt db)
+  in
+  let title eid =
+    Datascript.datoms plaintext Datascript.Eavt ~e:eid ~a:"block/title" ()
+    |> Seq.find_map (fun datom ->
+      match datom.Datascript.v with
+      | String value -> Some value
+      | _ -> None)
+  in
+  if title 1 <> Some "Private title"
+  then fail "encrypted snapshot" "user title was not decrypted";
+  if title 2 <> Some "root tag"
+  then fail "encrypted snapshot" "canonical built-in title was treated as ciphertext"
+;;

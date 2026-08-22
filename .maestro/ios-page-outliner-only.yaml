@@ -23,5 +23,5 @@ appId: com.logseq.chat
     id: "button.sidebar"
 - tapOn:
     id: "link.sidebar.journals"
-- assertVisible:
+- assertNotVisible:
     id: "button.content-mode"

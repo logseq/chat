@@ -113,6 +113,7 @@ import LogseqChatModel
 
     @Test func iOS26GroupsOnlySyncAndSettingsInTheNativeToolbar() {
         #expect(HeaderControlPolicy.usesNativeToolbarGroup)
+        #expect(!HeaderControlPolicy.showsContentModeControl)
         #expect(HeaderControlPolicy.trailingGroupActionCount == 2)
     }
 
@@ -123,6 +124,7 @@ import LogseqChatModel
         #expect(SidebarMenuIconPolicy.usesPrimaryStyle)
         #expect(SidebarMenuIconPolicy.usesCircularButtonShape)
         #expect(!SidebarMenuIconPolicy.addsExplicitGlassStyleInsideToolbar)
+        #expect(SidebarMenuIconPolicy.topLineWidth > SidebarMenuIconPolicy.bottomLineWidth)
     }
 
     @Test func offlineSSEFailuresStayOutOfContentErrorBanners() {

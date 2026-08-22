@@ -52,6 +52,15 @@ struct LogseqGraphSSETransportBuffer {
 }
 #endif
 
+public enum LogseqGraphSnapshotRefreshPolicy {
+    public static func shouldRefresh(
+        snapshotRequired: Bool,
+        isEditingOutlinerBlock: Bool
+    ) -> Bool {
+        snapshotRequired && !isEditingOutlinerBlock
+    }
+}
+
 public enum LogseqGraphSyncHTTP {
     private static func apiRoot(_ baseURL: String) throws -> URL {
         guard var root = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {

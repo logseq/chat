@@ -339,6 +339,21 @@ private let testEmptySnapshotJSON = """
     }
     #endif
 
+    @Test func graphSnapshotRefreshWaitsForOutlinerEditingToFinish() {
+        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
+            snapshotRequired: true,
+            isEditingOutlinerBlock: true
+        ))
+        #expect(LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
+            snapshotRequired: true,
+            isEditingOutlinerBlock: false
+        ))
+        #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
+            snapshotRequired: false,
+            isEditingOutlinerBlock: false
+        ))
+    }
+
     #if !SKIP
     @Test func sseTransportPreservesBlankLineFrameBoundary() throws {
         var buffer = LogseqGraphSSETransportBuffer()
@@ -1887,6 +1902,7 @@ private let testEmptySnapshotJSON = """
     }
 
     @Test func contentModeTogglesBetweenChatAndOutliner() {
+        #expect(LogseqContentMode.defaultMode == .outliner)
         #expect(LogseqContentMode.chat.toggled == .outliner)
         #expect(LogseqContentMode.outliner.toggled == .chat)
         #expect(LogseqContentMode(rawValue: "unknown") == nil)

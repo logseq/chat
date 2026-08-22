@@ -65,6 +65,15 @@ let has_tag db ~source ~target =
   | _ -> false
 ;;
 
+let has_ident_tag db ~source ~target =
+  match entid db "block/uuid" (Uuid source), entid db "db/ident" (Keyword target) with
+  | Some source_eid, Some target_eid ->
+    datoms db Eavt ~e:source_eid ~a:"block/tags" ()
+    |> Seq.exists (fun datom ->
+      Logseq_chat_datascript_value.ref_eid db "block/tags" datom.v = Some target_eid)
+  | _ -> false
+;;
+
 let operation id base_t intent =
   Ops.{ operation_id = id; base_t; state = Queued; intent }
 ;;
@@ -181,6 +190,65 @@ let () =
      && not
           (Projection.satisfied authoritative
              (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })))
+;;
+
+let () =
+  let journal_day = 20260822 in
+  let schema =
+    List.map
+      (fun (attr, definition) ->
+        if String.equal attr "block/journal-day"
+        then attr, { definition with unique = Some Identity }
+        else attr, definition)
+      schema
+  in
+  let page_only =
+    empty_db ~schema ()
+    |> db_with
+         [ Add (Entity_id 20, "block/uuid", Uuid "today-page")
+         ; Add (Entity_id 20, "block/name", String "aug 22nd, 2026")
+         ; Add (Entity_id 20, "block/title", String "Aug 22nd, 2026")
+         ; Add (Entity_id 20, "block/journal-day", Int journal_day)
+         ]
+  in
+  let intent =
+    Ops.Create_journal
+      { page_uuid = "today-page"
+      ; block_uuid = "today-block"
+      ; title = "Aug 22nd, 2026"
+      ; journal_day
+      ; created_at = 99
+      }
+  in
+  assert_bool "partial journal fixture contains the authoritative page"
+    (Option.is_some (entid page_only "block/journal-day" (Int journal_day)));
+  assert_bool "partial journal fixture does not contain the first block"
+    (Option.is_none (entid page_only "block/uuid" (Uuid "today-block")));
+  let projected = Projection.build ~server_t:1 page_only [ operation "op-journal" 0 intent ] in
+  assert_bool "partially applied journal creation still projects its first block"
+    (Option.is_some (entid projected.db "block/uuid" (Uuid "today-block")));
+  assert_bool "journal creation is not satisfied until its first block exists"
+    (not (Projection.satisfied page_only intent))
+;;
+
+let () =
+  let journal_day = 20260822 in
+  let authoritative =
+    empty_db ~schema ()
+    |> db_with [ Add (Entity_id 1, "db/ident", Keyword "logseq.class/Journal") ]
+  in
+  let intent =
+    Ops.Create_journal
+      { page_uuid = "today-page"
+      ; block_uuid = "today-block"
+      ; title = "Aug 22nd, 2026"
+      ; journal_day
+      ; created_at = 99
+      }
+  in
+  let projected = Projection.build ~server_t:1 authoritative [ operation "op-journal" 0 intent ] in
+  assert_bool "journal creation tags the page with the canonical Logseq Journal class"
+    (has_ident_tag projected.db ~source:"today-page" ~target:"logseq.class/Journal")
 ;;
 
 let () =

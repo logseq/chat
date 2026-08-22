@@ -1,0 +1,51 @@
+appId: com.logseq.chat
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "Enter your username"
+    commands:
+      - tapOn: "Enter your username"
+      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - tapOn: "Enter your password"
+      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - tapOn:
+          text: "Sign In"
+          index: 1
+- extendedWaitUntil:
+    visible: "Choose a graph"
+    timeout: 60000
+- tapOn: "Add sync graph"
+- tapOn:
+    id: "field.graph-name"
+- inputText: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn:
+    id: "button.graph-add.confirm"
+- extendedWaitUntil:
+    visible: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"
+    timeout: 60000
+- assertNotVisible: "Add sync graph"
+- extendedWaitUntil:
+    visible: "Aug 22nd, 2026"
+    timeout: 60000
+- assertNotVisible: "No cached blocks"
+- assertNotVisible: "snapshot_download_failed"
+- assertVisible:
+    id: "list.outliner"
+- assertNotVisible:
+    id: "button.content-mode"
+- tapOn: "Edit block Untitled block"
+- inputText: "First synced block"
+- assertVisible: "First synced block"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn: "Hide keyboard"
+- tapOn: "Edit block First synced block"
+- eraseText: 100
+- inputText: "Edited synced block"
+- tapOn: "Hide keyboard"
+- assertVisible: "Edited synced block"
+- extendedWaitUntil:
+    visible:
+      id: "sync.connected"
+    timeout: 10000

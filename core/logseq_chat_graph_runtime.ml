@@ -297,7 +297,11 @@ let ensure_today_journal runtime =
         ; state = Queued
         ; intent =
             Create_journal
-              { page_uuid = fresh_uuid ()
+              { page_uuid =
+                  Printf.sprintf
+                    "00000001-%04d-%04d-0000-000000000000"
+                    (journal_day / 10_000)
+                    (journal_day mod 10_000)
               ; block_uuid = fresh_uuid ()
               ; title = journal_day_title journal_day
               ; journal_day
@@ -343,8 +347,6 @@ let rebase runtime ~server_t ~operation_ids =
     | _ when
         Hashtbl.mem confirmed operation.operation_id
         && Projection.satisfied authoritative operation.intent ->
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
-    | Ops.Accepted accepted_t when accepted_t <= server_t ->
       Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
     | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent ->
       Ops.remove ~path:runtime.path ~operation_id:operation.operation_id

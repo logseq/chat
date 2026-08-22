@@ -7,12 +7,6 @@ appId: com.logseq.chat
     timeout: 30000
 - runFlow:
     when:
-      visible: "Show chat"
-    commands:
-      - tapOn:
-          id: "button.content-mode"
-- runFlow:
-    when:
       visible:
         id: "button.composer.expand"
     commands:
@@ -23,8 +17,6 @@ appId: com.logseq.chat
 - inputText: "{{youtube dQw4w9WgXcQ}}"
 - tapOn:
     id: "button.send"
-- tapOn:
-    text: "Show outliner"
 - scrollUntilVisible:
     element:
       id: "block.rich.video"

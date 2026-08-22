@@ -4,6 +4,8 @@ public enum LogseqContentMode: String, Codable, Sendable {
     case chat
     case outliner
 
+    public static let defaultMode: Self = .outliner
+
     public var toggled: Self {
         self == .chat ? .outliner : .chat
     }

@@ -64,9 +64,25 @@ let protected_attr attr =
 ;;
 
 let plaintext_snapshot_db decrypt db =
+  let built_in_entities = Hashtbl.create 128 in
+  Datascript.datoms db Datascript.Aevt ~a:"block/uuid" ()
+  |> Seq.iter (fun datom ->
+    match datom.Datascript.v with
+    | Datascript.Uuid uuid
+      when String.starts_with ~prefix:"00000002-" uuid
+           || String.starts_with ~prefix:"00000004-" uuid ->
+      Hashtbl.replace built_in_entities datom.e ()
+    | _ -> ());
+  Datascript.datoms db Datascript.Aevt ~a:"logseq.property/built-in?" ()
+  |> Seq.iter (fun datom ->
+    match datom.Datascript.v with
+    | Datascript.Bool true -> Hashtbl.replace built_in_entities datom.e ()
+    | _ -> ());
   let rec loop datoms = function
     | [] -> Ok (Datascript.init_db ~schema:db.Datascript.schema (List.rev datoms))
-    | datom :: rest when protected_attr datom.Datascript.a ->
+    | datom :: rest
+      when protected_attr datom.Datascript.a
+           && not (Hashtbl.mem built_in_entities datom.e) ->
       (match datom.v with
        | Datascript.String ciphertext ->
          bind (decrypt ciphertext) (fun plaintext ->

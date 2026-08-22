@@ -3,12 +3,9 @@ appId: com.logseq.chat
 - runFlow:
     file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
 - launchApp
-- tapOn:
-    id: "button.content-mode"
 - assertVisible:
     id: "list.outliner"
 - tapOn: "Edit block Untitled block"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "[[]]"
-

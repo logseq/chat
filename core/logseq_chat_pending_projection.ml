@@ -148,6 +148,14 @@ let uuid_for_eid db eid =
   | _ -> None
 ;;
 
+let journal_page_eid db journal_day =
+  datoms db Aevt ~a:"block/journal-day" ()
+  |> Seq.find_map (fun datom ->
+    match datom.v with
+    | Int day when day = journal_day -> Some datom.e
+    | _ -> None)
+;;
+
 let outliner_block db uuid =
   match string_value (one_value db (lookup uuid) "block/title"),
         one_value db (lookup uuid) "block/page",
@@ -348,12 +356,23 @@ let rec compile db = function
             }
         ]
   | Create_journal { page_uuid; block_uuid; title; journal_day; created_at } ->
-    if Option.is_some (entid db "block/journal-day" (Int journal_day))
-    then Ok []
-    else
-      let page_id = Temp_id ("pending/" ^ page_uuid) in
-      Ok
-        [ Entity
+    let existing_page_eid = journal_page_eid db journal_day in
+    let page_ref, page_tx =
+      match existing_page_eid with
+      | Some eid -> Entity_id eid, []
+      | None ->
+        let page_id = Temp_id ("pending/" ^ page_uuid) in
+        let journal_tag =
+          if Option.is_some (entid db "db/ident" (Keyword "logseq.class/Journal"))
+          then
+            [ ( "block/tags"
+              , Many_values
+                  [ Ref_to (Lookup_ref ("db/ident", Keyword "logseq.class/Journal")) ] )
+            ]
+          else []
+        in
+        ( page_id
+        , [ Entity
             { db_id = Some page_id
             ; attrs =
                 [ "block/uuid", One_value (Uuid page_uuid)
@@ -363,20 +382,36 @@ let rec compile db = function
                 ; "block/created-at", One_value (Int created_at)
                 ; "block/updated-at", One_value (Int created_at)
                 ]
+                @ journal_tag
             }
-        ; Entity
+          ] )
+    in
+    (match entid db "block/uuid" (Uuid block_uuid) with
+     | Some block_eid ->
+       let belongs_to_page attr =
+         match existing_page_eid, one_value db (Entity_id block_eid) attr with
+         | Some page_eid, Some value -> Ds_value.ref_eid db attr value = Some page_eid
+         | _ -> false
+       in
+       if belongs_to_page "block/page" && belongs_to_page "block/parent"
+       then Ok page_tx
+       else Error "journal block UUID already exists outside the journal"
+     | None ->
+       Ok
+         (page_tx
+          @ [ Entity
             { db_id = Some (Temp_id ("pending/" ^ block_uuid))
             ; attrs =
                 [ "block/uuid", One_value (Uuid block_uuid)
                 ; "block/title", One_value (String "")
-                ; "block/page", One_value (Ref_to page_id)
-                ; "block/parent", One_value (Ref_to page_id)
+                ; "block/page", One_value (Ref_to page_ref)
+                ; "block/parent", One_value (Ref_to page_ref)
                 ; "block/order", One_value (String "a0")
                 ; "block/created-at", One_value (Int created_at)
                 ; "block/updated-at", One_value (Int created_at)
                 ]
             }
-        ]
+          ]))
   | Add_tag { uuid; tag_uuid } ->
     (match entid db "block/uuid" (Uuid uuid), entid db "block/uuid" (Uuid tag_uuid) with
      | Some block_eid, Some tag_eid ->
@@ -420,8 +455,16 @@ let rec satisfied db = function
   | Delete_blocks { uuids } ->
     List.for_all (fun uuid -> Option.is_none (entid db "block/uuid" (Uuid uuid))) uuids
   | Create_tag { uuid; _ } -> Option.is_some (entid db "block/uuid" (Uuid uuid))
-  | Create_journal { journal_day; _ } ->
-    Option.is_some (entid db "block/journal-day" (Int journal_day))
+  | Create_journal { block_uuid; journal_day; _ } ->
+    (match journal_page_eid db journal_day, entid db "block/uuid" (Uuid block_uuid) with
+     | Some page_eid, Some block_eid ->
+       let references_page attr =
+         match one_value db (Entity_id block_eid) attr with
+         | Some value -> Ds_value.ref_eid db attr value = Some page_eid
+         | None -> false
+       in
+       references_page "block/page" && references_page "block/parent"
+     | _ -> false)
   | Add_tag { uuid; tag_uuid } ->
     (match entid db "block/uuid" (Uuid uuid), entid db "block/uuid" (Uuid tag_uuid) with
      | Some block_eid, Some tag_eid -> has_ref db block_eid "block/tags" tag_eid

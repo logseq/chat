@@ -55,6 +55,7 @@ enum AppHeaderPolicy {
 enum HeaderControlPolicy {
     static let settingsSystemImage = "ellipsis.circle"
     static let usesNativeToolbarGroup = true
+    static let showsContentModeControl = false
     static let trailingGroupActionCount = 2
 }
 
@@ -65,6 +66,8 @@ enum SidebarMenuIconPolicy {
     static let usesPrimaryStyle = true
     static let usesCircularButtonShape = true
     static let addsExplicitGlassStyleInsideToolbar = false
+    static let topLineWidth: CGFloat = 22.0
+    static let bottomLineWidth: CGFloat = 15.0
 }
 
 enum AppErrorPresentationPolicy {

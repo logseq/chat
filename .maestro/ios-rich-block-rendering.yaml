@@ -5,13 +5,8 @@ appId: com.logseq.chat
 - launchApp
 - assertVisible:
     id: "button.sidebar"
-- runFlow:
-    when:
-      visible:
-        id: "button.composer.expand"
-    commands:
-      - tapOn:
-          id: "button.content-mode"
+- assertVisible:
+    id: "list.outliner"
 - scrollUntilVisible:
     element:
       id: "block.rich.quote"

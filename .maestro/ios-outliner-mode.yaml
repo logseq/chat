@@ -5,20 +5,9 @@ appId: com.logseq.chat
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "button.content-mode"
+      id: "list.outliner"
     timeout: 30000
-- runFlow:
-    when:
-      notVisible:
-        id: "list.outliner"
-    commands:
-      - tapOn:
-          id: "button.content-mode"
 - assertVisible:
     id: "list.outliner"
-- assertVisible: "Show chat"
-- tapOn:
-    id: "button.content-mode"
 - assertNotVisible:
-    id: "list.outliner"
-- assertVisible: "Show outliner"
+    id: "button.content-mode"

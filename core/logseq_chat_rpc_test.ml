@@ -1959,6 +1959,32 @@ let () =
 ;;
 
 let () =
+  let staged = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ remote_block "remote" "Old" ])
+      ~stage_operation:(fun operation -> staged := !staged @ [ operation ]; Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote\",\"operationId\":\"op-rejected\",\"expectedTitle\":\"Old\",\"title\":\"Pending\",\"status\":null}"}}|});
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/reject\\\",\\\"reason\\\":\\\"stale\\\",\\\"t\\\":43}\",\"error\":null}"}}|});
+  match List.rev !staged with
+  | { Logseq_chat_pending_ops.operation_id = "op-rejected"; state = Retryable; _ } :: _ -> ()
+  | _ -> failwith "a tx/reject response must remain retryable despite HTTP 200"
+;;
+
+let () =
   let persisted = ref [] in
   let stage operation =
     persisted :=
