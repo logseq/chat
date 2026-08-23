@@ -1,0 +1,57 @@
+appId: com.logseq.chat
+---
+- launchApp
+- runFlow:
+    when:
+      visible:
+        id: "screen.graphs"
+    commands:
+      - tapOn:
+          text: "${LOGSEQ_CHAT_E2E_GRAPH_NAME}"
+          index: 0
+- extendedWaitUntil:
+    visible:
+      id: "list.outliner"
+    timeout: 60000
+- tapOn: "Edit block Untitled block"
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- inputText: "E2E inline editor ${LOGSEQ_CHAT_E2E_RUN_ID}"
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- inputText: "E2E inline editor tail"
+- assertVisible: "E2E inline editor tail"
+- pressKey: BACKSPACE
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertNotVisible: "outliner_effect_failed"
+- assertNotVisible: "invalid pending sync completion"
+- tapOn: "Hide keyboard"
+- assertNotVisible:
+    id: "field.outliner.block.*"
+- tapOn: "Edit block E2E inline editor tai"
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"

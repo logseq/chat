@@ -184,6 +184,29 @@ import Testing
         #expect(OutlinerLayoutMetrics.bulletContentSpacing == 2)
     }
 
+    @Test func editorVisibilityUpdatesOnlyForFocusOrViewportChanges() {
+        #expect(OutlinerEditorViewportPolicy.shouldEnsureVisible(
+            previousBlockID: nil,
+            blockID: "block",
+            viewportChanged: false
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEnsureVisible(
+            previousBlockID: "block",
+            blockID: "block",
+            viewportChanged: false
+        ))
+        #expect(OutlinerEditorViewportPolicy.shouldEnsureVisible(
+            previousBlockID: "block",
+            blockID: "block",
+            viewportChanged: true
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEnsureVisible(
+            previousBlockID: "block",
+            blockID: nil,
+            viewportChanged: true
+        ))
+    }
+
     @Test func olderJournalPaginationIsExplicitAndAccessible() {
         #expect(OutlinerPaginationPolicy.buttonTitle == "Load earlier journals")
         #expect(OutlinerPaginationPolicy.accessibilityIdentifier == "button.outliner.load-older-journals")

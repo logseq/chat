@@ -705,15 +705,26 @@ let rec project_outliner_intent blocks = function
          (fun (block : Model.block) ->
            if String.equal block.uuid uuid then { block with title = before } else block)
          blocks
-       @ [ { source with
-             uuid = new_uuid
-           ; title = after
-           ; order = Some new_order
-           ; created_at
-           ; updated_at = created_at
-           ; sync_status = "pending"
-           ; status = None
-           }
+       @ [ Model.
+             { uuid = new_uuid
+             ; title = after
+             ; page_id = source.page_id
+             ; parent_id = source.parent_id
+             ; order = Some new_order
+             ; created_at
+             ; updated_at = created_at
+             ; sync_status = "pending"
+             ; tags = []
+             ; references = []
+             ; breadcrumbs = []
+             ; status = None
+             ; is_asset = false
+             ; asset_type = None
+             ; asset_size = None
+             ; asset_checksum = None
+             ; local_path = None
+             ; journal = source.journal
+             }
          ])
   | Merge_backward { uuid; title; previous_uuid; merged_title; _ } ->
     let previous_title =

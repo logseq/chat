@@ -274,6 +274,10 @@ private final class FocusRetainingTextView: UITextView {
 
     private func fulfillPendingFocus() {
         guard focusPending, window != nil else { return }
+        if becomeFirstResponder() {
+            focusPending = false
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.focusPending, self.window != nil else { return }
             if self.becomeFirstResponder() {

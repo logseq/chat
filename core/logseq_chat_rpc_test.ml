@@ -3366,6 +3366,14 @@ let () =
     ; parent_id = Some page.uuid
     ; order = Some "a0"
     ; status = Some todo
+    ; tags = [ { uuid = "tag-card"; title = "Card" } ]
+    ; references = [ { uuid = "reference"; title = "Reference" } ]
+    ; breadcrumbs = [ { uuid = "ancestor"; title = "Ancestor" } ]
+    ; is_asset = true
+    ; asset_type = Some "image/jpeg"
+    ; asset_size = Some 42
+    ; asset_checksum = Some "checksum"
+    ; local_path = Some "/tmp/source.jpg"
     }
   in
   let session =
@@ -3403,7 +3411,15 @@ let () =
   | [ fields ] ->
     (match assoc "status" fields with
      | Some `Null | None -> ()
-     | _ -> failwith "a block created from a TODO block must not inherit its task status")
+     | _ -> failwith "a block created from a TODO block must not inherit its task status");
+    if required_list "tags" fields <> []
+    then failwith "a split block must not inherit tags";
+    if required_list "references" fields <> []
+    then failwith "a split block must not inherit references";
+    if required_list "breadcrumbs" fields <> []
+    then failwith "a split block must not inherit breadcrumbs";
+    if required_bool "isAsset" fields
+    then failwith "a split block must not inherit asset metadata"
   | _ -> failwith "splitting a TODO block must return exactly one new block"
 ;;
 

@@ -502,6 +502,17 @@ enum OutlinerLayoutMetrics {
     }
 }
 
+enum OutlinerEditorViewportPolicy {
+    static func shouldEnsureVisible(
+        previousBlockID: String?,
+        blockID: String?,
+        viewportChanged: Bool
+    ) -> Bool {
+        guard let blockID else { return false }
+        return viewportChanged || previousBlockID != blockID
+    }
+}
+
 enum OutlinerPaginationPolicy {
     static let buttonTitle = "Load earlier journals"
     static let accessibilityIdentifier = "button.outliner.load-older-journals"

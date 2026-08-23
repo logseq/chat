@@ -14,6 +14,10 @@ appId: com.logseq.chat
 - pressKey: ENTER
 - pressKey: ENTER
 - pressKey: ENTER
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
 - pressKey: BACKSPACE
 - pressKey: BACKSPACE
 - pressKey: BACKSPACE

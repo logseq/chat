@@ -34,8 +34,6 @@ struct OutlinerView: View {
     let showsEmptyPlaceholder: Bool
     let onAddFirstBlock: (() -> Void)?
     let isJournalHome: Bool
-    @State private var retainedEditorAnchorID: String? = nil
-
     var body: some View {
         GeometryReader { proxy in
             outlinerContent(viewportHeight: proxy.size.height)
@@ -47,7 +45,7 @@ struct OutlinerView: View {
         let visibleSections = sections.filter { section in
             section.blocks.contains(where: { rowsByID[$0.uuid] != nil })
         }
-        let content = ScrollView {
+        let scrollContent = ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 Color.clear.frame(height: topPadding)
                 if let error {
@@ -105,58 +103,43 @@ struct OutlinerView: View {
         }
         .accessibilityIdentifier("list.outliner")
         #if !SKIP && os(iOS)
-        content.overlayPreferenceValue(OutlinerEditorAnchorPreferenceKey.self) { anchors in
-            GeometryReader { proxy in
-                if let editing,
-                   let anchor = anchors[editing.uuid]
-                    ?? retainedEditorAnchorID.flatMap({ anchors[$0] }) {
-                    let frame = proxy[anchor]
-                    OutlinerInlineEditor(
-                        text: editing.title,
-                        blockID: editing.uuid,
-                        desiredCaretUTF16Offset: editing.caretUTF16Offset,
-                        onTextChange: { title, caret in
-                            sendEvent(LogseqOutlinerEvent(
-                                type: "textChanged",
-                                title: title,
-                                caretUTF16Offset: caret
-                            ))
-                        },
-                        onReturn: { title, caret in
-                            sendEvent(LogseqOutlinerEvent(
-                                type: "returnPressed",
-                                uuid: editing.uuid,
-                                title: title,
-                                caretUTF16Offset: caret
-                            ))
-                        },
-                        onBackspace: { title, selectionLength in
-                            sendEvent(LogseqOutlinerEvent(
-                                type: "backspacePressed",
-                                uuid: editing.uuid,
-                                title: title,
-                                selectionLength: selectionLength
-                            ))
-                        },
-                        onCaretChange: { offset in
-                            sendEvent(LogseqOutlinerEvent(
-                                type: "caretMoved",
-                                caretUTF16Offset: offset
-                            ))
-                        }
-                    )
-                    .frame(width: frame.width, height: max(frame.height, 24), alignment: .topLeading)
-                    .position(x: frame.midX, y: frame.midY)
+        let content = ScrollViewReader { proxy in
+            scrollContent
+                .onChange(of: editing?.uuid) { previousID, currentID in
+                    if OutlinerEditorViewportPolicy.shouldEnsureVisible(
+                        previousBlockID: previousID,
+                        blockID: currentID,
+                        viewportChanged: false
+                    ), let currentID {
+                        ensureEditorVisible(currentID, proxy: proxy)
+                    }
                 }
-            }
+                .onChange(of: viewportHeight) { previousHeight, currentHeight in
+                    guard abs(previousHeight - currentHeight) >= 1 else { return }
+                    if OutlinerEditorViewportPolicy.shouldEnsureVisible(
+                        previousBlockID: editing?.uuid,
+                        blockID: editing?.uuid,
+                        viewportChanged: true
+                    ), let editing {
+                        ensureEditorVisible(editing.uuid, proxy: proxy)
+                    }
+                }
         }
-        .onChange(of: editing?.uuid) { previousID, currentID in
-            retainedEditorAnchorID = previousID ?? currentID
-        }
-        #else
         content
+        #else
+        scrollContent
         #endif
     }
+
+    #if !SKIP && os(iOS)
+    private func ensureEditorVisible(_ blockID: String, proxy: ScrollViewProxy) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            proxy.scrollTo(blockID, anchor: .center)
+        }
+    }
+    #endif
 
     private func rowIndex(_ rows: [LogseqOutlineRow]) -> [String: LogseqOutlineRow] {
         var result: [String: LogseqOutlineRow] = [:]
@@ -339,6 +322,7 @@ struct OutlinerView: View {
             onOpenMarkupLink: onOpenMarkupLink
         )
         .equatable()
+        .id(row.block.uuid)
     }
 
     private func beginDrag(_ block: LogseqBlock) {
@@ -538,21 +522,6 @@ struct OutlinerBlockRow: View, Equatable {
     private var blockContent: some View {
         VStack(alignment: .leading, spacing: 4) {
             if isEditing {
-                #if !SKIP && os(iOS)
-                Text(verbatim: editingTitle.isEmpty ? " " : editingTitle)
-                    .font(.body)
-                    .foregroundStyle(.clear)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: OutlinerLayoutMetrics.titleLineHeight,
-                        alignment: .topLeading
-                    )
-                    .accessibilityHidden(true)
-                    .anchorPreference(
-                        key: OutlinerEditorAnchorPreferenceKey.self,
-                        value: .bounds
-                    ) { [row.block.uuid: $0] }
-                #else
                 OutlinerInlineEditor(
                     text: editingTitle,
                     blockID: row.block.uuid,
@@ -562,7 +531,11 @@ struct OutlinerBlockRow: View, Equatable {
                     onBackspace: onBackspace,
                     onCaretChange: onCaretChange
                 )
-                #endif
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: OutlinerLayoutMetrics.titleLineHeight,
+                    alignment: .leading
+                )
             } else {
                 if usesAssetPreview {
                     AssetPreview(block: row.block, onOpen: nil)
@@ -573,15 +546,9 @@ struct OutlinerBlockRow: View, Equatable {
                         .foregroundStyle(isCompleted ? .secondary : .primary)
                         .frame(
                             minHeight: OutlinerLayoutMetrics.titleLineHeight,
-                            alignment: .topLeading
+                            alignment: .leading
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        #if !SKIP && os(iOS)
-                        .anchorPreference(
-                            key: OutlinerEditorAnchorPreferenceKey.self,
-                            value: .bounds
-                        ) { [row.block.uuid: $0] }
-                        #endif
                 }
             }
             BlockTrailingTags(
@@ -791,19 +758,6 @@ struct BlockTrailingTags: View {
         }
     }
 }
-
-#if !SKIP && os(iOS)
-private struct OutlinerEditorAnchorPreferenceKey: PreferenceKey {
-    static let defaultValue: [String: Anchor<CGRect>] = [:]
-
-    static func reduce(
-        value: inout [String: Anchor<CGRect>],
-        nextValue: () -> [String: Anchor<CGRect>]
-    ) {
-        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
-    }
-}
-#endif
 
 private extension View {
     @ViewBuilder func outlinerTapToEdit(
