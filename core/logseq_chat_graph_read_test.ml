@@ -691,7 +691,6 @@ let () =
                ; "block/title", One_value (String "Task")
                ; "block/tags", Many_values [ Ref_to (Temp_id "tag-class") ]
                ; "db/ident", One_value (Keyword "logseq.class/Task")
-               ; "logseq.property.class/hide-from-node", One_value (Bool true)
                ]
            }
        ; Entity

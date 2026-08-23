@@ -97,8 +97,8 @@ let entity_summaries decrypt_title db eid attr =
 ;;
 
 let tag_is_visible_in_node db eid =
-  match value db eid "logseq.property.class/hide-from-node" with
-  | Some (Bool true) -> false
+  match value db eid "db/ident", value db eid "logseq.property.class/hide-from-node" with
+  | Some (Keyword "logseq.class/Task"), _ | _, Some (Bool true) -> false
   | _ -> true
 ;;
 
