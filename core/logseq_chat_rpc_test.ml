@@ -152,16 +152,20 @@ let configure_encrypted_graph session =
 let () =
   let created = ref false in
   let provisioned = ref None in
+  let events = ref [] in
+  let uploaded_path = ref None in
   let session =
     Logseq_chat_rpc.create
       ~send:(fun request ->
         if String.equal request.Logseq_chat_api.method_ "POST"
            && String.ends_with ~suffix:"/graphs" request.url
         then (
+          events := !events @ [ "create" ];
           created := true;
           Ok Logseq_chat_api.{ status = 201; body = {|{"graph-id":"new-private"}|} })
         else if String.ends_with ~suffix:"/graphs" request.url
-        then
+        then (
+          events := !events @ [ "discover" ];
           Ok
             Logseq_chat_api.
               { status = 200
@@ -170,11 +174,24 @@ let () =
                    then
                      {|{"graphs":[{"graph-id":"new-private","graph-name":"Private notes","schema-version":"65.33","graph-e2ee?":true,"graph-ready-for-use?":true}]}|}
                    else {|{"graphs":[]}|})
-              }
+              })
         else Error ("unexpected request: " ^ request.url))
       ~provision_graph_key:(fun config ->
+        events := !events @ [ "provision" ];
         provisioned := Some config.Logseq_chat_api.graph_id;
         Ok ())
+      ~encrypt_title:(fun ~graph_id:_ value -> Ok ("encrypted:" ^ value))
+      ~upload_file:(fun upload ->
+        events := !events @ [ "upload" ];
+        uploaded_path := Some upload.Logseq_chat_api.file_path;
+        if not (Sys.file_exists upload.file_path)
+        then failwith "initial snapshot must exist while it uploads";
+        if not (String.contains upload.request.url '?')
+           || not (String.ends_with ~suffix:"checksum=0000000000000000" upload.request.url)
+        then failwith "initial snapshot upload must finish the reset with its checksum";
+        if not (String.equal upload.content_type "application/transit+json")
+        then failwith "initial snapshot upload must use Transit";
+        Ok Logseq_chat_api.{ status = 200; body = {|{"ok":true,"count":8}|} })
       ()
   in
   ignore
@@ -194,7 +211,51 @@ let () =
       | _ -> failwith "encrypted graph creation should succeed")
    | _ -> failwith "createSyncGraph should return an RPC response");
   if !provisioned <> Some "new-private"
-  then failwith "encrypted graph creation must provision its AES key"
+  then failwith "encrypted graph creation must provision its AES key";
+  if !events <> [ "create"; "provision"; "upload"; "discover" ]
+  then
+    failwith
+      ("new graph workflow order changed: " ^ String.concat "," !events);
+  (match !uploaded_path with
+   | Some path when not (Sys.file_exists path) -> ()
+   | Some _ -> failwith "initial snapshot temporary file must be removed after upload"
+   | None -> failwith "new graph must upload an initial snapshot")
+;;
+
+let () =
+  let discovered = ref false in
+  let session =
+    Logseq_chat_rpc.create
+      ~send:(fun request ->
+        if String.equal request.Logseq_chat_api.method_ "POST"
+           && String.ends_with ~suffix:"/graphs" request.url
+        then Ok Logseq_chat_api.{ status = 201; body = {|{"graph-id":"upload-fails"}|} }
+        else if String.ends_with ~suffix:"/graphs" request.url
+        then (
+          discovered := true;
+          Ok Logseq_chat_api.{ status = 200; body = {|{"graphs":[]}|} })
+        else Error ("unexpected request: " ^ request.url))
+      ~upload_file:(fun _ -> Error "offline during initial snapshot upload")
+      ()
+  in
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"https://api.example\",\"graphId\":\"\",\"token\":\"access\"}"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"createSyncGraph","payload":"{\"name\":\"Incomplete\",\"isEncrypted\":false}"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     (match assoc "ok" fields, assoc "error" fields with
+      | Some (`Bool false), Some (`Assoc error) ->
+        assert_equal "snapshot upload failure code" "graph_initial_upload_failed" (required_string "code" error)
+      | _ -> failwith "failed initial snapshot upload must fail graph creation")
+   | _ -> failwith "failed initial snapshot upload must return an RPC response");
+  if !discovered then failwith "an incomplete graph must not be discovered or selected"
 ;;
 
 let pending_request response =

@@ -295,11 +295,14 @@ let () =
       | `Assoc fields ->
         (match List.assoc_opt "graph-name" fields,
                List.assoc_opt "schema-version" fields,
-               List.assoc_opt "graph-e2ee?" fields with
-         | Some (`String name), Some (`String schema), Some (`Bool true) ->
+               List.assoc_opt "graph-e2ee?" fields,
+               List.assoc_opt "graph-ready-for-use?" fields with
+         | Some (`String name), Some (`String schema), Some (`Bool true), Some (`Bool false) ->
            assert_equal "create graph name" "Private notes" name;
            assert_equal "create graph schema" "65.33" schema
-         | _ -> failwith "create graph body must preserve name, schema, and encryption")
+         | _ ->
+           failwith
+             "create graph body must preserve metadata and remain unavailable until its snapshot uploads")
       | _ -> failwith "create graph body must be an object")
    | None -> failwith "create graph request must have a body")
 ;;
@@ -320,4 +323,28 @@ let () =
     if not encrypted.e2ee then failwith "encrypted graph must remain encrypted";
     if encrypted.ready then failwith "encrypted graph must remain not ready"
   | _ -> failwith "graph discovery must preserve every valid graph"
+;;
+
+let () =
+  let config =
+    Logseq_chat_api.
+      { base_url = "https://api.example.com/api"
+      ; graph_id = "graph id"
+      ; graph_name = Some "Fresh graph"
+      ; token = "token"
+      }
+  in
+  let upload =
+    Logseq_chat_api.initial_snapshot_upload_request
+      config
+      ~file_path:"/tmp/initial.snapshot"
+      ~checksum:"0000000000000000"
+  in
+  assert_equal "initial snapshot method" "POST" upload.request.method_;
+  assert_equal
+    "initial snapshot url"
+    "https://api.example.com/sync/graph%20id/snapshot/upload?reset=true&finished=true&checksum=0000000000000000"
+    upload.request.url;
+  assert_equal "initial snapshot content type" "application/transit+json" upload.content_type;
+  assert_equal "initial snapshot path" "/tmp/initial.snapshot" upload.file_path
 ;;

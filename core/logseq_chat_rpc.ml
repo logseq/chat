@@ -8,6 +8,7 @@ module Flashcards = Logseq_chat_flashcards
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
 module Order = Logseq_chat_fractional_order
+module Graph_bootstrap = Logseq_chat_graph_bootstrap
 
 type pending_transport =
   | Json_request of Api.request
@@ -1408,6 +1409,46 @@ let discover_graphs session config =
      with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
 ;;
 
+let upload_initial_graph_snapshot session config ~graph_id ~e2ee =
+  let graph_config = { config with Api.graph_id = graph_id } in
+  let encrypt_text =
+    if not e2ee
+    then Ok (fun value -> Ok value)
+    else
+      match session.encrypt_title with
+      | Some encrypt -> Ok (fun value -> encrypt ~graph_id value)
+      | None -> Error "E2EE title encryption is unavailable"
+  in
+  match encrypt_text with
+  | Error _ as error -> error
+  | Ok encrypt_text ->
+    (match Graph_bootstrap.prepare ~graph_id ~e2ee ~encrypt_text with
+     | Error _ as error -> error
+     | Ok prepared ->
+       let upload =
+         Api.initial_snapshot_upload_request
+           graph_config
+           ~file_path:prepared.file_path
+           ~checksum:prepared.checksum
+       in
+       Fun.protect
+         ~finally:(fun () -> session.cleanup_file prepared.file_path)
+         (fun () ->
+           match session.upload_file upload with
+           | Ok response when response.status >= 200 && response.status < 300 ->
+             debug
+               "initial graph snapshot uploaded graph=%s rows=%d"
+               graph_id
+               prepared.row_count;
+             Ok ()
+           | Ok response ->
+             Error
+               (if String.equal response.body ""
+                then Printf.sprintf "Initial snapshot upload failed with HTTP %d" response.status
+                else response.body)
+           | Error message -> Error message))
+;;
+
 let cache_remote_blocks session response ~now =
   if response.Api.status >= 200 && response.Api.status < 300
   then (
@@ -2663,16 +2704,20 @@ let dispatch session action payload =
                    | Some _, Error message ->
                      failure ~code:"graph_key_provision_failed" ~message
                    | Some graph_id, Ok () ->
-                     (match discover_graphs session config with
-                      | Error message -> failure ~code:"graph_discovery_failed" ~message
+                     (match upload_initial_graph_snapshot session config ~graph_id ~e2ee:is_encrypted with
+                      | Error message ->
+                        failure ~code:"graph_initial_upload_failed" ~message
                       | Ok () ->
-                     session.config <-
-                       Some
-                         { config with
-                           graph_id
-                         ; graph_name = Some (String.trim name)
-                         };
-                     snapshot_visible session)
+                        (match discover_graphs session config with
+                         | Error message -> failure ~code:"graph_discovery_failed" ~message
+                         | Ok () ->
+                           session.config <-
+                             Some
+                               { config with
+                                 graph_id
+                               ; graph_name = Some (String.trim name)
+                               };
+                           snapshot_visible session))
                    | None, _ ->
                      failure ~code:"graph_create_failed" ~message:"Graph creation returned no graph id"
                   )

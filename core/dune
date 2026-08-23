@@ -10,6 +10,8 @@
   logseq_chat_entity_sync
   logseq_chat_fractional_order
   logseq_chat_graph_store
+  logseq_chat_graph_bootstrap_data
+  logseq_chat_graph_bootstrap
   logseq_chat_graph_read
   logseq_chat_flashcards
   logseq_chat_graph_runtime
@@ -151,6 +153,11 @@
 (test
  (name logseq_chat_graph_store_test)
  (modules logseq_chat_graph_store_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_graph_bootstrap_test)
+ (modules logseq_chat_graph_bootstrap_test)
  (libraries logseq_chat_core))
 
 (test

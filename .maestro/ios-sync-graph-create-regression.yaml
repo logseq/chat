@@ -41,8 +41,10 @@ appId: com.logseq.chat
     timeout: 60000
 - assertNotVisible: "Add sync graph"
 - extendedWaitUntil:
-    visible: "Aug 23rd, 2026"
+    visible:
+      id: "journals.graph-loaded"
     timeout: 60000
+- assertVisible: "Edit block Untitled block"
 - assertNotVisible: "No cached blocks"
 - assertNotVisible: "snapshot_download_failed"
 - assertNotVisible: "snapshot required"

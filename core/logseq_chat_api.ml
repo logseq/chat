@@ -128,9 +128,27 @@ let create_graph_request config ~name ~schema_version ~e2ee =
              [ "graph-name", `String name
              ; "schema-version", `String schema_version
              ; "graph-e2ee?", `Bool e2ee
-             ; "graph-ready-for-use?", `Bool true
+             ; "graph-ready-for-use?", `Bool false
              ]))
   ; token = config.token
+  }
+;;
+
+let initial_snapshot_upload_request config ~file_path ~checksum =
+  { request =
+      { method_ = "POST"
+      ; url =
+          Printf.sprintf
+            "%s/sync/%s/snapshot/upload?reset=true&finished=true&checksum=%s"
+            (api_root config)
+            (url_encode config.graph_id)
+            (url_encode checksum)
+      ; body = None
+      ; token = config.token
+      }
+  ; file_path
+  ; content_type = "application/transit+json"
+  ; headers = []
   }
 ;;
 

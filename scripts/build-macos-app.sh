@@ -93,6 +93,12 @@ else
   "$repo_root/core/logseq_chat_sync_checkpoint.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_snapshot.cmx \
   "$repo_root/core/logseq_chat_snapshot.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
+  "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_bootstrap_data.cmx \
+  "$repo_root/core/logseq_chat_graph_bootstrap_data.ml"
+"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_bootstrap.cmx \
+  "$repo_root/core/logseq_chat_graph_bootstrap.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_entity_sync.cmx \
   "$repo_root/core/logseq_chat_entity_sync.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_ref_text.cmx \
@@ -111,8 +117,6 @@ else
   "$repo_root/core/logseq_chat_http.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_rpc.cmx \
   "$repo_root/core/logseq_chat_rpc.ml"
-"$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_logseq_storage_codec.cmx \
-  "$repo_root/core/logseq_chat_logseq_storage_codec.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_graph_store.cmx \
   "$repo_root/core/logseq_chat_graph_store.ml"
 "$ocamlopt" -I . -I "$dependency_dir" -c -o logseq_chat_sync_session.cmx \
@@ -140,6 +144,9 @@ else
   logseq_chat_sync_state.cmx \
   logseq_chat_sync_checkpoint.cmx \
   logseq_chat_snapshot.cmx \
+  logseq_chat_logseq_storage_codec.cmx \
+  logseq_chat_graph_bootstrap_data.cmx \
+  logseq_chat_graph_bootstrap.cmx \
   logseq_chat_entity_sync.cmx \
   logseq_chat_ref_text.cmx \
   logseq_chat_graph_read.cmx \
@@ -149,7 +156,6 @@ else
   logseq_chat_api.cmx \
   logseq_chat_http.cmx \
   logseq_chat_rpc.cmx \
-  logseq_chat_logseq_storage_codec.cmx \
   logseq_chat_graph_store.cmx \
   logseq_chat_sync_session.cmx \
   logseq_chat_sqlite.cmx \

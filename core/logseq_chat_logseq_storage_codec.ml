@@ -4,6 +4,17 @@ module Transit = Transit_native.Transit.Json
 
 open Ds
 
+type index_metadata =
+  { count : int
+  ; shift : int
+  }
+
+type root_index_metadata =
+  { eavt : index_metadata
+  ; aevt : index_metadata
+  ; avet : index_metadata
+  }
+
 let default_schema_attr =
   { cardinality = One
   ; unique = None
@@ -341,24 +352,42 @@ let root_of_transit entries =
   }
 ;;
 
-let root_to_transit root =
+let index_metadata_to_transit metadata =
   Transit.Map
-    [ Transit.Keyword "schema", schema_to_transit root.storage_schema
-    ; Transit.Keyword "max-eid", Transit.Int root.storage_max_eid
-    ; Transit.Keyword "max-tx", Transit.Int root.storage_max_tx
-    ; Transit.Keyword "eavt", address_to_transit root.storage_eavt
-    ; Transit.Keyword "aevt", address_to_transit root.storage_aevt
-    ; Transit.Keyword "avet", address_to_transit root.storage_avet
-    ; ( Transit.Keyword "duplicate-datoms"
-      , Transit.Array (List.map datom_to_transit root.storage_duplicate_datoms) )
-    ; Transit.Keyword "max-addr", Transit.Int root.storage_max_addr
-    ; Transit.Keyword "branching-factor", Transit.Int root.storage_branching_factor
-    ; ( Transit.Keyword "ref-type"
-      , Transit.Keyword
-          (match root.storage_ref_type with
-           | PSet.Weak -> "soft"
-           | PSet.Strong -> "strong") )
+    [ Transit.Keyword "count", Transit.Int metadata.count
+    ; Transit.Keyword "shift", Transit.Int metadata.shift
     ]
+;;
+
+let root_to_transit ?index_metadata root =
+  let persisted_index_metadata =
+    match index_metadata with
+    | None -> []
+    | Some metadata ->
+      [ Transit.Keyword "eavt-metadata", index_metadata_to_transit metadata.eavt
+      ; Transit.Keyword "aevt-metadata", index_metadata_to_transit metadata.aevt
+      ; Transit.Keyword "avet-metadata", index_metadata_to_transit metadata.avet
+      ]
+  in
+  Transit.Map
+    ([ Transit.Keyword "schema", schema_to_transit root.storage_schema
+     ; Transit.Keyword "max-eid", Transit.Int root.storage_max_eid
+     ; Transit.Keyword "max-tx", Transit.Int root.storage_max_tx
+     ; Transit.Keyword "eavt", address_to_transit root.storage_eavt
+     ; Transit.Keyword "aevt", address_to_transit root.storage_aevt
+     ; Transit.Keyword "avet", address_to_transit root.storage_avet
+     ]
+     @ persisted_index_metadata
+     @ [ ( Transit.Keyword "duplicate-datoms"
+         , Transit.Array (List.map datom_to_transit root.storage_duplicate_datoms) )
+       ; Transit.Keyword "max-addr", Transit.Int root.storage_max_addr
+       ; Transit.Keyword "branching-factor", Transit.Int root.storage_branching_factor
+       ; ( Transit.Keyword "ref-type"
+         , Transit.Keyword
+             (match root.storage_ref_type with
+              | PSet.Weak -> "soft"
+              | PSet.Strong -> "strong") )
+       ])
 ;;
 
 let decode ?addresses content =
@@ -375,9 +404,12 @@ let decode ?addresses content =
   | _ -> invalid_arg "unknown Logseq storage payload"
 ;;
 
-let encode = function
+let encode ?root_index_metadata = function
   | Storage_root root ->
-    Transit.to_string ~mode:Transit.Verbose (root_to_transit root), None
+    Transit.to_string
+      ~mode:Transit.Verbose
+      (root_to_transit ?index_metadata:root_index_metadata root),
+    None
   | Storage_node (PSet.Leaf datoms) ->
     ( Transit.to_string
         ~mode:Transit.Verbose
