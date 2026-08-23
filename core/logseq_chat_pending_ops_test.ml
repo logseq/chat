@@ -48,6 +48,17 @@ let intents =
       ; order = "a1"
       ; created_at = 42
       }
+  ; Create_asset
+      { uuid = "asset"
+      ; title = "photo.png"
+      ; page_uuid = "page"
+      ; parent_uuid = "parent"
+      ; order = "a2"
+      ; created_at = 43
+      ; asset_type = "png"
+      ; asset_size = 2048
+      ; asset_checksum = "abc123"
+      }
   ; Move_block (move "block")
   ; Move_blocks { moves = [ move "first"; move "second" ] }
   ; Split_block
@@ -92,6 +103,7 @@ let () =
        ; "save-block"
        ; "save-block"
        ; "save-block"
+       ; "insert-blocks"
        ; "insert-blocks"
        ; "move-blocks"
        ; "move-blocks"
@@ -185,7 +197,7 @@ let () =
   assert_invalid "split createdAt must be an integer"
     (fun () ->
       let fields =
-        match intent_json (List.nth intents 7) with
+        match intent_json (List.nth intents 8) with
         | `Assoc fields ->
           ("createdAt", `String "invalid") :: List.remove_assoc "createdAt" fields
         | _ -> assert false
@@ -194,14 +206,14 @@ let () =
   assert_invalid "merged title must be a string or null"
     (fun () ->
       let fields =
-        match intent_json (List.nth intents 8) with
+        match intent_json (List.nth intents 9) with
         | `Assoc fields ->
           ("mergedTitle", `Int 1) :: List.remove_assoc "mergedTitle" fields
         | _ -> assert false
       in
       intent_of_json (assoc fields));
   assert_bool "missing merged title remains compatible with older pending rows"
-    (match intent_json (List.nth intents 8) with
+    (match intent_json (List.nth intents 9) with
      | `Assoc fields ->
        (match intent_of_json (assoc (List.remove_assoc "mergedTitle" fields)) with
         | Merge_backward { merged_title = None; _ } -> true

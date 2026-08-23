@@ -23,6 +23,7 @@ type file_upload =
   { request : request
   ; file_path : string
   ; content_type : string
+  ; headers : (string * string) list
   }
 
 type journal =
@@ -270,6 +271,7 @@ let asset_upload_request ?page_id config ~uuid ~file_name ~size ~checksum ~file_
       }
   ; file_path
   ; content_type
+  ; headers = []
   }
 ;;
 
@@ -322,6 +324,7 @@ let encrypted_asset_upload_request
       }
   ; file_path
   ; content_type = "text/plain"
+  ; headers = []
   }
 ;;
 
@@ -383,6 +386,29 @@ let content_type_for_asset_type asset_type =
   | "wav" -> "audio/wav"
   | "pdf" -> "application/pdf"
   | _ -> "application/octet-stream"
+;;
+
+let raw_asset_upload_request config ~uuid ~asset_type ~checksum ~file_path ~content_type =
+  let asset_type = normalize_asset_type asset_type in
+  { request =
+      { method_ = "PUT"
+      ; url =
+          Printf.sprintf
+            "%s/assets/%s/%s.%s"
+            (api_root config)
+            (url_encode config.graph_id)
+            (url_encode uuid)
+            (url_encode asset_type)
+      ; body = None
+      ; token = config.token
+      }
+  ; file_path
+  ; content_type
+  ; headers =
+      [ "x-amz-meta-checksum", checksum
+      ; "x-amz-meta-type", asset_type
+      ]
+  }
 ;;
 
 let update_block_request config ~uuid ~title =

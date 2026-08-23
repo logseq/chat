@@ -91,6 +91,12 @@ public enum LogseqPendingSyncHTTPTransport {
                         + "url=\(pending.url) file=\(uploadURL.path) size=\(fileSize?.intValue ?? -1) "
                         + "content_type=\(pending.contentType)"
                 )
+            } else {
+                print(
+                    "LOGSEQ_PENDING_SYNC request id=\(pending.id) method=\(pending.method) "
+                        + "url=\(pending.url) body_bytes=\(pending.body?.utf8.count ?? 0) "
+                        + "content_type=\(pending.contentType)"
+                )
             }
             #endif
             var request = URLRequest(url: url, timeoutInterval: 30)
@@ -98,6 +104,9 @@ public enum LogseqPendingSyncHTTPTransport {
             request.setValue("Bearer \(pending.token)", forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             request.setValue(pending.contentType, forHTTPHeaderField: "Content-Type")
+            for (name, value) in pending.headers {
+                request.setValue(value, forHTTPHeaderField: name)
+            }
             let data: Data
             let response: URLResponse
             if let uploadURL {

@@ -40,6 +40,10 @@ let schema =
   ; "logseq.property.recycle/original-order", one ~value_type:StringType ~indexed:true ()
   ; "logseq.property/status", one ~value_type:RefType ~indexed:true ()
   ; "logseq.property.class/extends", many ~value_type:RefType ~indexed:true ()
+  ; "logseq.property.asset/type", one ~value_type:StringType ~indexed:true ()
+  ; "logseq.property.asset/size", one ~value_type:NumberType ~indexed:true ()
+  ; "logseq.property.asset/checksum", one ~value_type:StringType ~indexed:true ()
+  ; "logseq.property.asset/remote-metadata", one ()
   ; "user.property/effort", one ~value_type:NumberType ~indexed:true ()
   ; "user.property/label", one ~value_type:StringType ~indexed:true ()
   ; "user.property/enabled", one ~indexed:true () ]
@@ -101,6 +105,7 @@ let base_db () =
        ; Add (Entity_id 3, "block/name", String "old ref")
        ; Add (Entity_id 4, "db/ident", Keyword "logseq.class/Tag")
        ; Add (Entity_id 6, "db/ident", Keyword "logseq.class/Root")
+       ; Add (Entity_id 7, "db/ident", Keyword "logseq.class/Asset")
        ; Add (Entity_id 5, "block/uuid", Uuid "non-inline-tag")
        ; Add (Entity_id 5, "block/title", String "Non-inline")
        ; Add (Entity_id 5, "block/name", String "non-inline")
@@ -112,6 +117,44 @@ let base_db () =
        ; Add (Entity_id 10, "block/order", String "a0")
        ; Add (Entity_id 10, "block/refs", Ref 3)
        ; Add (Entity_id 10, "block/tags", Ref 5) ]
+;;
+
+let () =
+  let intent =
+    Ops.Create_asset
+      { uuid = "asset"
+      ; title = "photo.png"
+      ; page_uuid = "page"
+      ; parent_uuid = "block"
+      ; order = "a1"
+      ; created_at = 100
+      ; asset_type = "png"
+      ; asset_size = 2048
+      ; asset_checksum = "abc123"
+      }
+  in
+  let projected =
+    match Projection.compile (base_db ()) intent with
+    | Ok tx -> db_with tx (base_db ())
+    | Error message -> fail "asset projection" message
+  in
+  assert_bool "asset projection is satisfied" (Projection.satisfied projected intent);
+  assert_string "asset projection preserves title" "photo.png" (title projected "asset");
+  assert_bool "asset projection uses the built-in Asset class"
+    (has_ident_tag projected ~source:"asset" ~target:"logseq.class/Asset");
+  let asset = Option.get (entity projected (lookup "asset")) in
+  assert_bool "asset projection stores its type"
+    (entity_attr asset "logseq.property.asset/type" = Some (One_value (String "png")));
+  assert_bool "asset projection stores its decoded size"
+    (entity_attr asset "logseq.property.asset/size" = Some (One_value (Int 2048)));
+  assert_bool "asset projection stores its checksum"
+    (entity_attr asset "logseq.property.asset/checksum" = Some (One_value (String "abc123")));
+  assert_bool "asset projection records uploaded remote metadata"
+    (match entity_attr asset "logseq.property.asset/remote-metadata" with
+     | Some (One_value (Map entries)) ->
+       List.mem (Keyword "checksum", String "abc123") entries
+       && List.mem (Keyword "type", String "png") entries
+     | _ -> false)
 ;;
 
 let () =

@@ -425,15 +425,25 @@ let () =
 
 let () =
   let cleaned = ref [] in
+  let staged = ref [] in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
       ~graph_unlocked:(fun ~graph_id:_ -> true)
       ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
+      ~resolve_asset_path:(fun source_path ->
+        assert_equal "stored asset path" "Assets/photo.jpg" source_path;
+        "/documents/Assets/photo.jpg")
       ~encrypt_asset_file:(fun ~graph_id:_ ~source_path ->
-        assert_equal "asset encryption source" "/documents/photo.jpg" source_path;
+        assert_equal "asset encryption source" "/documents/Assets/photo.jpg" source_path;
         Ok ("/tmp/photo.transit", 4096))
       ~journal_page_id:(fun ~journal_day:_ -> Some "real-journal-page")
+      ~sync_cursor:(fun () -> Some 91)
+      ~stage_operation:(fun operation ->
+        staged := !staged @ [ operation ];
+        Ok ())
+      ~prepare_operation:(fun operation ->
+        Ok (Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent, "[]"))
       ~cleanup_file:(fun path -> cleaned := path :: !cleaned)
       ()
   in
@@ -445,7 +455,7 @@ let () =
   ignore
     (Logseq_chat_rpc.call
        session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"asset-async\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"localPath\":\"/documents/photo.jpg\"}"}}|});
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"asset-async\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"localPath\":\"Assets/photo.jpg\"}"}}|});
   let request =
     Logseq_chat_rpc.call
       session
@@ -453,20 +463,49 @@ let () =
     |> pending_request
     |> Option.get
   in
-  assert_equal "encrypted asset method" "POST" (required_string "method" request);
+  assert_equal "encrypted asset method" "PUT" (required_string "method" request);
   assert_equal "encrypted asset path" "/tmp/photo.transit" (required_string "filePath" request);
   assert_equal "encrypted asset content type" "text/plain" (required_string "contentType" request);
-  let url = required_string "url" request in
-  if not (contains url "size=2048&upload-size=4096")
-  then failwith "encrypted asset must preserve logical and encoded sizes";
-  if not (contains url "title=cipher%28photo.jpg%29&page-id=real-journal-page")
-  then failwith "encrypted asset must use ciphertext title and real journal page";
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"cancelPendingSync"}}|});
+  assert_equal
+    "encrypted asset raw URL"
+    "http://127.0.0.1:8787/assets/encrypted-1/asset-async.jpg"
+    (required_string "url" request);
+  let headers = required_assoc "headers" request in
+  assert_equal
+    "encrypted asset checksum header"
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    (required_string "x-amz-meta-checksum" headers);
+  assert_equal "encrypted asset type header" "jpg" (required_string "x-amz-meta-type" headers);
+  let tx_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal
+    "encrypted asset datom URL"
+    "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+    (required_string "url" tx_request);
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.intent =
+           Create_asset
+             { uuid; title; page_uuid; parent_uuid; asset_type; asset_size;
+               asset_checksum; _ }
+       ; _ } ] ->
+     assert_equal "encrypted asset UUID" "asset-async" uuid;
+     assert_equal "encrypted asset title" "photo.jpg" title;
+     assert_equal "encrypted asset page" "real-journal-page" page_uuid;
+     assert_equal "encrypted asset parent" "real-journal-page" parent_uuid;
+     assert_equal "encrypted asset type" "jpg" asset_type;
+     assert_int_equal "encrypted asset size" 2048 asset_size;
+     assert_equal
+       "encrypted asset checksum"
+       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+       asset_checksum
+   | _ -> failwith "encrypted asset upload must stage one durable asset datom operation");
   if !cleaned <> [ "/tmp/photo.transit" ]
-  then failwith "cancelPendingSync must remove the temporary encrypted asset"
+  then failwith "successful encrypted asset upload must remove its temporary payload"
 ;;
 
 let () =
@@ -1318,8 +1357,10 @@ let () =
     |> Option.get
   in
   let url = required_string "url" request in
-  if contains url "page-id="
-  then failwith "plain asset upload must let the server resolve today's page"
+  assert_equal
+    "targeted asset raw URL uses its stable block UUID"
+    "http://127.0.0.1:8787/assets/plain-1/targeted-upload.m4a"
+    url
 ;;
 
 let () =
@@ -1341,8 +1382,10 @@ let () =
     |> Option.get
   in
   let url = required_string "url" request in
-  if not (contains url "file-name=IMG_0002.jpeg")
-  then failwith "shared asset upload must include a normalized file extension";
+  assert_equal
+    "shared asset upload uses its normalized extension"
+    "http://127.0.0.1:8787/assets/plain-1/shared-image.jpeg"
+    url;
   assert_equal
     "shared asset upload content type"
     "image/jpeg"
@@ -1592,6 +1635,103 @@ let prepare_test_operation operation =
   Ok
     ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
     , "[]" )
+;;
+
+let () =
+  let staged = ref [] in
+  let target =
+    { (remote_block "editing-block" "Editing") with
+      Logseq_chat_model.page_id = "target-page"
+    ; parent_id = Some "target-page"
+    ; order = Some "a0"
+    }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 41)
+      ~graph_blocks:(fun () -> Some [ target ])
+      ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
+      ~stage_operation:(fun operation ->
+        staged := !staged @ [ operation ];
+        Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"plain-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
+  let upload =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal "plain asset raw method" "PUT" (required_string "method" upload);
+  assert_equal
+    "plain asset raw URL"
+    "http://127.0.0.1:8787/assets/plain-1/plain-asset.m4a"
+    (required_string "url" upload);
+  let tx_request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal
+    "plain asset datom URL"
+    "http://127.0.0.1:8787/sync/plain-1/tx/batch"
+    (required_string "url" tx_request);
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.intent =
+           Create_asset { uuid; page_uuid; parent_uuid; order; _ }
+       ; _ } ] ->
+     assert_equal "plain asset UUID" "plain-asset" uuid;
+     assert_equal "plain asset page" "target-page" page_uuid;
+     assert_equal "plain asset parent" "editing-block" parent_uuid;
+     if String.equal order "" then failwith "plain asset must have an outliner order"
+   | _ -> failwith "plain asset upload must stage one durable asset datom operation")
+;;
+
+let () =
+  let staged = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 41)
+      ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
+      ~stage_operation:(fun operation ->
+        staged := operation :: !staged;
+        Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"retry-asset\",\"title\":\"photo.png\",\"now\":2,\"assetType\":\"png\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/photo.png\"}"}}|});
+  let first =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|});
+  if !staged <> [] then failwith "failed raw upload must not stage asset datoms";
+  let retry =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  assert_equal "failed raw asset upload retries the same URL"
+    (required_string "url" first)
+    (required_string "url" retry)
 ;;
 
 let () =

@@ -417,6 +417,7 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
     public let token: String
     public let filePath: String?
     public let contentType: String
+    public let headers: [String: String]
 
     public init(
         id: Int,
@@ -425,7 +426,8 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
         body: String?,
         token: String,
         filePath: String?,
-        contentType: String
+        contentType: String,
+        headers: [String: String] = [:]
     ) {
         self.id = id
         self.method = method
@@ -434,6 +436,23 @@ public struct LogseqPendingSyncRequest: Codable, Sendable {
         self.token = token
         self.filePath = filePath
         self.contentType = contentType
+        self.headers = headers
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, method, url, body, token, filePath, contentType, headers
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(Int.self, forKey: .id)
+        method = try values.decode(String.self, forKey: .method)
+        url = try values.decode(String.self, forKey: .url)
+        body = try values.decodeIfPresent(String.self, forKey: .body)
+        token = try values.decode(String.self, forKey: .token)
+        filePath = try values.decodeIfPresent(String.self, forKey: .filePath)
+        contentType = try values.decode(String.self, forKey: .contentType)
+        headers = try values.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
     }
 }
 

@@ -30,16 +30,6 @@ let assert_some_string label expected = function
   | None -> failwith (label ^ ": expected a value")
 ;;
 
-let contains text substring =
-  let text_length = String.length text in
-  let substring_length = String.length substring in
-  let rec loop index =
-    index + substring_length <= text_length
-    && (String.equal (String.sub text index substring_length) substring || loop (index + 1))
-  in
-  substring_length = 0 || loop 0
-;;
-
 let () =
   let explicit =
     required_single_block
@@ -179,12 +169,10 @@ let () =
     {|{"t-before":42,"txs":[{"tx-id":"018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8","tx":"[\"~:db/add\"]","outliner-op":"split-block"}]}|}
     (Option.value tx_batch.body ~default:"");
   let upload =
-    Logseq_chat_api.asset_upload_request
-      ~page_id:"page-target"
+    Logseq_chat_api.raw_asset_upload_request
       config
       ~uuid:"client-asset"
-      ~file_name:"photo.jpg"
-      ~size:2048
+      ~asset_type:"jpg"
       ~checksum:"abc123"
       ~file_path:"/documents/photo.jpg"
       ~content_type:"image/jpeg"
@@ -203,39 +191,29 @@ let () =
     "shared image MIME remains a valid upload content type"
     "image/jpeg"
     (Logseq_chat_api.content_type_for_asset_type "image/jpeg");
+  assert_equal "raw asset upload method" "PUT" upload.request.method_;
+  assert_equal
+    "raw asset upload URL"
+    "https://api.example/assets/graph-1/client-asset.jpg"
+    upload.request.url;
   if upload.request.body <> None then failwith "asset bytes must not be encoded in request JSON";
-  if not (contains upload.request.url "?uuid=client-asset&")
-  then failwith "asset upload must preserve the local block uuid in the query";
-  if not (contains upload.request.url "&page-id=page-target")
-  then failwith "asset upload must preserve the target page in the query";
-  let move =
-    Logseq_chat_api.move_block_request
-      config ~uuid:"client-asset" ~target_uuid:"editing-block"
-  in
-  assert_equal
-    "asset child move URL"
-    "https://api.example/api/v1/graphs/graph-1/block-moves"
-    move.url;
-  assert_equal
-    "asset child move body"
-    {|{"block-ids":["client-asset"],"target-id":"editing-block","position":"last-child"}|}
-    (Option.value move.body ~default:"");
+  if List.assoc_opt "x-amz-meta-checksum" upload.headers <> Some "abc123"
+  then failwith "raw asset upload must preserve the checksum header";
+  if List.assoc_opt "x-amz-meta-type" upload.headers <> Some "jpg"
+  then failwith "raw asset upload must preserve the normalized type header";
   let encrypted_upload =
-    Logseq_chat_api.encrypted_asset_upload_request
+    Logseq_chat_api.raw_asset_upload_request
       config
       ~uuid:"encrypted-asset"
-      ~file_name:"photo.jpg"
-      ~title:"encrypted-title"
-      ~page_id:"journal-1"
-      ~size:2048
-      ~upload_size:4096
+      ~asset_type:"jpg"
       ~checksum:"abc123"
       ~file_path:"/documents/encrypted-photo.transit"
+      ~content_type:"text/plain"
   in
-  if not (contains encrypted_upload.request.url "upload-size=4096")
-  then failwith "encrypted asset upload must declare its encrypted payload size";
-  if not (contains encrypted_upload.request.url "title=encrypted-title")
-  then failwith "encrypted asset upload must send its ciphertext title";
+  assert_equal
+    "encrypted raw asset URL keeps the logical extension"
+    "https://api.example/assets/graph-1/encrypted-asset.jpg"
+    encrypted_upload.request.url;
   assert_equal "encrypted asset content type" "text/plain" encrypted_upload.content_type;
   assert_equal
     "asset upload response uuid"

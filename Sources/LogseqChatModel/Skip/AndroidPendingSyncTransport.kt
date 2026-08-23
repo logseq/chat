@@ -22,6 +22,9 @@ object AndroidPendingSyncTransport {
                     setRequestProperty("Authorization", "Bearer ${request.token}")
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("Content-Type", request.contentType)
+                    request.headers.forEach { (name, value) ->
+                        setRequestProperty(name, value)
+                    }
                     doInput = true
                 }
             } catch (error: Exception) {

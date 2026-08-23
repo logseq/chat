@@ -56,6 +56,17 @@ type intent =
       ; order : string
       ; created_at : int
       }
+  | Create_asset of
+      { uuid : string
+      ; title : string
+      ; page_uuid : string
+      ; parent_uuid : string
+      ; order : string
+      ; created_at : int
+      ; asset_type : string
+      ; asset_size : int
+      ; asset_checksum : string
+      }
   | Move_block of
       move
   | Move_blocks of { moves : move list }
@@ -115,7 +126,7 @@ type t =
 
 let outliner_op = function
   | Save_title _ | Set_property _ | Set_properties _ | Create_tag _ | Add_tag _ -> "save-block"
-  | Insert_block _ | Create_journal _ -> "insert-blocks"
+  | Insert_block _ | Create_asset _ | Create_journal _ -> "insert-blocks"
   | Set_favorite { favorite = true; _ } -> "insert-blocks"
   | Set_favorite { favorite = false; _ } -> "delete-blocks"
   | Move_block _ | Move_blocks _ -> "move-blocks"
@@ -257,6 +268,22 @@ let intent_json = function
       ; "parentUuid", `String parent_uuid
       ; "order", `String order
       ; "createdAt", `Int created_at
+      ]
+  | Create_asset
+      { uuid; title; page_uuid; parent_uuid; order; created_at; asset_type;
+        asset_size; asset_checksum }
+    ->
+    `Assoc
+      [ "type", `String "create-asset"
+      ; "uuid", `String uuid
+      ; "title", `String title
+      ; "pageUuid", `String page_uuid
+      ; "parentUuid", `String parent_uuid
+      ; "order", `String order
+      ; "createdAt", `Int created_at
+      ; "assetType", `String asset_type
+      ; "assetSize", `Int asset_size
+      ; "assetChecksum", `String asset_checksum
       ]
   | Move_block { uuid; page_uuid; parent_uuid; order } ->
     `Assoc
@@ -402,6 +429,24 @@ let intent_of_json = function
              (match List.assoc_opt "createdAt" fields with
               | Some (`Int value) -> value
               | _ -> (invalid_arg "invalid pending intent field: createdAt" [@coverage off]))
+         }
+     | "create-asset" ->
+       Create_asset
+         { uuid = string fields "uuid"
+         ; title = string fields "title"
+         ; page_uuid = string fields "pageUuid"
+         ; parent_uuid = string fields "parentUuid"
+         ; order = string fields "order"
+         ; created_at =
+             (match List.assoc_opt "createdAt" fields with
+              | Some (`Int value) -> value
+              | _ -> invalid_arg "invalid pending intent field: createdAt")
+         ; asset_type = string fields "assetType"
+         ; asset_size =
+             (match List.assoc_opt "assetSize" fields with
+              | Some (`Int value) -> value
+              | _ -> invalid_arg "invalid pending intent field: assetSize")
+         ; asset_checksum = string fields "assetChecksum"
          }
      | "move-block" ->
        Move_block

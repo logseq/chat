@@ -379,6 +379,19 @@ let write_file path contents =
   | error -> Error ("write encrypted asset: " ^ Printexc.to_string error)
 ;;
 
+let resolve_asset_path source_path =
+  if Filename.is_relative source_path
+  then
+    match !graph_runtime with
+    | Some runtime ->
+      let documents_dir =
+        runtime.checkpoint_path |> Filename.dirname |> Filename.dirname |> Filename.dirname
+      in
+      Filename.concat documents_dir source_path
+    | None -> source_path
+  else source_path
+;;
+
 let encrypt_asset_file ~graph_id ~source_path =
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
   bind (read_file source_path) (fun bytes ->
@@ -470,6 +483,7 @@ let create_session ?storage ?catalog_session () =
     ~graph_unlocked:(fun ~graph_id ->
       Result.is_ok (E2ee_keyring.graph_key e2ee_keyring ~graph_id))
     ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring)
+    ~resolve_asset_path
     ~encrypt_asset_file
     ~journal_page_id
     ()

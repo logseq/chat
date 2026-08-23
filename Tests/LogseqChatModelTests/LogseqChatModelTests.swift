@@ -141,6 +141,16 @@ private let testEmptySnapshotJSON = """
         #expect(block.localPath == "/documents/photo.jpg")
     }
 
+    @Test func pendingAssetUploadDecodesRawPUTHeaders() throws {
+        let data = Data(#"{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"pendingSyncRequest":{"id":7,"method":"PUT","url":"https://sync.example/assets/graph/asset.png","body":null,"token":"token","filePath":"Assets/asset.png","contentType":"image/png","headers":{"x-amz-meta-checksum":"abc123","x-amz-meta-type":"png"}}}"#.utf8)
+        let snapshot = try JSONDecoder().decode(LogseqChatSnapshot.self, from: data)
+        let request = try #require(snapshot.pendingSyncRequest)
+
+        #expect(request.method == "PUT")
+        #expect(request.headers["x-amz-meta-checksum"] == "abc123")
+        #expect(request.headers["x-amz-meta-type"] == "png")
+    }
+
     @Test func builtInTaskStatusesMatchLogseq() {
         #expect(LogseqTaskStatus.builtIn.map(\.title) == [
             "Backlog", "Todo", "Doing", "In Review", "Done", "Canceled"

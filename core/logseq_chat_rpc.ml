@@ -15,6 +15,7 @@ type pending_transport =
 
 type pending_operation =
   | Create_block of Model.block
+  | Upload_asset of Model.block
   | Move_created_asset of
       { block : Model.block
       ; remote_uuid : string
@@ -111,6 +112,7 @@ type t =
   ; provision_graph_key : (Api.config -> (unit, string) result) option
   ; graph_unlocked : (graph_id:string -> bool) option
   ; encrypt_title : (graph_id:string -> string -> (string, string) result) option
+  ; resolve_asset_path : string -> string
   ; encrypt_asset_file : (graph_id:string -> source_path:string -> (string * int, string) result) option
   ; journal_page_id : (journal_day:int -> string option) option
   ; send : Api.request -> (Api.response, string) result
@@ -379,7 +381,7 @@ let search_hit_json (hit : Logseq_chat_search_index.hit) =
 ;;
 
 let pending_request_json session =
-  let request_json id (request : Api.request) file_path content_type =
+  let request_json id (request : Api.request) file_path content_type headers =
     let body_fields =
       match request.body with
       | Some body ->
@@ -394,18 +396,19 @@ let pending_request_json session =
        ; "url", `String request.url
        ; "token", `String request.token
        ; "contentType", `String content_type
+       ; "headers", `Assoc (List.map (fun (key, value) -> key, `String value) headers)
        ]
        @ body_fields
        @ (match file_path with Some path -> [ "filePath", `String path ] | None -> []))
   in
   match session.semantic_active, session.pending_sync with
   | Some active, _ ->
-    request_json active.id active.request None "application/json"
+    request_json active.id active.request None "application/json" []
   | None, Some { active = Some active; _ } ->
     (match active.transport with
-     | Json_request request -> request_json active.id request None "application/json"
+     | Json_request request -> request_json active.id request None "application/json" []
      | File_upload upload ->
-       request_json active.id upload.request (Some upload.file_path) upload.content_type)
+       request_json active.id upload.request (Some upload.file_path) upload.content_type upload.headers)
   | None, Some _ | None, None -> `Null
 ;;
 
@@ -703,6 +706,41 @@ let rec project_outliner_intent blocks = function
           ; journal = None
           }
       ]
+  | Create_asset
+      { uuid; title; page_uuid; parent_uuid; order; created_at; asset_type;
+        asset_size; asset_checksum }
+    ->
+    let asset =
+      Model.
+        { uuid
+        ; title
+        ; page_id = page_uuid
+        ; parent_id = Some parent_uuid
+        ; order = Some order
+        ; created_at
+        ; updated_at = created_at
+        ; sync_status = "pending"
+        ; tags = []
+        ; references = []
+        ; breadcrumbs = []
+        ; status = None
+        ; is_asset = true
+        ; asset_type = Some asset_type
+        ; asset_size = Some asset_size
+        ; asset_checksum = Some asset_checksum
+        ; local_path = None
+        ; journal = None
+        }
+    in
+    if List.exists (fun (block : Model.block) -> String.equal block.uuid uuid) blocks
+    then
+      List.map
+        (fun (block : Model.block) ->
+          if String.equal block.uuid uuid
+          then { asset with local_path = block.local_path }
+          else block)
+        blocks
+    else blocks @ [ asset ]
   | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
     (match
        List.find_opt
@@ -1348,6 +1386,7 @@ let create
       ?provision_graph_key
       ?graph_unlocked
       ?encrypt_title
+      ?(resolve_asset_path = Fun.id)
       ?encrypt_asset_file
       ?journal_page_id
       ?(send = Http.send)
@@ -1405,6 +1444,7 @@ let create
   ; provision_graph_key
   ; graph_unlocked
   ; encrypt_title
+  ; resolve_asset_path
   ; encrypt_asset_file
   ; journal_page_id
   ; send
@@ -1676,46 +1716,39 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
       ~operation:(Create_block block)
       ();
     Ok ()
-  | None, Some source_path, Some asset_type, Some asset_size, Some checksum ->
+  | None, Some source_path, Some asset_type, Some _asset_size, Some checksum ->
+    let source_path = session.resolve_asset_path source_path in
     if selected_graph_is_encrypted session
     then
-      (match page_id, session.encrypt_asset_file with
-       | None, _ -> Error "encrypted asset requires a journal page"
-       | _, None -> Error "encrypted asset encryption is unavailable"
-       | Some page_id, Some encrypt_asset_file ->
+      (match session.encrypt_asset_file with
+       | None -> Error "encrypted asset encryption is unavailable"
+       | Some encrypt_asset_file ->
          (match encrypt_asset_file ~graph_id:pump.config.graph_id ~source_path with
           | Error _ as error -> error
-          | Ok (file_path, upload_size) ->
+          | Ok (file_path, _upload_size) ->
             let upload =
-              Api.encrypted_asset_upload_request
+              Api.raw_asset_upload_request
                 pump.config
                 ~uuid:block.uuid
-                ~file_name:
-                  (Api.asset_file_name
-                     ~file_name:block.title
-                     ~asset_type)
-                ~title
-                ~page_id
-                ~size:asset_size
-                ~upload_size
+                ~asset_type
                 ~checksum
                 ~file_path
+                ~content_type:"text/plain"
             in
             set_pending_active
               session
               pump
               ~transport:(File_upload upload)
-              ~operation:(Create_block block)
+              ~operation:(Upload_asset block)
               ~cleanup_path:file_path
               ();
             Ok ()))
     else (
       let upload =
-        Api.asset_upload_request
+        Api.raw_asset_upload_request
           pump.config
           ~uuid:block.uuid
-          ~file_name:(Api.asset_file_name ~file_name:block.title ~asset_type)
-          ~size:asset_size
+          ~asset_type
           ~checksum
           ~file_path:source_path
           ~content_type:(Api.content_type_for_asset_type asset_type)
@@ -1724,7 +1757,7 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
         session
         pump
         ~transport:(File_upload upload)
-        ~operation:(Create_block block)
+        ~operation:(Upload_asset block)
         ();
       Ok ())
   | None, None, None, None, None ->
@@ -2008,6 +2041,64 @@ let finish_pending_block session pump block ~succeeded =
   prepare_pending_next session pump
 ;;
 
+let asset_datoms_operation session (block : Model.block) =
+  let base_t =
+    Option.bind session.sync_cursor (fun cursor -> cursor ())
+    |> Option.to_result ~none:"A current server cursor is required"
+  in
+  Result.bind base_t (fun base_t ->
+    match block.asset_type, block.asset_size, block.asset_checksum with
+    | Some asset_type, Some asset_size, Some asset_checksum ->
+      let context = base_outliner_context session in
+      let destination =
+        match block.parent_id with
+        | Some parent_uuid ->
+          List.find_opt
+            (fun (candidate : Model.block) -> String.equal candidate.uuid parent_uuid)
+            context.blocks
+          |> Option.map (fun (parent : Model.block) -> parent.page_id, parent_uuid)
+        | None ->
+          let journal_day = Model.journal_day_for_ms block.created_at in
+          Option.bind session.journal_page_id (fun find -> find ~journal_day)
+          |> Option.map (fun page_uuid -> page_uuid, page_uuid)
+      in
+      (match destination with
+       | None -> Error "asset destination is not available"
+       | Some (page_uuid, parent_uuid) ->
+         let last_order =
+           context.blocks
+           |> List.filter (fun (candidate : Model.block) ->
+             String.equal candidate.page_id page_uuid
+             && candidate.parent_id = Some parent_uuid
+             && not (String.equal candidate.uuid block.uuid))
+           |> List.filter_map (fun (candidate : Model.block) -> candidate.order)
+           |> List.sort String.compare
+           |> List.rev
+           |> function order :: _ -> Some order | [] -> None
+         in
+         Result.map
+           (fun order ->
+             Pending_ops.
+               { operation_id = fresh_squuid ()
+               ; base_t
+               ; state = Queued
+               ; intent =
+                   Create_asset
+                     { uuid = block.uuid
+                     ; title = block.title
+                     ; page_uuid
+                     ; parent_uuid
+                     ; order
+                     ; created_at = block.created_at
+                     ; asset_type
+                     ; asset_size
+                     ; asset_checksum
+                     }
+               })
+           (Order.between last_order None))
+    | _ -> Error "asset metadata is incomplete")
+;;
+
 let complete_pending_active session pump (active : pending_active) response =
   let succeeded = response.Api.status >= 200 && response.status < 300 in
   match active.operation with
@@ -2033,6 +2124,20 @@ let complete_pending_active session pump (active : pending_active) response =
        mark_pending_failed_if_unchanged session block;
        prepare_pending_next session pump)
   | Create_journal { block; _ } -> finish_pending_block session pump block ~succeeded:false
+  | Upload_asset block when succeeded ->
+    (match asset_datoms_operation session block with
+     | Error message ->
+       debug "prepare asset datoms failed uuid=%s message=%s" block.uuid message;
+       finish_pending_block session pump block ~succeeded:false
+     | Ok operation ->
+       (match enqueue_semantic session pump.config operation with
+        | Error message ->
+          debug "stage asset datoms failed uuid=%s message=%s" block.uuid message;
+          finish_pending_block session pump block ~succeeded:false
+        | Ok () ->
+          finish_pending_block session pump block ~succeeded:true;
+          activate_semantic_request session pump.config))
+  | Upload_asset block -> finish_pending_block session pump block ~succeeded:false
   | Create_block block when succeeded ->
     let remote_uuid =
       try Ok (Api.created_block_uuid_from_body response.body)
@@ -2169,7 +2274,8 @@ let complete_pending_sync session payload =
                 | Error message ->
                   debug "pending transport failed id=%d message=%s" active.id message;
                   (match active.operation with
-                   | Create_block block | Update_title block | Update_status block
+                   | Create_block block | Upload_asset block
+                   | Update_title block | Update_status block
                    | Move_created_asset { block; _ }
                    | Create_journal { block; _ } ->
                      finish_pending_block session pump block ~succeeded:false));

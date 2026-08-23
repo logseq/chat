@@ -1,0 +1,63 @@
+appId: com.logseq.chat
+---
+- launchApp
+- runFlow:
+    when:
+      visible:
+        id: "button.sidebar"
+    commands:
+      - tapOn:
+          id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.graphs"
+- extendedWaitUntil:
+    visible:
+      id: "screen.graphs"
+    timeout: 30000
+- tapOn:
+    id: "button.graph-add"
+- extendedWaitUntil:
+    visible: "Add sync graph"
+    timeout: 30000
+- tapOn:
+    id: "field.graph-name"
+- inputText: "asset-raw-${LOGSEQ_CHAT_E2E_RUN_ID}"
+- tapOn:
+    id: "button.graph-add.confirm"
+- extendedWaitUntil:
+    visible: "asset-raw-${LOGSEQ_CHAT_E2E_RUN_ID}"
+    timeout: 60000
+- tapOn:
+    text: "asset-raw-${LOGSEQ_CHAT_E2E_RUN_ID}"
+    index: 1
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible: "Aug 23rd, 2026"
+    timeout: 60000
+- tapOn: "Edit block Untitled block"
+- tapOn:
+    id: "button.outliner.editor.audio"
+- assertVisible: "Audio recording"
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: "Stop recording"
+    timeout: 10000
+- tapOn: "Stop recording"
+- extendedWaitUntil:
+    visible: "Audio-.*\\.m4a"
+    timeout: 15000
+- assertVisible:
+    id: "player.asset.audio"
+- extendedWaitUntil:
+    visible:
+      id: "sync.connected"
+    timeout: 15000
+- tapOn:
+    id: "sync.connected"
+- assertVisible: "Sync status"
+- assertVisible: "Up to date"
+- assertVisible: "Saved"

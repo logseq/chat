@@ -348,6 +348,44 @@ let rec compile db = function
     then Error "insert parent or page no longer exists"
     else
       Ok (insert_tx db Outliner.{ uuid; title; page_uuid; parent_uuid; order } created_at)
+  | Create_asset
+      { uuid; title; page_uuid; parent_uuid; order; created_at; asset_type;
+        asset_size; asset_checksum }
+    ->
+    if Option.is_some (entid db "block/uuid" (Uuid uuid))
+    then Error "asset block UUID already exists"
+    else if Option.is_none (entid db "block/uuid" (Uuid page_uuid))
+            || Option.is_none (entid db "block/uuid" (Uuid parent_uuid))
+    then Error "asset parent or page no longer exists"
+    else if Option.is_none (entid db "db/ident" (Keyword "logseq.class/Asset"))
+    then Error "the graph does not define logseq.class/Asset"
+    else
+      Ok
+        [ Entity
+            { db_id = Some (Temp_id ("pending/" ^ uuid))
+            ; attrs =
+                [ "block/uuid", One_value (Uuid uuid)
+                ; "block/title", One_value (String title)
+                ; "block/page", One_value (Ref_to (lookup page_uuid))
+                ; "block/parent", One_value (Ref_to (lookup parent_uuid))
+                ; "block/order", One_value (String order)
+                ; ( "block/tags"
+                  , Many_values
+                      [ Ref_to (Lookup_ref ("db/ident", Keyword "logseq.class/Asset")) ] )
+                ; "block/created-at", One_value (Int created_at)
+                ; "block/updated-at", One_value (Int created_at)
+                ; "logseq.property.asset/type", One_value (String asset_type)
+                ; "logseq.property.asset/size", One_value (Int asset_size)
+                ; "logseq.property.asset/checksum", One_value (String asset_checksum)
+                ; ( "logseq.property.asset/remote-metadata"
+                  , One_value
+                      (Map
+                         [ Keyword "checksum", String asset_checksum
+                         ; Keyword "type", String asset_type
+                         ]) )
+                ]
+            }
+        ]
   | Move_block { uuid; page_uuid; parent_uuid; order } ->
     (match entid db "block/uuid" (Uuid uuid),
            entid db "block/uuid" (Uuid page_uuid),
@@ -584,6 +622,26 @@ let rec satisfied db = function
     && semantic_value_equal db (one_value db (lookup uuid) "block/page") (Some (Ref_uuid page_uuid))
     && semantic_value_equal db (one_value db (lookup uuid) "block/parent") (Some (Ref_uuid parent_uuid))
     && string_value (one_value db (lookup uuid) "block/order") = Some order
+  | Create_asset
+      { uuid; title; page_uuid; parent_uuid; order; asset_type; asset_size;
+        asset_checksum; _ }
+    ->
+    Option.is_some (entid db "block/uuid" (Uuid uuid))
+    && string_value (one_value db (lookup uuid) "block/title") = Some title
+    && semantic_value_equal db (one_value db (lookup uuid) "block/page") (Some (Ref_uuid page_uuid))
+    && semantic_value_equal db (one_value db (lookup uuid) "block/parent") (Some (Ref_uuid parent_uuid))
+    && string_value (one_value db (lookup uuid) "block/order") = Some order
+    && string_value (one_value db (lookup uuid) "logseq.property.asset/type") = Some asset_type
+    && one_value db (lookup uuid) "logseq.property.asset/size" = Some (Int asset_size)
+    && string_value (one_value db (lookup uuid) "logseq.property.asset/checksum") = Some asset_checksum
+    && semantic_value_equal
+         db
+         (one_value db (lookup uuid) "logseq.property.asset/remote-metadata")
+         (Some
+            (Map_value
+               [ "checksum", String_value asset_checksum
+               ; "type", String_value asset_type
+               ]))
   | Move_block { uuid; page_uuid; parent_uuid; order } ->
     Option.is_some (entid db "block/uuid" (Uuid uuid))
     && semantic_value_equal db (one_value db (lookup uuid) "block/page") (Some (Ref_uuid page_uuid))
