@@ -126,10 +126,10 @@ import LogseqChatModel
         #expect(HeaderControlPolicy.settingsSystemImage == "ellipsis.circle")
     }
 
-    @Test func iOS26UsesNativeNavigationTitleBackButtonAndToolbarChrome() {
+    @Test func iOS26UsesAPlainLeadingTitleWithNativeBackAndToolbarChrome() {
         #expect(HeaderControlPolicy.usesNativeToolbarGroup)
         #expect(!HeaderControlPolicy.showsContentModeControl)
-        #expect(HeaderControlPolicy.usesSystemNavigationTitle)
+        #expect(!HeaderControlPolicy.usesSystemNavigationTitle)
         #expect(HeaderControlPolicy.usesSystemBackButton)
         #expect(HeaderControlPolicy.sidebarUsesSystemToolbarChrome)
         #expect(HeaderControlPolicy.titleUsesPrimaryStyle)

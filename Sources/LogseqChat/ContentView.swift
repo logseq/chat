@@ -854,7 +854,6 @@ struct ContentView: View {
         if #available(iOS 26.0, *) {
             primaryContent
                 .background(appBackground)
-                .navigationTitle(headerTitleText)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     nativeHeaderToolbar
@@ -875,6 +874,10 @@ struct ContentView: View {
         ToolbarItem(placement: .topBarLeading) {
             headerLeadingControl
         }
+        ToolbarItem(placement: .topBarLeading) {
+            headerTitle
+        }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .topBarTrailing) {
             syncIndicatorControl
             settingsControl
