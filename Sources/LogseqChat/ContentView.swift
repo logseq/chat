@@ -1737,6 +1737,10 @@ struct ContentView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 12) {
             headerLeadingControl
+                .frame(
+                    width: SidebarChromeMetrics.minimumHitTarget,
+                    height: SidebarChromeMetrics.minimumHitTarget
+                )
                 .buttonStyle(.plain)
             headerTitle
             Spacer()
@@ -1778,10 +1782,6 @@ struct ContentView: View {
                 SidebarMenuIcon()
             }
         }
-        .frame(
-            width: SidebarChromeMetrics.minimumHitTarget,
-            height: SidebarChromeMetrics.minimumHitTarget
-        )
         .foregroundStyle(.primary)
         .disabled(zoomedOutlinerBlock == nil && !isNodePagePresented && !sidebarActivationAvailable)
         .accessibilityLabel(
