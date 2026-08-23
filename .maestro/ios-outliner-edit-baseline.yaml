@@ -1,0 +1,20 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+- scrollUntilVisible:
+    element:
+      text: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+    direction: DOWN
+    timeout: 60000
+    speed: 50
+    visibilityPercentage: 100
+    centerElement: true
+- takeScreenshot: "ios-outliner-display-baseline"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "field.outliner.block.*"
+- takeScreenshot: "ios-outliner-edit-baseline"

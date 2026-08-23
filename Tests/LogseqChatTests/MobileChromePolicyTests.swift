@@ -129,6 +129,9 @@ import LogseqChatModel
     @Test func iOS26GroupsOnlySyncAndSettingsInTheNativeToolbar() {
         #expect(HeaderControlPolicy.usesNativeToolbarGroup)
         #expect(!HeaderControlPolicy.showsContentModeControl)
+        #expect(HeaderControlPolicy.titleIsLeading)
+        #expect(HeaderControlPolicy.titleUsesPrimaryStyle)
+        #expect(!HeaderControlPolicy.titleSharesLeadingControlGroup)
         #expect(HeaderControlPolicy.trailingGroupActionCount == 2)
         #expect(HeaderControlPolicy.syncIndicatorOpensStatusSheet)
     }

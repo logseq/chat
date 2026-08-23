@@ -17,7 +17,7 @@ appId: com.logseq.chat
     id: "list.outliner"
 - assertNotVisible:
     id: "button.content-mode"
-- assertNotVisible:
+- assertVisible:
     id: "button.composer.expand"
 - tapOn:
     id: "button.sidebar"

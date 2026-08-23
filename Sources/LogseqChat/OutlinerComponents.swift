@@ -201,7 +201,7 @@ struct OutlinerView: View {
         }
         content.overlay(alignment: .topLeading) {
             if let editing, let frame = editorFrame {
-                OutlinerInlineEditor(
+                OutlinerBaselineAlignedEditor(
                     text: editing.title,
                     blockID: editing.uuid,
                     desiredCaretUTF16Offset: editing.caretUTF16Offset,
@@ -499,6 +499,39 @@ struct OutlinerView: View {
     }
 
 }
+
+#if !SKIP && os(iOS)
+private struct OutlinerBaselineAlignedEditor: View {
+    let text: String
+    let blockID: String
+    let desiredCaretUTF16Offset: Int?
+    let onTextChange: (String, Int) -> Void
+    let onReturn: (String, Int) -> Void
+    let onBackspace: (String, Int) -> Void
+    let onCaretChange: (Int) -> Void
+
+    var body: some View {
+        ZStack(alignment: Alignment(horizontal: .leading, vertical: .firstTextBaseline)) {
+            Text(verbatim: text.isEmpty ? " " : text)
+                .font(.body)
+                .foregroundStyle(.clear)
+                .outlinerBlockTitleLayout()
+                .accessibilityHidden(true)
+            OutlinerInlineEditor(
+                text: text,
+                blockID: blockID,
+                desiredCaretUTF16Offset: desiredCaretUTF16Offset,
+                onTextChange: onTextChange,
+                onReturn: onReturn,
+                onBackspace: onBackspace,
+                onCaretChange: onCaretChange
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+#endif
 
 #if !SKIP && os(iOS)
 private struct OutlinerRowFramePreferenceKey: PreferenceKey {
@@ -1102,6 +1135,7 @@ private struct OutlinerRowDropDelegate: DropDelegate {
 
 #if !SKIP
 struct OutlinerEditorToolbar: View {
+    let taskStatusTitle: String?
     let onAction: (OutlinerToolbarAction) -> Void
 
     var body: some View {
@@ -1143,7 +1177,11 @@ struct OutlinerEditorToolbar: View {
                 .frame(width: OutlinerToolbarPolicy.editorItemWidth, height: 42)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(action.accessibilityTitle)
+        .accessibilityLabel(
+            action == .task
+                ? OutlinerToolbarPolicy.taskAccessibilityTitle(statusTitle: taskStatusTitle)
+                : action.accessibilityTitle
+        )
         .accessibilityValue(action == .pageReference ? "[[]]" : "")
         .accessibilityIdentifier("button.outliner.editor.\(action.identifier)")
     }

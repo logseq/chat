@@ -495,6 +495,31 @@ let () =
 ;;
 
 let () =
+  let status_change =
+    Ops.Set_property
+      { uuid = "block"
+      ; attr = "logseq.property/status"
+      ; expected = None
+      ; value = Some (Ops.Ref_ident "logseq.property/status.todo")
+      }
+  in
+  let title_change =
+    Ops.Set_property
+      { uuid = "block"
+      ; attr = "block/title"
+      ; expected = Some (Ops.String_value "Old")
+      ; value = Some (Ops.String_value "New")
+      }
+  in
+  assert_bool
+    "status-only changes do not write the search index"
+    (Runtime.affected_uuids (base_db "Old") status_change = []);
+  assert_bool
+    "search-visible property changes still refresh incrementally"
+    (Runtime.affected_uuids (base_db "Old") title_change = [ "block" ])
+;;
+
+let () =
   let graph_path = Filename.temp_file "logseq-chat-runtime-search" ".sqlite" in
   let search_path = Filename.temp_file "logseq-chat-runtime-search-index" ".sqlite" in
   let cleanup path = if Sys.file_exists path then Sys.remove path in

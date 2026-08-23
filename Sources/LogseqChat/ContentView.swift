@@ -691,13 +691,19 @@ struct ContentView: View {
         #if SKIP
             mainContent
         #else
-        NavigationStack(path: $appNavigationPath) {
-            navigationMainContent
-                .navigationDestination(for: AppNavigationRoute.self) { route in
-                    appNavigationDestination(route)
-                }
+        ZStack {
+            NavigationStack(path: $appNavigationPath) {
+                navigationMainContent
+                    .navigationDestination(for: AppNavigationRoute.self) { route in
+                        appNavigationDestination(route)
+                    }
+            }
+            composerDismissalSurface
         }
         .onChange(of: appNavigationPath) { previousPath, path in
+            if path.count < previousPath.count {
+                endEditingForDestinationChange()
+            }
             let closedNodes = AppNavigationPathPolicy.coreCloseCount(
                 previousPath: previousPath,
                 path: path,
@@ -864,9 +870,10 @@ struct ContentView: View {
             headerLeadingControl
                 .buttonBorderShape(.circle)
         }
-        ToolbarItem(placement: .principal) {
+        ToolbarItem(placement: .topBarLeading) {
             headerTitle
         }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .topBarTrailing) {
             syncIndicatorControl
             settingsControl
@@ -1059,6 +1066,7 @@ struct ContentView: View {
     private func switchGraph(to graph: LogseqGraph) {
         guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        endEditingForDestinationChange()
         sidebarMotion.setSidebarPresented(false)
         if graph.id == store.snapshot.selectedGraphId {
             store.clearSelectedPage()
@@ -1071,6 +1079,7 @@ struct ContentView: View {
     private func openSidebarPage(_ page: LogseqSidebarPage) {
         guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        endEditingForDestinationChange()
         sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
         flashcardsPresented = false
@@ -1080,6 +1089,7 @@ struct ContentView: View {
     private func openJournals() {
         guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        endEditingForDestinationChange()
         sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
         flashcardsPresented = false
@@ -1089,6 +1099,7 @@ struct ContentView: View {
     private func openFlashcards() {
         guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        endEditingForDestinationChange()
         sidebarMotion.setSidebarPresented(false)
         graphsPresented = false
         flashcardsPresented = true
@@ -1098,6 +1109,7 @@ struct ContentView: View {
     private func openGraphs() {
         guard sidebarMotion.isPresented,
               abs(sidebarMotion.dragOffset) == 0.0 else { return }
+        endEditingForDestinationChange()
         sidebarMotion.setSidebarPresented(false)
         flashcardsPresented = false
         graphsPresented = true
@@ -1146,11 +1158,17 @@ struct ContentView: View {
     @ViewBuilder private var mainContent: some View {
         #if SKIP
         stackedContent
+            .overlay {
+                composerDismissalSurface
+            }
             .overlay(alignment: .bottom) {
                 androidFloatingControls
             }
         #elseif os(macOS)
         stackedContent
+            .overlay {
+                composerDismissalSurface
+            }
             .overlay(alignment: .bottom) {
                 if shouldShowComposer {
                     floatingComposer
@@ -1346,6 +1364,7 @@ struct ContentView: View {
         switch link {
         case let .node(uuid):
             #if SKIP
+            endEditingForDestinationChange()
             store.openNode(uuid)
             #else
             openNodeRoute(uuid)
@@ -1355,6 +1374,7 @@ struct ContentView: View {
 
     private func openOutlinerNode(_ uuid: String) {
         #if SKIP
+        endEditingForDestinationChange()
         store.outlinerEvent(LogseqOutlinerEvent(type: "zoomIn", uuid: uuid))
         #else
         openNodeRoute(uuid)
@@ -1372,6 +1392,7 @@ struct ContentView: View {
             #endif
             return
         }
+        endEditingForDestinationChange()
         #if DEBUG
         print("LogseqChat debug: opening node route target=\(route) currentDepth=\(appNavigationPath.count)")
         #endif
@@ -1414,7 +1435,6 @@ struct ContentView: View {
     private var shouldShowComposer: Bool {
         !graphsPresented
             && !flashcardsPresented
-            && (store.snapshot.selectedPage == nil || isNodePagePresented)
     }
 
     private var shouldShowExpandedComposer: Bool {
@@ -1471,6 +1491,13 @@ struct ContentView: View {
 
     private var outlinerEditing: LogseqOutlinerEditing? {
         activeNodeProjection?.outlinerState.editing ?? store.snapshot.outlinerState.editing
+    }
+
+    private var outlinerEditingTaskStatus: LogseqTaskStatus? {
+        guard let editingUUID = outlinerEditing?.uuid else { return nil }
+        return (activeNodeProjection?.blocks ?? store.snapshot.blocks)
+            .first(where: { $0.uuid == editingUUID })?
+            .status
     }
 
     private var presentedOutlinerEditing: LogseqOutlinerEditing? {
@@ -1772,8 +1799,9 @@ struct ContentView: View {
             ))
         .font(.subheadline)
         .fontWeight(.semibold)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.primary)
         .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var hasUnconfirmedSyncChanges: Bool {
@@ -2034,6 +2062,11 @@ struct ContentView: View {
         store.outlinerEvent(LogseqOutlinerEvent(type: "cancelEditing"))
     }
 
+    private func endEditingForDestinationChange() {
+        finishOutlinerEditing()
+        dismissComposerEditing()
+    }
+
     private func performOutlinerPlatformCommands() {
         for command in store.snapshot.outlinerCommands {
             switch command.type {
@@ -2157,6 +2190,17 @@ struct ContentView: View {
     }
     #endif
 
+    @ViewBuilder private var composerDismissalSurface: some View {
+        if composerExpanded {
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismissComposerEditing()
+                }
+                .accessibilityIdentifier("surface.composer.dismiss")
+        }
+    }
+
     #if !SKIP && os(iOS)
     @ViewBuilder private var iosBottomChrome: some View {
         Group {
@@ -2174,7 +2218,10 @@ struct ContentView: View {
                             onSelect: completeOutlinerAutocomplete
                         )
                     }
-                    OutlinerEditorToolbar(onAction: handleOutlinerEditorToolbarAction)
+                    OutlinerEditorToolbar(
+                        taskStatusTitle: outlinerEditingTaskStatus?.title,
+                        onAction: handleOutlinerEditorToolbarAction
+                    )
                 }
                     .platformGlassContainer()
                     .padding(.horizontal, 16)
@@ -2526,12 +2573,23 @@ struct ContentView: View {
     }
 
     private func dismissComposerEditing() {
+        if let editingBlock {
+            let submittedDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !submittedDraft.isEmpty,
+               submittedDraft != editingBlock.title || selectedTaskStatus != editingBlock.status {
+                store.update(
+                    block: editingBlock,
+                    title: submittedDraft,
+                    status: selectedTaskStatus
+                )
+            }
+            draft = ""
+            persistedDraft = ""
+            selectedTaskStatus = nil
+            self.editingBlock = nil
+        }
         composerExpanded = false
         composerFocused = false
-        draft = ""
-        persistedDraft = ""
-        selectedTaskStatus = nil
-        editingBlock = nil
     }
 
     private func sendDraft() {

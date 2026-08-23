@@ -507,6 +507,10 @@ enum OutlinerToolbarPolicy {
     ]
 
     static let trailingSelectionAction = OutlinerToolbarAction.unselect
+
+    static func taskAccessibilityTitle(statusTitle: String?) -> String {
+        "Task: \(statusTitle ?? "None")"
+    }
 }
 
 enum OutlinerLayoutMetrics {
@@ -529,6 +533,8 @@ enum OutlinerLayoutMetrics {
 }
 
 enum OutlinerNativeTextLayoutPolicy {
+    static let usesSystemFirstBaselineAlignment = true
+
     static func verticalInset(
         fontLineHeight: CGFloat,
         minimumLineHeight: CGFloat

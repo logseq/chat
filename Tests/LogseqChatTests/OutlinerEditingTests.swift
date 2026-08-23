@@ -147,6 +147,13 @@ import Testing
         #expect(OutlinerToolbarPolicy.trailingEditorAction.systemImageName == "keyboard.chevron.compact.down")
     }
 
+    @Test func taskToolbarAccessibilityTracksTheEditingBlockStatus() {
+        #expect(OutlinerToolbarPolicy.taskAccessibilityTitle(statusTitle: nil) == "Task: None")
+        #expect(OutlinerToolbarPolicy.taskAccessibilityTitle(statusTitle: "Todo") == "Task: Todo")
+        #expect(OutlinerToolbarPolicy.taskAccessibilityTitle(statusTitle: "Doing") == "Task: Doing")
+        #expect(OutlinerToolbarPolicy.taskAccessibilityTitle(statusTitle: "Done") == "Task: Done")
+    }
+
     @Test func selectionToolbarMatchesCurrentLogseqMobileOrderAndSymbols() {
         let expected: [OutlinerToolbarAction] = [
             .copy, .outdent, .indent, .delete, .copyReference, .copyURL,
@@ -185,6 +192,7 @@ import Testing
     }
 
     @Test func nativeEditorCentersItsFontInsideTheSharedFirstLineHeight() {
+        #expect(OutlinerNativeTextLayoutPolicy.usesSystemFirstBaselineAlignment)
         #expect(OutlinerNativeTextLayoutPolicy.verticalInset(
             fontLineHeight: 20,
             minimumLineHeight: 24
@@ -728,7 +736,7 @@ import Testing
             composerExpanded: false,
             hasOutlinerSelection: false,
             isEditingOutlinerBlock: false
-        ) == .hidden)
+        ) == .captureAndSearch)
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.outliner,
             hasSelectedPage: true,
@@ -745,6 +753,24 @@ import Testing
             isEditingOutlinerBlock: false,
             isNodePage: true
         ) == .expandedComposer)
+    }
+
+    @Test func destinationChangesAndOutsideComposerTapsEndEditing() {
+        #expect(DestinationEditingPolicy.sidebarSelectionEndsEditing)
+        #expect(DestinationEditingPolicy.outsideComposerTapEndsEditing)
+        #expect(DestinationEditingPolicy.preservesCaptureDraftOnDismiss)
+        #expect(DestinationEditingPolicy.shouldEndEditing(
+            previousRouteDepth: 0,
+            currentRouteDepth: 1
+        ))
+        #expect(DestinationEditingPolicy.shouldEndEditing(
+            previousRouteDepth: 2,
+            currentRouteDepth: 1
+        ))
+        #expect(!DestinationEditingPolicy.shouldEndEditing(
+            previousRouteDepth: 1,
+            currentRouteDepth: 1
+        ))
     }
 
     @Test func dropZoneMapsOnlyPointerGeometry() {

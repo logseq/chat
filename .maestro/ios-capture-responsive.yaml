@@ -33,6 +33,15 @@ appId: com.logseq.chat
     id: "button.attachment"
 - assertVisible:
     id: "button.task-status"
+- inputText: "Preserved draft __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn:
+    id: "surface.composer.dismiss"
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.composer.expand"
+- assertVisible: "Preserved draft __LOGSEQ_CHAT_E2E_RUN_ID__"
+- eraseText: 28
 - inputText: "Clear me"
 - eraseText: 8
 - tapOn:

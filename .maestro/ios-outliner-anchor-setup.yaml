@@ -13,7 +13,10 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.send"
 - assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
-- tapOn: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible:
+    id: "surface.composer.dismiss"
+- tapOn:
+    point: "50%,30%"
 - assertVisible:
     id: "button.composer.expand"
 - assertVisible:

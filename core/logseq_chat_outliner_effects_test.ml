@@ -162,7 +162,7 @@ let () =
                  { uuid = "first"
                  ; attr = "logseq.property/status"
                  ; expected = None
-                 ; value = Some (Ref_ident "logseq.property/status.backlog")
+                 ; value = Some (Ref_ident "logseq.property/status.todo")
                  }
            ; _ } ] -> true
        | _ -> false);
@@ -349,27 +349,31 @@ let cycle_value status =
   match interpret ~context:(context_with_status status) [ State.Cycle_task_status "task" ] with
   | Ok
       { operations =
-          [ { Ops.intent = Set_property { expected; value = Some value; _ }; _ } ]
+          [ { Ops.intent = Set_property { expected; value; _ }; _ } ]
       ; _
       } -> expected, value
   | _ -> fail "task cycle did not produce a property operation"
 ;;
 
 let () =
-  assert_bool "task cycle advances a built-in status"
-    (cycle_value (status ~ident:"logseq.property/status.backlog" "backlog")
-     = ( Some (Ops.Ref_ident "logseq.property/status.backlog")
-       , Ops.Ref_ident "logseq.property/status.todo" ));
-  assert_bool "task cycle wraps the final built-in status"
-    (cycle_value (status ~ident:"logseq.property/status.canceled" "canceled")
-     = ( Some (Ops.Ref_ident "logseq.property/status.canceled")
-       , Ops.Ref_ident "logseq.property/status.backlog" ));
+  assert_bool "task cycle follows Logseq Todo Doing Done order"
+    (cycle_value (status ~ident:"logseq.property/status.todo" "todo")
+     = ( Some (Ops.Ref_ident "logseq.property/status.todo")
+       , Some (Ops.Ref_ident "logseq.property/status.doing") ));
+  assert_bool "task cycle advances Doing to Done"
+    (cycle_value (status ~ident:"logseq.property/status.doing" "doing")
+     = ( Some (Ops.Ref_ident "logseq.property/status.doing")
+       , Some (Ops.Ref_ident "logseq.property/status.done") ));
+  assert_bool "task cycle clears Done"
+    (cycle_value (status ~ident:"logseq.property/status.done" "done")
+     = ( Some (Ops.Ref_ident "logseq.property/status.done")
+       , None ));
   assert_bool "task cycle resets an unknown status"
     (cycle_value (status ~ident:"user.status/custom" "custom")
      = ( Some (Ops.Ref_ident "user.status/custom")
-       , Ops.Ref_ident "logseq.property/status.backlog" ));
+       , Some (Ops.Ref_ident "logseq.property/status.todo") ));
   assert_bool "task cycle guards a UUID-only status"
     (cycle_value (status "uuid-only")
      = ( Some (Ops.Ref_uuid "uuid-only")
-       , Ops.Ref_ident "logseq.property/status.backlog" ))
+       , Some (Ops.Ref_ident "logseq.property/status.todo") ))
 ;;

@@ -56,33 +56,21 @@ let operation ~base_t ~fresh_uuid intent =
   Ops.{ operation_id = fresh_uuid (); base_t; state = Queued; intent }
 ;;
 
-let built_in_status_idents =
-  [ "logseq.property/status.backlog"
-  ; "logseq.property/status.todo"
-  ; "logseq.property/status.doing"
-  ; "logseq.property/status.in-review"
-  ; "logseq.property/status.done"
-  ; "logseq.property/status.canceled"
-  ]
-;;
-
 let status_reference (status : Model.status) =
   match status.ident with
   | Some ident -> Ops.Ref_ident ident
   | None -> Ops.Ref_uuid status.uuid
 ;;
 
-let next_status_ident block =
+let next_status_value block =
   let current_ident = Option.bind block.Model.status (fun status -> status.Model.ident) in
-  let rec next = function
-    | [] -> List.hd built_in_status_idents
-    | current :: following :: _ when Option.equal String.equal current_ident (Some current) ->
-      following
-    | [ current ] when Option.equal String.equal current_ident (Some current) ->
-      List.hd built_in_status_idents
-    | _ :: rest -> next rest
-  in
-  match current_ident with None -> List.hd built_in_status_idents | Some _ -> next built_in_status_idents
+  match current_ident with
+  | Some "logseq.property/status.todo" ->
+    Some (Ops.Ref_ident "logseq.property/status.doing")
+  | Some "logseq.property/status.doing" ->
+    Some (Ops.Ref_ident "logseq.property/status.done")
+  | Some "logseq.property/status.done" -> None
+  | _ -> Some (Ops.Ref_ident "logseq.property/status.todo")
 ;;
 
 let append_result left right =
@@ -176,7 +164,7 @@ let command ~base_t ~now ~fresh_uuid context = function
                     { uuid
                     ; attr = "logseq.property/status"
                     ; expected = Option.map status_reference block.status
-                    ; value = Some (Ref_ident (next_status_ident block))
+                    ; value = next_status_value block
                     })
              ]
          ; platform = []

@@ -14,6 +14,8 @@ appId: com.logseq.chat
     timeout: 30000
 - assertVisible: "Linked references"
 - assertVisible: "E2E Journal 08"
+- assertVisible:
+    id: "button.composer.expand"
 - tapOn:
     id: "button.sidebar"
 - assertVisible:
@@ -24,3 +26,5 @@ appId: com.logseq.chat
       id: "section.node.linked-references"
     timeout: 30000
 - assertVisible: "Linked references"
+- assertVisible:
+    id: "button.composer.expand"

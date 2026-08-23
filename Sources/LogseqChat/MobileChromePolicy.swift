@@ -57,6 +57,9 @@ enum HeaderControlPolicy {
     static let settingsSystemImage = "ellipsis.circle"
     static let usesNativeToolbarGroup = true
     static let showsContentModeControl = false
+    static let titleIsLeading = true
+    static let titleUsesPrimaryStyle = true
+    static let titleSharesLeadingControlGroup = false
     static let trailingGroupActionCount = 2
     static let syncIndicatorOpensStatusSheet = true
 }
@@ -154,9 +157,21 @@ enum BottomChromePolicy {
         if !showsComposer { return .hidden }
         if contentMode == .outliner && hasOutlinerSelection { return .outlinerSelection }
         if contentMode == .outliner && isEditingOutlinerBlock { return .outlinerEditor }
-        if hasSelectedPage && !isNodePage { return .hidden }
         if composerExpanded { return .expandedComposer }
         return .captureAndSearch
+    }
+}
+
+enum DestinationEditingPolicy {
+    static let sidebarSelectionEndsEditing = true
+    static let outsideComposerTapEndsEditing = true
+    static let preservesCaptureDraftOnDismiss = true
+
+    static func shouldEndEditing(
+        previousRouteDepth: Int,
+        currentRouteDepth: Int
+    ) -> Bool {
+        previousRouteDepth != currentRouteDepth
     }
 }
 

@@ -49,9 +49,22 @@ let rec subtree_uuids db roots =
        uuid :: subtree_uuids db (children @ rest))
 ;;
 
+let search_visible_property = function
+  | "block/title" | "block/name" | "block/page" | "block/parent"
+  | "block/journal-day" | "block/refs" | "logseq.property/built-in?"
+  | "block/closed-value-property" | "logseq.property/hide?"
+  | "logseq.property/deleted-at" -> true
+  | _ -> false
+;;
+
 let affected_uuids db = function
-  | Ops.Save_title { uuid; _ } | Ops.Set_property { uuid; _ }
-  | Ops.Set_properties { uuid; _ }
+  | Ops.Set_property { uuid; attr; _ } ->
+    if search_visible_property attr then [ uuid ] else []
+  | Ops.Set_properties { uuid; changes } ->
+    if List.exists (fun change -> search_visible_property change.Ops.attr) changes
+    then [ uuid ]
+    else []
+  | Ops.Save_title { uuid; _ }
   | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ }
   | Ops.Move_block { uuid; _ }
   | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } -> [ uuid ]

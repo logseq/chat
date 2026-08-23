@@ -8,8 +8,27 @@ appId: com.logseq.chat
 - tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible:
     id: "toolbar.outliner.editor"
+- assertVisible: "Task: None"
 - tapOn:
     id: "button.outliner.editor.task"
+- extendedWaitUntil:
+    visible: "Task: Todo"
+    timeout: 2000
+- tapOn:
+    id: "button.outliner.editor.task"
+- extendedWaitUntil:
+    visible: "Task: Doing"
+    timeout: 2000
+- tapOn:
+    id: "button.outliner.editor.task"
+- extendedWaitUntil:
+    visible: "Task: Done"
+    timeout: 2000
+- tapOn:
+    id: "button.outliner.editor.task"
+- extendedWaitUntil:
+    visible: "Task: None"
+    timeout: 2000
 - assertVisible:
     id: "toolbar.outliner.editor"
 - tapOn:
