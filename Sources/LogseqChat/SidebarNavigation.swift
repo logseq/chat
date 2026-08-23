@@ -30,6 +30,7 @@ enum SidebarTabPolicy {
     static let configurableItems: [SidebarContentItem] = [
         .journals, .flashcards, .graphs,
     ]
+    static let requiredItems: [SidebarContentItem] = [.journals, .graphs]
 
     static func selectedItems(rawValue: String) -> [SidebarContentItem] {
         let requested = rawValue.isEmpty
@@ -43,6 +44,9 @@ enum SidebarTabPolicy {
         }
         selected.removeAll { $0 == .journals }
         selected.insert(.journals, at: 0)
+        if !selected.contains(SidebarContentItem.graphs) {
+            selected.append(SidebarContentItem.graphs)
+        }
         return selected
     }
 
@@ -66,7 +70,7 @@ enum SidebarTabPolicy {
             if configurableItems.contains(item), !selected.contains(item) {
                 selected.append(item)
             }
-        } else if item != .journals {
+        } else if !requiredItems.contains(item) {
             selected.removeAll { $0 == item }
         }
         return self.rawValue(for: selected)

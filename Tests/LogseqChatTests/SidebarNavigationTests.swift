@@ -46,12 +46,21 @@ import Testing
             == "journals,graphs,flashcards")
     }
 
-    @Test func journalsCannotBeDisabled() {
+    @Test func journalsAndGraphsCannotBeDisabled() {
+        #expect(SidebarTabPolicy.selectedItems(rawValue: "journals") == [
+            SidebarContentItem.journals,
+            SidebarContentItem.graphs,
+        ])
         #expect(SidebarTabPolicy.updatedRawValue(
             "journals,graphs",
             item: SidebarContentItem.journals,
             isEnabled: false
         ) == "journals,graphs")
+        #expect(SidebarTabPolicy.updatedRawValue(
+            "journals,flashcards,graphs",
+            item: SidebarContentItem.graphs,
+            isEnabled: false
+        ) == "journals,flashcards,graphs")
     }
 
     @Test func mobileTabsReorderWithoutMovingTheRequiredJournalTab() {

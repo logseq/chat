@@ -2923,7 +2923,7 @@ private struct MobileTabsSettingsView: View {
             } header: {
                 Text("Visible tabs")
             } footer: {
-                Text("Journals is always available. Use the arrows to reorder the other tabs.")
+                Text("Journals and Graphs are always available. Use the arrows to reorder tabs.")
             }
 
             if !availableItems.isEmpty {
@@ -2958,7 +2958,7 @@ private struct MobileTabsSettingsView: View {
             }
             .buttonStyle(.borderless)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .disabled(item == .journals)
+            .disabled(SidebarTabPolicy.requiredItems.contains(item))
             .accessibilityLabel(
                 item.title + (selectedItems.contains(item) ? ", on" : ", off")
             )

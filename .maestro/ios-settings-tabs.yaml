@@ -18,6 +18,7 @@ appId: com.logseq.chat
     id: "toggle.settings.tab.flashcards"
 - assertVisible:
     id: "toggle.settings.tab.graphs"
+- assertVisible: "Graphs, on"
 - tapOn:
     id: "toggle.settings.tab.flashcards"
 - assertVisible: "Flashcards, off"
