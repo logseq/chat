@@ -359,12 +359,20 @@ let () =
 ;;
 
 let () =
+  let staged = ref [] in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
       ~graph_unlocked:(fun ~graph_id:_ -> true)
-      ~encrypt_title:(fun ~graph_id:_ title -> Ok ("cipher(" ^ title ^ ")"))
+      ~sync_cursor:(fun () -> Some 91)
       ~journal_page_id:(fun ~journal_day:_ -> None)
+      ~stage_operation:(fun operation ->
+        staged := !staged @ [ operation ];
+        Ok ())
+      ~prepare_operation:(fun operation ->
+        Ok
+          ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
+          , "[]" ))
       ()
   in
   configure_encrypted_graph session;
@@ -376,33 +384,41 @@ let () =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"sendTask","payload":"{\"text\":\"Secret task\",\"uuid\":\"encrypted-async\",\"now\":1776000000000,\"status\":{\"uuid\":\"todo\",\"title\":\"Todo\"}}"}}|});
-  let page_request =
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.intent = Create_journal { block_uuid; title; _ }; _ }
+     ; { intent = Set_property { uuid; attr; _ }; _ }
+     ] ->
+     assert_equal "encrypted task journal block" "encrypted-async" block_uuid;
+     assert_equal "encrypted task title" "Secret task" title;
+     assert_equal "encrypted task status block" "encrypted-async" uuid;
+     assert_equal "encrypted task status property" "logseq.property/status" attr
+   | _ -> failwith "encrypted task must stage journal insertion and status operations");
+  let journal_request =
     Logseq_chat_rpc.call
       session
       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
     |> pending_request
     |> Option.get
   in
-  if not (String.ends_with ~suffix:"/pages" (required_string "url" page_request))
-  then failwith "encrypted pending pump must create a missing journal first";
-  let task_request =
+  assert_equal
+    "encrypted task journal tx"
+    "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+    (required_string "url" journal_request);
+  let status_request =
     Logseq_chat_rpc.call
       session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{}\",\"error\":null}"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}"}}|}
     |> pending_request
     |> Option.get
   in
-  if not (String.ends_with ~suffix:"/tasks" (required_string "url" task_request))
-  then failwith "encrypted pending pump must continue with semantic task REST";
-  let body = required_string "body" task_request in
-  if
-    not (contains body {|"title":"cipher(Secret task)"|})
-    || not (contains body {|"page-id":"00000001-2026-0412-0000-000000000000"|})
-  then failwith "encrypted pending task must contain ciphertext and its journal page";
+  assert_equal
+    "encrypted task status tx"
+    "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+    (required_string "url" status_request);
   let finished =
     Logseq_chat_rpc.call
       session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":2,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"encrypted-async\\\"}\",\"error\":null}"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":2,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":93}\",\"error\":null}"}}|}
   in
   if Option.is_some (pending_request finished) then failwith "encrypted task pump did not finish"
 ;;
@@ -1569,6 +1585,64 @@ let prepare_test_operation operation =
   Ok
     ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
     , "[]" )
+;;
+
+let () =
+  let staged = ref [] in
+  let existing =
+    { (remote_block "existing-journal-block" "Existing") with
+      Logseq_chat_model.page_id = "journal-page"
+    ; parent_id = Some "journal-page"
+    ; order = Some "a0"
+    }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
+      ~graph_unlocked:(fun ~graph_id:_ -> true)
+      ~sync_cursor:(fun () -> Some 91)
+      ~graph_blocks:(fun () -> Some [ existing ])
+      ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
+      ~stage_operation:(fun operation ->
+        staged := !staged @ [ operation ];
+        Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_encrypted_graph session;
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"selectGraph","payload":"encrypted-1"}}|});
+  ignore
+    (Logseq_chat_rpc.call
+       session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Encrypted capture\",\"uuid\":\"encrypted-capture\",\"now\":1776000000000}"}}|});
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.intent =
+           Insert_block { uuid; title; page_uuid; parent_uuid; order; _ }
+       ; _
+       } ] ->
+     assert_equal "encrypted capture uuid" "encrypted-capture" uuid;
+     assert_equal "encrypted capture title" "Encrypted capture" title;
+     assert_equal "encrypted capture page" "journal-page" page_uuid;
+     assert_equal "encrypted capture parent" "journal-page" parent_uuid;
+     if String.compare order "a0" <= 0
+     then failwith "encrypted capture must append after the last journal block"
+   | _ -> failwith "encrypted capture must stage one persistent insert operation");
+  let request =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request
+    |> Option.get
+  in
+  assert_equal
+    "encrypted capture tx URL"
+    "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+    (required_string "url" request);
+  if contains (required_string "url" request) "/capture"
+  then failwith "encrypted captures must never use the semantic capture API"
 ;;
 
 let dispatch_outliner session payload =

@@ -7,6 +7,7 @@ module Pending_ops = Logseq_chat_pending_ops
 module Flashcards = Logseq_chat_flashcards
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
+module Order = Logseq_chat_fractional_order
 
 type pending_transport =
   | Json_request of Api.request
@@ -131,6 +132,12 @@ let debug format =
   Printf.ksprintf
     (fun message -> prerr_endline ("LogseqChat core " ^ message))
     format
+;;
+
+let fresh_squuid () =
+  match Datascript.squuid () with
+  | Datascript.Uuid uuid -> uuid
+  | _ -> failwith "Datascript.squuid returned a non-UUID value"
 ;;
 
 let success result =
@@ -1742,6 +1749,146 @@ let enqueue_semantic session _config operation =
        Ok ())
 ;;
 
+(* Editor text keeps page and tag names readable; stored titles use UUID
+   references. New hashtags are staged before the title operation. *)
+let normalize_operation_titles session (operation : Pending_ops.t) =
+  match session.graph_normalize_titles with
+  | None -> [ operation ]
+  | Some normalize ->
+    let created = ref [] in
+    let normalize ~uuid titles =
+      let titles, new_tags = normalize ~uuid titles in
+      created := !created @ new_tags;
+      titles
+    in
+    let intent =
+      match operation.Pending_ops.intent with
+      | Pending_ops.Save_title { uuid; expected_title; title } ->
+        (match normalize ~uuid [ title ] with
+         | [ title ] -> Pending_ops.Save_title { uuid; expected_title; title }
+         | _ -> operation.Pending_ops.intent)
+      | Pending_ops.Insert_block record ->
+        (match normalize ~uuid:record.uuid [ record.title ] with
+         | [ title ] -> Pending_ops.Insert_block { record with title }
+         | _ -> operation.Pending_ops.intent)
+      | Pending_ops.Split_block record ->
+        (match normalize ~uuid:record.uuid [ record.before; record.after ] with
+         | [ before; after ] -> Pending_ops.Split_block { record with before; after }
+         | _ -> operation.Pending_ops.intent)
+      | Pending_ops.Merge_backward record ->
+        (match normalize ~uuid:record.uuid [ record.title ] with
+         | [ title ] -> Pending_ops.Merge_backward { record with title }
+         | _ -> operation.Pending_ops.intent)
+      | intent -> intent
+    in
+    let create_operations =
+      List.map
+        (fun (uuid, title) ->
+          Pending_ops.
+            { operation_id = fresh_squuid ()
+            ; base_t = operation.base_t
+            ; state = Queued
+            ; intent = Create_tag { uuid; title; created_at = now_ms () }
+            })
+        !created
+    in
+    create_operations @ [ { operation with Pending_ops.intent } ]
+;;
+
+let encrypted_capture_operations session ~uuid ~title ~now ?status () =
+  let base_t =
+    Option.bind session.sync_cursor (fun cursor -> cursor ())
+    |> Option.to_result ~none:"A current server cursor is required"
+  in
+  Result.bind base_t (fun base_t ->
+    let journal_day = Model.journal_day_for_ms now in
+    let page_uuid = Option.bind session.journal_page_id (fun find -> find ~journal_day) in
+    let capture_operation =
+      match page_uuid with
+      | None ->
+        Ok
+          Pending_ops.
+            { operation_id = fresh_squuid ()
+            ; base_t
+            ; state = Queued
+            ; intent =
+                Create_journal
+                  { page_uuid = journal_page_uuid journal_day
+                  ; block_uuid = uuid
+                  ; title
+                  ; journal_day
+                  ; created_at = now
+                  }
+            }
+      | Some page_uuid ->
+        let orders =
+          (base_outliner_context session).Outliner_state.blocks
+          |> List.filter (fun (block : Model.block) ->
+            String.equal block.page_id page_uuid
+            && block.parent_id = Some page_uuid)
+          |> List.filter_map (fun (block : Model.block) -> block.order)
+          |> List.sort String.compare
+          |> List.rev
+        in
+        let last_order = match orders with order :: _ -> Some order | [] -> None in
+        Result.map
+          (fun order ->
+            Pending_ops.
+              { operation_id = fresh_squuid ()
+              ; base_t
+              ; state = Queued
+              ; intent =
+                  Insert_block
+                    { uuid
+                    ; title
+                    ; page_uuid
+                    ; parent_uuid = page_uuid
+                    ; order
+                    ; created_at = now
+                    }
+              })
+          (Order.between last_order None)
+    in
+    Result.map
+      (fun capture_operation ->
+        let status_operations =
+          match status with
+          | None -> []
+          | Some (status : Model.status) ->
+            let value =
+              match status.ident with
+              | Some ident -> Pending_ops.Ref_ident ident
+              | None -> Ref_uuid status.uuid
+            in
+            [ Pending_ops.
+                { operation_id = fresh_squuid ()
+                ; base_t
+                ; state = Queued
+                ; intent =
+                    Set_property
+                      { uuid
+                      ; attr = "logseq.property/status"
+                      ; expected = None
+                      ; value = Some value
+                      }
+                }
+            ]
+        in
+        normalize_operation_titles session capture_operation @ status_operations)
+      capture_operation)
+;;
+
+let enqueue_encrypted_capture session config ~uuid ~title ~now ?status () =
+  Result.bind
+    (encrypted_capture_operations session ~uuid ~title ~now ?status ())
+    (fun operations ->
+      List.fold_left
+        (fun result operation ->
+          Result.bind result (fun () -> enqueue_semantic session config operation))
+        (Ok ())
+        operations)
+;;
+
 let restore_semantic_queue session _config =
   match session.pending_operations with
   | Some pending_operations ->
@@ -2021,12 +2168,6 @@ let load_related session request key =
     snapshot_visible session
 ;;
 
-let fresh_squuid () =
-  match Datascript.squuid () with
-  | Datascript.Uuid uuid -> uuid
-  | _ -> failwith "Datascript.squuid returned a non-UUID value"
-;;
-
 let reset_outliner session =
   session.outliner_state <- Outliner_state.empty;
   session.outliner_optimistic_blocks <- None;
@@ -2183,55 +2324,6 @@ let outliner_message payload =
      | Ok _ -> Error "unknown outliner event type")
   | _ -> Error "outliner event must be an object"
   | exception _ -> Error "outliner event must be valid JSON"
-;;
-
-(* Editor text keeps page and tag names readable; the stored titles use the
-   uuid reference form. Rewrite the title payloads of freshly interpreted
-   operations before they are staged or synced. Hashtags that resolve to no
-   existing tag mint a fresh tag, staged as a Create_tag operation ahead of
-   the operation whose title references it. *)
-let normalize_operation_titles session (operation : Pending_ops.t) =
-  match session.graph_normalize_titles with
-  | None -> [ operation ]
-  | Some normalize ->
-    let created = ref [] in
-    let normalize ~uuid titles =
-      let titles, new_tags = normalize ~uuid titles in
-      created := !created @ new_tags;
-      titles
-    in
-    let intent =
-      match operation.Pending_ops.intent with
-      | Pending_ops.Save_title { uuid; expected_title; title } ->
-        (match normalize ~uuid [ title ] with
-         | [ title ] -> Pending_ops.Save_title { uuid; expected_title; title }
-         | _ -> operation.Pending_ops.intent)
-      | Pending_ops.Insert_block record ->
-        (match normalize ~uuid:record.uuid [ record.title ] with
-         | [ title ] -> Pending_ops.Insert_block { record with title }
-         | _ -> operation.Pending_ops.intent)
-      | Pending_ops.Split_block record ->
-        (match normalize ~uuid:record.uuid [ record.before; record.after ] with
-         | [ before; after ] -> Pending_ops.Split_block { record with before; after }
-         | _ -> operation.Pending_ops.intent)
-      | Pending_ops.Merge_backward record ->
-        (match normalize ~uuid:record.uuid [ record.title ] with
-         | [ title ] -> Pending_ops.Merge_backward { record with title }
-         | _ -> operation.Pending_ops.intent)
-      | intent -> intent
-    in
-    let create_operations =
-      List.map
-        (fun (uuid, title) ->
-          Pending_ops.
-            { operation_id = fresh_squuid ()
-            ; base_t = operation.base_t
-            ; state = Queued
-            ; intent = Create_tag { uuid; title; created_at = now_ms () }
-            })
-        !created
-    in
-    create_operations @ [ { operation with Pending_ops.intent } ]
 ;;
 
 let outliner_structure_source payload =
@@ -2783,8 +2875,17 @@ let dispatch session action payload =
        else (
          let now = Option.value now ~default:(now_ms ()) in
          let uuid = Option.value uuid ~default:("local-" ^ string_of_int now) in
-         Model.cache_local_message session.model ~uuid ~title:text ~now;
-         snapshot_visible session))
+         if selected_graph_is_encrypted session
+         then
+           (match session.config with
+            | None -> failure ~code:"graph_not_selected" ~message:"Select a graph before capturing"
+            | Some config ->
+              (match enqueue_encrypted_capture session config ~uuid ~title:text ~now () with
+               | Ok () -> snapshot_visible session
+               | Error message -> failure ~code:"capture_failed" ~message))
+         else (
+           Model.cache_local_message session.model ~uuid ~title:text ~now;
+           snapshot_visible session)))
   | "sendTask" ->
     (match payload with
      | Some payload ->
@@ -2796,9 +2897,28 @@ let dispatch session action payload =
              let text = String.trim text in
              if text = "" then snapshot_visible session
              else (
-               Model.cache_local_task session.model ~uuid ~title:text ~status
-                 ~now:(Option.value now ~default:(now_ms ()));
-               snapshot_visible session)
+               let now = Option.value now ~default:(now_ms ()) in
+               if selected_graph_is_encrypted session
+               then
+                 (match session.config with
+                  | None ->
+                    failure ~code:"graph_not_selected" ~message:"Select a graph before capturing"
+                  | Some config ->
+                    (match
+                       enqueue_encrypted_capture
+                         session
+                         config
+                         ~uuid
+                         ~title:text
+                         ~now
+                         ~status
+                         ()
+                     with
+                     | Ok () -> snapshot_visible session
+                     | Error message -> failure ~code:"capture_failed" ~message))
+               else (
+                 Model.cache_local_task session.model ~uuid ~title:text ~status ~now;
+                 snapshot_visible session))
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
              failure ~code:"invalid_params" ~message)
