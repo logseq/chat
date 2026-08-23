@@ -32,7 +32,8 @@ fi
 sdk_path=$(xcrun --sdk iphonesimulator --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}-simulator"
 target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_build_dir="$repo_root/.build/arm64-apple-ios-simulator/$configuration"
+swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build}
+swift_build_dir="$swift_scratch_dir/arm64-apple-ios-simulator/$configuration"
 core_build_dir="$repo_root/_build/ios-core/simulator"
 core_object="$core_build_dir/logseq_chat_runtime.o"
 ffi_object="$core_build_dir/logseq_chat_core_ffi.o"

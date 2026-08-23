@@ -64,6 +64,11 @@ ios_e2e_script="$repo_root/scripts/test-ios-e2e.sh"
 ios_e2e_suite_script="$repo_root/scripts/test-ios-e2e-suite.sh"
 simulator_build_script="$repo_root/scripts/build-mobile-ios-simulator.sh"
 
+if ! grep -q 'swift_scratch_dir=' "$simulator_build_script"; then
+  echo "not ok - simulator build does not define its Swift scratch directory" >&2
+  failures=$((failures + 1))
+fi
+
 for build_script in "$repo_root/scripts/build-mobile-ios-device.sh" "$simulator_build_script"; do
   if ! grep -q 'prune_stale_swift_resource_bundles' "$build_script"; then
     echo "not ok - iOS build does not prune stale SwiftPM resource bundles: $build_script" >&2
