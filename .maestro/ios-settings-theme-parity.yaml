@@ -40,8 +40,9 @@ appId: com.logseq.chat
 - assertVisible: "Sync server"
 - scrollUntilVisible:
     element:
-      text: "About"
+      text: "Check log"
     direction: DOWN
+- assertVisible: "About"
 - assertVisible: "Version.*"
 - assertVisible: "Revision.*"
 - assertVisible: "Check log"
