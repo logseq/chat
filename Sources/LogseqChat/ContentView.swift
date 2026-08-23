@@ -311,11 +311,13 @@ struct ContentView: View {
         .onAppear {
             applyCaptureRequestIfNeeded()
         }
+        #if !SKIP
         .task {
             for await available in NetworkAvailabilityStream.values() {
                 await syncCoordinator.setNetworkAvailable(available)
             }
         }
+        #endif
         .task {
             if !hasStartedContentTask {
                 hasStartedContentTask = true
@@ -2820,9 +2822,9 @@ private struct ConnectionSettingsView: View {
                 }
             }
             .sheet(isPresented: $logPresented) {
-                RuntimeLogView(palette: palette) {
+                RuntimeLogView(palette: palette, dismiss: {
                     logPresented = false
-                }
+                })
             }
         }
     }

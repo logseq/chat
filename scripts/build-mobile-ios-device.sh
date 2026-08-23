@@ -37,6 +37,15 @@ die() {
   exit 1
 }
 
+prune_stale_swift_resource_bundles() {
+  [[ -d $swift_build_dir ]] || return 0
+  [[ $swift_build_dir == "$swift_scratch_dir/"* && $swift_build_dir != "$swift_scratch_dir" ]] \
+    || die "refusing to prune an invalid Swift build directory: $swift_build_dir"
+  while IFS= read -r -d '' bundle; do
+    rm -rf -- "$bundle"
+  done < <(find "$swift_build_dir" -mindepth 1 -maxdepth 1 -type d -name '*.bundle' -print0)
+}
+
 case "$build_configuration" in
   debug)
     ;;
@@ -303,6 +312,7 @@ if [[ ! -s $fingerprinted_core_object ]]; then
 fi
 fingerprinted_native_link_inputs="$fingerprinted_core_object:$ffi_object:$https_object:$crypto_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a"
 
+prune_stale_swift_resource_bundles
 LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$fingerprinted_native_link_inputs" \
 swift build \
   -c "$build_configuration" \

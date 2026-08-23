@@ -33,10 +33,6 @@ let package = Package(
         .library(name: "LogseqChat", type: .static, targets: ["LogseqChat"]),
         .library(name: "LogseqChatModel", type: .dynamic, targets: ["LogseqChatModel"]),
     ],
-    traits: [
-        .trait(name: "AppleAuth"),
-        .default(enabledTraits: ["AppleAuth"]),
-    ],
     dependencies: [
         .package(url: "https://source.skip.tools/skip.git", from: "1.9.5"),
         .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
@@ -44,9 +40,7 @@ let package = Package(
         .package(url: "https://source.skip.tools/skip-model.git", from: "1.0.0"),
         .package(url: "https://source.skip.tools/skip-ffi.git", from: "1.0.0"),
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
-        .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0"),
-        .package(url: "https://github.com/aws-amplify/amplify-swift", exact: "2.60.1"),
-        .package(url: "https://github.com/aws-amplify/amplify-ui-swift-authenticator", exact: "1.3.1")
+        .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],
     targets: [
         .executableTarget(
@@ -67,18 +61,6 @@ let package = Package(
                 name: "HighlightSwift",
                 package: "highlightswift",
                 condition: .when(platforms: [.iOS, .macOS])
-            ),
-            .product(
-                name: "Amplify", package: "amplify-swift",
-                condition: .when(platforms: [.iOS, .macOS], traits: ["AppleAuth"])
-            ),
-            .product(
-                name: "AWSCognitoAuthPlugin", package: "amplify-swift",
-                condition: .when(platforms: [.iOS, .macOS], traits: ["AppleAuth"])
-            ),
-            .product(
-                name: "Authenticator", package: "amplify-ui-swift-authenticator",
-                condition: .when(platforms: [.iOS, .macOS], traits: ["AppleAuth"])
             )
         ],
         resources: [.process("Resources")],

@@ -52,8 +52,8 @@ support:
 
 | Area | Current state |
 | --- | --- |
-| Apple authentication | Amplify UI Swift `Authenticator` with `AWSCognitoAuthPlugin`; access-token session refresh is owned by Amplify. The default `AppleAuth` SwiftPM trait keeps Auth in app builds while core/model-only builds can omit its dependency graph. |
-| Android authentication | Amplify UI Android `Authenticator` 1.9.2 with `AWSCognitoAuthPlugin`; built-in challenge flows, access-token retrieval, persisted session restore, and system-inset layout are emulator-verified |
+| Apple authentication | Cognito Hosted UI authorization-code flow with PKCE through `ASWebAuthenticationSession`; refresh tokens are stored in Keychain |
+| Android authentication | Cognito Hosted UI authorization-code flow with PKCE through Custom Tabs; refresh tokens are encrypted with an Android Keystore key |
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
 | Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client SSE, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
@@ -69,29 +69,20 @@ support:
 
 ### 1. Authenticate inside the app with Amazon Cognito
 
-Logseq Chat will use the native Amplify Authenticator component rather than
-implementing username, password, challenge, and account-recovery screens itself.
-On Apple platforms this is Amplify UI Swift's `Authenticator` with Amplify Swift
-and `AWSCognitoAuthPlugin`. Android uses Amplify UI Android's Compose
-`Authenticator` with `AWSCognitoAuthPlugin` behind the same app-level auth
-interface. Its Gradle dependency is the Authenticator module rather than the
-Amplify umbrella, API, Storage, or DataStore modules. The app will not open
-Cognito Managed Login, Hosted UI, an embedded web view, or the system browser.
+Logseq Chat uses Cognito Hosted UI instead of implementing password, challenge,
+account-recovery, and federated sign-in screens. Apple opens the authorization
+endpoint with `ASWebAuthenticationSession`; Android uses Custom Tabs. Both use the
+authorization-code flow with S256 PKCE and a public app client without a secret.
 
 Logseq Chat is a Skip application, so authentication is exposed to shared app code
-through a small platform service: Amplify Swift on Apple and Amplify Android in the
-generated Android application. Cognito SDK session objects and tokens do not cross
-the OCaml graph boundary; the adapter supplies an access token only when the OCaml
-core requests an authenticated transport operation.
+through a small platform service. OAuth state and tokens do not cross the OCaml
+graph boundary; the adapter supplies an access token only when the OCaml core
+requests an authenticated transport operation.
 
-The preferred password flow is SRP (`ALLOW_USER_SRP_AUTH`) so the password itself
-is not sent to Cognito. The Cognito app client is a public native client with no
-client secret and allows refresh-token authentication. Enabled sign-in challenges,
-including new-password, SMS MFA, TOTP, account confirmation, and recovery, are
-rendered and continued by Amplify Authenticator rather than duplicated in Chat UI.
-
-Amplify Auth owns session persistence and refresh. Logseq Chat obtains the Cognito
-User Pool access JWT from `fetchAuthSession` when it needs to call an API. Every
+The Cognito app client is a public native client with no client secret and allows
+authorization-code and refresh-token grants. Cognito Hosted UI owns sign-in and
+challenge presentation. Logseq Chat persists tokens in Keychain or an Android
+Keystore-backed encrypted store and refreshes them shortly before expiry. Every
 Graph API, db-sync, asset, and key-management request will use:
 
 ```http
@@ -105,12 +96,8 @@ selection therefore happens only after the app calls the authenticated db-sync
 `GET /graphs` operation. Semantic reads and writes remain under `/api/v1/graphs/...`;
 graph discovery does not use the semantic graph-list route.
 
-The Apple target depends only on `Amplify`, `AWSCognitoAuthPlugin`, and
-`Authenticator`. `AWSPluginsCore` remains an internal transitive dependency of the
-Cognito plugin and is not an app product dependency. The pinned upstream releases
-do not publish official XCFramework assets, so this ADR does not substitute an
-unverified AWS SDK for Amplify Auth. The `AppleAuth` package trait is enabled by
-default for app builds and may be disabled for core/model-only build and test jobs.
+Authentication depends only on platform browser, secure-storage, cryptography, and
+HTTP APIs. Amplify and the AWS SDK are not app dependencies.
 
 PAT configuration and the PAT input screen will be removed after Cognito login is
 available. PATs may remain supported by existing APIs during migration, but Logseq
@@ -449,8 +436,8 @@ background execution begins.
 During each execution window the app:
 
 1. opens the app metadata database and the last selected graph's local SQLite mirror;
-2. obtains a current Cognito access token through Amplify, allowing Amplify to refresh
-   the session when necessary;
+2. obtains a current Cognito access token, refreshing it through the OAuth token
+   endpoint when necessary;
 3. restores the persisted graph catalog, selection, schema, and `appliedServerT`
    checkpoint without refreshing the graph catalog or downloading a new snapshot;
 4. submits durable pending writes through the semantic REST allowlist;
@@ -467,7 +454,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 
 ## End-to-end flow
 
-1. Log in inside the app through Amplify Auth and the Cognito User Pool.
+1. Log in through Cognito Hosted UI using authorization code with S256 PKCE.
 2. List authorized graphs and select one.
 3. Resolve the graph's schema version and encryption flag.
 4. If encrypted, unlock the graph key locally.
@@ -507,8 +494,8 @@ delivery would require a later APNs silent-push capability and is not part of th
 
 ## Required Logseq Chat changes
 
-- Replace PAT configuration with built-in Cognito login and challenge screens backed
-  by Amplify Auth session, refresh, logout, and secure storage behavior.
+- Replace PAT configuration with Cognito Hosted UI login, OAuth refresh and logout,
+  and platform secure storage.
 - Add pinned `melange-transit-native` and `melange-edn-native` dependencies to the
   OCaml build.
 - Promote and reuse `datascript-ocaml`'s tested Logseq KVS Transit reader; do not
@@ -576,11 +563,11 @@ delivery would require a later APNs silent-push capability and is not part of th
 Polling is simple but wastes requests, increases update latency, and cannot provide
 a reliable contiguous cursor.
 
-### Use Cognito Managed Login or Hosted UI
+### Embed Cognito SDK authentication screens
 
-Browser-based login supports federation well, but it violates the requirement that
-authentication be built into Logseq Chat. The app embeds Amplify's native
-Authenticator component and uses Cognito SDK authentication instead.
+Embedding separate native authentication screens duplicates Cognito challenge and
+recovery behavior and adds a large SDK dependency. Hosted UI keeps those flows in
+Cognito while the app retains a small OAuth adapter.
 
 ### Add a new full-snapshot endpoint
 
@@ -667,8 +654,7 @@ The implementation is complete when automated integration tests demonstrate:
 - `logseq-chat/core/logseq_chat_core_ffi.c`
 - [melange-transit: native OCaml, js_of_ocaml, and Melange Transit JSON](https://github.com/RCmerci/melange-transit)
 - [melange-edn: native OCaml, js_of_ocaml, and Melange EDN](https://github.com/RCmerci/melange-edn)
-- [Amplify Swift sign-in](https://docs.amplify.aws/swift/frontend/auth/sign-in/)
-- [Amplify Swift session and Cognito token access](https://docs.amplify.aws/swift/frontend/auth/manage-user-sessions/)
-- [Amplify UI Android Authenticator](https://ui.docs.amplify.aws/android/connected-components/authenticator)
-- [Amplify Android session and Cognito token access](https://docs.amplify.aws/android/frontend/auth/manage-user-sessions/)
+- [Amazon Cognito authorization endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/authorization-endpoint.html)
+- [Amazon Cognito token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)
+- [Amazon Cognito PKCE](https://docs.aws.amazon.com/cognito/latest/developerguide/using-pkce-in-authorization-code.html)
 - [Amazon Cognito User Pool authentication flows](https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-authentication-flow-methods.html)

@@ -16,9 +16,7 @@ private actor FakeCognitoProvider: LogseqCognitoProviding {
         token
     }
 
-    func signIn(username: String, password: String) async throws -> String {
-        #expect(username == "user@example.com")
-        #expect(password == "correct horse")
+    func signIn() async throws -> String {
         token = signInToken
         return signInToken
     }
@@ -42,7 +40,7 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         throw SessionError()
     }
 
-    func signIn(username: String, password: String) async throws -> String {
+    func signIn() async throws -> String {
         throw SessionError()
     }
 
@@ -70,11 +68,24 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
             }
         }
 
-        await auth.signIn(username: " user@example.com ", password: "correct horse")
+        await auth.signIn()
 
         #expect(auth.state == .signedIn)
         #expect(published == ["signed-in-access-token"])
         #expect(auth.errorMessage == nil)
+    }
+
+    @Test @MainActor func hostedSignInFailureLeavesAuthenticationSignedOut() async {
+        var published: [String?] = []
+        let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider()) { token in
+            published.append(token)
+        }
+
+        await auth.signIn()
+
+        #expect(auth.state == .signedOut)
+        #expect(auth.errorMessage == "Could not restore the Cognito session.")
+        #expect(published == [nil])
     }
 
     @Test @MainActor func signsOutAndClearsPublishedAuthorization() async throws {

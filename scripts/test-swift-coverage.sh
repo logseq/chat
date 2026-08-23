@@ -5,11 +5,9 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
-# Authentication is an isolated platform effect. Disabling its trait keeps the
-# reusable state tests independent from the Amplify source build.
-swift test --disable-default-traits --enable-code-coverage --skip XCSkipTests
+swift test --enable-code-coverage --skip XCSkipTests
 
-bin_path=$(swift build --disable-default-traits --show-bin-path)
+bin_path=$(swift build --show-bin-path)
 test_binary="$bin_path/logseq-chatPackageTests.xctest/Contents/MacOS/logseq-chatPackageTests"
 profile="$bin_path/codecov/default.profdata"
 coverage_sources=(

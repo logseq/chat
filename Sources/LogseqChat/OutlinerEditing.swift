@@ -498,7 +498,7 @@ enum OutlinerNativeTextLayoutPolicy {
         fontLineHeight: CGFloat,
         minimumLineHeight: CGFloat
     ) -> CGFloat {
-        max(0, (minimumLineHeight - fontLineHeight) / 2)
+        max(0.0, (minimumLineHeight - fontLineHeight) / 2)
     }
 }
 

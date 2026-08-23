@@ -3,7 +3,7 @@ import Observation
 
 public protocol LogseqCognitoProviding: Sendable {
     func accessToken() async throws -> String?
-    func signIn(username: String, password: String) async throws -> String
+    func signIn() async throws -> String
     func signOut() async throws
 }
 
@@ -16,13 +16,10 @@ public enum LogseqAuthenticationState: String, Sendable {
 }
 
 public enum LogseqAuthenticationError: Error, LocalizedError {
-    case invalidCredentials
     case notSignedIn
 
     public var errorDescription: String? {
         switch self {
-        case .invalidCredentials:
-            return "Enter your email and password."
         case .notSignedIn:
             return "Sign in to connect to Logseq Sync."
         }
@@ -62,16 +59,11 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
         }
     }
 
-    public func signIn(username: String, password: String) async {
-        let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !username.isEmpty, !password.isEmpty else {
-            errorMessage = LogseqAuthenticationError.invalidCredentials.localizedDescription
-            return
-        }
+    public func signIn() async {
         state = .signingIn
         errorMessage = nil
         do {
-            let token = try await provider.signIn(username: username, password: password)
+            let token = try await provider.signIn()
             guard !token.isEmpty else {
                 throw LogseqAuthenticationError.notSignedIn
             }

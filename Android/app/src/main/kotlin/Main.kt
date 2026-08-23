@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.MaterialTheme
 import androidx.core.app.ActivityCompat
-import com.amplifyframework.ui.authenticator.ui.Authenticator
 
 internal val logger: SkipLogger = SkipLogger(subsystem = "logseq.chat", category = "LogseqChat")
 
@@ -49,6 +48,7 @@ open class AndroidAppMain: Application {
         logger.info("starting app")
         ProcessInfo.launch(applicationContext)
         CognitoAuthProvider.initialize(applicationContext)
+        AndroidNetworkAvailabilityMonitor.initialize(applicationContext)
         AppDelegate.shared.onInit()
     }
 
@@ -65,6 +65,7 @@ open class MainActivity: AppCompatActivity {
         super.onCreate(savedInstanceState)
         logger.info("starting activity")
         UIApplication.launch(this)
+        CognitoAuthProvider.attachActivity(this)
         AndroidAssetImporter.initialize(this)
         AndroidAudioRecorder.initialize(this)
         handleAppEntryPoint(intent)
@@ -72,16 +73,10 @@ open class MainActivity: AppCompatActivity {
         enableEdgeToEdge()
 
         setContent {
-            Authenticator(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-            ) {
-                val saveableStateHolder = rememberSaveableStateHolder()
-                saveableStateHolder.SaveableStateProvider(true) {
-                    PresentationRootView(ComposeContext())
-                    SideEffect { saveableStateHolder.removeState(true) }
-                }
+            val saveableStateHolder = rememberSaveableStateHolder()
+            saveableStateHolder.SaveableStateProvider(true) {
+                PresentationRootView(ComposeContext())
+                SideEffect { saveableStateHolder.removeState(true) }
             }
         }
 
@@ -106,6 +101,7 @@ open class MainActivity: AppCompatActivity {
 
     override fun onResume() {
         super.onResume()
+        CognitoAuthProvider.attachActivity(this)
         AppDelegate.shared.onResume()
     }
 
@@ -117,6 +113,7 @@ open class MainActivity: AppCompatActivity {
     }
 
     private fun handleAppEntryPoint(intent: Intent?) {
+        if (CognitoAuthProvider.handleCallback(intent?.dataString)) return
         val deepLink = AndroidAppEntryPoints.canonicalDeepLink(intent?.dataString) ?: return
         LogseqChatRuntime.shared.acceptSharedCaptureURL(URL(string = deepLink))
     }
@@ -161,6 +158,7 @@ open class MainActivity: AppCompatActivity {
     }
 
     override fun onDestroy() {
+        CognitoAuthProvider.detachActivity(this)
         super.onDestroy()
         AppDelegate.shared.onDestroy()
     }

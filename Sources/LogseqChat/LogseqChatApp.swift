@@ -3,12 +3,6 @@ import OSLog
 import SwiftUI
 import LogseqChatModel
 
-#if !SKIP && AppleAuth
-import Amplify
-import Authenticator
-import AWSCognitoAuthPlugin
-#endif
-
 #if os(iOS) && !SKIP
 @preconcurrency import BackgroundTasks
 import UIKit
@@ -59,19 +53,12 @@ public struct LogseqChatRootView : View {
     }
 
     public var body: some View {
-        #if !SKIP && AppleAuth
         ZStack {
             appContent
-            if authentication.state == .signedOut {
-                Authenticator { _ in
-                    EmptyView()
-                }
-                .hidesSignUpButton()
+            if authentication.state == .signedOut || authentication.state == .signingIn {
+                CognitoSignInView(authentication: authentication)
             }
         }
-        #else
-        appContent
-        #endif
     }
 
     private var appContent: some View {
@@ -93,40 +80,6 @@ public struct LogseqChatRootView : View {
             }
     }
 }
-
-#if !SKIP && AppleAuth
-@MainActor enum LogseqAmplifyAuth {
-    private static let configureOnce: Void = {
-        let configuration = LogseqCognitoConfiguration.load()
-        let outputs = AmplifyOutputsData(
-            auth: .init(
-                awsRegion: configuration.region,
-                userPoolId: configuration.userPoolId,
-                userPoolClientId: configuration.appClientId,
-                passwordPolicy: .init(
-                    minLength: 8,
-                    requireNumbers: true,
-                    requireLowercase: true,
-                    requireUppercase: true,
-                    requireSymbols: true
-                ),
-                standardRequiredAttributes: [.email],
-                userVerificationTypes: [.email]
-            )
-        )
-        do {
-            try Amplify.add(plugin: AWSCognitoAuthPlugin())
-            try Amplify.configure(outputs)
-        } catch {
-            logger.error("Could not configure Amplify Auth: \(String(describing: error))")
-        }
-    }()
-
-    static func configure() {
-        _ = configureOnce
-    }
-}
-#endif
 
 @MainActor public final class LogseqChatRuntime {
     public static let shared = LogseqChatRuntime()
@@ -155,7 +108,11 @@ public struct LogseqChatRootView : View {
             provider: CognitoAuthProvider(
                 region: configuration.region,
                 userPoolId: configuration.userPoolId,
-                appClientId: configuration.appClientId
+                appClientId: configuration.appClientId,
+                oauthDomain: configuration.oauthDomain,
+                redirectURI: configuration.redirectURI,
+                logoutURI: configuration.logoutURI,
+                scopes: configuration.scopes
             )
         )
     }
@@ -418,6 +375,10 @@ struct LogseqCognitoConfiguration: Decodable {
     let region: String
     let userPoolId: String
     let appClientId: String
+    let oauthDomain: String
+    let redirectURI: String
+    let logoutURI: String
+    let scopes: [String]
 
     static func load() -> LogseqCognitoConfiguration {
         guard
@@ -425,7 +386,15 @@ struct LogseqCognitoConfiguration: Decodable {
             let data = try? Data(contentsOf: url),
             let configuration = try? JSONDecoder().decode(LogseqCognitoConfiguration.self, from: data)
         else {
-            return LogseqCognitoConfiguration(region: "", userPoolId: "", appClientId: "")
+            return LogseqCognitoConfiguration(
+                region: "",
+                userPoolId: "",
+                appClientId: "",
+                oauthDomain: "",
+                redirectURI: "",
+                logoutURI: "",
+                scopes: []
+            )
         }
         return configuration
     }

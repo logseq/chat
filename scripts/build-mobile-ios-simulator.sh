@@ -7,6 +7,15 @@ die() {
   exit 1
 }
 
+prune_stale_swift_resource_bundles() {
+  [[ -d $swift_build_dir ]] || return 0
+  [[ $swift_build_dir == "$swift_scratch_dir/"* && $swift_build_dir != "$swift_scratch_dir" ]] \
+    || die "refusing to prune an invalid Swift build directory: $swift_build_dir"
+  while IFS= read -r -d '' bundle; do
+    rm -rf -- "$bundle"
+  done < <(find "$swift_build_dir" -mindepth 1 -maxdepth 1 -type d -name '*.bundle' -print0)
+}
+
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
 ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
@@ -255,6 +264,7 @@ mkdir -p "$native_link_dir"
 cp "$core_object" "$native_link_dir/logseq_chat_runtime.o"
 fingerprinted_native_link_inputs="$native_link_dir/logseq_chat_runtime.o:$ffi_object:$https_object:$crypto_object:$sqlite_object:$graph_store_object:$ocaml_lib/libthreadsnat.a"
 
+prune_stale_swift_resource_bundles
 LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$fingerprinted_native_link_inputs" \
 LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
 swift build \

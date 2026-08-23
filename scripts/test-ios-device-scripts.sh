@@ -30,16 +30,6 @@ for module in \
   fi
 done
 
-for framework in \
-  AWSCore.framework \
-  AWSCognitoIdentityProviderASF.framework \
-  AWSCognitoIdentityProvider.framework; do
-  if grep -q "$framework" "$repo_root/scripts/build-mobile-ios-device.sh"; then
-    echo "not ok - device build embeds legacy Cognito framework: $framework" >&2
-    failures=$((failures + 1))
-  fi
-done
-
 if ! grep -q 'LOGSEQ_CHAT_IOS_KEYCHAIN' \
   "$repo_root/scripts/build-mobile-ios-device.sh"; then
   echo "not ok - device build cannot select an isolated signing keychain" >&2
@@ -73,6 +63,13 @@ fi
 ios_e2e_script="$repo_root/scripts/test-ios-e2e.sh"
 ios_e2e_suite_script="$repo_root/scripts/test-ios-e2e-suite.sh"
 simulator_build_script="$repo_root/scripts/build-mobile-ios-simulator.sh"
+
+for build_script in "$repo_root/scripts/build-mobile-ios-device.sh" "$simulator_build_script"; do
+  if ! grep -q 'prune_stale_swift_resource_bundles' "$build_script"; then
+    echo "not ok - iOS build does not prune stale SwiftPM resource bundles: $build_script" >&2
+    failures=$((failures + 1))
+  fi
+done
 
 for extension in LogseqChatShareExtension LogseqChatWidgets; do
   if ! grep -Fq "$extension.appex" "$simulator_build_script"; then
