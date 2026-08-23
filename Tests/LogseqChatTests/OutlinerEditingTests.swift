@@ -395,6 +395,23 @@ import Testing
         #expect(AppNavigationPathPolicy.nodeCount(path) == 2)
     }
 
+    @Test func searchRouteStaysOnStackWithoutClosingCoreNodeProjection() {
+        let search = AppNavigationRoute.search
+        let node = AppNavigationRoute.node("result")
+
+        #expect(AppNavigationPathPolicy.nodeCount([search, node]) == 1)
+        #expect(AppNavigationPathPolicy.coreCloseCount(
+            previousPath: [search, node],
+            path: [search],
+            projectedNodeCount: 1
+        ) == 1)
+        #expect(AppNavigationPathPolicy.coreCloseCount(
+            previousPath: [search],
+            path: [],
+            projectedNodeCount: 0
+        ) == 0)
+    }
+
     @Test func markupNavigationDoesNotPushTheCurrentDestinationAgain() {
         let node = AppNavigationRoute.node("node-1")
         let tag = AppNavigationRoute.node("tag-1")

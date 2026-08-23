@@ -654,6 +654,7 @@ enum OutlinerNavigationPolicy {
 }
 
 enum AppNavigationRoute: Hashable {
+    case search
     case node(String)
 }
 
@@ -691,7 +692,11 @@ enum NodeNavigationPreviewPolicy {
 }
 
 enum AppNavigationPathPolicy {
-    static func nodeCount(_ path: [AppNavigationRoute]) -> Int { path.count }
+    static func nodeCount(_ path: [AppNavigationRoute]) -> Int {
+        path.reduce(into: 0) { count, route in
+            if case .node = route { count += 1 }
+        }
+    }
 
     static func shouldAppend(_ route: AppNavigationRoute, to path: [AppNavigationRoute]) -> Bool {
         path.last != route

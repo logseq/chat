@@ -1,0 +1,29 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.search"
+    timeout: 30000
+- tapOn:
+    id: "button.search"
+- assertVisible:
+    id: "screen.search"
+- inputText: "E2E Page Target"
+- extendedWaitUntil:
+    visible: "E2E Page Target"
+    timeout: 10000
+- tapOn:
+    id: "search.result.e2e10000-0000-4000-8000-000000000007"
+- extendedWaitUntil:
+    visible: "E2E Block Target"
+    timeout: 10000
+- tapOn:
+    id: "BackButton"
+- assertVisible:
+    id: "screen.search"
+- assertVisible: "E2E Page Target 20260816"
+- tapOn:
+    id: "BackButton"
+- assertVisible:
+    id: "button.search"

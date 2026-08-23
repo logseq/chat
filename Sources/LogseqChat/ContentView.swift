@@ -228,7 +228,9 @@ struct ContentView: View {
     @State private var handledCaptureRequestRevision = 0
     @State private var settingsPresented = false
     @State private var syncStatusPresented = false
+    #if SKIP
     @State private var searchPagePresented = false
+    #endif
     @State private var graphsPresented = false
     @State private var flashcardsPresented = false
     @State private var graphPasswordPresented = false
@@ -397,15 +399,13 @@ struct ContentView: View {
                 close: { syncStatusPresented = false }
             )
         }
+        #if SKIP
         .sheet(isPresented: $searchPagePresented) {
             NodeSearchView(store: store) { hit in
-                #if SKIP
                 store.openNode(hit.uuid)
-                #else
-                openNodeRoute(hit.uuid)
-                #endif
             }
         }
+        #endif
         #if !SKIP && os(iOS)
         .sheet(item: $nodeSharePayload) { payload in
             NodeShareSheet(items: payload.items)
@@ -717,8 +717,9 @@ struct ContentView: View {
                     for _ in 0..<closedNodes { store.closeNode() }
                 }
             }
-            let activeNodeIDs = Set(path.map { route in
-                switch route { case let .node(uuid): uuid }
+            let activeNodeIDs: Set<String> = Set(path.compactMap { route -> String? in
+                guard case let .node(uuid) = route else { return nil }
+                return uuid
             })
             nodeNavigationPreviews = nodeNavigationPreviews.filter {
                 activeNodeIDs.contains($0.key)
@@ -742,6 +743,14 @@ struct ContentView: View {
     #if !SKIP
     @ViewBuilder private func appNavigationDestination(_ route: AppNavigationRoute) -> some View {
         switch route {
+        case .search:
+            NodeSearchView(store: store, dismissAfterOpen: false) { hit in
+                openNodeRoute(hit.uuid)
+            }
+            .navigationTitle("Search")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
         case let .node(uuid): nodeNavigationDestination(uuid: uuid)
         }
     }
@@ -1446,7 +1455,10 @@ struct ContentView: View {
     }
 
     private var bottomChromePresentation: BottomChromePresentation {
-        BottomChromePolicy.presentation(
+        #if !SKIP
+        if appNavigationPath.last == .search { return .hidden }
+        #endif
+        return BottomChromePolicy.presentation(
             contentMode: presentedContentMode,
             hasSelectedPage: store.snapshot.selectedPage != nil,
             composerExpanded: composerExpanded,
@@ -2570,14 +2582,21 @@ struct ContentView: View {
 
     #if !SKIP
     private func presentSearch() {
-        composerExpanded = false
-        searchPagePresented = true
+        dismissComposerEditing()
+        let route = AppNavigationRoute.search
+        if AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath) {
+            appNavigationPath.append(route)
+        }
     }
     #endif
 
     private func expandSearch() {
         composerExpanded = false
+        #if SKIP
         searchPagePresented = true
+        #else
+        presentSearch()
+        #endif
     }
 
     private func dismissComposerEditing() {

@@ -5,11 +5,22 @@ import LogseqChatModel
 /// matching pages and blocks; block results include their breadcrumb path.
 struct NodeSearchView: View {
     let store: LogseqChatStore
+    let dismissAfterOpen: Bool
     let open: (LogseqSearchHit) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @FocusState private var queryFocused: Bool
+
+    init(
+        store: LogseqChatStore,
+        dismissAfterOpen: Bool = true,
+        open: @escaping (LogseqSearchHit) -> Void
+    ) {
+        self.store = store
+        self.dismissAfterOpen = dismissAfterOpen
+        self.open = open
+    }
 
     private var results: [LogseqSearchHit] {
         store.snapshot.searchResults ?? []
@@ -29,7 +40,7 @@ struct NodeSearchView: View {
             resultsList
         }
         .onAppear {
-            store.searchNodes("")
+            store.searchNodes(query)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                 queryFocused = true
             }
@@ -118,7 +129,7 @@ struct NodeSearchView: View {
     private func resultRow(_ hit: LogseqSearchHit) -> some View {
         Button {
             open(hit)
-            dismiss()
+            if dismissAfterOpen { dismiss() }
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: hit.isPage ? "doc.text" : "circle.fill")
