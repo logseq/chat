@@ -711,12 +711,7 @@ struct OutlinerBlockRow: View, Equatable {
                 Text(verbatim: editingTitle.isEmpty ? " " : editingTitle)
                     .font(.body)
                     .foregroundStyle(.clear)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: OutlinerLayoutMetrics.titleLineHeight,
-                        alignment: .leading
-                    )
+                    .outlinerBlockTitleLayout()
                     .background {
                         GeometryReader { geometry in
                             Color.clear.preference(
@@ -754,11 +749,7 @@ struct OutlinerBlockRow: View, Equatable {
                         .font(.body)
                         .strikethrough(isCompleted)
                         .foregroundStyle(isCompleted ? .secondary : .primary)
-                        .frame(
-                            minHeight: OutlinerLayoutMetrics.titleLineHeight,
-                            alignment: .leading
-                        )
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .outlinerBlockTitleLayout()
                 }
             }
             BlockTrailingTags(
@@ -839,6 +830,24 @@ struct OutlinerBlockRow: View, Equatable {
             ))
             .accessibilityIdentifier("button.outliner.collapse.\(row.block.uuid)")
         }
+    }
+}
+
+private struct OutlinerBlockTitleLayout: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: OutlinerLayoutMetrics.titleLineHeight,
+                alignment: .leading
+            )
+    }
+}
+
+private extension View {
+    func outlinerBlockTitleLayout() -> some View {
+        modifier(OutlinerBlockTitleLayout())
     }
 }
 
