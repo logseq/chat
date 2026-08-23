@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+control_source="$(rtk sed -n '/private var headerLeadingControl:/,/private var headerTitleText:/p' \
+  "${repo_root}/Sources/LogseqChat/ContentView.swift")"
+if printf '%s\n' "${control_source}" | rtk rg -q 'platformCircleButtonShape\(\)'; then
+  echo "headerLeadingControl overrides the native toolbar button shape" >&2
+  exit 1
+fi
+if printf '%s\n' "${control_source}" \
+  | rtk rg -q 'SidebarChromeMetrics\.minimumHitTarget'; then
+  echo "headerLeadingControl overrides the native toolbar control size" >&2
+  exit 1
+fi
+
 simulator_udid="${LOGSEQ_CHAT_IOS_SIMULATOR_UDID:-}"
 if [[ -z "${simulator_udid}" ]]; then
   echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID is required" >&2

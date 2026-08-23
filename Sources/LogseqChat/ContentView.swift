@@ -3223,14 +3223,6 @@ extension View {
         #endif
     }
 
-    @ViewBuilder public func platformCircleButtonShape() -> some View {
-        #if !SKIP
-        self.buttonBorderShape(.circle)
-        #else
-        self
-        #endif
-    }
-
     @ViewBuilder public func platformSmallControl() -> some View {
         #if !SKIP
         self.controlSize(.small)
