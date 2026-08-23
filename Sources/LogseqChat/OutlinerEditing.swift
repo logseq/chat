@@ -237,12 +237,6 @@ enum InlineEditorFocusPolicy {
     }
 }
 
-enum InlineEditorResponderContinuityPolicy {
-    static func shouldPark(isFirstResponder: Bool, isStructuralEdit: Bool) -> Bool {
-        isFirstResponder && isStructuralEdit
-    }
-}
-
 #if !SKIP
 enum InlineEditorPairDeletion {
     static func deletingEmptyNodeReference(
@@ -509,6 +503,23 @@ enum OutlinerLayoutMetrics {
 }
 
 enum OutlinerEditorViewportPolicy {
+    static func isFullyVisible(frame: CGRect, viewportHeight: CGFloat) -> Bool {
+        frame.minY >= 0 && frame.maxY <= viewportHeight
+    }
+
+    static func shouldEndEditing(
+        blockID: String,
+        renderedEditorBlockID: String?,
+        renderedBlockIDs: Set<String>,
+        isUserScrolling: Bool,
+        isScrollExitArmed: Bool
+    ) -> Bool {
+        isScrollExitArmed
+            && isUserScrolling
+            && renderedEditorBlockID == blockID
+            && !renderedBlockIDs.contains(blockID)
+    }
+
     static func shouldEnsureVisible(
         previousBlockID: String?,
         blockID: String?,

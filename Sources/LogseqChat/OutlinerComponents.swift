@@ -14,6 +14,13 @@ enum OutlinerBlockPresentationPolicy {
 struct OutlinerView: View {
     #if !SKIP && os(iOS)
     @State private var visibleBlockIDs: Set<String> = []
+    @State private var editorFrame: CGRect?
+    @State private var renderedEditorBlockID: String?
+    @State private var isUserScrolling = false
+    @State private var isScrollExitArmed = false
+    #if DEBUG
+    @State private var keyboardHideCount = 0
+    #endif
     #endif
     let rows: [LogseqOutlineRow]
     let sections: [LogseqBlockSection]
@@ -38,9 +45,34 @@ struct OutlinerView: View {
     let onAddFirstBlock: (() -> Void)?
     let isJournalHome: Bool
     var body: some View {
-        GeometryReader { proxy in
+        let content = GeometryReader { proxy in
             outlinerContent(viewportHeight: proxy.size.height)
         }
+        #if !SKIP && os(iOS) && DEBUG
+        content
+            .onChange(of: editing?.uuid) { previousID, currentID in
+                if previousID == nil, currentID != nil {
+                    keyboardHideCount = 0
+                }
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: UIResponder.keyboardWillHideNotification
+                )
+            ) { _ in
+                if editing != nil {
+                    keyboardHideCount += 1
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("debug.keyboard-hide-count.\(keyboardHideCount)")
+            }
+        #else
+        content
+        #endif
     }
 
     @ViewBuilder private func outlinerContent(viewportHeight: CGFloat) -> some View {
@@ -109,15 +141,44 @@ struct OutlinerView: View {
         }
         .accessibilityIdentifier("list.outliner")
         #if !SKIP && os(iOS)
+        let interactiveScrollContent = trackUserScrolling(scrollContent)
         let content = ScrollViewReader { proxy in
-            scrollContent
+            interactiveScrollContent
                 .coordinateSpace(name: "outlinerViewport")
                 .onPreferenceChange(OutlinerRowFramePreferenceKey.self) { frames in
                     visibleBlockIDs = Set(frames.compactMap { blockID, frame in
-                        frame.maxY > 0 && frame.minY < viewportHeight ? blockID : nil
+                        OutlinerEditorViewportPolicy.isFullyVisible(
+                            frame: frame,
+                            viewportHeight: viewportHeight
+                        ) ? blockID : nil
                     })
                 }
+                .onPreferenceChange(OutlinerEditorFramePreferenceKey.self) { frames in
+                    if let blockID = editing?.uuid, let frame = frames[blockID] {
+                        editorFrame = frame
+                        renderedEditorBlockID = blockID
+                    } else if let blockID = editing?.uuid,
+                              OutlinerEditorViewportPolicy.shouldEndEditing(
+                                blockID: blockID,
+                                renderedEditorBlockID: renderedEditorBlockID,
+                                renderedBlockIDs: Set(frames.keys),
+                                isUserScrolling: isUserScrolling,
+                                isScrollExitArmed: isScrollExitArmed
+                              ) {
+                        editorFrame = nil
+                        renderedEditorBlockID = nil
+                        DispatchQueue.main.async {
+                            guard editing?.uuid == blockID else { return }
+                            sendEvent(LogseqOutlinerEvent(type: "cancelEditing"))
+                        }
+                    }
+                }
                 .onChange(of: editing?.uuid) { previousID, currentID in
+                    isScrollExitArmed = false
+                    if currentID == nil {
+                        editorFrame = nil
+                        renderedEditorBlockID = nil
+                    }
                     ensureEditorVisibleIfNeeded(
                         previousBlockID: previousID,
                         blockID: currentID,
@@ -135,7 +196,54 @@ struct OutlinerView: View {
                     )
                 }
         }
-        content
+        content.overlay(alignment: .topLeading) {
+            if let editing, let frame = editorFrame {
+                OutlinerInlineEditor(
+                    text: editing.title,
+                    blockID: editing.uuid,
+                    desiredCaretUTF16Offset: editing.caretUTF16Offset,
+                    onTextChange: { title, caret in
+                        sendEvent(LogseqOutlinerEvent(
+                            type: "textChanged",
+                            title: title,
+                            caretUTF16Offset: caret
+                        ))
+                    },
+                    onReturn: { title, caret in
+                        sendEvent(LogseqOutlinerEvent(
+                            type: "returnPressed",
+                            uuid: editing.uuid,
+                            title: title,
+                            caretUTF16Offset: caret
+                        ))
+                    },
+                    onBackspace: { title, selectionLength in
+                        sendEvent(LogseqOutlinerEvent(
+                            type: "backspacePressed",
+                            uuid: editing.uuid,
+                            title: title,
+                            selectionLength: selectionLength
+                        ))
+                    },
+                    onCaretChange: { offset in
+                        sendEvent(LogseqOutlinerEvent(
+                            type: "caretMoved",
+                            caretUTF16Offset: offset
+                        ))
+                    }
+                )
+                .frame(
+                    width: max(frame.width, 1),
+                    height: max(frame.height, OutlinerLayoutMetrics.titleLineHeight),
+                    alignment: .topLeading
+                )
+                .position(
+                    x: frame.midX,
+                    y: frame.minY
+                        + max(frame.height, OutlinerLayoutMetrics.titleLineHeight) / 2
+                )
+            }
+        }
         #else
         scrollContent
         #endif
@@ -166,6 +274,21 @@ struct OutlinerView: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             proxy.scrollTo(blockID, anchor: .center)
+        }
+    }
+
+    @ViewBuilder private func trackUserScrolling<Content: View>(
+        _ content: Content
+    ) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollPhaseChange { _, phase in
+                isUserScrolling = phase.isScrolling && phase != .animating
+                if (phase == .idle || phase == .tracking), editing != nil {
+                    isScrollExitArmed = true
+                }
+            }
+        } else {
+            content
         }
     }
     #endif
@@ -382,6 +505,14 @@ private struct OutlinerRowFramePreferenceKey: PreferenceKey {
         value.merge(nextValue(), uniquingKeysWith: { _, next in next })
     }
 }
+
+private struct OutlinerEditorFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
 #endif
 
 private struct BlockBreadcrumb: View {
@@ -573,6 +704,30 @@ struct OutlinerBlockRow: View, Equatable {
     private var blockContent: some View {
         VStack(alignment: .leading, spacing: 4) {
             if isEditing {
+                #if !SKIP && os(iOS)
+                Text(verbatim: editingTitle.isEmpty ? " " : editingTitle)
+                    .font(.body)
+                    .foregroundStyle(.clear)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: OutlinerLayoutMetrics.titleLineHeight,
+                        alignment: .leading
+                    )
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: OutlinerEditorFramePreferenceKey.self,
+                                value: [
+                                    row.block.uuid: geometry.frame(
+                                        in: .named("outlinerViewport")
+                                    )
+                                ]
+                            )
+                        }
+                    }
+                    .accessibilityHidden(true)
+                #else
                 OutlinerInlineEditor(
                     text: editingTitle,
                     blockID: row.block.uuid,
@@ -587,6 +742,7 @@ struct OutlinerBlockRow: View, Equatable {
                     minHeight: OutlinerLayoutMetrics.titleLineHeight,
                     alignment: .leading
                 )
+                #endif
             } else {
                 if usesAssetPreview {
                     AssetPreview(block: row.block, onOpen: nil)

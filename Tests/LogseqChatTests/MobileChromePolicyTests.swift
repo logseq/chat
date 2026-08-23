@@ -25,6 +25,10 @@ import LogseqChatModel
         #expect(MobileChromePolicy.extendsIntoSystemSafeArea(MobileChromeRegion.footer))
         #expect(MobileChromePolicy.footerPlacement == .navigationContainerOverlay)
         #expect(MobileChromePolicy.bottomControlScreenEdgeInset == 21)
+        #expect(MobileChromePolicy.editorBottomScreenEdgeInset <
+            MobileChromePolicy.bottomControlScreenEdgeInset)
+        #expect(BottomChromePolicy.occupiesLayoutSpace(BottomChromePresentation.outlinerEditor))
+        #expect(!BottomChromePolicy.occupiesLayoutSpace(BottomChromePresentation.captureAndSearch))
     }
 
     @Test func shiftedMainPanelAlwaysSpansTheFullScreenHeight() {

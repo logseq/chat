@@ -45,51 +45,6 @@ struct OutlinerInlineEditor: View {
 }
 
 #if !SKIP && os(iOS)
-@MainActor
-private final class OutlinerNativeEditorSession {
-    static let shared = OutlinerNativeEditorSession()
-    let textView = FocusRetainingTextView()
-    private let parkingView = UIView(frame: CGRect(x: -2, y: -2, width: 1, height: 1))
-    fileprivate var activeBlockID: String?
-    fileprivate var localText: String?
-    fileprivate var isAwaitingBlockHandoff = false
-    fileprivate var pendingHandoffTyping = ""
-
-    init() {
-        parkingView.clipsToBounds = true
-        parkingView.alpha = 0.01
-    }
-
-    func attach(to container: UIView) {
-        guard textView.superview !== container else { return }
-        textView.removeFromSuperview()
-        container.addSubview(textView)
-        textView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            textView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            textView.topAnchor.constraint(equalTo: container.topAnchor),
-            textView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        parkingView.removeFromSuperview()
-    }
-
-    func parkForStructuralEdit() {
-        guard InlineEditorResponderContinuityPolicy.shouldPark(
-            isFirstResponder: textView.isFirstResponder,
-            isStructuralEdit: true
-        ), let window = textView.window else { return }
-        if parkingView.superview !== window {
-            parkingView.removeFromSuperview()
-            window.addSubview(parkingView)
-        }
-        textView.removeFromSuperview()
-        parkingView.addSubview(textView)
-        textView.translatesAutoresizingMaskIntoConstraints = true
-        textView.frame = parkingView.bounds
-    }
-}
-
 private struct NativeOutlinerTextView: UIViewRepresentable {
     let blockID: String
     let text: String
@@ -100,15 +55,13 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
 
-    private var session: OutlinerNativeEditorSession { .shared }
-
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
-    func makeUIView(context: Context) -> UIView {
-        let container = UIView()
-        let textView = session.textView
+    func makeUIView(context: Context) -> UITextView {
+        let textView = FocusRetainingTextView()
+        textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = .preferredFont(forTextStyle: .body)
         textView.textContainerInset = .zero
@@ -116,34 +69,39 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         textView.isScrollEnabled = false
         textView.adjustsFontForContentSizeCategory = true
         applyWritingAssistance(to: textView)
+        textView.accessibilityIdentifier = accessibilityIdentifier
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return container
+        textView.text = text
+        textView.selectedRange = NSRange(
+            location: min(desiredCaretUTF16Offset ?? text.utf16.count, text.utf16.count),
+            length: 0
+        )
+        textView.requestFocusWhenAttached()
+        return textView
     }
 
-    func updateUIView(_ container: UIView, context: Context) {
-        let textView = session.textView
-        textView.delegate = context.coordinator
+    func updateUIView(_ textView: UITextView, context: Context) {
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
-        let isSameBlock = session.activeBlockID == blockID
+        let isSameBlock = context.coordinator.activeBlockID == blockID
         switch InlineEditorTextReconciliationPolicy.decision(
             modelText: text,
-            localText: session.localText,
+            localText: context.coordinator.localText,
             isSameBlock: isSameBlock,
-            isAwaitingBlockHandoff: session.isAwaitingBlockHandoff
+            isAwaitingBlockHandoff: context.coordinator.isAwaitingBlockHandoff
         ) {
         case .keepLocal:
             break
         case .acknowledgeLocal:
-            session.localText = nil
-            session.isAwaitingBlockHandoff = false
+            context.coordinator.localText = nil
+            context.coordinator.isAwaitingBlockHandoff = false
         case .applyModel:
-            let wasAwaitingHandoff = session.isAwaitingBlockHandoff
+            let wasAwaitingHandoff = context.coordinator.isAwaitingBlockHandoff
             let bufferedTyping = wasAwaitingHandoff
-                ? session.pendingHandoffTyping : ""
-            session.pendingHandoffTyping = ""
-            session.localText = nil
-            session.isAwaitingBlockHandoff = false
+                ? context.coordinator.pendingHandoffTyping : ""
+            context.coordinator.pendingHandoffTyping = ""
+            context.coordinator.localText = nil
+            context.coordinator.isAwaitingBlockHandoff = false
             let selection = textView.selectedRange
             if wasAwaitingHandoff {
                 let merged = InlineEditorHandoffMerge.merged(
@@ -159,7 +117,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     length: 0
                 )
                 if !bufferedTyping.isEmpty {
-                    session.localText = merged.text
+                    context.coordinator.localText = merged.text
                     let onTextChange = context.coordinator.parent.onTextChange
                     DispatchQueue.main.async {
                         onTextChange(merged.text, merged.caretUTF16Offset)
@@ -179,19 +137,25 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             #if DEBUG
             print(
                 "LogseqChat debug: outliner editor responder handoff "
-                    + "from=\(session.activeBlockID ?? "none") "
+                    + "from=\(context.coordinator.activeBlockID) "
                     + "to=\(accessibilityIdentifier) retained=\(textView.isFirstResponder)"
             )
             #endif
-            session.activeBlockID = blockID
+            context.coordinator.activeBlockID = blockID
         }
         textView.accessibilityIdentifier = accessibilityIdentifier
-        session.attach(to: container)
         if InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: textView.window != nil,
             isFirstResponder: textView.isFirstResponder
         ) {
-            textView.requestFocusWhenAttached()
+            (textView as? FocusRetainingTextView)?.requestFocusWhenAttached()
+        }
+    }
+
+    static func dismantleUIView(_ textView: UITextView, coordinator: Coordinator) {
+        textView.delegate = nil
+        if textView.isFirstResponder {
+            textView.resignFirstResponder()
         }
     }
 
@@ -205,24 +169,27 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        uiView: UIView,
+        uiView: UITextView,
         context: Context
     ) -> CGSize? {
         guard let width = proposal.width else { return nil }
-        return session.textView.sizeThatFits(
-            CGSize(width: width, height: .greatestFiniteMagnitude)
-        )
+        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: NativeOutlinerTextView
+        var localText: String?
+        var isAwaitingBlockHandoff = false
+        var pendingHandoffTyping = ""
+        var activeBlockID: String
 
         init(parent: NativeOutlinerTextView) {
             self.parent = parent
+            activeBlockID = parent.blockID
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            parent.session.localText = textView.text
+            localText = textView.text
             parent.onTextChange(textView.text, textView.selectedRange.location)
         }
 
@@ -237,7 +204,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText replacement: String
         ) -> Bool {
-            if parent.session.isAwaitingBlockHandoff {
+            if isAwaitingBlockHandoff {
                 // Structure events are serialized and rebound to the latest
                 // editor by the store. Forward them immediately so fast
                 // Return/Backspace input is never swallowed during handoff.
@@ -246,11 +213,11 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 } else if replacement.isEmpty, range.location == 0, range.length == 0 {
                     parent.onBackspace(textView.text, range.length)
                 } else if replacement.isEmpty {
-                    if !parent.session.pendingHandoffTyping.isEmpty {
-                        parent.session.pendingHandoffTyping.removeLast()
+                    if !pendingHandoffTyping.isEmpty {
+                        pendingHandoffTyping.removeLast()
                     }
                 } else {
-                    parent.session.pendingHandoffTyping += replacement
+                    pendingHandoffTyping += replacement
                 }
                 return false
             }
@@ -264,7 +231,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                     location: deletion.caretUTF16Offset,
                     length: 0
                 )
-                parent.session.localText = deletion.text
+                localText = deletion.text
                 parent.onTextChange(deletion.text, deletion.caretUTF16Offset)
                 return false
             }
@@ -282,15 +249,13 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 // Leave the text view untouched until the core hands the
                 // editor off to the freshly created block; blanking it here
                 // makes the current block flash the caret suffix for a frame.
-                parent.session.localText = textView.text
-                parent.session.isAwaitingBlockHandoff = true
-                parent.session.parkForStructuralEdit()
+                localText = textView.text
+                isAwaitingBlockHandoff = true
                 parent.onReturn(submittedText, range.location)
                 return false
             }
             if replacement.isEmpty, range.location == 0, range.length == 0 {
-                parent.session.isAwaitingBlockHandoff = true
-                parent.session.parkForStructuralEdit()
+                isAwaitingBlockHandoff = true
                 parent.onBackspace(textView.text, range.length)
                 return false
             }

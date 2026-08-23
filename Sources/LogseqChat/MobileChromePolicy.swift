@@ -22,6 +22,7 @@ enum MobileChromePolicy {
     static let footerOccupiesLayoutSpace = false
     static let mainPanelBottomSafeAreaPadding: CGFloat = 0
     static let bottomControlScreenEdgeInset: CGFloat = 21
+    static let editorBottomScreenEdgeInset: CGFloat = 6
     static let minimumScrollableBottomClearance: CGFloat = 120
     static let footerPlacement = MobileChromePlacement.navigationContainerOverlay
 
@@ -137,6 +138,10 @@ enum BottomChromePresentation: Equatable {
 }
 
 enum BottomChromePolicy {
+    static func occupiesLayoutSpace(_ presentation: BottomChromePresentation) -> Bool {
+        presentation == .outlinerEditor
+    }
+
     static func presentation(
         contentMode: LogseqContentMode,
         hasSelectedPage: Bool,

@@ -716,8 +716,15 @@ struct ContentView: View {
             }
         }
         #if os(iOS)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if BottomChromePolicy.occupiesLayoutSpace(bottomChromePresentation) {
+                iosBottomChrome
+            }
+        }
         .overlay(alignment: .bottom) {
-            iosBottomChrome
+            if !BottomChromePolicy.occupiesLayoutSpace(bottomChromePresentation) {
+                iosBottomChrome
+            }
         }
         #endif
         #endif
@@ -2177,7 +2184,7 @@ struct ContentView: View {
                 }
                     .platformGlassContainer()
                     .padding(.horizontal, 16)
-                    .padding(.bottom, MobileChromePolicy.bottomControlScreenEdgeInset)
+                    .padding(.bottom, MobileChromePolicy.editorBottomScreenEdgeInset)
             case .expandedComposer:
                 composer
                     .padding(.horizontal, 16)

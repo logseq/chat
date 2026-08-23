@@ -10,37 +10,65 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - assertVisible:
     id: "field.outliner.block.*"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - assertNotVisible: "outliner_effect_failed"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - inputText: "E2E continuous first"
 - assertVisible: "E2E continuous first"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
 - assertVisible:
+    id: "debug.keyboard-hide-count.0"
+- assertVisible:
     id: "toolbar.outliner.editor"
 - pressKey: BACKSPACE
 - assertVisible: "E2E continuous first"
@@ -48,10 +76,14 @@ appId: com.logseq.chat
     id: "toolbar.outliner.editor"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - inputText: "E2E continuous second"
 - assertVisible: "E2E continuous second"
 - pressKey: ENTER
 - pressKey: BACKSPACE
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - tapOn: "Hide keyboard"

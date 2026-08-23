@@ -185,6 +185,18 @@ import Testing
     }
 
     @Test func editorScrollsOnlyWhenTheFocusedBlockIsOutsideTheViewport() {
+        #expect(OutlinerEditorViewportPolicy.isFullyVisible(
+            frame: CGRect(x: 0, y: 20, width: 100, height: 40),
+            viewportHeight: 100
+        ))
+        #expect(!OutlinerEditorViewportPolicy.isFullyVisible(
+            frame: CGRect(x: 0, y: 80, width: 100, height: 40),
+            viewportHeight: 100
+        ))
+        #expect(!OutlinerEditorViewportPolicy.isFullyVisible(
+            frame: CGRect(x: 0, y: -1, width: 100, height: 40),
+            viewportHeight: 100
+        ))
         #expect(OutlinerEditorViewportPolicy.shouldEnsureVisible(
             previousBlockID: nil,
             blockID: "block",
@@ -214,6 +226,44 @@ import Testing
             blockID: nil,
             viewportChanged: true,
             isBlockVisible: false
+        ))
+    }
+
+    @Test func editorEndsOnlyAfterItsRenderedPlaceholderLeavesTheLazyStack() {
+        #expect(OutlinerEditorViewportPolicy.shouldEndEditing(
+            blockID: "block",
+            renderedEditorBlockID: "block",
+            renderedBlockIDs: [],
+            isUserScrolling: true,
+            isScrollExitArmed: true
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEndEditing(
+            blockID: "next",
+            renderedEditorBlockID: "previous",
+            renderedBlockIDs: [],
+            isUserScrolling: true,
+            isScrollExitArmed: true
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEndEditing(
+            blockID: "block",
+            renderedEditorBlockID: "block",
+            renderedBlockIDs: ["block"],
+            isUserScrolling: true,
+            isScrollExitArmed: true
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEndEditing(
+            blockID: "block",
+            renderedEditorBlockID: "block",
+            renderedBlockIDs: [],
+            isUserScrolling: false,
+            isScrollExitArmed: true
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEndEditing(
+            blockID: "block",
+            renderedEditorBlockID: "block",
+            renderedBlockIDs: [],
+            isUserScrolling: true,
+            isScrollExitArmed: false
         ))
     }
 
@@ -749,21 +799,6 @@ import Testing
         ))
         #expect(!InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: true, isFirstResponder: true
-        ))
-    }
-
-    @Test func structuralEditingParksTheSameNativeFirstResponder() {
-        #expect(InlineEditorResponderContinuityPolicy.shouldPark(
-            isFirstResponder: true,
-            isStructuralEdit: true
-        ))
-        #expect(!InlineEditorResponderContinuityPolicy.shouldPark(
-            isFirstResponder: false,
-            isStructuralEdit: true
-        ))
-        #expect(!InlineEditorResponderContinuityPolicy.shouldPark(
-            isFirstResponder: true,
-            isStructuralEdit: false
         ))
     }
 
