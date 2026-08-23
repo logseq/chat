@@ -1005,14 +1005,21 @@ let () =
       ; journal = None
       }
   in
+  let projection_available = ref true in
   let session =
     Logseq_chat_rpc.create
-      ~graph_blocks:(fun () -> Some [ projected ])
+      ~graph_blocks:(fun () -> Some (if !projection_available then [ projected ] else []))
       ~graph_page_blocks:(fun uuid ->
-        if String.equal uuid page_uuid then Some [ projected ] else Some [])
+        if !projection_available && String.equal uuid page_uuid
+        then Some [ projected ]
+        else Some [])
       ~graph_node_destination:(fun _ -> None)
       ()
   in
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"snapshot","params":{}}|});
+  projection_available := false;
   let open_node uuid =
     Logseq_chat_rpc.call session
       (Printf.sprintf

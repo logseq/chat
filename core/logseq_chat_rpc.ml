@@ -70,6 +70,9 @@ type t =
   ; mutable selected_sidebar_page : Logseq_chat_graph_read.sidebar_page option
   ; mutable node_routes : node_route list
   ; mutable node_base_state : Outliner_state.t option
+  ; visible_node_destinations :
+      (string, Logseq_chat_graph_read.sidebar_page * bool) Hashtbl.t
+  ; visible_blocks_by_uuid : (string, Model.block) Hashtbl.t
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (graph_id:string -> Model.t) option
@@ -529,14 +532,19 @@ let node_route_context session route =
   in
   (* Locally cached blocks (for example chat entries that have not synced into
      the graph yet) must stay visible when the node view is opened offline. *)
+  let known = Hashtbl.create (List.length graph_blocks) in
+  List.iter
+    (fun (block : Model.block) -> Hashtbl.replace known block.uuid ())
+    graph_blocks;
   let cached_blocks =
-    Model.all_blocks session.model
+    (Model.all_blocks session.model
+     @ (Hashtbl.to_seq_values session.visible_blocks_by_uuid |> List.of_seq))
     |> List.filter (fun (block : Model.block) ->
-      String.equal block.page_id route.page.uuid
-      && not
-           (List.exists
-              (fun (existing : Model.block) -> String.equal existing.uuid block.uuid)
-              graph_blocks))
+      if String.equal block.page_id route.page.uuid && not (Hashtbl.mem known block.uuid)
+      then (
+        Hashtbl.replace known block.uuid ();
+        true)
+      else false)
   in
   outliner_context_with_blocks session (graph_blocks @ cached_blocks)
 ;;
@@ -563,6 +571,41 @@ let node_route_linked_reference_blocks session route =
     Option.bind session.graph_node_references (fun load -> load route.uuid)
     |> Option.value ~default:[]
   else []
+;;
+
+let page_for_visible_block session (block : Model.block) =
+  let page_title =
+    match block.Model.journal with
+    | Some (title, _) when not (String.equal (String.trim title) "") -> title
+    | _ ->
+      (match
+         List.find_opt
+           (fun (summary : Model.entity_summary) ->
+             String.equal summary.uuid block.Model.page_id)
+           block.Model.breadcrumbs
+       with
+       | Some summary -> summary.title
+       | None ->
+         (match Model.journal_metadata session.model block.Model.page_id with
+          | Some (title, _) when not (String.equal (String.trim title) "") -> title
+          | _ -> block.Model.title))
+  in
+  let page : Logseq_chat_graph_read.sidebar_page =
+    { uuid = block.Model.page_id; title = page_title }
+  in
+  page
+;;
+
+let remember_visible_blocks session blocks =
+  List.iter
+    (fun (block : Model.block) ->
+      if not (String.equal block.Model.page_id "")
+      then (
+        let page = page_for_visible_block session block in
+        Hashtbl.replace session.visible_blocks_by_uuid block.Model.uuid block;
+        Hashtbl.replace session.visible_node_destinations page.uuid (page, false);
+        Hashtbl.replace session.visible_node_destinations block.Model.uuid (page, true)))
+    blocks
 ;;
 
 (* Resolve against the same projected blocks that produced the visible UI.
@@ -603,26 +646,7 @@ let projected_node_destination session uuid =
     if String.equal block.Model.page_id ""
     then None
     else
-      let page_title =
-        match block.Model.journal with
-        | Some (title, _) when not (String.equal (String.trim title) "") -> title
-        | _ ->
-          (match
-             List.find_opt
-               (fun (summary : Model.entity_summary) ->
-                 String.equal summary.uuid block.page_id)
-               block.breadcrumbs
-           with
-           | Some summary -> summary.title
-           | None ->
-             (match Model.journal_metadata session.model block.page_id with
-              | Some (title, _) when not (String.equal (String.trim title) "") -> title
-              | _ -> block.title))
-      in
-      let page : Logseq_chat_graph_read.sidebar_page =
-        { uuid = block.Model.page_id; title = page_title }
-      in
-      Some (page, zoom_to_block))
+      Some (page_for_visible_block session block, zoom_to_block))
 ;;
 
 (* Related blocks are editable in place, so the dispatch context must resolve
@@ -942,6 +966,19 @@ let snapshot session ~context_blocks blocks =
   let base_context =
     base_outliner_context_with_blocks ~sidebar_pages session context_blocks
   in
+  remember_visible_blocks session context_blocks;
+  remember_visible_blocks session (snapshot_related_blocks session);
+  remember_visible_blocks session (snapshot_linked_reference_blocks session);
+  List.iter
+    (fun route ->
+      Hashtbl.replace session.visible_node_destinations route.uuid
+        (route.page, route.zoom_to_block);
+      remember_visible_blocks session (node_route_context session route).blocks)
+    session.node_routes;
+  Option.iter
+    (fun (page : Logseq_chat_graph_read.sidebar_page) ->
+      Hashtbl.replace session.visible_node_destinations page.uuid (page, false))
+    session.selected_sidebar_page;
   let serialized_blocks = Hashtbl.create (List.length blocks) in
   let serialize_block (block : Model.block) =
     match Hashtbl.find_opt serialized_blocks block.uuid with
@@ -1335,6 +1372,8 @@ let create
   ; selected_sidebar_page = None
   ; node_routes = []
   ; node_base_state = None
+  ; visible_node_destinations = Hashtbl.create 64
+  ; visible_blocks_by_uuid = Hashtbl.create 64
   ; open_graph
   ; import_snapshot
   ; model_for_graph
@@ -2629,6 +2668,8 @@ let dispatch session action payload =
           failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
         | Some graph ->
           clear_node_navigation session;
+          Hashtbl.clear session.visible_node_destinations;
+          Hashtbl.clear session.visible_blocks_by_uuid;
           session.selected_sidebar_page <- None;
           reset_outliner session;
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
@@ -2670,7 +2711,10 @@ let dispatch session action payload =
                  Option.bind session.graph_node_destination (fun resolve -> resolve uuid)
                with
                | Some _ as resolved -> resolved
-               | None -> projected_node_destination session uuid
+               | None ->
+                 (match projected_node_destination session uuid with
+                  | Some _ as resolved -> resolved
+                  | None -> Hashtbl.find_opt session.visible_node_destinations uuid)
              in
              (match destination with
         | Some (page, zoom_to_block) ->

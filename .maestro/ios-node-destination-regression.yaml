@@ -12,9 +12,16 @@ appId: com.logseq.chat
     notVisible:
       id: "button.sidebar.dismiss"
     timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: "button.journal.e2e10000-0000-4000-8000-000000000007"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 100
+    centerElement: true
 - tapOn:
-    id: "button.journal.*"
-    index: 0
+    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
 - assertVisible:
     id: "BackButton"
 - assertVisible:
@@ -36,26 +43,21 @@ appId: com.logseq.chat
 - tapOn:
     id: "BackButton"
 - tapOn:
-    id: "button.journal.*"
-    index: 0
+    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
 - assertVisible:
     id: "BackButton"
 - assertNotVisible: "unknown_node"
-- tapOn:
-    id: "BackButton"
-- tapOn: "Edit block Untitled block"
-- inputText: "E2E destination regression"
-- tapOn:
-    id: "button.send"
-- tapOn: "Zoom into E2E destination regression"
+- tapOn: "Zoom into E2E Block Target"
 - assertVisible:
     id: "BackButton"
 - assertVisible:
     id: "button.connection"
+- assertVisible: "E2E Block Target"
 - assertNotVisible: "unknown_node"
 - tapOn:
     id: "BackButton"
-- tapOn: "Zoom into E2E destination regression"
+- tapOn: "Zoom into E2E Block Target"
 - assertVisible:
     id: "BackButton"
+- assertVisible: "E2E Block Target"
 - assertNotVisible: "unknown_node"
