@@ -207,6 +207,24 @@ import Testing
         ))
     }
 
+    @Test func journalProjectionUpdatesRetainTheVisibleScrollAnchor() {
+        #expect(OutlinerScrollAnchorPolicy.retainedAnchor(
+            current: "visible",
+            previousRowIDs: ["top", "visible", "bottom"],
+            rowIDs: ["top", "visible", "inserted", "bottom"]
+        ) == "visible")
+        #expect(OutlinerScrollAnchorPolicy.retainedAnchor(
+            current: "removed",
+            previousRowIDs: ["top", "removed", "next"],
+            rowIDs: ["top", "next"]
+        ) == "next")
+        #expect(OutlinerScrollAnchorPolicy.retainedAnchor(
+            current: nil,
+            previousRowIDs: ["top"],
+            rowIDs: ["top", "new"]
+        ) == nil)
+    }
+
     @Test func olderJournalPaginationIsExplicitAndAccessible() {
         #expect(OutlinerPaginationPolicy.buttonTitle == "Load earlier journals")
         #expect(OutlinerPaginationPolicy.accessibilityIdentifier == "button.outliner.load-older-journals")
@@ -721,6 +739,21 @@ import Testing
         ))
         #expect(!InlineEditorFocusPolicy.shouldRequestFocus(
             isAttachedToWindow: true, isFirstResponder: true
+        ))
+    }
+
+    @Test func structuralEditingBridgesTheNativeFirstResponder() {
+        #expect(InlineEditorResponderHandoffPolicy.shouldBridge(
+            isFirstResponder: true,
+            isStructuralEdit: true
+        ))
+        #expect(!InlineEditorResponderHandoffPolicy.shouldBridge(
+            isFirstResponder: false,
+            isStructuralEdit: true
+        ))
+        #expect(!InlineEditorResponderHandoffPolicy.shouldBridge(
+            isFirstResponder: true,
+            isStructuralEdit: false
         ))
     }
 

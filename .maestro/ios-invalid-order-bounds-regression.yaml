@@ -20,6 +20,9 @@ appId: com.logseq.chat
     speed: 50
     visibilityPercentage: 100
     centerElement: true
+- waitForAnimationToEnd
+- assertVisible:
+    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
 - tapOn:
     id: "button.journal.e2e10000-0000-4000-8000-000000000007"
 - assertVisible:

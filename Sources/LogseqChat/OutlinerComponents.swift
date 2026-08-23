@@ -12,6 +12,7 @@ enum OutlinerBlockPresentationPolicy {
 }
 
 struct OutlinerView: View {
+    @State private var scrollAnchorID: String?
     let rows: [LogseqOutlineRow]
     let sections: [LogseqBlockSection]
     let editing: LogseqOutlinerEditing?
@@ -99,12 +100,23 @@ struct OutlinerView: View {
                 }
                 Color.clear.frame(height: bottomPadding)
             }
+            #if !SKIP && os(iOS)
+            .scrollTargetLayout()
+            #endif
             .padding(.horizontal, OutlinerLayoutMetrics.outerHorizontalInset)
         }
         .accessibilityIdentifier("list.outliner")
         #if !SKIP && os(iOS)
         let content = ScrollViewReader { proxy in
             scrollContent
+                .scrollPosition(id: $scrollAnchorID, anchor: .top)
+                .onChange(of: rows.map(\.block.uuid)) { previousIDs, rowIDs in
+                    scrollAnchorID = OutlinerScrollAnchorPolicy.retainedAnchor(
+                        current: scrollAnchorID,
+                        previousRowIDs: previousIDs,
+                        rowIDs: rowIDs
+                    )
+                }
                 .onChange(of: editing?.uuid) { previousID, currentID in
                     if OutlinerEditorViewportPolicy.shouldEnsureVisible(
                         previousBlockID: previousID,

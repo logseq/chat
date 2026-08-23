@@ -243,10 +243,13 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 // makes the current block flash the caret suffix for a frame.
                 localText = textView.text
                 isAwaitingBlockHandoff = true
+                InlineEditorResponderHandoff.begin(from: textView)
                 parent.onReturn(submittedText, range.location)
                 return false
             }
             if replacement.isEmpty, range.location == 0, range.length == 0 {
+                isAwaitingBlockHandoff = true
+                InlineEditorResponderHandoff.begin(from: textView)
                 parent.onBackspace(textView.text, range.length)
                 return false
             }
@@ -276,14 +279,65 @@ private final class FocusRetainingTextView: UITextView {
         guard focusPending, window != nil else { return }
         if becomeFirstResponder() {
             focusPending = false
+            InlineEditorResponderHandoff.complete(with: self)
             return
         }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.focusPending, self.window != nil else { return }
             if self.becomeFirstResponder() {
                 self.focusPending = false
+                InlineEditorResponderHandoff.complete(with: self)
             }
         }
+    }
+}
+
+@MainActor
+private enum InlineEditorResponderHandoff {
+    private static weak var source: UITextView?
+    private static var bridge: UITextView?
+
+    static func begin(from source: UITextView) {
+        guard InlineEditorResponderHandoffPolicy.shouldBridge(
+            isFirstResponder: source.isFirstResponder,
+            isStructuralEdit: true
+        ), let window = source.window else { return }
+        if bridge === source { return }
+        bridge?.removeFromSuperview()
+        let bridge = UITextView(frame: CGRect(x: -2, y: -2, width: 1, height: 1))
+        bridge.alpha = 0.01
+        bridge.text = source.text
+        bridge.selectedRange = source.selectedRange
+        bridge.font = source.font
+        bridge.keyboardType = source.keyboardType
+        bridge.autocorrectionType = source.autocorrectionType
+        bridge.spellCheckingType = source.spellCheckingType
+        bridge.delegate = source.delegate
+        window.addSubview(bridge)
+        guard bridge.becomeFirstResponder() else {
+            bridge.removeFromSuperview()
+            return
+        }
+        self.source = source
+        self.bridge = bridge
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            guard self.bridge === bridge else { return }
+            if let source = self.source, source.window != nil, source.becomeFirstResponder() {
+                self.complete(with: source)
+            } else {
+                bridge.resignFirstResponder()
+                bridge.removeFromSuperview()
+                self.bridge = nil
+                self.source = nil
+            }
+        }
+    }
+
+    static func complete(with target: UITextView) {
+        guard let bridge, bridge !== target else { return }
+        bridge.removeFromSuperview()
+        self.bridge = nil
+        source = nil
     }
 }
 #endif

@@ -237,6 +237,12 @@ enum InlineEditorFocusPolicy {
     }
 }
 
+enum InlineEditorResponderHandoffPolicy {
+    static func shouldBridge(isFirstResponder: Bool, isStructuralEdit: Bool) -> Bool {
+        isFirstResponder && isStructuralEdit
+    }
+}
+
 #if !SKIP
 enum InlineEditorPairDeletion {
     static func deletingEmptyNodeReference(
@@ -510,6 +516,30 @@ enum OutlinerEditorViewportPolicy {
     ) -> Bool {
         guard let blockID else { return false }
         return viewportChanged || previousBlockID != blockID
+    }
+}
+
+enum OutlinerScrollAnchorPolicy {
+    static func retainedAnchor(
+        current: String?,
+        previousRowIDs: [String],
+        rowIDs: [String]
+    ) -> String? {
+        guard let current else { return nil }
+        let available = Set(rowIDs)
+        if available.contains(current) { return current }
+        guard let index = previousRowIDs.firstIndex(of: current) else { return nil }
+        for distance in 1...max(previousRowIDs.count, 1) {
+            let next = index + distance
+            if next < previousRowIDs.count, available.contains(previousRowIDs[next]) {
+                return previousRowIDs[next]
+            }
+            let previous = index - distance
+            if previous >= 0, available.contains(previousRowIDs[previous]) {
+                return previousRowIDs[previous]
+            }
+        }
+        return nil
     }
 }
 
