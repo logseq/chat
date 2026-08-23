@@ -1286,6 +1286,56 @@ private let testEmptySnapshotJSON = """
         }
     }
 
+    @Test func successfulHTTPWithRejectedTransactionReportsTheServerReason() {
+        let result = LogseqPendingSyncResult(
+            status: 200,
+            body: #"{"type":"tx/reject","reason":"db transact failed","error-detail":"DB write failed with invalid data"}"#,
+            error: nil
+        )
+
+        #expect(
+            LogseqPendingSyncResultPolicy.failureMessage(for: result)
+                == "Sync server rejected the change: db transact failed — DB write failed with invalid data"
+        )
+    }
+
+    @Test @MainActor func rejectedTransactionStopsThePumpAndKeepsItsReason() async throws {
+        let recorder = RequestRecorder()
+        let request = LogseqPendingSyncRequest(
+            id: 1,
+            method: "POST",
+            url: "https://api.example/sync/graph-1/tx/batch",
+            body: "{}",
+            token: "access-token",
+            filePath: nil,
+            contentType: "application/json"
+        )
+        let store = LogseqChatStore(
+            call: { call in
+                recorder.append(call)
+                return pendingPumpSnapshot(query: "", syncStatus: "pending", request: request)
+            },
+            pendingTransport: { _ in
+                LogseqPendingSyncResult(
+                    status: 200,
+                    body: #"{"type":"tx/reject","reason":"db transact failed","error-detail":"DB write failed with invalid data"}"#,
+                    error: nil
+                )
+            }
+        )
+
+        store.syncPending()
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(
+            recorder.all.filter { $0.contains("\"action\":\"completePendingSync\"") }.count == 1
+        )
+        #expect(store.syncError?.message.contains("db transact failed") == true)
+    }
+
     @Test @MainActor func cancelingBackgroundPendingSyncCancelsTheHTTPTransport() async throws {
         let recorder = RequestRecorder()
         let transport = SuspendedPendingTransport()

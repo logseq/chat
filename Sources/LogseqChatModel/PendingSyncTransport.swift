@@ -145,9 +145,12 @@ public enum LogseqPendingSyncHTTPTransport {
                 )
             }
             #if DEBUG
-            if pending.filePath != nil || !(200..<300).contains(http.statusCode) {
+            if pending.filePath != nil
+                || !(200..<300).contains(http.statusCode)
+                || responseBody.contains("\"type\":\"tx/reject\"")
+            {
                 print(
-                    "LOGSEQ_ASSET_SYNC response id=\(pending.id) status=\(http.statusCode) "
+                    "LOGSEQ_PENDING_SYNC response id=\(pending.id) status=\(http.statusCode) "
                         + "body=\(responseBody)"
                 )
             }

@@ -1402,12 +1402,11 @@ private struct DeletePagePayload: Encodable {
             while let request = pending, !Task.isCancelled {
                 let result = await pendingTransport(request)
                 if Task.isCancelled { break }
-                if let error = result.error, !error.isEmpty {
-                    syncError = LogseqChatCoreError(code: "pending_sync_failed", message: error)
-                } else if let status = result.status, !(200..<300).contains(status) {
+                let failureMessage = LogseqPendingSyncResultPolicy.failureMessage(for: result)
+                if let failureMessage {
                     syncError = LogseqChatCoreError(
                         code: "pending_sync_failed",
-                        message: "Sync server returned HTTP \(status)"
+                        message: failureMessage
                     )
                 } else if snapshot.syncConnected == true {
                     syncError = nil
@@ -1419,6 +1418,10 @@ private struct DeletePagePayload: Encodable {
                     error: result.error
                 )
                 await dispatchEncodedAndWait("completePendingSync", completion)
+                if failureMessage != nil {
+                    pendingSyncRequested = false
+                    break
+                }
                 pending = snapshot.pendingSyncRequest
             }
             if Task.isCancelled {

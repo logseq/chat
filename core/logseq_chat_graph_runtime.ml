@@ -302,6 +302,26 @@ let normalize_expected_title _runtime db ~uuid ~expected =
   if String.equal current expected then Ok current else Error "title changed on the server"
 ;;
 
+let normalize_fsrs_value attr = function
+  | Ops.Instant_value value when String.equal attr "logseq.property.fsrs/due" ->
+    Ops.Int_value value
+  | Ops.Map_value entries when String.equal attr "logseq.property.fsrs/state" ->
+    Ops.Map_value
+      (List.map
+         (function
+           | "last-repeat", Ops.Instant_value value -> "last-repeat", Ops.Int_value value
+           | entry -> entry)
+         entries)
+  | value -> value
+;;
+
+let normalize_property_change (change : Ops.property_change) =
+  { change with
+    expected = Option.map (normalize_fsrs_value change.attr) change.expected
+  ; value = Option.map (normalize_fsrs_value change.attr) change.value
+  }
+;;
+
 let normalize_operation_against runtime db operation =
   let intent =
     match operation.Ops.intent with
@@ -336,8 +356,16 @@ let normalize_operation_against runtime db operation =
         ; merged_title = Some (expected_previous_title ^ source_title)
         }
       )
-    | (Ops.Set_property _ | Ops.Set_properties _
-      | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
+    | Ops.Set_property ({ attr; expected; value; _ } as property) ->
+      Ok
+        (Ops.Set_property
+           { property with
+             expected = Option.map (normalize_fsrs_value attr) expected
+           ; value = Option.map (normalize_fsrs_value attr) value
+           })
+    | Ops.Set_properties { uuid; changes } ->
+      Ok (Ops.Set_properties { uuid; changes = List.map normalize_property_change changes })
+    | (Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
       | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
       | Ops.Set_favorite _ | Ops.Delete_page _) as intent -> Ok intent
   in
@@ -559,7 +587,7 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
                     }
                   ; { attr = "logseq.property.fsrs/due"
                     ; expected = expected_due
-                    ; value = Some (Instant_value repeated.due)
+                    ; value = Some (Int_value repeated.due)
                     }
                   ]
               }

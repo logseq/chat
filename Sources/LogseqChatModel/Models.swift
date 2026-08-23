@@ -468,6 +468,52 @@ public struct LogseqPendingSyncResult: Codable, Sendable {
     }
 }
 
+public enum LogseqPendingSyncResultPolicy {
+    private struct ServerMessage: Decodable {
+        let type: String?
+        let reason: String?
+        let error: String?
+        let errorDetail: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type, reason, error
+            case errorDetail = "error-detail"
+        }
+    }
+
+    public static func failureMessage(for result: LogseqPendingSyncResult) -> String? {
+        if let error = result.error, !error.isEmpty {
+            return error
+        }
+        let message = result.body.flatMap(decodeServerMessage)
+        if let status = result.status, !(200..<300).contains(status) {
+            let reason = message?.error ?? message?.reason
+            return reason.map { "Sync server returned HTTP \(status): \($0)" }
+                ?? "Sync server returned HTTP \(status)"
+        }
+        guard message?.type == "tx/reject" else { return nil }
+        let reason = message?.reason ?? "transaction rejected"
+        guard let detail = message?.errorDetail, !detail.isEmpty else {
+            return "Sync server rejected the change: \(reason)"
+        }
+        return "Sync server rejected the change: \(reason) — \(detailSummary(detail))"
+    }
+
+    private static func decodeServerMessage(_ body: String) -> ServerMessage? {
+        try? JSONDecoder().decode(ServerMessage.self, from: Data(body.utf8))
+    }
+
+    private static func detailSummary(_ detail: String) -> String {
+        if detail.contains("DB write failed with invalid data") {
+            if detail.contains("should be a datetime") {
+                return "DB write failed with invalid data: should be a datetime"
+            }
+            return "DB write failed with invalid data"
+        }
+        return String(detail.prefix(240))
+    }
+}
+
 public enum LogseqOutlinerAutocompleteKind: String, Codable, Sendable {
     case node, tag, property
 }

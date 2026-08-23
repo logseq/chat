@@ -250,12 +250,71 @@ let () =
          = Ok ());
       assert_bool "reviewed card immediately leaves the due queue"
         (Runtime.due_flashcards runtime ~now = []);
-      assert_bool "one pending operation contains both FSRS properties"
+      assert_bool "one pending operation uses Logseq's millisecond FSRS property format"
         (match Ops.list ~path with
-         | [ { intent = Set_properties { uuid = "block"; changes }; _ } ] ->
-           List.map (fun (change : Ops.property_change) -> change.attr) changes
-           = [ "logseq.property.fsrs/state"; "logseq.property.fsrs/due" ]
+         | [ { intent = Set_properties
+                 { uuid = "block"
+                 ; changes =
+                     [ { attr = "logseq.property.fsrs/state"
+                       ; value = Some (Ops.Map_value state)
+                       ; _
+                       }
+                     ; { attr = "logseq.property.fsrs/due"
+                       ; value = Some (Ops.Int_value _)
+                       ; _
+                       }
+                     ]
+                 }
+               ; _
+               }
+           ] ->
+           List.assoc_opt "last-repeat" state
+           |> Option.fold ~none:false ~some:(function Ops.Int_value _ -> true | _ -> false)
          | _ -> false))
+;;
+
+let () =
+  let rec contains_date = function
+    | Transit.Date _ -> true
+    | Transit.Array values | Transit.List values | Transit.Set values ->
+      List.exists contains_date values
+    | Transit.Map entries ->
+      List.exists (fun (key, value) -> contains_date key || contains_date value) entries
+    | Transit.Tagged (_, value) -> contains_date value
+    | _ -> false
+  in
+  with_runtime (fun _path _conn runtime ->
+    let legacy =
+      Ops.
+        { operation_id = "legacy-fsrs-review"
+        ; base_t = 42
+        ; state = Queued
+        ; intent =
+            Set_properties
+              { uuid = "block"
+              ; changes =
+                  [ { attr = "logseq.property.fsrs/state"
+                    ; expected = None
+                    ; value =
+                        Some
+                          (Map_value
+                             [ "last-repeat", Instant_value 1_776_000_000_000
+                             ; "state", Keyword_value "review"
+                             ])
+                    }
+                  ; { attr = "logseq.property.fsrs/due"
+                    ; expected = None
+                    ; value = Some (Instant_value 1_776_086_400_000)
+                    }
+                  ]
+              }
+        }
+    in
+    assert_bool "legacy FSRS review stages" (Runtime.stage runtime legacy = Ok ());
+    assert_bool "legacy FSRS instants are normalized before server sync"
+      (match Runtime.prepare_sync runtime legacy with
+       | Ok ("save-block", wire) -> not (contains_date (Transit.of_string wire))
+       | _ -> false))
 ;;
 
 let () =

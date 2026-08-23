@@ -127,7 +127,7 @@ let state_value card =
     ; Keyword "reps", Int card.reps
     ; Keyword "lapses", Int card.lapses
     ; Keyword "state", Keyword (state_keyword card.state)
-    ; Keyword "last-repeat", Instant card.last_repeat
+    ; Keyword "last-repeat", Int card.last_repeat
     ]
   in
   let entries =
