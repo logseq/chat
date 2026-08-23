@@ -147,10 +147,21 @@ let test_invalid_envelope_fails_closed () =
     E2ee.decrypt_value
       ~crypto:(crypto (ref []))
       ~graph_key:"graph-key"
-      (Codec.to_string (Transit.String "plaintext"))
+      (Codec.to_string (Transit.Array [ Transit.String "iv"; Transit.String "ciphertext" ]))
   with
   | Error _ -> ()
   | Ok _ -> failwith "invalid encrypted value must not be treated as plaintext"
+;;
+
+let test_plaintext_protected_values_follow_logseq_compatibility () =
+  let calls = ref [] in
+  let decrypt source =
+    E2ee.decrypt_string ~crypto:(crypto calls) ~graph_key:"graph-key" source
+    |> expect_ok
+  in
+  expect_equal "Card" (decrypt "Card");
+  expect_equal "Card" (decrypt (Codec.to_string (Transit.String "Card")));
+  if !calls <> [] then failwith "plaintext protected values must not invoke AES-GCM"
 ;;
 
 let () =
@@ -158,5 +169,6 @@ let () =
   test_unlock_legacy_private_key_package ();
   test_prepare_graph_key_uses_logseq_transit_binary_envelopes ();
   test_protected_value_round_trip_keeps_transit_type ();
-  test_invalid_envelope_fails_closed ()
+  test_invalid_envelope_fails_closed ();
+  test_plaintext_protected_values_follow_logseq_compatibility ()
 ;;

@@ -98,16 +98,22 @@ let encrypt_value ~crypto ~graph_key value =
     Ok (Codec.to_string (Transit.Array [ Transit.Binary iv; Transit.Binary ciphertext ])))
 ;;
 
-let encrypted_value_envelope source =
-  bind (protect "decode encrypted value" (fun () -> Codec.of_string source)) (function
-    | Transit.Array [ Transit.Binary iv; Transit.Binary ciphertext ] -> Ok (iv, ciphertext)
-    | _ -> Error "encrypted value has an invalid Transit AES-GCM envelope")
-;;
-
 let decrypt_value ~crypto ~graph_key source =
-  bind (encrypted_value_envelope source) (fun (iv, ciphertext) ->
+  let decoded =
+    try Some (Codec.of_string source) with
+    | _ -> None
+  in
+  match decoded with
+  | None -> Ok (Transit.String source)
+  | Some (Transit.Array [ Transit.Binary iv; Transit.Binary ciphertext ]) ->
     bind (crypto.decrypt_aes_gcm ~key:graph_key ~iv ~ciphertext) (fun plaintext ->
-      protect "decode decrypted value" (fun () -> Codec.of_string plaintext)))
+      protect "decode decrypted value" (fun () -> Codec.of_string plaintext))
+  | Some (Transit.Array (_ :: _ :: _)) ->
+    Error "encrypted value has an invalid Transit AES-GCM envelope"
+  | Some (Transit.String value) ->
+    (try Ok (Codec.of_string value) with
+     | _ -> Ok (Transit.String value))
+  | Some value -> Ok value
 ;;
 
 let decrypt_string ~crypto ~graph_key source =
