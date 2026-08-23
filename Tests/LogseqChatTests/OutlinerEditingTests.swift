@@ -191,8 +191,7 @@ import Testing
         #expect(OutlinerLayoutMetrics.bulletContentSpacing == 2)
     }
 
-    @Test func nativeEditorCentersItsFontInsideTheSharedFirstLineHeight() {
-        #expect(OutlinerNativeTextLayoutPolicy.usesSystemFirstBaselineAlignment)
+    @Test func nativeEditorCentersEmptyAndNonEmptyTextInsideTheSharedFirstLineHeight() {
         #expect(OutlinerNativeTextLayoutPolicy.verticalInset(
             fontLineHeight: 20,
             minimumLineHeight: 24

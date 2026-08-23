@@ -1,0 +1,15 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- tapOn: "Edit block E2E Block Target"
+- pressKey: ENTER
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "debug.keyboard-hide-count.0"
+- takeScreenshot: "ios-outliner-empty-block-caret"

@@ -710,7 +710,12 @@ struct ContentView: View {
                 projectedNodeCount: store.snapshot.nodeRoutes.count
             )
             if closedNodes > 0 {
-                for _ in 0..<closedNodes { store.closeNode() }
+                Task { @MainActor in
+                    // Let SwiftUI commit the path change before publishing the
+                    // corresponding core projection cleanup.
+                    await Task.yield()
+                    for _ in 0..<closedNodes { store.closeNode() }
+                }
             }
             let activeNodeIDs = Set(path.map { route in
                 switch route { case let .node(uuid): uuid }
@@ -849,6 +854,7 @@ struct ContentView: View {
         if #available(iOS 26.0, *) {
             primaryContent
                 .background(appBackground)
+                .navigationTitle(headerTitleText)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     nativeHeaderToolbar
@@ -868,12 +874,7 @@ struct ContentView: View {
     @ToolbarContentBuilder private var nativeHeaderToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             headerLeadingControl
-                .buttonBorderShape(.circle)
         }
-        ToolbarItem(placement: .topBarLeading) {
-            headerTitle
-        }
-        .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .topBarTrailing) {
             syncIndicatorControl
             settingsControl
@@ -1789,14 +1790,18 @@ struct ContentView: View {
         )
     }
 
-    private var headerTitle: some View {
-        Text(verbatim: flashcardsPresented
+    private var headerTitleText: String {
+        flashcardsPresented
             ? "Flashcards"
             : AppHeaderPolicy.title(
                 zoomedBlockTitle: zoomedOutlinerBlock?.title,
                 selectedPageTitle: activeNodeProjection?.page.title
                     ?? store.snapshot.selectedPage?.title
-            ))
+            )
+    }
+
+    private var headerTitle: some View {
+        Text(verbatim: headerTitleText)
         .font(.subheadline)
         .fontWeight(.semibold)
         .foregroundStyle(.primary)

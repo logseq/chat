@@ -57,9 +57,10 @@ enum HeaderControlPolicy {
     static let settingsSystemImage = "ellipsis.circle"
     static let usesNativeToolbarGroup = true
     static let showsContentModeControl = false
-    static let titleIsLeading = true
+    static let usesSystemNavigationTitle = true
+    static let usesSystemBackButton = true
+    static let sidebarUsesSystemToolbarChrome = true
     static let titleUsesPrimaryStyle = true
-    static let titleSharesLeadingControlGroup = false
     static let trailingGroupActionCount = 2
     static let syncIndicatorOpensStatusSheet = true
 }

@@ -1,0 +1,19 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- assertVisible: "Journal"
+- assertVisible:
+    id: "button.sidebar"
+- tapOn: "Open Aug 24th, 2026"
+- assertVisible: "Aug 24th, 2026"
+- assertVisible:
+    id: "BackButton"
+- takeScreenshot: "ios-native-header-node"
+- tapOn:
+    id: "BackButton"
+- assertVisible: "Journal"
+- assertVisible:
+    id: "button.sidebar"
+- takeScreenshot: "ios-native-header-journal"

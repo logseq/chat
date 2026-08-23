@@ -1,0 +1,14 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- assertVisible: "E2E Block Target"
+- takeScreenshot: "ios-outliner-fixture-display-baseline"
+- tapOn: "Edit block E2E Block Target"
+- assertVisible:
+    id: "field.outliner.block.*"
+- takeScreenshot: "ios-outliner-fixture-edit-baseline"

@@ -126,12 +126,13 @@ import LogseqChatModel
         #expect(HeaderControlPolicy.settingsSystemImage == "ellipsis.circle")
     }
 
-    @Test func iOS26GroupsOnlySyncAndSettingsInTheNativeToolbar() {
+    @Test func iOS26UsesNativeNavigationTitleBackButtonAndToolbarChrome() {
         #expect(HeaderControlPolicy.usesNativeToolbarGroup)
         #expect(!HeaderControlPolicy.showsContentModeControl)
-        #expect(HeaderControlPolicy.titleIsLeading)
+        #expect(HeaderControlPolicy.usesSystemNavigationTitle)
+        #expect(HeaderControlPolicy.usesSystemBackButton)
+        #expect(HeaderControlPolicy.sidebarUsesSystemToolbarChrome)
         #expect(HeaderControlPolicy.titleUsesPrimaryStyle)
-        #expect(!HeaderControlPolicy.titleSharesLeadingControlGroup)
         #expect(HeaderControlPolicy.trailingGroupActionCount == 2)
         #expect(HeaderControlPolicy.syncIndicatorOpensStatusSheet)
     }

@@ -533,8 +533,6 @@ enum OutlinerLayoutMetrics {
 }
 
 enum OutlinerNativeTextLayoutPolicy {
-    static let usesSystemFirstBaselineAlignment = true
-
     static func verticalInset(
         fontLineHeight: CGFloat,
         minimumLineHeight: CGFloat

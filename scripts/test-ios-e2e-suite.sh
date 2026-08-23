@@ -15,10 +15,13 @@ flows=(
   .maestro/ios-outliner-interactions.yaml
   .maestro/ios-outliner-editor-toolbar.yaml
   .maestro/ios-outliner-continuous-editing.yaml
+  .maestro/ios-outliner-empty-block-caret.yaml
+  .maestro/ios-outliner-fixture-edit-baseline.yaml
   .maestro/ios-invalid-order-bounds-regression.yaml
   .maestro/ios-outliner-selection-toolbar.yaml
   .maestro/ios-outliner-hierarchy-navigation.yaml
   .maestro/ios-node-tag-navigation.yaml
+  .maestro/ios-native-header-navigation.yaml
   .maestro/ios-sidebar-node-navigation.yaml
   .maestro/ios-page-share.yaml
   .maestro/ios-page-favorite.yaml
@@ -39,6 +42,8 @@ fi
 for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow == .maestro/ios-invalid-order-bounds-regression.yaml \
+     || $flow == .maestro/ios-outliner-empty-block-caret.yaml \
+     || $flow == .maestro/ios-outliner-fixture-edit-baseline.yaml \
      || $flow == .maestro/ios-node-tag-navigation.yaml \
      || $flow == .maestro/ios-sidebar-node-navigation.yaml \
      || $flow == .maestro/ios-page-share.yaml \
