@@ -15,6 +15,7 @@ flows=(
   .maestro/ios-outliner-interactions.yaml
   .maestro/ios-outliner-editor-toolbar.yaml
   .maestro/ios-outliner-continuous-editing.yaml
+  .maestro/ios-invalid-order-bounds-regression.yaml
   .maestro/ios-outliner-selection-toolbar.yaml
   .maestro/ios-outliner-hierarchy-navigation.yaml
   .maestro/ios-node-tag-navigation.yaml
@@ -36,7 +37,8 @@ fi
 
 for flow in "${flows[@]}"; do
   echo "==> $flow"
-  if [[ $flow == .maestro/ios-node-tag-navigation.yaml \
+  if [[ $flow == .maestro/ios-invalid-order-bounds-regression.yaml \
+     || $flow == .maestro/ios-node-tag-navigation.yaml \
      || $flow == .maestro/ios-sidebar-node-navigation.yaml \
      || $flow == .maestro/ios-page-share.yaml \
      || $flow == .maestro/ios-page-favorite.yaml \

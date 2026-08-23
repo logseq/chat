@@ -59,6 +59,45 @@ let () =
 ;;
 
 let () =
+  let duplicate_order_context =
+    State.
+      { context with
+        blocks =
+          [ block "first" "First"
+          ; block ~order:(Some "a1") "second" "Second"
+          ; block ~order:(Some "a1") "duplicate" "Duplicate"
+          ; block ~order:(Some "a2") "third" "Third"
+          ]
+      }
+  in
+  let duplicate_ids = ref [ "duplicate-operation"; "duplicate-new-block" ] in
+  let duplicate_fresh_uuid () =
+    match !duplicate_ids with
+    | value :: rest -> duplicate_ids := rest; value
+    | [] -> fail "duplicate-order fresh UUID exhausted"
+  in
+  let result =
+    Effects.interpret
+      ~base_t:42
+      ~now:(fun () -> 100)
+      ~fresh_uuid:duplicate_fresh_uuid
+      duplicate_order_context
+      [ State.Split_at
+          { uuid = "second"; expected_title = "Second"; before = "Second"; after = "" }
+      ]
+  in
+  match result with
+  | Error message -> fail ("split after duplicate sibling order failed: " ^ message)
+  | Ok result ->
+    (match List.hd result.operations with
+     | { Ops.intent = Split_block { new_order; _ }; _ } ->
+       assert_bool
+         "split skips equal sibling orders and remains below the next greater order"
+         (String.compare "a1" new_order < 0 && String.compare new_order "a2" < 0)
+     | _ -> fail "duplicate-order split operation shape is wrong")
+;;
+
+let () =
   let result =
     Effects.interpret
       ~base_t:43

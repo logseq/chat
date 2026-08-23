@@ -36,8 +36,16 @@ let sorted_siblings (context : State.context) parent_id =
 
 let next_order context (block : Model.block) =
   let siblings = sorted_siblings context block.parent_id in
+  let rec first_strictly_greater lower = function
+    | [] -> None
+    | (candidate : Model.block) :: rest ->
+      (match lower, candidate.order with
+       | Some lower, Some candidate when String.compare candidate lower > 0 -> Some candidate
+       | _ -> first_strictly_greater lower rest)
+  in
   let rec loop = function
-    | current :: next :: _ when String.equal current.Model.uuid block.uuid -> next.Model.order
+    | current :: rest when String.equal current.Model.uuid block.uuid ->
+      first_strictly_greater block.order rest
     | _ :: rest -> loop rest
     | [] -> None
   in

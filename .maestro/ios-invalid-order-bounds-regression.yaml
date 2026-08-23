@@ -1,0 +1,46 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    notVisible:
+      id: "button.sidebar.dismiss"
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: "button.journal.e2e10000-0000-4000-8000-000000000007"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 100
+    centerElement: true
+- tapOn:
+    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
+- assertVisible:
+    id: "BackButton"
+- tapOn: "Edit block E2E Block Target"
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- assertVisible:
+    id: "field.outliner.block.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- inputText: "Keyboard stays open"
+- assertVisible: "Keyboard stays open"
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- assertVisible: "Keyboard stays open"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertNotVisible: "invalid order bounds"
+- assertNotVisible: "outliner_effect_failed"

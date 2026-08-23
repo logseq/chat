@@ -52,6 +52,31 @@ let () =
 ;;
 
 let () =
+  let source = block "source" "hello" in
+  let inserted = block ~order:"a1" "new" " world" in
+  let command =
+    Split
+      { source_uuid = "source"
+      ; expected_title = "hello world"
+      ; before = "hello"
+      ; after = " world"
+      ; new_uuid = "new"
+      ; new_order = "a1"
+      ; created_at = 42
+      }
+  in
+  assert_bool "an already committed split is an idempotent retry"
+    (plan
+       ~find:(function
+         | "source" -> Some source
+         | "new" -> Some inserted
+         | _ -> None)
+       ~children:(fun _ -> [])
+       command
+     = Ok [])
+;;
+
+let () =
   let source = block ~parent_uuid:"parent" "source" " world" in
   let previous = block ~parent_uuid:"parent" "previous" "hello" in
   let child = block ~parent_uuid:"source" "child" "nested" in

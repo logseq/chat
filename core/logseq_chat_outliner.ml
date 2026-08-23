@@ -50,26 +50,33 @@ let nonblank value = not (String.equal (String.trim value) "")
 let plan_split ~find (request : split_command) =
   match find request.source_uuid with
   | None -> Error "split source no longer exists"
-  | Some source when not (String.equal source.title request.expected_title) ->
-    Error "split source title changed on the server"
   | Some _ when String.equal request.source_uuid request.new_uuid || not (nonblank request.new_uuid) ->
     Error "split requires a distinct new block UUID"
-  | Some _ when Option.is_some (find request.new_uuid) ->
-    Error "split block UUID already exists"
   | Some source ->
-    Ok
-      [ Set_title { uuid = source.uuid; title = request.before }
-      ; Insert
-          { block =
-              { uuid = request.new_uuid
-              ; title = request.after
-              ; page_uuid = source.page_uuid
-              ; parent_uuid = source.parent_uuid
-              ; order = request.new_order
-              }
-          ; created_at = request.created_at
-          }
-      ]
+    (match find request.new_uuid with
+     | Some inserted
+       when String.equal source.title request.before
+            && String.equal inserted.title request.after
+            && String.equal inserted.page_uuid source.page_uuid
+            && String.equal inserted.parent_uuid source.parent_uuid
+            && String.equal inserted.order request.new_order -> Ok []
+     | Some _ -> Error "split block UUID already exists"
+     | None when not (String.equal source.title request.expected_title) ->
+       Error "split source title changed on the server"
+     | None ->
+       Ok
+         [ Set_title { uuid = source.uuid; title = request.before }
+         ; Insert
+             { block =
+                 { uuid = request.new_uuid
+                 ; title = request.after
+                 ; page_uuid = source.page_uuid
+                 ; parent_uuid = source.parent_uuid
+                 ; order = request.new_order
+                 }
+             ; created_at = request.created_at
+             }
+         ])
 ;;
 
 let plan_merge ~find ~children (request : merge_backward_command) =

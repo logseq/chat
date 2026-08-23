@@ -3289,6 +3289,55 @@ let () =
 ;;
 
 let () =
+  (* Node routes must use the optimistic projection while the page reader is
+     still behind, just like sidebar page editing does. *)
+  let page = Logseq_chat_graph_read.{ uuid = "node-lag-page"; title = "Node lag page" } in
+  let source =
+    { (remote_block "node-lag-source" "Hello") with
+      Logseq_chat_model.page_id = page.uuid
+    ; parent_id = Some page.uuid
+    ; order = Some "a0"
+    }
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_page_blocks:(fun uuid ->
+        if String.equal uuid page.uuid then Some [ source ] else None)
+      ~graph_node_destination:(fun uuid ->
+        if String.equal uuid page.uuid then Some (page, false) else None)
+      ~stage_operation:(fun _ -> Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"node-lag-page\"}"}}|});
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  let editing_uuid response =
+    let route = required_first_assoc "nodeRoutes" response in
+    required_assoc "outlinerState" route
+    |> required_assoc "editing"
+    |> required_string "uuid"
+  in
+  let split uuid =
+    dispatch_outliner
+      session
+      (`Assoc [ "type", `String "returnPressed"; "uuid", `String uuid ])
+    |> editing_uuid
+  in
+  let first_empty = split source.uuid in
+  let second_empty = split first_empty in
+  if String.equal first_empty second_empty
+  then failwith "consecutive node-route Enter must create distinct blocks"
+;;
+
+let () =
   (* Editing keeps local structure, but live properties must replace stale
      metadata in the optimistic overlay before staging another property edit. *)
   let page = Logseq_chat_graph_read.{ uuid = "status-page"; title = "Status page" } in

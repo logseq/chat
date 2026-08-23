@@ -518,7 +518,9 @@ let node_route_context session route =
     | Some load -> Option.value (load route.page.uuid) ~default:[]
     | None -> []
   in
-  outliner_context_with_blocks session graph_blocks
+  outliner_context_with_blocks
+    session
+    (page_blocks_with_optimistic_overlay session route.page.uuid graph_blocks)
 ;;
 
 let active_node_route session =
