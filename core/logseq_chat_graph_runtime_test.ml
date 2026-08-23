@@ -926,6 +926,96 @@ let () =
          | _ -> false))
 ;;
 
+let edited_split_authoritative () =
+  base_db "Old"
+  |> db_with
+       [ Add (Entity_id 11, "block/uuid", Uuid "already-created")
+       ; Add (Entity_id 11, "block/title", String "Edited later")
+       ; Add (Entity_id 11, "block/page", Ref 1)
+       ; Add (Entity_id 11, "block/parent", Ref 1)
+       ; Add (Entity_id 11, "block/order", String "a2")
+       ; Add (Entity_id 11, "block/created-at", Int 2)
+       ; Add (Entity_id 11, "block/updated-at", Int 3)
+       ]
+;;
+
+let split_operation ~state =
+  Ops.
+    { operation_id = "committed-split"
+    ; base_t = 42
+    ; state
+    ; intent =
+        Split_block
+          { uuid = "block"
+          ; expected_title = "Old"
+          ; before = "Old"
+          ; after = ""
+          ; new_uuid = "already-created"
+          ; new_order = "a1"
+          ; created_at = 2
+          }
+    }
+;;
+
+let with_reopened_split ?(server_t = 43) state f =
+  let path = Filename.temp_file "logseq-chat-runtime-idempotent-split" ".sqlite" in
+  Fun.protect
+    ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
+    (fun () ->
+      Logseq_chat_graph_store.prepare_staging path;
+      Ops.save ~path (split_operation ~state);
+      ignore (Runtime.create ~path ~server_t (conn_from_db (edited_split_authoritative ())));
+      f path)
+;;
+
+let () =
+  with_reopened_split
+    (Ops.Conflicted "split block UUID already exists")
+    (fun path ->
+      assert_bool
+        "startup removes a committed split even when later edits changed the new block"
+        (Ops.list ~path = []))
+;;
+
+let () =
+  with_reopened_split Ops.Submitted (fun path ->
+    assert_bool
+      "startup removes a submitted split whose authoritative block was edited later"
+      (Ops.list ~path = []))
+;;
+
+let () =
+  with_reopened_split ~server_t:43 (Ops.Accepted 44) (fun path ->
+    assert_bool
+      "startup preserves a split before its accepted cursor is authoritative"
+      (Ops.list ~path <> []))
+;;
+
+let () =
+  with_reopened_split ~server_t:44 (Ops.Accepted 44) (fun path ->
+    assert_bool
+      "startup removes an accepted split once its cursor is authoritative"
+      (Ops.list ~path = []))
+;;
+
+let () =
+  with_reopened_split Ops.Queued (fun path ->
+    assert_bool
+      "startup preserves a queued split when its UUID collides before submission"
+      (match Ops.list ~path with
+       | [ { state = Ops.Conflicted _; _ } ] -> true
+       | _ -> false))
+;;
+
+let () =
+  with_reopened_split (Ops.Conflicted "source block changed") (fun path ->
+    assert_bool
+      "startup preserves an unrelated split conflict despite a UUID collision"
+      (match Ops.list ~path with
+       | [ { state = Ops.Conflicted "source block changed"; _ } ] -> true
+       | _ -> false))
+;;
+
 let () =
   with_runtime (fun _path _conn runtime ->
     let db = Runtime.db runtime in

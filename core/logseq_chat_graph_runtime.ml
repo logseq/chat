@@ -159,6 +159,22 @@ let safe_to_rebase = function
   | Ops.Delete_blocks _ -> false
 ;;
 
+let split_result_exists db = function
+  | Ops.Split_block { new_uuid; _ } ->
+    Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid new_uuid))
+  | _ -> false
+;;
+
+let committed_despite_later_changes ~server_t authoritative (operation : Ops.t) =
+  match operation.state with
+  | Ops.Accepted accepted_t ->
+    accepted_t <= server_t && split_result_exists authoritative operation.intent
+  | Ops.Submitted -> split_result_exists authoritative operation.intent
+  | Ops.Conflicted "split block UUID already exists" ->
+    split_result_exists authoritative operation.intent
+  | Ops.Queued | Ops.Retryable | Ops.Applied | Ops.Conflicted _ -> false
+;;
+
 let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
   let confirmed = Hashtbl.create (List.length operation_ids) in
   List.iter (fun operation_id -> Hashtbl.replace confirmed operation_id ()) operation_ids;
@@ -172,6 +188,8 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
         && Projection.satisfied authoritative operation.intent ->
       Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
     | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent ->
+      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
+    | _ when committed_despite_later_changes ~server_t authoritative operation ->
       Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
     | _ -> ());
   runtime.server_t <- server_t;
@@ -219,7 +237,6 @@ let create_base
   let snapshot =
     Projection.build ~server_t (Datascript.conn_db conn) operations
   in
-  persist_projected_conflicts ~path operations snapshot.statuses;
   let search_index =
     Option.bind search_index_path (fun path ->
       try Some (Logseq_chat_search_index.create ~path) with
