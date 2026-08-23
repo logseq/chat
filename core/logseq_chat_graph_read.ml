@@ -330,17 +330,26 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
       |> List.sort (fun (left, _) (right, _) -> String.compare left right)
       |> List.map snd)
   in
+  let favorite_uuids =
+    List.fold_left
+      (fun uuids page -> String_set.add page.uuid uuids)
+      String_set.empty
+      favorites
+  in
   let recent_pages =
     Datascript.datoms db Aevt ~a:"block/name" ()
     |> List.of_seq
     |> List.filter_map (fun datom ->
-      Option.map
-        (fun page ->
-          Option.value (int_value (value db datom.e "block/updated-at")) ~default:0,
-          Option.value (int_value (value db datom.e "block/journal-day")) ~default:0,
-          datom.e,
-          page)
-        (page_summary decrypt_title db datom.e))
+      match page_summary decrypt_title db datom.e with
+      | Some page
+        when value db datom.e "logseq.property/built-in?" <> Some (Bool true)
+             && not (String_set.mem page.uuid favorite_uuids) ->
+        Some
+          ( Option.value (int_value (value db datom.e "block/updated-at")) ~default:0
+          , Option.value (int_value (value db datom.e "block/journal-day")) ~default:0
+          , datom.e
+          , page )
+      | Some _ | None -> None)
     |> List.sort (fun (left_updated, left_journal, left_eid, _) (right_updated, right_journal, right_eid, _) ->
       match compare right_updated left_updated with
       | 0 ->

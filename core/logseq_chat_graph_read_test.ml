@@ -841,6 +841,16 @@ let () =
                ]
            }
        ; Entity
+           { db_id = Some (Temp_id "built-in-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "page-built-in")
+               ; "block/name", One_value (String "built-in-page")
+               ; "block/title", One_value (String "Built-in page")
+               ; "block/updated-at", One_value (Instant 500)
+               ; "logseq.property/built-in?", One_value (Bool true)
+               ]
+           }
+       ; Entity
            { db_id = Some (Temp_id "favorite-alpha")
            ; attrs =
                [ "block/uuid", One_value (Uuid "favorite-alpha")
@@ -876,8 +886,8 @@ let () =
      <> [ "page-beta"; "page-alpha" ]
   then failwith "favorites must preserve their graph order";
   if List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.recent_pages
-     <> [ "page-beta"; "page-alpha"; "page-seeded-recent" ]
-  then failwith "recent pages must be newest first";
+     <> [ "page-seeded-recent" ]
+  then failwith "recent pages must exclude favorites and built-in pages";
   if List.exists
        (fun page -> page.Logseq_chat_graph_read.uuid = "favorites-page")
        sidebar.recent_pages
