@@ -531,6 +531,17 @@ private let testEmptySnapshotJSON = """
             taskIsCancelled: false
         ))
     }
+
+    @Test func sseConnectionFailuresHaveUsefulUserFacingMessages() {
+        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.timedOut))
+            == "The sync server timed out. Check that it is running and reachable, then try again.")
+        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.notConnectedToInternet))
+            == "No network connection. Sync will resume automatically when the network is available.")
+        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.cannotConnectToHost))
+            == "The sync server is unreachable. Check that it is running and reachable.")
+        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.unsupportedURL))
+            == "The sync server address is invalid.")
+    }
     #endif
 
     @Test @MainActor func graphDiscoveryRunsWhenThereIsNoCachedSelection() async throws {
@@ -1280,6 +1291,7 @@ private let testEmptySnapshotJSON = """
 
         #expect(store.lastError == nil)
         #expect(store.syncError?.code == "sse_connection_failed")
+        #expect(store.syncError?.message == "The sync server address is invalid.")
         store.openNode("page-1")
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"openNode\"") }

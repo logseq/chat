@@ -14,6 +14,24 @@ enum LogseqGraphSSEFailurePolicy {
         guard !taskIsCancelled, !(error is CancellationError) else { return false }
         return (error as? URLError)?.code != .cancelled
     }
+
+    static func userFacingMessage(_ error: Error) -> String {
+        guard let urlError = error as? URLError else {
+            return error.localizedDescription
+        }
+        switch urlError.code {
+        case .timedOut:
+            return "The sync server timed out. Check that it is running and reachable, then try again."
+        case .notConnectedToInternet:
+            return "No network connection. Sync will resume automatically when the network is available."
+        case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .networkConnectionLost:
+            return "The sync server is unreachable. Check that it is running and reachable."
+        case .badURL, .unsupportedURL:
+            return "The sync server address is invalid."
+        default:
+            return urlError.localizedDescription
+        }
+    }
 }
 
 struct LogseqGraphSSETransportBuffer {

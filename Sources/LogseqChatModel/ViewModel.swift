@@ -887,9 +887,12 @@ private struct DeletePagePayload: Encodable {
                 error,
                 taskIsCancelled: Task.isCancelled
             ) {
+                #if DEBUG
+                print("LogseqChat sync event stream failed: \(error)")
+                #endif
                 syncError = LogseqChatCoreError(
                     code: "sse_connection_failed",
-                    message: "\(error)"
+                    message: LogseqGraphSSEFailurePolicy.userFacingMessage(error)
                 )
             }
         }
