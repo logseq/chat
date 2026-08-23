@@ -256,7 +256,7 @@ let () =
              ( Entity_id 2
              , "block/uuid"
              , Uuid "00000002-0000-0000-0000-000000000001" )
-         ; Add (Entity_id 2, "block/title", String "root tag")
+         ; Add (Entity_id 2, "block/title", String "cipher:Card")
          ]
   in
   let decrypt value =
@@ -278,6 +278,6 @@ let () =
   in
   if title 1 <> Some "Private title"
   then fail "encrypted snapshot" "user title was not decrypted";
-  if title 2 <> Some "root tag"
-  then fail "encrypted snapshot" "canonical built-in title was treated as ciphertext"
+  if title 2 <> Some "Card"
+  then fail "encrypted snapshot" "legacy encrypted built-in title was not decrypted"
 ;;
