@@ -43,6 +43,10 @@ require_text "scripts/build-android-native.sh" "logseq_chat_call"
 require_text "scripts/build-android-native.sh" "logseq_chat_https_android.c"
 require_text "scripts/build-android-native.sh" "logseq_chat_crypto_android.c"
 require_file "core/logseq_chat_crypto_android.c"
+require_file "Sources/LogseqChat/Skip/AndroidE2EECrypto.kt"
+require_text "core/logseq_chat_https_android.c" "logseq_chat_crypto_jni_init"
+require_text "Sources/LogseqChat/Skip/AndroidE2EECrypto.kt" "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
+reject_text "core/logseq_chat_crypto_android.c" "Android crypto is not implemented"
 for module in \
   logseq_chat_edn \
   logseq_chat_sync_protocol \

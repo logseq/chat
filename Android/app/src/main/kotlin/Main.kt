@@ -45,6 +45,7 @@ open class AndroidAppMain: Application {
     override fun onCreate() {
         super.onCreate()
         System.loadLibrary("logseq_chat_core")
+        AndroidE2EECrypto.initialize(applicationContext)
         logger.info("starting app")
         ProcessInfo.launch(applicationContext)
         CognitoAuthProvider.initialize(applicationContext)

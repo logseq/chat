@@ -8,6 +8,8 @@ static jclass transport_class;
 static jmethodID send_method;
 static jmethodID upload_method;
 
+extern int logseq_chat_crypto_jni_init(JNIEnv *env);
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   JNIEnv *env = NULL;
   jclass local_class;
@@ -20,7 +22,13 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
   (*env)->DeleteLocalRef(env, local_class);
   send_method = (*env)->GetStaticMethodID(env, transport_class, "send", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
   upload_method = (*env)->GetStaticMethodID(env, transport_class, "uploadFile", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
-  return send_method != NULL && upload_method != NULL ? JNI_VERSION_1_6 : JNI_ERR;
+  return send_method != NULL && upload_method != NULL && logseq_chat_crypto_jni_init(env)
+    ? JNI_VERSION_1_6
+    : JNI_ERR;
+}
+
+JavaVM *logseq_chat_android_java_vm(void) {
+  return java_vm;
 }
 
 static value call_transport(jmethodID method_id, const char **arguments, int count) {

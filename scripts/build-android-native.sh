@@ -198,6 +198,7 @@ cd "$build_dir"
   --target="$target" \
   -fPIC \
   -I "$ocaml_lib" \
+  -I "$ndk_root/toolchains/llvm/prebuilt/$ndk_host/sysroot/usr/include" \
   -c "$repo_root/core/logseq_chat_crypto_android.c" \
   -o logseq_chat_crypto_android.o
 
