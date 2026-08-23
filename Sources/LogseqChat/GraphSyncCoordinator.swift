@@ -7,8 +7,35 @@ actor GraphSyncCoordinator {
     private var foregroundTask: Task<Void, Never>?
     private var backgroundTask: Task<Bool, Never>?
     private var backgroundGeneration = UUID()
+    private var networkAvailable = true
+    private var desiredForeground: (graphID: String, operation: ForegroundOperation)?
 
     func startForeground(
+        graphID: String,
+        operation: @escaping ForegroundOperation
+    ) async {
+        desiredForeground = (graphID, operation)
+        guard networkAvailable else {
+            await cancelForegroundTask()
+            return
+        }
+        await launchForeground(graphID: graphID, operation: operation)
+    }
+
+    func setNetworkAvailable(_ available: Bool) async {
+        guard networkAvailable != available else { return }
+        networkAvailable = available
+        if !available {
+            await cancelForegroundTask()
+        } else if let desiredForeground {
+            await launchForeground(
+                graphID: desiredForeground.graphID,
+                operation: desiredForeground.operation
+            )
+        }
+    }
+
+    private func launchForeground(
         graphID: String,
         operation: @escaping ForegroundOperation
     ) async {
@@ -28,6 +55,11 @@ actor GraphSyncCoordinator {
     }
 
     func stopForeground() async {
+        desiredForeground = nil
+        await cancelForegroundTask()
+    }
+
+    private func cancelForegroundTask() async {
         guard let foregroundTask else { return }
         self.foregroundTask = nil
         foregroundTask.cancel()

@@ -241,9 +241,25 @@ let () =
 
 let () =
   let legacy_send_count = ref 0 in
+  let staged = ref [] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    staged :=
+      operation
+      :: List.filter
+           (fun existing ->
+             not (String.equal existing.Logseq_chat_pending_ops.operation_id operation.operation_id))
+           !staged;
+    Ok ()
+  in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 91)
+      ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
+      ~stage_operation:stage
+      ~prepare_operation:(fun operation ->
+        Ok (Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent, "[]"))
+      ~pending_operations:(fun () -> List.rev !staged)
       ~send:(fun _request ->
         incr legacy_send_count;
         failwith "the asynchronous pending pump must not call the legacy transport")
@@ -271,27 +287,18 @@ let () =
   assert_equal "pending method" "POST" (required_string "method" request);
   assert_equal
     "pending URL"
-    "http://127.0.0.1:8787/api/v1/graphs/plain-1/capture"
+    "http://127.0.0.1:8787/sync/plain-1/tx/batch"
     (required_string "url" request);
   assert_int_equal "pending request id" 1 (required_int "id" request);
   if !legacy_send_count <> 0 then failwith "beginPendingSync performed blocking I/O";
 
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"async-local\",\"title\":\"Edited while sending\",\"status\":null}"}}|});
   let completion =
     Logseq_chat_rpc.call
       session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"async-local\\\"}\",\"error\":null}"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}"}}|}
   in
   if Option.is_some (pending_request completion)
-  then failwith "one-item pending pump should finish after completion";
-  match Logseq_chat_model.read_block session.model "async-local" with
-  | Some block ->
-    assert_equal "concurrent edit title" "Edited while sending" block.title;
-    assert_equal "concurrent edit remains pending" "pending" block.sync_status
-  | None -> failwith "completed pending block disappeared"
+  then failwith "one-item projected pending pump should finish after acceptance"
 ;;
 
 let () =
@@ -488,8 +495,9 @@ let () =
     "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
     (required_string "url" tx_request);
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent =
-           Create_asset
+   | [ { Logseq_chat_pending_ops.state = Applied; _ }
+     ; { state = Queued
+       ; intent = Create_asset
              { uuid; title; page_uuid; parent_uuid; asset_type; asset_size;
                asset_checksum; _ }
        ; _ } ] ->
@@ -503,7 +511,7 @@ let () =
        "encrypted asset checksum"
        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
        asset_checksum
-   | _ -> failwith "encrypted asset upload must stage one durable asset datom operation");
+   | _ -> failwith "encrypted asset must project locally before staging its durable datoms");
   if !cleaned <> [ "/tmp/photo.transit" ]
   then failwith "successful encrypted asset upload must remove its temporary payload"
 ;;
@@ -693,12 +701,40 @@ let () =
       ; asset_checksum = None; local_path = None; journal = None
       }
   in
+  let projected = ref [ parent ] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    (match operation.intent with
+     | Create_asset
+         { uuid; title; page_uuid; parent_uuid; order; created_at; asset_type;
+           asset_size; asset_checksum } ->
+       projected :=
+         !projected
+         @ [ Logseq_chat_model.
+               { uuid; title; page_id = page_uuid; parent_id = Some parent_uuid
+               ; order = Some order; created_at; updated_at = created_at
+               ; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
+               ; status = None; is_asset = true; asset_type = Some asset_type
+               ; asset_size = Some asset_size; asset_checksum = Some asset_checksum
+               ; local_path = None; journal = None
+               }
+           ]
+     | _ -> failwith "asset projection must stage Create_asset");
+    Ok ()
+  in
   let session =
     Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 5)
       ~graph_page_blocks:(fun page_id ->
-        if String.equal page_id "selected-page" then Some [ parent ] else Some [])
+        if String.equal page_id "selected-page" then Some !projected else Some [])
+      ~stage_operation:stage
+      ~prepare_operation:(fun operation ->
+        Ok
+          ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
+          , "[]" ))
       ()
   in
+  configure_plain_graph session;
   session.selected_sidebar_page <-
     Some Logseq_chat_graph_read.{ uuid = "selected-page"; title = "Selected page" };
   let response =
@@ -1018,9 +1054,8 @@ let () =
 ;;
 
 let () =
-  (* Navigation must resolve from the same projected blocks that produced the
-     visible UI. A transport refresh can make the dedicated destination index
-     temporarily unavailable while the current projection is still valid. *)
+  (* Navigation resolves from projected blocks when the dedicated destination
+     lookup has no result. It must not depend on a separate UI cache. *)
   let page_uuid = "projected-page" in
   let projected =
     Logseq_chat_model.
@@ -1044,12 +1079,11 @@ let () =
       ; journal = None
       }
   in
-  let projection_available = ref true in
   let session =
     Logseq_chat_rpc.create
-      ~graph_blocks:(fun () -> Some (if !projection_available then [ projected ] else []))
+      ~graph_blocks:(fun () -> Some [ projected ])
       ~graph_page_blocks:(fun uuid ->
-        if !projection_available && String.equal uuid page_uuid
+        if String.equal uuid page_uuid
         then Some [ projected ]
         else Some [])
       ~graph_node_destination:(fun _ -> None)
@@ -1058,7 +1092,6 @@ let () =
   ignore
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"snapshot","params":{}}|});
-  projection_available := false;
   let open_node uuid =
     Logseq_chat_rpc.call session
       (Printf.sprintf
@@ -1090,9 +1123,8 @@ let () =
 ;;
 
 let () =
-  (* A node that only exists in the local chat cache (for example a block
-     created while offline) must still open from the cached data instead of
-     failing with an endless spinner. *)
+  (* An offline block opens from the pending projection, without consulting
+     the legacy chat cache. *)
   let cached =
     Logseq_chat_model.
       { uuid = "cached-block"
@@ -1112,15 +1144,17 @@ let () =
       ; asset_size = None
       ; asset_checksum = None
       ; local_path = None
-      ; journal = None
+      ; journal = Some ("Aug 15th, 2026", 20260815)
       }
   in
   let session =
-    Logseq_chat_rpc.create ~graph_node_destination:(fun _ -> None) ()
+    Logseq_chat_rpc.create
+      ~graph_blocks:(fun () -> Some [ cached ])
+      ~graph_page_blocks:(fun page_uuid ->
+        if String.equal page_uuid cached.page_id then Some [ cached ] else Some [])
+      ~graph_node_destination:(fun _ -> None)
+      ()
   in
-  Logseq_chat_model.upsert_journal_page
-    session.model ~title:"Aug 15th, 2026" ~uuid:"journal/2026-08-15" ~journal_day:20260815;
-  Logseq_chat_model.upsert_blocks session.model [ cached ] ~refresh_time:1;
   let opened =
     Logseq_chat_rpc.call session
       {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"cached-block\"}"}}|}
@@ -1638,6 +1672,190 @@ let prepare_test_operation operation =
 ;;
 
 let () =
+  (* A local capture must enter the projected graph before any network work.
+     Journal home, node views, and inline editing must query that same state. *)
+  let page = Logseq_chat_graph_read.{ uuid = "journal-page"; title = "Aug 23rd, 2026" } in
+  let projected =
+    ref
+      [ { (remote_block "world" "World") with
+          Logseq_chat_model.page_id = page.uuid
+        ; parent_id = Some page.uuid
+        ; journal = Some (page.title, 20260823)
+        }
+      ]
+  in
+  let staged = ref [] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    staged := !staged @ [ operation ];
+    (match operation.intent with
+     | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
+       projected :=
+         !projected
+         @ [ Logseq_chat_model.
+               { uuid; title; page_id = page_uuid; parent_id = Some parent_uuid
+               ; order = Some order; created_at; updated_at = created_at
+               ; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
+               ; status = None; is_asset = false; asset_type = None; asset_size = None
+               ; asset_checksum = None; local_path = None
+               ; journal = Some (page.title, 20260823)
+               }
+           ]
+     | _ -> failwith "plain capture must stage an insert-block operation");
+    Ok ()
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 5)
+      ~journal_page_id:(fun ~journal_day:_ -> Some page.uuid)
+      ~graph_blocks:(fun () -> Some !projected)
+      ~graph_page_blocks:(fun uuid ->
+        Some (List.filter (fun block -> String.equal block.Logseq_chat_model.page_id uuid) !projected))
+      ~graph_node_destination:(fun uuid ->
+        if String.equal uuid page.uuid then Some (page, false) else None)
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  let captured =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"hello\",\"uuid\":\"local-hello\",\"now\":1787469000000}"}}|}
+    |> from_string
+  in
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.intent = Insert_block { uuid = "local-hello"; _ }; _ } ] -> ()
+   | _ -> failwith "plain local capture was not staged in the projected graph");
+  (match captured with
+   | `Assoc fields ->
+     let blocks = required_assoc "result" fields |> required_list "blocks" in
+     if not (List.exists (function
+       | `Assoc block -> assoc "uuid" block = Some (`String "local-hello")
+       | _ -> false) blocks)
+     then failwith "journal home did not read the projected local capture"
+   | _ -> failwith "plain capture should return a snapshot");
+  let opened =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openNode","payload":"{\"uuid\":\"journal-page\"}"}}|}
+    |> from_string
+  in
+  (match opened with
+   | `Assoc fields ->
+     let route = required_assoc "result" fields |> required_first_assoc "nodeRoutes" in
+     let blocks = required_list "blocks" route in
+     if not (List.exists (function
+       | `Assoc block -> assoc "uuid" block = Some (`String "local-hello")
+       | _ -> false) blocks)
+     then failwith "journal node did not read the projected local capture"
+   | _ -> failwith "opening the projected journal should succeed");
+  let tapped =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"outlinerEvent","payload":"{\"type\":\"tapBlock\",\"uuid\":\"local-hello\"}"}}|}
+    |> from_string
+  in
+  match tapped with
+  | `Assoc fields ->
+    let route = required_assoc "result" fields |> required_first_assoc "nodeRoutes" in
+    let editing = required_assoc "outlinerState" route |> required_assoc "editing" in
+    assert_equal "projected local block remains editable" "local-hello" (required_string "uuid" editing)
+  | _ -> failwith "tapping the projected local block should start editing"
+;;
+
+let () =
+  (* Child insertion has the same local-first contract as capture: the staged
+     projection is the only source read by the returned snapshot and editor. *)
+  let page = Logseq_chat_graph_read.{ uuid = "child-page"; title = "Child page" } in
+  let parent =
+    { (remote_block "child-parent" "Parent") with
+      Logseq_chat_model.page_id = page.uuid
+    ; parent_id = Some page.uuid
+    ; order = Some "a0"
+    }
+  in
+  let projected = ref [ parent ] in
+  let staged = ref [] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    staged := !staged @ [ operation ];
+    (match operation.intent with
+     | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
+       projected :=
+         !projected
+         @ [ Logseq_chat_model.
+               { uuid; title; page_id = page_uuid; parent_id = Some parent_uuid
+               ; order = Some order; created_at; updated_at = created_at
+               ; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
+               ; status = None; is_asset = false; asset_type = None; asset_size = None
+               ; asset_checksum = None; local_path = None; journal = None
+               }
+           ]
+     | _ -> failwith "addChildBlock must stage an insert-block operation");
+    Ok ()
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 5)
+      ~graph_blocks:(fun () -> Some !projected)
+      ~graph_page_blocks:(fun uuid ->
+        Some (List.filter (fun block -> String.equal block.Logseq_chat_model.page_id uuid) !projected))
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ()
+  in
+  configure_plain_graph session;
+  let added =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"addChildBlock","payload":"{\"uuid\":\"local-child\",\"title\":\"Child\",\"parentId\":\"child-parent\",\"now\":10}"}}|}
+    |> from_string
+  in
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.intent =
+           Insert_block { uuid = "local-child"; page_uuid = "child-page";
+                          parent_uuid = "child-parent"; _ }
+       ; _ } ] -> ()
+   | _ -> failwith "local child was not staged in the projected graph");
+  (match added with
+   | `Assoc fields ->
+     let blocks = required_assoc "result" fields |> required_list "blocks" in
+     if not (List.exists (function
+       | `Assoc block -> assoc "uuid" block = Some (`String "local-child")
+       | _ -> false) blocks)
+     then failwith "child snapshot did not read the projected insertion"
+   | _ -> failwith "addChildBlock should return a snapshot")
+;;
+
+let () =
+  (* Once a graph runtime is present, legacy Model contents must never leak
+     into UI reads. Otherwise journals and node views can disagree. *)
+  let projected = remote_block "projected-only" "Projected" in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~graph_blocks:(fun () -> Some [ projected ])
+      ()
+  in
+  Logseq_chat_model.cache_local_message
+    session.model
+    ~uuid:"legacy-only"
+    ~title:"Must not leak"
+    ~now:10;
+  configure_plain_graph session;
+  let snapshot =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}"}}|}
+    |> from_string
+  in
+  match snapshot with
+  | `Assoc fields ->
+    let blocks = required_assoc "result" fields |> required_list "blocks" in
+    if List.exists (function
+      | `Assoc block -> assoc "uuid" block = Some (`String "legacy-only")
+      | _ -> false) blocks
+    then failwith "snapshot leaked a block outside the projection database"
+  | _ -> failwith "configure should return a projected snapshot"
+;;
+
+let () =
   let staged = ref [] in
   let target =
     { (remote_block "editing-block" "Editing") with
@@ -1663,6 +1881,11 @@ let () =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"plain-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.state = Applied
+       ; intent = Create_asset { uuid = "plain-asset"; _ }
+       ; _ } ] -> ()
+   | _ -> failwith "local asset must enter projection before its raw upload");
   let upload =
     Logseq_chat_rpc.call
       session
@@ -1687,8 +1910,9 @@ let () =
     "http://127.0.0.1:8787/sync/plain-1/tx/batch"
     (required_string "url" tx_request);
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent =
-           Create_asset { uuid; page_uuid; parent_uuid; order; _ }
+   | [ { Logseq_chat_pending_ops.state = Applied; _ }
+     ; { state = Queued
+       ; intent = Create_asset { uuid; page_uuid; parent_uuid; order; _ }
        ; _ } ] ->
      assert_equal "plain asset UUID" "plain-asset" uuid;
      assert_equal "plain asset page" "target-page" page_uuid;
@@ -1723,7 +1947,11 @@ let () =
   ignore
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|});
-  if !staged <> [] then failwith "failed raw upload must not stage asset datoms";
+  (match !staged with
+   | [ { Logseq_chat_pending_ops.state = Applied
+       ; intent = Create_asset { uuid = "retry-asset"; _ }
+       ; _ } ] -> ()
+   | _ -> failwith "failed raw upload must keep only its local asset projection");
   let retry =
     Logseq_chat_rpc.call session
       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
@@ -2719,17 +2947,32 @@ let () =
       ; journal = None
       }
   in
+  let projected = ref [ authoritative ] in
   let session =
-    Logseq_chat_rpc.create ~graph_blocks:(fun () -> Some [ authoritative ]) ()
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 5)
+      ~graph_blocks:(fun () -> Some !projected)
+      ~stage_operation:(fun operation ->
+        (match operation.Logseq_chat_pending_ops.intent with
+         | Save_title { uuid; title; _ } ->
+           projected :=
+             List.map
+               (fun (block : Logseq_chat_model.block) ->
+                 if String.equal block.uuid uuid
+                 then { block with title; sync_status = "pending" }
+                 else block)
+               !projected
+         | _ -> failwith "offline edit must stage Save_title");
+        Ok ())
+      ~prepare_operation:prepare_test_operation
+      ()
   in
-  Logseq_chat_model.upsert_journal_page
-    session.model ~uuid:"journal/2026-08-15" ~journal_day:20260815;
-  Logseq_chat_model.upsert_blocks
-    session.model [ authoritative ] ~refresh_time:1_776_000_000_000;
+  configure_plain_graph session;
   let response =
     Logseq_chat_rpc.call
       session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"offline-edit\",\"title\":\"Edited offline\",\"status\":null}"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"offline-edit\",\"operationId\":\"offline-edit-op\",\"expectedTitle\":\"Server title\",\"title\":\"Edited offline\"}"}}|}
     |> from_string
   in
   match response with

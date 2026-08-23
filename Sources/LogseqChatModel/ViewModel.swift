@@ -502,6 +502,16 @@ private struct DeletePagePayload: Encodable {
         )
     }
 
+    @discardableResult public func selectGraphAndWait(_ graphID: String) async -> Bool {
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "selectGraph", payload: graphID)
+            )
+        )
+        return lastError == nil && snapshot.selectedGraphId == graphID
+    }
+
     public func createSyncGraph(name: String, isEncrypted: Bool) async -> Bool {
         guard let payload = encodePayload(
             CreateSyncGraphPayload(name: name, isEncrypted: isEncrypted),
@@ -567,6 +577,16 @@ private struct DeletePagePayload: Encodable {
             ),
             afterApply: nil
         )
+    }
+
+    @discardableResult public func clearSelectedPageAndWait() async -> Bool {
+        await performAsyncAndWait(
+            LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "clearSelectedPage")
+            )
+        )
+        return lastError == nil
     }
 
     public func requestCapture() {
@@ -788,6 +808,7 @@ private struct DeletePagePayload: Encodable {
             guard lastError == nil else { return false }
             syncError = nil
             isSnapshotRefreshDeferred = false
+            syncPendingSoon()
             while let frame = try await stream.nextFrame() {
                 await dispatchRawAndWait("feedSSE", payload: frame)
                 if lastError != nil { break }
@@ -828,6 +849,7 @@ private struct DeletePagePayload: Encodable {
             guard lastError == nil else { return false }
             syncError = nil
             isSnapshotRefreshDeferred = false
+            syncPendingSoon()
             var transportBuffer = LogseqGraphSSETransportBuffer()
             var networkChunk = Data()
             networkChunk.reserveCapacity(16 * 1024)
@@ -1334,7 +1356,9 @@ private struct DeletePagePayload: Encodable {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
             guard !Task.isCancelled, let self else { return }
             self.pendingSyncDebounceTask = nil
-            self.syncPending()
+            if self.snapshot.syncConnected == true {
+                self.syncPending()
+            }
         }
     }
 
@@ -1359,7 +1383,9 @@ private struct DeletePagePayload: Encodable {
     private func performAsyncThenSyncPending(_ request: LogseqChatRPCRequest) {
         Task {
             await performAsyncAndWait(request)
-            syncPending()
+            if snapshot.syncConnected == true {
+                syncPending()
+            }
         }
     }
 

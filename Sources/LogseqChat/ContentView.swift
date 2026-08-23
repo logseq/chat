@@ -313,6 +313,11 @@ struct ContentView: View {
             applyCaptureRequestIfNeeded()
         }
         .task {
+            for await available in NetworkAvailabilityStream.values() {
+                await syncCoordinator.setNetworkAvailable(available)
+            }
+        }
+        .task {
             if !hasStartedContentTask {
                 hasStartedContentTask = true
                 draft = persistedDraft
@@ -639,8 +644,7 @@ struct ContentView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(graphs) { graph in
                             Button {
-                                selectedGraphID = graph.id
-                                store.selectGraph(graph.id)
+                                Task { await openManagedGraph(graph) }
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -1094,16 +1098,18 @@ struct ContentView: View {
         graphsPresented = true
     }
 
-    private func openManagedGraph(_ graph: LogseqGraph) {
-        graphsPresented = false
-        flashcardsPresented = false
+    private func openManagedGraph(_ graph: LogseqGraph) async {
         if graph.id == store.snapshot.selectedGraphId,
            LogseqGraphLocalStorage.isDownloaded(databasePath: databasePath, graphID: graph.id) {
-            store.clearSelectedPage()
+            guard await store.clearSelectedPageAndWait() else { return }
+            graphsPresented = false
+            flashcardsPresented = false
             return
         }
         selectedGraphID = graph.id
-        store.selectGraph(graph.id)
+        guard await store.selectGraphAndWait(graph.id) else { return }
+        graphsPresented = false
+        flashcardsPresented = false
     }
 
     private func deleteManagedGraph(_ graph: LogseqGraph) async throws {
@@ -1179,7 +1185,7 @@ struct ContentView: View {
                 databasePath: databasePath,
                 refresh: { store.refresh() },
                 add: { createGraphPresented = true },
-                open: openManagedGraph,
+                open: { graph in Task { await openManagedGraph(graph) } },
                 deleteGraph: deleteManagedGraph
             )
         } else if flashcardsPresented {
@@ -1539,21 +1545,8 @@ struct ContentView: View {
                 await store.configureAndSelectGraph(
                     baseURL: baseURL,
                     token: accessToken,
-                    selectedGraphID: requestedGraphID.isEmpty ? nil : requestedGraphID,
-                    refreshGraphCatalog: !requestedGraphID.isEmpty
+                    selectedGraphID: requestedGraphID.isEmpty ? nil : requestedGraphID
                 )
-                if !requestedGraphID.isEmpty,
-                   store.snapshot.graphs?.contains(where: { $0.id == requestedGraphID }) != true {
-                    await syncCoordinator.stopForeground()
-                    selectedGraphID = ""
-                    await store.resetToCatalog()
-                    await store.configureAndSelectGraph(
-                        baseURL: baseURL,
-                        token: accessToken,
-                        selectedGraphID: nil
-                    )
-                    return
-                }
                 if !requestedGraphID.isEmpty {
                     beginGraphAccess(requestedGraphID)
                 }
@@ -1637,6 +1630,7 @@ struct ContentView: View {
                         baseURL: baseURL,
                         accessToken: freshAccessToken
                     )
+                    guard store.syncError == nil else { return }
                     let shouldRefreshSnapshot = LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
                         snapshotRequired: snapshotRequired,
                         isEditingOutlinerBlock: store.snapshot.outlinerState.editing != nil

@@ -164,6 +164,44 @@ import Testing
         await coordinator.cancelBackground()
     }
 
+    @Test func networkLossPausesForegroundAndRecoveryRestartsIt() async {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+
+        await coordinator.startForeground(graphID: "graph-1") { _ in
+            await events.append("start")
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            await events.append("stop")
+        }
+        await waitForEvent("start", in: events)
+
+        await coordinator.setNetworkAvailable(false)
+        await waitForEvent("stop", in: events)
+        await coordinator.setNetworkAvailable(true)
+        await waitForEventCount(3, in: events)
+
+        #expect(await events.snapshot() == ["start", "stop", "start"])
+        await coordinator.stopForeground()
+    }
+
+    @Test func foregroundWaitsUntilNetworkIsAvailable() async {
+        let coordinator = GraphSyncCoordinator()
+        let events = SyncEventRecorder()
+
+        await coordinator.setNetworkAvailable(false)
+        await coordinator.startForeground(graphID: "graph-1") { _ in
+            await events.append("start")
+        }
+        for _ in 0..<100 { await Task.yield() }
+        #expect(await events.snapshot().isEmpty)
+
+        await coordinator.setNetworkAvailable(true)
+        await waitForEvent("start", in: events)
+        #expect(await events.snapshot() == ["start"])
+    }
+
     @Test func backgroundCanceledWhileWaitingForForegroundDoesNotStart() async {
         let coordinator = GraphSyncCoordinator()
         let events = SyncEventRecorder()
@@ -262,6 +300,19 @@ private func waitForEvent(
 ) async {
     for _ in 0..<attempts {
         if await recorder.snapshot().contains(event) {
+            return
+        }
+        await Task.yield()
+    }
+}
+
+private func waitForEventCount(
+    _ count: Int,
+    in recorder: SyncEventRecorder,
+    attempts: Int = 1_000
+) async {
+    for _ in 0..<attempts {
+        if await recorder.snapshot().count >= count {
             return
         }
         await Task.yield()

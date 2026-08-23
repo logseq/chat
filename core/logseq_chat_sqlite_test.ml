@@ -213,8 +213,8 @@ let () =
             blocks
         in
         assert_bool
-          "persisted pending block should remain visible with an open graph"
-          (List.mem "local-restart" uuids);
+          "legacy pending blocks must not leak outside the open graph projection"
+          (not (List.mem "local-restart" uuids));
         assert_bool
           "server graph block should remain visible"
           (List.mem "remote-existing" uuids)))

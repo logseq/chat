@@ -71,9 +71,6 @@ type t =
   ; mutable selected_sidebar_page : Logseq_chat_graph_read.sidebar_page option
   ; mutable node_routes : node_route list
   ; mutable node_base_state : Outliner_state.t option
-  ; visible_node_destinations :
-      (string, Logseq_chat_graph_read.sidebar_page * bool) Hashtbl.t
-  ; visible_blocks_by_uuid : (string, Model.block) Hashtbl.t
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (graph_id:string -> Model.t) option
@@ -330,13 +327,8 @@ let flashcard_json (due_card : Flashcards.due_card) =
     ]
 ;;
 
-let visible_block_json model (block : Model.block) =
-  let journal =
-    match block.journal with
-    | Some _ as journal -> journal
-    | None -> Model.journal_metadata model block.page_id
-  in
-  match journal with
+let visible_block_json _model (block : Model.block) =
+  match block.journal with
   | Some (journal_title, journal_day) ->
     (match block_json block with
      | `Assoc fields ->
@@ -480,14 +472,7 @@ let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
         | None -> block)
     | None, _ | Some _, None -> live_blocks
   in
-  let known = Hashtbl.create (List.length base) in
-  List.iter (fun (block : Model.block) -> Hashtbl.replace known block.uuid ()) base;
-  let local_only =
-    Model.unsynced_blocks session.model
-    |> List.filter (fun (block : Model.block) ->
-      String.equal block.page_id page_uuid && not (Hashtbl.mem known block.uuid))
-  in
-  base @ local_only
+  base
 ;;
 
 let base_outliner_context_live session =
@@ -533,23 +518,7 @@ let node_route_context session route =
     | Some load -> Option.value (load route.page.uuid) ~default:[]
     | None -> []
   in
-  (* Locally cached blocks (for example chat entries that have not synced into
-     the graph yet) must stay visible when the node view is opened offline. *)
-  let known = Hashtbl.create (List.length graph_blocks) in
-  List.iter
-    (fun (block : Model.block) -> Hashtbl.replace known block.uuid ())
-    graph_blocks;
-  let cached_blocks =
-    (Model.all_blocks session.model
-     @ (Hashtbl.to_seq_values session.visible_blocks_by_uuid |> List.of_seq))
-    |> List.filter (fun (block : Model.block) ->
-      if String.equal block.page_id route.page.uuid && not (Hashtbl.mem known block.uuid)
-      then (
-        Hashtbl.replace known block.uuid ();
-        true)
-      else false)
-  in
-  outliner_context_with_blocks session (graph_blocks @ cached_blocks)
+  outliner_context_with_blocks session graph_blocks
 ;;
 
 let active_node_route session =
@@ -576,7 +545,7 @@ let node_route_linked_reference_blocks session route =
   else []
 ;;
 
-let page_for_visible_block session (block : Model.block) =
+let page_for_visible_block _session (block : Model.block) =
   let page_title =
     match block.Model.journal with
     | Some (title, _) when not (String.equal (String.trim title) "") -> title
@@ -589,9 +558,7 @@ let page_for_visible_block session (block : Model.block) =
        with
        | Some summary -> summary.title
        | None ->
-         (match Model.journal_metadata session.model block.Model.page_id with
-          | Some (title, _) when not (String.equal (String.trim title) "") -> title
-          | _ -> block.Model.title))
+         block.Model.title)
   in
   let page : Logseq_chat_graph_read.sidebar_page =
     { uuid = block.Model.page_id; title = page_title }
@@ -599,21 +566,7 @@ let page_for_visible_block session (block : Model.block) =
   page
 ;;
 
-let remember_visible_blocks session blocks =
-  List.iter
-    (fun (block : Model.block) ->
-      if not (String.equal block.Model.page_id "")
-      then (
-        let page = page_for_visible_block session block in
-        Hashtbl.replace session.visible_blocks_by_uuid block.Model.uuid block;
-        Hashtbl.replace session.visible_node_destinations page.uuid (page, false);
-        Hashtbl.replace session.visible_node_destinations block.Model.uuid (page, true)))
-    blocks
-;;
-
-(* Resolve against the same projected blocks that produced the visible UI.
-   This keeps optimistic/local blocks and their page headers navigable while a
-   graph transport refresh is rebuilding its dedicated destination lookup. *)
+(* Resolve against the same projected blocks that produced the visible UI. *)
 let projected_node_destination session uuid =
   let graph_blocks =
     Option.bind session.graph_blocks (fun load -> load ())
@@ -635,7 +588,6 @@ let projected_node_destination session uuid =
     @ routed_blocks
     @ session.related_blocks
     @ optimistic_blocks
-    @ Model.all_blocks session.model
   in
   let candidate =
     match List.find_opt (fun (block : Model.block) -> String.equal block.uuid uuid) blocks with
@@ -1004,19 +956,6 @@ let snapshot session ~context_blocks blocks =
   let base_context =
     base_outliner_context_with_blocks ~sidebar_pages session context_blocks
   in
-  remember_visible_blocks session context_blocks;
-  remember_visible_blocks session (snapshot_related_blocks session);
-  remember_visible_blocks session (snapshot_linked_reference_blocks session);
-  List.iter
-    (fun route ->
-      Hashtbl.replace session.visible_node_destinations route.uuid
-        (route.page, route.zoom_to_block);
-      remember_visible_blocks session (node_route_context session route).blocks)
-    session.node_routes;
-  Option.iter
-    (fun (page : Logseq_chat_graph_read.sidebar_page) ->
-      Hashtbl.replace session.visible_node_destinations page.uuid (page, false))
-    session.selected_sidebar_page;
   let serialized_blocks = Hashtbl.create (List.length blocks) in
   let serialize_block (block : Model.block) =
     match Hashtbl.find_opt serialized_blocks block.uuid with
@@ -1252,49 +1191,23 @@ let snapshot_visible session =
     | Some graph_blocks ->
       (match graph_blocks () with
      | Some blocks ->
-       let graph_uuids = Hashtbl.create (List.length blocks) in
-       List.iter
-         (fun (block : Model.block) -> Hashtbl.replace graph_uuids block.uuid ())
-         blocks;
-       let unsynced = Model.unsynced_blocks session.model in
-       let local_by_uuid = Hashtbl.create (List.length unsynced) in
+       let local_by_uuid = Hashtbl.create (List.length blocks) in
        List.iter
          (fun (block : Model.block) -> Hashtbl.replace local_by_uuid block.uuid block)
          (Model.all_blocks session.model);
-       let unsynced_by_uuid = Hashtbl.create (List.length unsynced) in
-       List.iter
-         (fun (block : Model.block) -> Hashtbl.replace unsynced_by_uuid block.uuid block)
-         unsynced;
-       let merged_graph_blocks =
-         List.map
-           (fun (block : Model.block) ->
-             match Hashtbl.find_opt unsynced_by_uuid block.uuid with
-             | Some local -> local
-             | None ->
-               (match Hashtbl.find_opt local_by_uuid block.uuid with
-                | Some local when Option.is_some local.local_path ->
-                  { block with
-                    is_asset = local.is_asset
-                  ; asset_type = local.asset_type
-                  ; asset_size = local.asset_size
-                  ; asset_checksum = local.asset_checksum
-                  ; local_path = local.local_path
-                  }
-                | _ -> block))
-           blocks
-       in
-       let local_only =
-         List.filter
-           (fun (block : Model.block) -> not (Hashtbl.mem graph_uuids block.uuid))
-           unsynced
-       in
-       merged_graph_blocks @ local_only
-       | None -> Model.visible_blocks session.model)
+       List.map
+         (fun (block : Model.block) ->
+           match Hashtbl.find_opt local_by_uuid block.uuid with
+           | Some local when Option.is_some local.local_path ->
+             { block with local_path = local.local_path }
+           | Some _ | None -> block)
+         blocks
+       | None -> [])
     | None -> Model.visible_blocks session.model
   in
   let context_blocks = blocks in
   let blocks =
-    if Option.is_some session.selected_sidebar_page
+    if Option.is_some session.graph_blocks || Option.is_some session.selected_sidebar_page
     then blocks
     else Model.visible_from session.model blocks
   in
@@ -1411,8 +1324,6 @@ let create
   ; selected_sidebar_page = None
   ; node_routes = []
   ; node_base_state = None
-  ; visible_node_destinations = Hashtbl.create 64
-  ; visible_blocks_by_uuid = Hashtbl.create 64
   ; open_graph
   ; import_snapshot
   ; model_for_graph
@@ -1867,7 +1778,7 @@ let normalize_operation_titles session (operation : Pending_ops.t) =
     create_operations @ [ { operation with Pending_ops.intent } ]
 ;;
 
-let encrypted_capture_operations session ~uuid ~title ~now ?status () =
+let capture_operations session ~uuid ~title ~now ?status () =
   let base_t =
     Option.bind session.sync_cursor (fun cursor -> cursor ())
     |> Option.to_result ~none:"A current server cursor is required"
@@ -1950,9 +1861,9 @@ let encrypted_capture_operations session ~uuid ~title ~now ?status () =
       capture_operation)
 ;;
 
-let enqueue_encrypted_capture session config ~uuid ~title ~now ?status () =
+let enqueue_capture session config ~uuid ~title ~now ?status () =
   Result.bind
-    (encrypted_capture_operations session ~uuid ~title ~now ?status ())
+    (capture_operations session ~uuid ~title ~now ?status ())
     (fun operations ->
       List.fold_left
         (fun result operation ->
@@ -2041,7 +1952,9 @@ let finish_pending_block session pump block ~succeeded =
   prepare_pending_next session pump
 ;;
 
-let asset_datoms_operation session (block : Model.block) =
+let asset_operation_id uuid = "asset:" ^ uuid
+
+let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.block) =
   let base_t =
     Option.bind session.sync_cursor (fun cursor -> cursor ())
     |> Option.to_result ~none:"A current server cursor is required"
@@ -2079,9 +1992,9 @@ let asset_datoms_operation session (block : Model.block) =
          Result.map
            (fun order ->
              Pending_ops.
-               { operation_id = fresh_squuid ()
+               { operation_id = asset_operation_id block.uuid
                ; base_t
-               ; state = Queued
+               ; state
                ; intent =
                    Create_asset
                      { uuid = block.uuid
@@ -2774,8 +2687,6 @@ let dispatch session action payload =
           failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
         | Some graph ->
           clear_node_navigation session;
-          Hashtbl.clear session.visible_node_destinations;
-          Hashtbl.clear session.visible_blocks_by_uuid;
           session.selected_sidebar_page <- None;
           reset_outliner session;
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
@@ -2817,10 +2728,7 @@ let dispatch session action payload =
                  Option.bind session.graph_node_destination (fun resolve -> resolve uuid)
                with
                | Some _ as resolved -> resolved
-               | None ->
-                 (match projected_node_destination session uuid with
-                  | Some _ as resolved -> resolved
-                  | None -> Hashtbl.find_opt session.visible_node_destinations uuid)
+               | None -> projected_node_destination session uuid
              in
              (match destination with
         | Some (page, zoom_to_block) ->
@@ -3025,17 +2933,14 @@ let dispatch session action payload =
        else (
          let now = Option.value now ~default:(now_ms ()) in
          let uuid = Option.value uuid ~default:("local-" ^ string_of_int now) in
-         if selected_graph_is_encrypted session
-         then
-           (match session.config with
-            | None -> failure ~code:"graph_not_selected" ~message:"Select a graph before capturing"
-            | Some config ->
-              (match enqueue_encrypted_capture session config ~uuid ~title:text ~now () with
-               | Ok () -> snapshot_visible session
-               | Error message -> failure ~code:"capture_failed" ~message))
-         else (
+         match session.config, session.stage_operation, session.prepare_operation with
+         | Some config, Some _, Some _ ->
+           (match enqueue_capture session config ~uuid ~title:text ~now () with
+            | Ok () -> snapshot_visible session
+            | Error message -> failure ~code:"capture_failed" ~message)
+         | _ ->
            Model.cache_local_message session.model ~uuid ~title:text ~now;
-           snapshot_visible session)))
+           snapshot_visible session))
   | "sendTask" ->
     (match payload with
      | Some payload ->
@@ -3048,27 +2953,23 @@ let dispatch session action payload =
              if text = "" then snapshot_visible session
              else (
                let now = Option.value now ~default:(now_ms ()) in
-               if selected_graph_is_encrypted session
-               then
-                 (match session.config with
-                  | None ->
-                    failure ~code:"graph_not_selected" ~message:"Select a graph before capturing"
-                  | Some config ->
-                    (match
-                       enqueue_encrypted_capture
-                         session
-                         config
-                         ~uuid
-                         ~title:text
-                         ~now
-                         ~status
-                         ()
-                     with
-                     | Ok () -> snapshot_visible session
-                     | Error message -> failure ~code:"capture_failed" ~message))
-               else (
+               match session.config, session.stage_operation, session.prepare_operation with
+               | Some config, Some _, Some _ ->
+                 (match
+                    enqueue_capture
+                      session
+                      config
+                      ~uuid
+                      ~title:text
+                      ~now
+                      ~status
+                      ()
+                  with
+                  | Ok () -> snapshot_visible session
+                  | Error message -> failure ~code:"capture_failed" ~message)
+               | _ ->
                  Model.cache_local_task session.model ~uuid ~title:text ~status ~now;
-                 snapshot_visible session))
+                 snapshot_visible session)
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
              failure ~code:"invalid_params" ~message)
@@ -3104,7 +3005,16 @@ let dispatch session action payload =
              Model.cache_local_asset session.model ~uuid ~title ~asset_type ~asset_size
                ~asset_checksum ~local_path ?target_block_id
                ~now;
-             snapshot_visible session
+             (match session.config, session.stage_operation,
+                    Model.read_block session.model uuid with
+              | Some _, Some stage, Some block ->
+                (match asset_datoms_operation ~state:Applied session block with
+                 | Ok operation ->
+                   (match stage operation with
+                    | Ok () -> snapshot_visible session
+                    | Error message -> failure ~code:"stage_operation_failed" ~message)
+                 | Error message -> failure ~code:"asset_projection_failed" ~message)
+              | _ -> snapshot_visible session)
            | _ -> failure ~code:"invalid_params" ~message:"addAsset requires complete file metadata")
         | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
@@ -3117,12 +3027,53 @@ let dispatch session action payload =
           (match required_string "uuid" fields, required_string "title" fields,
                  required_string "parentId" fields, optional_int "now" fields with
            | Ok uuid, Ok title, Ok parent_id, Ok now ->
-             (match
-                Model.cache_local_child session.model ~uuid ~title ~parent_id
-                  ~now:(Option.value now ~default:(now_ms ()))
-              with
-              | Ok () -> snapshot_visible session
-              | Error message -> failure ~code:"invalid_params" ~message)
+             let now = Option.value now ~default:(now_ms ()) in
+             (match session.config, session.sync_cursor with
+              | Some config, Some cursor ->
+                let context = outliner_context session in
+                (match
+                   List.find_opt
+                     (fun (block : Model.block) -> String.equal block.uuid parent_id)
+                     context.blocks,
+                   cursor ()
+                 with
+                 | Some parent, Some base_t ->
+                   let last_order =
+                     context.blocks
+                     |> List.filter (fun (block : Model.block) ->
+                       String.equal block.page_id parent.page_id
+                       && block.parent_id = Some parent.uuid)
+                     |> List.filter_map (fun (block : Model.block) -> block.order)
+                     |> List.sort String.compare
+                     |> List.rev
+                     |> function order :: _ -> Some order | [] -> None
+                   in
+                   (match Order.between last_order None with
+                    | Error message -> failure ~code:"invalid_params" ~message
+                    | Ok order ->
+                      let operation =
+                        Pending_ops.
+                          { operation_id = fresh_squuid ()
+                          ; base_t
+                          ; state = Queued
+                          ; intent =
+                              Insert_block
+                                { uuid; title; page_uuid = parent.page_id
+                                ; parent_uuid = parent.uuid; order; created_at = now
+                                }
+                          }
+                      in
+                      (match enqueue_semantic session config operation with
+                       | Ok () -> snapshot_visible session
+                       | Error message ->
+                         failure ~code:"stage_operation_failed" ~message))
+                 | None, _ -> failure ~code:"invalid_params" ~message:"parent block is unavailable"
+                 | _, None ->
+                   failure ~code:"invalid_params" ~message:"A current server cursor is required")
+              | _ ->
+                (match Model.cache_local_child session.model ~uuid ~title ~parent_id ~now with
+                 | Ok () -> snapshot_visible session
+                 | Error message -> failure ~code:"invalid_params" ~message))
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
              failure ~code:"invalid_params" ~message)
