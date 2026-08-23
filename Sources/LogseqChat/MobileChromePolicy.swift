@@ -78,6 +78,12 @@ enum AppErrorPresentationPolicy {
 }
 
 enum SyncIndicatorPolicy {
+    enum State: Equatable {
+        case green
+        case yellow
+        case red
+    }
+
     static func hasUnconfirmedChanges(
         hasPendingSemanticOperations: Bool,
         hasPendingTransportRequest: Bool,
@@ -86,6 +92,16 @@ enum SyncIndicatorPolicy {
         hasPendingSemanticOperations
             || hasPendingTransportRequest
             || cachedBlockStatuses.contains { $0 == "failed" }
+    }
+
+    static func state(
+        isConnected: Bool,
+        hasPendingChanges: Bool,
+        hasFailedChanges: Bool,
+        hasSyncError: Bool
+    ) -> State {
+        if !isConnected || hasFailedChanges || hasSyncError { return .red }
+        return hasPendingChanges ? .yellow : .green
     }
 }
 

@@ -389,7 +389,7 @@ struct ContentView: View {
                 isConnected: syncConnectionAvailable,
                 hasPendingChanges: hasUnconfirmedSyncChanges,
                 cursor: store.snapshot.appliedServerT,
-                errorMessage: presentedError?.message,
+                errorMessage: store.syncError?.message ?? presentedError?.message,
                 syncNow: { store.syncPending() },
                 close: { syncStatusPresented = false }
             )
@@ -1811,17 +1811,29 @@ struct ContentView: View {
     }
 
     private var syncIndicatorColor: Color {
-        if syncConnectionAvailable && !hasUnconfirmedSyncChanges {
-            return .green
+        switch syncIndicatorState {
+        case .green: return .green
+        case .yellow: return .yellow
+        case .red: return .red
         }
-        return .yellow
     }
 
     private var syncIndicatorLabel: String {
-        if hasUnconfirmedSyncChanges {
-            return "Syncing"
+        switch syncIndicatorState {
+        case .green: return "Synced"
+        case .yellow: return "Syncing"
+        case .red:
+            return hasFailedSyncChanges || store.syncError != nil ? "Sync failed" : "Not connected"
         }
-        return syncConnectionAvailable ? "Synced" : "Not connected"
+    }
+
+    private var syncIndicatorState: SyncIndicatorPolicy.State {
+        SyncIndicatorPolicy.state(
+            isConnected: syncConnectionAvailable,
+            hasPendingChanges: hasUnconfirmedSyncChanges,
+            hasFailedChanges: hasFailedSyncChanges,
+            hasSyncError: store.syncError != nil
+        )
     }
 
     private var syncConnectionAvailable: Bool {
@@ -1832,6 +1844,9 @@ struct ContentView: View {
     }
 
     private var syncIndicatorAccessibilityIdentifier: String {
+        if syncIndicatorState == .red {
+            return hasFailedSyncChanges || store.syncError != nil ? "sync.failed" : "sync.disconnected"
+        }
         if store.cursorAdvancedAfterMutation {
             return "sync.cursor-advanced"
         }

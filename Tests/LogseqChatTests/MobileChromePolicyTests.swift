@@ -183,6 +183,24 @@ import LogseqChatModel
         ) == "Sync needs attention")
     }
 
+    @Test func syncIndicatorUsesRedForDisconnectedOrFailedSync() {
+        #expect(SyncIndicatorPolicy.state(
+            isConnected: true, hasPendingChanges: false, hasFailedChanges: false, hasSyncError: false
+        ) == .green)
+        #expect(SyncIndicatorPolicy.state(
+            isConnected: true, hasPendingChanges: true, hasFailedChanges: false, hasSyncError: false
+        ) == .yellow)
+        #expect(SyncIndicatorPolicy.state(
+            isConnected: false, hasPendingChanges: true, hasFailedChanges: false, hasSyncError: false
+        ) == .red)
+        #expect(SyncIndicatorPolicy.state(
+            isConnected: true, hasPendingChanges: true, hasFailedChanges: true, hasSyncError: false
+        ) == .red)
+        #expect(SyncIndicatorPolicy.state(
+            isConnected: true, hasPendingChanges: true, hasFailedChanges: false, hasSyncError: true
+        ) == .red)
+    }
+
     @Test func deferredSnapshotRefreshKeepsTheSyncConnectionAvailableWhileEditing() {
         #expect(SyncConnectionPolicy.isAvailable(
             isConnected: false,

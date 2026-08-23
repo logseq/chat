@@ -1201,7 +1201,7 @@ private let testEmptySnapshotJSON = """
         #expect(store.snapshot.blocks.first?.isPendingSync == true)
     }
 
-    @Test @MainActor func pendingHTTPDoesNotBlockUnrelatedLocalCoreActions() async throws {
+    @Test @MainActor func pendingHTTPDoesNotBlockNavigationOrLocalBlockCreation() async throws {
         let recorder = RequestRecorder()
         let transport = SuspendedPendingTransport()
         let store = LogseqChatStore(
@@ -1238,14 +1238,41 @@ private let testEmptySnapshotJSON = """
         store.send("Offline capture")
         try await waitUntilAsync { await transport.hasStarted }
 
-        store.searchNodes("local")
-        try await waitUntil { store.snapshot.searchQuery == "local" }
+        store.openNode("page-1")
+        _ = store.addChildBlock("Offline child", parentId: "local-1")
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"openNode\"") }
+                && recorder.all.contains { $0.contains("\"action\":\"addChildBlock\"") }
+        }
         #expect(await transport.isWaiting)
 
         await transport.resume()
         try await waitUntil {
             recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
                 && store.snapshot.blocks.first?.syncStatus == "submitted"
+        }
+    }
+
+    @Test @MainActor func networkSyncFailureDoesNotBecomeALocalOperationError() async throws {
+        let recorder = RequestRecorder()
+        let store = LogseqChatStore { request in
+            recorder.append(request)
+            return outlineSnapshotJSON(blocks: [], appliedServerT: 51)
+        }
+        store.refresh()
+        try await waitUntil { store.snapshot.appliedServerT == 51 }
+
+        _ = await store.runGraphEventsOnce(
+            graphID: "graph-1",
+            baseURL: "://",
+            accessToken: "access-token"
+        )
+
+        #expect(store.lastError == nil)
+        #expect(store.syncError?.code == "sse_connection_failed")
+        store.openNode("page-1")
+        try await waitUntil {
+            recorder.all.contains { $0.contains("\"action\":\"openNode\"") }
         }
     }
 

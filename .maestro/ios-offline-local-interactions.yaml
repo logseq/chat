@@ -1,0 +1,40 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "sync.failed"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "button.journal.e2e10000-0000-4000-8000-000000000007"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 100
+    centerElement: true
+- tapOn:
+    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
+- assertNotVisible: "unknown_node"
+- tapOn: "Edit block E2E Block Target"
+- pressKey: ENTER
+- inputText: "E2E offline local block"
+- assertVisible: "E2E offline local block"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn: "Hide keyboard"
+- tapOn:
+    id: "BackButton"
+- tapOn:
+    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
+- tapOn: "Zoom into E2E Block Target"
+- assertVisible: "E2E Block Target"
+- assertNotVisible: "unknown_node"
+- assertNotVisible: "outliner_effect_failed"
+- assertVisible:
+    id: "sync.failed"
+- tapOn:
+    id: "sync.failed"
+- assertVisible: "Sync status"
+- assertVisible: "Disconnected"
+- assertVisible: "Last error"

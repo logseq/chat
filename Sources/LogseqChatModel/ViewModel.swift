@@ -200,6 +200,7 @@ private struct DeletePagePayload: Encodable {
         relatedBlocks: nil
     )
     public private(set) var lastError: LogseqChatCoreError?
+    public private(set) var syncError: LogseqChatCoreError?
     public private(set) var isRefreshing = false
     public private(set) var cursorAdvancedAfterMutation = false
     public private(set) var captureRequestRevision = 0
@@ -785,6 +786,7 @@ private struct DeletePagePayload: Encodable {
             defer { stream.close() }
             await dispatchRawAndWait("startSSE")
             guard lastError == nil else { return false }
+            syncError = nil
             isSnapshotRefreshDeferred = false
             while let frame = try await stream.nextFrame() {
                 await dispatchRawAndWait("feedSSE", payload: frame)
@@ -802,11 +804,12 @@ private struct DeletePagePayload: Encodable {
                 if streamError.code == "snapshot_required" {
                     return true
                 }
-                lastError = streamError
+                lastError = nil
+                syncError = streamError
             }
         } catch {
             await dispatchRawAndWait("stopSSE")
-            lastError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
+            syncError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
         }
         return false
         #else
@@ -823,6 +826,7 @@ private struct DeletePagePayload: Encodable {
             }
             await dispatchRawAndWait("startSSE")
             guard lastError == nil else { return false }
+            syncError = nil
             isSnapshotRefreshDeferred = false
             var transportBuffer = LogseqGraphSSETransportBuffer()
             var networkChunk = Data()
@@ -852,7 +856,8 @@ private struct DeletePagePayload: Encodable {
                 if streamError.code == "snapshot_required" {
                     return true
                 }
-                lastError = streamError
+                lastError = nil
+                syncError = streamError
             }
         } catch {
             await dispatchRawAndWait("stopSSE")
@@ -860,7 +865,10 @@ private struct DeletePagePayload: Encodable {
                 error,
                 taskIsCancelled: Task.isCancelled
             ) {
-                lastError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
+                syncError = LogseqChatCoreError(
+                    code: "sse_connection_failed",
+                    message: "\(error)"
+                )
             }
         }
         return false
@@ -1368,6 +1376,16 @@ private struct DeletePagePayload: Encodable {
             while let request = pending, !Task.isCancelled {
                 let result = await pendingTransport(request)
                 if Task.isCancelled { break }
+                if let error = result.error, !error.isEmpty {
+                    syncError = LogseqChatCoreError(code: "pending_sync_failed", message: error)
+                } else if let status = result.status, !(200..<300).contains(status) {
+                    syncError = LogseqChatCoreError(
+                        code: "pending_sync_failed",
+                        message: "Sync server returned HTTP \(status)"
+                    )
+                } else if snapshot.syncConnected == true {
+                    syncError = nil
+                }
                 let completion = LogseqPendingSyncCompletion(
                     id: request.id,
                     status: result.status,
@@ -1509,9 +1527,11 @@ private struct DeletePagePayload: Encodable {
                 if actionName == "openGraph" {
                     activeGraphID = mergedResult.selectedGraphId
                     debugDatabaseRoute = "graph:\(activeGraphID ?? "unknown")"
+                    syncError = nil
                 } else if actionName == "open" {
                     activeGraphID = nil
                     debugDatabaseRoute = "catalog:\(openedDatabasePath ?? "unknown")"
+                    syncError = nil
                 }
             } else {
                 let error = response.error ?? LogseqChatCoreError(code: "unknown_core_error", message: "The core returned no snapshot")
