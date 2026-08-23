@@ -22,6 +22,20 @@ appId: com.logseq.chat
     id: "screen.settings"
 - assertVisible: "Theme"
 - assertVisible: "Language"
+- tapOn:
+    id: "picker.settings.language"
+- scrollUntilVisible:
+    element:
+      text: "العربية"
+    direction: DOWN
+- tapOn: "العربية"
+- tapOn:
+    id: "picker.settings.language"
+- scrollUntilVisible:
+    element:
+      text: "System"
+    direction: UP
+- tapOn: "System"
 - assertVisible: "Editor"
 - assertVisible: "Sync server"
 - scrollUntilVisible:

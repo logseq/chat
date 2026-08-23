@@ -21,8 +21,13 @@ import Testing
 
     @Test func languageChoicesCoverEveryShippedLocalization() {
         #expect(LogseqSettingsPolicy.languages.map(\.id) == [
-            "system", "en", "zh-Hans", "ja", "fr", "es",
+            "system", "en", "fr", "de", "nl", "zh-CN", "zh-Hant", "af", "ca",
+            "es", "vi", "nb-NO", "pl", "pt-BR", "pt-PT", "ru", "ja", "it", "tr",
+            "uk", "ko", "sk", "fa", "id", "cs", "ar",
         ])
+        #expect(LogseqSettingsPolicy.normalizedLanguageID("zh-Hans") == "zh-CN")
+        #expect(LogseqSettingsPolicy.normalizedLanguageID("fr") == "fr")
+        #expect(LogseqSettingsPolicy.normalizedLanguageID("unknown") == "system")
     }
 
     @Test func customSyncServerAcceptsOnlyHttpURLsAndNormalizesWhitespace() {

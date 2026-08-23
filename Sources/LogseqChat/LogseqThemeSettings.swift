@@ -106,10 +106,30 @@ enum LogseqSettingsPolicy {
     static let languages = [
         LogseqLanguageChoice(id: "system", title: "System"),
         LogseqLanguageChoice(id: "en", title: "English"),
-        LogseqLanguageChoice(id: "zh-Hans", title: "简体中文"),
-        LogseqLanguageChoice(id: "ja", title: "日本語"),
         LogseqLanguageChoice(id: "fr", title: "Français"),
+        LogseqLanguageChoice(id: "de", title: "Deutsch"),
+        LogseqLanguageChoice(id: "nl", title: "Dutch (Nederlands)"),
+        LogseqLanguageChoice(id: "zh-CN", title: "简体中文"),
+        LogseqLanguageChoice(id: "zh-Hant", title: "繁體中文"),
+        LogseqLanguageChoice(id: "af", title: "Afrikaans"),
+        LogseqLanguageChoice(id: "ca", title: "Català"),
         LogseqLanguageChoice(id: "es", title: "Español"),
+        LogseqLanguageChoice(id: "vi", title: "Tiếng Việt"),
+        LogseqLanguageChoice(id: "nb-NO", title: "Norsk (bokmål)"),
+        LogseqLanguageChoice(id: "pl", title: "Polski"),
+        LogseqLanguageChoice(id: "pt-BR", title: "Português (Brasileiro)"),
+        LogseqLanguageChoice(id: "pt-PT", title: "Português (Europeu)"),
+        LogseqLanguageChoice(id: "ru", title: "Русский"),
+        LogseqLanguageChoice(id: "ja", title: "日本語"),
+        LogseqLanguageChoice(id: "it", title: "Italiano"),
+        LogseqLanguageChoice(id: "tr", title: "Türkçe"),
+        LogseqLanguageChoice(id: "uk", title: "Українська"),
+        LogseqLanguageChoice(id: "ko", title: "한국어"),
+        LogseqLanguageChoice(id: "sk", title: "Slovenčina"),
+        LogseqLanguageChoice(id: "fa", title: "فارسی"),
+        LogseqLanguageChoice(id: "id", title: "Bahasa Indonesia"),
+        LogseqLanguageChoice(id: "cs", title: "Čeština"),
+        LogseqLanguageChoice(id: "ar", title: "العربية"),
     ]
 
     static let communityLinks = [
@@ -141,6 +161,11 @@ enum LogseqSettingsPolicy {
             return nil
         }
         return normalized
+    }
+
+    static func normalizedLanguageID(_ value: String) -> String {
+        let migrated = value == "zh-Hans" ? "zh-CN" : value
+        return languages.contains(where: { $0.id == migrated }) ? migrated : "system"
     }
 
     static var version: String {

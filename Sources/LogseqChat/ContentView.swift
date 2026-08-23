@@ -290,7 +290,8 @@ struct ContentView: View {
     }
 
     private var preferredLocale: Locale {
-        language == "system" ? Locale.current : Locale(identifier: language)
+        let identifier = LogseqSettingsPolicy.normalizedLanguageID(language)
+        return identifier == "system" ? Locale.current : Locale(identifier: identifier)
     }
 
     private var themePalette: LogseqThemePalette {
@@ -2746,6 +2747,7 @@ private struct ConnectionSettingsView: View {
                                 }
                             }
                             .labelsHidden()
+                            .accessibilityIdentifier("picker.settings.language")
                         }
                         Divider()
                         NavigationLink {
@@ -2843,6 +2845,9 @@ private struct ConnectionSettingsView: View {
                 RuntimeLogView(palette: palette, dismiss: {
                     logPresented = false
                 })
+            }
+            .onAppear {
+                language = LogseqSettingsPolicy.normalizedLanguageID(language)
             }
         }
     }
