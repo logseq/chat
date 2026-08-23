@@ -1,0 +1,7 @@
+appId: com.logseq.chat
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible: "https://example.com/.*"
+    timeout: 30000

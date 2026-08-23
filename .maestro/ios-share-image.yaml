@@ -1,0 +1,11 @@
+appId: com.apple.mobileslideshow
+---
+- tapOn:
+    point: "16%,52%"
+- tapOn: "Share"
+- tapOn:
+    id: "shareCell"
+    text: "LogseqChat"
+- extendedWaitUntil:
+    notVisible: "1 Photo Selected"
+    timeout: 10000

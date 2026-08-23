@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* ShareViewController.swift */; };
+		A10000000000000000000012 /* SharedProviderPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* SharedProviderPolicy.swift */; };
 		A10000000000000000000002 /* LogseqChatShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* LogseqChatShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A20000000000000000000001 /* LogseqWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* LogseqWidgets.swift */; };
 		A20000000000000000000002 /* LogseqChatWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* LogseqChatWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -64,6 +65,7 @@
 		A10000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10000000000000000000007 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000008 /* LogseqChatShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LogseqChatShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000013 /* SharedProviderPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedProviderPolicy.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* LogseqWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogseqWidgets.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000006 /* LogseqChatWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LogseqChatWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -157,6 +159,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000005 /* ShareViewController.swift */,
+				A10000000000000000000013 /* SharedProviderPolicy.swift */,
 				A10000000000000000000006 /* Info.plist */,
 				A10000000000000000000007 /* ShareExtension.entitlements */,
 			);
@@ -328,6 +331,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* ShareViewController.swift in Sources */,
+				A10000000000000000000012 /* SharedProviderPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

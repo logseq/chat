@@ -6,7 +6,6 @@ import UniformTypeIdentifiers
 
 private enum SharedCaptureConstants {
     static let appGroup = "group.com.logseq.chat"
-    static let storageKey = "logseq.pendingSharedCaptureItems"
     static let logger = Logger(subsystem: "com.logseq.chat.share", category: "SharedCapture")
 }
 
@@ -48,6 +47,12 @@ private struct SharedItem: Codable, Sendable {
     }
 }
 
+private enum LoadedProviderCapture: Sendable {
+    case text(String)
+    case url(String)
+    case asset(SharedItem)
+}
+
 private final class CaptureAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var text: String?
@@ -64,6 +69,14 @@ private final class CaptureAccumulator: @unchecked Sendable {
 
     func append(_ asset: SharedItem) {
         lock.withLock { assets.append(asset) }
+    }
+
+    func append(_ capture: LoadedProviderCapture) {
+        switch capture {
+        case .text(let value): setText(value)
+        case .url(let value): setURL(value)
+        case .asset(let value): append(value)
+        }
     }
 
     func snapshot() -> (text: String?, url: String?, assets: [SharedItem]) {
@@ -100,30 +113,14 @@ private final class CaptureAccumulator: @unchecked Sendable {
         let accumulator = CaptureAccumulator()
 
         for provider in providers {
-            if let assetType = assetType(for: provider) {
-                group.enter()
-                provider.loadFileRepresentation(forTypeIdentifier: assetType.identifier) { fileURL, _ in
-                    defer { group.leave() }
-                    guard let fileURL, let asset = try? Self.stage(fileURL, type: assetType) else { return }
-                    accumulator.append(.asset(asset))
-                }
-            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
-                    defer { group.leave() }
-                    let value = (item as? URL)?.absoluteString ?? (item as? NSURL)?.absoluteString
-                    if let value = value?.trimmed {
-                        accumulator.setURL(value)
-                    }
-                }
-            } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                group.enter()
-                provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
-                    defer { group.leave() }
-                    if let value = (item as? String)?.trimmed {
-                        accumulator.setText(value)
-                    }
-                }
+            let routes = ShareCaptureRoutePolicy.routes(for: provider.registeredTypeIdentifiers)
+            guard !routes.isEmpty else { continue }
+            group.enter()
+            ShareCaptureRouteRunner.firstResult(in: routes) { route, finish in
+                Self.load(route, from: provider, completion: finish)
+            } completion: { capture in
+                if let capture { accumulator.append(capture) }
+                group.leave()
             }
         }
 
@@ -147,15 +144,62 @@ private final class CaptureAccumulator: @unchecked Sendable {
         }
     }
 
-    private func assetType(for provider: NSItemProvider) -> UTType? {
-        provider.registeredTypeIdentifiers
-            .compactMap(UTType.init)
-            .first { type in
-                type.conforms(to: .image) || type.conforms(to: .audio) ||
-                    type.conforms(to: .movie) || type.conforms(to: .pdf) ||
-                    (type.conforms(to: .data) && !type.conforms(to: .plainText) &&
-                        !type.conforms(to: .url))
+    nonisolated private static func load(
+        _ route: ShareCaptureRoute,
+        from provider: NSItemProvider,
+        completion: @escaping (LoadedProviderCapture?) -> Void
+    ) {
+        switch route {
+        case .asset(let identifier):
+            guard let type = UTType(identifier) else {
+                completion(nil)
+                return
             }
+            loadAsset(type: type, from: provider) { asset in
+                guard let asset else {
+                    completion(nil)
+                    return
+                }
+                completion(.asset(.asset(asset)))
+            }
+        case .url:
+            provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
+                let value = (item as? URL)?.absoluteString
+                    ?? (item as? NSURL)?.absoluteString
+                    ?? (item as? String)
+                completion(value?.trimmed.map(LoadedProviderCapture.url))
+            }
+        case .text:
+            provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
+                let value = (item as? String) ?? (item as? NSString).map { String($0) }
+                completion(value?.trimmed.map(LoadedProviderCapture.text))
+            }
+        }
+    }
+
+    nonisolated private static func loadAsset(
+        type: UTType,
+        from provider: NSItemProvider,
+        completion: @escaping (SharedAsset?) -> Void
+    ) {
+        provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { fileURL, _ in
+            if let fileURL, let asset = try? stage(fileURL, type: type) {
+                completion(asset)
+                return
+            }
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+                guard let data,
+                      let asset = try? stage(
+                        data,
+                        suggestedName: provider.suggestedName,
+                        type: type
+                      ) else {
+                    completion(nil)
+                    return
+                }
+                completion(asset)
+            }
+        }
     }
 
     nonisolated private static func stage(_ source: URL, type: UTType) throws -> SharedAsset {
@@ -179,6 +223,35 @@ private final class CaptureAccumulator: @unchecked Sendable {
         )
     }
 
+    nonisolated private static func stage(
+        _ data: Data,
+        suggestedName: String?,
+        type: UTType
+    ) throws -> SharedAsset {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedCaptureConstants.appGroup
+        ) else { throw CocoaError(.fileNoSuchFile) }
+        let directory = container.appendingPathComponent("SharedCapture", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var title = suggestedName?.trimmed ?? "Attachment"
+        if URL(fileURLWithPath: title).pathExtension.isEmpty,
+           let pathExtension = type.preferredFilenameExtension {
+            title += ".\(pathExtension)"
+        }
+        let safeTitle = title.replacingOccurrences(of: "/", with: "-")
+        let stagedName = "\(UUID().uuidString.lowercased())-\(safeTitle)"
+        let destination = directory.appendingPathComponent(stagedName, isDirectory: false)
+        try data.write(to: destination, options: .atomic)
+        let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return SharedAsset(
+            title: title,
+            assetType: type.preferredMIMEType ?? type.preferredFilenameExtension ?? type.identifier,
+            size: data.count,
+            checksum: checksum,
+            stagedFileName: stagedName
+        )
+    }
+
     nonisolated private static func blockText(text: String?, title: String?, url: String?) -> String? {
         let link: String?
         if let url {
@@ -192,24 +265,27 @@ private final class CaptureAccumulator: @unchecked Sendable {
     }
 
     nonisolated private static func persist(_ additions: [SharedItem]) {
-        guard let defaults = UserDefaults(suiteName: SharedCaptureConstants.appGroup) else {
-            SharedCaptureConstants.logger.error("App group defaults are unavailable")
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedCaptureConstants.appGroup
+        ) else {
+            SharedCaptureConstants.logger.error("App group container is unavailable")
             return
         }
-        var pending: [SharedItem] = []
-        if let value = defaults.string(forKey: SharedCaptureConstants.storageKey),
-           let data = value.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode([SharedItem].self, from: data) {
-            pending = decoded
-        }
-        pending.append(contentsOf: additions)
-        guard let data = try? JSONEncoder().encode(pending),
-              let value = String(data: data, encoding: .utf8) else {
-            SharedCaptureConstants.logger.error("Failed to encode shared captures")
+        let directory = container.appendingPathComponent("SharedCaptureQueue", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            for item in additions {
+                let name = SHA256.hash(data: Data(item.id.utf8))
+                    .map { String(format: "%02x", $0) }
+                    .joined()
+                let destination = directory.appendingPathComponent("\(name).json")
+                try JSONEncoder().encode(item).write(to: destination, options: .atomic)
+            }
+        } catch {
+            SharedCaptureConstants.logger.error("Failed to persist shared captures: \(error)")
             return
         }
-        defaults.set(value, forKey: SharedCaptureConstants.storageKey)
-        SharedCaptureConstants.logger.notice("Persisted \(pending.count) shared captures")
+        SharedCaptureConstants.logger.notice("Persisted \(additions.count) shared captures")
     }
 }
 

@@ -107,6 +107,24 @@ import LogseqChatModel
         #expect(inbox.pendingItems().isEmpty)
     }
 
+    #if !SKIP
+    @Test @MainActor func appGroupFileInboxIsVisibleAcrossProcesses() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shared-capture-inbox-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = SharedCaptureInbox(directory: directory)
+        let reader = SharedCaptureInbox(directory: directory)
+
+        writer.enqueue(.text(id: "cross-process", text: "Shared text"))
+
+        #expect(reader.pendingItems() == [
+            .text(id: "cross-process", text: "Shared text")
+        ])
+        reader.acknowledge(id: "cross-process")
+        #expect(writer.pendingItems().isEmpty)
+    }
+    #endif
+
     @Test @MainActor func shortcutCaptureQueuesTrimmedTextForTheJournal() {
         let suiteName = "ShortcutCaptureTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

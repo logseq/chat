@@ -1,0 +1,9 @@
+appId: com.apple.mobilesafari
+---
+- tapOn: "More"
+- tapOn: "Share"
+- tapOn:
+    point: "81%,76%"
+- extendedWaitUntil:
+    visible: "Example Domain"
+    timeout: 10000

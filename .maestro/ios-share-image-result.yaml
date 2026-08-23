@@ -1,0 +1,8 @@
+appId: com.logseq.chat
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible:
+      id: "asset.preview.image"
+    timeout: 30000
