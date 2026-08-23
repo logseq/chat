@@ -2,6 +2,71 @@ import Testing
 @testable import LogseqChat
 
 @Suite struct SidebarNavigationTests {
+    @Test func mobileTabsDefaultToEveryPrimaryDestination() {
+        #expect(SidebarTabPolicy.selectedItems(rawValue: "") == [
+            SidebarContentItem.journals,
+            SidebarContentItem.flashcards,
+            SidebarContentItem.graphs,
+        ])
+        #expect(SidebarTabPolicy.sidebarItems(rawValue: "") == [
+            SidebarContentItem.journals,
+            SidebarContentItem.flashcards,
+            SidebarContentItem.graphs,
+            SidebarContentItem.favorites,
+            SidebarContentItem.recent,
+        ])
+    }
+
+    @Test func mobileTabsKeepJournalsAndDiscardUnknownOrDuplicateValues() {
+        #expect(SidebarTabPolicy.selectedItems(
+            rawValue: "graphs,graphs,unknown,flashcards"
+        ) == [
+            SidebarContentItem.journals,
+            SidebarContentItem.graphs,
+            SidebarContentItem.flashcards,
+        ])
+    }
+
+    @Test func mobileTabsPersistDisabledAndReorderedDestinations() {
+        let withoutFlashcards = SidebarTabPolicy.updatedRawValue(
+            "journals,flashcards,graphs",
+            item: SidebarContentItem.flashcards,
+            isEnabled: false
+        )
+        #expect(withoutFlashcards == "journals,graphs")
+        #expect(SidebarTabPolicy.selectedItems(rawValue: withoutFlashcards) == [
+            SidebarContentItem.journals,
+            SidebarContentItem.graphs,
+        ])
+        #expect(SidebarTabPolicy.rawValue(for: [
+            SidebarContentItem.journals,
+            SidebarContentItem.graphs,
+            SidebarContentItem.flashcards,
+        ])
+            == "journals,graphs,flashcards")
+    }
+
+    @Test func journalsCannotBeDisabled() {
+        #expect(SidebarTabPolicy.updatedRawValue(
+            "journals,graphs",
+            item: SidebarContentItem.journals,
+            isEnabled: false
+        ) == "journals,graphs")
+    }
+
+    @Test func mobileTabsReorderWithoutMovingTheRequiredJournalTab() {
+        #expect(SidebarTabPolicy.movedRawValue(
+            "journals,flashcards,graphs",
+            item: SidebarContentItem.graphs,
+            offset: -1
+        ) == "journals,graphs,flashcards")
+        #expect(SidebarTabPolicy.movedRawValue(
+            "journals,flashcards,graphs",
+            item: SidebarContentItem.flashcards,
+            offset: -1
+        ) == "journals,flashcards,graphs")
+    }
+
     @Test func journalsAppearsBeforeDynamicPageSections() {
         let expected: [SidebarContentItem] = [.journals, .flashcards, .graphs, .favorites, .recent]
         #expect(SidebarContentItem.allCases == expected)

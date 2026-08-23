@@ -1,0 +1,47 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- tapOn:
+    id: "button.connection"
+- tapOn: "Settings"
+- assertVisible:
+    id: "screen.settings"
+- tapOn:
+    id: "link.settings.tabs"
+- assertVisible:
+    id: "screen.settings.tabs"
+- assertVisible:
+    id: "toggle.settings.tab.journals"
+- assertVisible:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible:
+    id: "toggle.settings.tab.graphs"
+- tapOn:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible: "Flashcards, off"
+- tapOn: "Settings"
+- tapOn: "Cancel"
+- tapOn:
+    id: "button.sidebar"
+- assertNotVisible:
+    id: "link.sidebar.flashcards"
+- assertVisible:
+    id: "link.sidebar.graphs"
+- tapOn:
+    id: "button.sidebar.dismiss"
+- tapOn:
+    id: "button.connection"
+- tapOn: "Settings"
+- tapOn:
+    id: "link.settings.tabs"
+- tapOn:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible: "Flashcards, on"
+- tapOn: "Settings"
+- tapOn: "Cancel"
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "link.sidebar.flashcards"

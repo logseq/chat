@@ -274,6 +274,7 @@ struct ContentView: View {
     @AppStorage("logseq.composerDraft") private var persistedDraft = ""
     @AppStorage("logseq.appearance") private var appearance = "system"
     @AppStorage("logseq.language") private var language = "system"
+    @AppStorage("logseq.mobile.sidebarTabs") private var sidebarTabs = ""
     @FocusState private var composerFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -908,7 +909,7 @@ struct ContentView: View {
                 .tint(.primary)
                 .padding(.bottom, 16)
 
-                ForEach(SidebarContentItem.allCases, id: \.rawValue) { item in
+                ForEach(SidebarTabPolicy.sidebarItems(rawValue: sidebarTabs), id: \.rawValue) { item in
                     sidebarItem(item)
                 }
                 Spacer()
@@ -2706,6 +2707,7 @@ private struct ConnectionSettingsView: View {
     @AppStorage("logseq.language") private var language = "system"
     @AppStorage("logseq.editor.spellCheck") private var spellCheck = true
     @AppStorage("logseq.editor.autoCorrection") private var autoCorrection = true
+    @AppStorage("logseq.mobile.sidebarTabs") private var sidebarTabs = ""
     @State private var logPresented = false
 
     private var palette: LogseqThemePalette {
@@ -2745,6 +2747,22 @@ private struct ConnectionSettingsView: View {
                             }
                             .labelsHidden()
                         }
+                        Divider()
+                        NavigationLink {
+                            MobileTabsSettingsView(
+                                rawValue: $sidebarTabs,
+                                palette: palette
+                            )
+                        } label: {
+                            HStack {
+                                Text("Tabs")
+                                Spacer()
+                                Text(verbatim: selectedTabsLabel)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .accessibilityIdentifier("link.settings.tabs")
                     }
                     settingsSection(Text("Editor")) {
                         Toggle("Spell check", isOn: $spellCheck)
@@ -2862,6 +2880,12 @@ private struct ConnectionSettingsView: View {
         choice.id == "system" ? Text("System") : Text(verbatim: choice.title)
     }
 
+    private var selectedTabsLabel: String {
+        SidebarTabPolicy.selectedItems(rawValue: sidebarTabs)
+            .map(\.title)
+            .joined(separator: " · ")
+    }
+
     private func communityLabel(_ title: String) -> Text {
         switch title {
         case "Report bug":
@@ -2875,6 +2899,109 @@ private struct ConnectionSettingsView: View {
         default:
             return Text(verbatim: title)
         }
+    }
+}
+
+private struct MobileTabsSettingsView: View {
+    @Binding var rawValue: String
+    let palette: LogseqThemePalette
+
+    private var selectedItems: [SidebarContentItem] {
+        SidebarTabPolicy.selectedItems(rawValue: rawValue)
+    }
+
+    private var availableItems: [SidebarContentItem] {
+        SidebarTabPolicy.configurableItems.filter { !selectedItems.contains($0) }
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(selectedItems, id: \.rawValue) { item in
+                    tabToggle(item)
+                }
+            } header: {
+                Text("Visible tabs")
+            } footer: {
+                Text("Journals is always available. Use the arrows to reorder the other tabs.")
+            }
+
+            if !availableItems.isEmpty {
+                Section("Available tabs") {
+                    ForEach(availableItems, id: \.rawValue) { item in
+                        tabToggle(item)
+                    }
+                }
+            }
+        }
+        .background(palette.background.ignoresSafeArea())
+        .foregroundStyle(palette.primaryText)
+        .navigationTitle("Tabs")
+        .accessibilityIdentifier("screen.settings.tabs")
+    }
+
+    private func tabToggle(_ item: SidebarContentItem) -> some View {
+        HStack {
+            Button {
+                setEnabled(!selectedItems.contains(item), for: item)
+            } label: {
+                HStack {
+                    Text(verbatim: item.title)
+                    Spacer()
+                    Text(verbatim: selectedItems.contains(item) ? "✓" : "○")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(
+                            selectedItems.contains(item) ? Color.accentColor : palette.secondaryText
+                        )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .disabled(item == .journals)
+            .accessibilityLabel(
+                item.title + (selectedItems.contains(item) ? ", on" : ", off")
+            )
+            .accessibilityIdentifier("toggle.settings.tab." + item.rawValue)
+
+            if item != .journals, let index = selectedItems.firstIndex(of: item) {
+                Button {
+                    move(item, offset: -1)
+                } label: {
+                    Text(verbatim: "↑")
+                }
+                .buttonStyle(.borderless)
+                .disabled(index <= 1)
+                .accessibilityLabel("Move " + item.title + " up")
+                .accessibilityIdentifier("button.settings.tab." + item.rawValue + ".up")
+
+                Button {
+                    move(item, offset: 1)
+                } label: {
+                    Text(verbatim: "↓")
+                }
+                .buttonStyle(.borderless)
+                .disabled(index >= selectedItems.count - 1)
+                .accessibilityLabel("Move " + item.title + " down")
+                .accessibilityIdentifier("button.settings.tab." + item.rawValue + ".down")
+            }
+        }
+    }
+
+    private func setEnabled(_ isEnabled: Bool, for item: SidebarContentItem) {
+        rawValue = SidebarTabPolicy.updatedRawValue(
+            rawValue,
+            item: item,
+            isEnabled: isEnabled
+        )
+    }
+
+    private func move(_ item: SidebarContentItem, offset: Int) {
+        rawValue = SidebarTabPolicy.movedRawValue(
+            rawValue,
+            item: item,
+            offset: offset
+        )
     }
 }
 
