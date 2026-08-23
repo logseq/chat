@@ -9,11 +9,18 @@ appId: com.logseq.chat
 - pressKey: ENTER
 - assertVisible:
     id: "toolbar.outliner.editor"
+- assertVisible: "Hide keyboard"
+- assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - assertVisible:
     id: "field.outliner.block.*"
 - assertVisible:
@@ -28,9 +35,11 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - inputText: "E2E continuous first"
 - assertVisible: "E2E continuous first"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - pressKey: BACKSPACE
@@ -38,6 +47,7 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - pressKey: ENTER
+- assertVisible: "Hide keyboard"
 - inputText: "E2E continuous second"
 - assertVisible: "E2E continuous second"
 - pressKey: ENTER

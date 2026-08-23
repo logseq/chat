@@ -237,8 +237,8 @@ enum InlineEditorFocusPolicy {
     }
 }
 
-enum InlineEditorResponderHandoffPolicy {
-    static func shouldBridge(isFirstResponder: Bool, isStructuralEdit: Bool) -> Bool {
+enum InlineEditorResponderContinuityPolicy {
+    static func shouldPark(isFirstResponder: Bool, isStructuralEdit: Bool) -> Bool {
         isFirstResponder && isStructuralEdit
     }
 }
@@ -512,9 +512,11 @@ enum OutlinerEditorViewportPolicy {
     static func shouldEnsureVisible(
         previousBlockID: String?,
         blockID: String?,
-        viewportChanged: Bool
+        viewportChanged: Bool,
+        isBlockVisible: Bool
     ) -> Bool {
         guard let blockID else { return false }
+        guard !isBlockVisible else { return false }
         return viewportChanged || previousBlockID != blockID
     }
 }

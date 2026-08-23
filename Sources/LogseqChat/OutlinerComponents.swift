@@ -12,7 +12,9 @@ enum OutlinerBlockPresentationPolicy {
 }
 
 struct OutlinerView: View {
-    @State private var scrollAnchorID: String?
+    #if !SKIP && os(iOS)
+    @State private var visibleBlockIDs: Set<String> = []
+    #endif
     let rows: [LogseqOutlineRow]
     let sections: [LogseqBlockSection]
     let editing: LogseqOutlinerEditing?
@@ -109,32 +111,28 @@ struct OutlinerView: View {
         #if !SKIP && os(iOS)
         let content = ScrollViewReader { proxy in
             scrollContent
-                .scrollPosition(id: $scrollAnchorID, anchor: .top)
-                .onChange(of: rows.map(\.block.uuid)) { previousIDs, rowIDs in
-                    scrollAnchorID = OutlinerScrollAnchorPolicy.retainedAnchor(
-                        current: scrollAnchorID,
-                        previousRowIDs: previousIDs,
-                        rowIDs: rowIDs
-                    )
+                .coordinateSpace(name: "outlinerViewport")
+                .onPreferenceChange(OutlinerRowFramePreferenceKey.self) { frames in
+                    visibleBlockIDs = Set(frames.compactMap { blockID, frame in
+                        frame.maxY > 0 && frame.minY < viewportHeight ? blockID : nil
+                    })
                 }
                 .onChange(of: editing?.uuid) { previousID, currentID in
-                    if OutlinerEditorViewportPolicy.shouldEnsureVisible(
+                    ensureEditorVisibleIfNeeded(
                         previousBlockID: previousID,
                         blockID: currentID,
-                        viewportChanged: false
-                    ), let currentID {
-                        ensureEditorVisible(currentID, proxy: proxy)
-                    }
+                        viewportChanged: false,
+                        proxy: proxy
+                    )
                 }
                 .onChange(of: viewportHeight) { previousHeight, currentHeight in
                     guard abs(previousHeight - currentHeight) >= 1 else { return }
-                    if OutlinerEditorViewportPolicy.shouldEnsureVisible(
+                    ensureEditorVisibleIfNeeded(
                         previousBlockID: editing?.uuid,
                         blockID: editing?.uuid,
-                        viewportChanged: true
-                    ), let editing {
-                        ensureEditorVisible(editing.uuid, proxy: proxy)
-                    }
+                        viewportChanged: true,
+                        proxy: proxy
+                    )
                 }
         }
         content
@@ -144,6 +142,25 @@ struct OutlinerView: View {
     }
 
     #if !SKIP && os(iOS)
+    private func ensureEditorVisibleIfNeeded(
+        previousBlockID: String?,
+        blockID: String?,
+        viewportChanged: Bool,
+        proxy: ScrollViewProxy
+    ) {
+        guard let blockID else { return }
+        DispatchQueue.main.async {
+            guard editing?.uuid == blockID else { return }
+            guard OutlinerEditorViewportPolicy.shouldEnsureVisible(
+                previousBlockID: previousBlockID,
+                blockID: blockID,
+                viewportChanged: viewportChanged,
+                isBlockVisible: visibleBlockIDs.contains(blockID)
+            ) else { return }
+            ensureEditorVisible(blockID, proxy: proxy)
+        }
+    }
+
     private func ensureEditorVisible(_ blockID: String, proxy: ScrollViewProxy) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
@@ -335,6 +352,18 @@ struct OutlinerView: View {
         )
         .equatable()
         .id(row.block.uuid)
+        #if !SKIP && os(iOS)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: OutlinerRowFramePreferenceKey.self,
+                    value: [
+                        row.block.uuid: geometry.frame(in: .named("outlinerViewport"))
+                    ]
+                )
+            }
+        }
+        #endif
     }
 
     private func beginDrag(_ block: LogseqBlock) {
@@ -344,6 +373,16 @@ struct OutlinerView: View {
     }
 
 }
+
+#if !SKIP && os(iOS)
+private struct OutlinerRowFramePreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
+    }
+}
+#endif
 
 private struct BlockBreadcrumb: View {
     let summaries: [LogseqEntitySummary]

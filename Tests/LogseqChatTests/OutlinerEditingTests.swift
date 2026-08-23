@@ -184,26 +184,36 @@ import Testing
         #expect(OutlinerLayoutMetrics.bulletContentSpacing == 2)
     }
 
-    @Test func editorVisibilityUpdatesOnlyForFocusOrViewportChanges() {
+    @Test func editorScrollsOnlyWhenTheFocusedBlockIsOutsideTheViewport() {
         #expect(OutlinerEditorViewportPolicy.shouldEnsureVisible(
             previousBlockID: nil,
             blockID: "block",
-            viewportChanged: false
+            viewportChanged: false,
+            isBlockVisible: false
+        ))
+        #expect(!OutlinerEditorViewportPolicy.shouldEnsureVisible(
+            previousBlockID: "previous",
+            blockID: "block",
+            viewportChanged: false,
+            isBlockVisible: true
+        ))
+        #expect(OutlinerEditorViewportPolicy.shouldEnsureVisible(
+            previousBlockID: "block",
+            blockID: "block",
+            viewportChanged: true,
+            isBlockVisible: false
         ))
         #expect(!OutlinerEditorViewportPolicy.shouldEnsureVisible(
             previousBlockID: "block",
             blockID: "block",
-            viewportChanged: false
-        ))
-        #expect(OutlinerEditorViewportPolicy.shouldEnsureVisible(
-            previousBlockID: "block",
-            blockID: "block",
-            viewportChanged: true
+            viewportChanged: true,
+            isBlockVisible: true
         ))
         #expect(!OutlinerEditorViewportPolicy.shouldEnsureVisible(
             previousBlockID: "block",
             blockID: nil,
-            viewportChanged: true
+            viewportChanged: true,
+            isBlockVisible: false
         ))
     }
 
@@ -742,16 +752,16 @@ import Testing
         ))
     }
 
-    @Test func structuralEditingBridgesTheNativeFirstResponder() {
-        #expect(InlineEditorResponderHandoffPolicy.shouldBridge(
+    @Test func structuralEditingParksTheSameNativeFirstResponder() {
+        #expect(InlineEditorResponderContinuityPolicy.shouldPark(
             isFirstResponder: true,
             isStructuralEdit: true
         ))
-        #expect(!InlineEditorResponderHandoffPolicy.shouldBridge(
+        #expect(!InlineEditorResponderContinuityPolicy.shouldPark(
             isFirstResponder: false,
             isStructuralEdit: true
         ))
-        #expect(!InlineEditorResponderHandoffPolicy.shouldBridge(
+        #expect(!InlineEditorResponderContinuityPolicy.shouldPark(
             isFirstResponder: true,
             isStructuralEdit: false
         ))
