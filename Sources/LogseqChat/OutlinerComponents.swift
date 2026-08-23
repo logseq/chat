@@ -187,7 +187,10 @@ struct OutlinerView: View {
                     )
                 }
                 .onChange(of: viewportHeight) { previousHeight, currentHeight in
-                    guard abs(previousHeight - currentHeight) >= 1 else { return }
+                    guard OutlinerEditorViewportPolicy.viewportChangeCanOccludeEditor(
+                        previousHeight: previousHeight,
+                        currentHeight: currentHeight
+                    ) else { return }
                     ensureEditorVisibleIfNeeded(
                         previousBlockID: editing?.uuid,
                         blockID: editing?.uuid,

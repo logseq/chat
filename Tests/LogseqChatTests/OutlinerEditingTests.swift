@@ -184,6 +184,36 @@ import Testing
         #expect(OutlinerLayoutMetrics.bulletContentSpacing == 2)
     }
 
+    @Test func nativeEditorCentersItsFontInsideTheSharedFirstLineHeight() {
+        #expect(OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: 20,
+            minimumLineHeight: 24
+        ) == 2)
+        #expect(OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: 24,
+            minimumLineHeight: 24
+        ) == 0)
+        #expect(OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: 28,
+            minimumLineHeight: 24
+        ) == 0)
+    }
+
+    @Test func editorVisibilityIsRecheckedOnlyWhenTheViewportShrinks() {
+        #expect(OutlinerEditorViewportPolicy.viewportChangeCanOccludeEditor(
+            previousHeight: 700,
+            currentHeight: 400
+        ))
+        #expect(!OutlinerEditorViewportPolicy.viewportChangeCanOccludeEditor(
+            previousHeight: 400,
+            currentHeight: 700
+        ))
+        #expect(!OutlinerEditorViewportPolicy.viewportChangeCanOccludeEditor(
+            previousHeight: 400,
+            currentHeight: 400
+        ))
+    }
+
     @Test func editorScrollsOnlyWhenTheFocusedBlockIsOutsideTheViewport() {
         #expect(OutlinerEditorViewportPolicy.isFullyVisible(
             frame: CGRect(x: 0, y: 20, width: 100, height: 40),

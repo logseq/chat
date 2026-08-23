@@ -63,11 +63,10 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         let textView = FocusRetainingTextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
-        textView.font = .preferredFont(forTextStyle: .body)
-        textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.isScrollEnabled = false
         textView.adjustsFontForContentSizeCategory = true
+        applyTextLayout(to: textView)
         applyWritingAssistance(to: textView)
         textView.accessibilityIdentifier = accessibilityIdentifier
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -81,6 +80,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        applyTextLayout(to: textView)
         applyWritingAssistance(to: textView)
         context.coordinator.parent = self
         let isSameBlock = context.coordinator.activeBlockID == blockID
@@ -157,6 +157,21 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         if textView.isFirstResponder {
             textView.resignFirstResponder()
         }
+    }
+
+    private func applyTextLayout(to textView: UITextView) {
+        let font = UIFont.preferredFont(forTextStyle: .body)
+        let inset = OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: font.lineHeight,
+            minimumLineHeight: OutlinerLayoutMetrics.titleLineHeight
+        )
+        textView.font = font
+        textView.textContainerInset = UIEdgeInsets(
+            top: inset,
+            left: 0,
+            bottom: inset,
+            right: 0
+        )
     }
 
     private func applyWritingAssistance(to textView: UITextView) {

@@ -502,7 +502,23 @@ enum OutlinerLayoutMetrics {
     }
 }
 
+enum OutlinerNativeTextLayoutPolicy {
+    static func verticalInset(
+        fontLineHeight: CGFloat,
+        minimumLineHeight: CGFloat
+    ) -> CGFloat {
+        max(0, (minimumLineHeight - fontLineHeight) / 2)
+    }
+}
+
 enum OutlinerEditorViewportPolicy {
+    static func viewportChangeCanOccludeEditor(
+        previousHeight: CGFloat,
+        currentHeight: CGFloat
+    ) -> Bool {
+        currentHeight < previousHeight
+    }
+
     static func isFullyVisible(frame: CGRect, viewportHeight: CGFloat) -> Bool {
         frame.minY >= 0 && frame.maxY <= viewportHeight
     }
