@@ -249,7 +249,6 @@ struct ContentView: View {
     @State private var blocksPendingDeletion: [LogseqBlock] = []
     @State private var pagePendingDeletion: LogseqSidebarPage?
     @State private var outlinerDeleteConfirmationPending = false
-    @State private var outlinerKeyboardDismissalPending = false
     @State private var sidebarMotion = SidebarMotionState()
     @State private var appNavigationPath: [AppNavigationRoute] = []
     @State private var pendingNodeRoutes: Set<AppNavigationRoute> = []
@@ -359,11 +358,6 @@ struct ContentView: View {
         }
         .onChange(of: store.snapshot.outlinerCommandRevision) { _, _ in
             performOutlinerPlatformCommands()
-        }
-        .onChange(of: outlinerEditing?.uuid) { _, uuid in
-            if uuid == nil {
-                outlinerKeyboardDismissalPending = false
-            }
         }
         .onChange(of: store.captureRequestRevision) { _, _ in
             applyCaptureRequestIfNeeded()
@@ -1339,7 +1333,6 @@ struct ContentView: View {
     }
 
     private func beginOutlinerInteraction() {
-        outlinerKeyboardDismissalPending = false
         composerExpanded = false
         composerFocused = false
         editingBlock = nil
@@ -1477,10 +1470,7 @@ struct ContentView: View {
     }
 
     private var presentedOutlinerEditing: LogseqOutlinerEditing? {
-        OutlinerKeyboardPresentationPolicy.presentedEditing(
-            coreEditing: outlinerEditing,
-            dismissalPending: outlinerKeyboardDismissalPending
-        )
+        outlinerEditing
     }
 
     private var outlinerSelectedBlockIDs: Set<String> {
@@ -2215,15 +2205,6 @@ struct ContentView: View {
 
     private func handleOutlinerEditorToolbarAction(_ action: OutlinerToolbarAction) {
         guard let eventValue = action.eventValue else { return }
-        if action == .hideKeyboard {
-            outlinerKeyboardDismissalPending = true
-            UIApplication.shared.sendAction(
-                #selector(UIResponder.resignFirstResponder),
-                to: nil,
-                from: nil,
-                for: nil
-            )
-        }
         store.outlinerEvent(LogseqOutlinerEvent(type: "toolbar", action: eventValue))
     }
 

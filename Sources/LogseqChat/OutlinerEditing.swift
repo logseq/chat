@@ -474,15 +474,6 @@ enum OutlinerToolbarPolicy {
     static let trailingSelectionAction = OutlinerToolbarAction.unselect
 }
 
-enum OutlinerKeyboardPresentationPolicy {
-    static func presentedEditing(
-        coreEditing: LogseqOutlinerEditing?,
-        dismissalPending: Bool
-    ) -> LogseqOutlinerEditing? {
-        dismissalPending ? nil : coreEditing
-    }
-}
-
 enum OutlinerLayoutMetrics {
     static let outerHorizontalInset: CGFloat = 8
     static let indentation: CGFloat = 22

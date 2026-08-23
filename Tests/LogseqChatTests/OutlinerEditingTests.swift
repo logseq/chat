@@ -700,26 +700,6 @@ import Testing
         #expect(!OutlinerToolbarAction.hideKeyboard.preservesInlineEditorFocus)
     }
 
-    @Test func keyboardDismissalHidesTheInlineEditorBeforeCoreAcknowledgesIt() throws {
-        let editing = try JSONDecoder().decode(
-            LogseqOutlinerEditing.self,
-            from: Data(#"{"uuid":"block","title":"Draft","caretUTF16Offset":5}"#.utf8)
-        )
-
-        #expect(OutlinerKeyboardPresentationPolicy.presentedEditing(
-            coreEditing: editing,
-            dismissalPending: false
-        ) == editing)
-        #expect(OutlinerKeyboardPresentationPolicy.presentedEditing(
-            coreEditing: editing,
-            dismissalPending: true
-        ) == nil)
-        #expect(OutlinerKeyboardPresentationPolicy.presentedEditing(
-            coreEditing: nil,
-            dismissalPending: true
-        ) == nil)
-    }
-
     @Test func outlinerIdleStateStillShowsTheGlobalBottomBar() {
         #expect(BottomChromePolicy.presentation(
             contentMode: LogseqContentMode.outliner,
