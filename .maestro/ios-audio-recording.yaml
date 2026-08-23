@@ -21,6 +21,8 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.outliner.editor.audio"
 - assertVisible: "Audio recording"
+- assertVisible:
+    id: "toggle.audio.transcription"
 - runFlow:
     when:
       visible: "Allow"

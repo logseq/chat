@@ -183,6 +183,7 @@ struct AudioRecorderSheet: View {
                     .frame(height: 72)
                 if #available(iOS 26.0, *) {
                     Toggle("Transcribe recording", isOn: $transcriptionEnabled)
+                        .accessibilityIdentifier("toggle.audio.transcription")
                 }
                 if let errorMessage = recorder.errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
@@ -264,6 +265,7 @@ struct AndroidAudioRecorderSheet: View {
                 }
                 if AndroidAudioTranscriber.isSupported() {
                     Toggle("Transcribe recording", isOn: $transcriptionEnabled)
+                        .accessibilityIdentifier("toggle.audio.transcription")
                 }
                 Button("Stop recording") {
                     AndroidAudioRecorder.stop { title, type, size, checksum, path in
