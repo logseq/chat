@@ -12,6 +12,7 @@ enum OutlinerBlockPresentationPolicy {
 }
 
 struct OutlinerView: View {
+    @State private var youtubePlaybackStarts: [String: Int] = [:]
     #if !SKIP && os(iOS)
     @State private var visibleBlockIDs: Set<String> = []
     @State private var editorFrame: CGRect?
@@ -45,8 +46,20 @@ struct OutlinerView: View {
     let onAddFirstBlock: (() -> Void)?
     let isJournalHome: Bool
     var body: some View {
+        let rowsByID = rowIndex(rows)
+        let orderedRows = sections.flatMap { section in
+            section.blocks.compactMap { rowsByID[$0.uuid] }
+        }
+        let youtubeTargets = OutlinerYouTubeTimestampPolicy.targetURLsByBlockID(
+            (orderedRows.map { (id: $0.block.uuid, nodes: $0.block.markup) }
+                + relatedBlocks.map { (id: $0.uuid, nodes: $0.markup) }
+                + linkedReferenceBlocks.map { (id: $0.uuid, nodes: $0.markup) })
+        )
         let content = GeometryReader { proxy in
-            outlinerContent(viewportHeight: proxy.size.height)
+            outlinerContent(
+                viewportHeight: proxy.size.height,
+                youtubeTargets: youtubeTargets
+            )
         }
         #if !SKIP && os(iOS) && DEBUG
         content
@@ -75,7 +88,10 @@ struct OutlinerView: View {
         #endif
     }
 
-    @ViewBuilder private func outlinerContent(viewportHeight: CGFloat) -> some View {
+    @ViewBuilder private func outlinerContent(
+        viewportHeight: CGFloat,
+        youtubeTargets: [String: String]
+    ) -> some View {
         let rowsByID = rowIndex(rows)
         let visibleSections = sections.filter { section in
             section.blocks.contains(where: { rowsByID[$0.uuid] != nil })
@@ -96,7 +112,11 @@ struct OutlinerView: View {
                 } else {
                     ForEach(Array(visibleSections.enumerated()), id: \.element.id) { index, section in
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            sectionView(section, rowsByID: rowsByID)
+                            sectionView(
+                                section,
+                                rowsByID: rowsByID,
+                                youtubeTargets: youtubeTargets
+                            )
                         }
                         .frame(
                             minHeight: isJournalHome
@@ -121,7 +141,8 @@ struct OutlinerView: View {
                         title: relatedTitle,
                         emptyTitle: relatedEmptyTitle,
                         blocks: relatedBlocks,
-                        accessibilityIdentifier: relatedAccessibilityIdentifier
+                        accessibilityIdentifier: relatedAccessibilityIdentifier,
+                        youtubeTargets: youtubeTargets
                     )
                 }
                 if !linkedReferenceBlocks.isEmpty {
@@ -129,7 +150,8 @@ struct OutlinerView: View {
                         title: "Linked references",
                         emptyTitle: nil,
                         blocks: linkedReferenceBlocks,
-                        accessibilityIdentifier: "section.node.linked-references"
+                        accessibilityIdentifier: "section.node.linked-references",
+                        youtubeTargets: youtubeTargets
                     )
                 }
                 Color.clear.frame(height: bottomPadding)
@@ -306,12 +328,13 @@ struct OutlinerView: View {
 
     private func sectionView(
         _ section: LogseqBlockSection,
-        rowsByID: [String: LogseqOutlineRow]
+        rowsByID: [String: LogseqOutlineRow],
+        youtubeTargets: [String: String]
     ) -> some View {
         Group {
             sectionTitle(section)
             ForEach(section.blocks.compactMap { rowsByID[$0.uuid] }) { row in
-                blockRow(row)
+                blockRow(row, youtubeTargetURL: youtubeTargets[row.block.uuid])
             }
         }
     }
@@ -351,7 +374,8 @@ struct OutlinerView: View {
         title: String,
         emptyTitle: String?,
         blocks: [LogseqBlock],
-        accessibilityIdentifier: String
+        accessibilityIdentifier: String,
+        youtubeTargets: [String: String]
     ) -> some View {
         Text(verbatim: title)
             .font(.title2.bold())
@@ -378,7 +402,8 @@ struct OutlinerView: View {
             ForEach(group.blocks) { block in
                 blockRow(
                     relatedRow(block),
-                    opensAsPage: block.uuid == block.pageId
+                    opensAsPage: block.uuid == block.pageId,
+                    youtubeTargetURL: youtubeTargets[block.uuid]
                 )
             }
         }
@@ -388,7 +413,11 @@ struct OutlinerView: View {
         LogseqOutlineRow(block: block, depth: 0, hasChildren: false, isCollapsed: false)
     }
 
-    private func blockRow(_ row: LogseqOutlineRow, opensAsPage: Bool = false) -> some View {
+    private func blockRow(
+        _ row: LogseqOutlineRow,
+        opensAsPage: Bool = false,
+        youtubeTargetURL: String? = nil
+    ) -> some View {
         OutlinerBlockRow(
             row: row,
             statuses: statuses,
@@ -451,6 +480,13 @@ struct OutlinerView: View {
             },
             desiredCaretUTF16Offset: editing?.uuid == row.block.uuid
                 ? editing?.caretUTF16Offset : nil,
+            youtubeTargetURL: youtubeTargetURL,
+            youtubePlaybackStarts: youtubePlaybackStarts,
+            onSeekYouTube: { url, seconds in
+                var updatedStarts = youtubePlaybackStarts
+                updatedStarts[url] = seconds
+                youtubePlaybackStarts = updatedStarts
+            },
             onCaretChange: { offset in
                 sendEvent(LogseqOutlinerEvent(
                     type: "caretMoved",
@@ -559,6 +595,9 @@ struct OutlinerBlockRow: View, Equatable {
     let onReturnAtCaret: (String, Int) -> Void
     let onBackspace: (String, Int) -> Void
     let desiredCaretUTF16Offset: Int?
+    let youtubeTargetURL: String?
+    let youtubePlaybackStarts: [String: Int]
+    let onSeekYouTube: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
     let onStatusChange: (LogseqTaskStatus) -> Void
     let onDragStarted: () -> Void
@@ -568,6 +607,8 @@ struct OutlinerBlockRow: View, Equatable {
 
     nonisolated static func == (left: Self, right: Self) -> Bool {
         left.renderKey == right.renderKey
+            && left.youtubeTargetURL == right.youtubeTargetURL
+            && left.youtubePlaybackStarts == right.youtubePlaybackStarts
     }
 
     private var isCompleted: Bool {
@@ -786,6 +827,9 @@ struct OutlinerBlockRow: View, Equatable {
             OutlinerMixedRichMarkupContent(
                 nodes: row.block.markup,
                 fallback: row.block.title.isEmpty ? " " : row.block.title,
+                precedingYouTubeURL: youtubeTargetURL,
+                youtubePlaybackStarts: youtubePlaybackStarts,
+                onSeekYouTube: onSeekYouTube,
                 onOpenMarkupLink: onOpenMarkupLink
             )
         } else {
@@ -854,11 +898,16 @@ private extension View {
 private struct OutlinerMixedRichMarkupContent: View {
     let nodes: [LogseqMarkupNode]
     let fallback: String
+    let precedingYouTubeURL: String?
+    let youtubePlaybackStarts: [String: Int]
+    let onSeekYouTube: (String, Int) -> Void
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
-    @State private var youtubePlaybackStarts: [String: Int] = [:]
 
     private var targetedNodes: [LogseqMarkupNode] {
-        OutlinerYouTubeTimestampPolicy.associateTargets(nodes)
+        OutlinerYouTubeTimestampPolicy.associateTargets(
+            nodes,
+            precedingYouTubeURL: precedingYouTubeURL
+        )
     }
 
     private var chunks: [[LogseqMarkupNode]] {
@@ -875,9 +924,7 @@ private struct OutlinerMixedRichMarkupContent: View {
                     OutlinerRichBlockContent(
                         node: node,
                         youtubeStartSeconds: node.url.flatMap { youtubePlaybackStarts[$0] },
-                        onSeekYouTube: { url, seconds in
-                            youtubePlaybackStarts[url] = seconds
-                        },
+                        onSeekYouTube: onSeekYouTube,
                         onOpenMarkupLink: onOpenMarkupLink
                     )
                 } else {
@@ -1034,6 +1081,7 @@ private extension View {
         self
         #endif
     }
+
 }
 
 struct OutlinerAutocompleteBar: View {

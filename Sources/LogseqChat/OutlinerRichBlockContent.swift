@@ -70,7 +70,21 @@ struct OutlinerRichBlockContent: View {
                 Text(verbatim: node.text ?? node.url ?? "")
             }
         }
-        .accessibilityIdentifier("block.rich.\(node.type.rawValue)")
+        .accessibilityIdentifier(contentAccessibilityIdentifier)
+    }
+
+    private var contentAccessibilityIdentifier: String {
+        if let youtubeStartSeconds {
+            switch node.type {
+            case .video:
+                return "block.rich.video.start.\(youtubeStartSeconds)"
+            case .youtubeTimestamp:
+                return "block.rich.youtubeTimestamp.start.\(youtubeStartSeconds)"
+            default:
+                break
+            }
+        }
+        return "block.rich.\(node.type.rawValue)"
     }
 
     @ViewBuilder private var quoteText: some View {
@@ -103,7 +117,9 @@ private struct YouTubeTimestamp: View {
             Button {
                 onSeek(url, seconds)
             } label: {
-                timestampLabel.foregroundStyle(.tint)
+                timestampLabel
+                    .foregroundStyle(.tint)
+                    .platformTimestampHitShape()
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Seek YouTube video to " + label)
@@ -115,6 +131,16 @@ private struct YouTubeTimestamp: View {
     private var timestampLabel: some View {
         Text(verbatim: "◷ " + label)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    @ViewBuilder func platformTimestampHitShape() -> some View {
+        #if !SKIP
+        contentShape(Rectangle())
+        #else
+        self
+        #endif
     }
 }
 
