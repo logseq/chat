@@ -17,6 +17,30 @@ appId: com.logseq.chat
       visible: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
     commands:
       - tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+- waitForAnimationToEnd:
+    timeout: 5000
+- runFlow:
+    when:
+      visible: "Choose a graph"
+    commands:
+      - tapOn: "Add sync graph"
+      - extendedWaitUntil:
+          visible: "Add sync graph"
+          timeout: 10000
+      - tapOn:
+          id: "field.graph-name"
+      - inputText: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+      - tapOn:
+          id: "toggle.graph-encryption"
+      - tapOn:
+          id: "button.graph-add.confirm"
+- runFlow:
+    when:
+      visible: "Unlock encrypted graphs"
+    commands:
+      - tapOn: "E2EE password"
+      - inputText: "__LOGSEQ_CHAT_E2EE_PASSWORD__"
+      - tapOn: "Unlock"
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"

@@ -8,6 +8,7 @@ app_id=${LOGSEQ_CHAT_IOS_APP_ID:-com.logseq.chat}
 screenshots_dir="$repo_root/.maestro/screenshots"
 username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
 password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
+e2ee_password=${LOGSEQ_CHAT_E2EE_PASSWORD:-$password}
 base_url=${LOGSEQ_CHAT_E2E_BASE_URL:-http://127.0.0.1:8787}
 graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-sync 2}
 run_id=${LOGSEQ_CHAT_E2E_RUN_ID:-$(date +%s)}
@@ -62,6 +63,7 @@ fi
 sed \
   -e "s|__LOGSEQ_CHAT_E2E_USERNAME__|$username|g" \
   -e "s|__LOGSEQ_CHAT_E2E_PASSWORD__|$password|g" \
+  -e "s|__LOGSEQ_CHAT_E2EE_PASSWORD__|$e2ee_password|g" \
   -e "s|__LOGSEQ_CHAT_E2E_GRAPH_NAME__|$graph_name|g" \
   "$repo_root/.maestro/ios-local-graph-setup.yaml" > "$rendered_setup"
 sed \
