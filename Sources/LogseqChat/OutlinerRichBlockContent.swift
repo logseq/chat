@@ -24,6 +24,8 @@ import dev.hossain.highlight.ui.SyntaxHighlightedCode
 
 struct OutlinerRichBlockContent: View {
     let node: LogseqMarkupNode
+    let youtubeStartSeconds: Int?
+    let onSeekYouTube: (String, Int) -> Void
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
 
     @ViewBuilder var body: some View {
@@ -49,11 +51,19 @@ struct OutlinerRichBlockContent: View {
                     language: node.style
                 )
             case .video:
-                EmbeddedVideo(url: EmbeddedMediaPolicy.safeURL(node.url))
+                EmbeddedVideo(
+                    url: EmbeddedMediaPolicy.safeURL(node.url),
+                    startSeconds: youtubeStartSeconds
+                )
             case .iframe:
                 EmbeddedWebContent(url: EmbeddedMediaPolicy.safeURL(node.url))
             case .youtubeTimestamp:
-                YouTubeTimestamp(label: node.text ?? "")
+                YouTubeTimestamp(
+                    label: node.text ?? "",
+                    url: node.url,
+                    seconds: OutlinerYouTubeTimestampPolicy.seconds(node),
+                    onSeek: onSeekYouTube
+                )
             case .cloze:
                 InteractiveCloze(text: node.text ?? "")
             default:
@@ -83,21 +93,28 @@ struct OutlinerRichBlockContent: View {
 
 private struct YouTubeTimestamp: View {
     let label: String
-    @State private var unavailablePresented = false
+    let url: String?
+    let seconds: Int?
+    let onSeek: (String, Int) -> Void
 
+    @ViewBuilder
     var body: some View {
-        Text(verbatim: "◷ " + label)
-            .foregroundStyle(.tint)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            #if !SKIP
-            .contentShape(Rectangle())
-            #endif
-            .onTapGesture { unavailablePresented = true }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityLabel("YouTube timestamp " + label)
-            .alert("YouTube timestamps aren't available on mobile", isPresented: $unavailablePresented) {
-                Button("OK", role: .cancel) {}
+        if let url, let seconds {
+            Button {
+                onSeek(url, seconds)
+            } label: {
+                timestampLabel.foregroundStyle(.tint)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Seek YouTube video to " + label)
+        } else {
+            timestampLabel.foregroundStyle(.secondary)
+        }
+    }
+
+    private var timestampLabel: some View {
+        Text(verbatim: "◷ " + label)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -188,9 +205,14 @@ private struct NativeLatexView: View {
 
 private struct EmbeddedVideo: View {
     let url: URL?
+    let startSeconds: Int?
 
     @ViewBuilder var body: some View {
-        if let url, let embedURL = EmbeddedMediaPolicy.webVideoEmbedURL(url) {
+        if let url,
+           let embedURL = EmbeddedMediaPolicy.webVideoEmbedURL(
+            url,
+            startSeconds: startSeconds
+           ) {
             EmbeddedWebContent(url: embedURL)
         } else if let url {
             #if !SKIP && os(iOS)

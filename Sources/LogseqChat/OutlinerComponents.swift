@@ -855,9 +855,14 @@ private struct OutlinerMixedRichMarkupContent: View {
     let nodes: [LogseqMarkupNode]
     let fallback: String
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+    @State private var youtubePlaybackStarts: [String: Int] = [:]
+
+    private var targetedNodes: [LogseqMarkupNode] {
+        OutlinerYouTubeTimestampPolicy.associateTargets(nodes)
+    }
 
     private var chunks: [[LogseqMarkupNode]] {
-        OutlinerRichMarkupPolicy.chunks(nodes)
+        OutlinerRichMarkupPolicy.chunks(targetedNodes)
     }
 
     var body: some View {
@@ -869,6 +874,10 @@ private struct OutlinerMixedRichMarkupContent: View {
                    OutlinerRichMarkupPolicy.isRich(node.type) {
                     OutlinerRichBlockContent(
                         node: node,
+                        youtubeStartSeconds: node.url.flatMap { youtubePlaybackStarts[$0] },
+                        onSeekYouTube: { url, seconds in
+                            youtubePlaybackStarts[url] = seconds
+                        },
                         onOpenMarkupLink: onOpenMarkupLink
                     )
                 } else {

@@ -868,6 +868,36 @@ import Testing
         ) == nil)
     }
 
+    @Test func youtubeTimestampTargetsTheNearestPlayerAndOverridesItsStartTime() throws {
+        let source = "https://youtu.be/dQw4w9WgXcQ?t=12"
+        let nodes = OutlinerYouTubeTimestampPolicy.associateTargets([
+            LogseqMarkupNode(type: .video, url: source),
+            LogseqMarkupNode(type: .youtubeTimestamp, text: "01:23", style: "83"),
+        ])
+
+        #expect(nodes[1].url == source)
+        #expect(OutlinerYouTubeTimestampPolicy.seconds(nodes[1]) == 83)
+        let sourceURL = try #require(URL(string: source))
+        let embed = try #require(EmbeddedMediaPolicy.webVideoEmbedURL(
+            sourceURL,
+            startSeconds: 83
+        ))
+        let components = try #require(URLComponents(url: embed, resolvingAgainstBaseURL: false))
+        let starts = components.queryItems?
+            .filter { $0.name == "start" }
+            .compactMap(\.value)
+        #expect(starts == ["83"])
+    }
+
+    @Test func youtubeTimestampDoesNotAttachToUntrustedOrNonYouTubeVideoURLs() {
+        let nodes = OutlinerYouTubeTimestampPolicy.associateTargets([
+            LogseqMarkupNode(type: .video, url: "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ"),
+            LogseqMarkupNode(type: .youtubeTimestamp, text: "00:05", style: "5"),
+        ])
+
+        #expect(nodes[1].url == nil)
+    }
+
 
     @Test func inlineEditorAppliesTheNewBlockDuringResponderHandoff() {
         #expect(InlineEditorTextReconciliationPolicy.decision(

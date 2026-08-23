@@ -289,7 +289,7 @@ enum EmbeddedMediaPolicy {
         return url
     }
 
-    static func youtubeEmbedURL(_ url: URL) -> URL? {
+    static func youtubeEmbedURL(_ url: URL, startSeconds: Int? = nil) -> URL? {
         let host = (url.host ?? "").lowercased()
         var videoID: String?
         if host == "youtu.be" || host == "www.youtu.be" {
@@ -308,8 +308,8 @@ enum EmbeddedMediaPolicy {
         else { return nil }
 
         let sourceQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        var start: Int?
-        if let rawStart = sourceQuery
+        var start = startSeconds.flatMap { $0 > 0 ? $0 : nil }
+        if start == nil, let rawStart = sourceQuery
             .first(where: { $0.name == "start" || $0.name == "t" })?.value,
            let parsedStart = Int(rawStart), parsedStart > 0 {
             start = parsedStart
@@ -334,8 +334,8 @@ enum EmbeddedMediaPolicy {
         return true
     }
 
-    static func webVideoEmbedURL(_ url: URL) -> URL? {
-        if let youtube = youtubeEmbedURL(url) { return youtube }
+    static func webVideoEmbedURL(_ url: URL, startSeconds: Int? = nil) -> URL? {
+        if let youtube = youtubeEmbedURL(url, startSeconds: startSeconds) { return youtube }
         let host = (url.host ?? "").lowercased()
         return host == "player.vimeo.com" ? url : nil
     }
@@ -348,6 +348,41 @@ enum EmbeddedMediaPolicy {
 
     static func webReferer(for url: URL) -> String? {
         webRequestHeaders(for: url)["Referer"]
+    }
+}
+
+enum OutlinerYouTubeTimestampPolicy {
+    static func associateTargets(_ nodes: [LogseqMarkupNode]) -> [LogseqMarkupNode] {
+        var currentYouTubeURL: String?
+        return nodes.map { node in
+            if node.type == .video,
+               let source = node.url,
+               let url = EmbeddedMediaPolicy.safeURL(source),
+               EmbeddedMediaPolicy.youtubeEmbedURL(url) != nil {
+                currentYouTubeURL = source
+                return node
+            }
+            guard node.type == .youtubeTimestamp,
+                  node.url == nil,
+                  let currentYouTubeURL else { return node }
+            return LogseqMarkupNode(
+                type: node.type,
+                text: node.text,
+                style: node.style,
+                url: currentYouTubeURL,
+                uuid: node.uuid,
+                title: node.title,
+                children: node.children
+            )
+        }
+    }
+
+    static func seconds(_ node: LogseqMarkupNode) -> Int? {
+        guard node.type == .youtubeTimestamp,
+              let value = node.style,
+              let seconds = Int(value),
+              seconds >= 0 else { return nil }
+        return seconds
     }
 }
 
