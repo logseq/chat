@@ -5,18 +5,4 @@
 (package
  (name logseq_chat)
  (synopsis "Logseq chat mobile core backed by DataScript OCaml")
- (allow_empty)
- (depends
-  (ocaml (>= 5.5.0))
-  dune
-  datascript_ocaml
-  datascript-ocaml-native
-  melange-edn-native
-  melange-transit-native
-  lg
-  (lg-test :with-test)
-  lui
-  signal-lg
-  mldoc
-  ocaml-fsrs
-  yojson))
+ (allow_empty))

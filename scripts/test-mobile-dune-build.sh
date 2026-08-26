@@ -6,6 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 workspace="$repo_root/dune-workspace.mobile"
 builder="$repo_root/scripts/build-mobile-ocaml.sh"
 core_dune="$repo_root/core/dune"
+dune_project="$repo_root/dune-project"
 lockfile="$repo_root/logseq_chat.opam.locked"
 legacy_builder="$repo_root/scripts/build-mobile-ocaml-deps.sh"
 legacy_mldoc_patch="$repo_root/scripts/patches/mldoc-wrapped.patch"
@@ -43,6 +44,11 @@ fi
 
 if grep -Fq 'OPAM_SWITCH_PREFIX' "$core_dune"; then
   echo "error: mobile Dune rules depend on a local opam installation path" >&2
+  exit 1
+fi
+
+if grep -Fq '(depends' "$dune_project"; then
+  echo "error: OCaml dependencies must be declared only in logseq_chat.opam" >&2
   exit 1
 fi
 
