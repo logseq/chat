@@ -124,6 +124,10 @@ type t =
   ; outliner_selected_block_ids : string list
   ; is_outliner_patch : bool
   ; sync_connected : bool
+  ; applied_server_t : int option
+  ; has_pending_semantic_operations : bool
+  ; has_pending_sync_request : bool
+  ; is_pending_sync_patch : bool
   }
 
 let member name fields = List.assoc_opt name fields
@@ -698,6 +702,14 @@ let decode_response encoded =
            ; outliner_selected_block_ids
            ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
            ; sync_connected = bool_member "syncConnected" result_fields
+           ; applied_server_t = int_member "appliedServerT" result_fields
+           ; has_pending_semantic_operations =
+               bool_member "hasPendingSemanticOperations" result_fields
+           ; has_pending_sync_request =
+               (match member "pendingSyncRequest" result_fields with
+                | Some `Null | None -> false
+                | Some _ -> true)
+           ; is_pending_sync_patch = bool_member "isPendingSyncPatch" result_fields
            }
        | _ -> Error "Core response did not contain a snapshot")
     | `Assoc response_fields -> Error (error_message response_fields)

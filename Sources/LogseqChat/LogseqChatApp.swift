@@ -268,7 +268,8 @@ public struct LogseqChatRootView : View {
                 Self.copyText(payload.text)
                 return true
                 #endif
-            }
+            },
+            syncNow: { store.syncPending() }
         )
         let platformCommandRouter = LGChatPlatformCommandRouter(
             setClipboardText: Self.copyText,

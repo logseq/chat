@@ -86,6 +86,10 @@
     (task-statuses [])
     (flashcards [])
     (sync-connected false)
+    (applied-server-t None)
+    (has-pending-semantic-operations false)
+    (has-pending-sync-request false)
+    (is-pending-sync-patch false)
     (search-query "")
     (search-results [])
     (node-routes [])
@@ -511,6 +515,59 @@
       (assert-equal "Sync failed: Network unavailable"
                     (property-string renderer sync-label proto/TextValue)
                     "failure retains its actionable reason"))))
+
+(deftest sync-details-render-projected-cursor-and-trigger-the-existing-pump
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        projection (assoc (empty-core-projection)
+                          :graph-name (Some "Work")
+                          :sync-connected true
+                          :applied-server-t (Some 42)
+                          :has-pending-semantic-operations true
+                          :has-pending-sync-request false)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          sync-button (descendant-with-identifier renderer root "sync.connected")]
+      (driver/dispatch-event! application (proto/Press sync-button))
+      (driver/flush! application)
+      (is (:sync-details-open (chat/model application))
+          "sync detail presentation is LG-owned")
+      (let [root-children (apple/children renderer root)
+            sheet (nth root-children (dec (count root-children)))
+            cursor (descendant-with-identifier renderer sheet "sync.cursor")
+            pending (descendant-with-identifier renderer sheet "sync.pending")
+            sync-now (descendant-with-identifier renderer sheet "button.sync-now")]
+        (assert-equal "42" (property-string renderer cursor proto/TextValue)
+                      "the authoritative server cursor is visible")
+        (assert-equal "Waiting to save"
+                      (property-string renderer pending proto/TextValue)
+                      "pending semantic work is visible")
+        (driver/dispatch-event! application (proto/Press sync-now))
+        (driver/flush! application)
+        (assert-equal [(model/SyncNowEffect 1)]
+                      (:pending-effects (chat/model application))
+                      "Sync now reuses the existing platform sync pump")))))
+
+(deftest pending-sync-patches-preserve-the-current-screen-and-cursor
+  (let [full (assoc (empty-core-projection)
+                    :graph-name (Some "Work")
+                    :sync-connected true
+                    :applied-server-t (Some 42)
+                    :has-pending-semantic-operations true)
+        current (model/update (model/initial) (model/ApplyCoreSnapshot full))
+        patch (assoc (empty-core-projection)
+                     :is-pending-sync-patch true
+                     :has-pending-semantic-operations false
+                     :has-pending-sync-request false)
+        updated (model/update current (model/ApplyCoreSnapshot patch))]
+    (assert-equal (Some "Work") (:selected-graph updated)
+                  "pending transport patches do not clear graph state")
+    (assert-equal (Some 42) (:applied-server-t updated)
+                  "pending transport patches preserve the server cursor")
+    (is (not (:has-pending-semantic-operations updated))
+        "pending transport patches update their owned sync flags")))
 
 (deftest sidebar-state-and-page-selection-are-owned-by-lg
   (let [favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))

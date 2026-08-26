@@ -123,6 +123,8 @@
     (str "{\"id\":" id
          ",\"kind\":\"delete-page\",\"text\":"
          (wire/quoted uuid) "}")
+    (model/SyncNowEffect id)
+    (str "{\"id\":" id ",\"kind\":\"sync-now\",\"text\":\"\"}")
     (model/SearchNodesEffect id query)
     (str "{\"id\":" id
          ",\"kind\":\"search-nodes\",\"text\":"

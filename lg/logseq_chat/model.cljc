@@ -29,6 +29,10 @@
           (graph-password-open false)
           (graph-password "")
           (sync-state OfflineState)
+          (applied-server-t None)
+          (has-pending-semantic-operations false)
+          (has-pending-sync-request false)
+          (sync-details-open false)
           (destination JournalsDestination)
           (sidebar-open false)
           (favorites [])
@@ -121,6 +125,7 @@
     (PresentPageShareEffect id _text _paths) id
     (SetPageFavoriteEffect id _uuid _favorite) id
     (DeletePageEffect id _uuid) id
+    (SyncNowEffect id) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
     (ChangeOutlinerTextEffect id _uuid _title _caret) id
@@ -542,7 +547,13 @@
       current)
 
     (ApplyCoreSnapshot projection)
-    (let [projected-rows
+    (if (:is-pending-sync-patch projection)
+      (assoc current
+             :has-pending-semantic-operations
+             (:has-pending-semantic-operations projection)
+             :has-pending-sync-request
+             (:has-pending-sync-request projection))
+      (let [projected-rows
           (if (:is-outliner-patch projection)
             (if (empty? (:outliner-row-splices projection))
               (merge-row-replacements
@@ -574,6 +585,11 @@
                  :is-graph-unlocked (:is-graph-unlocked projection)
                  :sync-state
                  (if (:sync-connected projection) SyncedState OfflineState)
+                 :applied-server-t (:applied-server-t projection)
+                 :has-pending-semantic-operations
+                 (:has-pending-semantic-operations projection)
+                 :has-pending-sync-request
+                 (:has-pending-sync-request projection)
                  :favorites (:favorites sidebar)
                  :recent-pages (:recent-pages sidebar)
                  :selected-page (:selected-page sidebar)
@@ -614,7 +630,7 @@
                    :graph-password-open true
                    :graph-password ""
                    :effect-error None)
-            searched))))
+            searched)))))
 
     (BeginOutlinerEdit uuid)
     (let [id (:next-effect-id current)]
@@ -976,6 +992,16 @@
 
     CloseConnectionMenu
     (assoc current :connection-menu-open false)
+
+    OpenSyncDetails
+    (assoc current :sync-details-open true)
+
+    CloseSyncDetails
+    (assoc current :sync-details-open false)
+
+    SyncNow
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (SyncNowEffect id)))
 
     ToggleActivePageFavorite
     (match (active-page current)

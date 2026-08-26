@@ -7,7 +7,7 @@ let equal expected actual message =
 
 let () =
   let response =
-    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"syncConnected":true}}|}
+    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"appliedServerT":42,"hasPendingSemanticOperations":true,"pendingSyncRequest":{"id":7},"syncConnected":true}}|}
   in
   match decode_response response with
   | Error message -> failwith message
@@ -15,6 +15,11 @@ let () =
     equal "Work" (Option.value ~default:"" snapshot.graph_name) "graph name";
     equal "project" snapshot.search_query "search query";
     if not snapshot.sync_connected then failwith "sync state was not projected";
+    if snapshot.applied_server_t <> Some 42 then failwith "sync cursor was not projected";
+    if not snapshot.has_pending_semantic_operations
+    then failwith "pending semantic operations were not projected";
+    if not snapshot.has_pending_sync_request
+    then failwith "pending transport request was not projected";
     (match snapshot.search_results with
      | [ page; block ] ->
        equal "page-a" page.uuid "page uuid";
@@ -44,6 +49,15 @@ let () =
     (match snapshot.outliner_autocomplete_candidates with
      | [ { label = "Project Alpha"; value = "page-a" } ] -> ()
      | _ -> failwith "outliner autocomplete candidates were not projected");
+    let pending_patch =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"revision":2,"blocks":[],"pendingSyncRequest":null,"hasPendingSemanticOperations":false,"isPendingSyncPatch":true}}|}
+    in
+    (match pending_patch with
+     | Ok patch ->
+       if not patch.is_pending_sync_patch
+       then failwith "pending sync patch identity was not projected"
+     | Error message -> failwith message);
     let routed =
       decode_response
         {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"base","title":"Base"},"depth":0,"hasChildren":false,"isCollapsed":false}],"nodeRoutes":[{"uuid":"node-a","isTag":false,"isProperty":false,"page":{"uuid":"page-a","title":"Project"},"outlinerState":{"editing":{"uuid":"child","title":"Child","caretUTF16Offset":5},"selectedBlockIds":[],"autocomplete":null},"outlinerAutocompleteCandidates":[],"outlinerRows":[{"block":{"uuid":"child","title":"Child"},"depth":1,"hasChildren":false,"isCollapsed":false}]}],"syncConnected":true}}|}

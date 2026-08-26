@@ -578,6 +578,26 @@ struct LGChatRendererTests {
         #expect(resolution.output == .discard)
     }
 
+    @Test("sync now reuses the platform sync pump")
+    func syncNowEffectsUsePlatformBoundary() async {
+        var syncCount = 0
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            syncNow: { syncCount += 1 }
+        )
+
+        let resolution = await handler.execute(
+            LGChatEffect(id: 45, kind: "sync-now", text: "")
+        )
+
+        #expect(syncCount == 1)
+        #expect(resolution.succeeded)
+        #expect(resolution.output == .discard)
+    }
+
     @Test("composer draft effects persist through the platform boundary")
     func composerDraftEffectsUsePlatformPersistence() async {
         var persistedDrafts: [String] = []

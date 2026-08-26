@@ -126,6 +126,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let presentAttachment: (@MainActor (String) async -> Bool)?
     private let presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)?
     private let presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)?
+    private let syncNow: (@MainActor () -> Void)?
 
     public init(
         saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
@@ -136,7 +137,8 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
         presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)? = nil,
-        presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)? = nil
+        presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)? = nil,
+        syncNow: (@MainActor () -> Void)? = nil
     ) {
         self.saveSettings = saveSettings
         self.persistComposerDraft = persistComposerDraft
@@ -147,6 +149,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         self.presentAttachment = presentAttachment
         self.presentAsset = presentAsset
         self.presentPageShare = presentPageShare
+        self.syncNow = syncNow
     }
 
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
@@ -272,6 +275,20 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                 return LGChatEffectResolution(
                     succeeded: succeeded,
                     message: succeeded ? "" : "Page sharing is unavailable",
+                    output: .discard
+                )
+            case "sync-now":
+                guard let syncNow else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Sync is unavailable",
+                        output: .discard
+                    )
+                }
+                syncNow()
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
                     output: .discard
                 )
             case "open-graph", "unlock-graph", "create-graph", "delete-local-graph":
@@ -664,7 +681,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
         case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
-             "present-attachment", "present-asset", "present-page-share":
+             "present-attachment", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
                 return LGChatEffectResolution(
                     succeeded: false,

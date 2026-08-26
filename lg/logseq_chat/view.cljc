@@ -187,11 +187,36 @@
     None "No graph selected"))
 
 (defn sync-label [current]
+  (if (or (:has-pending-semantic-operations current)
+          (:has-pending-sync-request current))
+    "Syncing"
+    (match (:sync-state current)
+      OfflineState "Offline"
+      SyncingState "Syncing"
+      SyncedState "Up to date"
+      (FailedState reason) (str "Sync failed: " reason))))
+
+(defn sync-accessibility-identifier [current]
   (match (:sync-state current)
-    OfflineState "Offline"
-    SyncingState "Syncing"
-    SyncedState "Up to date"
-    (FailedState reason) (str "Sync failed: " reason)))
+    (FailedState _reason) "sync.failed"
+    OfflineState "sync.disconnected"
+    _ "sync.connected"))
+
+(defn sync-connection-label [current]
+  (match (:sync-state current)
+    OfflineState "Disconnected"
+    _ "Connected"))
+
+(defn sync-pending-label [current]
+  (if (or (:has-pending-semantic-operations current)
+          (:has-pending-sync-request current))
+    "Waiting to save"
+    "Saved"))
+
+(defn sync-cursor-label [current]
+  (match (:applied-server-t current)
+    (Some cursor) (str cursor)
+    None "Unavailable"))
 
 (defn active-page-actions-visible? [current]
   (match (model/active-page current)
@@ -1560,6 +1585,35 @@
       :on-press (fn [_event] (send model/ConfirmDeleteActivePage))}
      "Delete"]]])
 
+(defui sync-status-sheet [model-source send]
+  [:sheet
+   {:text "Sync status"
+    :on-dismiss (fn [_event] (send model/CloseSyncDetails))}
+   [:column
+    [:heading "Sync status"]
+    [:row [:text "Status"] [:text {:value (reactive sync-label model-source)}]]
+    [:row [:text "Graph"] [:text {:value (reactive graph-label model-source)}]]
+    [:row
+     [:text "Connection"]
+     [:text {:value (reactive sync-connection-label model-source)}]]
+    [:row
+     [:text "Local changes"]
+     [:text
+      {:value (reactive sync-pending-label model-source)
+       :accessibility-identifier "sync.pending"}]]
+    [:row
+     [:text "Server cursor"]
+     [:text
+      {:value (reactive sync-cursor-label model-source)
+       :accessibility-identifier "sync.cursor"}]]
+    [:button
+     {:accessibility-identifier "button.sync-now"
+      :on-press (fn [_event] (send model/SyncNow))}
+     "Sync now"]
+    [:button
+     {:on-press (fn [_event] (send model/CloseSyncDetails))}
+     "Done"]]])
+
 (defui chat-main-view [model-source send]
   [:column
    [:if {:test (reactive journal-root-visible? model-source)}
@@ -1569,7 +1623,12 @@
    [:if {:test (reactive journal-root-visible? model-source)}
     [:text {:value (reactive graph-label model-source)}]]
    [:if {:test (reactive journal-root-visible? model-source)}
-    [:text {:value (reactive sync-label model-source)}]]
+    [:button
+     {:text (reactive sync-label model-source)
+      :label (reactive sync-label model-source)
+      :accessibility-identifier-signal
+      (reactive sync-accessibility-identifier model-source)
+      :on-press (fn [_event] (send model/OpenSyncDetails))}]]
    [:if {:test (reactive journal-root-visible? model-source)}
     [:button
      {:accessibility-identifier "button.search"
@@ -1669,7 +1728,9 @@
    [:if {:test (reactive :task-status-picker-open model-source)}
     [task-status-picker-dialog model-source send]]
    [:if {:test (reactive page-deletion-pending? model-source)}
-    [page-delete-dialog send]]])
+    [page-delete-dialog send]]
+   [:if {:test (reactive :sync-details-open model-source)}
+    [sync-status-sheet model-source send]]])
 
 (defui chat-view [model-source send]
   [:drawer
