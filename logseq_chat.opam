@@ -31,7 +31,7 @@ pin-depends: [
   ["lg.dev" "git+https://github.com/tiensonqin/lg.git#e69a52952a93bcc1fa77ccfdef74a21f0d35928f"]
   ["lui.0.1.0" "git+https://github.com/tiensonqin/lui.git#f3e523a7ac4b651676c89eb3ea6e65cc23a39a23"]
   ["signal-lg.0.1.0" "git+https://github.com/tiensonqin/signal-lg.git#ed2e6c68322316d64bf41644480a5f8901940a02"]
-  ["mldoc.dev" "git+https://github.com/logseq/mldoc.git#ed536476975519c0e49d3de00c3a52a5c4775453"]
+  ["mldoc.dev" "git+https://github.com/logseq/mldoc.git#463de0331caf2c55bbc9870c2278fdfea0079ecf"]
   ["ocaml-fsrs.0.1.0-alpha3" "git+https://github.com/chaosarium/ocaml-fsrs.git#65e243d822a5dc18d50300300a2aa629cdd1beaf"]
 ]
 build: [
