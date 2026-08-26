@@ -1,4 +1,5 @@
-(ns logseq-chat.model)
+(ns logseq-chat.model
+  (:require [clojure.string :as string]))
 
 (defn initial []
   (record chat-model
@@ -6,6 +7,12 @@
     (sync-state OfflineState)
     (search-open false)
     (search-query "")
+    (composer-expanded false)
+    (composer-draft "")
+    (composer-submission None)
+    (composer-submission-revision 0)
+    (attachment-picker-open false)
+    (task-status-picker-open false)
     (app-navigation-path [])
     (search-navigation-path [])))
 
@@ -54,6 +61,41 @@
            :search-open false
            :search-query ""
            :search-navigation-path [])
+
+    ExpandComposer
+    (assoc current :composer-expanded true)
+
+    (ChangeComposerDraft draft)
+    (assoc current :composer-draft draft)
+
+    DismissComposer
+    (assoc current :composer-expanded false)
+
+    SendComposer
+    (let [submission (string/trim (:composer-draft current))]
+      (if (empty? submission)
+        current
+        (assoc current
+               :composer-expanded true
+               :composer-draft ""
+               :composer-submission (Some submission)
+               :composer-submission-revision
+               (inc (:composer-submission-revision current)))))
+
+    ClearComposerSubmission
+    (assoc current :composer-submission None)
+
+    OpenAttachmentPicker
+    (assoc current :attachment-picker-open true)
+
+    CloseAttachmentPicker
+    (assoc current :attachment-picker-open false)
+
+    OpenTaskStatusPicker
+    (assoc current :task-status-picker-open true)
+
+    CloseTaskStatusPicker
+    (assoc current :task-status-picker-open false)
 
     (RequestAppNode uuid)
     (assoc current

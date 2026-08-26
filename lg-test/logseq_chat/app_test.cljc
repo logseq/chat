@@ -72,6 +72,10 @@
     (driver/flush! application)
     (let [root (driver/root-node application)
           search-button (nth (apple/children renderer root) 3)]
+      (assert-equal "button.search"
+                    (property-string renderer search-button
+                                     proto/AccessibilityIdentifier)
+                    "search keeps the main-branch accessibility identifier")
       (driver/dispatch-event! application (proto/Press search-button))
       (driver/flush! application)
       (is (:search-open (chat/model application))
@@ -79,6 +83,18 @@
       (let [search-panel (nth (apple/children renderer root) 4)
             search-field (nth (apple/children renderer search-panel) 0)
             close-button (nth (apple/children renderer search-panel) 1)]
+        (assert-equal "screen.search"
+                      (property-string renderer search-panel
+                                       proto/AccessibilityIdentifier)
+                      "search presentation keeps its screen identifier")
+        (assert-equal "field.search"
+                      (property-string renderer search-field
+                                       proto/AccessibilityIdentifier)
+                      "search field keeps its automation identifier")
+        (assert-equal "button.search.close"
+                      (property-string renderer close-button
+                                       proto/AccessibilityIdentifier)
+                      "close keeps its automation identifier")
         (driver/dispatch-event!
          application (proto/TextChanged search-field "project alpha"))
         (driver/flush! application)
@@ -90,8 +106,77 @@
             "close removes the search presentation")
         (assert-equal "" (:search-query (chat/model application))
                       "close clears transient search input")
-        (assert-equal 4 (count (apple/children renderer root))
+        (assert-equal 5 (count (apple/children renderer root))
                       "the retained search subtree is disposed")))))
+
+(deftest composer-matches-the-main-branch-expand-draft-and-send-contract
+  (let [renderer (apple/create)
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          composer (nth (apple/children renderer root) 4)
+          collapsed (nth (apple/children renderer composer) 0)]
+      (assert-equal "button.composer.expand"
+                    (property-string renderer collapsed
+                                     proto/AccessibilityIdentifier)
+                    "collapsed capture keeps its automation identifier")
+      (driver/dispatch-event! application (proto/Press collapsed))
+      (driver/flush! application)
+      (is (:composer-expanded (chat/model application))
+          "capture expands from LG-owned state")
+      (let [expanded (nth (apple/children renderer composer) 0)
+            field (nth (apple/children renderer expanded) 0)
+            controls (nth (apple/children renderer expanded) 1)
+            attachment (nth (apple/children renderer controls) 0)
+            task-status (nth (apple/children renderer controls) 1)
+            send-button (nth (apple/children renderer controls) 2)]
+        (assert-equal "field.composer"
+                      (property-string renderer field
+                                       proto/AccessibilityIdentifier)
+                      "expanded capture keeps its field identifier")
+        (assert-equal "button.attachment"
+                      (property-string renderer attachment
+                                       proto/AccessibilityIdentifier)
+                      "attachment keeps its automation identifier")
+        (assert-equal "button.task-status"
+                      (property-string renderer task-status
+                                       proto/AccessibilityIdentifier)
+                      "task status keeps its automation identifier")
+        (assert-equal "button.send"
+                      (property-string renderer send-button
+                                       proto/AccessibilityIdentifier)
+                      "send keeps its automation identifier")
+        (driver/dispatch-event!
+         application (proto/TextChanged field "  Project note  "))
+        (driver/flush! application)
+        (assert-equal "  Project note  "
+                      (:composer-draft (chat/model application))
+                      "draft text is model-owned without eager trimming")
+        (driver/dispatch-event! application (proto/Press send-button))
+        (driver/flush! application)
+        (assert-equal "" (:composer-draft (chat/model application))
+                      "successful send clears the draft")
+        (assert-equal (Some "Project note")
+                      (:composer-submission (chat/model application))
+                      "send publishes the trimmed capture command")
+        (assert-equal 1
+                      (:composer-submission-revision (chat/model application))
+                      "send advances the command revision exactly once")
+        (is (:composer-expanded (chat/model application))
+            "send keeps the composer expanded like main")))))
+
+(deftest composer-dismissal-preserves-an-unsent-draft
+  (let [expanded (model/update (model/initial) model/ExpandComposer)
+        drafted (model/update expanded (model/ChangeComposerDraft "Later"))
+        dismissed (model/update drafted model/DismissComposer)
+        empty-send (model/update dismissed model/SendComposer)]
+    (is (not (:composer-expanded dismissed))
+        "dismiss collapses composer state")
+    (assert-equal "Later" (:composer-draft dismissed)
+                  "dismiss preserves the persisted draft")
+    (assert-equal 1 (:composer-submission-revision empty-send)
+                  "a preserved non-empty draft can still be submitted")))
 
 (deftest app-navigation-matches-the-main-branch-path-contract
   (let [initial (model/initial)
