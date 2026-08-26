@@ -73,6 +73,22 @@ public final class LogseqChatCore {
         #endif
     }
 
+    public nonisolated static func callAsync(_ request: LogseqChatRPCRequest) async -> String {
+        guard let data = try? JSONEncoder().encode(request),
+              let requestJSON = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        #if !SKIP
+        return await LogseqChatCoreExecutor.shared.call(
+            { request in LogseqChatCore.shared.logseq_chat_call(request) },
+            requestJSON: requestJSON,
+            priority: .interaction
+        )
+        #else
+        return LogseqChatCore.shared.logseq_chat_call(requestJSON)
+        #endif
+    }
+
     /* SKIP EXTERN */ public func logseq_chat_lui_initialize(
         _ platformCode: Int,
         _ hostCode: Int
@@ -180,6 +196,30 @@ public final class LogseqChatCore {
     /* SKIP EXTERN */ public func logseq_chat_lui_dispose() -> String {
         #if LOGSEQ_CHAT_CORE
         return String(cString: LogseqChatCoreABI.logseq_chat_lui_dispose())
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_take_effect() -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_take_effect())
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_resolve_effect(
+        _ effectID: Int,
+        _ succeeded: Bool,
+        _ message: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_resolve_effect(
+            Int64(effectID),
+            succeeded ? 1 : 0,
+            message
+        ))
         #else
         return ""
         #endif
@@ -474,19 +514,7 @@ private struct DeletePagePayload: Encodable {
     }
 
     public nonisolated static func callForLaunch(_ request: LogseqChatRPCRequest) async -> String {
-        guard let data = try? JSONEncoder().encode(request),
-              let requestJSON = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-        #if !SKIP
-        return await LogseqChatCoreExecutor.shared.call(
-            { request in LogseqChatCore.shared.logseq_chat_call(request) },
-            requestJSON: requestJSON,
-            priority: .interaction
-        )
-        #else
-        return LogseqChatCore.shared.logseq_chat_call(requestJSON)
-        #endif
+        await LogseqChatCore.callAsync(request)
     }
 
     public func applyLaunchResponse(

@@ -157,12 +157,12 @@
         (driver/flush! application)
         (assert-equal "" (:composer-draft (chat/model application))
                       "successful send clears the draft")
-        (assert-equal (Some "Project note")
-                      (:composer-submission (chat/model application))
-                      "send publishes the trimmed capture command")
-        (assert-equal 1
-                      (:composer-submission-revision (chat/model application))
-                      "send advances the command revision exactly once")
+        (assert-equal [(model/SendCaptureEffect 1 "Project note")]
+                      (:pending-effects (chat/model application))
+                      "send publishes one typed capture effect")
+        (assert-equal 2
+                      (:next-effect-id (chat/model application))
+                      "send advances the stable effect identifier exactly once")
         (is (:composer-expanded (chat/model application))
             "send keeps the composer expanded like main")))))
 
@@ -175,8 +175,46 @@
         "dismiss collapses composer state")
     (assert-equal "Later" (:composer-draft dismissed)
                   "dismiss preserves the persisted draft")
-    (assert-equal 1 (:composer-submission-revision empty-send)
+    (assert-equal [(model/SendCaptureEffect 1 "Later")]
+                  (:pending-effects empty-send)
                   "a preserved non-empty draft can still be submitted")))
+
+(deftest native-bridge-drains-and-resolves-typed-effects-once
+  (bridge/initialize 2 1)
+  (let [application (bridge/app)]
+    (driver/send! application model/ExpandComposer)
+    (driver/send! application (model/ChangeComposerDraft "Project \"alpha\"\nNext"))
+    (driver/send! application model/SendComposer)
+    (driver/flush! application)
+    (assert-equal
+     "{\"id\":1,\"kind\":\"send-capture\",\"text\":\"Project \\\"alpha\\\"\\nNext\"}"
+     (bridge/take-effect)
+     "the bridge emits escaped JSON for the host executor")
+    (assert-equal "" (bridge/take-effect)
+                  "an effect is never dispatched to the host twice")
+    (assert-equal [1] (:in-flight-effect-ids (chat/model application))
+                  "dequeued effects remain tracked until resolution")
+    (bridge/resolve-effect 1 false "Network unavailable")
+    (assert-equal [] (:in-flight-effect-ids (chat/model application))
+                  "resolution retires the matching in-flight effect")
+    (assert-equal (Some "Network unavailable")
+                  (:effect-error (chat/model application))
+                  "effect failures return to LG-owned application state")
+    (bridge/dispose)))
+
+(deftest successful-effect-resolution-preserves-the-core-response-for-projection
+  (let [drafted (model/update (model/initial)
+                              (model/ChangeComposerDraft "Project note"))
+        queued (model/update drafted model/SendComposer)
+        dequeued (model/update queued (model/DequeueEffect 1))
+        resolved (model/update dequeued
+                               (model/ResolveEffect 1 true "{\"ok\":true}"))]
+    (assert-equal [] (:in-flight-effect-ids resolved)
+                  "success retires the in-flight effect")
+    (assert-equal None (:effect-error resolved)
+                  "success clears the visible effect failure")
+    (assert-equal (Some "{\"ok\":true}") (:last-core-response resolved)
+                  "the LG projection boundary receives the core response")))
 
 (deftest app-navigation-matches-the-main-branch-path-contract
   (let [initial (model/initial)

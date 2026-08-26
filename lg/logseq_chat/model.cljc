@@ -9,8 +9,11 @@
     (search-query "")
     (composer-expanded false)
     (composer-draft "")
-    (composer-submission None)
-    (composer-submission-revision 0)
+    (pending-effects [])
+    (in-flight-effect-ids [])
+    (next-effect-id 1)
+    (effect-error None)
+    (last-core-response None)
     (attachment-picker-open false)
     (task-status-picker-open false)
     (app-navigation-path [])
@@ -35,6 +38,38 @@
   (if (empty? path)
     path
     (subvec path 0 (dec (count path)))))
+
+(defn effect-id [effect]
+  (match effect
+    (SendCaptureEffect id _text) id))
+
+(defn remove-int [values target]
+  (loop [index 0
+         result []]
+    (if (= index (count values))
+      result
+      (let [value (nth values index)]
+        (recur (inc index)
+               (if (= value target) result (conj result value)))))))
+
+(defn contains-int? [values target]
+  (loop [index 0]
+    (if (= index (count values))
+      false
+      (if (= (nth values index) target)
+        true
+        (recur (inc index))))))
+
+(defn remove-effect [effects target]
+  (loop [index 0
+         result []]
+    (if (= index (count effects))
+      result
+      (let [effect (nth effects index)]
+        (recur (inc index)
+               (if (= (effect-id effect) target)
+                 result
+                 (conj result effect)))))))
 
 (defn update [current action]
   (match action
@@ -75,15 +110,34 @@
     (let [submission (string/trim (:composer-draft current))]
       (if (empty? submission)
         current
-        (assoc current
-               :composer-expanded true
-               :composer-draft ""
-               :composer-submission (Some submission)
-               :composer-submission-revision
-               (inc (:composer-submission-revision current)))))
+        (let [id (:next-effect-id current)]
+          (assoc current
+                 :composer-expanded true
+                 :composer-draft ""
+                 :pending-effects
+                 (conj (:pending-effects current)
+                       (SendCaptureEffect id submission))
+                 :next-effect-id (inc id)
+                 :effect-error None))))
 
-    ClearComposerSubmission
-    (assoc current :composer-submission None)
+    (DequeueEffect id)
+    (let [pending (:pending-effects current)]
+      (if (= pending (remove-effect pending id))
+        current
+        (assoc current
+               :pending-effects (remove-effect pending id)
+               :in-flight-effect-ids
+               (conj (:in-flight-effect-ids current) id))))
+
+    (ResolveEffect id succeeded message)
+    (if (contains-int? (:in-flight-effect-ids current) id)
+      (assoc current
+             :in-flight-effect-ids
+             (remove-int (:in-flight-effect-ids current) id)
+             :effect-error (if succeeded None (Some message))
+             :last-core-response
+             (if succeeded (Some message) (:last-core-response current)))
+      current)
 
     OpenAttachmentPicker
     (assoc current :attachment-picker-open true)

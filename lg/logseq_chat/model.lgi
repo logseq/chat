@@ -9,6 +9,9 @@
 (type-variant navigation-route
   (NodeRoute :string))
 
+(type-variant chat-effect
+  (SendCaptureEffect :int :string))
+
 (type-record chat-model
   (selected-graph :option<string>)
   (sync-state :sync-state)
@@ -16,8 +19,11 @@
   (search-query :string)
   (composer-expanded :bool)
   (composer-draft :string)
-  (composer-submission :option<string>)
-  (composer-submission-revision :int)
+  (pending-effects :vector<chat-effect>)
+  (in-flight-effect-ids :vector<int>)
+  (next-effect-id :int)
+  (effect-error :option<string>)
+  (last-core-response :option<string>)
   (attachment-picker-open :bool)
   (task-status-picker-open :bool)
   (app-navigation-path :vector<navigation-route>)
@@ -35,7 +41,8 @@
   (ChangeComposerDraft :string)
   (DismissComposer)
   (SendComposer)
-  (ClearComposerSubmission)
+  (DequeueEffect :int)
+  (ResolveEffect :int :bool :string)
   (OpenAttachmentPicker)
   (CloseAttachmentPicker)
   (OpenTaskStatusPicker)
@@ -54,4 +61,9 @@
  :fn<vector<navigation-route>;navigation-route;bool;vector<navigation-route>>)
 (signature logseq-chat.model/pop-route
  :fn<vector<navigation-route>;vector<navigation-route>>)
+(signature logseq-chat.model/effect-id :fn<chat-effect;int>)
+(signature logseq-chat.model/remove-int :fn<vector<int>;int;vector<int>>)
+(signature logseq-chat.model/contains-int? :fn<vector<int>;int;bool>)
+(signature logseq-chat.model/remove-effect
+ :fn<vector<chat-effect>;int;vector<chat-effect>>)
 (signature logseq-chat.model/update :fn<chat-model;chat-action;chat-model>)

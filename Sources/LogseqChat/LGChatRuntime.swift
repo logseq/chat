@@ -15,6 +15,90 @@ public protocol LGChatNativeCalling {
     func dismiss(node: Int) -> String
     func doublePress(node: Int) -> String
     func dispose() -> String
+    func takeEffect() -> String
+    func resolveEffect(id: Int, succeeded: Bool, message: String) -> String
+}
+
+public struct LGChatEffect: Decodable, Equatable, Sendable {
+    public let id: Int
+    public let kind: String
+    public let text: String
+}
+
+public struct LGChatEffectResolution: Equatable, Sendable {
+    public let succeeded: Bool
+    public let message: String
+
+    public init(succeeded: Bool, message: String) {
+        self.succeeded = succeeded
+        self.message = message
+    }
+}
+
+@MainActor
+public protocol LGChatEffectExecuting {
+    func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution
+}
+
+private struct LGSendCapturePayload: Encodable {
+    let text: String
+    let uuid: String
+    let now: Int64
+}
+
+private struct LGCoreEffectResponse: Decodable {
+    let ok: Bool
+    let error: LogseqChatCoreError?
+}
+
+@MainActor
+public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
+    public init() {}
+
+    public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
+        guard effect.kind == "send-capture" else {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: "Unsupported LG effect: \(effect.kind)"
+            )
+        }
+
+        do {
+            let payload = LGSendCapturePayload(
+                text: effect.text,
+                uuid: UUID().uuidString.lowercased(),
+                now: Int64(Date().timeIntervalSince1970 * 1_000)
+            )
+            let payloadData = try JSONEncoder().encode(payload)
+            guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "Could not encode the capture payload as UTF-8"
+                )
+            }
+            let request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "send", payload: payloadJSON)
+            )
+            let responseJSON = await LogseqChatCore.callAsync(request)
+            let response = try JSONDecoder().decode(
+                LGCoreEffectResponse.self,
+                from: Data(responseJSON.utf8)
+            )
+            if response.ok {
+                return LGChatEffectResolution(succeeded: true, message: responseJSON)
+            }
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: response.error?.message ?? "The OCaml core rejected the effect"
+            )
+        } catch {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: String(describing: error)
+            )
+        }
+    }
 }
 
 @MainActor
@@ -47,6 +131,10 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
         core.logseq_chat_lui_double_press(node)
     }
     public func dispose() -> String { core.logseq_chat_lui_dispose() }
+    public func takeEffect() -> String { core.logseq_chat_lui_take_effect() }
+    public func resolveEffect(id: Int, succeeded: Bool, message: String) -> String {
+        core.logseq_chat_lui_resolve_effect(id, succeeded, message)
+    }
 }
 
 @MainActor
@@ -58,8 +146,18 @@ public final class LGChatRuntime {
     @ObservationIgnored
     private let native: any LGChatNativeCalling
 
-    public init(native: any LGChatNativeCalling) {
+    @ObservationIgnored
+    private let effectExecutor: any LGChatEffectExecuting
+
+    @ObservationIgnored
+    private var isDrainingEffects = false
+
+    public init(
+        native: any LGChatNativeCalling,
+        effectExecutor: any LGChatEffectExecuting = LGChatCoreEffectExecutor()
+    ) {
         self.native = native
+        self.effectExecutor = effectExecutor
         renderer = LGChatRenderer()
         renderer.onEvent = { [weak self] event in
             self?.receive(event)
@@ -68,6 +166,7 @@ public final class LGChatRuntime {
 
     public func start(platformCode: Int, hostCode: Int = 1) throws {
         try apply(native.initialize(platformCode: platformCode, hostCode: hostCode))
+        scheduleEffectDrain()
     }
 
     public func stop() {
@@ -109,9 +208,54 @@ public final class LGChatRuntime {
 
         do {
             try apply(patch)
+            scheduleEffectDrain()
         } catch {
             lastError = String(describing: error)
         }
+    }
+
+    private func scheduleEffectDrain() {
+        guard !isDrainingEffects else { return }
+        isDrainingEffects = true
+        Task { [weak self] in
+            await self?.drainEffects()
+        }
+    }
+
+    private func drainEffects() async {
+        defer { isDrainingEffects = false }
+        while true {
+            let encoded = native.takeEffect()
+            guard !encoded.isEmpty else { return }
+
+            let effect: LGChatEffect
+            do {
+                effect = try JSONDecoder().decode(
+                    LGChatEffect.self,
+                    from: Data(encoded.utf8)
+                )
+            } catch {
+                lastError = "Invalid LG effect: \(String(describing: error))"
+                return
+            }
+
+            let resolution = await effectExecutor.execute(effect)
+            do {
+                try apply(native.resolveEffect(
+                    id: effect.id,
+                    succeeded: resolution.succeeded,
+                    message: resolution.message
+                ))
+                lastError = resolution.succeeded ? nil : resolution.message
+            } catch {
+                lastError = String(describing: error)
+                return
+            }
+        }
+    }
+
+    func drainEffectsForTesting() async {
+        await drainEffects()
     }
 
     private func apply(_ patch: String) throws {

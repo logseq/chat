@@ -20,6 +20,9 @@ const char *logseq_chat_lui_value_changed(int64_t node, double value);
 const char *logseq_chat_lui_dismiss(int64_t node);
 const char *logseq_chat_lui_double_press(int64_t node);
 const char *logseq_chat_lui_dispose(void);
+const char *logseq_chat_lui_take_effect(void);
+const char *logseq_chat_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
+                                           const char *message);
 int32_t logseq_chat_gunzip_file(const char *input_path, const char *output_path);
 
 #ifdef __cplusplus

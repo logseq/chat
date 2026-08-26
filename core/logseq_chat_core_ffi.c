@@ -217,6 +217,28 @@ static const char *call_lui_double(int64_t node, double number) {
   CAMLreturnT(const char *, response);
 }
 
+static const char *call_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
+                                           const char *message) {
+  const char *response;
+  CAMLparam0();
+  CAMLlocal2(message_value, result);
+  const value *callback = caml_named_value("logseq_chat_lui_resolve_effect");
+  if (callback == NULL) {
+    response = missing_lui_callback();
+  } else {
+    message_value = caml_copy_string(message == NULL ? "" : message);
+    result = caml_callback3_exn(
+      *callback,
+      Val_long(effect_id),
+      Val_bool(succeeded != 0),
+      message_value);
+    response = Is_exception_result(result)
+      ? missing_lui_callback()
+      : replace_response(String_val(result));
+  }
+  CAMLreturnT(const char *, response);
+}
+
 #define LUI_RUNTIME_CALL(expression) \
   int registration = acquire_ocaml_runtime(); \
   if (registration < 0) { return missing_lui_callback(); } \
@@ -266,4 +288,13 @@ const char *logseq_chat_lui_double_press(int64_t node) {
 
 const char *logseq_chat_lui_dispose(void) {
   LUI_RUNTIME_CALL(call_lui0("logseq_chat_lui_dispose"));
+}
+
+const char *logseq_chat_lui_take_effect(void) {
+  LUI_RUNTIME_CALL(call_lui0("logseq_chat_lui_take_effect"));
+}
+
+const char *logseq_chat_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
+                                           const char *message) {
+  LUI_RUNTIME_CALL(call_lui_resolve_effect(effect_id, succeeded, message));
 }

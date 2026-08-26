@@ -2,7 +2,9 @@
   (:require [lui.app :as driver]
             [lui.backend.apple :as apple]
             [lui.protocol :as proto]
+            [lui.wire :as wire]
             [logseq-chat.app :as chat]
+            [logseq-chat.model :as model]
             [ocaml.Callback :as callback]))
 
 (def latest-patch (atom ""))
@@ -29,6 +31,30 @@
   (driver/dispatch-event! (app) event)
   (driver/flush! (app))
   (deref latest-patch))
+
+(defn flush-action! [action]
+  (reset! latest-patch "")
+  (driver/send! (app) action)
+  (driver/flush! (app))
+  (deref latest-patch))
+
+(defn encode-effect [effect]
+  (match effect
+    (model/SendCaptureEffect id text)
+    (str "{\"id\":" id
+         ",\"kind\":\"send-capture\",\"text\":"
+         (wire/quoted text) "}")))
+
+(defn take-effect []
+  (let [effects (:pending-effects (chat/model (app)))]
+    (if (empty? effects)
+      ""
+      (let [effect (nth effects 0)]
+        (flush-action! (model/DequeueEffect (model/effect-id effect)))
+        (encode-effect effect)))))
+
+(defn resolve-effect [id succeeded message]
+  (flush-action! (model/ResolveEffect id succeeded message)))
 
 (defn initialize [platform-code _host-code]
   (reset! latest-patch "")
@@ -76,3 +102,5 @@
 (callback/register "logseq_chat_lui_double_press" double-press)
 (callback/register "logseq_chat_lui_dispose" dispose)
 (callback/register "logseq_chat_lui_root_node" root-node)
+(callback/register "logseq_chat_lui_take_effect" take-effect)
+(callback/register "logseq_chat_lui_resolve_effect" resolve-effect)

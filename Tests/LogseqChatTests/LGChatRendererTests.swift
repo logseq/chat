@@ -60,12 +60,51 @@ struct LGChatRendererTests {
         #expect(native.pressedNodes == [7])
         #expect(runtime.renderer.rootID == 1)
     }
+
+    @Test("executes and resolves typed LG effects")
+    func executesTypedEffects() async {
+        let native = LGChatNativeRuntimeProbe()
+        native.effects = [
+            "{\"id\":7,\"kind\":\"send-capture\",\"text\":\"Project note\"}"
+        ]
+        let executor = LGChatEffectExecutorProbe()
+        let runtime = LGChatRuntime(native: native, effectExecutor: executor)
+
+        await runtime.drainEffectsForTesting()
+
+        #expect(executor.effects == [
+            LGChatEffect(id: 7, kind: "send-capture", text: "Project note")
+        ])
+        #expect(native.resolutions == [
+            LGChatEffectResolutionProbe(id: 7, succeeded: true, message: "core response")
+        ])
+        #expect(native.effects.isEmpty)
+        #expect(runtime.lastError == nil)
+    }
+}
+
+private struct LGChatEffectResolutionProbe: Equatable {
+    let id: Int
+    let succeeded: Bool
+    let message: String
+}
+
+@MainActor
+private final class LGChatEffectExecutorProbe: LGChatEffectExecuting {
+    var effects: [LGChatEffect] = []
+
+    func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
+        effects.append(effect)
+        return LGChatEffectResolution(succeeded: true, message: "core response")
+    }
 }
 
 @MainActor
 private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var startedPlatforms: [Int] = []
     var pressedNodes: [Int] = []
+    var effects: [String] = []
+    var resolutions: [LGChatEffectResolutionProbe] = []
 
     func initialize(platformCode: Int, hostCode: Int) -> String {
         startedPlatforms.append(platformCode)
@@ -96,4 +135,15 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     func dismiss(node: Int) -> String { "" }
     func doublePress(node: Int) -> String { "" }
     func dispose() -> String { "" }
+    func takeEffect() -> String {
+        effects.isEmpty ? "" : effects.removeFirst()
+    }
+    func resolveEffect(id: Int, succeeded: Bool, message: String) -> String {
+        resolutions.append(LGChatEffectResolutionProbe(
+            id: id,
+            succeeded: succeeded,
+            message: message
+        ))
+        return ""
+    }
 }
