@@ -1,0 +1,20 @@
+(ns logseq-chat.native-bridge)
+
+(signature logseq-chat.native-bridge/send-patch! :fn<string;bool>)
+(signature logseq-chat.native-bridge/operating-system
+  :fn<int;operating-system>)
+(signature logseq-chat.native-bridge/app
+  :fn<reducer-app<chat-model;chat-action>>)
+(signature logseq-chat.native-bridge/flush-event! :fn<event;string>)
+(signature logseq-chat.native-bridge/initialize :fn<int;int;string>)
+(signature logseq-chat.native-bridge/press :fn<int;string>)
+(signature logseq-chat.native-bridge/hold :fn<int;string>)
+(signature logseq-chat.native-bridge/text-changed :fn<int;string;string>)
+(signature logseq-chat.native-bridge/submit :fn<int;string>)
+(signature logseq-chat.native-bridge/toggle-changed :fn<int;bool;string>)
+(signature logseq-chat.native-bridge/change :fn<int;string>)
+(signature logseq-chat.native-bridge/value-changed :fn<int;float;string>)
+(signature logseq-chat.native-bridge/dismiss :fn<int;string>)
+(signature logseq-chat.native-bridge/double-press :fn<int;string>)
+(signature logseq-chat.native-bridge/dispose :fn<string>)
+(signature logseq-chat.native-bridge/root-node :fn<int>)

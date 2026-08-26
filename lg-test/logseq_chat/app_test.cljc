@@ -4,6 +4,7 @@
             [lui.backend.apple :as apple]
             [lui.protocol :as proto :refer [StringValue]]
             [logseq-chat.app :as chat]
+            [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]))
 
 (defmacro assert-equal [expected actual message]
@@ -151,3 +152,9 @@
                   "closing search preserves the app navigation history")
     (assert-equal "" (:search-query closed-model)
                   "closing search clears its transient query")))
+
+(deftest native-bridge-returns-initial-and-disposal-patch-batches
+  (let [initial-patch (bridge/initialize 2 1)]
+    (is (not (= "" initial-patch)))
+    (is (> (bridge/root-node) 0))
+    (is (not (= "" (bridge/dispose))))))

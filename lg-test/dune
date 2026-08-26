@@ -24,6 +24,8 @@
    ../lg/logseq_chat/view.cljc
    ../lg/logseq_chat/app.lgi
    ../lg/logseq_chat/app.cljc
+   ../lg/logseq_chat/native_bridge.lgi
+   ../lg/logseq_chat/native_bridge.cljc
    %{lib:lg-test.sources:test.cljc}
    %{lib:lg-test.sources:test_native.cljc}
    logseq_chat
