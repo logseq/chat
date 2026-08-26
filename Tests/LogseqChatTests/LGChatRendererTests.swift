@@ -262,6 +262,60 @@ struct LGChatRendererTests {
         #expect(platformCommands.batches[0].graphName == "Work")
         #expect(platformCommands.batches[0].commands.map(\.type) == ["setClipboardText"])
     }
+
+    @Test("routes core commands into platform services and presentation intents")
+    func routesPlatformCommands() {
+        var clipboardValues: [String] = []
+        var hapticStyles: [String?] = []
+        var presentations: [LGChatPlatformPresentation] = []
+        let router = LGChatPlatformCommandRouter(
+            setClipboardText: { clipboardValues.append($0) },
+            performHaptic: { hapticStyles.append($0) },
+            present: { presentations.append($0) }
+        )
+
+        router.handle(LGChatPlatformCommandBatch(
+            revision: 8,
+            graphName: "Work",
+            commands: [
+                LogseqOutlinerCommand(
+                    type: "setClipboardReferences",
+                    style: nil,
+                    uuid: nil,
+                    uuids: ["a", "b"],
+                    text: nil
+                ),
+                LogseqOutlinerCommand(
+                    type: "setClipboardURLs",
+                    style: nil,
+                    uuid: nil,
+                    uuids: ["a"],
+                    text: nil
+                ),
+                LogseqOutlinerCommand(
+                    type: "haptic",
+                    style: "selection",
+                    uuid: nil,
+                    uuids: nil,
+                    text: nil
+                ),
+                LogseqOutlinerCommand(
+                    type: "pickAttachment",
+                    style: nil,
+                    uuid: "target",
+                    uuids: nil,
+                    text: nil
+                ),
+            ]
+        ))
+
+        #expect(clipboardValues == [
+            "[[a]]\n[[b]]",
+            "logseq://graph/Work?block-id=a",
+        ])
+        #expect(hapticStyles == ["selection"])
+        #expect(presentations == [.pickAttachment(blockID: "target")])
+    }
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {

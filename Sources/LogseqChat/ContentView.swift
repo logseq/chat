@@ -2150,63 +2150,58 @@ struct ContentView: View {
     }
 
     private func performOutlinerPlatformCommands() {
-        for command in store.snapshot.outlinerCommands {
-            switch command.type {
-            case "haptic":
+        let router = LGChatPlatformCommandRouter(
+            setClipboardText: { text in
                 #if !SKIP && os(iOS)
-                if command.style == "selection" {
+                UIPasteboard.general.string = text
+                #endif
+            },
+            performHaptic: { style in
+                #if !SKIP && os(iOS)
+                if style == "selection" {
                     UISelectionFeedbackGenerator().selectionChanged()
                 } else {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
                 #endif
-            case "confirmDelete":
-                let ids = Set(command.uuids ?? [])
-                let blocks = activeNodeProjection?.blocks ?? store.snapshot.blocks
-                blocksPendingDeletion = blocks.filter { ids.contains($0.uuid) }
-                outlinerDeleteConfirmationPending = !blocksPendingDeletion.isEmpty
-            case "setClipboardText":
-                #if !SKIP && os(iOS)
-                UIPasteboard.general.string = command.text
-                #endif
-            case "setClipboardReferences":
-                #if !SKIP && os(iOS)
-                UIPasteboard.general.string = OutlinerClipboardPolicy.nodeReferences(
-                    command.uuids ?? []
-                )
-                #endif
-            case "setClipboardURLs":
-                #if !SKIP && os(iOS)
-                UIPasteboard.general.string = (command.uuids ?? []).map {
-                    "logseq://graph/\(graphSubtitle)?block-id=\($0)"
-                }.joined(separator: "\n")
-                #endif
-            case "pickAttachment":
-                pendingAssetTargetBlockID = command.uuid
-                fileImporterPresented = true
-            case "takePhoto":
-                #if !SKIP && os(iOS)
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    pendingAssetTargetBlockID = command.uuid
-                    cameraPresented = true
+            },
+            present: { presentation in
+                switch presentation {
+                case let .confirmDelete(blockIDs):
+                    let ids = Set(blockIDs)
+                    let blocks = activeNodeProjection?.blocks ?? store.snapshot.blocks
+                    blocksPendingDeletion = blocks.filter { ids.contains($0.uuid) }
+                    outlinerDeleteConfirmationPending = !blocksPendingDeletion.isEmpty
+                case let .pickAttachment(blockID):
+                    pendingAssetTargetBlockID = blockID
+                    fileImporterPresented = true
+                case let .takePhoto(blockID):
+                    #if !SKIP && os(iOS)
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        pendingAssetTargetBlockID = blockID
+                        cameraPresented = true
+                    }
+                    #endif
+                case let .recordAudio(blockID):
+                    #if SKIP
+                    androidAudioRecorderTargetBlockID = blockID
+                    androidAudioRecorderPresented = true
+                    #else
+                    #if !SKIP && os(iOS)
+                    audioRecorderTargetBlockID = blockID
+                    audioRecorderPresented = true
+                    #endif
+                    #endif
+                case .focusBlock:
+                    break
                 }
-                #endif
-            case "recordAudio":
-                #if SKIP
-                androidAudioRecorderTargetBlockID = command.uuid
-                androidAudioRecorderPresented = true
-                #else
-                #if !SKIP && os(iOS)
-                audioRecorderTargetBlockID = command.uuid
-                audioRecorderPresented = true
-                #endif
-                #endif
-            case "focusBlock":
-                break
-            default:
-                break
             }
-        }
+        )
+        router.handle(LGChatPlatformCommandBatch(
+            revision: store.snapshot.outlinerCommandRevision,
+            graphName: graphSubtitle,
+            commands: store.snapshot.outlinerCommands
+        ))
     }
 
     private func editBlock(_ block: LogseqBlock) {

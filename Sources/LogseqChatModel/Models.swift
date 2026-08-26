@@ -558,6 +558,20 @@ public struct LogseqOutlinerCommand: Codable, Equatable, Sendable {
     public let uuid: String?
     public let uuids: [String]?
     public let text: String?
+
+    public init(
+        type: String,
+        style: String? = nil,
+        uuid: String? = nil,
+        uuids: [String]? = nil,
+        text: String? = nil
+    ) {
+        self.type = type
+        self.style = style
+        self.uuid = uuid
+        self.uuids = uuids
+        self.text = text
+    }
 }
 
 public struct LogseqOutlinerEvent: Encodable, Sendable {
