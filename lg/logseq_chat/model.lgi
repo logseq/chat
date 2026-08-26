@@ -91,6 +91,23 @@
   (delete-count :int)
   (rows :vector<outline-row>))
 
+(type-record core-projection
+  (graph-name :option<string>)
+  (sidebar :sidebar-projection)
+  (flashcards :vector<flashcard>)
+  (sync-connected :bool)
+  (search-query :string)
+  (search-results :vector<search-hit>)
+  (node-routes :vector<node-projection>)
+  (outliner-editing :option<outliner-editing>)
+  (outliner-autocomplete :option<outliner-autocomplete>)
+  (outliner-autocomplete-candidates
+   :vector<outliner-autocomplete-candidate>)
+  (outliner-selected-block-ids :vector<string>)
+  (outliner-rows :vector<outline-row>)
+  (is-outliner-patch :bool)
+  (outliner-row-splices :vector<outline-row-splice>))
+
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
   (SearchNodesEffect :int :string)
@@ -159,14 +176,7 @@
   (OpenSearch)
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
-  (ApplyCoreSnapshot :option<string> :sidebar-projection :vector<flashcard>
-                     :bool :string :vector<search-hit>
-                     :vector<node-projection>
-                     :option<outliner-editing> :option<outliner-autocomplete>
-                     :vector<outliner-autocomplete-candidate>
-                     :vector<string>
-                     :vector<outline-row> :bool
-                     :vector<outline-row-splice>)
+  (ApplyCoreSnapshot :core-projection)
   (BeginOutlinerEdit :string)
   (ChangeOutlinerText :string :string :int)
   (ReturnOutlinerEditor :string :string :int)

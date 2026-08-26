@@ -51,6 +51,28 @@
     (related-rows [])
     (linked-reference-rows [])))
 
+(defn apply-core-snapshot
+  [graph-name sidebar flashcards sync-connected search-query search-results
+   node-routes outliner-editing outliner-autocomplete
+   outliner-autocomplete-candidates outliner-selected-block-ids outliner-rows
+   is-outliner-patch outliner-row-splices]
+  (model/ApplyCoreSnapshot
+   (record model/core-projection
+     (graph-name graph-name)
+     (sidebar sidebar)
+     (flashcards flashcards)
+     (sync-connected sync-connected)
+     (search-query search-query)
+     (search-results search-results)
+     (node-routes node-routes)
+     (outliner-editing outliner-editing)
+     (outliner-autocomplete outliner-autocomplete)
+     (outliner-autocomplete-candidates outliner-autocomplete-candidates)
+     (outliner-selected-block-ids outliner-selected-block-ids)
+     (outliner-rows outliner-rows)
+     (is-outliner-patch is-outliner-patch)
+     (outliner-row-splices outliner-row-splices))))
+
 (defn flashcard-answer [uuid index text]
   (record model/flashcard-answer-row
     (uuid uuid)
@@ -135,7 +157,7 @@
         projected
         (model/update
          opened
-         (model/ApplyCoreSnapshot
+         (apply-core-snapshot
           None
           (record model/sidebar-projection
             (favorites [favorite])
@@ -179,7 +201,7 @@
           (linked-reference-rows []))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None sidebar [] false "" [] []
+                  (apply-core-snapshot None sidebar [] false "" [] []
                                            None None [] [] [] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -239,7 +261,7 @@
           (linked-reference-rows []))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None sidebar [] false "" [] []
+                  (apply-core-snapshot None sidebar [] false "" [] []
                                            None None [] [] [] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
@@ -262,7 +284,7 @@
         projected
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [card]
+         (apply-core-snapshot None (empty-sidebar-projection) [card]
                                   false "" [] [] None None [] [] [] false []))
         shown (model/update projected model/ShowFlashcards)
         cloze (model/update shown model/RevealFlashcardCloze)
@@ -295,7 +317,7 @@
         projected
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [first-card]
+         (apply-core-snapshot None (empty-sidebar-projection) [first-card]
                                   false "" [] [] None None [] [] [] false []))
         revealed
         (model/update
@@ -304,12 +326,12 @@
         refreshed
         (model/update
          revealed
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [same-card]
+         (apply-core-snapshot None (empty-sidebar-projection) [same-card]
                                   false "" [] [] None None [] [] [] false []))
         advanced
         (model/update
          refreshed
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [next-card]
+         (apply-core-snapshot None (empty-sidebar-projection) [next-card]
                                   false "" [] [] None None [] [] [] false []))]
     (is (:flashcard-cloze-revealed refreshed)
         "a refresh of the same card retains its reveal state")
@@ -334,7 +356,7 @@
     (driver/start! application)
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None (empty-sidebar-projection) [card]
+     (apply-core-snapshot None (empty-sidebar-projection) [card]
                               false "" [] [] None None [] [] [] false []))
     (driver/send! application model/ShowFlashcards)
     (driver/flush! application)
@@ -383,7 +405,7 @@
           "an empty due queue preserves the existing empty state"))
     (driver/send!
      application
-     (model/ApplyCoreSnapshot
+     (apply-core-snapshot
       None (empty-sidebar-projection)
       [(flashcard "card-a" "Plain question" "Plain question" [] false)]
       false "" [] [] None None [] [] [] false []))
@@ -669,7 +691,7 @@
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None (empty-sidebar-projection) [] false "" [] [route]
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
                               None None [] [] [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
@@ -702,7 +724,7 @@
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "page-a"))
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+                  (apply-core-snapshot None (empty-sidebar-projection) []
                                            false "" [] [route]
                                            None None [] [] [] false []))
     (driver/flush! application)
@@ -825,7 +847,7 @@
                         (caret-utf16-offset 4))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+                  (apply-core-snapshot None (empty-sidebar-projection) []
                                            false "" [] []
                                            (Some editing) None [] []
                                            [row] false []))
@@ -870,7 +892,7 @@
                     (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+                  (apply-core-snapshot None (empty-sidebar-projection) []
                                            false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
@@ -930,7 +952,7 @@
                     (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+                  (apply-core-snapshot None (empty-sidebar-projection) []
                                            false "" [] [] None None []
                                            ["parent"] [row] false []))
     (driver/flush! application)
@@ -981,7 +1003,7 @@
     (driver/start! application)
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None (empty-sidebar-projection) [] false "" [] []
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
                               (Some editing) (Some autocomplete) [candidate]
                               [] [row] false []))
     (driver/flush! application)
@@ -1024,7 +1046,7 @@
                     (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+                  (apply-core-snapshot None (empty-sidebar-projection) []
                                            false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
@@ -1079,7 +1101,7 @@
         initial
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+         (apply-core-snapshot None (empty-sidebar-projection) []
                                   false "" [] [] None None [] []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
@@ -1091,7 +1113,7 @@
         collapsed
         (model/update
          initial
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
+         (apply-core-snapshot None (empty-sidebar-projection) []
                                   false "" [] [] None None [] [] []
                                   true [splice]))]
     (assert-equal [collapsed-parent sibling]

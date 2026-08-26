@@ -106,24 +106,29 @@ let apply_response encoded =
     match Snapshot.decode_response encoded with
     | Ok snapshot ->
       LG.ApplyCoreSnapshot
-        ( snapshot.graph_name
-        , sidebar_projection snapshot
-        , Rrbvec.of_list (List.map flashcard snapshot.flashcards)
-        , snapshot.sync_connected
-        , snapshot.search_query
-        , Rrbvec.of_list (List.map search_hit snapshot.search_results)
-        , Rrbvec.of_list (List.map node_projection snapshot.node_routes)
-        , Option.map outliner_editing snapshot.outliner_editing
-        , Option.map outliner_autocomplete snapshot.outliner_autocomplete
-        , Rrbvec.of_list
-            (List.mapi
-               outliner_autocomplete_candidate
-               snapshot.outliner_autocomplete_candidates)
-        , Rrbvec.of_list snapshot.outliner_selected_block_ids
-        , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
-        , snapshot.is_outliner_patch
-        , Rrbvec.of_list
-            (List.map outliner_row_splice snapshot.outliner_row_splices) )
+        { graph_name = snapshot.graph_name
+        ; sidebar = sidebar_projection snapshot
+        ; flashcards = Rrbvec.of_list (List.map flashcard snapshot.flashcards)
+        ; sync_connected = snapshot.sync_connected
+        ; search_query = snapshot.search_query
+        ; search_results = Rrbvec.of_list (List.map search_hit snapshot.search_results)
+        ; node_routes = Rrbvec.of_list (List.map node_projection snapshot.node_routes)
+        ; outliner_editing = Option.map outliner_editing snapshot.outliner_editing
+        ; outliner_autocomplete =
+            Option.map outliner_autocomplete snapshot.outliner_autocomplete
+        ; outliner_autocomplete_candidates =
+            Rrbvec.of_list
+              (List.mapi
+                 outliner_autocomplete_candidate
+                 snapshot.outliner_autocomplete_candidates)
+        ; outliner_selected_block_ids =
+            Rrbvec.of_list snapshot.outliner_selected_block_ids
+        ; outliner_rows = Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
+        ; is_outliner_patch = snapshot.is_outliner_patch
+        ; outliner_row_splices =
+            Rrbvec.of_list
+              (List.map outliner_row_splice snapshot.outliner_row_splices)
+        }
     | Error message -> LG.SyncFailed message
   in
   LG.logseq_chat_native_bridge_flush_action_bang action

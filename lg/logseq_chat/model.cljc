@@ -280,26 +280,24 @@
              :search-loading false)
       current)
 
-    (ApplyCoreSnapshot graph-name sidebar flashcards sync-connected query results node-routes
-                       outliner-editing outliner-autocomplete
-                       outliner-autocomplete-candidates
-                       outliner-selected-block-ids
-                       outliner-rows is-outliner-patch
-                       outliner-row-splices)
+    (ApplyCoreSnapshot projection)
     (let [projected-rows
-          (if is-outliner-patch
-            (if (empty? outliner-row-splices)
-              (merge-row-replacements (:outliner-rows current) outliner-rows)
+          (if (:is-outliner-patch projection)
+            (if (empty? (:outliner-row-splices projection))
+              (merge-row-replacements
+               (:outliner-rows current) (:outliner-rows projection))
               (apply-row-splices (:outliner-rows current)
-                                 outliner-row-splices))
-            outliner-rows)
+                                 (:outliner-row-splices projection)))
+            (:outliner-rows projection))
           card-changed
           (not (= (first-flashcard-id (:flashcards current))
-                  (first-flashcard-id flashcards)))
+                  (first-flashcard-id (:flashcards projection))))
+          sidebar (:sidebar projection)
           updated
           (assoc current
-                 :selected-graph graph-name
-                 :sync-state (if sync-connected SyncedState OfflineState)
+                 :selected-graph (:graph-name projection)
+                 :sync-state
+                 (if (:sync-connected projection) SyncedState OfflineState)
                  :favorites (:favorites sidebar)
                  :recent-pages (:recent-pages sidebar)
                  :selected-page (:selected-page sidebar)
@@ -307,21 +305,22 @@
                  :selected-page-is-property (:selected-page-is-property sidebar)
                  :related-rows (:related-rows sidebar)
                  :linked-reference-rows (:linked-reference-rows sidebar)
-                 :flashcards flashcards
+                 :flashcards (:flashcards projection)
                  :flashcard-cloze-revealed
                  (if card-changed false (:flashcard-cloze-revealed current))
                  :flashcard-answer-revealed
                  (if card-changed false (:flashcard-answer-revealed current))
-                 :node-routes node-routes
-                 :outliner-editing outliner-editing
-                 :outliner-autocomplete outliner-autocomplete
+                 :node-routes (:node-routes projection)
+                 :outliner-editing (:outliner-editing projection)
+                 :outliner-autocomplete (:outliner-autocomplete projection)
                  :outliner-autocomplete-candidates
-                 outliner-autocomplete-candidates
-                 :outliner-selected-block-ids outliner-selected-block-ids
+                 (:outliner-autocomplete-candidates projection)
+                 :outliner-selected-block-ids
+                 (:outliner-selected-block-ids projection)
                  :outliner-rows projected-rows)]
-      (if (= query (:search-query current))
+      (if (= (:search-query projection) (:search-query current))
         (assoc updated
-               :search-results results
+               :search-results (:search-results projection)
                :search-loading false)
         updated))
 
