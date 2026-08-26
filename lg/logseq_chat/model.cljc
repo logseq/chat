@@ -5,7 +5,29 @@
     (selected-graph None)
     (sync-state OfflineState)
     (search-open false)
-    (search-query "")))
+    (search-query "")
+    (app-navigation-path [])
+    (search-navigation-path [])))
+
+(defn request-route [path route]
+  (if (and (not (empty? path)) (= (last path) route))
+    path
+    (conj path route)))
+
+(defn resolve-route [path route resolved]
+  (if resolved
+    path
+    (loop [index (dec (count path))]
+      (if (< index 0)
+        path
+        (if (= (nth path index) route)
+          (into (subvec path 0 index) (subvec path (inc index)))
+          (recur (dec index)))))))
+
+(defn pop-route [path]
+  (if (empty? path)
+    path
+    (subvec path 0 (dec (count path)))))
 
 (defn update [current action]
   (match action
@@ -28,4 +50,41 @@
     (assoc current :search-query query)
 
     CloseSearch
-    (assoc current :search-open false :search-query "")))
+    (assoc current
+           :search-open false
+           :search-query ""
+           :search-navigation-path [])
+
+    (RequestAppNode uuid)
+    (assoc current
+           :app-navigation-path
+           (request-route (:app-navigation-path current) (NodeRoute uuid)))
+
+    (ResolveAppNode uuid resolved)
+    (assoc current
+           :app-navigation-path
+           (resolve-route (:app-navigation-path current)
+                          (NodeRoute uuid)
+                          resolved))
+
+    BackAppNavigation
+    (assoc current
+           :app-navigation-path
+           (pop-route (:app-navigation-path current)))
+
+    (RequestSearchNode uuid)
+    (assoc current
+           :search-navigation-path
+           (request-route (:search-navigation-path current) (NodeRoute uuid)))
+
+    (ResolveSearchNode uuid resolved)
+    (assoc current
+           :search-navigation-path
+           (resolve-route (:search-navigation-path current)
+                          (NodeRoute uuid)
+                          resolved))
+
+    BackSearchNavigation
+    (assoc current
+           :search-navigation-path
+           (pop-route (:search-navigation-path current)))))

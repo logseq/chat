@@ -91,3 +91,63 @@
                       "close clears transient search input")
         (assert-equal 4 (count (apple/children renderer root))
                       "the retained search subtree is disposed")))))
+
+(deftest app-navigation-matches-the-main-branch-path-contract
+  (let [initial (model/initial)
+        first-request (model/update initial (model/RequestAppNode "page-a"))
+        duplicate-request
+        (model/update first-request (model/RequestAppNode "page-a"))
+        nested-request
+        (model/update duplicate-request (model/RequestAppNode "page-b"))]
+    (assert-equal [(model/NodeRoute "page-a")]
+                  (:app-navigation-path first-request)
+                  "the first node request pushes one route")
+    (assert-equal (:app-navigation-path first-request)
+                  (:app-navigation-path duplicate-request)
+                  "a consecutive duplicate route is not pushed")
+    (assert-equal [(model/NodeRoute "page-a") (model/NodeRoute "page-b")]
+                  (:app-navigation-path nested-request)
+                  "a distinct nested route is appended")
+    (assert-equal (:app-navigation-path nested-request)
+                  (:app-navigation-path
+                   (model/update nested-request
+                                 (model/ResolveAppNode "page-b" true)))
+                  "a resolved route remains presented")
+    (assert-equal [(model/NodeRoute "page-a")]
+                  (:app-navigation-path
+                   (model/update nested-request
+                                 (model/ResolveAppNode "page-b" false)))
+                  "an unresolved route is removed")
+    (assert-equal [(model/NodeRoute "page-a")]
+                  (:app-navigation-path
+                   (model/update nested-request model/BackAppNavigation))
+                  "the back action removes exactly one route")))
+
+(deftest search-navigation-is-isolated-and-cleared-with-the-presentation
+  (let [open-model (model/update (model/initial) model/OpenSearch)
+        app-model (model/update open-model (model/RequestAppNode "journal"))
+        search-model
+        (model/update app-model (model/RequestSearchNode "search-result"))
+        failed-model
+        (model/update search-model
+                      (model/ResolveSearchNode "search-result" false))
+        reopened-model
+        (model/update
+         (model/update failed-model (model/RequestSearchNode "search-result"))
+         (model/ChangeSearchQuery "project alpha"))
+        closed-model (model/update reopened-model model/CloseSearch)]
+    (assert-equal [(model/NodeRoute "journal")]
+                  (:app-navigation-path search-model)
+                  "search navigation does not mutate the app path")
+    (assert-equal [(model/NodeRoute "search-result")]
+                  (:search-navigation-path search-model)
+                  "search owns a separate navigation path")
+    (assert-equal [] (:search-navigation-path failed-model)
+                  "a failed search route is removed")
+    (assert-equal [] (:search-navigation-path closed-model)
+                  "closing search clears its navigation history")
+    (assert-equal [(model/NodeRoute "journal")]
+                  (:app-navigation-path closed-model)
+                  "closing search preserves the app navigation history")
+    (assert-equal "" (:search-query closed-model)
+                  "closing search clears its transient query")))

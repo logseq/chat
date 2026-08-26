@@ -6,11 +6,16 @@
   (SyncedState)
   (FailedState :string))
 
+(type-variant navigation-route
+  (NodeRoute :string))
+
 (type-record chat-model
   (selected-graph :option<string>)
   (sync-state :sync-state)
   (search-open :bool)
-  (search-query :string))
+  (search-query :string)
+  (app-navigation-path :vector<navigation-route>)
+  (search-navigation-path :vector<navigation-route>))
 
 (type-variant chat-action
   (SelectGraph :string)
@@ -19,7 +24,19 @@
   (SyncFailed :string)
   (OpenSearch)
   (ChangeSearchQuery :string)
-  (CloseSearch))
+  (CloseSearch)
+  (RequestAppNode :string)
+  (ResolveAppNode :string :bool)
+  (BackAppNavigation)
+  (RequestSearchNode :string)
+  (ResolveSearchNode :string :bool)
+  (BackSearchNavigation))
 
 (signature logseq-chat.model/initial :fn<chat-model>)
+(signature logseq-chat.model/request-route
+ :fn<vector<navigation-route>;navigation-route;vector<navigation-route>>)
+(signature logseq-chat.model/resolve-route
+ :fn<vector<navigation-route>;navigation-route;bool;vector<navigation-route>>)
+(signature logseq-chat.model/pop-route
+ :fn<vector<navigation-route>;vector<navigation-route>>)
 (signature logseq-chat.model/update :fn<chat-model;chat-action;chat-model>)
