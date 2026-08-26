@@ -7,5 +7,25 @@
 
 (context
  (default
-  (name mobile)
+  (name ios_simulator)
+  (host mobile_host)))
+
+(context
+ (default
+  (name ios_device)
+  (host mobile_host)))
+
+(context
+ (default
+  (name android_arm64)
+  (host mobile_host)))
+
+(context
+ (default
+  (name android_x86_64)
+  (host mobile_host)))
+
+(context
+ (default
+  (name macos_arm64)
   (host mobile_host)))

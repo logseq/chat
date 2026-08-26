@@ -61,7 +61,7 @@ plutil -create xml1 "$signature_entitlements"
 plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.logseq.chat"]' "$signature_entitlements"
 
 core_object=$(LOGSEQ_CHAT_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
-  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix")
+  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" ios_simulator)
 
 for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
   "$clang" \

@@ -2,14 +2,15 @@
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "usage: $0 TARGET_PREFIX" >&2
+if [[ $# -ne 2 ]]; then
+  echo "usage: $0 TARGET_PREFIX DUNE_CONTEXT" >&2
   exit 2
 fi
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 target_prefix=$(cd "$1" && pwd)
-target="_build/mobile/core/logseq_chat_mobile_entry.exe.o"
+context=$2
+target="_build/$context/core/logseq_chat_mobile_entry.exe.o"
 dune=${DUNE:-$(opam exec --switch=5.5.0 -- which dune)}
 profile=${DUNE_PROFILE:-dev}
 

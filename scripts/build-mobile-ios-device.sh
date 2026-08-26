@@ -95,7 +95,7 @@ fi
 ocaml_lib="$target_prefix/lib/ocaml"
 clang=$(xcrun --sdk iphoneos --find clang)
 core_object=$(LOGSEQ_CHAT_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
-  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix")
+  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" ios_device)
 
 for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
   "$clang" \

@@ -48,7 +48,7 @@ clang=$(xcrun --sdk macosx --find clang)
 mkdir -p "$core_build_dir"
 
 core_object=$(LOGSEQ_CHAT_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
-  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix")
+  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" macos_arm64)
 
 for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
   "$clang" \

@@ -55,7 +55,7 @@
   (language c)
   (names logseq_chat_https_stub logseq_chat_graph_store_stubs))
  (c_library_flags
-  (:standard -lsqlite3)))
+  (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
 
 (rule
  (target logseq_chat_lui_native.ml)

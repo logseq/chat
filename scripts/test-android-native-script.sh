@@ -44,6 +44,7 @@ require_text "scripts/build-android-native.sh" "logseq_chat_call"
 require_text "scripts/build-android-native.sh" "logseq_chat_https_android.c"
 require_text "scripts/build-android-native.sh" "logseq_chat_crypto_android.c"
 require_text "scripts/build-android-native.sh" 'scripts/build-mobile-ocaml.sh'
+require_text "scripts/build-android-native.sh" 'DATASCRIPT_SQLITE_LIB_DIR="$build_dir"'
 require_file "core/logseq_chat_crypto_android.c"
 require_file "Sources/LogseqChat/Skip/AndroidE2EECrypto.kt"
 require_text "core/logseq_chat_https_android.c" "logseq_chat_crypto_jni_init"

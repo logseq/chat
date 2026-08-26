@@ -14,8 +14,14 @@ die() {
 }
 
 case "$android_abi" in
-  arm64-v8a) target_arch=aarch64 ;;
-  x86_64) target_arch=x86_64 ;;
+  arm64-v8a)
+    target_arch=aarch64
+    dune_context=android_arm64
+    ;;
+  x86_64)
+    target_arch=x86_64
+    dune_context=android_x86_64
+    ;;
   *) die "unsupported Android ABI: $android_abi" ;;
 esac
 
@@ -62,9 +68,10 @@ cd "$build_dir"
 "$ndk_bin/llvm-ar" rcs libsqlite3.a sqlite3.o
 
 runtime_object=$(C_INCLUDE_PATH="$sqlite_source_dir${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}" \
+  DATASCRIPT_SQLITE_LIB_DIR="$build_dir" \
   DUNE_PROFILE=android \
   LOGSEQ_CHAT_SQLITE_LIB_DIR="$build_dir" \
-  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix")
+  "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" "$dune_context")
 
 for source in logseq_chat_crypto_android.c logseq_chat_https_android.c; do
   "$ndk_bin/clang" \
