@@ -254,6 +254,20 @@ public struct LogseqChatRootView : View {
                 #else
                 return false
                 #endif
+            },
+            presentPageShare: { payload in
+                #if SKIP
+                AndroidAssetImporter.share(
+                    text: payload.text,
+                    paths: payload.localAssetPaths
+                )
+                return true
+                #elseif os(iOS)
+                return presentationCoordinator.presentPageShare(payload)
+                #else
+                Self.copyText(payload.text)
+                return true
+                #endif
             }
         )
         let platformCommandRouter = LGChatPlatformCommandRouter(

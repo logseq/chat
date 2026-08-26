@@ -47,6 +47,7 @@
           (new-graph-name "")
           (new-graph-encrypted false)
           (pending-graph-deletion None)
+          (pending-page-deletion None)
           (connection-menu-open false)
           (settings-open false)
           (settings-tabs-open false)
@@ -117,6 +118,9 @@
     (PersistComposerDraftEffect id _draft) id
     (PresentAttachmentEffect id _kind) id
     (PresentAssetEffect id _title _asset-type _local-path) id
+    (PresentPageShareEffect id _text _paths) id
+    (SetPageFavoriteEffect id _uuid _favorite) id
+    (DeletePageEffect id _uuid) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
     (ChangeOutlinerTextEffect id _uuid _title _caret) id
@@ -267,6 +271,51 @@
     (base-url (string/trim (:base-url current)))
     (version (:version current))
     (revision (:revision current))))
+
+(defn active-page [current]
+  (if (not (= (:destination current) JournalsDestination))
+    None
+    (if (empty? (:node-routes current))
+      (:selected-page current)
+      (let [route (last (:node-routes current))]
+        (Some
+         (record sidebar-page
+           (uuid (:page-uuid route))
+           (title (:title route))))))))
+
+(defn page-is-favorite? [current uuid]
+  (loop [index 0]
+    (if (= index (count (:favorites current)))
+      false
+      (if (= (:uuid (nth (:favorites current) index)) uuid)
+        true
+        (recur (inc index))))))
+
+(defn page-share-text [page rows]
+  (loop [index 0
+         lines [(:title page)]]
+    (if (= index (count rows))
+      (string/join "\n" lines)
+      (let [title (string/trim (:title (nth rows index)))]
+        (recur (inc index)
+               (if (empty? title) lines (conj lines (str "- " title))))))))
+
+(defn page-share-asset-paths [rows]
+  (loop [index 0
+         paths []]
+    (if (= index (count rows))
+      paths
+      (let [row (nth rows index)
+            next-paths
+            (match (:local-path row)
+              (Some path)
+              (if (and (:is-asset row)
+                       (not (empty? path))
+                       (not (string-vector-contains? paths path)))
+                (conj paths path)
+                paths)
+              None paths)]
+        (recur (inc index) next-paths)))))
 
 (defn rollback-navigation-effect [current effect]
   (match effect
@@ -927,6 +976,60 @@
 
     CloseConnectionMenu
     (assoc current :connection-menu-open false)
+
+    ToggleActivePageFavorite
+    (match (active-page current)
+      (Some page)
+      (let [updated (assoc current :connection-menu-open false)
+            id (:next-effect-id updated)]
+        (enqueue-effect
+         updated
+         (SetPageFavoriteEffect
+          id (:uuid page) (not (page-is-favorite? current (:uuid page))))))
+      None current)
+
+    ShareActivePage
+    (match (active-page current)
+      (Some page)
+      (let [updated (assoc current :connection-menu-open false)
+            id (:next-effect-id updated)]
+        (enqueue-effect
+         updated
+         (PresentPageShareEffect
+          id
+          (page-share-text page (:outliner-rows current))
+          (page-share-asset-paths (:outliner-rows current)))))
+      None current)
+
+    RequestDeleteActivePage
+    (match (active-page current)
+      (Some page)
+      (assoc current
+             :connection-menu-open false
+             :pending-page-deletion (Some page))
+      None current)
+
+    CancelDeleteActivePage
+    (assoc current :pending-page-deletion None)
+
+    ConfirmDeleteActivePage
+    (match (:pending-page-deletion current)
+      (Some page)
+      (let [updated (assoc current :pending-page-deletion None)
+            delete-id (:next-effect-id updated)
+            deleting
+            (enqueue-effect updated (DeletePageEffect delete-id (:uuid page)))]
+        (if (empty? (:app-navigation-path deleting))
+          (let [clear-id (:next-effect-id deleting)]
+            (enqueue-effect deleting (ClearSelectedPageEffect clear-id)))
+          (let [path (:app-navigation-path deleting)
+                route (nth path (dec (count path)))
+                closed (assoc deleting :app-navigation-path (pop-route path))
+                close-id (:next-effect-id closed)]
+            (enqueue-effect
+             closed
+             (CloseAppNodeEffect close-id (navigation-route-uuid route))))))
+      None current)
 
     OpenSettings
     (assoc current

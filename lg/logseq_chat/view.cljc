@@ -193,6 +193,27 @@
     SyncedState "Up to date"
     (FailedState reason) (str "Sync failed: " reason)))
 
+(defn active-page-actions-visible? [current]
+  (match (model/active-page current)
+    (Some _page) true
+    None false))
+
+(defn connection-settings-visible? [current]
+  (not (active-page-actions-visible? current)))
+
+(defn active-page-favorite-label [current]
+  (match (model/active-page current)
+    (Some page)
+    (if (model/page-is-favorite? current (:uuid page))
+      "Unfavorite"
+      "Favorite")
+    None "Favorite"))
+
+(defn page-deletion-pending? [current]
+  (match (:pending-page-deletion current)
+    (Some _page) true
+    None false))
+
 (defn sidebar-page-identifier [page]
   (str "link.sidebar.page." (:uuid page)))
 
@@ -1525,6 +1546,20 @@
    [:if {:test (reactive runtime-log-visible? model-source)}
     [runtime-log-screen model-source send]]])
 
+(defui page-delete-dialog [send]
+  [:dialog
+   {:text "Delete page?"
+    :on-dismiss (fn [_event] (send model/CancelDeleteActivePage))}
+   [:column
+    [:text "The page will be moved to Recycle."]
+    [:button
+     {:on-press (fn [_event] (send model/CancelDeleteActivePage))}
+     "Cancel"]
+    [:button
+     {:accessibility-identifier "button.page-delete.confirm"
+      :on-press (fn [_event] (send model/ConfirmDeleteActivePage))}
+     "Delete"]]])
+
 (defui chat-main-view [model-source send]
   [:column
    [:if {:test (reactive journal-root-visible? model-source)}
@@ -1547,8 +1582,24 @@
     "Connection"]
    [:if {:test (reactive :connection-menu-open model-source)}
     [:dropdown-menu {:on-dismiss (fn [_event] (send model/CloseConnectionMenu))}
-     [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
-      "Settings"]]]
+     [:if {:test (reactive active-page-actions-visible? model-source)}
+      [:menu-item
+       {:text (reactive active-page-favorite-label model-source)
+        :accessibility-identifier "button.page-favorite"
+        :on-press (fn [_event] (send model/ToggleActivePageFavorite))}]]
+     [:if {:test (reactive active-page-actions-visible? model-source)}
+      [:menu-item
+       {:accessibility-identifier "button.page-share"
+        :on-press (fn [_event] (send model/ShareActivePage))}
+       "Share"]]
+     [:if {:test (reactive active-page-actions-visible? model-source)}
+      [:menu-item
+       {:accessibility-identifier "button.page-delete"
+        :on-press (fn [_event] (send model/RequestDeleteActivePage))}
+       "Delete"]]
+     [:if {:test (reactive connection-settings-visible? model-source)}
+      [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
+       "Settings"]]]]
    [:if {:test (reactive search-main-visible? model-source)}
     [:column {:accessibility-identifier "screen.search"}
      [:search-field
@@ -1616,7 +1667,9 @@
    [:if {:test (reactive :attachment-picker-open model-source)}
     [attachment-picker-dialog send]]
    [:if {:test (reactive :task-status-picker-open model-source)}
-    [task-status-picker-dialog model-source send]]])
+    [task-status-picker-dialog model-source send]]
+   [:if {:test (reactive page-deletion-pending? model-source)}
+    [page-delete-dialog send]]])
 
 (defui chat-view [model-source send]
   [:drawer

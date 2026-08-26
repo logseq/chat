@@ -1611,6 +1611,72 @@
     (assert-equal 2 (:next-effect-id editing)
                   "outliner effects share the monotonic effect sequence")))
 
+(deftest active-page-actions-use-typed-core-and-platform-effects
+  (let [page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        asset (record model/outline-row
+                      (uuid "asset-a") (title "Photo.jpg")
+                      (markup-json "[]") (youtube-target-url None)
+                      (breadcrumb "") (opens-as-page false) (depth 0)
+                      (has-children false) (is-collapsed false)
+                      (is-asset true) (asset-type (Some "image/jpeg"))
+                      (local-path (Some "Assets/Photo.jpg")))
+        current (assoc (model/initial)
+                       :selected-page (Some page)
+                       :outliner-rows [asset])
+        favorited (model/update current model/ToggleActivePageFavorite)
+        shared (model/update favorited model/ShareActivePage)
+        requested (model/update shared model/RequestDeleteActivePage)
+        deleted (model/update requested model/ConfirmDeleteActivePage)]
+    (assert-equal [(model/SetPageFavoriteEffect 1 "page-a" true)]
+                  (:pending-effects favorited)
+                  "favorite changes cross the semantic core boundary")
+    (assert-equal
+     [(model/SetPageFavoriteEffect 1 "page-a" true)
+      (model/PresentPageShareEffect
+       2 "Project\n- Photo.jpg" ["Assets/Photo.jpg"])]
+     (:pending-effects shared)
+     "sharing carries rendered text and unique local assets to the platform")
+    (assert-equal (Some page) (:pending-page-deletion requested)
+                  "page deletion requires explicit confirmation")
+    (assert-equal
+     [(model/SetPageFavoriteEffect 1 "page-a" true)
+      (model/PresentPageShareEffect
+       2 "Project\n- Photo.jpg" ["Assets/Photo.jpg"])
+      (model/DeletePageEffect 3 "page-a")
+      (model/ClearSelectedPageEffect 4)]
+     (:pending-effects deleted)
+     "confirmed deletion recycles the page and leaves its selected route")))
+
+(deftest connection-menu-matches-active-page-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        sidebar (assoc (empty-sidebar-projection) :selected-page (Some page))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] true "" [] []
+                                       None None [] [] [] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          connection (descendant-with-identifier renderer root "button.connection")]
+      (driver/dispatch-event! application (proto/Press connection))
+      (driver/flush! application)
+      (assert-equal false
+                    (= -1 (descendant-with-identifier
+                           renderer root "button.page-favorite"))
+                    "active pages expose Favorite")
+      (assert-equal false
+                    (= -1 (descendant-with-identifier
+                           renderer root "button.page-share"))
+                    "active pages expose Share")
+      (let [delete (descendant-with-identifier renderer root "button.page-delete")]
+        (assert-equal false (= -1 delete) "active pages expose Delete")
+        (driver/dispatch-event! application (proto/Press delete))
+        (driver/flush! application)
+        (assert-equal (Some page)
+                      (:pending-page-deletion (chat/model application))
+                      "Delete opens the LG-owned confirmation state")))))
+
 (deftest outliner-structure-controls-publish-typed-core-effects
   (let [collapsed
         (model/update (model/initial)

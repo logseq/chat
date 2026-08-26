@@ -51,6 +51,23 @@ struct NodeSharePayload: Identifiable {
         }
         self.items = items
     }
+
+    init(text: String, localAssetPaths: [String]) {
+        var items: [Any] = [text]
+        var sharedURLs = Set<URL>()
+        for path in localAssetPaths {
+            let title = URL(fileURLWithPath: path).lastPathComponent
+            guard
+                let url = LocalAssetPath.resolve(path, title: title, assetType: nil),
+                !sharedURLs.contains(url)
+            else {
+                continue
+            }
+            sharedURLs.insert(url)
+            items.append(url)
+        }
+        self.items = items
+    }
 }
 
 struct NodeShareSheet: UIViewControllerRepresentable {

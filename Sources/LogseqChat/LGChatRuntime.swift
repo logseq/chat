@@ -97,6 +97,16 @@ public struct LGChatAssetPresentationPayload: Codable, Equatable, Sendable {
     }
 }
 
+public struct LGChatPageSharePayload: Equatable, Sendable {
+    public let text: String
+    public let localAssetPaths: [String]
+
+    public init(text: String, localAssetPaths: [String]) {
+        self.text = text
+        self.localAssetPaths = localAssetPaths
+    }
+}
+
 public struct LGChatRuntimeLogPayload: Codable, Equatable, Sendable {
     public let id: String
     public let level: String
@@ -115,6 +125,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
     private let presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)?
+    private let presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)?
 
     public init(
         saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
@@ -124,7 +135,8 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         signOut: @escaping @MainActor () async -> Void,
         graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
-        presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)? = nil
+        presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)? = nil,
+        presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)? = nil
     ) {
         self.saveSettings = saveSettings
         self.persistComposerDraft = persistComposerDraft
@@ -134,6 +146,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         self.graphEffect = graphEffect
         self.presentAttachment = presentAttachment
         self.presentAsset = presentAsset
+        self.presentPageShare = presentPageShare
     }
 
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
@@ -240,6 +253,27 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                     message: succeeded ? "" : "The local asset is unavailable",
                     output: .discard
                 )
+            case "present-page-share":
+                guard let presentPageShare, let metadata = effect.metadata else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Page sharing is unavailable",
+                        output: .discard
+                    )
+                }
+                let paths = try JSONDecoder().decode(
+                    [String].self,
+                    from: Data(metadata.utf8)
+                )
+                let succeeded = await presentPageShare(LGChatPageSharePayload(
+                    text: effect.text,
+                    localAssetPaths: paths
+                ))
+                return LGChatEffectResolution(
+                    succeeded: succeeded,
+                    message: succeeded ? "" : "Page sharing is unavailable",
+                    output: .discard
+                )
             case "open-graph", "unlock-graph", "create-graph", "delete-local-graph":
                 guard let graphEffect else {
                     return LGChatEffectResolution(
@@ -329,6 +363,19 @@ private struct LGReviewFlashcardPayload: Encodable {
 private struct LGCreateGraphPayload: Encodable {
     let name: String
     let isEncrypted: Bool
+}
+
+private struct LGSetPageFavoritePayload: Encodable {
+    let pageUuid: String
+    let favorite: Bool
+    let operationId: String
+    let now: Int64
+}
+
+private struct LGDeletePagePayload: Encodable {
+    let pageUuid: String
+    let operationId: String
+    let now: Int64
 }
 
 private struct LGCoreEffectResponse: Decodable {
@@ -504,6 +551,53 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "clearSelectedPage")
             )
+        case "set-page-favorite":
+            do {
+                let data = try JSONEncoder().encode(LGSetPageFavoritePayload(
+                    pageUuid: effect.text,
+                    favorite: effect.value == 1,
+                    operationId: UUID().uuidString.lowercased(),
+                    now: Int64(Date().timeIntervalSince1970 * 1_000)
+                ))
+                guard let payload = String(data: data, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the page favorite payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "setPageFavorite", payload: payload)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "delete-page":
+            do {
+                let data = try JSONEncoder().encode(LGDeletePagePayload(
+                    pageUuid: effect.text,
+                    operationId: UUID().uuidString.lowercased(),
+                    now: Int64(Date().timeIntervalSince1970 * 1_000)
+                ))
+                guard let payload = String(data: data, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the page deletion payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "deletePage", payload: payload)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
         case "load-flashcards":
             request = LogseqChatRPCRequest(
                 method: "dispatch",
@@ -570,7 +664,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
         case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
-             "present-attachment", "present-asset":
+             "present-attachment", "present-asset", "present-page-share":
             guard let platformEffect else {
                 return LGChatEffectResolution(
                     succeeded: false,

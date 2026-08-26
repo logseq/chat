@@ -521,6 +521,63 @@ struct LGChatRendererTests {
         #expect(resolution.output == .discard)
     }
 
+    @Test("page mutations preserve semantic operation payloads")
+    func pageMutationEffectsUseCoreBoundary() async throws {
+        var requests: [LogseqChatRPCRequest] = []
+        let executor = LGChatCoreEffectExecutor { request in
+            requests.append(request)
+            return #"{"apiVersion":1,"ok":true,"result":null}"#
+        }
+
+        #expect((await executor.execute(LGChatEffect(
+            id: 42,
+            kind: "set-page-favorite",
+            text: "page-a",
+            value: 1
+        ))).succeeded)
+        #expect((await executor.execute(LGChatEffect(
+            id: 43,
+            kind: "delete-page",
+            text: "page-a"
+        ))).succeeded)
+
+        #expect(requests.map(\.params.action) == ["setPageFavorite", "deletePage"])
+        #expect(requests[0].params.payload?.contains(#""pageUuid":"page-a""#) == true)
+        #expect(requests[0].params.payload?.contains(#""favorite":true"#) == true)
+        #expect(requests[0].params.payload?.contains(#""operationId":"#) == true)
+        #expect(requests[1].params.payload?.contains(#""pageUuid":"page-a""#) == true)
+        #expect(requests[1].params.payload?.contains(#""operationId":"#) == true)
+    }
+
+    @Test("page sharing stays on the platform presentation boundary")
+    func pageSharingEffectsUsePlatformBoundary() async {
+        var presented: LGChatPageSharePayload?
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            presentPageShare: { payload in
+                presented = payload
+                return true
+            }
+        )
+
+        let resolution = await handler.execute(LGChatEffect(
+            id: 44,
+            kind: "present-page-share",
+            text: "Project\n- Photo.jpg",
+            metadata: #"["Assets/Photo.jpg"]"#
+        ))
+
+        #expect(presented == LGChatPageSharePayload(
+            text: "Project\n- Photo.jpg",
+            localAssetPaths: ["Assets/Photo.jpg"]
+        ))
+        #expect(resolution.succeeded)
+        #expect(resolution.output == .discard)
+    }
+
     @Test("composer draft effects persist through the platform boundary")
     func composerDraftEffectsUsePlatformPersistence() async {
         var persistedDrafts: [String] = []

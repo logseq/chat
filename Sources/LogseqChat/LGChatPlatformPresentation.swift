@@ -27,6 +27,7 @@ public final class LGChatPlatformPresentationCoordinator {
     public private(set) var pendingDeletionBlockIDs: [String] = []
     #if !SKIP && os(iOS)
     public private(set) var previewAssetURL: URL?
+    var pageSharePayload: NodeSharePayload?
     #endif
 
     public init() {
@@ -76,6 +77,19 @@ public final class LGChatPlatformPresentationCoordinator {
 
     public func updatePreviewAssetURL(_ url: URL?) {
         previewAssetURL = url
+    }
+
+    @discardableResult
+    public func presentPageShare(_ payload: LGChatPageSharePayload) -> Bool {
+        pageSharePayload = NodeSharePayload(
+            text: payload.text,
+            localAssetPaths: payload.localAssetPaths
+        )
+        return true
+    }
+
+    public func updatePageSharePayload(_ payload: NodeSharePayload?) {
+        pageSharePayload = payload
     }
     #endif
 }
@@ -190,6 +204,9 @@ struct LGChatPlatformPresentationHost: ViewModifier {
             }
             #if os(iOS)
             .quickLookPreview(previewAssetBinding)
+            .sheet(item: pageSharePayloadBinding) { payload in
+                NodeShareSheet(items: payload.items)
+            }
             .fullScreenCover(isPresented: presentationBinding(for: .camera)) {
                 CameraPicker { image in
                     coordinator.dismissAttachment()
@@ -247,6 +264,13 @@ struct LGChatPlatformPresentationHost: ViewModifier {
         Binding(
             get: { coordinator.previewAssetURL },
             set: { coordinator.updatePreviewAssetURL($0) }
+        )
+    }
+
+    private var pageSharePayloadBinding: Binding<NodeSharePayload?> {
+        Binding(
+            get: { coordinator.pageSharePayload },
+            set: { coordinator.updatePageSharePayload($0) }
         )
     }
     #endif

@@ -153,6 +153,9 @@
   (PersistComposerDraftEffect :int :string)
   (PresentAttachmentEffect :int :string)
   (PresentAssetEffect :int :string :string :string)
+  (PresentPageShareEffect :int :string :vector<string>)
+  (SetPageFavoriteEffect :int :string :bool)
+  (DeletePageEffect :int :string)
   (SearchNodesEffect :int :string)
   (TapOutlinerBlockEffect :int :string)
   (ChangeOutlinerTextEffect :int :string :string :int)
@@ -211,6 +214,7 @@
   (new-graph-name :string)
   (new-graph-encrypted :bool)
   (pending-graph-deletion :option<graph>)
+  (pending-page-deletion :option<sidebar-page>)
   (connection-menu-open :bool)
   (settings-open :bool)
   (settings-tabs-open :bool)
@@ -316,6 +320,11 @@
   (ApplySettingsSnapshot :settings-projection)
   (OpenConnectionMenu)
   (CloseConnectionMenu)
+  (ToggleActivePageFavorite)
+  (ShareActivePage)
+  (RequestDeleteActivePage)
+  (CancelDeleteActivePage)
+  (ConfirmDeleteActivePage)
   (OpenSettings)
   (DismissSettings)
   (OpenSettingsTabs)
@@ -382,6 +391,14 @@
 (signature logseq-chat.model/valid-attachment-kind? :fn<string;bool>)
 (signature logseq-chat.model/current-settings
  :fn<chat-model;settings-projection>)
+(signature logseq-chat.model/active-page
+ :fn<chat-model;option<sidebar-page>>)
+(signature logseq-chat.model/page-is-favorite?
+ :fn<chat-model;string;bool>)
+(signature logseq-chat.model/page-share-text
+ :fn<sidebar-page;vector<outline-row>;string>)
+(signature logseq-chat.model/page-share-asset-paths
+ :fn<vector<outline-row>;vector<string>>)
 (signature logseq-chat.model/rollback-navigation-effect
  :fn<chat-model;chat-effect;chat-model>)
 (signature logseq-chat.model/resolve-successful-effect

@@ -31,6 +31,14 @@
 
 (signature logseq-chat.view/graph-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-label :fn<chat-model;string>)
+(signature logseq-chat.view/active-page-actions-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/connection-settings-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/active-page-favorite-label
+ :fn<chat-model;string>)
+(signature logseq-chat.view/page-deletion-pending?
+ :fn<chat-model;bool>)
 (signature logseq-chat.view/sidebar-page-identifier :fn<sidebar-page;string>)
 (signature logseq-chat.view/sidebar-page-title :fn<sidebar-page;string>)
 (signature logseq-chat.view/favorites-empty? :fn<chat-model;bool>)
@@ -245,6 +253,8 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/settings-sheet
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/page-delete-dialog
+ :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-main-view

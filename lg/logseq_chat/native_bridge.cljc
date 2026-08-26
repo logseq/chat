@@ -109,7 +109,20 @@
     (str "{\"id\":" id
          ",\"kind\":\"present-asset\",\"text\":\"\",\"metadata\":"
          (wire/quoted
-          (encode-asset-presentation title asset-type local-path)) "}")
+         (encode-asset-presentation title asset-type local-path)) "}")
+    (model/PresentPageShareEffect id text paths)
+    (str "{\"id\":" id
+         ",\"kind\":\"present-page-share\",\"text\":"
+         (wire/quoted text) ",\"metadata\":"
+         (wire/quoted (encode-string-vector paths)) "}")
+    (model/SetPageFavoriteEffect id uuid favorite)
+    (str "{\"id\":" id
+         ",\"kind\":\"set-page-favorite\",\"text\":"
+         (wire/quoted uuid) ",\"value\":" (if favorite 1 0) "}")
+    (model/DeletePageEffect id uuid)
+    (str "{\"id\":" id
+         ",\"kind\":\"delete-page\",\"text\":"
+         (wire/quoted uuid) "}")
     (model/SearchNodesEffect id query)
     (str "{\"id\":" id
          ",\"kind\":\"search-nodes\",\"text\":"
