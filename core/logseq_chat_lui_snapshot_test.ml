@@ -7,7 +7,7 @@ let equal expected actual message =
 
 let () =
   let response =
-    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"syncConnected":true}}|}
+    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"syncConnected":true}}|}
   in
   match decode_response response with
   | Error message -> failwith message
@@ -20,5 +20,12 @@ let () =
        equal "page-a" page.uuid "page uuid";
        if not page.is_page then failwith "page result lost its kind";
        equal "Parent" block.breadcrumb "block breadcrumb"
-     | _ -> failwith "search results were not projected")
+     | _ -> failwith "search results were not projected");
+    (match snapshot.outliner_rows with
+     | [ row ] ->
+       equal "outline-a" row.uuid "outliner uuid";
+       equal "Nested note" row.title "outliner title";
+       if row.depth <> 2 || not row.has_children || row.is_collapsed
+       then failwith "outliner presentation state was not projected"
+     | _ -> failwith "outliner rows were not projected")
 ;;

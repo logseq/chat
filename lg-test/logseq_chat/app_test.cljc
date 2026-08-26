@@ -106,7 +106,7 @@
             "close removes the search presentation")
         (assert-equal "" (:search-query (chat/model application))
                       "close clears transient search input")
-        (assert-equal 5 (count (apple/children renderer root))
+        (assert-equal 6 (count (apple/children renderer root))
                       "the retained search subtree is disposed")))))
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
@@ -115,7 +115,7 @@
     (driver/start! application)
     (driver/flush! application)
     (let [root (driver/root-node application)
-          composer (nth (apple/children renderer root) 4)
+          composer (nth (apple/children renderer root) 5)
           collapsed (nth (apple/children renderer composer) 0)]
       (assert-equal "button.composer.expand"
                     (property-string renderer collapsed
@@ -327,6 +327,27 @@
       (assert-equal [(model/NodeRoute "block-a")]
                     (:search-navigation-path (chat/model application))
                     "pressing a result requests navigation in LG state"))))
+
+(deftest core-snapshot-renders-keyed-outliner-rows
+  (let [renderer (apple/create)
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+              (uuid "block-a")
+              (title "Project note")
+              (depth 2)
+              (has-children true)
+              (is-collapsed false))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None false "" [] [row]))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          outliner (nth (apple/children renderer root) 4)
+          rendered-row (nth (apple/children renderer outliner) 0)]
+      (assert-equal "outliner.block.block-a"
+                    (property-string renderer rendered-row
+                                     proto/AccessibilityIdentifier)
+                    "the LG row keeps main's stable block identifier"))))
 
 (deftest native-bridge-returns-initial-and-disposal-patch-batches
   (let [initial-patch (bridge/initialize 2 1)]

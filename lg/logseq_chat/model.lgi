@@ -15,6 +15,13 @@
   (breadcrumb :string)
   (is-page :bool))
 
+(type-record outline-row
+  (uuid :string)
+  (title :string)
+  (depth :int)
+  (has-children :bool)
+  (is-collapsed :bool))
+
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
   (SearchNodesEffect :int :string))
@@ -26,6 +33,7 @@
   (search-query :string)
   (search-results :vector<search-hit>)
   (search-loading :bool)
+  (outliner-rows :vector<outline-row>)
   (composer-expanded :bool)
   (composer-draft :string)
   (pending-effects :vector<chat-effect>)
@@ -46,7 +54,8 @@
   (OpenSearch)
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
-  (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>)
+  (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>
+                     :vector<outline-row>)
   (CloseSearch)
   (ExpandComposer)
   (ChangeComposerDraft :string)

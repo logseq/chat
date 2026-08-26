@@ -5,8 +5,13 @@
 (signature logseq-chat.view/composer-collapsed? :fn<chat-model;bool>)
 (signature logseq-chat.view/composer-send-disabled? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-result-identifier :fn<search-hit;string>)
+(signature logseq-chat.view/search-result-title :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-row
  :fn<ui-context;signal<search-hit>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-title :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row
+ :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view
   :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view

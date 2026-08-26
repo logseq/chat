@@ -9,6 +9,7 @@
     (search-query "")
     (search-results [])
     (search-loading false)
+    (outliner-rows [])
     (composer-expanded false)
     (composer-draft "")
     (pending-effects [])
@@ -122,11 +123,12 @@
              :search-loading false)
       current)
 
-    (ApplyCoreSnapshot graph-name sync-connected query results)
+    (ApplyCoreSnapshot graph-name sync-connected query results outliner-rows)
     (let [updated
           (assoc current
                  :selected-graph graph-name
-                 :sync-state (if sync-connected SyncedState OfflineState))]
+                 :sync-state (if sync-connected SyncedState OfflineState)
+                 :outliner-rows outliner-rows)]
       (if (= query (:search-query current))
         (assoc updated
                :search-results results

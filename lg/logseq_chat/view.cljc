@@ -25,7 +25,12 @@
   (string/blank? (:composer-draft current)))
 
 (defn search-result-identifier [hit]
-  (str "search.result." (:uuid hit)))
+  (let [_breadcrumb (:breadcrumb hit)]
+    (str "search.result." (:uuid hit))))
+
+(defn search-result-title [hit]
+  (let [_breadcrumb (:breadcrumb hit)]
+    (:title hit)))
 
 (defn search-result-row [ui-context hit-source send]
   (let [hit (signal/sample hit-source)]
@@ -37,8 +42,27 @@
        (event [current-hit hit-source]
          (send (model/RequestSearchNode (:uuid current-hit))))}
       [:column
-       [:text {:value (reactive :title hit-source)}]
+       [:text {:value (reactive search-result-title hit-source)}]
        [:text {:value (reactive :breadcrumb hit-source)}]]])))
+
+(defn outliner-row-identifier [row]
+  (let [_depth (:depth row)]
+    (str "outliner.block." (:uuid row))))
+
+(defn outliner-row-title [row]
+  (let [_depth (:depth row)]
+    (:title row)))
+
+(defn outliner-row [ui-context row-source send]
+  (let [row (signal/sample row-source)]
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:accessibility-identifier (outliner-row-identifier row)
+       :on-press
+       (event [current-row row-source]
+         (send (model/RequestAppNode (:uuid current-row))))}
+      [:text {:value (reactive outliner-row-title row-source)}]])))
 
 (defui composer-view [model-source send]
   [:column
@@ -111,4 +135,11 @@
         :compare compare
         :as hit-source}
        [search-result-row hit-source send]]]]]
+   [:list {:accessibility-identifier "outliner.list"}
+    [:keyed
+     {:source (reactive :outliner-rows model-source)
+      :key :uuid
+      :compare compare
+      :as row-source}
+     [outliner-row row-source send]]]
    (composer-view model-source send)])

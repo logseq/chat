@@ -5,10 +5,19 @@ type search_hit =
   ; is_page : bool
   }
 
+type outline_row =
+  { uuid : string
+  ; title : string
+  ; depth : int
+  ; has_children : bool
+  ; is_collapsed : bool
+  }
+
 type t =
   { graph_name : string option
   ; search_query : string
   ; search_results : search_hit list
+  ; outliner_rows : outline_row list
   ; sync_connected : bool
   }
 
@@ -24,6 +33,12 @@ let bool_member name fields =
   match member name fields with
   | Some (`Bool value) -> value
   | _ -> false
+;;
+
+let int_member name fields =
+  match member name fields with
+  | Some (`Int value) -> Some value
+  | _ -> None
 ;;
 
 let title_from_summary = function
@@ -54,6 +69,24 @@ let search_hit = function
   | _ -> None
 ;;
 
+let outline_row = function
+  | `Assoc fields ->
+    (match member "block" fields, int_member "depth" fields with
+     | Some (`Assoc block_fields), Some depth ->
+       (match string_member "uuid" block_fields, string_member "title" block_fields with
+        | Some uuid, Some title ->
+          Some
+            { uuid
+            ; title
+            ; depth
+            ; has_children = bool_member "hasChildren" fields
+            ; is_collapsed = bool_member "isCollapsed" fields
+            }
+        | _ -> None)
+     | _ -> None)
+  | _ -> None
+;;
+
 let error_message fields =
   match member "error" fields with
   | Some (`Assoc error_fields) ->
@@ -72,10 +105,16 @@ let decode_response encoded =
            | Some (`List values) -> List.filter_map search_hit values
            | _ -> []
          in
+         let outliner_rows =
+           match member "outlinerRows" result_fields with
+           | Some (`List values) -> List.filter_map outline_row values
+           | _ -> []
+         in
          Ok
            { graph_name = string_member "graphName" result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
+           ; outliner_rows
            ; sync_connected = bool_member "syncConnected" result_fields
            }
        | _ -> Error "Core response did not contain a snapshot")

@@ -9,6 +9,15 @@ let search_hit (hit : Snapshot.search_hit) : LG.search_hit =
   }
 ;;
 
+let outline_row (row : Snapshot.outline_row) : LG.outline_row =
+  { uuid = row.uuid
+  ; title = row.title
+  ; depth = row.depth
+  ; has_children = row.has_children
+  ; is_collapsed = row.is_collapsed
+  }
+;;
+
 let apply_response encoded =
   let action =
     match Snapshot.decode_response encoded with
@@ -17,7 +26,8 @@ let apply_response encoded =
         ( snapshot.graph_name
         , snapshot.sync_connected
         , snapshot.search_query
-        , Rrbvec.of_list (List.map search_hit snapshot.search_results) )
+        , Rrbvec.of_list (List.map search_hit snapshot.search_results)
+        , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows) )
     | Error message -> LG.SyncFailed message
   in
   LG.logseq_chat_native_bridge_flush_action_bang action
