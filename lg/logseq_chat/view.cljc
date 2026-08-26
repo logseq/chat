@@ -483,6 +483,47 @@
          None true
          (Some _page) false)))
 
+(defn journal-section-marker-for [markers block-id]
+  (loop [index 0]
+    (if (= index (count markers))
+      None
+      (let [marker (nth markers index)]
+        (if (= (:block-id marker) block-id)
+          (Some marker)
+          (recur (inc index)))))))
+
+(defn outliner-journal-marker [current row]
+  (journal-section-marker-for
+   (:outliner-section-markers current) (:uuid row)))
+
+(defn outliner-journal-heading-visible? [current row]
+  (and
+   (journal-root-visible? current)
+   (match (:selected-page current)
+     None
+     (match (outliner-journal-marker current row)
+       (Some _marker) true
+       None false)
+     (Some _page) false)))
+
+(defn outliner-journal-divider-visible? [current row]
+  (match (outliner-journal-marker current row)
+    (Some marker) (:has-divider marker)
+    None false))
+
+(defn outliner-journal-title [current row]
+  (match (outliner-journal-marker current row)
+    (Some marker) (:title marker)
+    None ""))
+
+(defn outliner-journal-page-id [current row]
+  (match (outliner-journal-marker current row)
+    (Some marker) (:page-id marker)
+    None ""))
+
+(defn outliner-journal-button-identifier [current row]
+  (str "button.journal." (outliner-journal-page-id current row)))
+
 (defn node-screen-visible? [current]
   (and (journals-destination? current)
        (node-navigation-active? current)))
@@ -747,6 +788,27 @@
          {:accessibility-identifier
           (str "outliner.sync-failed." (:uuid row))}
          "Sync failed"]]]])))
+
+(defui outliner-entry [model-source row-source send]
+  [:column
+   [:if {:test
+         (reactive outliner-journal-heading-visible?
+                   model-source row-source)}
+    [:column
+     [:if {:test
+           (reactive outliner-journal-divider-visible?
+                     model-source row-source)}
+      [:separator {:accessibility-identifier "journal.divider"}]]
+     [:button
+      {:text (reactive outliner-journal-title model-source row-source)
+       :label (reactive outliner-journal-title model-source row-source)
+       :accessibility-identifier-signal
+       (reactive outliner-journal-button-identifier
+                 model-source row-source)
+       :on-press
+       (event [current-row row-source]
+         (send (model/RequestAppNode (:page-id current-row))))}]]]
+   [outliner-row model-source row-source send]])
 
 (defui outliner-selection-toolbar [send]
   [:toolbar
@@ -1826,7 +1888,7 @@
         :key :uuid
         :compare compare
         :as row-source}
-       [outliner-row model-source row-source send]]]]]
+       [outliner-entry model-source row-source send]]]]]
    [:if {:test (reactive older-journals-visible? model-source)}
     [:button
      {:accessibility-identifier "button.outliner.load-older-journals"

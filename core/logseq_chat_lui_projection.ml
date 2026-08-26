@@ -51,6 +51,9 @@ and outline_row (row : Snapshot.outline_row) : LG.outline_row =
               { uuid = page.uuid; title = page.title })
            row.tags)
   ; sync_status = row.sync_status
+  ; page_id = row.page_id
+  ; journal_title = row.journal_title
+  ; journal_day = row.journal_day
   }
 ;;
 

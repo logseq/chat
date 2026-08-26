@@ -60,6 +60,23 @@
                 (recur (inc index))
                 found))))))))
 
+(defn descendant-count-with-identifier [renderer parent identifier]
+  (let [own (if (= identifier
+                   (property-string renderer parent
+                                    proto/AccessibilityIdentifier))
+              1
+              0)
+        children (apple/children renderer parent)]
+    (loop [index 0
+           total own]
+      (if (= index (count children))
+        total
+        (recur
+         (inc index)
+         (+ total
+            (descendant-count-with-identifier
+             renderer (nth children index) identifier)))))))
+
 (defn main-root [renderer application]
   (let [stack (nth (apple/children renderer (driver/root-node application)) 0)
         children (apple/children renderer stack)]
@@ -146,6 +163,27 @@
     (name name)
     (is-encrypted encrypted)
     (is-ready ready)))
+
+(defn journal-outline-row [uuid page-id title journal-title journal-day depth]
+  (record model/outline-row
+    (uuid uuid)
+    (title title)
+    (markup-json "[]")
+    (youtube-target-url None)
+    (breadcrumb "")
+    (opens-as-page false)
+    (depth depth)
+    (has-children false)
+    (is-collapsed false)
+    (is-asset false)
+    (asset-type None)
+    (local-path None)
+    (status None)
+    (tags [])
+    (sync-status None)
+    (page-id page-id)
+    (journal-title (Some journal-title))
+    (journal-day (Some journal-day))))
 
 (defn task-status [uuid ident title icon-type icon-id icon-color]
   (record model/task-status
@@ -670,7 +708,7 @@
           (depth 0)
           (has-children false)
           (is-collapsed false)
-          (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+          (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         sidebar
         (record model/sidebar-projection
           (favorites [page])
@@ -1365,14 +1403,14 @@
                     (depth 0)
                     (has-children false)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))])
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))])
                 (linked-reference-rows []))
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 1)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -1460,6 +1498,119 @@
     (is (view/older-journals-visible? available))
     (is (not (view/older-journals-visible? selected-page)))
     (is (not (view/older-journals-visible? nested)))))
+
+(deftest journal-section-markers-preserve-boundaries-and-stable-pages
+  (let [unsectioned
+        (assoc (journal-outline-row "draft" "" "Draft" "" 0 0)
+               :journal-title None
+               :journal-day None)
+        first-root
+        (journal-outline-row "day-a-root" "page-a" "First" "August 27th" 20260827 0)
+        first-child
+        (journal-outline-row "day-a-child" "page-a" "Child" "August 27th" 20260827 1)
+        second-root
+        (journal-outline-row "day-b-root" "page-b" "Second" "August 28th" 20260828 0)
+        markers
+        (model/journal-section-markers
+         [unsectioned first-root first-child second-root])]
+    (assert-equal ["day-a-root" "day-b-root"]
+                  (mapv :block-id markers)
+                  "only the first row of each journal starts a section")
+    (assert-equal ["page-a" "page-b"]
+                  (mapv :page-id markers)
+                  "journal navigation keeps the page identity")
+    (assert-equal [false true]
+                  (mapv :has-divider markers)
+                  "only later journal sections receive a divider")))
+
+(deftest journal-section-markers-recompute-after-row-splices
+  (let [day-a
+        (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
+        day-b
+        (journal-outline-row "day-b" "page-b" "B" "August 28th" 20260828 0)
+        day-c
+        (journal-outline-row "day-c" "page-c" "C" "August 29th" 20260829 0)
+        initial
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection) :outliner-rows [day-a day-c])))
+        splice
+        (record model/outline-row-splice
+          (start (Some 1))
+          (after-block-id None)
+          (before-block-id None)
+          (delete-count 0)
+          (rows [day-b]))
+        updated
+        (model/update
+         initial
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :is-outliner-patch true
+                 :outliner-row-splices [splice])))]
+    (assert-equal ["page-a" "page-b" "page-c"]
+                  (mapv :page-id (:outliner-section-markers updated))
+                  "splice application recomputes all journal boundaries")
+    (assert-equal [false true true]
+                  (mapv :has-divider (:outliner-section-markers updated))
+                  "inserted sections keep exactly one divider per boundary")))
+
+(deftest journal-home-renders-navigable-section-headings-and-dividers
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        day-a
+        (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
+        day-b
+        (journal-outline-row "day-b" "page-b" "B" "August 28th" 20260828 0)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection) :outliner-rows [day-a day-b])))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          first-heading
+          (descendant-with-identifier renderer root "button.journal.page-a")
+          second-heading
+          (descendant-with-identifier renderer root "button.journal.page-b")]
+      (is (not (= first-heading -1))
+          "the first journal heading is visible and navigable")
+      (is (not (= second-heading -1))
+          "the second journal heading is visible and navigable")
+      (assert-equal 1
+                    (descendant-count-with-identifier
+                     renderer root "journal.divider")
+                    "two journal sections render one divider")
+      (driver/dispatch-event! application (proto/Press second-heading))
+      (driver/flush! application)
+      (assert-equal [(model/OpenAppNodeEffect 1 "page-b")]
+                    (:pending-effects (chat/model application))
+                    "journal headings use the existing page navigation effect"))))
+
+(deftest selected-pages-do-not-render-journal-home-headings
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row
+        (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
+        selected-sidebar
+        (assoc (empty-sidebar-projection)
+               :selected-page
+               (Some (record model/sidebar-page
+                       (uuid "page-a") (title "August 27th"))))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :sidebar selected-sidebar
+             :outliner-rows [row])))
+    (driver/flush! application)
+    (let [root (main-root renderer application)]
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.journal.page-a")
+                    "journal navigation headings stay specific to journal home"))))
 
 (deftest search-navigation-is-isolated-and-cleared-with-the-presentation
   (let [open-model (model/update (model/initial) model/OpenSearch)
@@ -1580,7 +1731,7 @@
                     (depth 2)
                     (has-children true)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project note")
@@ -1594,7 +1745,8 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
-          rendered-row (nth (apple/children renderer outliner) 0)]
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.block-a")]
       (assert-equal "outliner.block.block-a"
                     (property-string renderer rendered-row
                                      proto/AccessibilityIdentifier)
@@ -1651,7 +1803,7 @@
                              (ident (Some "logseq.property/status.done"))
                              (title "Done")
                              (icon-type None) (icon-id None) (icon-color None))))
-                    (tags []) (sync-status None))]
+                    (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1660,7 +1812,8 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
-          rendered-row (nth (apple/children renderer outliner) 0)
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.block-a")
           column (nth (apple/children renderer rendered-row) 0)
           content (nth (apple/children renderer column) 0)
           rich-content (nth (apple/children renderer content) 3)]
@@ -1696,7 +1849,7 @@
                     (is-collapsed false)
                     (is-asset true)
                     (asset-type (Some "image/jpeg"))
-                    (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None))]
+                    (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1705,7 +1858,8 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
-          rendered-row (nth (apple/children renderer outliner) 0)
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.asset-a")
           column (nth (apple/children renderer rendered-row) 0)
           content (nth (apple/children renderer column) 0)
           rich-content (nth (apple/children renderer content) 2)]
@@ -1743,7 +1897,7 @@
                       (breadcrumb "") (opens-as-page false) (depth 0)
                       (has-children false) (is-collapsed false)
                       (is-asset true) (asset-type (Some "image/jpeg"))
-                      (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None))
+                      (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         current (assoc (model/initial)
                        :selected-page (Some page)
                        :outliner-rows [asset])
@@ -1845,7 +1999,8 @@
                     (has-children false) (is-collapsed false)
                     (is-asset false) (asset-type None) (local-path None)
                     (status (Some todo)) (tags [tag])
-                    (sync-status (Some "failed")))]
+                    (sync-status (Some "failed"))
+                    (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1878,7 +2033,7 @@
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 0)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1887,7 +2042,8 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
-          rendered-row (nth (apple/children renderer outliner) 0)
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.parent")
           toolbar (child-with-identifier
                    renderer root "toolbar.outliner.selection")
           copy-button (nth (apple/children renderer toolbar) 0)]
@@ -1918,7 +2074,7 @@
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 0)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project [[Pro")
@@ -1974,7 +2130,7 @@
                     (depth 2)
                     (has-children true)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1983,7 +2139,8 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
-          rendered-row (nth (apple/children renderer outliner) 0)
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.parent")
           column (nth (apple/children renderer rendered-row) 0)
           content (nth (apple/children renderer column) 0)
           content-children (apple/children renderer content)
@@ -2015,25 +2172,25 @@
                  (markup-json "[]") (youtube-target-url None)
                  (breadcrumb "") (opens-as-page false) (depth 0)
                  (has-children true) (is-collapsed false)
-                 (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+                 (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         child (record model/outline-row
                 (uuid "child") (title "Child")
                 (markup-json "[]") (youtube-target-url None)
                 (breadcrumb "") (opens-as-page false) (depth 1)
                 (has-children false) (is-collapsed false)
-                (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+                (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         sibling (record model/outline-row
                   (uuid "sibling") (title "Sibling")
                   (markup-json "[]") (youtube-target-url None)
                   (breadcrumb "") (opens-as-page false) (depth 0)
                   (has-children false) (is-collapsed false)
-                  (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+                  (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         collapsed-parent (record model/outline-row
                            (uuid "parent") (title "Parent")
                            (markup-json "[]") (youtube-target-url None)
                            (breadcrumb "") (opens-as-page false) (depth 0)
                            (has-children true) (is-collapsed true)
-                           (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
+                           (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         initial
         (model/update
          (model/initial)

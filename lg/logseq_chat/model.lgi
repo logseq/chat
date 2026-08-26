@@ -100,7 +100,16 @@
   (local-path :option<string>)
   (status :option<task-status>)
   (tags :vector<sidebar-page>)
-  (sync-status :option<string>))
+  (sync-status :option<string>)
+  (page-id :string)
+  (journal-title :option<string>)
+  (journal-day :option<int>))
+
+(type-record journal-section-marker
+  (block-id :string)
+  (page-id :string)
+  (title :string)
+  (has-divider :bool))
 
 (type-record outliner-editing
   (uuid :string)
@@ -257,6 +266,7 @@
   (outliner-autocomplete :option<outliner-autocomplete>)
   (outliner-autocomplete-candidates :vector<outliner-autocomplete-candidate>)
   (outliner-task-status-block-id :option<string>)
+  (outliner-section-markers :vector<journal-section-marker>)
   (has-older-journals :bool)
   (composer-expanded :bool)
   (composer-draft :string)
@@ -379,6 +389,12 @@
 (signature logseq-chat.model/built-in-task-statuses
  :fn<vector<task-status>>)
 (signature logseq-chat.model/initial :fn<chat-model>)
+(signature logseq-chat.model/journal-section-key
+ :fn<outline-row;option<string>>)
+(signature logseq-chat.model/journal-section-title
+ :fn<outline-row;string>)
+(signature logseq-chat.model/journal-section-markers
+ :fn<vector<outline-row>;vector<journal-section-marker>>)
 (signature logseq-chat.model/request-route
  :fn<vector<navigation-route>;navigation-route;vector<navigation-route>>)
 (signature logseq-chat.model/resolve-route

@@ -55,6 +55,9 @@ type outline_row =
   ; status : task_status option
   ; tags : sidebar_page list
   ; sync_status : string option
+  ; page_id : string
+  ; journal_title : string option
+  ; journal_day : int option
   }
 
 type outliner_editing =
@@ -388,6 +391,9 @@ let outline_row_from_block
            | Some (`List values) -> List.filter_map sidebar_page values
            | _ -> [])
       ; sync_status = string_member "syncStatus" block_fields
+      ; page_id = Option.value ~default:"" (string_member "pageId" block_fields)
+      ; journal_title = string_member "journalTitle" block_fields
+      ; journal_day = int_member "journalDay" block_fields
       }
   | _ -> None
 ;;

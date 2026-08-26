@@ -7,7 +7,7 @@ let equal expected actual message =
 
 let () =
   let response =
-    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"hasOlderJournals":true,"appliedServerT":42,"hasPendingSemanticOperations":true,"pendingSyncRequest":{"id":7},"syncConnected":true}}|}
+    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note","pageId":"journal-a","journalTitle":"August 27th, 2026","journalDay":20260827},"depth":2,"hasChildren":true,"isCollapsed":false}],"hasOlderJournals":true,"appliedServerT":42,"hasPendingSemanticOperations":true,"pendingSyncRequest":{"id":7},"syncConnected":true}}|}
   in
   match decode_response response with
   | Error message -> failwith message
@@ -32,6 +32,12 @@ let () =
      | [ row ] ->
        equal "outline-a" row.uuid "outliner uuid";
        equal "Nested note" row.title "outliner title";
+       equal "journal-a" row.page_id "outliner page id";
+       equal "August 27th, 2026"
+         (Option.value ~default:"" row.journal_title)
+         "outliner journal title";
+       if row.journal_day <> Some 20260827
+       then failwith "outliner journal day was not projected";
        if row.depth <> 2 || not row.has_children || row.is_collapsed
        then failwith "outliner presentation state was not projected"
      | _ -> failwith "outliner rows were not projected")
@@ -210,7 +216,7 @@ let () =
      | Ok _ -> failwith "task statuses were not projected"
      | Error message -> failwith message);
     let patch_response =
-      {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
+      {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note","pageId":"journal-a","journalTitle":"August 27th, 2026","journalDay":20260827},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in
     (match decode_response patch_response with
      | Error message -> failwith message
@@ -221,7 +227,11 @@ let () =
           if splice.start <> Some 0 || splice.delete_count <> 2
           then failwith "outliner splice bounds were not projected";
           (match splice.rows with
-           | [ row ] when row.uuid = "outline-a" && row.is_collapsed -> ()
+           | [ row ]
+             when row.uuid = "outline-a"
+                  && row.is_collapsed
+                  && row.page_id = "journal-a"
+                  && row.journal_day = Some 20260827 -> ()
            | _ -> failwith "outliner splice rows were not projected")
         | _ -> failwith "outliner row splices were not projected"))
 ;;

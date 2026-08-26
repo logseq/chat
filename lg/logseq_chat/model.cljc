@@ -79,6 +79,7 @@
           (outliner-autocomplete None)
           (outliner-autocomplete-candidates [])
           (outliner-task-status-block-id None)
+          (outliner-section-markers [])
           (has-older-journals false)
           (composer-expanded false)
           (composer-draft "")
@@ -173,6 +174,55 @@
   (if (empty? flashcards)
     None
     (Some (:uuid (nth flashcards 0)))))
+
+(defn journal-section-key [row]
+  (match (:journal-day row)
+    (Some day) (Some (str day))
+    None
+    (match (:journal-title row)
+      (Some title) (if (string/blank? title) None (Some title))
+      None None)))
+
+(defn journal-section-title [row]
+  (match (:journal-title row)
+    (Some title) (if (string/blank? title)
+                   (match (:journal-day row)
+                     (Some day) (str day)
+                     None "")
+                   title)
+    None
+    (match (:journal-day row)
+      (Some day) (str day)
+      None "")))
+
+(defn journal-section-markers [rows]
+  (loop [index 0
+         previous-key None
+         has-section false
+         result []]
+    (if (= index (count rows))
+      result
+      (let [row (nth rows index)
+            key (journal-section-key row)
+            starts-section
+            (match key
+              (Some _current-key) (not (= key previous-key))
+              None false)
+            next-key (if starts-section key previous-key)
+            next-result
+            (if starts-section
+              (conj
+               result
+               (record journal-section-marker
+                 (block-id (:uuid row))
+                 (page-id (:page-id row))
+                 (title (journal-section-title row))
+                 (has-divider has-section)))
+              result)]
+        (recur (inc index)
+               next-key
+               (or has-section starts-section)
+               next-result)))))
 
 (defn graph-by-id [graphs target]
   (loop [index 0]
@@ -616,6 +666,8 @@
                  :outliner-selected-block-ids
                  (:outliner-selected-block-ids projection)
                  :has-older-journals (:has-older-journals projection)
+                 :outliner-section-markers
+                 (journal-section-markers projected-rows)
                  :outliner-rows projected-rows)
           searched
           (if (= (:search-query projection) (:search-query current))

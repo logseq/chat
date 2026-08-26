@@ -112,6 +112,20 @@
 (signature logseq-chat.view/graphs-destination? :fn<chat-model;bool>)
 (signature logseq-chat.view/journal-root-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/older-journals-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/journal-section-marker-for
+ :fn<vector<journal-section-marker>;string;option<journal-section-marker>>)
+(signature logseq-chat.view/outliner-journal-marker
+ :fn<chat-model;outline-row;option<journal-section-marker>>)
+(signature logseq-chat.view/outliner-journal-heading-visible?
+ :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-journal-divider-visible?
+ :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-journal-title
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-journal-page-id
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-journal-button-identifier
+ :fn<chat-model;outline-row;string>)
 (signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/primary-sidebar-button-visible?
  :fn<chat-model;bool>)
@@ -163,6 +177,8 @@
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
+ :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-entry
  :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-selection-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
