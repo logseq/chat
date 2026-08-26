@@ -739,6 +739,30 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                     message: String(describing: error)
                 )
             }
+        case "set-outliner-task-status":
+            do {
+                guard let metadata = effect.metadata else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "The task status effect is missing its status payload"
+                    )
+                }
+                let status = try JSONDecoder().decode(
+                    LGTaskStatusPayload.self,
+                    from: Data(metadata.utf8)
+                )
+                request = try Self.outlinerRequest(LogseqOutlinerEvent(
+                    type: "setTaskStatus",
+                    uuid: effect.text,
+                    statusIdent: status.ident,
+                    statusUuid: status.uuid
+                ))
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
         case "outliner-toolbar":
             do {
                 request = try Self.outlinerRequest(

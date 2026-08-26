@@ -772,6 +772,29 @@ struct LGChatRendererTests {
         #expect(copy.succeeded)
     }
 
+    @Test("outliner task status effects reuse the existing core event")
+    func outlinerTaskStatusEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return #"{"apiVersion":1,"ok":true,"result":null}"#
+        }
+
+        let resolution = await executor.execute(LGChatEffect(
+            id: 16,
+            kind: "set-outliner-task-status",
+            text: "block-a",
+            metadata: #"{"uuid":"done","ident":"logseq.property/status.done","title":"Done","iconType":"tabler-icon","iconId":"Done","iconColor":null}"#
+        ))
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("setTaskStatus") == true)
+        #expect(request.params.payload?.contains("block-a") == true)
+        #expect(request.params.payload?.contains("logseq.property/status.done") == true)
+        #expect(resolution.succeeded)
+    }
+
     @Test("autocomplete effects reuse the existing core reducer")
     func autocompleteEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequest: LogseqChatRPCRequest?

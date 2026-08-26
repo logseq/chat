@@ -33,6 +33,24 @@ and outline_row (row : Snapshot.outline_row) : LG.outline_row =
   ; is_asset = row.is_asset
   ; asset_type = row.asset_type
   ; local_path = row.local_path
+  ; status =
+      Option.map
+        (fun (status : Snapshot.task_status) : LG.task_status ->
+           { uuid = status.uuid
+           ; ident = status.ident
+           ; title = status.title
+           ; icon_type = status.icon_type
+           ; icon_id = status.icon_id
+           ; icon_color = status.icon_color
+           })
+        row.status
+  ; tags =
+      Rrbvec.of_list
+        (List.map
+           (fun (page : Snapshot.sidebar_page) : LG.sidebar_page ->
+              { uuid = page.uuid; title = page.title })
+           row.tags)
+  ; sync_status = row.sync_status
   }
 ;;
 

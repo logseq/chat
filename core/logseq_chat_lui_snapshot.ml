@@ -52,6 +52,9 @@ type outline_row =
   ; is_asset : bool
   ; asset_type : string option
   ; local_path : string option
+  ; status : task_status option
+  ; tags : sidebar_page list
+  ; sync_status : string option
   }
 
 type outliner_editing =
@@ -378,6 +381,12 @@ let outline_row_from_block
       ; is_asset = bool_member "isAsset" block_fields
       ; asset_type = string_member "assetType" block_fields
       ; local_path = string_member "localPath" block_fields
+      ; status = Option.bind (member "status" block_fields) task_status
+      ; tags =
+          (match member "tags" block_fields with
+           | Some (`List values) -> List.filter_map sidebar_page values
+           | _ -> [])
+      ; sync_status = string_member "syncStatus" block_fields
       }
   | _ -> None
 ;;

@@ -669,7 +669,7 @@
           (depth 0)
           (has-children false)
           (is-collapsed false)
-          (is-asset false) (asset-type None) (local-path None))
+          (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         sidebar
         (record model/sidebar-projection
           (favorites [page])
@@ -1364,14 +1364,14 @@
                     (depth 0)
                     (has-children false)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None))])
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))])
                 (linked-reference-rows []))
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 1)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None))]
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -1526,7 +1526,7 @@
                     (depth 2)
                     (has-children true)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None))
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project note")
@@ -1545,7 +1545,8 @@
                     (property-string renderer rendered-row
                                      proto/AccessibilityIdentifier)
                     "the LG row keeps main's stable block identifier")
-      (let [content (nth (apple/children renderer rendered-row) 0)
+      (let [column (nth (apple/children renderer rendered-row) 0)
+            content (nth (apple/children renderer column) 0)
             editor (nth (apple/children renderer content) 2)]
         (assert-equal (Some (apple/AppleExtension "outliner-editor"))
                       (apple/node renderer editor)
@@ -1589,7 +1590,7 @@
                     (depth 0)
                     (has-children false)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None))]
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1599,7 +1600,8 @@
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
-          content (nth (apple/children renderer rendered-row) 0)
+          column (nth (apple/children renderer rendered-row) 0)
+          content (nth (apple/children renderer column) 0)
           rich-content (nth (apple/children renderer content) 2)]
       (assert-equal
        (Some (apple/AppleExtension "outliner-block-content"))
@@ -1630,7 +1632,7 @@
                     (is-collapsed false)
                     (is-asset true)
                     (asset-type (Some "image/jpeg"))
-                    (local-path (Some "Assets/Photo.jpg")))]
+                    (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1640,7 +1642,8 @@
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
-          content (nth (apple/children renderer rendered-row) 0)
+          column (nth (apple/children renderer rendered-row) 0)
+          content (nth (apple/children renderer column) 0)
           rich-content (nth (apple/children renderer content) 2)]
       (assert-equal (Some (proto/BoolValue true))
                     (extension-property application rich-content "is-asset")
@@ -1676,7 +1679,7 @@
                       (breadcrumb "") (opens-as-page false) (depth 0)
                       (has-children false) (is-collapsed false)
                       (is-asset true) (asset-type (Some "image/jpeg"))
-                      (local-path (Some "Assets/Photo.jpg")))
+                      (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None))
         current (assoc (model/initial)
                        :selected-page (Some page)
                        :outliner-rows [asset])
@@ -1752,6 +1755,57 @@
     (assert-equal 3 (:next-effect-id zoomed)
                   "both structure controls advance stable effect IDs")))
 
+(deftest outliner-task-status-selection-uses-the-core-event-boundary
+  (let [todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+        done (model/task-status "done" "logseq.property/status.done" "Done" "Done")
+        current (assoc (model/initial) :task-statuses [todo done])
+        opened (model/update current (model/OpenOutlinerTaskStatusPicker "block-a"))
+        chosen (model/update opened (model/ChooseOutlinerTaskStatus "done"))]
+    (assert-equal (Some "block-a") (:outliner-task-status-block-id opened)
+                  "the task-status picker keeps its target block")
+    (assert-equal [(model/SetOutlinerTaskStatusEffect 1 "block-a" done)]
+                  (:pending-effects chosen)
+                  "status changes reuse the typed outliner core boundary")
+    (assert-equal None (:outliner-task-status-block-id chosen)
+                  "choosing a status dismisses the picker")))
+
+(deftest outliner-rows-render-status-tags-and-sync-failures
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+        tag (record model/sidebar-page (uuid "tag-a") (title "Project"))
+        row (record model/outline-row
+                    (uuid "block-a") (title "Ship it")
+                    (markup-json "[]") (youtube-target-url None)
+                    (breadcrumb "") (opens-as-page false) (depth 0)
+                    (has-children false) (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status (Some todo)) (tags [tag])
+                    (sync-status (Some "failed")))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       true "" [] [] None None [] []
+                                       [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          rendered-row (descendant-with-identifier
+                        renderer root "outliner.block.block-a")]
+      (is (not (= -1 (descendant-with-identifier
+                       renderer rendered-row "button.block-task-status")))
+          "task blocks expose their status control")
+      (let [tag-button (descendant-with-identifier
+                        renderer rendered-row "button.block-tag.tag-a")]
+        (is (not (= -1 tag-button)) "trailing tags remain interactive")
+        (driver/dispatch-event! application (proto/Press tag-button))
+        (driver/flush! application)
+        (assert-equal [(model/NodeRoute "tag-a")]
+                      (:app-navigation-path (chat/model application))
+                      "tag presses use LG-owned node navigation"))
+      (is (not (= -1 (descendant-with-identifier
+                       renderer rendered-row "outliner.sync-failed.block-a")))
+          "failed block sync remains visible"))))
+
 (deftest outliner-long-press-selection-and-toolbar-use-typed-effects
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -1760,7 +1814,7 @@
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 0)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None))]
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1800,7 +1854,7 @@
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 0)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None))
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project [[Pro")
@@ -1856,7 +1910,7 @@
                     (depth 2)
                     (has-children true)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None))]
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1866,7 +1920,8 @@
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
-          content (nth (apple/children renderer rendered-row) 0)
+          column (nth (apple/children renderer rendered-row) 0)
+          content (nth (apple/children renderer column) 0)
           content-children (apple/children renderer content)
           indent (nth content-children 0)
           zoom (nth content-children 1)
@@ -1896,25 +1951,25 @@
                  (markup-json "[]") (youtube-target-url None)
                  (breadcrumb "") (opens-as-page false) (depth 0)
                  (has-children true) (is-collapsed false)
-                 (is-asset false) (asset-type None) (local-path None))
+                 (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         child (record model/outline-row
                 (uuid "child") (title "Child")
                 (markup-json "[]") (youtube-target-url None)
                 (breadcrumb "") (opens-as-page false) (depth 1)
                 (has-children false) (is-collapsed false)
-                (is-asset false) (asset-type None) (local-path None))
+                (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         sibling (record model/outline-row
                   (uuid "sibling") (title "Sibling")
                   (markup-json "[]") (youtube-target-url None)
                   (breadcrumb "") (opens-as-page false) (depth 0)
                   (has-children false) (is-collapsed false)
-                  (is-asset false) (asset-type None) (local-path None))
+                  (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         collapsed-parent (record model/outline-row
                            (uuid "parent") (title "Parent")
                            (markup-json "[]") (youtube-target-url None)
                            (breadcrumb "") (opens-as-page false) (depth 0)
                            (has-children true) (is-collapsed true)
-                           (is-asset false) (asset-type None) (local-path None))
+                           (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))
         initial
         (model/update
          (model/initial)

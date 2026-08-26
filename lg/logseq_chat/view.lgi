@@ -22,6 +22,20 @@
  :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-local-path
  :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-has-status?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-status-title
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-has-tags?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-sync-failed?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-tag-identifier
+ :fn<sidebar-page;string>)
+(signature logseq-chat.view/outliner-tag-title
+ :fn<sidebar-page;string>)
+(signature logseq-chat.view/outliner-tag
+ :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/request-node-action
  :fn<chat-model;string;chat-action>)
 (signature logseq-chat.view/handle-outliner-block-content-event
@@ -175,6 +189,14 @@
 (signature logseq-chat.view/task-status-row
  :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/task-status-picker-dialog
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-task-status-picker-open?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-task-status-option-identifier
+ :fn<task-status;string>)
+(signature logseq-chat.view/outliner-task-status-row
+ :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-task-status-dialog
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/first-flashcard
  :fn<chat-model;option<flashcard>>)

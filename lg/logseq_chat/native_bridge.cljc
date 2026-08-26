@@ -125,6 +125,11 @@
          (wire/quoted uuid) "}")
     (model/SyncNowEffect id)
     (str "{\"id\":" id ",\"kind\":\"sync-now\",\"text\":\"\"}")
+    (model/SetOutlinerTaskStatusEffect id block-id status)
+    (str "{\"id\":" id
+         ",\"kind\":\"set-outliner-task-status\",\"text\":"
+         (wire/quoted block-id) ",\"metadata\":"
+         (wire/quoted (encode-task-status status)) "}")
     (model/SearchNodesEffect id query)
     (str "{\"id\":" id
          ",\"kind\":\"search-nodes\",\"text\":"

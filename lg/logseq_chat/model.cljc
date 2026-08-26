@@ -78,6 +78,7 @@
           (outliner-editing None)
           (outliner-autocomplete None)
           (outliner-autocomplete-candidates [])
+          (outliner-task-status-block-id None)
           (composer-expanded false)
           (composer-draft "")
           (composer-autofocus false)
@@ -126,6 +127,7 @@
     (SetPageFavoriteEffect id _uuid _favorite) id
     (DeletePageEffect id _uuid) id
     (SyncNowEffect id) id
+    (SetOutlinerTaskStatusEffect id _block-id _status) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
     (ChangeOutlinerTextEffect id _uuid _title _caret) id
@@ -1002,6 +1004,24 @@
     SyncNow
     (let [id (:next-effect-id current)]
       (enqueue-effect current (SyncNowEffect id)))
+
+    (OpenOutlinerTaskStatusPicker block-id)
+    (assoc current :outliner-task-status-block-id (Some block-id))
+
+    CloseOutlinerTaskStatusPicker
+    (assoc current :outliner-task-status-block-id None)
+
+    (ChooseOutlinerTaskStatus status-id)
+    (match (:outliner-task-status-block-id current)
+      (Some block-id)
+      (match (task-status-by-id (:task-statuses current) status-id)
+        (Some status)
+        (let [updated (assoc current :outliner-task-status-block-id None)
+              id (:next-effect-id updated)]
+          (enqueue-effect
+           updated (SetOutlinerTaskStatusEffect id block-id status)))
+        None current)
+      None current)
 
     ToggleActivePageFavorite
     (match (active-page current)

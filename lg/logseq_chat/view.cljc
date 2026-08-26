@@ -597,6 +597,42 @@
     (Some editing) (:caret-utf16-offset editing)
     None 0))
 
+(defn outliner-row-has-status? [row]
+  (match (:status row)
+    (Some _status) true
+    None false))
+
+(defn outliner-row-status-title [row]
+  (match (:status row)
+    (Some status) (:title status)
+    None ""))
+
+(defn outliner-row-has-tags? [row]
+  (not (empty? (:tags row))))
+
+(defn outliner-row-sync-failed? [row]
+  (match (:sync-status row)
+    (Some status) (= status "failed")
+    None false))
+
+(defn outliner-tag-identifier [tag]
+  (str "button.block-tag." (:uuid tag)))
+
+(defn outliner-tag-title [tag]
+  (str "#" (:title tag)))
+
+(defn outliner-tag [ui-context tag-source send]
+  (let [tag (signal/sample tag-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive outliner-tag-title tag-source)
+       :label (reactive outliner-tag-title tag-source)
+       :accessibility-identifier (outliner-tag-identifier tag)
+       :on-press
+       (event [current-tag tag-source]
+         (send (model/RequestAppNode (:uuid current-tag))))}])))
+
 (defn outliner-row [ui-context model-source row-source send]
   (let [row (signal/sample row-source)
         search-open (:search-open (signal/sample model-source))
@@ -615,7 +651,11 @@
         selected-source (reactive row-selected? model-source row-source)
         not-editing-source
         (reactive row-not-editing? model-source row-source)
-        has-children-source (reactive outliner-row-has-children row-source)]
+        has-children-source (reactive outliner-row-has-children row-source)
+        has-status-source (reactive outliner-row-has-status? row-source)
+        status-title-source (reactive outliner-row-status-title row-source)
+        has-tags-source (reactive outliner-row-has-tags? row-source)
+        sync-failed-source (reactive outliner-row-sync-failed? row-source)]
     (elements/element
      ui-context nil
      [:list-item
@@ -633,32 +673,55 @@
        :on-long-press
        (event [current-row row-source]
          (send (model/LongPressOutlinerBlock (:uuid current-row))))}
-      [:row {:gap 2 :padding-vertical 5}
-       [outliner-indent-view indent-source]
-       [:button
-        {:label (reactive outliner-row-zoom-label row-source)
-         :accessibility-identifier
-         (str "button.outliner.zoom." (:uuid row))
-         :on-press
-         (event [current-row row-source]
-           (send (model/ZoomOutlinerBlock (:uuid current-row))))}
-        "•"]
-       [:if {:test editing-source}
-       [outliner-editor-view block-id-source
-         editing-title-source editing-caret-source send]]
-       [:if {:test not-editing-source}
-        [outliner-block-content-view
-         model-source title-source markup-source youtube-target-source
-         is-asset-source asset-type-source local-path-source send]]
-       [:if {:test has-children-source}
+      [:column
+       [:row {:gap 2 :padding-vertical 5}
+        [outliner-indent-view indent-source]
         [:button
-         {:text (reactive outliner-row-collapse-glyph row-source)
-          :label (reactive outliner-row-collapse-label row-source)
+         {:label (reactive outliner-row-zoom-label row-source)
           :accessibility-identifier
-          (str "button.outliner.collapse." (:uuid row))
+          (str "button.outliner.zoom." (:uuid row))
           :on-press
           (event [current-row row-source]
-            (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]])))
+            (send (model/ZoomOutlinerBlock (:uuid current-row))))}
+         "•"]
+        [:if {:test has-status-source}
+         [:button
+          {:text status-title-source
+           :label "Task status"
+           :accessibility-identifier "button.block-task-status"
+           :on-press
+           (event [current-row row-source]
+             (send
+              (model/OpenOutlinerTaskStatusPicker (:uuid current-row))))}]]
+        [:if {:test editing-source}
+         [outliner-editor-view block-id-source
+          editing-title-source editing-caret-source send]]
+        [:if {:test not-editing-source}
+         [outliner-block-content-view
+          model-source title-source markup-source youtube-target-source
+          is-asset-source asset-type-source local-path-source send]]
+        [:if {:test has-children-source}
+         [:button
+          {:text (reactive outliner-row-collapse-glyph row-source)
+           :label (reactive outliner-row-collapse-label row-source)
+           :accessibility-identifier
+           (str "button.outliner.collapse." (:uuid row))
+           :on-press
+           (event [current-row row-source]
+             (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]
+       [:if {:test has-tags-source}
+        [:row
+         [:keyed
+          {:source (reactive :tags row-source)
+           :key :uuid
+           :compare compare
+           :as tag-source}
+          [outliner-tag tag-source send]]]]
+       [:if {:test sync-failed-source}
+        [:text
+         {:accessibility-identifier
+          (str "outliner.sync-failed." (:uuid row))}
+         "Sync failed"]]]])))
 
 (defui outliner-selection-toolbar [send]
   [:toolbar
@@ -999,6 +1062,48 @@
       "Clear task status"]]
     [:button
      {:on-press (fn [_event] (send model/CloseTaskStatusPicker))}
+     "Cancel"]]])
+
+(defn outliner-task-status-picker-open? [current]
+  (match (:outliner-task-status-block-id current)
+    (Some _block-id) true
+    None false))
+
+(defn outliner-task-status-option-identifier [status]
+  (str
+   "button.block-task-status-option."
+   (match (:ident status)
+     (Some ident) ident
+     None (:uuid status))))
+
+(defn outliner-task-status-row [ui-context status-source send]
+  (let [status (signal/sample status-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive task-status-title status-source)
+       :label (reactive task-status-title status-source)
+       :accessibility-identifier
+       (outliner-task-status-option-identifier status)
+       :on-press
+       (event [current-status status-source]
+         (send (model/ChooseOutlinerTaskStatus (:uuid current-status))))}])))
+
+(defui outliner-task-status-dialog [model-source send]
+  [:dialog
+   {:text "Task status"
+    :on-dismiss
+    (fn [_event] (send model/CloseOutlinerTaskStatusPicker))}
+   [:column
+    [:keyed
+     {:source (reactive :task-statuses model-source)
+      :key :uuid
+      :compare compare
+      :as status-source}
+     [outliner-task-status-row status-source send]]
+    [:button
+     {:on-press
+      (fn [_event] (send model/CloseOutlinerTaskStatusPicker))}
      "Cancel"]]])
 
 (defn first-flashcard [current]
@@ -1727,6 +1832,8 @@
     [attachment-picker-dialog send]]
    [:if {:test (reactive :task-status-picker-open model-source)}
     [task-status-picker-dialog model-source send]]
+   [:if {:test (reactive outliner-task-status-picker-open? model-source)}
+    [outliner-task-status-dialog model-source send]]
    [:if {:test (reactive page-deletion-pending? model-source)}
     [page-delete-dialog send]]
    [:if {:test (reactive :sync-details-open model-source)}
