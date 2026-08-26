@@ -654,7 +654,6 @@ enum OutlinerNavigationPolicy {
 }
 
 enum AppNavigationRoute: Hashable {
-    case search
     case node(String)
 }
 

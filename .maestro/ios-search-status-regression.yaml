@@ -25,13 +25,34 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - tapOn:
     id: "button.search"
-- assertVisible: "Search blocks"
-- tapOn: "Search blocks"
+- assertVisible:
+    id: "screen.search"
+- assertVisible:
+    id: "button.search.close"
+- assertNotVisible: "Cancel"
+- assertNotVisible: "Back"
 - inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
 - extendedWaitUntil:
     visible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
     timeout: 10000
-- tapOn: "close"
+- swipe:
+    direction: UP
+    duration: 400
+- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- extendedWaitUntil:
+    visible: "Back"
+    timeout: 10000
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "screen.search"
+    timeout: 10000
+- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn:
+    id: "button.search.close"
+- assertNotVisible:
+    id: "screen.search"
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"

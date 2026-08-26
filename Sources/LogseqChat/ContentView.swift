@@ -228,8 +228,10 @@ struct ContentView: View {
     @State private var handledCaptureRequestRevision = 0
     @State private var settingsPresented = false
     @State private var syncStatusPresented = false
-    #if SKIP
     @State private var searchPagePresented = false
+    @State private var searchQuery = ""
+    #if !SKIP
+    @State private var searchNavigationPath: [AppNavigationRoute] = []
     #endif
     @State private var graphsPresented = false
     @State private var flashcardsPresented = false
@@ -399,11 +401,13 @@ struct ContentView: View {
                 close: { syncStatusPresented = false }
             )
         }
-        #if SKIP
+        #if os(macOS)
         .sheet(isPresented: $searchPagePresented) {
-            NodeSearchView(store: store) { hit in
-                store.openNode(hit.uuid)
-            }
+            searchPresentation
+        }
+        #else
+        .fullScreenCover(isPresented: $searchPagePresented) {
+            searchPresentation
         }
         #endif
         #if !SKIP && os(iOS)
@@ -605,6 +609,37 @@ struct ContentView: View {
         authenticatedContent
     }
 
+    private var searchPresentation: some View {
+        #if SKIP
+        NodeSearchView(
+            store: store,
+            query: $searchQuery,
+            close: dismissSearch
+        ) { hit in
+            searchPagePresented = false
+            store.openNode(hit.uuid)
+        }
+        #else
+        NavigationStack(path: $searchNavigationPath) {
+            NodeSearchView(
+                store: store,
+                query: $searchQuery,
+                close: dismissSearch,
+                open: { hit in openSearchNodeRoute(hit.uuid) }
+            )
+            .navigationDestination(for: AppNavigationRoute.self) { route in
+                switch route {
+                case let .node(uuid):
+                    nodeNavigationDestination(uuid: uuid, openNode: openSearchNodeRoute)
+                }
+            }
+        }
+        .onChange(of: searchNavigationPath) { previousPath, path in
+            handleNodeNavigationPathChange(previousPath: previousPath, path: path)
+        }
+        #endif
+    }
+
     private var graphPicker: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
@@ -701,29 +736,7 @@ struct ContentView: View {
             composerDismissalSurface
         }
         .onChange(of: appNavigationPath) { previousPath, path in
-            if path.count < previousPath.count {
-                endEditingForDestinationChange()
-            }
-            let closedNodes = AppNavigationPathPolicy.coreCloseCount(
-                previousPath: previousPath,
-                path: path,
-                projectedNodeCount: store.snapshot.nodeRoutes.count
-            )
-            if closedNodes > 0 {
-                Task { @MainActor in
-                    // Let SwiftUI commit the path change before publishing the
-                    // corresponding core projection cleanup.
-                    await Task.yield()
-                    for _ in 0..<closedNodes { store.closeNode() }
-                }
-            }
-            let activeNodeIDs: Set<String> = Set(path.compactMap { route -> String? in
-                guard case let .node(uuid) = route else { return nil }
-                return uuid
-            })
-            nodeNavigationPreviews = nodeNavigationPreviews.filter {
-                activeNodeIDs.contains($0.key)
-            }
+            handleNodeNavigationPathChange(previousPath: previousPath, path: path)
         }
         #if os(iOS)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -743,24 +756,20 @@ struct ContentView: View {
     #if !SKIP
     @ViewBuilder private func appNavigationDestination(_ route: AppNavigationRoute) -> some View {
         switch route {
-        case .search:
-            NodeSearchView(store: store, dismissAfterOpen: false) { hit in
-                openNodeRoute(hit.uuid)
-            }
-            .navigationTitle("Search")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-        case let .node(uuid): nodeNavigationDestination(uuid: uuid)
+        case let .node(uuid):
+            nodeNavigationDestination(uuid: uuid, openNode: openNodeRoute)
         }
     }
 
-    private func nodeNavigationDestination(uuid: String) -> some View {
+    private func nodeNavigationDestination(
+        uuid: String,
+        openNode: @escaping (String) -> Void
+    ) -> some View {
         Group {
             if let projection = store.snapshot.nodeRoutes.last(where: { $0.uuid == uuid }) {
-                nodeProjectionContent(projection)
+                nodeProjectionContent(projection, openNode: openNode)
             } else if let preview = nodeNavigationPreviews[uuid] {
-                nodeNavigationPreviewContent(preview)
+                nodeNavigationPreviewContent(preview, openNode: openNode)
             } else {
                 Color.clear
             }
@@ -778,7 +787,10 @@ struct ContentView: View {
         #endif
     }
 
-    private func nodeNavigationPreviewContent(_ preview: NodeNavigationPreview) -> some View {
+    private func nodeNavigationPreviewContent(
+        _ preview: NodeNavigationPreview,
+        openNode: @escaping (String) -> Void
+    ) -> some View {
         OutlinerView(
             rows: preview.rows,
             sections: preview.sections,
@@ -791,8 +803,10 @@ struct ContentView: View {
             bottomPadding: blockListContentBottomPadding,
             sendEvent: { _ in },
             onBeginInteraction: {},
-            onZoomBlock: openOutlinerNode,
-            onOpenMarkupLink: openMarkupLink,
+            onZoomBlock: openNode,
+            onOpenMarkupLink: { link in
+                if case let .node(uuid) = link { openNode(uuid) }
+            },
             onLoadOlderJournals: {},
             relatedTitle: nil,
             relatedEmptyTitle: nil,
@@ -805,7 +819,10 @@ struct ContentView: View {
         )
     }
 
-    @ViewBuilder private func nodeProjectionContent(_ projection: LogseqNodeProjection) -> some View {
+    @ViewBuilder private func nodeProjectionContent(
+        _ projection: LogseqNodeProjection,
+        openNode: @escaping (String) -> Void
+    ) -> some View {
         OutlinerView(
             rows: projection.outlinerRows,
             sections: store.sections(for: projection),
@@ -818,8 +835,10 @@ struct ContentView: View {
             bottomPadding: blockListContentBottomPadding,
             sendEvent: store.outlinerEvent,
             onBeginInteraction: beginOutlinerInteraction,
-            onZoomBlock: openOutlinerNode,
-            onOpenMarkupLink: openMarkupLink,
+            onZoomBlock: openNode,
+            onOpenMarkupLink: { link in
+                if case let .node(uuid) = link { openNode(uuid) }
+            },
             onLoadOlderJournals: {},
             relatedTitle: RelatedContentPolicy.sectionTitle(
                 isTag: projection.isTag,
@@ -1395,19 +1414,65 @@ struct ContentView: View {
     }
 
     #if !SKIP
+    private func handleNodeNavigationPathChange(
+        previousPath: [AppNavigationRoute],
+        path: [AppNavigationRoute]
+    ) {
+        if path.count < previousPath.count {
+            endEditingForDestinationChange()
+        }
+        let closedNodes = AppNavigationPathPolicy.coreCloseCount(
+            previousPath: previousPath,
+            path: path,
+            projectedNodeCount: store.snapshot.nodeRoutes.count
+        )
+        if closedNodes > 0 {
+            Task { @MainActor in
+                // Let SwiftUI commit the pop before cleaning up the matching
+                // core projection. Search and app navigation use this path.
+                await Task.yield()
+                for _ in 0..<closedNodes { store.closeNode() }
+            }
+        }
+        let activeNodeIDs = Set(
+            (appNavigationPath + searchNavigationPath).compactMap { route -> String? in
+                guard case let .node(uuid) = route else { return nil }
+                return uuid
+            }
+        )
+        nodeNavigationPreviews = nodeNavigationPreviews.filter {
+            activeNodeIDs.contains($0.key)
+        }
+    }
+
     private func openNodeRoute(_ uuid: String) {
+        openNodeRoute(uuid, path: $appNavigationPath, context: "app")
+    }
+
+    private func openSearchNodeRoute(_ uuid: String) {
+        openNodeRoute(uuid, path: $searchNavigationPath, context: "search")
+    }
+
+    private func openNodeRoute(
+        _ uuid: String,
+        path: Binding<[AppNavigationRoute]>,
+        context: String
+    ) {
         let route = AppNavigationRoute.node(uuid)
-        guard AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath),
+        guard AppNavigationPathPolicy.shouldAppend(route, to: path.wrappedValue),
               !pendingNodeRoutes.contains(route)
         else {
             #if DEBUG
-            print("LogseqChat debug: ignored duplicate node route target=\(route)")
+            print("LogseqChat debug: ignored duplicate \(context) node route target=\(route)")
             #endif
             return
         }
         endEditingForDestinationChange()
         #if DEBUG
-        print("LogseqChat debug: opening node route target=\(route) currentDepth=\(appNavigationPath.count)")
+        print(
+            "LogseqChat debug: opening \(context) node route "
+                + "target=\(route) currentDepth=\(path.wrappedValue.count)"
+        )
         #endif
         let previewSource = activeNodeProjection
         nodeNavigationPreviews[uuid] = NodeNavigationPreviewPolicy.make(
@@ -1420,10 +1485,10 @@ struct ContentView: View {
         pendingNodeRoutes.insert(route)
         let requestedPath = AppNavigationPathPolicy.pathAfterRequest(
             route,
-            in: appNavigationPath
+            in: path.wrappedValue
         )
         let requestedDepth = requestedPath.count
-        appNavigationPath = requestedPath
+        path.wrappedValue = requestedPath
         store.openNode(uuid) { resolved in
             pendingNodeRoutes.remove(route)
             if !resolved { nodeNavigationPreviews.removeValue(forKey: uuid) }
@@ -1431,15 +1496,15 @@ struct ContentView: View {
                !AppNavigationPathPolicy.shouldKeepResolvedProjection(
                    route,
                    requestedDepth: requestedDepth,
-                   in: appNavigationPath
+                   in: path.wrappedValue
                ) {
                 store.closeNode()
                 return
             }
-            appNavigationPath = AppNavigationPathPolicy.pathAfterResolution(
+            path.wrappedValue = AppNavigationPathPolicy.pathAfterResolution(
                 route,
                 resolved: resolved,
-                in: appNavigationPath
+                in: path.wrappedValue
             )
         }
     }
@@ -1455,9 +1520,6 @@ struct ContentView: View {
     }
 
     private var bottomChromePresentation: BottomChromePresentation {
-        #if !SKIP
-        if appNavigationPath.last == .search { return .hidden }
-        #endif
         return BottomChromePolicy.presentation(
             contentMode: presentedContentMode,
             hasSelectedPage: store.snapshot.selectedPage != nil,
@@ -2254,7 +2316,7 @@ struct ContentView: View {
             case .captureAndSearch:
                 HStack(spacing: 10) {
                     collapsedComposer
-                    Button(action: presentSearch) {
+                    Button(action: expandSearch) {
                         IconImage(name: "search")
                             .frame(width: 24, height: 24)
                             .frame(width: 58, height: 58)
@@ -2580,22 +2642,16 @@ struct ContentView: View {
         #endif
     }
 
-    #if !SKIP
-    private func presentSearch() {
-        dismissComposerEditing()
-        let route = AppNavigationRoute.search
-        if AppNavigationPathPolicy.shouldAppend(route, to: appNavigationPath) {
-            appNavigationPath.append(route)
-        }
-    }
-    #endif
-
     private func expandSearch() {
-        composerExpanded = false
-        #if SKIP
+        dismissComposerEditing()
         searchPagePresented = true
-        #else
-        presentSearch()
+    }
+
+    private func dismissSearch() {
+        searchPagePresented = false
+        searchQuery = ""
+        #if !SKIP
+        searchNavigationPath = []
         #endif
     }
 

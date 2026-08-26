@@ -1,29 +1,37 @@
 import SwiftUI
 import LogseqChatModel
 
-/// Dedicated search page backed by the per-graph sqlite search index. Lists
+/// Full-screen search backed by the per-graph sqlite search index. Lists
 /// matching pages and blocks; block results include their breadcrumb path.
 struct NodeSearchView: View {
     let store: LogseqChatStore
-    let dismissAfterOpen: Bool
+    let close: () -> Void
     let open: (LogseqSearchHit) -> Void
 
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
+    @Binding private var query: String
+    #if !SKIP && os(iOS)
+    @State private var nativeSearchPresented = true
+    @FocusState private var nativeSearchFocused: Bool
+    #endif
     @FocusState private var queryFocused: Bool
 
     init(
         store: LogseqChatStore,
-        dismissAfterOpen: Bool = true,
+        query: Binding<String>,
+        close: @escaping () -> Void,
         open: @escaping (LogseqSearchHit) -> Void
     ) {
         self.store = store
-        self.dismissAfterOpen = dismissAfterOpen
+        _query = query
+        self.close = close
         self.open = open
     }
 
     private var results: [LogseqSearchHit] {
-        store.snapshot.searchResults ?? []
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return []
+        }
+        return store.snapshot.searchResults ?? []
     }
 
     private var pageResults: [LogseqSearchHit] {
@@ -35,22 +43,74 @@ struct NodeSearchView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchField
-            resultsList
+        Group {
+            #if !SKIP && os(iOS)
+            if #available(iOS 26.0, *) {
+                nativeSearch
+            } else {
+                fallbackSearch
+            }
+            #else
+            fallbackSearch
+            #endif
         }
         .onAppear {
-            store.searchNodes(query)
+            #if SKIP
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                 queryFocused = true
             }
+            #endif
         }
         .accessibilityIdentifier("screen.search")
     }
 
+    #if !SKIP && os(iOS)
+    @available(iOS 26.0, *)
+    private var nativeSearch: some View {
+        resultsList
+            .searchable(
+                text: $query,
+                isPresented: $nativeSearchPresented,
+                placement: .toolbar,
+                prompt: "Search pages and blocks"
+            )
+            .searchFocused($nativeSearchFocused)
+            .searchPresentationToolbarBehavior(.avoidHidingContent)
+            .toolbarVisibility(.hidden, for: .navigationBar)
+            .toolbar {
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    closeButton
+                }
+            }
+            .onChange(of: query) { _, newQuery in
+                store.searchNodes(newQuery)
+            }
+            .onAppear {
+                nativeSearchPresented = true
+                DispatchQueue.main.async {
+                    nativeSearchFocused = true
+                }
+            }
+            .onScrollPhaseChange { _, newPhase in
+                if newPhase == .tracking || newPhase == .interacting {
+                    nativeSearchFocused = false
+                }
+            }
+    }
+    #endif
+
+    private var fallbackSearch: some View {
+        VStack(spacing: 0) {
+            resultsList
+            searchField
+        }
+    }
+
     private var searchField: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
+            Image("search", bundle: .module)
                 .frame(width: 18, height: 18)
             TextField("Search pages and blocks", text: $query)
                 .textFieldStyle(.plain)
@@ -63,28 +123,45 @@ struct NodeSearchView: View {
             if !query.isEmpty {
                 Button {
                     query = ""
-                    store.searchNodes("")
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
+                    Image("close", bundle: .module)
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
                 .accessibilityIdentifier("button.search.clear")
             }
-            Button("Cancel") {
-                dismiss()
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("button.search.cancel")
+            closeButton
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .platformGlassContainer()
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.vertical, 8)
+    }
+
+    private var closeButton: some View {
+        Button(action: exitSearch) {
+            Image("close", bundle: .module)
+                .frame(width: 20, height: 20)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close search")
+        .accessibilityIdentifier("button.search.close")
+    }
+
+    private func exitSearch() {
+        queryFocused = false
+        #if !SKIP && os(iOS)
+        nativeSearchFocused = false
+        nativeSearchPresented = false
+        DispatchQueue.main.async {
+            close()
+        }
+        #else
+        close()
+        #endif
     }
 
     @ViewBuilder private var resultsList: some View {
@@ -109,6 +186,7 @@ struct NodeSearchView: View {
             }
             #if !SKIP
             .listStyle(.plain)
+            .scrollDismissesKeyboard(.interactively)
             #endif
         }
     }
@@ -129,7 +207,6 @@ struct NodeSearchView: View {
     private func resultRow(_ hit: LogseqSearchHit) -> some View {
         Button {
             open(hit)
-            if dismissAfterOpen { dismiss() }
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: hit.isPage ? "doc.text" : "circle.fill")
