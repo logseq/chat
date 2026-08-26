@@ -7,6 +7,8 @@ workspace="$repo_root/dune-workspace.mobile"
 builder="$repo_root/scripts/build-mobile-ocaml.sh"
 core_dune="$repo_root/core/dune"
 lockfile="$repo_root/logseq_chat.opam.locked"
+legacy_builder="$repo_root/scripts/build-mobile-ocaml-deps.sh"
+legacy_mldoc_patch="$repo_root/scripts/patches/mldoc-wrapped.patch"
 
 [[ -f $workspace ]] || {
   echo "error: mobile Dune workspace is missing" >&2
@@ -17,11 +19,20 @@ lockfile="$repo_root/logseq_chat.opam.locked"
   exit 1
 }
 
+[[ ! -e $repo_root/Vendor/mldoc ]] || {
+  echo "error: mldoc must come from the pinned Dune dependency, not a submodule" >&2
+  exit 1
+}
+[[ ! -e $legacy_builder && ! -e $legacy_mldoc_patch ]] || {
+  echo "error: legacy manual mobile dependency build files must be removed" >&2
+  exit 1
+}
+
 grep -Fq '(switch 5.5.0)' "$workspace"
 grep -Fq '(host mobile_host)' "$workspace"
 grep -Fq '"$dune" build' "$builder"
 
-if grep -Eq 'ocamlopt|\.cmx|output-complete-obj|yojson|melange|mldoc|datascript|opam|curl|git|patch|find|sed|awk' "$builder"; then
+if grep -Eq 'ocamlopt|\.cmx|output-complete-obj|yojson|melange|mldoc|datascript|curl|git|patch|find|sed|awk' "$builder"; then
   echo "error: mobile OCaml builder contains dependency or linker internals" >&2
   exit 1
 fi

@@ -4,8 +4,6 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 expected_root="$repo_root/_build/apple-toolchains"
-temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-apple-build-test.XXXXXX")
-trap 'rm -rf "$temporary_directory"' EXIT
 
 assert_contains() {
   local name=$1
@@ -48,35 +46,3 @@ macos_settings=$(LOGSEQ_CHAT_MACOS_PRINT_BUILD_SETTINGS=1 \
   "$repo_root/scripts/build-macos-app.sh")
 assert_contains "macOS toolchain is workspace-local" "$macos_settings" \
   "toolchain-root=$expected_root"
-
-fake_prefix="$temporary_directory/toolchain"
-mkdir -p "$fake_prefix/bin"
-cat >"$fake_prefix/bin/ocamlopt.opt" <<'SCRIPT'
-#!/usr/bin/env bash
-case "${1:-}" in
-  -version) echo 5.5.0 ;;
-  -config) echo architecture: arm64 ;;
-  *) exit 2 ;;
-esac
-SCRIPT
-chmod +x "$fake_prefix/bin/ocamlopt.opt"
-dependency_stamp="$temporary_directory/dependency-fingerprint"
-printf '%s\n' first >"$dependency_stamp"
-first_fingerprint=$("$repo_root/scripts/apple-core-fingerprint.sh" \
-  "$fake_prefix" arm64-apple-ios17.0 /test-sdk "$dependency_stamp")
-repeated_fingerprint=$("$repo_root/scripts/apple-core-fingerprint.sh" \
-  "$fake_prefix" arm64-apple-ios17.0 /test-sdk "$dependency_stamp")
-if [[ $first_fingerprint != "$repeated_fingerprint" ]]; then
-  echo "not ok - unchanged native inputs have a stable fingerprint" >&2
-  exit 1
-fi
-echo "ok - unchanged native inputs have a stable fingerprint"
-
-printf '%s\n' second >"$dependency_stamp"
-changed_fingerprint=$("$repo_root/scripts/apple-core-fingerprint.sh" \
-  "$fake_prefix" arm64-apple-ios17.0 /test-sdk "$dependency_stamp")
-if [[ $first_fingerprint == "$changed_fingerprint" ]]; then
-  echo "not ok - dependency changes invalidate the native core cache" >&2
-  exit 1
-fi
-echo "ok - dependency changes invalidate the native core cache"

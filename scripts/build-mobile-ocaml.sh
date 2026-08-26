@@ -10,7 +10,7 @@ fi
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 target_prefix=$(cd "$1" && pwd)
 target="_build/mobile/core/logseq_chat_mobile_entry.exe.o"
-dune=${DUNE:-dune}
+dune=${DUNE:-$(opam exec --switch=5.5.0 -- which dune)}
 profile=${DUNE_PROFILE:-dev}
 
 [[ -x $target_prefix/bin/ocamlc ]] || {
