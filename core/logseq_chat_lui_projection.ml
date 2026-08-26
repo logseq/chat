@@ -1,4 +1,5 @@
 module LG = Logseq_chat_lui_native
+module Host_update = Logseq_chat_lui_host_update
 module Snapshot = Logseq_chat_lui_snapshot
 
 let search_hit (hit : Snapshot.search_hit) : LG.search_hit =
@@ -146,4 +147,39 @@ let apply_response encoded =
   LG.logseq_chat_native_bridge_flush_action_bang action
 ;;
 
-let () = Callback.register "logseq_chat_lui_apply_snapshot" apply_response
+let runtime_log_record (record : Host_update.runtime_log_record) : LG.runtime_log_record =
+  { id = record.id
+  ; level = record.level
+  ; source = record.source
+  ; timestamp = record.timestamp
+  ; message = record.message
+  }
+;;
+
+let apply_host_update kind payload =
+  let action =
+    match Host_update.decode kind payload with
+    | Ok (Settings settings) ->
+      LG.ApplySettingsSnapshot
+        { appearance = settings.appearance
+        ; language = settings.language
+        ; spell_check = settings.spell_check
+        ; auto_correction = settings.auto_correction
+        ; sidebar_tabs = Rrbvec.of_list settings.sidebar_tabs
+        ; base_url = settings.base_url
+        ; version = settings.version
+        ; revision = settings.revision
+        }
+    | Ok (Runtime_log records) ->
+      LG.ApplyRuntimeLog (Rrbvec.of_list (List.map runtime_log_record records))
+    | Ok (Local_graph_ids graph_ids) ->
+      LG.ApplyLocalGraphIds (Rrbvec.of_list graph_ids)
+    | Error message -> LG.SyncFailed message
+  in
+  LG.logseq_chat_native_bridge_flush_action_bang action
+;;
+
+let () =
+  Callback.register "logseq_chat_lui_apply_snapshot" apply_response;
+  Callback.register "logseq_chat_lui_apply_host_update" apply_host_update
+;;

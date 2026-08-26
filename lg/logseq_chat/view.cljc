@@ -1125,6 +1125,13 @@
 (defn settings-base-url [current]
   (:base-url current))
 
+(defn settings-base-url-invalid? [current]
+  (and (not (empty? (string/trim (:base-url current))))
+       (not (model/valid-base-url? (:base-url current)))))
+
+(defn settings-apply-disabled? [current]
+  (not (model/valid-base-url? (:base-url current))))
+
 (defn settings-version [current]
   (:version current))
 
@@ -1339,6 +1346,8 @@
        (match input-event
          (TextChanged _node text) (send (model/ChangeBaseURL text))
          _ true))}]
+   [:if {:test (reactive settings-base-url-invalid? model-source)}
+    [:text "Enter a valid HTTP or HTTPS URL."]]
    [:heading {:level 2} "About"]
    [:row [:text "Version"] [:text {:value (reactive settings-version model-source)}]]
    [:row [:text "Revision"] [:text {:value (reactive settings-revision model-source)}]]
@@ -1354,6 +1363,7 @@
      "Cancel"]
     [:button
      {:accessibility-identifier "button.connection.apply"
+      :disabled (reactive settings-apply-disabled? model-source)
       :on-press (fn [_event] (send model/ApplySettings))}
      "Apply"]]])
 

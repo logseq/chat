@@ -331,10 +331,18 @@
 (signature logseq-chat.model/graph-local? :fn<chat-model;string;bool>)
 (signature logseq-chat.model/remove-string
  :fn<vector<string>;string;vector<string>>)
+(signature logseq-chat.model/required-sidebar-tab? :fn<string;bool>)
+(signature logseq-chat.model/toggle-sidebar-tab
+ :fn<vector<string>;string;vector<string>>)
+(signature logseq-chat.model/move-sidebar-tab
+ :fn<vector<string>;string;int;vector<string>>)
+(signature logseq-chat.model/valid-base-url? :fn<string;bool>)
+(signature logseq-chat.model/current-settings
+ :fn<chat-model;settings-projection>)
 (signature logseq-chat.model/rollback-navigation-effect
  :fn<chat-model;chat-effect;chat-model>)
 (signature logseq-chat.model/resolve-successful-effect
- :fn<chat-model;chat-effect;chat-model>)
+ :fn<chat-model;chat-effect;string;chat-model>)
 (signature logseq-chat.model/enqueue-close-search-effects
  :fn<chat-model;vector<navigation-route>;chat-model>)
 (signature logseq-chat.model/enqueue-effect

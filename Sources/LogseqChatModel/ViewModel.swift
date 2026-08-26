@@ -256,6 +256,20 @@ public final class LogseqChatCore {
         return ""
         #endif
     }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_apply_host_update(
+        _ kind: String,
+        _ payloadJSON: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_host_update(
+            kind,
+            payloadJSON
+        ))
+        #else
+        return ""
+        #endif
+    }
 }
 
 private struct LogseqPendingSyncCompletion: Encodable {

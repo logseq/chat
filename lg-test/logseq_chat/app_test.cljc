@@ -162,7 +162,7 @@
         logs (model/update (model/update hidden model/BackSettings)
                            model/OpenRuntimeLog)
         filtered (model/update logs model/ToggleRuntimeLogErrors)
-        refreshed (model/update filtered model/RefreshRuntimeLog)]
+        refreshed filtered]
     (is (:connection-menu-open menu) "the connection menu is model-owned")
     (is (:settings-open opened) "settings presentation is model-owned")
     (is (not (:connection-menu-open opened))
@@ -176,6 +176,72 @@
      [(model/RefreshRuntimeLogEffect 1 "ui" true false)]
      (:pending-effects refreshed)
      "refreshing diagnostics crosses one typed platform boundary")))
+
+(deftest settings-reject-invalid-connections-and-preserve-required-tabs
+  (let [opened (assoc (model/initial)
+                      :settings-open true
+                      :base-url "not a server")
+        invalid (model/update opened model/ApplySettings)
+        required-toggled
+        (model/update opened (model/ToggleSidebarTab "journals"))
+        required-moved
+        (model/update opened (model/MoveSidebarTab "journals" 2))]
+    (assert-equal [] (:pending-effects invalid)
+                  "invalid connection URLs do not leave LG")
+    (is (:settings-open invalid)
+        "invalid connection URLs keep settings open for correction")
+    (assert-equal ["journals" "flashcards" "graphs"]
+                  (:sidebar-tabs required-toggled)
+                  "journals cannot be hidden")
+    (assert-equal ["journals" "flashcards" "graphs"]
+                  (:sidebar-tabs required-moved)
+                  "journals remains the first required tab")))
+
+(deftest runtime-log-filters-refresh-and-successful-results-enter-lg-state
+  (let [filtered (model/update (model/initial) model/ToggleRuntimeLogErrors)
+        in-flight (model/update filtered (model/DequeueEffect 1))
+        resolved (model/update in-flight (model/ResolveEffect 1 true ""))
+        expected [(runtime-record "1" "INFO" "ui" "Started")]
+        applied (model/update resolved (model/ApplyRuntimeLog expected))]
+    (assert-equal
+     [(model/RefreshRuntimeLogEffect 1 "ui" true false)]
+     (:pending-effects filtered)
+     "changing a log filter refreshes the visible result immediately")
+    (assert-equal expected (:runtime-log-records applied)
+                  "typed host log updates enter retained LG state")))
+
+(deftest graph-effect-success-owns-selection-and-selected-deletion-cleanup
+  (let [local (graph "local" "Local" false true)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :graphs [local]
+                 :selected-graph-id None)))
+        known-local (model/update projected (model/ApplyLocalGraphIds ["local"]))
+        requested (model/update known-local (model/RequestOpenGraph "local"))
+        opened
+        (model/update
+         (model/update requested (model/DequeueEffect 1))
+         (model/ResolveEffect 1 true "ok"))
+        deletion-requested
+        (model/update opened (model/RequestDeleteGraph "local"))
+        deleting
+        (model/update
+         (model/update deletion-requested model/ConfirmDeleteGraph)
+         (model/DequeueEffect 2))
+        deleted (model/update deleting (model/ResolveEffect 2 true "ok"))]
+    (assert-equal (Some "local") (:selected-graph-id opened)
+                  "opening a graph updates LG selection after platform success")
+    (assert-equal (Some "Local") (:selected-graph opened)
+                  "opening a graph projects its title without waiting for a refresh")
+    (assert-equal None (:selected-graph-id deleted)
+                  "deleting the selected local graph clears its identifier")
+    (assert-equal None (:selected-graph deleted)
+                  "deleting the selected local graph clears its title")
+    (assert-equal [] (:local-graph-ids deleted)
+                  "deleting a local graph removes it from local storage state")))
 
 (deftest settings-render-the-main-branch-navigation-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))

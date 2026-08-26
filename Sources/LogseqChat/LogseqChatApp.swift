@@ -6,6 +6,8 @@ import LogseqChatModel
 #if os(iOS) && !SKIP
 @preconcurrency import BackgroundTasks
 import UIKit
+#elseif os(macOS)
+import AppKit
 #endif
 
 struct LogseqAppLogger {
@@ -42,6 +44,10 @@ struct LogseqAppLogger {
 }
 
 let logger = LogseqAppLogger()
+
+private enum LGChatHostEncodingError: Error {
+    case invalidUTF8
+}
 
 /// The shared top-level view for the app, loaded from the platform-specific App delegates below.
 ///
@@ -88,7 +94,7 @@ public struct LogseqChatRootView : View {
     public let store: LogseqChatStore
     public let lgRuntime: LGChatRuntime
     public let authentication: LogseqAuthenticationStore
-    let syncCoordinator = GraphSyncCoordinator()
+    let syncCoordinator: GraphSyncCoordinator
     private struct LocalLaunchResult: Sendable {
         let catalogResponse: String
         let graphResponse: String?
@@ -98,16 +104,26 @@ public struct LogseqChatRootView : View {
     private var didApplyLocalLaunchResult = false
     private var sharedCaptureTask: Task<Void, Never>?
 
+    private struct SettingsHostPayload: Encodable {
+        let appearance: String
+        let language: String
+        let spellCheck: Bool
+        let autoCorrection: Bool
+        let sidebarTabs: [String]
+        let baseURL: String
+        let version: String
+        let revision: String
+    }
+
     private init() {
         try? FileManager.default.removeItem(
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
         )
-        self.store = LogseqChatStore { request in
+        let store = LogseqChatStore { request in
             LogseqChatCore.shared.logseq_chat_call(request)
         }
-        self.lgRuntime = LGChatRuntime(native: LGChatCoreNativeCaller())
         let configuration = LogseqCognitoConfiguration.load()
-        self.authentication = LogseqAuthenticationStore(
+        let authentication = LogseqAuthenticationStore(
             provider: CognitoAuthProvider(
                 region: configuration.region,
                 userPoolId: configuration.userPoolId,
@@ -117,6 +133,52 @@ public struct LogseqChatRootView : View {
                 logoutURI: configuration.logoutURI,
                 scopes: configuration.scopes
             )
+        )
+        let syncCoordinator = GraphSyncCoordinator()
+        let platformHandler = LGChatPlatformEffectHandler(
+            saveSettings: { settings in
+                let defaults = UserDefaults.standard
+                defaults.set(settings.appearance, forKey: "logseq.appearance")
+                defaults.set(
+                    LogseqSettingsPolicy.normalizedLanguageID(settings.language),
+                    forKey: "logseq.language"
+                )
+                defaults.set(settings.spellCheck, forKey: "logseq.editor.spellCheck")
+                defaults.set(
+                    settings.autoCorrection,
+                    forKey: "logseq.editor.autoCorrection"
+                )
+                let tabs = settings.sidebarTabs.compactMap(SidebarContentItem.init(rawValue:))
+                defaults.set(
+                    SidebarTabPolicy.rawValue(for: tabs),
+                    forKey: "logseq.mobile.sidebarTabs"
+                )
+                defaults.set(settings.baseURL, forKey: "logseq.baseURL")
+            },
+            runtimeLog: .shared,
+            copyText: Self.copyText,
+            signOut: {
+                await syncCoordinator.stopForeground()
+                await authentication.signOut()
+                let defaults = UserDefaults.standard
+                defaults.set("", forKey: "logseq.selectedGraphId")
+                store.configure(
+                    baseURL: defaults.string(forKey: "logseq.baseURL")
+                        ?? "http://127.0.0.1:8787",
+                    token: "",
+                    refreshAfterApply: false
+                )
+            }
+        )
+        let effectExecutor = LGChatCoreEffectExecutor(
+            platformEffect: { effect in await platformHandler.execute(effect) }
+        )
+        self.store = store
+        self.authentication = authentication
+        self.syncCoordinator = syncCoordinator
+        self.lgRuntime = LGChatRuntime(
+            native: LGChatCoreNativeCaller(),
+            effectExecutor: effectExecutor
         )
     }
 
@@ -129,9 +191,48 @@ public struct LogseqChatRootView : View {
     public func startLGRenderer() {
         do {
             try lgRuntime.start(platformCode: Self.lgPlatformCode)
+            try lgRuntime.applyHostUpdate(
+                kind: "settings",
+                payload: try Self.settingsHostPayload()
+            )
         } catch {
             logger.error("Could not start LG renderer: \(String(describing: error))")
         }
+    }
+
+    private static func settingsHostPayload() throws -> String {
+        let defaults = UserDefaults.standard
+        let rawTabs = defaults.string(forKey: "logseq.mobile.sidebarTabs") ?? ""
+        let payload = SettingsHostPayload(
+            appearance: defaults.string(forKey: "logseq.appearance") ?? "system",
+            language: LogseqSettingsPolicy.normalizedLanguageID(
+                defaults.string(forKey: "logseq.language") ?? "system"
+            ),
+            spellCheck: defaults.object(forKey: "logseq.editor.spellCheck") as? Bool ?? true,
+            autoCorrection: defaults.object(forKey: "logseq.editor.autoCorrection") as? Bool
+                ?? true,
+            sidebarTabs: SidebarTabPolicy.selectedItems(rawValue: rawTabs).map(\.rawValue),
+            baseURL: defaults.string(forKey: "logseq.baseURL")
+                ?? "http://127.0.0.1:8787",
+            version: LogseqSettingsPolicy.version,
+            revision: LogseqSettingsPolicy.revision
+        )
+        let data = try JSONEncoder().encode(payload)
+        guard let encoded = String(data: data, encoding: .utf8) else {
+            throw LGChatHostEncodingError.invalidUTF8
+        }
+        return encoded
+    }
+
+    private static func copyText(_ text: String) {
+        #if SKIP
+        AndroidAssetImporter.copyText(text: text)
+        #elseif os(iOS)
+        UIPasteboard.general.string = text
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #endif
     }
 
     private static var lgPlatformCode: Int {
@@ -236,6 +337,7 @@ public struct LogseqChatRootView : View {
     private func applyLocalLaunchResultWhenReady() async {
         guard !didApplyLocalLaunchResult, let result = await localLaunchTask?.value else { return }
         didApplyLocalLaunchResult = true
+        applyLocalGraphIDsToLG(from: result.catalogResponse)
         if let isEncrypted = result.isEncrypted {
             UserDefaults.standard.set(isEncrypted, forKey: "logseq.selectedGraphEncrypted")
         }
@@ -265,6 +367,26 @@ public struct LogseqChatRootView : View {
             try lgRuntime.applyCoreResponse(response)
         } catch {
             logger.error("Could not project launch response into LG: \(String(describing: error))")
+        }
+    }
+
+    private func applyLocalGraphIDsToLG(from catalogResponse: String) {
+        guard let data = catalogResponse.data(using: .utf8),
+              let response = try? JSONDecoder().decode(LogseqChatRPCResponse.self, from: data)
+        else { return }
+        let graphIDs = (response.result?.graphs ?? []).compactMap { graph in
+            LogseqGraphLocalStorage.isDownloaded(
+                databasePath: databasePath,
+                graphID: graph.id
+            ) ? graph.id : nil
+        }
+        guard let payloadData = try? JSONEncoder().encode(graphIDs),
+              let payload = String(data: payloadData, encoding: .utf8)
+        else { return }
+        do {
+            try lgRuntime.applyHostUpdate(kind: "local-graph-ids", payload: payload)
+        } catch {
+            logger.error("Could not project local graphs into LG: \(String(describing: error))")
         }
     }
 

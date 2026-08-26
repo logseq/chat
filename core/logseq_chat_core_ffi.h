@@ -24,6 +24,8 @@ const char *logseq_chat_lui_take_effect(void);
 const char *logseq_chat_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
                                            const char *message);
 const char *logseq_chat_lui_apply_snapshot(const char *response_json);
+const char *logseq_chat_lui_apply_host_update(const char *kind,
+                                              const char *payload_json);
 
 #ifdef __cplusplus
 }

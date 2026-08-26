@@ -168,7 +168,9 @@
       (conj tabs tab))))
 
 (defn move-sidebar-tab [tabs tab offset]
-  (let [without (remove-string tabs tab)]
+  (if (= tab "journals")
+    tabs
+    (let [without (remove-string tabs tab)]
     (loop [index 0]
       (if (= index (count tabs))
         tabs
@@ -176,7 +178,14 @@
           (let [target (min (max (+ index offset) 0) (count without))]
             (into (conj (subvec without 0 target) tab)
                   (subvec without target)))
-          (recur (inc index)))))))
+          (recur (inc index))))))))
+
+(defn valid-base-url? [value]
+  (let [normalized (string/trim value)]
+    (or (and (string/starts-with? normalized "http://")
+             (> (count normalized) 7))
+        (and (string/starts-with? normalized "https://")
+             (> (count normalized) 8)))))
 
 (defn current-settings [current]
   (record settings-projection
@@ -209,10 +218,16 @@
     (assoc current :sidebar-open true)
     _ current))
 
-(defn resolve-successful-effect [current effect]
+(defn resolve-successful-effect [current effect message]
   (match effect
-    (OpenGraphEffect _id _graph-id)
-    (assoc current :destination JournalsDestination)
+    (OpenGraphEffect _id graph-id)
+    (match (graph-by-id (:graphs current) graph-id)
+      (Some selected)
+      (assoc current
+             :destination JournalsDestination
+             :selected-graph-id (Some graph-id)
+             :selected-graph (Some (:name selected)))
+      None (assoc current :destination JournalsDestination))
     (CreateGraphEffect _id _name _is-encrypted)
     (assoc current
            :destination JournalsDestination
@@ -220,9 +235,22 @@
            :new-graph-name ""
            :new-graph-encrypted false)
     (DeleteLocalGraphEffect _id graph-id)
+    (let [deleting-selected
+          (match (:selected-graph-id current)
+            (Some selected-id) (= selected-id graph-id)
+            None false)]
+      (assoc current
+             :pending-graph-deletion None
+             :local-graph-ids (remove-string (:local-graph-ids current) graph-id)
+             :selected-graph-id
+             (if deleting-selected None (:selected-graph-id current))
+             :selected-graph
+             (if deleting-selected None (:selected-graph current))))
+    (SignOutEffect _id)
     (assoc current
-           :pending-graph-deletion None
-           :local-graph-ids (remove-string (:local-graph-ids current) graph-id))
+           :settings-open false
+           :settings-tabs-open false
+           :runtime-log-open false)
     _ current))
 
 (defn enqueue-effect [current effect]
@@ -543,7 +571,7 @@
       (Some effect)
       (let [resolved-current
             (if succeeded
-              (resolve-successful-effect current effect)
+              (resolve-successful-effect current effect message)
               (rollback-navigation-effect current effect))]
         (assoc resolved-current
                :in-flight-effects
@@ -768,13 +796,15 @@
     (assoc current :base-url base-url)
 
     ApplySettings
-    (let [id (:next-effect-id current)]
-      (enqueue-effect
-       (assoc current
-              :settings-open false
-              :settings-tabs-open false
-              :runtime-log-open false)
-       (SaveSettingsEffect id (current-settings current))))
+    (if (valid-base-url? (:base-url current))
+      (let [id (:next-effect-id current)]
+        (enqueue-effect
+         (assoc current
+                :settings-open false
+                :settings-tabs-open false
+                :runtime-log-open false)
+         (SaveSettingsEffect id (current-settings current))))
+      current)
 
     OpenRuntimeLog
     (assoc current :runtime-log-open true)
@@ -783,16 +813,37 @@
     (assoc current :runtime-log-open false)
 
     ToggleRuntimeLogErrors
-    (assoc current :runtime-log-errors-only
-           (not (:runtime-log-errors-only current)))
+    (let [updated
+          (assoc current :runtime-log-errors-only
+                 (not (:runtime-log-errors-only current)))
+          id (:next-effect-id updated)]
+      (enqueue-effect
+       updated
+       (RefreshRuntimeLogEffect
+        id (:runtime-log-source updated) (:runtime-log-errors-only updated)
+        (:runtime-log-newest-first updated))))
 
     ToggleRuntimeLogOrder
-    (assoc current :runtime-log-newest-first
-           (not (:runtime-log-newest-first current)))
+    (let [updated
+          (assoc current :runtime-log-newest-first
+                 (not (:runtime-log-newest-first current)))
+          id (:next-effect-id updated)]
+      (enqueue-effect
+       updated
+       (RefreshRuntimeLogEffect
+        id (:runtime-log-source updated) (:runtime-log-errors-only updated)
+        (:runtime-log-newest-first updated))))
 
     ToggleRuntimeLogSource
-    (assoc current :runtime-log-source
-           (if (= (:runtime-log-source current) "ui") "core" "ui"))
+    (let [updated
+          (assoc current :runtime-log-source
+                 (if (= (:runtime-log-source current) "ui") "core" "ui"))
+          id (:next-effect-id updated)]
+      (enqueue-effect
+       updated
+       (RefreshRuntimeLogEffect
+        id (:runtime-log-source updated) (:runtime-log-errors-only updated)
+        (:runtime-log-newest-first updated))))
 
     (ApplyRuntimeLog records)
     (assoc current :runtime-log-records records)

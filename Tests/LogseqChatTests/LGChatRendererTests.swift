@@ -417,6 +417,100 @@ struct LGChatRendererTests {
         #expect(coreCallCount == 0)
     }
 
+    @Test("platform settings handler preserves persisted values and multiline logs")
+    func platformSettingsHandlerPreservesValuesAndLogs() async throws {
+        var saved: LGChatSettingsPayload?
+        var copied = ""
+        var signedOut = false
+        let log = LogseqRuntimeLog(capacity: 10)
+        log.append(
+            level: .error,
+            source: .ui,
+            message: "第一行\nsecond line",
+            timestampMilliseconds: 1_000
+        )
+        log.append(level: .info, source: .core, message: "core")
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { saved = $0 },
+            runtimeLog: log,
+            copyText: { copied = $0 },
+            signOut: { signedOut = true }
+        )
+
+        let save = await handler.execute(LGChatEffect(
+            id: 40,
+            kind: "save-settings",
+            text: #"{"appearance":"dark","language":"zh-CN","spellCheck":false,"autoCorrection":true,"sidebarTabs":["journals","graphs"],"baseURL":"https://example.com"}"#
+        ))
+        let refresh = await handler.execute(LGChatEffect(
+            id: 41,
+            kind: "refresh-runtime-log",
+            text: "ui",
+            value: 1
+        ))
+        let copy = await handler.execute(LGChatEffect(
+            id: 42,
+            kind: "copy-runtime-log",
+            text: refresh.message
+        ))
+        let signOut = await handler.execute(
+            LGChatEffect(id: 43, kind: "sign-out", text: "")
+        )
+
+        #expect(saved?.appearance == "dark")
+        #expect(saved?.language == "zh-CN")
+        #expect(saved?.sidebarTabs == ["journals", "graphs"])
+        #expect(save.output == .discard)
+        #expect(refresh.output == LGChatEffectOutput.hostUpdate("runtime-log"))
+        let records = try JSONDecoder().decode(
+            [LGChatRuntimeLogPayload].self,
+            from: Data(refresh.message.utf8)
+        )
+        #expect(records.map(\.message) == ["第一行\nsecond line"])
+        #expect(copied.contains("第一行\nsecond line"))
+        #expect(copy.succeeded)
+        #expect(signedOut)
+        #expect(signOut.succeeded)
+    }
+
+    @Test("runtime routes platform output to host updates instead of core snapshots")
+    func runtimeRoutesPlatformOutputToHostUpdates() async {
+        let native = LGChatNativeRuntimeProbe()
+        native.effects = [
+            "{\"id\":44,\"kind\":\"refresh-runtime-log\",\"text\":\"ui\",\"value\":0}"
+        ]
+        let executor = LGChatEffectExecutorProbe()
+        executor.resolution = LGChatEffectResolution(
+            succeeded: true,
+            message: "[]",
+            output: LGChatEffectOutput.hostUpdate("runtime-log")
+        )
+        let runtime = LGChatRuntime(native: native, effectExecutor: executor)
+
+        await runtime.drainEffectsForTesting()
+
+        #expect(native.hostUpdates == [LGChatHostUpdateProbe(
+            kind: "runtime-log",
+            payload: "[]"
+        )])
+        #expect(native.appliedSnapshots.isEmpty)
+    }
+
+    @Test("host updates wait for renderer initialization")
+    func hostUpdatesWaitForRendererInitialization() throws {
+        let native = LGChatNativeRuntimeProbe()
+        let runtime = LGChatRuntime(native: native)
+
+        try runtime.applyHostUpdate(kind: "local-graph-ids", payload: #"["a"]"#)
+        #expect(native.hostUpdates.isEmpty)
+
+        try runtime.start(platformCode: 2)
+        #expect(native.hostUpdates == [LGChatHostUpdateProbe(
+            kind: "local-graph-ids",
+            payload: #"["a"]"#
+        )])
+    }
+
     @Test("outliner selection effects reuse the existing core reducer")
     func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []
@@ -583,13 +677,19 @@ private struct LGChatExtensionEventProbe: Equatable {
     let value: Int
 }
 
+private struct LGChatHostUpdateProbe: Equatable {
+    let kind: String
+    let payload: String
+}
+
 @MainActor
 private final class LGChatEffectExecutorProbe: LGChatEffectExecuting {
     var effects: [LGChatEffect] = []
+    var resolution = LGChatEffectResolution(succeeded: true, message: "core response")
 
     func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
         effects.append(effect)
-        return LGChatEffectResolution(succeeded: true, message: "core response")
+        return resolution
     }
 }
 
@@ -610,6 +710,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var resolutions: [LGChatEffectResolutionProbe] = []
     var appliedSnapshots: [String] = []
     var extensionEvents: [LGChatExtensionEventProbe] = []
+    var hostUpdates: [LGChatHostUpdateProbe] = []
 
     func initialize(platformCode: Int, hostCode: Int) -> String {
         startedPlatforms.append(platformCode)
@@ -669,6 +770,10 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     }
     func applySnapshot(_ response: String) -> String {
         appliedSnapshots.append(response)
+        return ""
+    }
+    func applyHostUpdate(kind: String, payload: String) -> String {
+        hostUpdates.append(LGChatHostUpdateProbe(kind: kind, payload: payload))
         return ""
     }
 }

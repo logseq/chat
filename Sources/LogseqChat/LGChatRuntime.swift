@@ -26,6 +26,7 @@ public protocol LGChatNativeCalling {
     func takeEffect() -> String
     func resolveEffect(id: Int, succeeded: Bool, message: String) -> String
     func applySnapshot(_ response: String) -> String
+    func applyHostUpdate(kind: String, payload: String) -> String
 }
 
 public struct LGChatEffect: Decodable, Equatable, Sendable {
@@ -50,13 +51,143 @@ public struct LGChatEffect: Decodable, Equatable, Sendable {
     }
 }
 
+public enum LGChatEffectOutput: Equatable, Sendable {
+    case coreResponse
+    case hostUpdate(String)
+    case discard
+}
+
 public struct LGChatEffectResolution: Equatable, Sendable {
     public let succeeded: Bool
     public let message: String
+    public let output: LGChatEffectOutput
 
-    public init(succeeded: Bool, message: String) {
+    public init(
+        succeeded: Bool,
+        message: String,
+        output: LGChatEffectOutput = .coreResponse
+    ) {
         self.succeeded = succeeded
         self.message = message
+        self.output = output
+    }
+}
+
+public struct LGChatSettingsPayload: Decodable, Equatable, Sendable {
+    public let appearance: String
+    public let language: String
+    public let spellCheck: Bool
+    public let autoCorrection: Bool
+    public let sidebarTabs: [String]
+    public let baseURL: String
+}
+
+public struct LGChatRuntimeLogPayload: Codable, Equatable, Sendable {
+    public let id: String
+    public let level: String
+    public let source: String
+    public let timestamp: String
+    public let message: String
+}
+
+@MainActor
+public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
+    private let saveSettings: @MainActor (LGChatSettingsPayload) async throws -> Void
+    private let runtimeLog: LogseqRuntimeLog
+    private let copyText: @MainActor (String) -> Void
+    private let signOut: @MainActor () async -> Void
+
+    public init(
+        saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
+        runtimeLog: LogseqRuntimeLog,
+        copyText: @escaping @MainActor (String) -> Void,
+        signOut: @escaping @MainActor () async -> Void
+    ) {
+        self.saveSettings = saveSettings
+        self.runtimeLog = runtimeLog
+        self.copyText = copyText
+        self.signOut = signOut
+    }
+
+    public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
+        do {
+            switch effect.kind {
+            case "save-settings":
+                let settings = try JSONDecoder().decode(
+                    LGChatSettingsPayload.self,
+                    from: Data(effect.text.utf8)
+                )
+                try await saveSettings(settings)
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            case "refresh-runtime-log":
+                guard let source = LogseqRuntimeLogSource(rawValue: effect.text) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Unknown runtime log source: \(effect.text)",
+                        output: .discard
+                    )
+                }
+                let flags = effect.value ?? 0
+                let records = runtimeLog.records(
+                    source: source,
+                    errorsOnly: flags & 1 != 0,
+                    newestFirst: flags & 2 != 0
+                ).map { record in
+                    LGChatRuntimeLogPayload(
+                        id: String(record.id),
+                        level: record.level.rawValue.uppercased(),
+                        source: record.source.rawValue,
+                        timestamp: String(record.timestampMilliseconds),
+                        message: record.message
+                    )
+                }
+                let data = try JSONEncoder().encode(records)
+                guard let payload = String(data: data, encoding: .utf8) else {
+                    throw LGChatEffectEncodingError.invalidUTF8
+                }
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: payload,
+                    output: .hostUpdate("runtime-log")
+                )
+            case "copy-runtime-log":
+                let records = try JSONDecoder().decode(
+                    [LGChatRuntimeLogPayload].self,
+                    from: Data(effect.text.utf8)
+                )
+                copyText(records.map { record in
+                    "\(record.timestamp) \(record.level) \(record.source) \(record.message)"
+                }.joined(separator: "\n"))
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            case "sign-out":
+                await signOut()
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            default:
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "Unsupported platform effect: \(effect.kind)",
+                    output: .discard
+                )
+            }
+        } catch {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: String(describing: error),
+                output: .discard
+            )
+        }
     }
 }
 
@@ -74,6 +205,11 @@ public struct LGChatPlatformCommandBatch: Equatable, Sendable {
         self.graphName = graphName
         self.commands = commands
     }
+}
+
+private struct LGChatPendingHostUpdate {
+    let kind: String
+    let payload: String
 }
 
 @MainActor
@@ -153,9 +289,23 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
 
     public init(
         platformEffect: @escaping @MainActor (LGChatEffect) async -> LGChatEffectResolution,
-        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String
+        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
+            await LogseqChatCore.callAsync(request)
+        }
     ) {
         self.deleteLocalGraph = nil
+        self.platformEffect = platformEffect
+        self.callCore = callCore
+    }
+
+    public init(
+        deleteLocalGraph: @escaping @MainActor (String) async -> String,
+        platformEffect: @escaping @MainActor (LGChatEffect) async -> LGChatEffectResolution,
+        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
+            await LogseqChatCore.callAsync(request)
+        }
+    ) {
+        self.deleteLocalGraph = deleteLocalGraph
         self.platformEffect = platformEffect
         self.callCore = callCore
     }
@@ -509,6 +659,9 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
     public func applySnapshot(_ response: String) -> String {
         core.logseq_chat_lui_apply_snapshot(response)
     }
+    public func applyHostUpdate(kind: String, payload: String) -> String {
+        core.logseq_chat_lui_apply_host_update(kind, payload)
+    }
 }
 
 @MainActor
@@ -532,6 +685,9 @@ public final class LGChatRuntime {
 
     @ObservationIgnored
     private var pendingCoreResponses: [String] = []
+
+    @ObservationIgnored
+    private var pendingHostUpdates: [LGChatPendingHostUpdate] = []
 
     @ObservationIgnored
     private var lastPlatformCommandRevision = 0
@@ -573,6 +729,10 @@ public final class LGChatRuntime {
             try apply(native.applySnapshot(response))
             deliverPlatformCommands(from: response)
         }
+        while !pendingHostUpdates.isEmpty {
+            let update = pendingHostUpdates.removeFirst()
+            try apply(native.applyHostUpdate(kind: update.kind, payload: update.payload))
+        }
         scheduleEffectDrain()
     }
 
@@ -594,6 +754,14 @@ public final class LGChatRuntime {
         }
         try apply(native.applySnapshot(response))
         deliverPlatformCommands(from: response)
+    }
+
+    public func applyHostUpdate(kind: String, payload: String) throws {
+        guard isStarted else {
+            pendingHostUpdates.append(LGChatPendingHostUpdate(kind: kind, payload: payload))
+            return
+        }
+        try apply(native.applyHostUpdate(kind: kind, payload: payload))
     }
 
     private func receive(_ event: LGChatRendererEvent) {
@@ -709,12 +877,22 @@ public final class LGChatRuntime {
                     message: resolution.message
                 ))
                 if resolution.succeeded {
-                    try apply(native.applySnapshot(resolution.message))
-                    deliverPlatformCommands(from: resolution.message)
-                    scheduleOutlinerAutosaveIfNeeded(
-                        after: effect,
-                        response: resolution.message
-                    )
+                    switch resolution.output {
+                    case .coreResponse:
+                        try apply(native.applySnapshot(resolution.message))
+                        deliverPlatformCommands(from: resolution.message)
+                        scheduleOutlinerAutosaveIfNeeded(
+                            after: effect,
+                            response: resolution.message
+                        )
+                    case let .hostUpdate(kind):
+                        try apply(native.applyHostUpdate(
+                            kind: kind,
+                            payload: resolution.message
+                        ))
+                    case .discard:
+                        break
+                    }
                 }
                 lastError = resolution.succeeded ? nil : resolution.message
             } catch {

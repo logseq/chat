@@ -190,6 +190,8 @@
 (signature logseq-chat.view/settings-spell-check :fn<chat-model;bool>)
 (signature logseq-chat.view/settings-auto-correction :fn<chat-model;bool>)
 (signature logseq-chat.view/settings-base-url :fn<chat-model;string>)
+(signature logseq-chat.view/settings-base-url-invalid? :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-apply-disabled? :fn<chat-model;bool>)
 (signature logseq-chat.view/settings-version :fn<chat-model;string>)
 (signature logseq-chat.view/settings-revision :fn<chat-model;string>)
 (signature logseq-chat.view/settings-tabs-visible? :fn<chat-model;bool>)
