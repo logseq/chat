@@ -409,8 +409,9 @@ struct LGChatRendererTests {
             LGChatEffect(id: 33, kind: "copy-runtime-log", text: "[]"),
             LGChatEffect(id: 34, kind: "sign-out", text: ""),
             LGChatEffect(id: 35, kind: "open-graph", text: "graph-a"),
-            LGChatEffect(id: 36, kind: "create-graph", text: "New", value: 0),
-            LGChatEffect(id: 37, kind: "delete-local-graph", text: "graph-a"),
+            LGChatEffect(id: 36, kind: "unlock-graph", text: "secret"),
+            LGChatEffect(id: 37, kind: "create-graph", text: "New", value: 0),
+            LGChatEffect(id: 38, kind: "delete-local-graph", text: "graph-a"),
         ]
         for effect in effects {
             #expect((await executor.execute(effect)).succeeded)
@@ -496,13 +497,16 @@ struct LGChatRendererTests {
 
         for effect in [
             LGChatEffect(id: 45, kind: "open-graph", text: "a"),
-            LGChatEffect(id: 46, kind: "create-graph", text: "New", value: 0),
-            LGChatEffect(id: 47, kind: "delete-local-graph", text: "a"),
+            LGChatEffect(id: 46, kind: "unlock-graph", text: "secret"),
+            LGChatEffect(id: 47, kind: "create-graph", text: "New", value: 0),
+            LGChatEffect(id: 48, kind: "delete-local-graph", text: "a"),
         ] {
             #expect((await handler.execute(effect)).succeeded)
         }
 
-        #expect(graphKinds == ["open-graph", "create-graph", "delete-local-graph"])
+        #expect(graphKinds == [
+            "open-graph", "unlock-graph", "create-graph", "delete-local-graph",
+        ])
     }
 
     @Test("runtime routes platform output to host updates instead of core snapshots")

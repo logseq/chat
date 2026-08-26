@@ -26,6 +26,8 @@ final class LGChatGraphLifecycle {
         switch effect.kind {
         case "open-graph":
             return await openGraph(effect.text)
+        case "unlock-graph":
+            return await unlockGraph(effect.text)
         case "create-graph":
             let succeeded = await store.createSyncGraph(
                 name: effect.text,
@@ -67,6 +69,34 @@ final class LGChatGraphLifecycle {
         if !accessToken.isEmpty,
            !isEncrypted || store.snapshot.isGraphUnlocked == true {
             startSync(graphID: graphID, baseURL: baseURL, isEncrypted: isEncrypted)
+        }
+        return resolution(succeeded: true)
+    }
+
+    private func unlockGraph(_ password: String) async -> LGChatEffectResolution {
+        await store.unlockGraph(password)
+        guard store.lastError == nil, store.snapshot.isGraphUnlocked == true else {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: store.lastError?.message ?? "The graph is still locked",
+                output: .discard
+            )
+        }
+
+        guard let graphID = store.snapshot.selectedGraphId,
+              !graphID.isEmpty
+        else {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: "The unlocked graph has no selected identifier",
+                output: .discard
+            )
+        }
+        let baseURL = UserDefaults.standard.string(forKey: "logseq.baseURL")
+            ?? "http://127.0.0.1:8787"
+        let accessToken = (try? await authentication.accessToken()) ?? ""
+        if !accessToken.isEmpty {
+            startSync(graphID: graphID, baseURL: baseURL, isEncrypted: true)
         }
         return resolution(succeeded: true)
     }

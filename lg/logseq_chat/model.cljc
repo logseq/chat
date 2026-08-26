@@ -9,6 +9,8 @@
           (local-graph-ids [])
           (is-graph-encrypted false)
           (is-graph-unlocked false)
+          (graph-password-open false)
+          (graph-password "")
           (sync-state OfflineState)
           (destination JournalsDestination)
           (sidebar-open false)
@@ -113,6 +115,7 @@
     (ReviewFlashcardEffect id _uuid _rating) id
     (RefreshGraphsEffect id) id
     (OpenGraphEffect id _graph-id) id
+    (UnlockGraphEffect id _password) id
     (CreateGraphEffect id _name _is-encrypted) id
     (DeleteLocalGraphEffect id _graph-id) id
     (SaveSettingsEffect id _settings) id
@@ -221,13 +224,20 @@
 (defn resolve-successful-effect [current effect message]
   (match effect
     (OpenGraphEffect _id graph-id)
-    (match (graph-by-id (:graphs current) graph-id)
-      (Some selected)
-      (assoc current
-             :destination JournalsDestination
-             :selected-graph-id (Some graph-id)
-             :selected-graph (Some (:name selected)))
-      None (assoc current :destination JournalsDestination))
+    (let [opened
+          (match (graph-by-id (:graphs current) graph-id)
+            (Some selected)
+            (assoc current
+                   :destination JournalsDestination
+                   :selected-graph-id (Some graph-id)
+                   :selected-graph (Some (:name selected)))
+            None (assoc current :destination JournalsDestination))]
+      (if (and (:is-graph-encrypted current)
+               (not (:is-graph-unlocked current)))
+        (assoc opened :graph-password-open true :graph-password "")
+        opened))
+    (UnlockGraphEffect _id _password)
+    (assoc current :graph-password-open false :graph-password "")
     (CreateGraphEffect _id _name _is-encrypted)
     (assoc current
            :destination JournalsDestination
@@ -697,6 +707,19 @@
           (enqueue-effect current (OpenGraphEffect id graph-id)))
         current)
       None current)
+
+    (ChangeGraphPassword password)
+    (assoc current :graph-password password)
+
+    SubmitGraphPassword
+    (if (string/blank? (:graph-password current))
+      current
+      (let [id (:next-effect-id current)]
+        (enqueue-effect current
+                        (UnlockGraphEffect id (:graph-password current)))))
+
+    CancelGraphUnlock
+    (assoc current :graph-password-open false :graph-password "")
 
     OpenCreateGraph
     (assoc current :create-graph-open true)

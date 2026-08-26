@@ -243,6 +243,125 @@
     (assert-equal [] (:local-graph-ids deleted)
                   "deleting a local graph removes it from local storage state")))
 
+(deftest encrypted-graph-unlock-is-owned-by-lg
+  (let [encrypted (graph "encrypted" "Encrypted" true true)
+        projection
+        (assoc (empty-core-projection)
+               :graphs [encrypted]
+               :selected-graph-id (Some "encrypted")
+               :graph-name (Some "Encrypted")
+               :is-graph-encrypted true
+               :is-graph-unlocked false)
+        requested
+        (model/update
+         (model/update (model/initial)
+                       (model/ApplyCoreSnapshot projection))
+         (model/RequestOpenGraph "encrypted"))
+        opened
+        (model/update
+         (model/update requested (model/DequeueEffect 1))
+         (model/ResolveEffect 1 true ""))
+        blank (model/update opened model/SubmitGraphPassword)
+        wrong
+        (model/update
+         (model/update opened (model/ChangeGraphPassword "wrong"))
+         model/SubmitGraphPassword)
+        failed
+        (model/update
+         (model/update wrong (model/DequeueEffect 2))
+         (model/ResolveEffect 2 false "Wrong password"))
+        correct
+        (model/update
+         (model/update failed (model/ChangeGraphPassword "correct"))
+         model/SubmitGraphPassword)
+        unlocked-projection (assoc projection :is-graph-unlocked true)
+        succeeded
+        (model/update
+         (model/update
+          (model/update correct (model/DequeueEffect 3))
+          (model/ApplyCoreSnapshot unlocked-projection))
+         (model/ResolveEffect 3 true ""))
+        cancelled
+        (model/update
+         (model/update opened (model/ChangeGraphPassword "cancel me"))
+         model/CancelGraphUnlock)]
+    (is (:graph-password-open opened)
+        "opening a locked encrypted graph presents the password sheet")
+    (assert-equal [] (:pending-effects blank)
+                  "an empty password never crosses the platform boundary")
+    (assert-equal [(model/UnlockGraphEffect 2 "wrong")]
+                  (:pending-effects wrong)
+                  "unlock publishes one typed platform effect")
+    (is (:graph-password-open failed)
+        "an unlock failure keeps the password sheet visible")
+    (assert-equal "wrong" (:graph-password failed)
+                  "an unlock failure preserves the entered password")
+    (assert-equal (Some "Wrong password") (:effect-error failed)
+                  "an unlock failure remains visible in LG state")
+    (is (not (:graph-password-open succeeded))
+        "a successful unlock dismisses the password sheet")
+    (assert-equal "" (:graph-password succeeded)
+                  "a successful unlock clears the password")
+    (is (not (:graph-password-open cancelled))
+        "cancelling unlock dismisses the password sheet")
+    (assert-equal "" (:graph-password cancelled)
+                  "cancelling unlock clears the password")))
+
+(deftest encrypted-graph-unlock-renders-the-secure-field-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        encrypted (graph "encrypted" "Encrypted" true true)
+        projection
+        (assoc (empty-core-projection)
+               :graphs [encrypted]
+               :selected-graph-id (Some "encrypted")
+               :graph-name (Some "Encrypted")
+               :is-graph-encrypted true
+               :is-graph-unlocked false)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/RequestOpenGraph "encrypted"))
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application (model/ResolveEffect 1 true ""))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          field (descendant-with-identifier renderer root "field.graph-password")
+          unlock (descendant-with-identifier renderer root "button.graph-unlock")
+          cancel (descendant-with-identifier renderer root "button.graph-unlock.cancel")]
+      (is (not (= -1 field)) "the unlock sheet renders a secure password field")
+      (is (not (= -1 unlock)) "the unlock sheet renders its confirm action")
+      (is (not (= -1 cancel)) "the unlock sheet renders its cancel action")
+      (assert-equal "E2EE password"
+                    (property-string renderer field proto/PlaceholderValue)
+                    "the secure field preserves the existing placeholder")
+      (driver/dispatch-event! application
+                              (proto/TextChanged field "secret"))
+      (driver/flush! application)
+      (assert-equal "secret" (:graph-password (chat/model application))
+                    "secure-field input is retained by LG")
+      (driver/dispatch-event! application (proto/Press unlock))
+      (driver/flush! application)
+      (assert-equal [(model/UnlockGraphEffect 2 "secret")]
+                    (:pending-effects (chat/model application))
+                    "the unlock button submits the retained password")
+      (driver/send! application (model/DequeueEffect 2))
+      (driver/send! application
+                    (model/ResolveEffect 2 false "Wrong password"))
+      (driver/flush! application)
+      (let [error
+            (descendant-with-identifier
+             renderer root "text.graph-unlock-error")]
+        (is (not (= -1 error)) "an unlock failure stays inside the sheet")
+        (assert-equal "Wrong password"
+                      (property-string renderer error proto/TextValue)
+                      "the unlock failure explains why the graph stayed locked")))))
+
+(deftest encrypted-graph-unlock-has-a-stable-native-effect-payload
+  (assert-equal
+   "{\"id\":9,\"kind\":\"unlock-graph\",\"text\":\"secret \\\"phrase\\\"\"}"
+   (bridge/encode-effect (model/UnlockGraphEffect 9 "secret \"phrase\""))
+   "the native bridge escapes passwords in a typed unlock effect"))
+
 (deftest settings-render-the-main-branch-navigation-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]

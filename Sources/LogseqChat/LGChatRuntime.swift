@@ -177,7 +177,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                     message: "",
                     output: .discard
                 )
-            case "open-graph", "create-graph", "delete-local-graph":
+            case "open-graph", "unlock-graph", "create-graph", "delete-local-graph":
                 guard let graphEffect else {
                     return LGChatEffectResolution(
                         succeeded: false,
@@ -410,6 +410,14 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             request = LogseqChatRPCRequest(
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "selectGraph", payload: effect.text)
+            )
+        case "unlock-graph":
+            if let platformEffect {
+                return await platformEffect(effect)
+            }
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "unlockGraph", payload: effect.text)
             )
         case "create-graph":
             if let platformEffect {

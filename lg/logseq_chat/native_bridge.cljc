@@ -149,6 +149,9 @@
     (model/OpenGraphEffect id graph-id)
     (str "{\"id\":" id ",\"kind\":\"open-graph\",\"text\":"
          (wire/quoted graph-id) "}")
+    (model/UnlockGraphEffect id password)
+    (str "{\"id\":" id ",\"kind\":\"unlock-graph\",\"text\":"
+         (wire/quoted password) "}")
     (model/CreateGraphEffect id name is-encrypted)
     (str "{\"id\":" id ",\"kind\":\"create-graph\",\"text\":"
          (wire/quoted name) ",\"value\":" (if is-encrypted 1 0) "}")

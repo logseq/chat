@@ -1008,6 +1008,19 @@
     (Some _graph) true
     None false))
 
+(defn graph-password-empty? [current]
+  (string/blank? (:graph-password current)))
+
+(defn graph-unlock-error-present? [current]
+  (match (:effect-error current)
+    (Some _message) true
+    None false))
+
+(defn graph-unlock-error-message [current]
+  (match (:effect-error current)
+    (Some message) message
+    None ""))
+
 (defn graph-row [ui-context model-source graph-source send]
   (let [graph (signal/sample graph-source)
         graph-id (:id graph)]
@@ -1079,6 +1092,36 @@
     [:button
      {:on-press (fn [_event] (send model/ConfirmDeleteGraph))}
      "Confirm"]]])
+
+(defui graph-password-sheet [model-source send]
+  [:sheet
+   {:text "Unlock encrypted graphs"
+    :on-dismiss (fn [_event] (send model/CancelGraphUnlock))}
+   [:column
+    [:text "Unlock encrypted graphs"]
+    [:secure-field
+     {:text (reactive :graph-password model-source)
+      :placeholder "E2EE password"
+      :label "E2EE password"
+      :accessibility-identifier "field.graph-password"
+      :on-input
+      (fn [input-event]
+        (match input-event
+          (TextChanged _node text) (send (model/ChangeGraphPassword text))
+          _ true))}]
+    [:if {:test (reactive graph-unlock-error-present? model-source)}
+     [:text
+      {:value (reactive graph-unlock-error-message model-source)
+       :accessibility-identifier "text.graph-unlock-error"}]]
+    [:button
+     {:accessibility-identifier "button.graph-unlock.cancel"
+      :on-press (fn [_event] (send model/CancelGraphUnlock))}
+     "Cancel"]
+    [:button
+     {:accessibility-identifier "button.graph-unlock"
+      :disabled (reactive graph-password-empty? model-source)
+      :on-press (fn [_event] (send model/SubmitGraphPassword))}
+     "Unlock"]]])
 
 (defui graphs-screen [model-source send]
   [:column {:accessibility-identifier "screen.graphs"}
@@ -1462,7 +1505,9 @@
       :on-press (fn [_event] (send model/OpenSidebar))}
      "Menu"]]
    [:if {:test (reactive :settings-open model-source)}
-    [settings-sheet model-source send]]])
+    [settings-sheet model-source send]]
+   [:if {:test (reactive :graph-password-open model-source)}
+    [graph-password-sheet model-source send]]])
 
 (defui chat-view [model-source send]
   [:drawer
