@@ -408,6 +408,9 @@ struct LGChatRendererTests {
             LGChatEffect(id: 32, kind: "refresh-runtime-log", text: "ui", value: 3),
             LGChatEffect(id: 33, kind: "copy-runtime-log", text: "[]"),
             LGChatEffect(id: 34, kind: "sign-out", text: ""),
+            LGChatEffect(id: 35, kind: "open-graph", text: "graph-a"),
+            LGChatEffect(id: 36, kind: "create-graph", text: "New", value: 0),
+            LGChatEffect(id: 37, kind: "delete-local-graph", text: "graph-a"),
         ]
         for effect in effects {
             #expect((await executor.execute(effect)).succeeded)
@@ -471,6 +474,35 @@ struct LGChatRendererTests {
         #expect(copy.succeeded)
         #expect(signedOut)
         #expect(signOut.succeeded)
+    }
+
+    @Test("graph lifecycle effects stay on the platform service boundary")
+    func graphLifecycleEffectsUsePlatformServices() async {
+        var graphKinds: [String] = []
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            graphEffect: { effect in
+                graphKinds.append(effect.kind)
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            }
+        )
+
+        for effect in [
+            LGChatEffect(id: 45, kind: "open-graph", text: "a"),
+            LGChatEffect(id: 46, kind: "create-graph", text: "New", value: 0),
+            LGChatEffect(id: 47, kind: "delete-local-graph", text: "a"),
+        ] {
+            #expect((await handler.execute(effect)).succeeded)
+        }
+
+        #expect(graphKinds == ["open-graph", "create-graph", "delete-local-graph"])
     }
 
     @Test("runtime routes platform output to host updates instead of core snapshots")

@@ -96,17 +96,20 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let runtimeLog: LogseqRuntimeLog
     private let copyText: @MainActor (String) -> Void
     private let signOut: @MainActor () async -> Void
+    private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
 
     public init(
         saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
-        signOut: @escaping @MainActor () async -> Void
+        signOut: @escaping @MainActor () async -> Void,
+        graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil
     ) {
         self.saveSettings = saveSettings
         self.runtimeLog = runtimeLog
         self.copyText = copyText
         self.signOut = signOut
+        self.graphEffect = graphEffect
     }
 
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
@@ -174,6 +177,15 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                     message: "",
                     output: .discard
                 )
+            case "open-graph", "create-graph", "delete-local-graph":
+                guard let graphEffect else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Graph platform handling is unavailable",
+                        output: .discard
+                    )
+                }
+                return await graphEffect(effect)
             default:
                 return LGChatEffectResolution(
                     succeeded: false,
@@ -392,11 +404,17 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 params: LogseqChatRPCParams(action: "refresh")
             )
         case "open-graph":
+            if let platformEffect {
+                return await platformEffect(effect)
+            }
             request = LogseqChatRPCRequest(
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "selectGraph", payload: effect.text)
             )
         case "create-graph":
+            if let platformEffect {
+                return await platformEffect(effect)
+            }
             do {
                 let data = try JSONEncoder().encode(LGCreateGraphPayload(
                     name: effect.text,
@@ -419,6 +437,9 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 )
             }
         case "delete-local-graph":
+            if let platformEffect {
+                return await platformEffect(effect)
+            }
             guard let deleteLocalGraph else {
                 return LGChatEffectResolution(
                     succeeded: false,

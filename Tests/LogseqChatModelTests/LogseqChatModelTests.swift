@@ -23,6 +23,22 @@ private let testEmptySnapshotJSON = """
         #expect(1 + 2 == 3, "basic test")
     }
 
+    @Test @MainActor func appliedCoreResponsesAreRelayedToTheLGHost() {
+        var relayed: [String] = []
+        let store = LogseqChatStore(
+            call: { _ in "" },
+            responseObserver: { relayed.append($0) }
+        )
+
+        store.applyLaunchResponse(
+            testEmptySnapshotJSON,
+            actionName: "open",
+            databasePath: "/tmp/logseq-chat-test.sqlite"
+        )
+
+        #expect(relayed == [testEmptySnapshotJSON])
+    }
+
     @Test func decodeType() throws {
         // load the TestData.json file from the Resources folder and decode it into a struct
         let resourceURL: URL = try #require(Bundle.module.url(forResource: "TestData", withExtension: "json"))

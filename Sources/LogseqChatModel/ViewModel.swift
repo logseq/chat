@@ -406,6 +406,7 @@ private struct DeletePagePayload: Encodable {
 
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
+    private let responseObserver: @MainActor (String) -> Void
     private var searchGeneration = 0
     private var openedDatabasePath: String?
     private var activeGraphID: String?
@@ -421,17 +422,30 @@ private struct DeletePagePayload: Encodable {
     private var outlinerAutosaveTask: Task<Void, Never>?
 
     public convenience init(call: @escaping @Sendable (String) -> String) {
-        self.init(call: call) { request in
-            await LogseqPendingSyncHTTPTransport.send(request)
-        }
+        self.init(call: call, responseObserver: { _ in })
+    }
+
+    public convenience init(
+        call: @escaping @Sendable (String) -> String,
+        responseObserver: @escaping @MainActor (String) -> Void
+    ) {
+        self.init(
+            call: call,
+            pendingTransport: { request in
+                await LogseqPendingSyncHTTPTransport.send(request)
+            },
+            responseObserver: responseObserver
+        )
     }
 
     public init(
         call: @escaping @Sendable (String) -> String,
-        pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
+        pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult,
+        responseObserver: @escaping @MainActor (String) -> Void = { _ in }
     ) {
         self.callCore = call
         self.pendingTransport = pendingTransport
+        self.responseObserver = responseObserver
     }
 
     public var sections: [LogseqBlockSection] {
@@ -1771,6 +1785,7 @@ private struct DeletePagePayload: Encodable {
             )
             lastError = coreError
         }
+        responseObserver(responseJSON)
     }
 
     private static func normalizedBaseURL(_ value: String) -> String {

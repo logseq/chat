@@ -49,6 +49,15 @@ private enum LGChatHostEncodingError: Error {
     case invalidUTF8
 }
 
+@MainActor
+private final class LGChatCoreResponseRelay {
+    var apply: ((String) -> Void)?
+
+    func send(_ response: String) {
+        apply?(response)
+    }
+}
+
 /// The shared top-level view for the app, loaded from the platform-specific App delegates below.
 ///
 /// The default implementation merely loads the `ContentView` for the app and logs a message.
@@ -119,9 +128,11 @@ public struct LogseqChatRootView : View {
         try? FileManager.default.removeItem(
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
         )
-        let store = LogseqChatStore { request in
-            LogseqChatCore.shared.logseq_chat_call(request)
-        }
+        let responseRelay = LGChatCoreResponseRelay()
+        let store = LogseqChatStore(
+            call: { request in LogseqChatCore.shared.logseq_chat_call(request) },
+            responseObserver: responseRelay.send
+        )
         let configuration = LogseqCognitoConfiguration.load()
         let authentication = LogseqAuthenticationStore(
             provider: CognitoAuthProvider(
@@ -135,6 +146,15 @@ public struct LogseqChatRootView : View {
             )
         )
         let syncCoordinator = GraphSyncCoordinator()
+        let databasePath = URL.documentsDirectory
+            .appendingPathComponent("logseq-chat.sqlite")
+            .path
+        let graphLifecycle = LGChatGraphLifecycle(
+            store: store,
+            authentication: authentication,
+            syncCoordinator: syncCoordinator,
+            databasePath: databasePath
+        )
         let platformHandler = LGChatPlatformEffectHandler(
             saveSettings: { settings in
                 let defaults = UserDefaults.standard
@@ -168,7 +188,8 @@ public struct LogseqChatRootView : View {
                     token: "",
                     refreshAfterApply: false
                 )
-            }
+            },
+            graphEffect: { effect in await graphLifecycle.execute(effect) }
         )
         let effectExecutor = LGChatCoreEffectExecutor(
             platformEffect: { effect in await platformHandler.execute(effect) }
@@ -176,10 +197,34 @@ public struct LogseqChatRootView : View {
         self.store = store
         self.authentication = authentication
         self.syncCoordinator = syncCoordinator
-        self.lgRuntime = LGChatRuntime(
+        let lgRuntime = LGChatRuntime(
             native: LGChatCoreNativeCaller(),
             effectExecutor: effectExecutor
         )
+        self.lgRuntime = lgRuntime
+        responseRelay.apply = { [weak lgRuntime] response in
+            do {
+                try lgRuntime?.applyCoreResponse(response)
+            } catch {
+                logger.error(
+                    "Could not relay a platform core response into LG: "
+                        + String(describing: error)
+                )
+            }
+        }
+        graphLifecycle.localGraphIDsChanged = { [weak lgRuntime] graphIDs in
+            guard let data = try? JSONEncoder().encode(graphIDs),
+                  let payload = String(data: data, encoding: .utf8)
+            else { return }
+            do {
+                try lgRuntime?.applyHostUpdate(kind: "local-graph-ids", payload: payload)
+            } catch {
+                logger.error(
+                    "Could not relay local graph identifiers into LG: "
+                        + String(describing: error)
+                )
+            }
+        }
     }
 
     public var databasePath: String {
@@ -342,7 +387,6 @@ public struct LogseqChatRootView : View {
             UserDefaults.standard.set(isEncrypted, forKey: "logseq.selectedGraphEncrypted")
         }
         if let graphResponse = result.graphResponse {
-            applyLaunchResponseToLG(graphResponse)
             store.applyLaunchResponse(
                 graphResponse,
                 actionName: "openGraph",
@@ -351,7 +395,6 @@ public struct LogseqChatRootView : View {
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
             LogseqChatAppDelegate.shared.reportLaunchStage("graph_loaded")
         } else {
-            applyLaunchResponseToLG(result.catalogResponse)
             store.applyLaunchResponse(
                 result.catalogResponse,
                 actionName: "open",
@@ -360,14 +403,6 @@ public struct LogseqChatRootView : View {
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
         }
         drainSharedCapturesIfReady()
-    }
-
-    private func applyLaunchResponseToLG(_ response: String) {
-        do {
-            try lgRuntime.applyCoreResponse(response)
-        } catch {
-            logger.error("Could not project launch response into LG: \(String(describing: error))")
-        }
     }
 
     private func applyLocalGraphIDsToLG(from catalogResponse: String) {
