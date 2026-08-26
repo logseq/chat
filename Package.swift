@@ -7,6 +7,15 @@ let logseqChatNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_CHA
     .split(separator: ":")
     .map(String.init) ?? []
 let logseqChatSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS"]
+let luiPackageDependency: Package.Dependency
+if let localLUIPath = ProcessInfo.processInfo.environment["LUI_PACKAGE_PATH"] {
+    luiPackageDependency = .package(path: localLUIPath)
+} else {
+    luiPackageDependency = .package(
+        url: "https://github.com/tiensonqin/lui.git",
+        branch: "main"
+    )
+}
 let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
     .unsafeFlags(logseqChatNativeLinkInputs, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
@@ -39,6 +48,7 @@ let package = Package(
         .package(url: "https://source.skip.tools/skip-foundation.git", from: "1.0.0"),
         .package(url: "https://source.skip.tools/skip-model.git", from: "1.0.0"),
         .package(url: "https://source.skip.tools/skip-ffi.git", from: "1.0.0"),
+        luiPackageDependency,
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],
@@ -51,6 +61,7 @@ let package = Package(
         ),
         .target(name: "LogseqChat", dependencies: [
             "LogseqChatModel",
+            .product(name: "LUIAppleBackendStatic", package: "lui"),
             .product(name: "SkipUI", package: "skip-ui"),
             .product(
                 name: "SwiftUIMath",
