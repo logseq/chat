@@ -26,6 +26,22 @@
           (new-graph-name "")
           (new-graph-encrypted false)
           (pending-graph-deletion None)
+          (connection-menu-open false)
+          (settings-open false)
+          (settings-tabs-open false)
+          (runtime-log-open false)
+          (appearance "system")
+          (language "system")
+          (spell-check true)
+          (auto-correction true)
+          (sidebar-tabs ["journals" "flashcards" "graphs"])
+          (base-url "")
+          (version "Development")
+          (revision "Development")
+          (runtime-log-source "ui")
+          (runtime-log-errors-only false)
+          (runtime-log-newest-first false)
+          (runtime-log-records [])
           (search-open false)
           (search-query "")
           (search-results [])
@@ -98,7 +114,11 @@
     (RefreshGraphsEffect id) id
     (OpenGraphEffect id _graph-id) id
     (CreateGraphEffect id _name _is-encrypted) id
-    (DeleteLocalGraphEffect id _graph-id) id))
+    (DeleteLocalGraphEffect id _graph-id) id
+    (SaveSettingsEffect id _settings) id
+    (RefreshRuntimeLogEffect id _source _errors-only _newest-first) id
+    (CopyRuntimeLogEffect id _records) id
+    (SignOutEffect id) id))
 
 (defn effect-with-id [effects target]
   (loop [index 0]
@@ -136,6 +156,38 @@
 
 (defn remove-string [values target]
   (filterv (fn [value] (not (= value target))) values))
+
+(defn required-sidebar-tab? [tab]
+  (or (= tab "journals") (= tab "graphs")))
+
+(defn toggle-sidebar-tab [tabs tab]
+  (if (required-sidebar-tab? tab)
+    tabs
+    (if (string-vector-contains? tabs tab)
+      (remove-string tabs tab)
+      (conj tabs tab))))
+
+(defn move-sidebar-tab [tabs tab offset]
+  (let [without (remove-string tabs tab)]
+    (loop [index 0]
+      (if (= index (count tabs))
+        tabs
+        (if (= (nth tabs index) tab)
+          (let [target (min (max (+ index offset) 0) (count without))]
+            (into (conj (subvec without 0 target) tab)
+                  (subvec without target)))
+          (recur (inc index)))))))
+
+(defn current-settings [current]
+  (record settings-projection
+    (appearance (:appearance current))
+    (language (:language current))
+    (spell-check (:spell-check current))
+    (auto-correction (:auto-correction current))
+    (sidebar-tabs (:sidebar-tabs current))
+    (base-url (string/trim (:base-url current)))
+    (version (:version current))
+    (revision (:revision current))))
 
 (defn rollback-navigation-effect [current effect]
   (match effect
@@ -655,6 +707,112 @@
             id (:next-effect-id updated)]
         (enqueue-effect updated (DeleteLocalGraphEffect id (:id graph))))
       None current)
+
+    (ApplySettingsSnapshot settings)
+    (assoc current
+           :appearance (:appearance settings)
+           :language (:language settings)
+           :spell-check (:spell-check settings)
+           :auto-correction (:auto-correction settings)
+           :sidebar-tabs (:sidebar-tabs settings)
+           :base-url (:base-url settings)
+           :version (:version settings)
+           :revision (:revision settings))
+
+    OpenConnectionMenu
+    (assoc current :connection-menu-open true)
+
+    CloseConnectionMenu
+    (assoc current :connection-menu-open false)
+
+    OpenSettings
+    (assoc current
+           :connection-menu-open false
+           :settings-open true
+           :settings-tabs-open false
+           :runtime-log-open false)
+
+    DismissSettings
+    (assoc current
+           :settings-open false
+           :settings-tabs-open false
+           :runtime-log-open false)
+
+    OpenSettingsTabs
+    (assoc current :settings-tabs-open true)
+
+    BackSettings
+    (assoc current :settings-tabs-open false :runtime-log-open false)
+
+    (ChangeAppearance appearance)
+    (assoc current :appearance appearance)
+
+    (ChangeLanguage language)
+    (assoc current :language language)
+
+    (ToggleSpellCheck enabled)
+    (assoc current :spell-check enabled)
+
+    (ToggleAutoCorrection enabled)
+    (assoc current :auto-correction enabled)
+
+    (ToggleSidebarTab tab)
+    (assoc current :sidebar-tabs
+           (toggle-sidebar-tab (:sidebar-tabs current) tab))
+
+    (MoveSidebarTab tab offset)
+    (assoc current :sidebar-tabs
+           (move-sidebar-tab (:sidebar-tabs current) tab offset))
+
+    (ChangeBaseURL base-url)
+    (assoc current :base-url base-url)
+
+    ApplySettings
+    (let [id (:next-effect-id current)]
+      (enqueue-effect
+       (assoc current
+              :settings-open false
+              :settings-tabs-open false
+              :runtime-log-open false)
+       (SaveSettingsEffect id (current-settings current))))
+
+    OpenRuntimeLog
+    (assoc current :runtime-log-open true)
+
+    DismissRuntimeLog
+    (assoc current :runtime-log-open false)
+
+    ToggleRuntimeLogErrors
+    (assoc current :runtime-log-errors-only
+           (not (:runtime-log-errors-only current)))
+
+    ToggleRuntimeLogOrder
+    (assoc current :runtime-log-newest-first
+           (not (:runtime-log-newest-first current)))
+
+    ToggleRuntimeLogSource
+    (assoc current :runtime-log-source
+           (if (= (:runtime-log-source current) "ui") "core" "ui"))
+
+    (ApplyRuntimeLog records)
+    (assoc current :runtime-log-records records)
+
+    RefreshRuntimeLog
+    (let [id (:next-effect-id current)]
+      (enqueue-effect
+       current
+       (RefreshRuntimeLogEffect
+        id (:runtime-log-source current) (:runtime-log-errors-only current)
+        (:runtime-log-newest-first current))))
+
+    CopyRuntimeLog
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current
+                      (CopyRuntimeLogEffect id (:runtime-log-records current))))
+
+    SignOut
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (SignOutEffect id)))
 
     RevealFlashcardCloze
     (assoc current :flashcard-cloze-revealed true)

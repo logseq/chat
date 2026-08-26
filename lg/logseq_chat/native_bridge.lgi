@@ -7,6 +7,14 @@
   :fn<reducer-app<chat-model;chat-action>>)
 (signature logseq-chat.native-bridge/flush-event! :fn<event;string>)
 (signature logseq-chat.native-bridge/flush-action! :fn<chat-action;string>)
+(signature logseq-chat.native-bridge/encode-string-vector
+ :fn<vector<string>;string>)
+(signature logseq-chat.native-bridge/encode-settings
+ :fn<settings-projection;string>)
+(signature logseq-chat.native-bridge/encode-runtime-log-record
+ :fn<runtime-log-record;string>)
+(signature logseq-chat.native-bridge/encode-runtime-log-records
+ :fn<vector<runtime-log-record>;string>)
 (signature logseq-chat.native-bridge/encode-effect :fn<chat-effect;string>)
 (signature logseq-chat.native-bridge/take-effect :fn<string>)
 (signature logseq-chat.native-bridge/resolve-effect :fn<int;bool;string;string>)

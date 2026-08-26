@@ -130,6 +130,7 @@ private struct LGPlatformCommandResponse: Decodable {
 public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
     private let callCore: @MainActor (LogseqChatRPCRequest) async -> String
     private let deleteLocalGraph: (@MainActor (String) async -> String)?
+    private let platformEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
 
     public init(
         callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
@@ -137,6 +138,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
         }
     ) {
         self.deleteLocalGraph = nil
+        self.platformEffect = nil
         self.callCore = callCore
     }
 
@@ -145,6 +147,16 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
         callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String
     ) {
         self.deleteLocalGraph = deleteLocalGraph
+        self.platformEffect = nil
+        self.callCore = callCore
+    }
+
+    public init(
+        platformEffect: @escaping @MainActor (LGChatEffect) async -> LGChatEffectResolution,
+        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String
+    ) {
+        self.deleteLocalGraph = nil
+        self.platformEffect = platformEffect
         self.callCore = callCore
     }
 
@@ -264,6 +276,14 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 )
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
+        case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out":
+            guard let platformEffect else {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "Platform settings handling is unavailable"
+                )
+            }
+            return await platformEffect(effect)
         case "review-flashcard":
             guard let uuid = effect.uuid else {
                 return LGChatEffectResolution(

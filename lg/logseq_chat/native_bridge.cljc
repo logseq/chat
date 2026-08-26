@@ -1,5 +1,6 @@
 (ns logseq-chat.native-bridge
-  (:require [lui.app :as driver]
+  (:require [clojure.string :as string]
+            [lui.app :as driver]
             [lui.backend.apple :as apple]
             [lui.protocol :as proto]
             [lui.wire :as wire]
@@ -38,6 +39,32 @@
   (driver/send! (app) action)
   (driver/flush! (app))
   (deref latest-patch))
+
+(defn encode-string-vector [values]
+  (str "["
+       (string/join "," (mapv wire/quoted values))
+       "]"))
+
+(defn encode-settings [settings]
+  (str "{\"appearance\":" (wire/quoted (:appearance settings))
+       ",\"language\":" (wire/quoted (:language settings))
+       ",\"spellCheck\":" (:spell-check settings)
+       ",\"autoCorrection\":" (:auto-correction settings)
+       ",\"sidebarTabs\":" (encode-string-vector (:sidebar-tabs settings))
+       ",\"baseURL\":" (wire/quoted (:base-url settings))
+       "}"))
+
+(defn encode-runtime-log-record [record]
+  (str "{\"id\":" (wire/quoted (:id record))
+       ",\"level\":" (wire/quoted (:level record))
+       ",\"source\":" (wire/quoted (:source record))
+       ",\"timestamp\":" (wire/quoted (:timestamp record))
+       ",\"message\":" (wire/quoted (:message record)) "}"))
+
+(defn encode-runtime-log-records [records]
+  (str "["
+       (string/join "," (mapv encode-runtime-log-record records))
+       "]"))
 
 (defn encode-effect [effect]
   (match effect
@@ -127,7 +154,19 @@
          (wire/quoted name) ",\"value\":" (if is-encrypted 1 0) "}")
     (model/DeleteLocalGraphEffect id graph-id)
     (str "{\"id\":" id ",\"kind\":\"delete-local-graph\",\"text\":"
-         (wire/quoted graph-id) "}")))
+         (wire/quoted graph-id) "}")
+    (model/SaveSettingsEffect id settings)
+    (str "{\"id\":" id ",\"kind\":\"save-settings\",\"text\":"
+         (wire/quoted (encode-settings settings)) "}")
+    (model/RefreshRuntimeLogEffect id source errors-only newest-first)
+    (str "{\"id\":" id ",\"kind\":\"refresh-runtime-log\",\"text\":"
+         (wire/quoted source) ",\"value\":"
+         (+ (if errors-only 1 0) (if newest-first 2 0)) "}")
+    (model/CopyRuntimeLogEffect id records)
+    (str "{\"id\":" id ",\"kind\":\"copy-runtime-log\",\"text\":"
+         (wire/quoted (encode-runtime-log-records records)) "}")
+    (model/SignOutEffect id)
+    (str "{\"id\":" id ",\"kind\":\"sign-out\",\"text\":\"\"}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]

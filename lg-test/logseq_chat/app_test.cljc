@@ -132,6 +132,89 @@
     (is-encrypted encrypted)
     (is-ready ready)))
 
+(defn settings [tabs]
+  (record model/settings-projection
+    (appearance "system")
+    (language "system")
+    (spell-check true)
+    (auto-correction true)
+    (sidebar-tabs tabs)
+    (base-url "https://api.logseq.com")
+    (version "1.0")
+    (revision "abc123")))
+
+(defn runtime-record [id level source message]
+  (record model/runtime-log-record
+    (id id)
+    (level level)
+    (source source)
+    (timestamp "12:00")
+    (message message)))
+
+(deftest settings-navigation-tabs-and-diagnostics-are-lg-owned
+  (let [initial (model/update (model/initial)
+                              (model/ApplySettingsSnapshot
+                               (settings ["journals" "flashcards" "graphs"])))
+        menu (model/update initial model/OpenConnectionMenu)
+        opened (model/update menu model/OpenSettings)
+        tabs (model/update opened model/OpenSettingsTabs)
+        hidden (model/update tabs (model/ToggleSidebarTab "flashcards"))
+        logs (model/update (model/update hidden model/BackSettings)
+                           model/OpenRuntimeLog)
+        filtered (model/update logs model/ToggleRuntimeLogErrors)
+        refreshed (model/update filtered model/RefreshRuntimeLog)]
+    (is (:connection-menu-open menu) "the connection menu is model-owned")
+    (is (:settings-open opened) "settings presentation is model-owned")
+    (is (not (:connection-menu-open opened))
+        "opening settings dismisses its source menu")
+    (is (:settings-tabs-open tabs) "tabs navigation is model-owned")
+    (assert-equal ["journals" "graphs"] (:sidebar-tabs hidden)
+                  "optional sidebar tabs can be hidden")
+    (is (:runtime-log-open logs) "runtime diagnostics are model-owned")
+    (is (:runtime-log-errors-only filtered) "log filtering is model-owned")
+    (assert-equal
+     [(model/RefreshRuntimeLogEffect 1 "ui" true false)]
+     (:pending-effects refreshed)
+     "refreshing diagnostics crosses one typed platform boundary")))
+
+(deftest settings-render-the-main-branch-navigation-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplySettingsSnapshot
+                   (settings ["journals" "flashcards" "graphs"])))
+    (driver/send! application model/OpenConnectionMenu)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)]
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "screen.settings")))
+          "settings retain their baseline screen identifier")
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "link.settings.tabs")))
+          "settings expose tabs navigation")
+      (driver/send! application model/OpenSettingsTabs)
+      (driver/flush! application)
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "screen.settings.tabs")))
+          "tabs retain their baseline screen identifier")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toggle.settings.tab.flashcards")))
+          "configurable tabs retain their stable identifiers")
+      (driver/send! application model/BackSettings)
+      (driver/send! application model/OpenRuntimeLog)
+      (driver/send! application
+                    (model/ApplyRuntimeLog
+                     [(runtime-record "1" "INFO" "ui" "Started")]))
+      (driver/flush! application)
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "screen.runtime-log")))
+          "runtime log retains its baseline screen identifier")
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "button.log-copy")))
+          "runtime diagnostics retain their actions"))))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
@@ -589,7 +672,7 @@
       (driver/flush! application)
       (is (:search-open (chat/model application))
           "search presentation is model-owned")
-      (let [search-panel (nth (apple/children renderer root) 4)
+      (let [search-panel (child-with-identifier renderer root "screen.search")
             search-field (nth (apple/children renderer search-panel) 0)
             close-button (nth (apple/children renderer search-panel) 1)]
         (assert-equal "screen.search"
@@ -615,7 +698,7 @@
             "close removes the search presentation")
         (assert-equal "" (:search-query (chat/model application))
                       "close clears transient search input")
-        (assert-equal 7 (count (apple/children renderer root))
+        (assert-equal -1 (child-with-identifier renderer root "screen.search")
                       "the retained search subtree is disposed")))))
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
@@ -624,7 +707,7 @@
     (driver/start! application)
     (driver/flush! application)
     (let [root (main-root renderer application)
-          composer (nth (apple/children renderer root) 5)
+          composer (child-with-identifier renderer root "surface.composer.root")
           collapsed (nth (apple/children renderer composer) 0)]
       (assert-equal "button.composer.expand"
                     (property-string renderer collapsed
@@ -951,7 +1034,7 @@
                   (model/ApplySearchResults "project" [hit]))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          search-panel (nth (apple/children renderer root) 4)
+          search-panel (child-with-identifier renderer root "screen.search")
           results (nth (apple/children renderer search-panel) 2)
           row (nth (apple/children renderer results) 0)]
       (assert-equal "search.result.block-a"
@@ -989,7 +1072,7 @@
                                            [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (nth (apple/children renderer root) 4)
+          outliner (child-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)]
       (assert-equal "outliner.block.block-a"
                     (property-string renderer rendered-row
@@ -1033,7 +1116,7 @@
                                            [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (nth (apple/children renderer root) 4)
+          outliner (child-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
           content (nth (apple/children renderer rendered-row) 0)
           rich-content (nth (apple/children renderer content) 2)]
@@ -1093,7 +1176,7 @@
                                            ["parent"] [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (nth (apple/children renderer root) 4)
+          outliner (child-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
           toolbar (child-with-identifier
                    renderer root "toolbar.outliner.selection")
@@ -1187,7 +1270,7 @@
                                            [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (nth (apple/children renderer root) 4)
+          outliner (child-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
           content (nth (apple/children renderer rendered-row) 0)
           content-children (apple/children renderer content)

@@ -186,6 +186,15 @@
 (defn recent-pages-empty? [current]
   (empty? (:recent-pages current)))
 
+(defn sidebar-tab-visible? [current tab]
+  (model/string-vector-contains? (:sidebar-tabs current) tab))
+
+(defn flashcards-tab-visible? [current]
+  (sidebar-tab-visible? current "flashcards"))
+
+(defn graphs-tab-visible? [current]
+  (sidebar-tab-visible? current "graphs"))
+
 (defn sidebar-page-row [ui-context page-source send]
   (let [page (signal/sample page-source)]
     (elements/element
@@ -215,16 +224,18 @@
      :accessibility-identifier "link.sidebar.journals"
      :on-press (fn [_event] (send model/ShowJournals))}
     "Journals"]
-   [:button
-    {:label "Flashcards"
-     :accessibility-identifier "link.sidebar.flashcards"
-     :on-press (fn [_event] (send model/ShowFlashcards))}
-    "Flashcards"]
-   [:button
-    {:label "Graphs"
-     :accessibility-identifier "link.sidebar.graphs"
-     :on-press (fn [_event] (send model/ShowGraphs))}
-    "Graphs"]
+   [:if {:test (reactive flashcards-tab-visible? model-source)}
+    [:button
+     {:label "Flashcards"
+      :accessibility-identifier "link.sidebar.flashcards"
+      :on-press (fn [_event] (send model/ShowFlashcards))}
+     "Flashcards"]]
+   [:if {:test (reactive graphs-tab-visible? model-source)}
+    [:button
+     {:label "Graphs"
+      :accessibility-identifier "link.sidebar.graphs"
+      :on-press (fn [_event] (send model/ShowGraphs))}
+     "Graphs"]]
    [:column {:accessibility-identifier "section.sidebar.favorites"}
     [:text "Favorites"]
     [:if {:test (reactive favorites-empty? model-source)}
@@ -802,7 +813,7 @@
    (composer-view model-source send)])
 
 (defui composer-view [model-source send]
-  [:column
+  [:column {:accessibility-identifier "surface.composer.root"}
    [:if {:test (reactive :composer-expanded model-source)}
     [:column
      [:textarea
@@ -1099,7 +1110,263 @@
    [:if {:test (reactive :create-graph-open model-source)}
     [graph-create-sheet model-source send]]
    [:if {:test (reactive graph-deletion-pending? model-source)}
-    [graph-delete-dialog model-source send]]])
+   [graph-delete-dialog model-source send]]])
+
+(defn settings-main-visible? [current]
+  (and (not (:settings-tabs-open current))
+       (not (:runtime-log-open current))))
+
+(defn settings-spell-check [current]
+  (:spell-check current))
+
+(defn settings-auto-correction [current]
+  (:auto-correction current))
+
+(defn settings-base-url [current]
+  (:base-url current))
+
+(defn settings-version [current]
+  (:version current))
+
+(defn settings-revision [current]
+  (:revision current))
+
+(defn settings-tabs-visible? [current]
+  (:settings-tabs-open current))
+
+(defn runtime-log-visible? [current]
+  (:runtime-log-open current))
+
+(defn tab-enabled? [current tab]
+  (model/string-vector-contains? (:sidebar-tabs current) tab))
+
+(defn tab-toggle-label [current tab]
+  (let [title
+        (cond
+          (= tab "journals") "Journals"
+          (= tab "flashcards") "Flashcards"
+          :else "Graphs")]
+    (str title (if (tab-enabled? current tab) ", on" ", off"))))
+
+(defn journals-tab-toggle-label [current]
+  (tab-toggle-label current "journals"))
+
+(defn flashcards-tab-toggle-label [current]
+  (tab-toggle-label current "flashcards"))
+
+(defn graphs-tab-toggle-label [current]
+  (tab-toggle-label current "graphs"))
+
+(defn tab-toggle-identifier [tab]
+  (str "toggle.settings.tab." tab))
+
+(defn tab-up-identifier [tab]
+  (str "button.settings.tab." tab ".up"))
+
+(defn tab-down-identifier [tab]
+  (str "button.settings.tab." tab ".down"))
+
+(defn runtime-log-level [record]
+  (:level record))
+
+(defn runtime-log-timestamp [record]
+  (:timestamp record))
+
+(defn runtime-log-message [record]
+  (:message record))
+
+(defn runtime-log-empty? [current]
+  (empty? (:runtime-log-records current)))
+
+(defn runtime-log-records [current]
+  (:runtime-log-records current))
+
+(defn runtime-log-errors-label [current]
+  (if (:runtime-log-errors-only current) "All" "Errors only"))
+
+(defn runtime-log-order-label [current]
+  (if (:runtime-log-newest-first current) "Oldest first" "Newest first"))
+
+(defn runtime-log-source-label [current]
+  (if (= (:runtime-log-source current) "ui") "Core log" "UI log"))
+
+(defn runtime-log-row [ui-context record-source]
+  (elements/element
+   ui-context nil
+   [:column
+    [:row
+     [:text {:value (reactive runtime-log-level record-source)}]
+     [:text {:value (reactive runtime-log-timestamp record-source)}]]
+    [:text {:value (reactive runtime-log-message record-source)}]
+    [:separator]]))
+
+(defn settings-tab-row [ui-context label-source tab title send]
+  (let [row (ui/row! ui-context)
+        toggle (ui/button! ui-context)
+        up (ui/button! ui-context)
+        down (ui/button! ui-context)]
+    (ui/string-property-signal!
+     ui-context toggle proto/AccessibilityLabel label-source)
+    (ui/accessibility-identifier!
+     ui-context toggle (tab-toggle-identifier tab))
+    (ui/on-event!
+     ui-context toggle
+     (fn [input-event]
+       (match input-event
+         (proto/Press _node) (send (model/ToggleSidebarTab tab))
+         _ true)))
+    (ui/string-property! ui-context toggle proto/TextValue title)
+    (ui/accessibility-label! ui-context up (str "Move " title " up"))
+    (ui/accessibility-identifier! ui-context up (tab-up-identifier tab))
+    (ui/on-event!
+     ui-context up
+     (fn [input-event]
+       (match input-event
+         (proto/Press _node) (send (model/MoveSidebarTab tab -1))
+         _ true)))
+    (ui/string-property! ui-context up proto/TextValue "↑")
+    (ui/accessibility-label! ui-context down (str "Move " title " down"))
+    (ui/accessibility-identifier! ui-context down (tab-down-identifier tab))
+    (ui/on-event!
+     ui-context down
+     (fn [input-event]
+       (match input-event
+         (proto/Press _node) (send (model/MoveSidebarTab tab 1))
+         _ true)))
+    (ui/string-property! ui-context down proto/TextValue "↓")
+    (ui/append! ui-context row toggle)
+    (ui/append! ui-context row up)
+    (ui/append! ui-context row down)
+    row))
+
+(defui settings-tabs-screen [model-source send]
+  [:column {:accessibility-identifier "screen.settings.tabs"}
+   [:row
+    [:button {:on-press (fn [_event] (send model/BackSettings))} "Settings"]
+    [:heading {:level 1} "Tabs"]]
+   [:text "Visible tabs"]
+   [settings-tab-row (reactive journals-tab-toggle-label model-source)
+    "journals" "Journals" send]
+   [settings-tab-row (reactive flashcards-tab-toggle-label model-source)
+    "flashcards" "Flashcards" send]
+   [settings-tab-row (reactive graphs-tab-toggle-label model-source)
+    "graphs" "Graphs" send]
+   [:text "Journals and Graphs are always available. Use the arrows to reorder tabs."]])
+
+(defui runtime-log-screen [model-source send]
+  [:column {:accessibility-identifier "screen.runtime-log"}
+   [:row
+    [:button {:on-press (fn [_event] (send model/DismissRuntimeLog))} "Done"]
+    [:heading {:level 1} "Log"]
+    [:button
+     {:accessibility-identifier "button.log-refresh"
+      :on-press (fn [_event] (send model/RefreshRuntimeLog))}
+     "Refresh"]]
+   [:row
+    [:button
+     {:text (reactive runtime-log-errors-label model-source)
+      :accessibility-identifier "button.log-errors"
+      :on-press (fn [_event] (send model/ToggleRuntimeLogErrors))}]
+    [:button
+     {:text (reactive runtime-log-order-label model-source)
+      :accessibility-identifier "button.log-order"
+      :on-press (fn [_event] (send model/ToggleRuntimeLogOrder))}]
+    [:button
+     {:text (reactive runtime-log-source-label model-source)
+      :accessibility-identifier "button.log-source"
+      :on-press (fn [_event] (send model/ToggleRuntimeLogSource))}]
+    [:button
+     {:accessibility-identifier "button.log-copy"
+      :on-press (fn [_event] (send model/CopyRuntimeLog))}
+     "Copy"]]
+   [:if {:test (reactive runtime-log-empty? model-source)}
+    [:text "No log entries"]]
+   [:keyed
+    {:source (reactive runtime-log-records model-source)
+     :key :id
+     :compare compare
+     :as record-source}
+    [runtime-log-row record-source]]])
+
+(defui settings-screen [model-source send]
+  [:column {:accessibility-identifier "screen.settings"}
+   [:heading {:level 1} "Settings"]
+   [:heading {:level 2} "General"]
+   [:text "Theme"]
+   [:row
+    [:button {:on-press (fn [_event] (send (model/ChangeAppearance "system")))}
+     "System"]
+    [:button {:on-press (fn [_event] (send (model/ChangeAppearance "light")))}
+     "Light"]
+    [:button {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
+     "Dark"]]
+   [:button
+    {:accessibility-identifier "picker.settings.language"
+     :on-press (fn [_event] (send (model/ChangeLanguage "system")))}
+    "Language"]
+   [:button
+    {:accessibility-identifier "link.settings.tabs"
+     :on-press (fn [_event] (send model/OpenSettingsTabs))}
+    "Tabs"]
+   [:heading {:level 2} "Editor"]
+   [:toggle
+    {:checked (reactive settings-spell-check model-source)
+     :on-toggle
+     (fn [input-event]
+       (match input-event
+         (proto/ToggleChanged _node enabled)
+         (send (model/ToggleSpellCheck enabled))
+         _ true))}
+    "Spell check"]
+   [:toggle
+    {:checked (reactive settings-auto-correction model-source)
+     :on-toggle
+     (fn [input-event]
+       (match input-event
+         (proto/ToggleChanged _node enabled)
+         (send (model/ToggleAutoCorrection enabled))
+         _ true))}
+    "Auto-correction"]
+   [:heading {:level 2} "Sync server"]
+   [:text "Connection"]
+   [:text-field
+    {:text (reactive settings-base-url model-source)
+     :placeholder "Server URL"
+     :label "Server URL"
+     :accessibility-identifier "field.base-url"
+     :on-input
+     (fn [input-event]
+       (match input-event
+         (TextChanged _node text) (send (model/ChangeBaseURL text))
+         _ true))}]
+   [:heading {:level 2} "About"]
+   [:row [:text "Version"] [:text {:value (reactive settings-version model-source)}]]
+   [:row [:text "Revision"] [:text {:value (reactive settings-revision model-source)}]]
+   [:button {:on-press (fn [_event] (send model/OpenRuntimeLog))} "Check log"]
+   [:button
+    {:accessibility-identifier "button.sign-out"
+     :on-press (fn [_event] (send model/SignOut))}
+    "Sign Out"]
+   [:row
+    [:button
+     {:accessibility-identifier "button.connection.cancel"
+      :on-press (fn [_event] (send model/DismissSettings))}
+     "Cancel"]
+    [:button
+     {:accessibility-identifier "button.connection.apply"
+      :on-press (fn [_event] (send model/ApplySettings))}
+     "Apply"]]])
+
+(defui settings-sheet [model-source send]
+  [:sheet
+   {:text "Settings"
+    :on-dismiss (fn [_event] (send model/DismissSettings))}
+   [:if {:test (reactive settings-main-visible? model-source)}
+    [settings-screen model-source send]]
+   [:if {:test (reactive settings-tabs-visible? model-source)}
+    [settings-tabs-screen model-source send]]
+   [:if {:test (reactive runtime-log-visible? model-source)}
+    [runtime-log-screen model-source send]]])
 
 (defui chat-main-view [model-source send]
   [:column
@@ -1116,6 +1383,15 @@
      {:accessibility-identifier "button.search"
       :on-press (fn [_event] (send model/OpenSearch))}
      "Search"]]
+   [:button
+    {:label "Connection"
+     :accessibility-identifier "button.connection"
+     :on-press (fn [_event] (send model/OpenConnectionMenu))}
+    "Connection"]
+   [:if {:test (reactive :connection-menu-open model-source)}
+    [:dropdown-menu {:on-dismiss (fn [_event] (send model/CloseConnectionMenu))}
+     [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
+      "Settings"]]]
    [:if {:test (reactive search-main-visible? model-source)}
     [:column {:accessibility-identifier "screen.search"}
      [:search-field
@@ -1174,7 +1450,9 @@
      {:label "Open sidebar"
       :accessibility-identifier "button.sidebar"
       :on-press (fn [_event] (send model/OpenSidebar))}
-     "Menu"]]])
+     "Menu"]]
+   [:if {:test (reactive :settings-open model-source)}
+    [settings-sheet model-source send]]])
 
 (defui chat-view [model-source send]
   [:drawer

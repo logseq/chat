@@ -388,6 +388,35 @@ struct LGChatRendererTests {
         #expect(delete.succeeded)
     }
 
+    @Test("settings and diagnostics effects stay on the platform boundary")
+    func settingsEffectsUsePlatformBoundary() async {
+        var platformKinds: [String] = []
+        var coreCallCount = 0
+        let executor = LGChatCoreEffectExecutor(
+            platformEffect: { effect in
+                platformKinds.append(effect.kind)
+                return LGChatEffectResolution(succeeded: true, message: "ok")
+            },
+            callCore: { _ in
+                coreCallCount += 1
+                return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+            }
+        )
+
+        let effects = [
+            LGChatEffect(id: 31, kind: "save-settings", text: "{}"),
+            LGChatEffect(id: 32, kind: "refresh-runtime-log", text: "ui", value: 3),
+            LGChatEffect(id: 33, kind: "copy-runtime-log", text: "[]"),
+            LGChatEffect(id: 34, kind: "sign-out", text: ""),
+        ]
+        for effect in effects {
+            #expect((await executor.execute(effect)).succeeded)
+        }
+
+        #expect(platformKinds == effects.map(\.kind))
+        #expect(coreCallCount == 0)
+    }
+
     @Test("outliner selection effects reuse the existing core reducer")
     func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []
