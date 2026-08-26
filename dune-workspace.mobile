@@ -1,0 +1,11 @@
+(lang dune 3.23)
+
+(context
+ (opam
+  (name mobile_host)
+  (switch 5.5.0)))
+
+(context
+ (default
+  (name mobile)
+  (host mobile_host)))

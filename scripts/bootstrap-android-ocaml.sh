@@ -33,16 +33,6 @@ target_prefix="$toolchain_root/$target-$ocaml_version"
 host_source="$toolchain_root/ocaml-$ocaml_version-host"
 target_source="$toolchain_root/ocaml-$ocaml_version-$target_arch"
 
-if [[ -d ${ANDROID_NDK_HOME:-} ]]; then
-  ndk_root=$ANDROID_NDK_HOME
-else
-  ndk_root=
-  for candidate in "$android_home"/ndk/*; do
-    [[ -d $candidate ]] && ndk_root=$candidate
-  done
-fi
-[[ -n ${ndk_root:-} && -d $ndk_root ]] || die "Android NDK is not installed under $android_home/ndk"
-
 case "$(uname -s)" in
   Darwin)
     ndk_host=darwin-x86_64
@@ -54,6 +44,16 @@ case "$(uname -s)" in
     die "unsupported build host: $(uname -s)"
     ;;
 esac
+
+if [[ -d ${ANDROID_NDK_HOME:-} ]]; then
+  ndk_root=$ANDROID_NDK_HOME
+else
+  ndk_root=
+  for candidate in "$android_home"/ndk/*; do
+    [[ -x $candidate/toolchains/llvm/prebuilt/$ndk_host/bin/clang ]] && ndk_root=$candidate
+  done
+fi
+[[ -n ${ndk_root:-} && -d $ndk_root ]] || die "Android NDK is not installed under $android_home/ndk"
 
 ndk_bin="$ndk_root/toolchains/llvm/prebuilt/$ndk_host/bin"
 [[ -x $ndk_bin/clang ]] || die "Android NDK clang was not found: $ndk_bin/clang"

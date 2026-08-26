@@ -6,29 +6,11 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 failures=0
 
-if grep -Eq 'opam exec --switch=(simulator|ios|android)-|5\.4\.1' \
-  "$repo_root/scripts/build-mobile-ocaml-deps.sh"; then
-  echo "not ok - mobile dependency build references a legacy cross switch" >&2
+if ! grep -Fq 'scripts/build-mobile-ocaml.sh' \
+  "$repo_root/scripts/build-mobile-ios-device.sh"; then
+  echo "not ok - device build does not delegate OCaml compilation to Dune" >&2
   failures=$((failures + 1))
 fi
-
-for module in \
-  logseq_chat_edn \
-  logseq_chat_entity_sync \
-  logseq_chat_graph_read \
-  logseq_chat_graph_store \
-  logseq_chat_logseq_storage_codec \
-  logseq_chat_snapshot \
-  logseq_chat_sse \
-  logseq_chat_sync_checkpoint \
-  logseq_chat_sync_protocol \
-  logseq_chat_sync_session \
-  logseq_chat_sync_state; do
-  if ! grep -q "core/$module.ml" "$repo_root/scripts/build-mobile-ios-device.sh"; then
-    echo "not ok - device build omits OCaml module: $module" >&2
-    failures=$((failures + 1))
-  fi
-done
 
 if ! grep -q 'LOGSEQ_CHAT_IOS_KEYCHAIN' \
   "$repo_root/scripts/build-mobile-ios-device.sh"; then
@@ -124,12 +106,6 @@ for marker in \
 done
 
 device_build_script="$repo_root/scripts/build-mobile-ios-device.sh"
-mobile_deps_script="$repo_root/scripts/build-mobile-ocaml-deps.sh"
-
-if ! grep -Fq 'PATH="$host_prefix/bin:$PATH" dune build' "$mobile_deps_script"; then
-  echo "not ok - mobile dependency build does not select its matching OCaml host compiler" >&2
-  failures=$((failures + 1))
-fi
 
 if grep -q 'rm -f "$swift_build_dir/LogseqChatShell"' "$device_build_script"; then
   echo "not ok - device build unconditionally discards the incremental Swift link" >&2
@@ -139,7 +115,7 @@ fi
 for marker in \
   'native_link_fingerprint=$(' \
   'native-link-inputs/$native_link_fingerprint' \
-  'fingerprinted_native_link_inputs=' \
+  'native_link_inputs=' \
   'swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build/ios-device}' \
   '--scratch-path "$swift_scratch_dir"'; do
   if ! grep -Fq -- "$marker" "$device_build_script"; then
@@ -153,11 +129,8 @@ native_fingerprint_block=$(sed -n \
   "$device_build_script")
 for input in \
   '$core_object' \
-  '$ffi_object' \
   '$https_object' \
   '$crypto_object' \
-  '$sqlite_object' \
-  '$graph_store_object' \
   '$ocaml_lib/libthreadsnat.a'; do
   if [[ $native_fingerprint_block != *"$input"* ]]; then
     echo "not ok - native link fingerprint omits input: $input" >&2

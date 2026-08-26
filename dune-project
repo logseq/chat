@@ -14,7 +14,7 @@
   melange-edn-native
   melange-transit-native
   lg
-  lg-test
+  (lg-test :with-test)
   lui
   signal-lg
   mldoc

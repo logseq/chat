@@ -35,6 +35,7 @@ reject_text() {
 
 require_file "scripts/bootstrap-android-ocaml.sh"
 require_file "scripts/build-android-sqlite.sh"
+require_file "scripts/build-mobile-ocaml.sh"
 require_file "scripts/build-android-native.sh"
 
 require_text "scripts/build-android-native.sh" "liblogseq_chat_core.so"
@@ -42,31 +43,15 @@ require_text "scripts/build-android-native.sh" 'Android/app/src/main/jniLibs/$an
 require_text "scripts/build-android-native.sh" "logseq_chat_call"
 require_text "scripts/build-android-native.sh" "logseq_chat_https_android.c"
 require_text "scripts/build-android-native.sh" "logseq_chat_crypto_android.c"
+require_text "scripts/build-android-native.sh" 'scripts/build-mobile-ocaml.sh'
 require_file "core/logseq_chat_crypto_android.c"
 require_file "Sources/LogseqChat/Skip/AndroidE2EECrypto.kt"
 require_text "core/logseq_chat_https_android.c" "logseq_chat_crypto_jni_init"
 require_text "Sources/LogseqChat/Skip/AndroidE2EECrypto.kt" "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
 reject_text "core/logseq_chat_crypto_android.c" "Android crypto is not implemented"
-for module in \
-  logseq_chat_edn \
-  logseq_chat_sync_protocol \
-  logseq_chat_sync_state \
-  logseq_chat_sync_checkpoint \
-  logseq_chat_snapshot \
-  logseq_chat_entity_sync \
-  logseq_chat_datascript_value \
-  logseq_chat_graph_read \
-  logseq_chat_e2ee \
-  logseq_chat_outliner_state \
-  logseq_chat_graph_runtime \
-  logseq_chat_sse \
-  logseq_chat_logseq_storage_codec \
-  logseq_chat_graph_store \
-  logseq_chat_sync_session; do
-  require_text "scripts/build-android-native.sh" "$module.cmx"
+for forbidden in ".cmx" "ocamlopt" "output-complete-obj" "link-objects.txt" "build-mobile-ocaml-deps.sh"; do
+  reject_text "scripts/build-android-native.sh" "$forbidden"
 done
-require_text "scripts/build-android-native.sh" "logseq_chat_graph_store_stubs.c"
-require_text "scripts/build-android-native.sh" "logseq_chat_graph_store_stubs.o"
 require_text "core/logseq_chat_https_android.c" "JNI_OnLoad"
 require_text "core/logseq_chat_https_android.c" "AndroidHttpTransport"
 require_text "Android/app/src/main/kotlin/AndroidHttpTransport.kt" "connectTimeout = 30_000"

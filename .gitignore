@@ -73,6 +73,9 @@ Package.resolved
 
 Carthage/Build/
 
+# Pulled from logseq_chat.opam.locked by opam-monorepo.
+duniverse/
+
 # fastlane
 
 **/fastlane/apikey.json
