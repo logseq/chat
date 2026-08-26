@@ -205,6 +205,28 @@
 (defn outliner-selection-active? [current]
   (not (empty? (:outliner-selected-block-ids current))))
 
+(defn outliner-selection-inactive? [current]
+  (empty? (:outliner-selected-block-ids current)))
+
+(defn outliner-editor-active? [current]
+  (and (outliner-selection-inactive? current)
+       (match (:outliner-editing current)
+         (Some _editing) true
+         None false)))
+
+(defn outliner-autocomplete-active? [current]
+  (and (outliner-editor-active? current)
+       (match (:outliner-autocomplete current)
+         (Some _autocomplete)
+         (not (empty? (:outliner-autocomplete-candidates current)))
+         None false)))
+
+(defn outliner-autocomplete-identifier [candidate]
+  (str "button.outliner.autocomplete." (:index candidate)))
+
+(defn outliner-autocomplete-label [candidate]
+  (:label candidate))
+
 (defn editing-title [current]
   (match (:outliner-editing current)
     (Some editing) (:title editing)
@@ -312,6 +334,97 @@
      (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}
     "Unselect"]])
 
+(defn outliner-autocomplete-row [ui-context candidate-source send]
+  (let [candidate (signal/sample candidate-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive outliner-autocomplete-label candidate-source)
+       :label (reactive outliner-autocomplete-label candidate-source)
+       :accessibility-identifier
+       (outliner-autocomplete-identifier candidate)
+       :on-press
+       (event [current-candidate candidate-source]
+         (send
+          (model/ChooseOutlinerAutocomplete
+           (:value current-candidate))))}])))
+
+(defui outliner-autocomplete-bar [model-source send]
+  [:toolbar
+   {:orientation "vertical"
+    :label "Outliner autocomplete"
+    :accessibility-identifier "toolbar.outliner.autocomplete"
+    :gap 2}
+   [:keyed
+    {:source (reactive :outliner-autocomplete-candidates model-source)
+     :key :value
+     :compare compare
+     :as candidate-source}
+    [outliner-autocomplete-row candidate-source send]]])
+
+(defui outliner-editor-toolbar [send]
+  [:toolbar
+   {:orientation "horizontal"
+    :label "Outliner editor"
+    :accessibility-identifier "toolbar.outliner.editor"
+    :gap 4}
+   [:button
+    {:label "Task"
+     :accessibility-identifier "button.outliner.editor.task"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "task")))}
+    "Task"]
+   [:button
+    {:label "Outdent"
+     :accessibility-identifier "button.outliner.editor.outdent"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}
+    "Outdent"]
+   [:button
+    {:label "Indent"
+     :accessibility-identifier "button.outliner.editor.indent"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}
+    "Indent"]
+   [:button
+    {:label "Tag"
+     :accessibility-identifier "button.outliner.editor.tag"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "tag")))}
+    "Tag"]
+   [:button
+    {:label "Photo"
+     :accessibility-identifier "button.outliner.editor.camera"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "camera")))}
+    "Photo"]
+   [:button
+    {:label "Record audio"
+     :accessibility-identifier "button.outliner.editor.audio"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "audio")))}
+    "Audio"]
+   [:button
+    {:label "Upload asset"
+     :accessibility-identifier "button.outliner.editor.attachment"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}
+    "Attach"]
+   [:button
+    {:label "Page reference"
+     :accessibility-identifier "button.outliner.editor.pageReference"
+     :on-press
+     (fn [_event]
+       (send (model/PerformOutlinerToolbarAction "pageReference")))}
+    "[[]]"]
+   [:button
+    {:label "Hide keyboard"
+     :accessibility-identifier "button.outliner.editor.hideKeyboard"
+     :on-press
+     (fn [_event]
+       (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}
+    "Hide"]])
+
 (defui composer-view [model-source send]
   [:column
    [:if {:test (reactive :composer-expanded model-source)}
@@ -392,4 +505,8 @@
      [outliner-row model-source row-source send]]]
    [:if {:test (reactive outliner-selection-active? model-source)}
     [outliner-selection-toolbar send]]
+   [:if {:test (reactive outliner-autocomplete-active? model-source)}
+    [outliner-autocomplete-bar model-source send]]
+   [:if {:test (reactive outliner-editor-active? model-source)}
+    [outliner-editor-toolbar send]]
    (composer-view model-source send)])

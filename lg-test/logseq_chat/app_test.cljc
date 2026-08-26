@@ -373,7 +373,8 @@
     (driver/start! application)
     (driver/send! application
                   (model/ApplyCoreSnapshot None false "" []
-                                           (Some editing) [] [row] false []))
+                                           (Some editing) None [] []
+                                           [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
           outliner (nth (apple/children renderer root) 4)
@@ -434,7 +435,7 @@
               (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] None
+                  (model/ApplyCoreSnapshot None false "" [] None None []
                                            ["parent"] [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -462,6 +463,54 @@
        (:pending-effects (chat/model application))
        "selection gestures and toolbar actions cross one typed boundary"))))
 
+(deftest outliner-editor-toolbar-and-autocomplete-use-core-owned-state
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+              (uuid "block-a") (title "Project [[Pro") (depth 0)
+              (has-children false) (is-collapsed false))
+        editing (record model/outliner-editing
+                  (uuid "block-a")
+                  (title "Project [[Pro")
+                  (caret-utf16-offset 13))
+        autocomplete (record model/outliner-autocomplete
+                       (kind model/NodeAutocomplete)
+                       (query "Pro"))
+        candidate (record model/outliner-autocomplete-candidate
+                    (index 0)
+                    (label "Project Alpha")
+                    (value "page-a"))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot None false "" []
+                              (Some editing) (Some autocomplete) [candidate]
+                              [] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          autocomplete-bar
+          (child-with-identifier renderer root "toolbar.outliner.autocomplete")
+          candidate-button (nth (apple/children renderer autocomplete-bar) 0)
+          editor-toolbar
+          (child-with-identifier renderer root "toolbar.outliner.editor")
+          task-button (nth (apple/children renderer editor-toolbar) 0)]
+      (assert-equal "button.outliner.autocomplete.0"
+                    (property-string renderer candidate-button
+                                     proto/AccessibilityIdentifier)
+                    "autocomplete keeps main's first candidate identifier")
+      (assert-equal "button.outliner.editor.task"
+                    (property-string renderer task-button
+                                     proto/AccessibilityIdentifier)
+                    "the editor toolbar keeps main's task identifier")
+      (driver/dispatch-event! application (proto/Press candidate-button))
+      (driver/dispatch-event! application (proto/Press task-button))
+      (driver/flush! application)
+      (assert-equal
+       [(model/ChooseOutlinerAutocompleteEffect 1 "page-a")
+        (model/OutlinerToolbarEffect 2 "task")]
+       (:pending-effects (chat/model application))
+       "autocomplete and editor actions cross the typed core boundary"))))
+
 (deftest outliner-rows-preserve-depth-zoom-and-collapse-controls
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -473,8 +522,8 @@
               (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] None [] [row]
-                                           false []))
+                  (model/ApplyCoreSnapshot None false "" [] None None [] []
+                                           [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
           outliner (nth (apple/children renderer root) 4)
@@ -519,7 +568,7 @@
         initial
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None false "" [] None []
+         (model/ApplyCoreSnapshot None false "" [] None None [] []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
                  (start (Some 0))
@@ -530,7 +579,8 @@
         collapsed
         (model/update
          initial
-         (model/ApplyCoreSnapshot None false "" [] None [] [] true [splice]))]
+         (model/ApplyCoreSnapshot None false "" [] None None [] [] []
+                                  true [splice]))]
     (assert-equal [collapsed-parent sibling]
                   (:outliner-rows collapsed)
                   "a bounded core splice preserves unaffected keyed rows")))

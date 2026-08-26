@@ -27,6 +27,20 @@
   (title :string)
   (caret-utf16-offset :int))
 
+(type-variant outliner-autocomplete-kind
+  (NodeAutocomplete)
+  (TagAutocomplete)
+  (PropertyAutocomplete))
+
+(type-record outliner-autocomplete
+  (kind :outliner-autocomplete-kind)
+  (query :string))
+
+(type-record outliner-autocomplete-candidate
+  (index :int)
+  (label :string)
+  (value :string))
+
 (type-record outline-row-splice
   (start :option<int>)
   (after-block-id :option<string>)
@@ -45,7 +59,8 @@
   (ToggleOutlinerCollapsedEffect :int :string)
   (ZoomOutlinerBlockEffect :int :string)
   (LongPressOutlinerBlockEffect :int :string)
-  (OutlinerToolbarEffect :int :string))
+  (OutlinerToolbarEffect :int :string)
+  (ChooseOutlinerAutocompleteEffect :int :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
@@ -57,6 +72,8 @@
   (outliner-rows :vector<outline-row>)
   (outliner-selected-block-ids :vector<string>)
   (outliner-editing :option<outliner-editing>)
+  (outliner-autocomplete :option<outliner-autocomplete>)
+  (outliner-autocomplete-candidates :vector<outliner-autocomplete-candidate>)
   (composer-expanded :bool)
   (composer-draft :string)
   (pending-effects :vector<chat-effect>)
@@ -78,7 +95,9 @@
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
   (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>
-                     :option<outliner-editing> :vector<string>
+                     :option<outliner-editing> :option<outliner-autocomplete>
+                     :vector<outliner-autocomplete-candidate>
+                     :vector<string>
                      :vector<outline-row> :bool
                      :vector<outline-row-splice>)
   (BeginOutlinerEdit :string)
@@ -90,6 +109,7 @@
   (ZoomOutlinerBlock :string)
   (LongPressOutlinerBlock :string)
   (PerformOutlinerToolbarAction :string)
+  (ChooseOutlinerAutocomplete :string)
   (CloseSearch)
   (ExpandComposer)
   (ChangeComposerDraft :string)

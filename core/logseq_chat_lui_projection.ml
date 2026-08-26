@@ -25,6 +25,29 @@ let outliner_editing (editing : Snapshot.outliner_editing) : LG.outliner_editing
   }
 ;;
 
+let outliner_autocomplete_kind = function
+  | Snapshot.Node -> LG.NodeAutocomplete
+  | Tag -> TagAutocomplete
+  | Property -> PropertyAutocomplete
+;;
+
+let outliner_autocomplete
+    (autocomplete : Snapshot.outliner_autocomplete)
+  : LG.outliner_autocomplete
+  =
+  { kind = outliner_autocomplete_kind autocomplete.kind
+  ; query = autocomplete.query
+  }
+;;
+
+let outliner_autocomplete_candidate
+    index
+    (candidate : Snapshot.outliner_autocomplete_candidate)
+  : LG.outliner_autocomplete_candidate
+  =
+  { index; label = candidate.label; value = candidate.value }
+;;
+
 let outliner_row_splice (splice : Snapshot.outliner_row_splice) : LG.outline_row_splice =
   { start = splice.start
   ; after_block_id = splice.after_block_id
@@ -44,6 +67,11 @@ let apply_response encoded =
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)
         , Option.map outliner_editing snapshot.outliner_editing
+        , Option.map outliner_autocomplete snapshot.outliner_autocomplete
+        , Rrbvec.of_list
+            (List.mapi
+               outliner_autocomplete_candidate
+               snapshot.outliner_autocomplete_candidates)
         , Rrbvec.of_list snapshot.outliner_selected_block_ids
         , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
         , snapshot.is_outliner_patch

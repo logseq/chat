@@ -214,6 +214,54 @@ struct LGChatRendererTests {
         #expect(longPress.succeeded)
         #expect(copy.succeeded)
     }
+
+    @Test("autocomplete effects reuse the existing core reducer")
+    func autocompleteEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(
+                id: 15,
+                kind: "choose-outliner-autocomplete",
+                text: "page-a"
+            )
+        )
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("chooseAutocomplete") == true)
+        #expect(request.params.payload?.contains("page-a") == true)
+        #expect(resolution.succeeded)
+    }
+
+    @Test("delivers each core platform command revision exactly once")
+    func deliversPlatformCommandsOnce() throws {
+        let native = LGChatNativeRuntimeProbe()
+        let platformCommands = LGChatPlatformCommandHandlerProbe()
+        let runtime = LGChatRuntime(
+            native: native,
+            platformCommandHandler: platformCommands
+        )
+        try runtime.start(platformCode: 2)
+        let response = """
+        {"apiVersion":1,"ok":true,"result":{
+          "graphName":"Work","outlinerCommandRevision":7,
+          "outlinerCommands":[{"type":"setClipboardText","text":"Copied"}]
+        }}
+        """
+
+        try runtime.applyCoreResponse(response)
+        try runtime.applyCoreResponse(response)
+
+        #expect(platformCommands.batches.count == 1)
+        #expect(platformCommands.batches[0].revision == 7)
+        #expect(platformCommands.batches[0].graphName == "Work")
+        #expect(platformCommands.batches[0].commands.map(\.type) == ["setClipboardText"])
+    }
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {
@@ -236,6 +284,15 @@ private final class LGChatEffectExecutorProbe: LGChatEffectExecuting {
     func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
         effects.append(effect)
         return LGChatEffectResolution(succeeded: true, message: "core response")
+    }
+}
+
+@MainActor
+private final class LGChatPlatformCommandHandlerProbe: LGChatPlatformCommandHandling {
+    var batches: [LGChatPlatformCommandBatch] = []
+
+    func handle(_ batch: LGChatPlatformCommandBatch) {
+        batches.append(batch)
     }
 }
 

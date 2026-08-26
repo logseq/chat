@@ -19,6 +19,21 @@ type outliner_editing =
   ; caret_utf16_offset : int
   }
 
+type outliner_autocomplete_kind =
+  | Node
+  | Tag
+  | Property
+
+type outliner_autocomplete =
+  { kind : outliner_autocomplete_kind
+  ; query : string
+  }
+
+type outliner_autocomplete_candidate =
+  { label : string
+  ; value : string
+  }
+
 type outliner_row_splice =
   { start : int option
   ; after_block_id : string option
@@ -34,6 +49,8 @@ type t =
   ; outliner_rows : outline_row list
   ; outliner_row_splices : outliner_row_splice list
   ; outliner_editing : outliner_editing option
+  ; outliner_autocomplete : outliner_autocomplete option
+  ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
   ; outliner_selected_block_ids : string list
   ; is_outliner_patch : bool
   ; sync_connected : bool
@@ -118,6 +135,30 @@ let outliner_editing = function
   | _ -> None
 ;;
 
+let outliner_autocomplete_kind = function
+  | "node" -> Some Node
+  | "tag" -> Some Tag
+  | "property" -> Some Property
+  | _ -> None
+;;
+
+let outliner_autocomplete = function
+  | `Assoc fields ->
+    (match string_member "kind" fields, string_member "query" fields with
+     | Some kind, Some query ->
+       Option.map (fun kind -> { kind; query }) (outliner_autocomplete_kind kind)
+     | _ -> None)
+  | _ -> None
+;;
+
+let outliner_autocomplete_candidate = function
+  | `Assoc fields ->
+    (match string_member "label" fields, string_member "value" fields with
+     | Some label, Some value -> Some { label; value }
+     | _ -> None)
+  | _ -> None
+;;
+
 let outliner_row_splice = function
   | `Assoc fields ->
     (match int_member "deleteCount" fields with
@@ -143,6 +184,15 @@ let current_outliner_editing result_fields =
   | Some (`Assoc state_fields) ->
     (match member "editing" state_fields with
      | Some value -> outliner_editing value
+     | None -> None)
+  | _ -> None
+;;
+
+let current_outliner_autocomplete result_fields =
+  match member "outlinerState" result_fields with
+  | Some (`Assoc state_fields) ->
+    (match member "autocomplete" state_fields with
+     | Some value -> outliner_autocomplete value
      | None -> None)
   | _ -> None
 ;;
@@ -188,6 +238,12 @@ let decode_response encoded =
            | Some (`List values) -> List.filter_map outliner_row_splice values
            | _ -> []
          in
+         let outliner_autocomplete_candidates =
+           match member "outlinerAutocompleteCandidates" result_fields with
+           | Some (`List values) ->
+             List.filter_map outliner_autocomplete_candidate values
+           | _ -> []
+         in
          Ok
            { graph_name = string_member "graphName" result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
@@ -195,6 +251,8 @@ let decode_response encoded =
            ; outliner_rows
            ; outliner_row_splices
            ; outliner_editing = current_outliner_editing result_fields
+           ; outliner_autocomplete = current_outliner_autocomplete result_fields
+           ; outliner_autocomplete_candidates
            ; outliner_selected_block_ids = current_outliner_selected_block_ids result_fields
            ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
            ; sync_connected = bool_member "syncConnected" result_fields

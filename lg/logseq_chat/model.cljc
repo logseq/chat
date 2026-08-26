@@ -12,6 +12,8 @@
     (outliner-rows [])
     (outliner-selected-block-ids [])
     (outliner-editing None)
+    (outliner-autocomplete None)
+    (outliner-autocomplete-candidates [])
     (composer-expanded false)
     (composer-draft "")
     (pending-effects [])
@@ -56,7 +58,8 @@
     (ToggleOutlinerCollapsedEffect id _uuid) id
     (ZoomOutlinerBlockEffect id _uuid) id
     (LongPressOutlinerBlockEffect id _uuid) id
-    (OutlinerToolbarEffect id _action) id))
+    (OutlinerToolbarEffect id _action) id
+    (ChooseOutlinerAutocompleteEffect id _value) id))
 
 (defn enqueue-effect [current effect]
   (assoc current
@@ -225,7 +228,9 @@
       current)
 
     (ApplyCoreSnapshot graph-name sync-connected query results
-                       outliner-editing outliner-selected-block-ids
+                       outliner-editing outliner-autocomplete
+                       outliner-autocomplete-candidates
+                       outliner-selected-block-ids
                        outliner-rows is-outliner-patch
                        outliner-row-splices)
     (let [projected-rows
@@ -240,6 +245,9 @@
                  :selected-graph graph-name
                  :sync-state (if sync-connected SyncedState OfflineState)
                  :outliner-editing outliner-editing
+                 :outliner-autocomplete outliner-autocomplete
+                 :outliner-autocomplete-candidates
+                 outliner-autocomplete-candidates
                  :outliner-selected-block-ids outliner-selected-block-ids
                  :outliner-rows projected-rows)]
       (if (= query (:search-query current))
@@ -294,6 +302,11 @@
     (PerformOutlinerToolbarAction action)
     (let [id (:next-effect-id current)]
       (enqueue-effect current (OutlinerToolbarEffect id action)))
+
+    (ChooseOutlinerAutocomplete value)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current
+                      (ChooseOutlinerAutocompleteEffect id value)))
 
     CloseSearch
     (assoc current

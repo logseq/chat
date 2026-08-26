@@ -38,11 +38,24 @@
  :fn<vector<string>;string;bool>)
 (signature logseq-chat.view/row-selected? :fn<chat-model;outline-row;bool>)
 (signature logseq-chat.view/outliner-selection-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-selection-inactive? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-editor-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-autocomplete-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-autocomplete-identifier
+ :fn<outliner-autocomplete-candidate;string>)
+(signature logseq-chat.view/outliner-autocomplete-label
+ :fn<outliner-autocomplete-candidate;string>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
  :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-selection-toolbar
+ :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-autocomplete-row
+ :fn<ui-context;signal<outliner-autocomplete-candidate>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-autocomplete-bar
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-editor-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view
   :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)

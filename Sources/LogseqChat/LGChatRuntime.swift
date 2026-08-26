@@ -54,6 +54,27 @@ public struct LGChatEffectResolution: Equatable, Sendable {
     }
 }
 
+public struct LGChatPlatformCommandBatch: Equatable, Sendable {
+    public let revision: Int
+    public let graphName: String?
+    public let commands: [LogseqOutlinerCommand]
+
+    public init(
+        revision: Int,
+        graphName: String?,
+        commands: [LogseqOutlinerCommand]
+    ) {
+        self.revision = revision
+        self.graphName = graphName
+        self.commands = commands
+    }
+}
+
+@MainActor
+public protocol LGChatPlatformCommandHandling: AnyObject {
+    func handle(_ batch: LGChatPlatformCommandBatch)
+}
+
 @MainActor
 public protocol LGChatEffectExecuting {
     func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution
@@ -68,6 +89,16 @@ private struct LGSendCapturePayload: Encodable {
 private struct LGCoreEffectResponse: Decodable {
     let ok: Bool
     let error: LogseqChatCoreError?
+}
+
+private struct LGPlatformCommandResponse: Decodable {
+    let result: Result?
+
+    struct Result: Decodable {
+        let graphName: String?
+        let outlinerCommandRevision: Int?
+        let outlinerCommands: [LogseqOutlinerCommand]?
+    }
 }
 
 @MainActor
@@ -136,6 +167,17 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             do {
                 request = try Self.outlinerRequest(
                     LogseqOutlinerEvent(type: "toolbar", action: effect.text)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "choose-outliner-autocomplete":
+            do {
+                request = try Self.outlinerRequest(
+                    LogseqOutlinerEvent(type: "chooseAutocomplete", value: effect.text)
                 )
             } catch {
                 return LGChatEffectResolution(
@@ -296,17 +338,25 @@ public final class LGChatRuntime {
     private let effectExecutor: any LGChatEffectExecuting
 
     @ObservationIgnored
+    private weak var platformCommandHandler: (any LGChatPlatformCommandHandling)?
+
+    @ObservationIgnored
     private var isDrainingEffects = false
 
     @ObservationIgnored
     private var pendingCoreResponses: [String] = []
 
+    @ObservationIgnored
+    private var lastPlatformCommandRevision = 0
+
     public init(
         native: any LGChatNativeCalling,
-        effectExecutor: any LGChatEffectExecuting = LGChatCoreEffectExecutor()
+        effectExecutor: any LGChatEffectExecuting = LGChatCoreEffectExecutor(),
+        platformCommandHandler: (any LGChatPlatformCommandHandling)? = nil
     ) {
         self.native = native
         self.effectExecutor = effectExecutor
+        self.platformCommandHandler = platformCommandHandler
         renderer = LGChatRenderer()
         renderer.onEvent = { [weak self] event in
             self?.receive(event)
@@ -320,6 +370,7 @@ public final class LGChatRuntime {
         while !pendingCoreResponses.isEmpty {
             let response = pendingCoreResponses.removeFirst()
             try apply(native.applySnapshot(response))
+            deliverPlatformCommands(from: response)
         }
         scheduleEffectDrain()
     }
@@ -340,6 +391,7 @@ public final class LGChatRuntime {
             return
         }
         try apply(native.applySnapshot(response))
+        deliverPlatformCommands(from: response)
     }
 
     private func receive(_ event: LGChatRendererEvent) {
@@ -445,6 +497,7 @@ public final class LGChatRuntime {
                 ))
                 if resolution.succeeded {
                     try apply(native.applySnapshot(resolution.message))
+                    deliverPlatformCommands(from: resolution.message)
                 }
                 lastError = resolution.succeeded ? nil : resolution.message
             } catch {
@@ -456,6 +509,23 @@ public final class LGChatRuntime {
 
     func drainEffectsForTesting() async {
         await drainEffects()
+    }
+
+    private func deliverPlatformCommands(from response: String) {
+        guard let envelope = try? JSONDecoder().decode(
+            LGPlatformCommandResponse.self,
+            from: Data(response.utf8)
+        ) else { return }
+        guard let result = envelope.result,
+              let revision = result.outlinerCommandRevision,
+              revision > lastPlatformCommandRevision else { return }
+        lastPlatformCommandRevision = revision
+        guard let commands = result.outlinerCommands, !commands.isEmpty else { return }
+        platformCommandHandler?.handle(LGChatPlatformCommandBatch(
+            revision: revision,
+            graphName: result.graphName,
+            commands: commands
+        ))
     }
 
     private func apply(_ patch: String) throws {

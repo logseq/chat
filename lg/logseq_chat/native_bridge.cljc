@@ -87,7 +87,11 @@
     (model/OutlinerToolbarEffect id action)
     (str "{\"id\":" id
          ",\"kind\":\"outliner-toolbar\",\"text\":"
-         (wire/quoted action) "}")))
+         (wire/quoted action) "}")
+    (model/ChooseOutlinerAutocompleteEffect id value)
+    (str "{\"id\":" id
+         ",\"kind\":\"choose-outliner-autocomplete\",\"text\":"
+         (wire/quoted value) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]
