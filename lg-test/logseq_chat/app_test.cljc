@@ -1537,7 +1537,7 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           search-panel (child-with-identifier renderer root "screen.search")
-          results (nth (apple/children renderer search-panel) 2)
+          results (nth (apple/children renderer search-panel) 3)
           row (nth (apple/children renderer results) 0)]
       (assert-equal "search.result.block-a"
                     (property-string renderer row
@@ -1548,6 +1548,24 @@
       (assert-equal [(model/NodeRoute "block-a")]
                     (:search-navigation-path (chat/model application))
                     "pressing a result requests navigation in LG state"))))
+
+(deftest non-empty-search-renders-an-explicit-clear-control
+  (let [renderer (apple/create)
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSearch)
+    (driver/send! application (model/ChangeSearchQuery "project"))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          search-panel (child-with-identifier renderer root "screen.search")
+          clear-button
+          (child-with-identifier renderer search-panel "button.search.clear")]
+      (is (not (= clear-button -1))
+          "a non-empty search exposes main's explicit clear control")
+      (driver/dispatch-event! application (proto/Press clear-button))
+      (driver/flush! application)
+      (assert-equal "" (:search-query (chat/model application))
+                    "clearing search updates LG state"))))
 
 (deftest core-snapshot-renders-keyed-outliner-rows
   (let [renderer (apple/create-with-extensions (view/extension-registry))

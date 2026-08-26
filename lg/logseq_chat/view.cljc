@@ -479,6 +479,9 @@
 (defn search-main-visible? [current]
   (and (journal-root-visible? current) (:search-open current)))
 
+(defn search-query-present? [current]
+  (not (empty? (:search-query current))))
+
 (defn main-outliner-selection-active? [current]
   (and (journal-root-visible? current)
        (outliner-selection-active? current)))
@@ -1774,7 +1777,7 @@
    [:if {:test (reactive search-main-visible? model-source)}
     [:column {:accessibility-identifier "screen.search"}
      [:search-field
-      {:text (reactive :search-query model-source)
+     {:text (reactive :search-query model-source)
        :placeholder "Search pages and blocks"
        :label "Search pages and blocks"
        :accessibility-identifier "field.search"
@@ -1783,6 +1786,12 @@
          (match input-event
            (TextChanged _node text) (send (model/ChangeSearchQuery text))
            _ true))}]
+     [:if {:test (reactive search-query-present? model-source)}
+      [:button
+       {:label "Clear search"
+        :accessibility-identifier "button.search.clear"
+        :on-press (fn [_event] (send (model/ChangeSearchQuery "")))}
+       "Clear"]]
      [:button
      {:accessibility-identifier "button.search.close"
        :on-press (fn [_event] (send model/CloseSearch))}
