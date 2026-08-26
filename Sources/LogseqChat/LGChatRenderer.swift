@@ -75,7 +75,8 @@ public final class LGChatRenderer {
     }
 
     private func receive(_ event: LGChatRendererEvent) {
-        onEvent?(event)
+        guard let onEvent else { return }
+        onEvent(event)
     }
 
     private static func map(_ event: LUIEvent) -> LGChatRendererEvent {

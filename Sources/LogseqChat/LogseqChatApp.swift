@@ -73,6 +73,7 @@ public struct LogseqChatRootView : View {
                 }
             }
             .task {
+                LogseqChatRuntime.shared.startLGRenderer()
                 logger.info("Skip app logs are viewable in the Xcode console for iOS; Android logs can be viewed in Studio or using adb logcat")
             }
             .onOpenURL { url in
@@ -85,6 +86,7 @@ public struct LogseqChatRootView : View {
     public static let shared = LogseqChatRuntime()
 
     public let store: LogseqChatStore
+    public let lgRuntime: LGChatRuntime
     public let authentication: LogseqAuthenticationStore
     let syncCoordinator = GraphSyncCoordinator()
     private struct LocalLaunchResult: Sendable {
@@ -103,6 +105,7 @@ public struct LogseqChatRootView : View {
         self.store = LogseqChatStore { request in
             LogseqChatCore.shared.logseq_chat_call(request)
         }
+        self.lgRuntime = LGChatRuntime(native: LGChatCoreNativeCaller())
         let configuration = LogseqCognitoConfiguration.load()
         self.authentication = LogseqAuthenticationStore(
             provider: CognitoAuthProvider(
@@ -121,6 +124,24 @@ public struct LogseqChatRootView : View {
         URL.documentsDirectory
             .appendingPathComponent("logseq-chat.sqlite")
             .path
+    }
+
+    public func startLGRenderer() {
+        do {
+            try lgRuntime.start(platformCode: Self.lgPlatformCode)
+        } catch {
+            logger.error("Could not start LG renderer: \(String(describing: error))")
+        }
+    }
+
+    private static var lgPlatformCode: Int {
+        #if SKIP
+        3
+        #elseif os(macOS)
+        1
+        #else
+        2
+        #endif
     }
 
     public func startLocalLaunchLoad() {
@@ -219,6 +240,7 @@ public struct LogseqChatRootView : View {
             UserDefaults.standard.set(isEncrypted, forKey: "logseq.selectedGraphEncrypted")
         }
         if let graphResponse = result.graphResponse {
+            applyLaunchResponseToLG(graphResponse)
             store.applyLaunchResponse(
                 graphResponse,
                 actionName: "openGraph",
@@ -227,6 +249,7 @@ public struct LogseqChatRootView : View {
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
             LogseqChatAppDelegate.shared.reportLaunchStage("graph_loaded")
         } else {
+            applyLaunchResponseToLG(result.catalogResponse)
             store.applyLaunchResponse(
                 result.catalogResponse,
                 actionName: "open",
@@ -235,6 +258,14 @@ public struct LogseqChatRootView : View {
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
         }
         drainSharedCapturesIfReady()
+    }
+
+    private func applyLaunchResponseToLG(_ response: String) {
+        do {
+            try lgRuntime.applyCoreResponse(response)
+        } catch {
+            logger.error("Could not project launch response into LG: \(String(describing: error))")
+        }
     }
 
     public func acceptSharedCaptureURL(_ url: URL) {

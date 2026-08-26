@@ -169,6 +169,7 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
 public final class LGChatRuntime {
     public let renderer: LGChatRenderer
     public private(set) var lastError: String?
+    public private(set) var isStarted = false
 
     @ObservationIgnored
     private let native: any LGChatNativeCalling
@@ -178,6 +179,9 @@ public final class LGChatRuntime {
 
     @ObservationIgnored
     private var isDrainingEffects = false
+
+    @ObservationIgnored
+    private var pendingCoreResponses: [String] = []
 
     public init(
         native: any LGChatNativeCalling,
@@ -192,16 +196,32 @@ public final class LGChatRuntime {
     }
 
     public func start(platformCode: Int, hostCode: Int = 1) throws {
+        guard !isStarted else { return }
         try apply(native.initialize(platformCode: platformCode, hostCode: hostCode))
+        isStarted = true
+        while !pendingCoreResponses.isEmpty {
+            let response = pendingCoreResponses.removeFirst()
+            try apply(native.applySnapshot(response))
+        }
         scheduleEffectDrain()
     }
 
     public func stop() {
+        guard isStarted else { return }
         do {
             try apply(native.dispose())
         } catch {
             lastError = String(describing: error)
         }
+        isStarted = false
+    }
+
+    public func applyCoreResponse(_ response: String) throws {
+        guard isStarted else {
+            pendingCoreResponses.append(response)
+            return
+        }
+        try apply(native.applySnapshot(response))
     }
 
     private func receive(_ event: LGChatRendererEvent) {

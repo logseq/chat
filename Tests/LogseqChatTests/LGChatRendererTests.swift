@@ -84,6 +84,21 @@ struct LGChatRendererTests {
         #expect(runtime.lastError == nil)
     }
 
+    @Test("applies a launch snapshot that arrives before the renderer starts")
+    func queuesLaunchSnapshotUntilStart() throws {
+        let native = LGChatNativeRuntimeProbe()
+        let runtime = LGChatRuntime(native: native)
+
+        try runtime.applyCoreResponse("launch response")
+        #expect(native.appliedSnapshots.isEmpty)
+
+        try runtime.start(platformCode: 2)
+
+        #expect(native.startedPlatforms == [2])
+        #expect(native.appliedSnapshots == ["launch response"])
+        #expect(runtime.isStarted)
+    }
+
     @Test("search effects dispatch the existing core search action")
     func searchEffectsUseCoreSearch() async throws {
         var capturedRequest: LogseqChatRPCRequest?
