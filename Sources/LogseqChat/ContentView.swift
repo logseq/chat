@@ -3798,7 +3798,7 @@ struct CameraPicker: UIViewControllerRepresentable {
 }
 #endif
 
-private struct IconImage: View {
+struct IconImage: View {
     let name: String
     let size: CGFloat
 

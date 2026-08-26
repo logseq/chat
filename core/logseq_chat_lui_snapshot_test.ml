@@ -72,6 +72,23 @@ let () =
          "cross-block YouTube timestamp target"
      | Ok _ -> failwith "rich outliner rows were not projected"
      | Error message -> failwith message);
+    let asset =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"asset-a","title":"Photo.jpg","isAsset":true,"assetType":"image/jpeg","localPath":"Assets/Photo.jpg"},"depth":0,"hasChildren":false,"isCollapsed":false}],"syncConnected":true}}|}
+    in
+    (match asset with
+     | Ok { outliner_rows = [ row ]; _ } ->
+       if not row.is_asset then failwith "outliner asset kind was lost";
+       equal
+         "image/jpeg"
+         (Option.value ~default:"" row.asset_type)
+         "outliner asset type";
+       equal
+         "Assets/Photo.jpg"
+         (Option.value ~default:"" row.local_path)
+         "outliner local asset path"
+     | Ok _ -> failwith "outliner asset row was not projected"
+     | Error message -> failwith message);
     let related =
       decode_response
         {|{"apiVersion":1,"ok":true,"result":{"outlinerState":{"editing":null},"nodeRoutes":[{"uuid":"tag-a","isTag":true,"isProperty":false,"page":{"uuid":"tag-a","title":"Project"},"blocks":[],"relatedBlocks":[{"uuid":"page-object","title":"Tagged page","pageId":"page-object","breadcrumbs":[{"uuid":"journal","title":"Journal"}],"markup":[]}],"linkedReferenceBlocks":[{"uuid":"linked","title":"Linked block","pageId":"journal","breadcrumbs":[],"markup":[]}],"outlinerState":{"editing":null},"outlinerRows":[],"outlinerAutocompleteCandidates":[]}],"syncConnected":true}}|}

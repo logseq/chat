@@ -7,6 +7,7 @@ import CryptoKit
 import PhotosUI
 import UniformTypeIdentifiers
 #if os(iOS)
+import QuickLook
 import UIKit
 #endif
 #endif
@@ -24,6 +25,9 @@ public final class LGChatPlatformPresentationCoordinator {
     public private(set) var attachmentService: LGChatAttachmentService?
     public private(set) var attachmentTargetBlockID: String?
     public private(set) var pendingDeletionBlockIDs: [String] = []
+    #if !SKIP && os(iOS)
+    public private(set) var previewAssetURL: URL?
+    #endif
 
     public init() {
     }
@@ -57,6 +61,23 @@ public final class LGChatPlatformPresentationCoordinator {
     public func dismissDeletion() {
         pendingDeletionBlockIDs = []
     }
+
+    #if !SKIP && os(iOS)
+    @discardableResult
+    public func presentAsset(_ asset: LGChatAssetPresentationPayload) -> Bool {
+        guard let url = LocalAssetPath.resolve(
+            asset.localPath,
+            title: asset.title,
+            assetType: asset.assetType
+        ) else { return false }
+        previewAssetURL = url
+        return true
+    }
+
+    public func updatePreviewAssetURL(_ url: URL?) {
+        previewAssetURL = url
+    }
+    #endif
 }
 
 #if !SKIP
@@ -168,6 +189,7 @@ struct LGChatPlatformPresentationHost: ViewModifier {
                 Text("This deletes the block and all of its children. Pages use Recycle instead.")
             }
             #if os(iOS)
+            .quickLookPreview(previewAssetBinding)
             .fullScreenCover(isPresented: presentationBinding(for: .camera)) {
                 CameraPicker { image in
                     coordinator.dismissAttachment()
@@ -219,6 +241,15 @@ struct LGChatPlatformPresentationHost: ViewModifier {
             }
         )
     }
+
+    #if os(iOS)
+    private var previewAssetBinding: Binding<URL?> {
+        Binding(
+            get: { coordinator.previewAssetURL },
+            set: { coordinator.updatePreviewAssetURL($0) }
+        )
+    }
+    #endif
 
     private var deletionTitle: String {
         coordinator.pendingDeletionBlockIDs.count > 1 ? "Delete blocks?" : "Delete block?"

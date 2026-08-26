@@ -94,7 +94,10 @@
   (opens-as-page :bool)
   (depth :int)
   (has-children :bool)
-  (is-collapsed :bool))
+  (is-collapsed :bool)
+  (is-asset :bool)
+  (asset-type :option<string>)
+  (local-path :option<string>))
 
 (type-record outliner-editing
   (uuid :string)
@@ -149,6 +152,7 @@
   (SendTaskEffect :int :string :task-status)
   (PersistComposerDraftEffect :int :string)
   (PresentAttachmentEffect :int :string)
+  (PresentAssetEffect :int :string :string :string)
   (SearchNodesEffect :int :string)
   (TapOutlinerBlockEffect :int :string)
   (ChangeOutlinerTextEffect :int :string :string :int)
@@ -265,6 +269,7 @@
   (LongPressOutlinerBlock :string)
   (PerformOutlinerToolbarAction :string)
   (ChooseOutlinerAutocomplete :string)
+  (OpenOutlinerAsset :string)
   (CloseSearch)
   (ExpandComposer)
   (FocusComposer)

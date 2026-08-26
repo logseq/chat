@@ -38,10 +38,13 @@ struct LGChatRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none|events:9:open-node[4:uuid:string:required]"},
+          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Project"},
           {"op":"set-extension-prop","id":2,"property":"markup-json","value":"[]"},
           {"op":"set-extension-prop","id":2,"property":"youtube-target-url","value":""},
+          {"op":"set-extension-prop","id":2,"property":"is-asset","value":false},
+          {"op":"set-extension-prop","id":2,"property":"asset-type","value":""},
+          {"op":"set-extension-prop","id":2,"property":"local-path","value":""},
           {"op":"insert-child","parent":1,"child":2,"index":0}
         ]}
         """)
@@ -451,6 +454,12 @@ struct LGChatRendererTests {
             LGChatEffect(id: 37, kind: "create-graph", text: "New", value: 0),
             LGChatEffect(id: 38, kind: "delete-local-graph", text: "graph-a"),
             LGChatEffect(id: 39, kind: "present-attachment", text: "photos"),
+            LGChatEffect(
+                id: 40,
+                kind: "present-asset",
+                text: "",
+                metadata: #"{"title":"Photo.jpg","assetType":"image/jpeg","localPath":"Assets/Photo.jpg"}"#
+            ),
         ]
         for effect in effects {
             #expect((await executor.execute(effect)).succeeded)
@@ -480,6 +489,36 @@ struct LGChatRendererTests {
 
         #expect(selectedKind == "photos")
         #expect(resolution.succeeded)
+    }
+
+    @Test("asset presentation effects preserve the local asset descriptor")
+    func assetPresentationEffectsUsePlatformBoundary() async {
+        var presented: LGChatAssetPresentationPayload?
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            presentAsset: { asset in
+                presented = asset
+                return true
+            }
+        )
+
+        let resolution = await handler.execute(LGChatEffect(
+            id: 41,
+            kind: "present-asset",
+            text: "",
+            metadata: #"{"title":"Photo.jpg","assetType":"image/jpeg","localPath":"Assets/Photo.jpg"}"#
+        ))
+
+        #expect(presented == LGChatAssetPresentationPayload(
+            title: "Photo.jpg",
+            assetType: "image/jpeg",
+            localPath: "Assets/Photo.jpg"
+        ))
+        #expect(resolution.succeeded)
+        #expect(resolution.output == .discard)
     }
 
     @Test("composer draft effects persist through the platform boundary")

@@ -27,6 +27,13 @@
     (Some (proto/BoolValue value)) value
     _ false))
 
+(defn extension-property [application node property]
+  (match (clojure.core/get
+          (deref
+           (:runtime-extension-properties (driver/runtime application))) node)
+    (Some properties) (clojure.core/get properties property)
+    None None))
+
 (defn child-with-identifier [renderer parent identifier]
   (let [children (apple/children renderer parent)]
     (loop [index 0]
@@ -451,7 +458,7 @@
 
 (deftest outliner-block-content-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none|events:9:open-node[4:uuid:string:required]"
+   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"
    (ext/fingerprint (view/outliner-block-content-schema))
    "the rich block renderer must match the LG wire schema"))
 
@@ -604,7 +611,8 @@
           (opens-as-page false)
           (depth 0)
           (has-children false)
-          (is-collapsed false))
+          (is-collapsed false)
+          (is-asset false) (asset-type None) (local-path None))
         sidebar
         (record model/sidebar-projection
           (favorites [page])
@@ -1298,13 +1306,15 @@
                     (opens-as-page false)
                     (depth 0)
                     (has-children false)
-                    (is-collapsed false))])
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None))])
                 (linked-reference-rows []))
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 1)
-              (has-children false) (is-collapsed false))]
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -1458,7 +1468,8 @@
               (opens-as-page false)
                     (depth 2)
                     (has-children true)
-                    (is-collapsed false))
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project note")
@@ -1520,7 +1531,8 @@
                     (opens-as-page false)
                     (depth 0)
                     (has-children false)
-                    (is-collapsed false))]
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1545,6 +1557,50 @@
       (assert-equal [(model/NodeRoute "page-a")]
                     (:app-navigation-path (chat/model application))
                     "rich node references return to LG-owned navigation"))))
+
+(deftest projected-assets-render-and-open-through-the-native-extension
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+                    (uuid "asset-a")
+                    (title "Photo.jpg")
+                    (markup-json "[]")
+                    (youtube-target-url None)
+                    (breadcrumb "")
+                    (opens-as-page false)
+                    (depth 0)
+                    (has-children false)
+                    (is-collapsed false)
+                    (is-asset true)
+                    (asset-type (Some "image/jpeg"))
+                    (local-path (Some "Assets/Photo.jpg")))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       false "" [] [] None None [] []
+                                       [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          rendered-row (nth (apple/children renderer outliner) 0)
+          content (nth (apple/children renderer rendered-row) 0)
+          rich-content (nth (apple/children renderer content) 2)]
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application rich-content "is-asset")
+                    "asset identity reaches the native extension")
+      (assert-equal (Some (proto/StringValue "image/jpeg"))
+                    (extension-property application rich-content "asset-type")
+                    "asset content type reaches the native extension")
+      (assert-equal (Some (proto/StringValue "Assets/Photo.jpg"))
+                    (extension-property application rich-content "local-path")
+                    "local path reaches the native extension")
+      (driver/dispatch-event! application (proto/Press rendered-row))
+      (driver/flush! application)
+      (assert-equal
+       [(model/PresentAssetEffect
+         1 "Photo.jpg" "image/jpeg" "Assets/Photo.jpg")]
+       (:pending-effects (chat/model application))
+       "opening an asset crosses the typed platform-effect boundary"))))
 
 (deftest outliner-row-press-publishes-a-typed-core-effect
   (let [current (model/initial)
@@ -1580,7 +1636,8 @@
               (uuid "parent") (title "Parent")
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 0)
-              (has-children false) (is-collapsed false))]
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1619,7 +1676,8 @@
               (uuid "block-a") (title "Project [[Pro")
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (opens-as-page false) (depth 0)
-              (has-children false) (is-collapsed false))
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project [[Pro")
@@ -1674,7 +1732,8 @@
               (opens-as-page false)
                     (depth 2)
                     (has-children true)
-                    (is-collapsed false))]
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1713,22 +1772,26 @@
                  (uuid "parent") (title "Parent")
                  (markup-json "[]") (youtube-target-url None)
                  (breadcrumb "") (opens-as-page false) (depth 0)
-                 (has-children true) (is-collapsed false))
+                 (has-children true) (is-collapsed false)
+                 (is-asset false) (asset-type None) (local-path None))
         child (record model/outline-row
                 (uuid "child") (title "Child")
                 (markup-json "[]") (youtube-target-url None)
                 (breadcrumb "") (opens-as-page false) (depth 1)
-                (has-children false) (is-collapsed false))
+                (has-children false) (is-collapsed false)
+                (is-asset false) (asset-type None) (local-path None))
         sibling (record model/outline-row
                   (uuid "sibling") (title "Sibling")
                   (markup-json "[]") (youtube-target-url None)
                   (breadcrumb "") (opens-as-page false) (depth 0)
-                  (has-children false) (is-collapsed false))
+                  (has-children false) (is-collapsed false)
+                  (is-asset false) (asset-type None) (local-path None))
         collapsed-parent (record model/outline-row
                            (uuid "parent") (title "Parent")
                            (markup-json "[]") (youtube-target-url None)
                            (breadcrumb "") (opens-as-page false) (depth 0)
-                           (has-children true) (is-collapsed true))
+                           (has-children true) (is-collapsed true)
+                           (is-asset false) (asset-type None) (local-path None))
         initial
         (model/update
          (model/initial)

@@ -85,6 +85,18 @@ public struct LGChatSettingsPayload: Decodable, Equatable, Sendable {
     public let baseURL: String
 }
 
+public struct LGChatAssetPresentationPayload: Codable, Equatable, Sendable {
+    public let title: String
+    public let assetType: String
+    public let localPath: String
+
+    public init(title: String, assetType: String, localPath: String) {
+        self.title = title
+        self.assetType = assetType
+        self.localPath = localPath
+    }
+}
+
 public struct LGChatRuntimeLogPayload: Codable, Equatable, Sendable {
     public let id: String
     public let level: String
@@ -102,6 +114,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let signOut: @MainActor () async -> Void
     private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
+    private let presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)?
 
     public init(
         saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
@@ -110,7 +123,8 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         copyText: @escaping @MainActor (String) -> Void,
         signOut: @escaping @MainActor () async -> Void,
         graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
-        presentAttachment: (@MainActor (String) async -> Bool)? = nil
+        presentAttachment: (@MainActor (String) async -> Bool)? = nil,
+        presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)? = nil
     ) {
         self.saveSettings = saveSettings
         self.persistComposerDraft = persistComposerDraft
@@ -119,6 +133,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         self.signOut = signOut
         self.graphEffect = graphEffect
         self.presentAttachment = presentAttachment
+        self.presentAsset = presentAsset
     }
 
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
@@ -205,6 +220,24 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                 return LGChatEffectResolution(
                     succeeded: succeeded,
                     message: succeeded ? "" : "Unknown attachment service: \(effect.text)",
+                    output: .discard
+                )
+            case "present-asset":
+                guard let presentAsset, let metadata = effect.metadata else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Asset presentation is unavailable",
+                        output: .discard
+                    )
+                }
+                let asset = try JSONDecoder().decode(
+                    LGChatAssetPresentationPayload.self,
+                    from: Data(metadata.utf8)
+                )
+                let succeeded = await presentAsset(asset)
+                return LGChatEffectResolution(
+                    succeeded: succeeded,
+                    message: succeeded ? "" : "The local asset is unavailable",
                     output: .discard
                 )
             case "open-graph", "unlock-graph", "create-graph", "delete-local-graph":
@@ -537,7 +570,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
         case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
-             "present-attachment":
+             "present-attachment", "present-asset":
             guard let platformEffect else {
                 return LGChatEffectResolution(
                     succeeded: false,

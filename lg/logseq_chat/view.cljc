@@ -43,7 +43,10 @@
    false []
    [(ext/property "title" ext/StringScalar true None)
     (ext/property "markup-json" ext/StringScalar true None)
-    (ext/property "youtube-target-url" ext/StringScalar true None)]
+    (ext/property "youtube-target-url" ext/StringScalar true None)
+    (ext/property "is-asset" ext/BoolScalar true None)
+    (ext/property "asset-type" ext/StringScalar true None)
+    (ext/property "local-path" ext/StringScalar true None)]
    [(ext/event
      "open-node"
      [(ext/event-field "uuid" ext/StringScalar true)])]))
@@ -59,6 +62,9 @@
 
 (defn int-wire-value [value]
   (proto/IntValue value))
+
+(defn bool-wire-value [value]
+  (proto/BoolValue value))
 
 (defn extension-string [values name]
   (match (clojure.core/get values name)
@@ -131,6 +137,12 @@
 (defn outliner-row-youtube-target [row]
   (optional-string (:youtube-target-url row)))
 
+(defn outliner-row-asset-type [row]
+  (optional-string (:asset-type row)))
+
+(defn outliner-row-local-path [row]
+  (optional-string (:local-path row)))
+
 (defn request-node-action [current uuid]
   (if (= (:search-open current) true)
     (model/RequestSearchNode uuid)
@@ -147,7 +159,8 @@
     _ true))
 
 (defn outliner-block-content-view
-  [ui-context model-source title-source markup-source youtube-target-source send]
+  [ui-context model-source title-source markup-source youtube-target-source
+   is-asset-source asset-type-source local-path-source send]
   (let [node (ui/extension! ui-context "outliner-block-content")]
     (ui/extension-property-signal!
      ui-context node "title" (reactive string-wire-value title-source))
@@ -156,6 +169,12 @@
     (ui/extension-property-signal!
      ui-context node "youtube-target-url"
      (reactive string-wire-value youtube-target-source))
+    (ui/extension-property-signal!
+     ui-context node "is-asset" (reactive bool-wire-value is-asset-source))
+    (ui/extension-property-signal!
+     ui-context node "asset-type" (reactive string-wire-value asset-type-source))
+    (ui/extension-property-signal!
+     ui-context node "local-path" (reactive string-wire-value local-path-source))
     (ui/on-event!
      ui-context node
      (fn [input-event]
@@ -540,6 +559,9 @@
         markup-source (reactive :markup-json row-source)
         youtube-target-source
         (reactive outliner-row-youtube-target row-source)
+        is-asset-source (reactive :is-asset row-source)
+        asset-type-source (reactive outliner-row-asset-type row-source)
+        local-path-source (reactive outliner-row-local-path row-source)
         editing-title-source (reactive editing-title model-source)
         editing-caret-source (reactive editing-caret model-source)
         indent-source (reactive outliner-row-indent row-source)
@@ -555,11 +577,13 @@
        :selected selected-source
        :on-press
        (event [current-row row-source]
-         (if (= (:opens-as-page current-row) true)
-           (if search-open
-             (send (model/RequestSearchNode (:uuid current-row)))
-             (send (model/RequestAppNode (:uuid current-row))))
-           (send (model/BeginOutlinerEdit (:uuid current-row)))))
+         (if (= (:is-asset current-row) true)
+           (send (model/OpenOutlinerAsset (:uuid current-row)))
+           (if (= (:opens-as-page current-row) true)
+             (if search-open
+               (send (model/RequestSearchNode (:uuid current-row)))
+               (send (model/RequestAppNode (:uuid current-row))))
+             (send (model/BeginOutlinerEdit (:uuid current-row))))))
        :on-long-press
        (event [current-row row-source]
          (send (model/LongPressOutlinerBlock (:uuid current-row))))}
@@ -578,7 +602,8 @@
          editing-title-source editing-caret-source send]]
        [:if {:test not-editing-source}
         [outliner-block-content-view
-         model-source title-source markup-source youtube-target-source send]]
+         model-source title-source markup-source youtube-target-source
+         is-asset-source asset-type-source local-path-source send]]
        [:if {:test has-children-source}
         [:button
          {:text (reactive outliner-row-collapse-glyph row-source)

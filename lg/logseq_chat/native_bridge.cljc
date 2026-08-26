@@ -59,6 +59,12 @@
        ",\"iconColor\":" (encode-option-string (:icon-color status))
        "}"))
 
+(defn encode-asset-presentation [title asset-type local-path]
+  (str "{\"title\":" (wire/quoted title)
+       ",\"assetType\":" (wire/quoted asset-type)
+       ",\"localPath\":" (wire/quoted local-path)
+       "}"))
+
 (defn encode-settings [settings]
   (str "{\"appearance\":" (wire/quoted (:appearance settings))
        ",\"language\":" (wire/quoted (:language settings))
@@ -99,6 +105,11 @@
     (str "{\"id\":" id
          ",\"kind\":\"present-attachment\",\"text\":"
          (wire/quoted kind) "}")
+    (model/PresentAssetEffect id title asset-type local-path)
+    (str "{\"id\":" id
+         ",\"kind\":\"present-asset\",\"text\":\"\",\"metadata\":"
+         (wire/quoted
+          (encode-asset-presentation title asset-type local-path)) "}")
     (model/SearchNodesEffect id query)
     (str "{\"id\":" id
          ",\"kind\":\"search-nodes\",\"text\":"

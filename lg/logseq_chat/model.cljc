@@ -116,6 +116,7 @@
     (SendTaskEffect id _text _status) id
     (PersistComposerDraftEffect id _draft) id
     (PresentAttachmentEffect id _kind) id
+    (PresentAssetEffect id _title _asset-type _local-path) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
     (ChangeOutlinerTextEffect id _uuid _title _caret) id
@@ -617,6 +618,25 @@
     (let [id (:next-effect-id current)]
       (enqueue-effect current
                       (ChooseOutlinerAutocompleteEffect id value)))
+
+    (OpenOutlinerAsset uuid)
+    (match (row-index (:outliner-rows current) uuid)
+      (Some index)
+      (let [row (nth (:outliner-rows current) index)]
+        (if (:is-asset row)
+          (match (:local-path row)
+            (Some path)
+            (let [id (:next-effect-id current)
+                  asset-type
+                  (match (:asset-type row)
+                    (Some value) value
+                    None "application/octet-stream")]
+              (enqueue-effect
+               current
+               (PresentAssetEffect id (:title row) asset-type path)))
+            None current)
+          current))
+      None current)
 
     CloseSearch
     (let [path (:search-navigation-path current)

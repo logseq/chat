@@ -13,6 +13,8 @@
  :fn<option<string>;string>)
 (signature logseq-chat.native-bridge/encode-task-status
  :fn<task-status;string>)
+(signature logseq-chat.native-bridge/encode-asset-presentation
+ :fn<string;string;string;string>)
 (signature logseq-chat.native-bridge/encode-settings
  :fn<settings-projection;string>)
 (signature logseq-chat.native-bridge/encode-runtime-log-record

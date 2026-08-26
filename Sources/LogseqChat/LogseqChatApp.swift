@@ -238,6 +238,22 @@ public struct LogseqChatRootView : View {
             graphEffect: { effect in await graphLifecycle.execute(effect) },
             presentAttachment: { kind in
                 presentationCoordinator.presentAttachment(kind)
+            },
+            presentAsset: { asset in
+                #if SKIP
+                guard !asset.localPath.isEmpty else { return false }
+                AndroidAssetImporter.openFile(
+                    path: asset.localPath,
+                    contentType: asset.assetType.isEmpty
+                        ? "application/octet-stream"
+                        : asset.assetType
+                )
+                return true
+                #elseif os(iOS)
+                return presentationCoordinator.presentAsset(asset)
+                #else
+                return false
+                #endif
             }
         )
         let platformCommandRouter = LGChatPlatformCommandRouter(

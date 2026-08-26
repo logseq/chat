@@ -49,6 +49,9 @@ type outline_row =
   ; depth : int
   ; has_children : bool
   ; is_collapsed : bool
+  ; is_asset : bool
+  ; asset_type : string option
+  ; local_path : string option
   }
 
 type outliner_editing =
@@ -368,6 +371,9 @@ let outline_row_from_block
       ; depth
       ; has_children
       ; is_collapsed
+      ; is_asset = bool_member "isAsset" block_fields
+      ; asset_type = string_member "assetType" block_fields
+      ; local_path = string_member "localPath" block_fields
       }
   | _ -> None
 ;;

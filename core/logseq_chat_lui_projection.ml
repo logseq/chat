@@ -30,6 +30,9 @@ and outline_row (row : Snapshot.outline_row) : LG.outline_row =
   ; depth = row.depth
   ; has_children = row.has_children
   ; is_collapsed = row.is_collapsed
+  ; is_asset = row.is_asset
+  ; asset_type = row.asset_type
+  ; local_path = row.local_path
   }
 ;;
 
