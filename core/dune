@@ -52,13 +52,37 @@
  (c_library_flags
   (:standard -lsqlite3)))
 
+(rule
+ (target logseq_chat_lui_native.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  (source_tree ../lg/logseq_chat)
+  %{bin:lg})
+ (action
+  (run
+   %{bin:lg}
+   --target native
+   --compile-files-from %{lib:signal-lg.states:signal_native.state}
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
+   ../lg/logseq_chat
+   -o %{target})))
+
 (executable
  (name logseq_chat_mobile_entry)
  (modules
   logseq_chat_mobile_entry
+  logseq_chat_lui_native
   logseq_chat_sqlite)
  (modes exe object shared_object)
- (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix)
+ (libraries
+  logseq_chat_core
+  datascript-ocaml-native.sqlite
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  threads.posix)
  (foreign_stubs
   (language c)
   (names logseq_chat_core_ffi))

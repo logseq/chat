@@ -72,6 +72,118 @@ public final class LogseqChatCore {
             """
         #endif
     }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_initialize(
+        _ platformCode: Int,
+        _ hostCode: Int
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_initialize(
+            Int32(platformCode),
+            Int32(hostCode)
+        ))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_press(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_press(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_hold(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_hold(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_text_changed(
+        _ node: Int,
+        _ text: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_text_changed(
+            Int64(node),
+            text
+        ))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_submit(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_submit(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_toggle_changed(
+        _ node: Int,
+        _ checked: Bool
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_toggle_changed(
+            Int64(node),
+            checked ? 1 : 0
+        ))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_change(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_change(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_value_changed(
+        _ node: Int,
+        _ value: Double
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_value_changed(
+            Int64(node),
+            value
+        ))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_dismiss(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_dismiss(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_double_press(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_double_press(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_dispose() -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_dispose())
+        #else
+        return ""
+        #endif
+    }
 }
 
 private struct LogseqPendingSyncCompletion: Encodable {
