@@ -36,6 +36,9 @@ let () =
   (match decode "local-graph-ids" {|["a","b"]|} with
    | Ok (Local_graph_ids [ "a"; "b" ]) -> ()
    | _ -> fail "local graph identifiers were not decoded");
+  (match decode "open-capture" {|{}|} with
+   | Ok Open_capture -> ()
+   | _ -> fail "capture presentation host updates were not decoded");
   (match decode "unknown" {|{}|} with
    | Error _ -> ()
    | Ok _ -> fail "unknown host updates must be rejected")

@@ -543,7 +543,11 @@ public struct LogseqChatRootView : View {
             SharedCaptureInbox.shared.enqueueText(text)
             drainSharedCapturesIfReady()
         case .openCapture:
-            store.requestCapture()
+            do {
+                try lgRuntime.applyHostUpdate(kind: "open-capture", payload: "{}")
+            } catch {
+                logger.error("Could not present LG capture: \(String(describing: error))")
+            }
         case .openJournal:
             store.clearSelectedPage()
         }

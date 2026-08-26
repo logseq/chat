@@ -174,6 +174,7 @@ let apply_host_update kind payload =
       LG.ApplyRuntimeLog (Rrbvec.of_list (List.map runtime_log_record records))
     | Ok (Local_graph_ids graph_ids) ->
       LG.ApplyLocalGraphIds (Rrbvec.of_list graph_ids)
+    | Ok Open_capture -> LG.ExpandComposer
     | Error message -> LG.SyncFailed message
   in
   LG.logseq_chat_native_bridge_flush_action_bang action

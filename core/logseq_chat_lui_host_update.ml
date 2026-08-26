@@ -21,6 +21,7 @@ type t =
   | Settings of settings
   | Runtime_log of runtime_log_record list
   | Local_graph_ids of string list
+  | Open_capture
 
 let string_field name json = Yojson.Safe.Util.(json |> member name |> to_string)
 let bool_field name json = Yojson.Safe.Util.(json |> member name |> to_bool)
@@ -57,6 +58,7 @@ let decode kind payload =
     | "runtime-log" ->
       Ok (Runtime_log Yojson.Safe.Util.(json |> to_list |> List.map runtime_log_record))
     | "local-graph-ids" -> Ok (Local_graph_ids (string_list json))
+    | "open-capture" -> Ok Open_capture
     | _ -> Error ("Unsupported host update: " ^ kind)
   with
   | Yojson.Json_error message -> Error ("Invalid host update JSON: " ^ message)
