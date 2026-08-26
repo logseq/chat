@@ -45,6 +45,21 @@
  :fn<outliner-autocomplete-candidate;string>)
 (signature logseq-chat.view/outliner-autocomplete-label
  :fn<outliner-autocomplete-candidate;string>)
+(signature logseq-chat.view/node-navigation-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/node-navigation-inactive? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-main-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/main-outliner-selection-active?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/main-outliner-autocomplete-active?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/main-outliner-editor-active?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/active-node-projection
+ :fn<chat-model;option<node-projection>>)
+(signature logseq-chat.view/active-node-uuid :fn<chat-model;string>)
+(signature logseq-chat.view/active-node-title :fn<chat-model;string>)
+(signature logseq-chat.view/back-from-node
+ :fn<chat-model;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
@@ -57,6 +72,8 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-editor-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view
   :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view

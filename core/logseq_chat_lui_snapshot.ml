@@ -34,6 +34,18 @@ type outliner_autocomplete_candidate =
   ; value : string
   }
 
+type node_route =
+  { uuid : string
+  ; title : string
+  ; is_tag : bool
+  ; is_property : bool
+  ; outliner_rows : outline_row list
+  ; outliner_editing : outliner_editing option
+  ; outliner_autocomplete : outliner_autocomplete option
+  ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
+  ; outliner_selected_block_ids : string list
+  }
+
 type outliner_row_splice =
   { start : int option
   ; after_block_id : string option
@@ -46,6 +58,7 @@ type t =
   { graph_name : string option
   ; search_query : string
   ; search_results : search_hit list
+  ; node_routes : node_route list
   ; outliner_rows : outline_row list
   ; outliner_row_splices : outliner_row_splice list
   ; outliner_editing : outliner_editing option
@@ -210,6 +223,78 @@ let current_outliner_selected_block_ids result_fields =
   | _ -> []
 ;;
 
+let string_list_member name fields =
+  match member name fields with
+  | Some (`List values) ->
+    List.filter_map (function
+      | `String value -> Some value
+      | _ -> None)
+      values
+  | _ -> []
+;;
+
+let outliner_rows_member name fields =
+  match member name fields with
+  | Some (`List values) -> List.filter_map outline_row values
+  | _ -> []
+;;
+
+let autocomplete_candidates_member name fields =
+  match member name fields with
+  | Some (`List values) -> List.filter_map outliner_autocomplete_candidate values
+  | _ -> []
+;;
+
+let node_title uuid is_tag fields =
+  let page_title =
+    match member "page" fields with
+    | Some (`Assoc page_fields) -> Option.value ~default:"Untitled" (string_member "title" page_fields)
+    | _ -> "Untitled"
+  in
+  if is_tag
+  then "#" ^ page_title
+  else
+    match member "blocks" fields with
+    | Some (`List blocks) ->
+      List.find_map
+        (function
+          | `Assoc block_fields
+            when Option.equal String.equal (string_member "uuid" block_fields) (Some uuid) ->
+            string_member "title" block_fields
+          | _ -> None)
+        blocks
+      |> Option.value ~default:page_title
+    | _ -> page_title
+;;
+
+let node_route = function
+  | `Assoc fields ->
+    (match string_member "uuid" fields with
+     | None -> None
+     | Some uuid ->
+       let is_tag = bool_member "isTag" fields in
+       let state_fields =
+         match member "outlinerState" fields with
+         | Some (`Assoc values) -> values
+         | _ -> []
+       in
+       Some
+         { uuid
+         ; title = node_title uuid is_tag fields
+         ; is_tag
+         ; is_property = bool_member "isProperty" fields
+         ; outliner_rows = outliner_rows_member "outlinerRows" fields
+         ; outliner_editing =
+             Option.bind (member "editing" state_fields) outliner_editing
+         ; outliner_autocomplete =
+             Option.bind (member "autocomplete" state_fields) outliner_autocomplete
+         ; outliner_autocomplete_candidates =
+             autocomplete_candidates_member "outlinerAutocompleteCandidates" fields
+         ; outliner_selected_block_ids = string_list_member "selectedBlockIds" state_fields
+         })
+  | _ -> None
+;;
+
 let error_message fields =
   match member "error" fields with
   | Some (`Assoc error_fields) ->
@@ -228,32 +313,64 @@ let decode_response encoded =
            | Some (`List values) -> List.filter_map search_hit values
            | _ -> []
          in
-         let outliner_rows =
-           match member "outlinerRows" result_fields with
-           | Some (`List values) -> List.filter_map outline_row values
-           | _ -> []
-         in
+         let base_outliner_rows = outliner_rows_member "outlinerRows" result_fields in
          let outliner_row_splices =
            match member "outlinerRowSplices" result_fields with
            | Some (`List values) -> List.filter_map outliner_row_splice values
            | _ -> []
          in
-         let outliner_autocomplete_candidates =
-           match member "outlinerAutocompleteCandidates" result_fields with
-           | Some (`List values) ->
-             List.filter_map outliner_autocomplete_candidate values
+         let base_outliner_autocomplete_candidates =
+           autocomplete_candidates_member "outlinerAutocompleteCandidates" result_fields
+         in
+         let node_routes =
+           match member "nodeRoutes" result_fields with
+           | Some (`List values) -> List.filter_map node_route values
            | _ -> []
+         in
+         let active_node_route =
+           match List.rev node_routes with route :: _ -> Some route | [] -> None
+         in
+         let outliner_rows =
+           Option.fold
+             ~none:base_outliner_rows
+             ~some:(fun (route : node_route) -> route.outliner_rows)
+             active_node_route
+         in
+         let outliner_editing =
+           Option.fold
+             ~none:(current_outliner_editing result_fields)
+             ~some:(fun (route : node_route) -> route.outliner_editing)
+             active_node_route
+         in
+         let outliner_autocomplete =
+           Option.fold
+             ~none:(current_outliner_autocomplete result_fields)
+             ~some:(fun (route : node_route) -> route.outliner_autocomplete)
+             active_node_route
+         in
+         let outliner_autocomplete_candidates =
+           Option.fold
+             ~none:base_outliner_autocomplete_candidates
+             ~some:(fun (route : node_route) -> route.outliner_autocomplete_candidates)
+             active_node_route
+         in
+         let outliner_selected_block_ids =
+           Option.fold
+             ~none:(current_outliner_selected_block_ids result_fields)
+             ~some:(fun (route : node_route) -> route.outliner_selected_block_ids)
+             active_node_route
          in
          Ok
            { graph_name = string_member "graphName" result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
+           ; node_routes
            ; outliner_rows
            ; outliner_row_splices
-           ; outliner_editing = current_outliner_editing result_fields
-           ; outliner_autocomplete = current_outliner_autocomplete result_fields
+           ; outliner_editing
+           ; outliner_autocomplete
            ; outliner_autocomplete_candidates
-           ; outliner_selected_block_ids = current_outliner_selected_block_ids result_fields
+           ; outliner_selected_block_ids
            ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
            ; sync_connected = bool_member "syncConnected" result_fields
            }

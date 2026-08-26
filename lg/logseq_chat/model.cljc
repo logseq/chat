@@ -3,28 +3,29 @@
 
 (defn initial []
   (record chat-model
-    (selected-graph None)
-    (sync-state OfflineState)
-    (search-open false)
-    (search-query "")
-    (search-results [])
-    (search-loading false)
-    (outliner-rows [])
-    (outliner-selected-block-ids [])
-    (outliner-editing None)
-    (outliner-autocomplete None)
-    (outliner-autocomplete-candidates [])
-    (composer-expanded false)
-    (composer-draft "")
-    (pending-effects [])
-    (in-flight-effect-ids [])
-    (next-effect-id 1)
-    (effect-error None)
-    (last-core-response None)
-    (attachment-picker-open false)
-    (task-status-picker-open false)
-    (app-navigation-path [])
-    (search-navigation-path [])))
+          (selected-graph None)
+          (sync-state OfflineState)
+          (search-open false)
+          (search-query "")
+          (search-results [])
+          (search-loading false)
+          (node-routes [])
+          (outliner-rows [])
+          (outliner-selected-block-ids [])
+          (outliner-editing None)
+          (outliner-autocomplete None)
+          (outliner-autocomplete-candidates [])
+          (composer-expanded false)
+          (composer-draft "")
+          (pending-effects [])
+          (in-flight-effects [])
+          (next-effect-id 1)
+          (effect-error None)
+          (last-core-response None)
+          (attachment-picker-open false)
+          (task-status-picker-open false)
+          (app-navigation-path [])
+          (search-navigation-path [])))
 
 (defn request-route [path route]
   (if (and (not (empty? path)) (= (last path) route))
@@ -46,6 +47,10 @@
     path
     (subvec path 0 (dec (count path)))))
 
+(defn navigation-route-uuid [route]
+  (match route
+    (NodeRoute uuid) uuid))
+
 (defn effect-id [effect]
   (match effect
     (SendCaptureEffect id _text) id
@@ -59,7 +64,38 @@
     (ZoomOutlinerBlockEffect id _uuid) id
     (LongPressOutlinerBlockEffect id _uuid) id
     (OutlinerToolbarEffect id _action) id
-    (ChooseOutlinerAutocompleteEffect id _value) id))
+    (ChooseOutlinerAutocompleteEffect id _value) id
+    (OpenAppNodeEffect id _uuid) id
+    (OpenSearchNodeEffect id _uuid) id
+    (CloseAppNodeEffect id _uuid) id
+    (CloseSearchNodeEffect id _uuid) id))
+
+(defn effect-with-id [effects target]
+  (loop [index 0]
+    (if (= index (count effects))
+      None
+      (let [effect (nth effects index)]
+        (if (= (effect-id effect) target)
+          (Some effect)
+          (recur (inc index)))))))
+
+(defn rollback-navigation-effect [current effect]
+  (match effect
+    (OpenAppNodeEffect _id uuid)
+    (assoc current :app-navigation-path
+           (resolve-route (:app-navigation-path current)
+                          (NodeRoute uuid) false))
+    (OpenSearchNodeEffect _id uuid)
+    (assoc current :search-navigation-path
+           (resolve-route (:search-navigation-path current)
+                          (NodeRoute uuid) false))
+    (CloseAppNodeEffect _id uuid)
+    (assoc current :app-navigation-path
+           (request-route (:app-navigation-path current) (NodeRoute uuid)))
+    (CloseSearchNodeEffect _id uuid)
+    (assoc current :search-navigation-path
+           (request-route (:search-navigation-path current) (NodeRoute uuid)))
+    _ current))
 
 (defn enqueue-effect [current effect]
   (assoc current
@@ -67,15 +103,25 @@
          :next-effect-id (inc (:next-effect-id current))
          :effect-error None))
 
+(defn enqueue-close-search-effects [current path]
+  (loop [index (dec (count path))
+         updated current]
+    (if (< index 0)
+      updated
+      (let [uuid (navigation-route-uuid (nth path index))
+            id (:next-effect-id updated)]
+        (recur (dec index)
+               (enqueue-effect updated (CloseSearchNodeEffect id uuid)))))))
+
 (defn update-editing [current uuid title caret]
   (match (:outliner-editing current)
     (Some editing)
     (if (= (:uuid editing) uuid)
       (assoc current :outliner-editing
              (Some (record outliner-editing
-                     (uuid uuid)
-                     (title title)
-                     (caret-utf16-offset caret))))
+                           (uuid uuid)
+                           (title title)
+                           (caret-utf16-offset caret))))
       current)
     None current))
 
@@ -159,23 +205,6 @@
        _ true))
    effects))
 
-(defn remove-int [values target]
-  (loop [index 0
-         result []]
-    (if (= index (count values))
-      result
-      (let [value (nth values index)]
-        (recur (inc index)
-               (if (= value target) result (conj result value)))))))
-
-(defn contains-int? [values target]
-  (loop [index 0]
-    (if (= index (count values))
-      false
-      (if (= (nth values index) target)
-        true
-        (recur (inc index))))))
-
 (defn remove-effect [effects target]
   (loop [index 0
          result []]
@@ -227,7 +256,7 @@
              :search-loading false)
       current)
 
-    (ApplyCoreSnapshot graph-name sync-connected query results
+    (ApplyCoreSnapshot graph-name sync-connected query results node-routes
                        outliner-editing outliner-autocomplete
                        outliner-autocomplete-candidates
                        outliner-selected-block-ids
@@ -244,6 +273,7 @@
           (assoc current
                  :selected-graph graph-name
                  :sync-state (if sync-connected SyncedState OfflineState)
+                 :node-routes node-routes
                  :outliner-editing outliner-editing
                  :outliner-autocomplete outliner-autocomplete
                  :outliner-autocomplete-candidates
@@ -309,13 +339,17 @@
                       (ChooseOutlinerAutocompleteEffect id value)))
 
     CloseSearch
-    (assoc current
-           :search-open false
-           :search-query ""
-           :search-results []
-           :search-loading false
-           :pending-effects (remove-search-effects (:pending-effects current))
-           :search-navigation-path [])
+    (let [path (:search-navigation-path current)
+          closed
+          (assoc current
+                 :search-open false
+                 :search-query ""
+                 :search-results []
+                 :search-loading false
+                 :pending-effects
+                 (remove-search-effects (:pending-effects current))
+                 :search-navigation-path [])]
+      (enqueue-close-search-effects closed path))
 
     ExpandComposer
     (assoc current :composer-expanded true)
@@ -342,22 +376,26 @@
 
     (DequeueEffect id)
     (let [pending (:pending-effects current)]
-      (if (= pending (remove-effect pending id))
-        current
+      (match (effect-with-id pending id)
+        (Some effect)
         (assoc current
                :pending-effects (remove-effect pending id)
-               :in-flight-effect-ids
-               (conj (:in-flight-effect-ids current) id))))
+               :in-flight-effects
+               (conj (:in-flight-effects current) effect))
+        None current))
 
     (ResolveEffect id succeeded message)
-    (if (contains-int? (:in-flight-effect-ids current) id)
-      (assoc current
-             :in-flight-effect-ids
-             (remove-int (:in-flight-effect-ids current) id)
-             :effect-error (if succeeded None (Some message))
-             :last-core-response
-             (if succeeded (Some message) (:last-core-response current)))
-      current)
+    (match (effect-with-id (:in-flight-effects current) id)
+      (Some effect)
+      (let [resolved-current
+            (if succeeded current (rollback-navigation-effect current effect))]
+        (assoc resolved-current
+               :in-flight-effects
+               (remove-effect (:in-flight-effects current) id)
+               :effect-error (if succeeded None (Some message))
+               :last-core-response
+               (if succeeded (Some message) (:last-core-response current))))
+      None current)
 
     OpenAttachmentPicker
     (assoc current :attachment-picker-open true)
@@ -372,9 +410,13 @@
     (assoc current :task-status-picker-open false)
 
     (RequestAppNode uuid)
-    (assoc current
-           :app-navigation-path
-           (request-route (:app-navigation-path current) (NodeRoute uuid)))
+    (let [path (:app-navigation-path current)
+          requested (request-route path (NodeRoute uuid))]
+      (if (= path requested)
+        current
+        (let [updated (assoc current :app-navigation-path requested)
+              id (:next-effect-id updated)]
+          (enqueue-effect updated (OpenAppNodeEffect id uuid)))))
 
     (ResolveAppNode uuid resolved)
     (assoc current
@@ -384,14 +426,22 @@
                           resolved))
 
     BackAppNavigation
-    (assoc current
-           :app-navigation-path
-           (pop-route (:app-navigation-path current)))
+    (let [path (:app-navigation-path current)]
+      (if (empty? path)
+        current
+        (let [uuid (navigation-route-uuid (nth path (dec (count path))))
+              updated (assoc current :app-navigation-path (pop-route path))
+              id (:next-effect-id updated)]
+          (enqueue-effect updated (CloseAppNodeEffect id uuid)))))
 
     (RequestSearchNode uuid)
-    (assoc current
-           :search-navigation-path
-           (request-route (:search-navigation-path current) (NodeRoute uuid)))
+    (let [path (:search-navigation-path current)
+          requested (request-route path (NodeRoute uuid))]
+      (if (= path requested)
+        current
+        (let [updated (assoc current :search-navigation-path requested)
+              id (:next-effect-id updated)]
+          (enqueue-effect updated (OpenSearchNodeEffect id uuid)))))
 
     (ResolveSearchNode uuid resolved)
     (assoc current
@@ -401,6 +451,10 @@
                           resolved))
 
     BackSearchNavigation
-    (assoc current
-           :search-navigation-path
-           (pop-route (:search-navigation-path current)))))
+    (let [path (:search-navigation-path current)]
+      (if (empty? path)
+        current
+        (let [uuid (navigation-route-uuid (nth path (dec (count path))))
+              updated (assoc current :search-navigation-path (pop-route path))
+              id (:next-effect-id updated)]
+          (enqueue-effect updated (CloseSearchNodeEffect id uuid)))))))

@@ -152,6 +152,32 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "searchNodes", payload: effect.text)
             )
+        case "open-node":
+            do {
+                let payloadData = try JSONEncoder().encode(
+                    LogseqNodeRouteRequest(uuid: effect.text)
+                )
+                guard let payload = String(data: payloadData, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the node route payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "openNode", payload: payload)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "close-node":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "closeNode")
+            )
         case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block",
              "long-press-outliner-block":
             do {

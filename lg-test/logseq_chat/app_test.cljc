@@ -221,10 +221,11 @@
      "the bridge emits escaped JSON for the host executor")
     (assert-equal "" (bridge/take-effect)
                   "an effect is never dispatched to the host twice")
-    (assert-equal [1] (:in-flight-effect-ids (chat/model application))
+    (assert-equal [(model/SendCaptureEffect 1 "Project \"alpha\"\nNext")]
+                  (:in-flight-effects (chat/model application))
                   "dequeued effects remain tracked until resolution")
     (bridge/resolve-effect 1 false "Network unavailable")
-    (assert-equal [] (:in-flight-effect-ids (chat/model application))
+    (assert-equal [] (:in-flight-effects (chat/model application))
                   "resolution retires the matching in-flight effect")
     (assert-equal (Some "Network unavailable")
                   (:effect-error (chat/model application))
@@ -238,7 +239,7 @@
         dequeued (model/update queued (model/DequeueEffect 1))
         resolved (model/update dequeued
                                (model/ResolveEffect 1 true "{\"ok\":true}"))]
-    (assert-equal [] (:in-flight-effect-ids resolved)
+    (assert-equal [] (:in-flight-effects resolved)
                   "success retires the in-flight effect")
     (assert-equal None (:effect-error resolved)
                   "success clears the visible effect failure")
@@ -276,6 +277,76 @@
                    (model/update nested-request model/BackAppNavigation))
                   "the back action removes exactly one route")))
 
+(deftest navigation-requests-and-back-cross-the-core-effect-boundary
+  (let [requested
+        (model/update (model/initial) (model/RequestSearchNode "node-a"))
+        returned (model/update requested model/BackSearchNavigation)]
+    (assert-equal [(model/NodeRoute "node-a")]
+                  (:search-navigation-path requested)
+                  "search navigation remains optimistic")
+    (assert-equal [(model/OpenSearchNodeEffect 1 "node-a")]
+                  (:pending-effects requested)
+                  "opening a search node calls the core")
+    (assert-equal [] (:search-navigation-path returned)
+                  "back pops the visible search route")
+    (assert-equal
+     [(model/OpenSearchNodeEffect 1 "node-a")
+      (model/CloseSearchNodeEffect 2 "node-a")]
+     (:pending-effects returned)
+     "back closes the matching core projection")))
+
+(deftest failed-navigation-effects-restore-the-optimistic-path
+  (let [requested
+        (model/update (model/initial) (model/RequestAppNode "node-a"))
+        opening (model/update requested (model/DequeueEffect 1))
+        open-failed
+        (model/update opening (model/ResolveEffect 1 false "Open failed"))
+        opened-again
+        (model/update open-failed (model/RequestAppNode "node-a"))
+        opened
+        (model/update
+         (model/update opened-again (model/DequeueEffect 2))
+         (model/ResolveEffect 2 true "{\"ok\":true}"))
+        returned (model/update opened model/BackAppNavigation)
+        closing (model/update returned (model/DequeueEffect 3))
+        close-failed
+        (model/update closing (model/ResolveEffect 3 false "Close failed"))]
+    (assert-equal [] (:app-navigation-path open-failed)
+                  "a failed open removes its optimistic route")
+    (assert-equal [(model/NodeRoute "node-a")]
+                  (:app-navigation-path close-failed)
+                  "a failed close restores the optimistically popped route")))
+
+(deftest active-node-route-renders-a-core-backed-navigation-screen
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        route (record model/node-projection
+                (uuid "node-a")
+                (title "Project")
+                (is-tag false)
+                (is-property false))
+        row (record model/outline-row
+              (uuid "child") (title "Child") (depth 1)
+              (has-children false) (is-collapsed false))]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot None false "" [] [route]
+                              None None [] [] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          screen (child-with-identifier renderer root "screen.node")
+          back (child-with-identifier renderer screen "button.outliner.zoom-out")
+          title (child-with-identifier renderer screen "title.node")]
+      (assert-equal "Project"
+                    (property-string renderer title proto/TextValue)
+                    "the route title comes from the core projection")
+      (driver/dispatch-event! application (proto/Press back))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "back removes the presented route"))))
+
 (deftest search-navigation-is-isolated-and-cleared-with-the-presentation
   (let [open-model (model/update (model/initial) model/OpenSearch)
         app-model (model/update open-model (model/RequestAppNode "journal"))
@@ -299,6 +370,13 @@
                   "a failed search route is removed")
     (assert-equal [] (:search-navigation-path closed-model)
                   "closing search clears its navigation history")
+    (assert-equal
+     [(model/OpenAppNodeEffect 1 "journal")
+      (model/OpenSearchNodeEffect 2 "search-result")
+      (model/OpenSearchNodeEffect 3 "search-result")
+      (model/CloseSearchNodeEffect 5 "search-result")]
+     (:pending-effects closed-model)
+     "closing search closes every core-backed search route from the top")
     (assert-equal [(model/NodeRoute "journal")]
                   (:app-navigation-path closed-model)
                   "closing search preserves the app navigation history")
@@ -372,7 +450,7 @@
                   (caret-utf16-offset 4))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" []
+                  (model/ApplyCoreSnapshot None false "" [] []
                                            (Some editing) None [] []
                                            [row] false []))
     (driver/flush! application)
@@ -435,7 +513,7 @@
               (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] None None []
+                  (model/ApplyCoreSnapshot None false "" [] [] None None []
                                            ["parent"] [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -483,7 +561,7 @@
     (driver/start! application)
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None false "" []
+     (model/ApplyCoreSnapshot None false "" [] []
                               (Some editing) (Some autocomplete) [candidate]
                               [] [row] false []))
     (driver/flush! application)
@@ -522,7 +600,7 @@
               (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] None None [] []
+                  (model/ApplyCoreSnapshot None false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -568,7 +646,7 @@
         initial
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None false "" [] None None [] []
+         (model/ApplyCoreSnapshot None false "" [] [] None None [] []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
                  (start (Some 0))
@@ -579,7 +657,7 @@
         collapsed
         (model/update
          initial
-         (model/ApplyCoreSnapshot None false "" [] None None [] [] []
+         (model/ApplyCoreSnapshot None false "" [] [] None None [] [] []
                                   true [splice]))]
     (assert-equal [collapsed-parent sibling]
                   (:outliner-rows collapsed)

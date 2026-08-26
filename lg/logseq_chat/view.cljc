@@ -227,6 +227,45 @@
 (defn outliner-autocomplete-label [candidate]
   (:label candidate))
 
+(defn node-navigation-active? [current]
+  (not (empty? (:node-routes current))))
+
+(defn node-navigation-inactive? [current]
+  (empty? (:node-routes current)))
+
+(defn search-main-visible? [current]
+  (and (node-navigation-inactive? current) (:search-open current)))
+
+(defn main-outliner-selection-active? [current]
+  (and (node-navigation-inactive? current)
+       (outliner-selection-active? current)))
+
+(defn main-outliner-autocomplete-active? [current]
+  (and (node-navigation-inactive? current)
+       (outliner-autocomplete-active? current)))
+
+(defn main-outliner-editor-active? [current]
+  (and (node-navigation-inactive? current)
+       (outliner-editor-active? current)))
+
+(defn active-node-projection [current]
+  (last (:node-routes current)))
+
+(defn active-node-uuid [current]
+  (match (active-node-projection current)
+    (Some route) (:uuid route)
+    None ""))
+
+(defn active-node-title [current]
+  (match (active-node-projection current)
+    (Some route) (:title route)
+    None "Untitled"))
+
+(defn back-from-node [current send]
+  (if (empty? (:search-navigation-path current))
+    (send model/BackAppNavigation)
+    (send model/BackSearchNavigation)))
+
 (defn editing-title [current]
   (match (:outliner-editing current)
     (Some editing) (:title editing)
@@ -425,6 +464,34 @@
        (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}
     "Hide"]])
 
+(defui node-screen [model-source send]
+  [:column
+   {:accessibility-identifier "screen.node"}
+   [:button
+    {:label "Back"
+     :accessibility-identifier "button.outliner.zoom-out"
+     :on-press
+     (event [current model-source]
+       (back-from-node current send))}
+    "Back"]
+   [:text
+    {:value (reactive active-node-title model-source)
+     :accessibility-identifier "title.node"}]
+   [:list {:accessibility-identifier "outliner.list"}
+    [:keyed
+     {:source (reactive :outliner-rows model-source)
+      :key :uuid
+      :compare compare
+      :as row-source}
+     [outliner-row model-source row-source send]]]
+   [:if {:test (reactive outliner-selection-active? model-source)}
+    [outliner-selection-toolbar send]]
+   [:if {:test (reactive outliner-autocomplete-active? model-source)}
+    [outliner-autocomplete-bar model-source send]]
+   [:if {:test (reactive outliner-editor-active? model-source)}
+    [outliner-editor-toolbar send]]
+   (composer-view model-source send)])
+
 (defui composer-view [model-source send]
   [:column
    [:if {:test (reactive :composer-expanded model-source)}
@@ -466,14 +533,18 @@
 
 (defui chat-view [model-source send]
   [:column
-   [:heading {:level 1} "Logseq"]
-   [:text {:value (reactive graph-label model-source)}]
-   [:text {:value (reactive sync-label model-source)}]
-   [:button
-    {:accessibility-identifier "button.search"
-     :on-press (fn [_event] (send model/OpenSearch))}
-    "Search"]
-   [:if {:test (reactive :search-open model-source)}
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [:heading {:level 1} "Logseq"]]
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [:text {:value (reactive graph-label model-source)}]]
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [:text {:value (reactive sync-label model-source)}]]
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [:button
+     {:accessibility-identifier "button.search"
+      :on-press (fn [_event] (send model/OpenSearch))}
+     "Search"]]
+   [:if {:test (reactive search-main-visible? model-source)}
     [:column {:accessibility-identifier "screen.search"}
      [:search-field
       {:text (reactive :search-query model-source)
@@ -496,17 +567,21 @@
         :compare compare
         :as hit-source}
        [search-result-row hit-source send]]]]]
-   [:list {:accessibility-identifier "outliner.list"}
-    [:keyed
-     {:source (reactive :outliner-rows model-source)
-      :key :uuid
-      :compare compare
-      :as row-source}
-     [outliner-row model-source row-source send]]]
-   [:if {:test (reactive outliner-selection-active? model-source)}
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [:list {:accessibility-identifier "outliner.list"}
+     [:keyed
+      {:source (reactive :outliner-rows model-source)
+       :key :uuid
+       :compare compare
+       :as row-source}
+      [outliner-row model-source row-source send]]]]
+   [:if {:test (reactive main-outliner-selection-active? model-source)}
     [outliner-selection-toolbar send]]
-   [:if {:test (reactive outliner-autocomplete-active? model-source)}
+   [:if {:test (reactive main-outliner-autocomplete-active? model-source)}
     [outliner-autocomplete-bar model-source send]]
-   [:if {:test (reactive outliner-editor-active? model-source)}
+   [:if {:test (reactive main-outliner-editor-active? model-source)}
     [outliner-editor-toolbar send]]
-   (composer-view model-source send)])
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [composer-view model-source send]]
+   [:if {:test (reactive node-navigation-active? model-source)}
+    [node-screen model-source send]]])

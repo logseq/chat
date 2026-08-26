@@ -91,7 +91,19 @@
     (model/ChooseOutlinerAutocompleteEffect id value)
     (str "{\"id\":" id
          ",\"kind\":\"choose-outliner-autocomplete\",\"text\":"
-         (wire/quoted value) "}")))
+         (wire/quoted value) "}")
+    (model/OpenAppNodeEffect id uuid)
+    (str "{\"id\":" id ",\"kind\":\"open-node\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/OpenSearchNodeEffect id uuid)
+    (str "{\"id\":" id ",\"kind\":\"open-node\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/CloseAppNodeEffect id uuid)
+    (str "{\"id\":" id ",\"kind\":\"close-node\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/CloseSearchNodeEffect id uuid)
+    (str "{\"id\":" id ",\"kind\":\"close-node\",\"text\":"
+         (wire/quoted uuid) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]

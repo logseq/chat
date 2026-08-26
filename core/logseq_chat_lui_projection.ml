@@ -9,6 +9,14 @@ let search_hit (hit : Snapshot.search_hit) : LG.search_hit =
   }
 ;;
 
+let node_projection (route : Snapshot.node_route) : LG.node_projection =
+  { uuid = route.uuid
+  ; title = route.title
+  ; is_tag = route.is_tag
+  ; is_property = route.is_property
+  }
+;;
+
 let outline_row (row : Snapshot.outline_row) : LG.outline_row =
   { uuid = row.uuid
   ; title = row.title
@@ -66,6 +74,7 @@ let apply_response encoded =
         , snapshot.sync_connected
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)
+        , Rrbvec.of_list (List.map node_projection snapshot.node_routes)
         , Option.map outliner_editing snapshot.outliner_editing
         , Option.map outliner_autocomplete snapshot.outliner_autocomplete
         , Rrbvec.of_list

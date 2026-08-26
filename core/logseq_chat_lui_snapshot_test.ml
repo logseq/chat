@@ -44,6 +44,18 @@ let () =
     (match snapshot.outliner_autocomplete_candidates with
      | [ { label = "Project Alpha"; value = "page-a" } ] -> ()
      | _ -> failwith "outliner autocomplete candidates were not projected");
+    let routed =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"base","title":"Base"},"depth":0,"hasChildren":false,"isCollapsed":false}],"nodeRoutes":[{"uuid":"node-a","isTag":false,"isProperty":false,"page":{"uuid":"page-a","title":"Project"},"outlinerState":{"editing":{"uuid":"child","title":"Child","caretUTF16Offset":5},"selectedBlockIds":[],"autocomplete":null},"outlinerAutocompleteCandidates":[],"outlinerRows":[{"block":{"uuid":"child","title":"Child"},"depth":1,"hasChildren":false,"isCollapsed":false}]}],"syncConnected":true}}|}
+    in
+    (match routed with
+     | Ok routed ->
+       (match routed.node_routes, routed.outliner_rows, routed.outliner_editing with
+        | [ { uuid = "node-a"; title = "Project"; _ } ],
+          [ { uuid = "child"; _ } ],
+          Some { uuid = "child"; _ } -> ()
+        | _ -> failwith "the active node route did not become the outliner surface")
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

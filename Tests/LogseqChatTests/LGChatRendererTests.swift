@@ -191,6 +191,28 @@ struct LGChatRendererTests {
         #expect(zoom.succeeded)
     }
 
+    @Test("node navigation effects dispatch the existing core actions")
+    func nodeNavigationEffectsUseCoreNavigation() async throws {
+        var capturedRequests: [LogseqChatRPCRequest] = []
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequests.append(request)
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let open = await executor.execute(
+            LGChatEffect(id: 20, kind: "open-node", text: "node-a")
+        )
+        let close = await executor.execute(
+            LGChatEffect(id: 21, kind: "close-node", text: "node-a")
+        )
+
+        #expect(capturedRequests.map(\.params.action) == ["openNode", "closeNode"])
+        #expect(capturedRequests[0].params.payload?.contains("node-a") == true)
+        #expect(capturedRequests[1].params.payload == nil)
+        #expect(open.succeeded)
+        #expect(close.succeeded)
+    }
+
     @Test("outliner selection effects reuse the existing core reducer")
     func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []
