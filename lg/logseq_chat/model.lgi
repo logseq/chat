@@ -1,0 +1,25 @@
+(ns logseq-chat.model)
+
+(type-variant sync-state
+  (OfflineState)
+  (SyncingState)
+  (SyncedState)
+  (FailedState :string))
+
+(type-record chat-model
+  (selected-graph :option<string>)
+  (sync-state :sync-state)
+  (search-open :bool)
+  (search-query :string))
+
+(type-variant chat-action
+  (SelectGraph :string)
+  (BeginSync)
+  (SyncSucceeded)
+  (SyncFailed :string)
+  (OpenSearch)
+  (ChangeSearchQuery :string)
+  (CloseSearch))
+
+(signature logseq-chat.model/initial :fn<chat-model>)
+(signature logseq-chat.model/update :fn<chat-model;chat-action;chat-model>)

@@ -1,0 +1,47 @@
+(rule
+ (target logseq_chat_lui_test.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  (source_tree ../lg/logseq_chat)
+  (source_tree logseq_chat)
+  %{lib:lg-test.sources:test.cljc}
+  %{lib:lg-test.sources:test_native.cljc}
+  %{lib:lg-test.sources:run.cljc}
+  %{lib:lg-test.runtime:lg_test_runtime.cmi}
+  %{lib:lg-test.alcotest:lg_test_alcotest.cmi}
+  %{bin:lg})
+ (action
+  (run
+   %{bin:lg}
+   --target native
+   --compile-files-from %{lib:signal-lg.states:signal_native.state}
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
+   ../lg/logseq_chat/model.lgi
+   ../lg/logseq_chat/model.cljc
+   ../lg/logseq_chat/view.lgi
+   ../lg/logseq_chat/view.cljc
+   ../lg/logseq_chat/app.lgi
+   ../lg/logseq_chat/app.cljc
+   %{lib:lg-test.sources:test.cljc}
+   %{lib:lg-test.sources:test_native.cljc}
+   logseq_chat
+   %{lib:lg-test.sources:run.cljc}
+   -o %{target})))
+
+(executable
+ (name logseq_chat_lui_test)
+ (modules logseq_chat_lui_test)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  lg-test.runtime
+  lg-test.alcotest))
+
+(rule
+ (alias runtest)
+ (deps logseq_chat_lui_test.exe)
+ (action (run %{exe:logseq_chat_lui_test.exe})))

@@ -13,6 +13,10 @@
   datascript-ocaml-native
   melange-edn-native
   melange-transit-native
+  lg
+  lg-test
+  lui
+  signal-lg
   mldoc
   ocaml-fsrs
   yojson))

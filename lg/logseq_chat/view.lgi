@@ -1,0 +1,6 @@
+(ns logseq-chat.view)
+
+(signature logseq-chat.view/graph-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-label :fn<chat-model;string>)
+(signature logseq-chat.view/chat-view
+  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
