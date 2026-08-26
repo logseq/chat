@@ -126,6 +126,17 @@ private struct LGChatRichBlock: View {
 }
 
 @MainActor
+enum LGChatAssetPreviewPolicy {
+    static func usesInlineAudioPlayer(assetType: String, localPath: String) -> Bool {
+        !localPath.isEmpty
+            && AssetPresentationPolicy.kind(
+                assetType: assetType,
+                localPath: localPath
+            ) == .audio
+    }
+}
+
+@MainActor
 private struct LGChatAssetPreview: View {
     let title: String
     let assetType: String
@@ -146,6 +157,22 @@ private struct LGChatAssetPreview: View {
                 .frame(maxWidth: .infinity, maxHeight: 280)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .accessibilityIdentifier("asset.preview.image")
+        } else if LGChatAssetPreviewPolicy.usesInlineAudioPlayer(
+            assetType: assetType,
+            localPath: localPath
+        ), let url = LocalAssetPath.resolve(
+            localPath,
+            title: title,
+            assetType: assetType
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verbatim: title.isEmpty ? "Untitled file" : title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .lineLimit(3)
+                AssetAudioPlayer(path: url.path)
+                    .frame(height: 44)
+            }
         } else {
             fileSummary
         }

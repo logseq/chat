@@ -3627,7 +3627,7 @@ struct AssetPreview: View {
 }
 
 #if !SKIP && os(iOS)
-private struct AssetAudioPlayer: View {
+struct AssetAudioPlayer: View {
     @State private var player: AVPlayer
     @State private var isPlaying = false
 

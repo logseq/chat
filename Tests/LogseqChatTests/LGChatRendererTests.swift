@@ -7,6 +7,22 @@ import LUIAppleBackend
 @MainActor
 @Suite("LG chat renderer")
 struct LGChatRendererTests {
+    @Test("audio assets use the inline player when a local file is available")
+    func audioAssetPreviewPolicy() {
+        #expect(LGChatAssetPreviewPolicy.usesInlineAudioPlayer(
+            assetType: "audio/m4a",
+            localPath: "Assets/recording.m4a"
+        ))
+        #expect(!LGChatAssetPreviewPolicy.usesInlineAudioPlayer(
+            assetType: "application/pdf",
+            localPath: "Assets/report.pdf"
+        ))
+        #expect(!LGChatAssetPreviewPolicy.usesInlineAudioPlayer(
+            assetType: "audio/m4a",
+            localPath: ""
+        ))
+    }
+
     @Test("applies retained patches and exposes the stable runtime root")
     func appliesRetainedPatches() throws {
         let renderer = LGChatRenderer()
