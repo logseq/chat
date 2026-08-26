@@ -147,6 +147,7 @@
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
   (SendTaskEffect :int :string :task-status)
+  (PersistComposerDraftEffect :int :string)
   (PresentAttachmentEffect :int :string)
   (SearchNodesEffect :int :string)
   (TapOutlinerBlockEffect :int :string)
@@ -234,6 +235,7 @@
   (outliner-autocomplete-candidates :vector<outliner-autocomplete-candidate>)
   (composer-expanded :bool)
   (composer-draft :string)
+  (composer-autofocus :bool)
   (pending-effects :vector<chat-effect>)
   (in-flight-effects :vector<chat-effect>)
   (next-effect-id :int)
@@ -265,6 +267,8 @@
   (ChooseOutlinerAutocomplete :string)
   (CloseSearch)
   (ExpandComposer)
+  (FocusComposer)
+  (ApplyComposerDraft :string)
   (ChangeComposerDraft :string)
   (DismissComposer)
   (SendComposer)
@@ -398,5 +402,7 @@
 (signature logseq-chat.model/remove-effect
  :fn<vector<chat-effect>;int;vector<chat-effect>>)
 (signature logseq-chat.model/remove-search-effects
+ :fn<vector<chat-effect>;vector<chat-effect>>)
+(signature logseq-chat.model/remove-composer-draft-effects
  :fn<vector<chat-effect>;vector<chat-effect>>)
 (signature logseq-chat.model/update :fn<chat-model;chat-action;chat-model>)

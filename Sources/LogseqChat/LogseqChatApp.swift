@@ -218,6 +218,9 @@ public struct LogseqChatRootView : View {
                 )
                 defaults.set(settings.baseURL, forKey: "logseq.baseURL")
             },
+            persistComposerDraft: { draft in
+                UserDefaults.standard.set(draft, forKey: "logseq.composerDraft")
+            },
             runtimeLog: .shared,
             copyText: Self.copyText,
             signOut: {
@@ -316,6 +319,16 @@ public struct LogseqChatRootView : View {
             try lgRuntime.applyHostUpdate(
                 kind: "settings",
                 payload: try Self.settingsHostPayload()
+            )
+            let persistedDraft = UserDefaults.standard.string(
+                forKey: "logseq.composerDraft"
+            ) ?? ""
+            try lgRuntime.applyHostUpdate(
+                kind: "composer-draft",
+                payload: String(
+                    decoding: try JSONEncoder().encode(persistedDraft),
+                    as: UTF8.self
+                )
             )
         } catch {
             logger.error("Could not start LG renderer: \(String(describing: error))")

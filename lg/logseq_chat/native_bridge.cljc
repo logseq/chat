@@ -91,6 +91,10 @@
          ",\"kind\":\"send-task\",\"text\":"
          (wire/quoted text) ",\"metadata\":"
          (wire/quoted (encode-task-status status)) "}")
+    (model/PersistComposerDraftEffect id draft)
+    (str "{\"id\":" id
+         ",\"kind\":\"persist-composer-draft\",\"text\":"
+         (wire/quoted draft) "}")
     (model/PresentAttachmentEffect id kind)
     (str "{\"id\":" id
          ",\"kind\":\"present-attachment\",\"text\":"

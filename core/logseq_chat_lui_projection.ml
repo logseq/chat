@@ -185,6 +185,7 @@ let apply_host_update kind payload =
       LG.ApplyRuntimeLog (Rrbvec.of_list (List.map runtime_log_record records))
     | Ok (Local_graph_ids graph_ids) ->
       LG.ApplyLocalGraphIds (Rrbvec.of_list graph_ids)
+    | Ok (Composer_draft draft) -> LG.ApplyComposerDraft draft
     | Ok Open_capture -> LG.ExpandComposer
     | Error message -> LG.SyncFailed message
   in

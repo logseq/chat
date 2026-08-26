@@ -75,6 +75,7 @@
           (outliner-autocomplete-candidates [])
           (composer-expanded false)
           (composer-draft "")
+          (composer-autofocus false)
           (pending-effects [])
           (in-flight-effects [])
           (next-effect-id 1)
@@ -113,6 +114,7 @@
   (match effect
     (SendCaptureEffect id _text) id
     (SendTaskEffect id _text _status) id
+    (PersistComposerDraftEffect id _draft) id
     (PresentAttachmentEffect id _kind) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
@@ -428,6 +430,14 @@
      (match effect
        (SearchNodesEffect _id _query) false
        _ true))
+      effects))
+
+(defn remove-composer-draft-effects [effects]
+  (filterv
+   (fn [effect]
+     (match effect
+       (PersistComposerDraftEffect _id _draft) false
+       _ true))
    effects))
 
 (defn remove-effect [effects target]
@@ -622,26 +632,48 @@
       (enqueue-close-search-effects closed path))
 
     ExpandComposer
-    (assoc current :composer-expanded true)
+    (assoc current :composer-expanded true :composer-autofocus true)
 
-    (ChangeComposerDraft draft)
+    FocusComposer
+    (assoc current :composer-autofocus true)
+
+    (ApplyComposerDraft draft)
     (assoc current :composer-draft draft)
 
+    (ChangeComposerDraft draft)
+    (let [updated
+          (assoc current
+                 :composer-draft draft
+                 :composer-autofocus false
+                 :pending-effects
+                 (remove-composer-draft-effects (:pending-effects current)))
+          id (:next-effect-id updated)]
+      (enqueue-effect updated (PersistComposerDraftEffect id draft)))
+
     DismissComposer
-    (assoc current :composer-expanded false)
+    (assoc current :composer-expanded false :composer-autofocus false)
 
     SendComposer
     (let [submission (string/trim (:composer-draft current))]
       (if (empty? submission)
         current
-        (let [id (:next-effect-id current)]
+        (let [cleared
+              (assoc current
+                     :composer-expanded true
+                     :composer-draft ""
+                     :composer-autofocus true
+                     :pending-effects
+                     (remove-composer-draft-effects (:pending-effects current)))
+              persist-id (:next-effect-id cleared)
+              persisted
+              (enqueue-effect
+               cleared (PersistComposerDraftEffect persist-id ""))
+              send-id (:next-effect-id persisted)]
           (enqueue-effect
-           (assoc current
-                  :composer-expanded true
-                  :composer-draft "")
+           persisted
            (match (:selected-task-status current)
-             (Some status) (SendTaskEffect id submission status)
-             None (SendCaptureEffect id submission))))))
+             (Some status) (SendTaskEffect send-id submission status)
+             None (SendCaptureEffect send-id submission))))))
 
     (DequeueEffect id)
     (let [pending (:pending-effects current)]

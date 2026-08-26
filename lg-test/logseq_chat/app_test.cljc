@@ -54,7 +54,9 @@
                 found))))))))
 
 (defn main-root [renderer application]
-  (nth (apple/children renderer (driver/root-node application)) 0))
+  (let [stack (nth (apple/children renderer (driver/root-node application)) 0)
+        children (apple/children renderer stack)]
+    (nth children (dec (count children)))))
 
 (defn empty-sidebar-projection []
   (record model/sidebar-projection
@@ -975,12 +977,13 @@
         (driver/flush! application)
         (assert-equal "" (:composer-draft (chat/model application))
                       "successful send clears the draft")
-        (assert-equal [(model/SendCaptureEffect 1 "Project note")]
+        (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                       (model/SendCaptureEffect 3 "Project note")]
                       (:pending-effects (chat/model application))
-                      "send publishes one typed capture effect")
-        (assert-equal 2
+                      "send clears persisted text before publishing capture")
+        (assert-equal 4
                       (:next-effect-id (chat/model application))
-                      "send advances the stable effect identifier exactly once")
+                      "draft persistence and capture receive stable identifiers")
         (is (:composer-expanded (chat/model application))
             "send keeps the composer expanded like main")))))
 
@@ -993,9 +996,50 @@
         "dismiss collapses composer state")
     (assert-equal "Later" (:composer-draft dismissed)
                   "dismiss preserves the persisted draft")
-    (assert-equal [(model/SendCaptureEffect 1 "Later")]
+    (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                   (model/SendCaptureEffect 3 "Later")]
                   (:pending-effects empty-send)
                   "a preserved non-empty draft can still be submitted")))
+
+(deftest composer-draft-restore-focus-and-dismissal-are-owned-by-lg
+  (let [restored
+        (model/update (model/initial)
+                      (model/ApplyComposerDraft "稍后处理\nsecond line"))
+        expanded (model/update restored model/ExpandComposer)
+        drafted (model/update expanded (model/ChangeComposerDraft "Later"))
+        dismissed (model/update drafted model/DismissComposer)]
+    (assert-equal "稍后处理\nsecond line" (:composer-draft restored)
+                  "the persisted draft is restored through a typed host update")
+    (is (:composer-autofocus expanded)
+        "expanding requests native focus on the mounted composer field")
+    (is (not (:composer-autofocus drafted))
+        "typing consumes the edge-triggered autofocus request")
+    (assert-equal [(model/PersistComposerDraftEffect 1 "Later")]
+                  (:pending-effects drafted)
+                  "draft persistence crosses one coalescible platform boundary")
+    (is (not (:composer-autofocus dismissed))
+        "dismissal releases composer focus")
+    (assert-equal "Later" (:composer-draft dismissed)
+                  "dismissal keeps the persisted capture text")))
+
+(deftest composer-renders-autofocus-and-an-outside-dismissal-surface
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/ExpandComposer)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          field (descendant-with-identifier renderer root "field.composer")
+          dismissal
+          (descendant-with-identifier renderer root "surface.composer.dismiss")]
+      (is (property-bool renderer field proto/Autofocus)
+          "the expanded field receives the native autofocus edge")
+      (is (not (= -1 dismissal))
+          "expanded capture renders the main-branch dismissal surface")
+      (driver/dispatch-event! application (proto/Press dismissal))
+      (driver/flush! application)
+      (is (not (:composer-expanded (chat/model application)))
+          "pressing outside collapses the composer"))))
 
 (deftest composer-attachment-selection-is-owned-by-lg
   (let [opened (model/update (model/initial) model/OpenAttachmentPicker)
@@ -1057,7 +1101,8 @@
                   "the chosen status remains selected for subsequent captures")
     (is (not (:task-status-picker-open selected))
         "choosing a status closes the menu")
-    (assert-equal [(model/SendTaskEffect 1 "Follow up" todo)]
+    (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                   (model/SendTaskEffect 3 "Follow up" todo)]
                   (:pending-effects sent)
                   "task capture preserves its full semantic status")
     (assert-equal (Some todo) (:selected-task-status sent)
@@ -1127,15 +1172,21 @@
     (driver/send! application model/SendComposer)
     (driver/flush! application)
     (assert-equal
-     "{\"id\":1,\"kind\":\"send-capture\",\"text\":\"Project \\\"alpha\\\"\\nNext\"}"
+     "{\"id\":2,\"kind\":\"persist-composer-draft\",\"text\":\"\"}"
      (bridge/take-effect)
-     "the bridge emits escaped JSON for the host executor")
+     "the bridge clears persisted text before capture")
+    (assert-equal
+     "{\"id\":3,\"kind\":\"send-capture\",\"text\":\"Project \\\"alpha\\\"\\nNext\"}"
+     (bridge/take-effect)
+     "the bridge emits escaped capture JSON for the host executor")
     (assert-equal "" (bridge/take-effect)
                   "an effect is never dispatched to the host twice")
-    (assert-equal [(model/SendCaptureEffect 1 "Project \"alpha\"\nNext")]
+    (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                   (model/SendCaptureEffect 3 "Project \"alpha\"\nNext")]
                   (:in-flight-effects (chat/model application))
                   "dequeued effects remain tracked until resolution")
-    (bridge/resolve-effect 1 false "Network unavailable")
+    (bridge/resolve-effect 2 true "")
+    (bridge/resolve-effect 3 false "Network unavailable")
     (assert-equal [] (:in-flight-effects (chat/model application))
                   "resolution retires the matching in-flight effect")
     (assert-equal (Some "Network unavailable")
@@ -1147,9 +1198,9 @@
   (let [drafted (model/update (model/initial)
                               (model/ChangeComposerDraft "Project note"))
         queued (model/update drafted model/SendComposer)
-        dequeued (model/update queued (model/DequeueEffect 1))
+        dequeued (model/update queued (model/DequeueEffect 3))
         resolved (model/update dequeued
-                               (model/ResolveEffect 1 true "{\"ok\":true}"))]
+                               (model/ResolveEffect 3 true "{\"ok\":true}"))]
     (assert-equal [] (:in-flight-effects resolved)
                   "success retires the in-flight effect")
     (assert-equal None (:effect-error resolved)

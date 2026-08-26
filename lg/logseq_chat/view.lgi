@@ -153,6 +153,8 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/attachment-picker-dialog
  :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/composer-dismissal-surface
+ :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/task-status-row
  :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/task-status-picker-dialog

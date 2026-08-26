@@ -824,11 +824,14 @@
    (composer-view model-source send)])
 
 (defui composer-view [model-source send]
-  [:column {:accessibility-identifier "surface.composer.root"}
+  [:column
+   {:accessibility-identifier "surface.composer.root"
+    :on-press (fn [_event] (send model/FocusComposer))}
    [:if {:test (reactive :composer-expanded model-source)}
     [:column
      [:textarea
       {:text (reactive :composer-draft model-source)
+       :autofocus (reactive :composer-autofocus model-source)
        :placeholder "Capture"
        :label "Capture"
        :accessibility-identifier "field.composer"
@@ -886,6 +889,13 @@
     [:button
      {:on-press (fn [_event] (send model/CloseAttachmentPicker))}
      "Cancel"]]])
+
+(defui composer-dismissal-surface [send]
+  [:button
+   {:label "Dismiss composer"
+    :accessibility-identifier "surface.composer.dismiss"
+    :grow 1.0
+    :on-press (fn [_event] (send model/DismissComposer))}])
 
 (defn task-status-row [ui-context status-source send]
   (let [status (signal/sample status-source)]
@@ -1592,5 +1602,8 @@
         (proto/ToggleChanged _node open)
         (send (if open model/OpenSidebar model/CloseSidebar))
         _ true))}
-   [chat-main-view model-source send]
+   [:stack
+    [:if {:test (reactive :composer-expanded model-source)}
+     [composer-dismissal-surface send]]
+    [chat-main-view model-source send]]
    [sidebar-view model-source send]])

@@ -482,6 +482,30 @@ struct LGChatRendererTests {
         #expect(resolution.succeeded)
     }
 
+    @Test("composer draft effects persist through the platform boundary")
+    func composerDraftEffectsUsePlatformPersistence() async {
+        var persistedDrafts: [String] = []
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            persistComposerDraft: { persistedDrafts.append($0) },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {}
+        )
+
+        let saved = await handler.execute(
+            LGChatEffect(id: 41, kind: "persist-composer-draft", text: "稍后\nLater")
+        )
+        let cleared = await handler.execute(
+            LGChatEffect(id: 42, kind: "persist-composer-draft", text: "")
+        )
+
+        #expect(persistedDrafts == ["稍后\nLater", ""])
+        #expect(saved.succeeded)
+        #expect(saved.output == .discard)
+        #expect(cleared.succeeded)
+    }
+
     @Test("platform settings handler preserves persisted values and multiline logs")
     func platformSettingsHandlerPreservesValuesAndLogs() async throws {
         var saved: LGChatSettingsPayload?

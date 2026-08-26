@@ -39,6 +39,9 @@ let () =
   (match decode "open-capture" {|{}|} with
    | Ok Open_capture -> ()
    | _ -> fail "capture presentation host updates were not decoded");
+  (match decode "composer-draft" {|"稍后处理\nsecond line"|} with
+   | Ok (Composer_draft "稍后处理\nsecond line") -> ()
+   | _ -> fail "composer draft host updates lost Unicode or newlines");
   (match decode "unknown" {|{}|} with
    | Error _ -> ()
    | Ok _ -> fail "unknown host updates must be rejected")

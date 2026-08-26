@@ -96,6 +96,7 @@ public struct LGChatRuntimeLogPayload: Codable, Equatable, Sendable {
 @MainActor
 public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let saveSettings: @MainActor (LGChatSettingsPayload) async throws -> Void
+    private let persistComposerDraft: @MainActor (String) -> Void
     private let runtimeLog: LogseqRuntimeLog
     private let copyText: @MainActor (String) -> Void
     private let signOut: @MainActor () async -> Void
@@ -104,6 +105,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
 
     public init(
         saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
+        persistComposerDraft: @escaping @MainActor (String) -> Void = { _ in },
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
         signOut: @escaping @MainActor () async -> Void,
@@ -111,6 +113,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         presentAttachment: (@MainActor (String) async -> Bool)? = nil
     ) {
         self.saveSettings = saveSettings
+        self.persistComposerDraft = persistComposerDraft
         self.runtimeLog = runtimeLog
         self.copyText = copyText
         self.signOut = signOut
@@ -121,6 +124,13 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
         do {
             switch effect.kind {
+            case "persist-composer-draft":
+                persistComposerDraft(effect.text)
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
             case "save-settings":
                 let settings = try JSONDecoder().decode(
                     LGChatSettingsPayload.self,
