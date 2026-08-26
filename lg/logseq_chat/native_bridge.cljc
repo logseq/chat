@@ -43,7 +43,11 @@
     (model/SendCaptureEffect id text)
     (str "{\"id\":" id
          ",\"kind\":\"send-capture\",\"text\":"
-         (wire/quoted text) "}")))
+         (wire/quoted text) "}")
+    (model/SearchNodesEffect id query)
+    (str "{\"id\":" id
+         ",\"kind\":\"search-nodes\",\"text\":"
+         (wire/quoted query) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]

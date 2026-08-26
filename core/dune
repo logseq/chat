@@ -21,6 +21,7 @@
   logseq_chat_flashcards
   logseq_chat_graph_runtime
   logseq_chat_http
+  logseq_chat_lui_snapshot
   logseq_chat_logseq_storage_codec
   logseq_chat_markup
   logseq_chat_model
@@ -80,6 +81,7 @@
  (modules
   logseq_chat_mobile_entry
   logseq_chat_lui_native
+  logseq_chat_lui_projection
   logseq_chat_platform_crypto
   logseq_chat_sqlite)
  (modes exe object shared_object)
@@ -119,6 +121,11 @@
 (test
  (name logseq_chat_model_test)
  (modules logseq_chat_model_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_lui_snapshot_test)
+ (modules logseq_chat_lui_snapshot_test)
  (libraries logseq_chat_core))
 
 (test

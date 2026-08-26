@@ -1,0 +1,86 @@
+type search_hit =
+  { uuid : string
+  ; title : string
+  ; breadcrumb : string
+  ; is_page : bool
+  }
+
+type t =
+  { graph_name : string option
+  ; search_query : string
+  ; search_results : search_hit list
+  ; sync_connected : bool
+  }
+
+let member name fields = List.assoc_opt name fields
+
+let string_member name fields =
+  match member name fields with
+  | Some (`String value) -> Some value
+  | _ -> None
+;;
+
+let bool_member name fields =
+  match member name fields with
+  | Some (`Bool value) -> value
+  | _ -> false
+;;
+
+let title_from_summary = function
+  | `Assoc fields -> string_member "title" fields
+  | _ -> None
+;;
+
+let breadcrumb fields =
+  let titles =
+    match member "breadcrumbs" fields with
+    | Some (`List values) -> List.filter_map title_from_summary values
+    | _ -> []
+  in
+  match titles with
+  | _ :: _ -> String.concat " › " titles
+  | [] ->
+    (match member "page" fields with
+     | Some (`Assoc page_fields) -> Option.value ~default:"" (string_member "title" page_fields)
+     | _ -> "")
+;;
+
+let search_hit = function
+  | `Assoc fields ->
+    (match string_member "uuid" fields, string_member "title" fields with
+     | Some uuid, Some title ->
+       Some { uuid; title; breadcrumb = breadcrumb fields; is_page = bool_member "isPage" fields }
+     | _ -> None)
+  | _ -> None
+;;
+
+let error_message fields =
+  match member "error" fields with
+  | Some (`Assoc error_fields) ->
+    Option.value ~default:"Core request failed" (string_member "message" error_fields)
+  | _ -> "Core request failed"
+;;
+
+let decode_response encoded =
+  try
+    match Yojson.Basic.from_string encoded with
+    | `Assoc response_fields when bool_member "ok" response_fields ->
+      (match member "result" response_fields with
+       | Some (`Assoc result_fields) ->
+         let search_results =
+           match member "searchResults" result_fields with
+           | Some (`List values) -> List.filter_map search_hit values
+           | _ -> []
+         in
+         Ok
+           { graph_name = string_member "graphName" result_fields
+           ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
+           ; search_results
+           ; sync_connected = bool_member "syncConnected" result_fields
+           }
+       | _ -> Error "Core response did not contain a snapshot")
+    | `Assoc response_fields -> Error (error_message response_fields)
+    | _ -> Error "Core response must be a JSON object"
+  with
+  | Yojson.Json_error message -> Error ("Invalid core response: " ^ message)
+;;

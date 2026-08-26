@@ -184,6 +184,23 @@ static const char *call_lui_text(int64_t node, const char *text) {
   CAMLreturnT(const char *, response);
 }
 
+static const char *call_lui_string(const char *name, const char *text) {
+  const char *response;
+  CAMLparam0();
+  CAMLlocal2(text_value, result);
+  const value *callback = caml_named_value(name);
+  if (callback == NULL || text == NULL) {
+    response = missing_lui_callback();
+  } else {
+    text_value = caml_copy_string(text);
+    result = caml_callback_exn(*callback, text_value);
+    response = Is_exception_result(result)
+      ? missing_lui_callback()
+      : replace_response(String_val(result));
+  }
+  CAMLreturnT(const char *, response);
+}
+
 static const char *call_lui_bool(int64_t node, int32_t checked) {
   const char *response;
   CAMLparam0();
@@ -297,4 +314,8 @@ const char *logseq_chat_lui_take_effect(void) {
 const char *logseq_chat_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
                                            const char *message) {
   LUI_RUNTIME_CALL(call_lui_resolve_effect(effect_id, succeeded, message));
+}
+
+const char *logseq_chat_lui_apply_snapshot(const char *response_json) {
+  LUI_RUNTIME_CALL(call_lui_string("logseq_chat_lui_apply_snapshot", response_json));
 }

@@ -1,8 +1,10 @@
 (ns logseq-chat.view
   (:require [clojure.string :as string]
-            [lui.macros :refer [defui reactive]]
+            [lui.elements :as elements]
+            [lui.macros :refer [defui reactive event]]
             [lui.protocol :refer [TextChanged]]
-            [logseq-chat.model :as model]))
+            [logseq-chat.model :as model]
+            [signal.core :as signal]))
 
 (defn graph-label [current]
   (match (:selected-graph current)
@@ -21,6 +23,22 @@
 
 (defn composer-send-disabled? [current]
   (string/blank? (:composer-draft current)))
+
+(defn search-result-identifier [hit]
+  (str "search.result." (:uuid hit)))
+
+(defn search-result-row [ui-context hit-source send]
+  (let [hit (signal/sample hit-source)]
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:accessibility-identifier (search-result-identifier hit)
+       :on-press
+       (event [current-hit hit-source]
+         (send (model/RequestSearchNode (:uuid current-hit))))}
+      [:column
+       [:text {:value (reactive :title hit-source)}]
+       [:text {:value (reactive :breadcrumb hit-source)}]]])))
 
 (defui composer-view [model-source send]
   [:column
@@ -71,7 +89,7 @@
      :on-press (fn [_event] (send model/OpenSearch))}
     "Search"]
    [:if {:test (reactive :search-open model-source)}
-    [:row {:accessibility-identifier "screen.search"}
+    [:column {:accessibility-identifier "screen.search"}
      [:search-field
       {:text (reactive :search-query model-source)
        :placeholder "Search pages and blocks"
@@ -83,7 +101,14 @@
            (TextChanged _node text) (send (model/ChangeSearchQuery text))
            _ true))}]
      [:button
-      {:accessibility-identifier "button.search.close"
+     {:accessibility-identifier "button.search.close"
        :on-press (fn [_event] (send model/CloseSearch))}
-      "Close"]]]
+      "Close"]
+     [:list
+      [:keyed
+       {:source (reactive :search-results model-source)
+        :key :uuid
+        :compare compare
+        :as hit-source}
+       [search-result-row hit-source send]]]]]
    (composer-view model-source send)])

@@ -7,6 +7,8 @@
     (sync-state OfflineState)
     (search-open false)
     (search-query "")
+    (search-results [])
+    (search-loading false)
     (composer-expanded false)
     (composer-draft "")
     (pending-effects [])
@@ -41,7 +43,16 @@
 
 (defn effect-id [effect]
   (match effect
-    (SendCaptureEffect id _text) id))
+    (SendCaptureEffect id _text) id
+    (SearchNodesEffect id _query) id))
+
+(defn remove-search-effects [effects]
+  (filterv
+   (fn [effect]
+     (match effect
+       (SearchNodesEffect _id _query) false
+       _ true))
+   effects))
 
 (defn remove-int [values target]
   (loop [index 0
@@ -89,12 +100,46 @@
     (assoc current :search-open true)
 
     (ChangeSearchQuery query)
-    (assoc current :search-query query)
+    (let [pending (remove-search-effects (:pending-effects current))]
+      (if (string/blank? query)
+        (assoc current
+               :search-query query
+               :search-results []
+               :search-loading false
+               :pending-effects pending)
+        (let [id (:next-effect-id current)]
+          (assoc current
+                 :search-query query
+                 :search-loading true
+                 :pending-effects (conj pending (SearchNodesEffect id query))
+                 :next-effect-id (inc id)
+                 :effect-error None))))
+
+    (ApplySearchResults query results)
+    (if (= query (:search-query current))
+      (assoc current
+             :search-results results
+             :search-loading false)
+      current)
+
+    (ApplyCoreSnapshot graph-name sync-connected query results)
+    (let [updated
+          (assoc current
+                 :selected-graph graph-name
+                 :sync-state (if sync-connected SyncedState OfflineState))]
+      (if (= query (:search-query current))
+        (assoc updated
+               :search-results results
+               :search-loading false)
+        updated))
 
     CloseSearch
     (assoc current
            :search-open false
            :search-query ""
+           :search-results []
+           :search-loading false
+           :pending-effects (remove-search-effects (:pending-effects current))
            :search-navigation-path [])
 
     ExpandComposer

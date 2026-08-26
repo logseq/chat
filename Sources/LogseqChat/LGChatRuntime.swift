@@ -17,6 +17,7 @@ public protocol LGChatNativeCalling {
     func dispose() -> String
     func takeEffect() -> String
     func resolveEffect(id: Int, succeeded: Bool, message: String) -> String
+    func applySnapshot(_ response: String) -> String
 }
 
 public struct LGChatEffect: Decodable, Equatable, Sendable {
@@ -53,10 +54,49 @@ private struct LGCoreEffectResponse: Decodable {
 
 @MainActor
 public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
-    public init() {}
+    private let callCore: (LogseqChatRPCRequest) async -> String
+
+    public init(
+        callCore: @escaping (LogseqChatRPCRequest) async -> String = { request in
+            await LogseqChatCore.callAsync(request)
+        }
+    ) {
+        self.callCore = callCore
+    }
 
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
-        guard effect.kind == "send-capture" else {
+        let request: LogseqChatRPCRequest
+        switch effect.kind {
+        case "send-capture":
+            do {
+                let payload = LGSendCapturePayload(
+                    text: effect.text,
+                    uuid: UUID().uuidString.lowercased(),
+                    now: Int64(Date().timeIntervalSince1970 * 1_000)
+                )
+                let payloadData = try JSONEncoder().encode(payload)
+                guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the capture payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "send", payload: payloadJSON)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "search-nodes":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "searchNodes", payload: effect.text)
+            )
+        default:
             return LGChatEffectResolution(
                 succeeded: false,
                 message: "Unsupported LG effect: \(effect.kind)"
@@ -64,23 +104,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
         }
 
         do {
-            let payload = LGSendCapturePayload(
-                text: effect.text,
-                uuid: UUID().uuidString.lowercased(),
-                now: Int64(Date().timeIntervalSince1970 * 1_000)
-            )
-            let payloadData = try JSONEncoder().encode(payload)
-            guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
-                return LGChatEffectResolution(
-                    succeeded: false,
-                    message: "Could not encode the capture payload as UTF-8"
-                )
-            }
-            let request = LogseqChatRPCRequest(
-                method: "dispatch",
-                params: LogseqChatRPCParams(action: "send", payload: payloadJSON)
-            )
-            let responseJSON = await LogseqChatCore.callAsync(request)
+            let responseJSON = await callCore(request)
             let response = try JSONDecoder().decode(
                 LGCoreEffectResponse.self,
                 from: Data(responseJSON.utf8)
@@ -134,6 +158,9 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
     public func takeEffect() -> String { core.logseq_chat_lui_take_effect() }
     public func resolveEffect(id: Int, succeeded: Bool, message: String) -> String {
         core.logseq_chat_lui_resolve_effect(id, succeeded, message)
+    }
+    public func applySnapshot(_ response: String) -> String {
+        core.logseq_chat_lui_apply_snapshot(response)
     }
 }
 
@@ -246,6 +273,9 @@ public final class LGChatRuntime {
                     succeeded: resolution.succeeded,
                     message: resolution.message
                 ))
+                if resolution.succeeded {
+                    try apply(native.applySnapshot(resolution.message))
+                }
                 lastError = resolution.succeeded ? nil : resolution.message
             } catch {
                 lastError = String(describing: error)

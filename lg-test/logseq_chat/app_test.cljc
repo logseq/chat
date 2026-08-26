@@ -276,6 +276,58 @@
     (assert-equal "" (:search-query closed-model)
                   "closing search clears its transient query")))
 
+(deftest search-query-publishes-a-core-effect-and-rejects-stale-results
+  (let [queried (model/update (model/initial)
+                              (model/ChangeSearchQuery "project alpha"))
+        hit (record model/search-hit
+              (uuid "page-a")
+              (title "Project Alpha")
+              (breadcrumb "")
+              (is-page true))
+        stale (model/update queried
+                            (model/ApplySearchResults "older" [hit]))
+        current (model/update queried
+                              (model/ApplySearchResults "project alpha" [hit]))]
+    (assert-equal [(model/SearchNodesEffect 1 "project alpha")]
+                  (:pending-effects queried)
+                  "typing publishes one typed search request")
+    (is (:search-loading queried)
+        "the query visibly remains in progress")
+    (assert-equal [] (:search-results stale)
+                  "a response for an older query is ignored")
+    (assert-equal [hit] (:search-results current)
+                  "the current query accepts its projected hits")
+    (is (not (:search-loading current))
+        "the current result ends the loading state")))
+
+(deftest search-results-render-as-keyed-native-rows
+  (let [renderer (apple/create)
+        application (chat/create (apple/backend renderer))
+        hit (record model/search-hit
+              (uuid "block-a")
+              (title "Project note")
+              (breadcrumb "Journal › Parent")
+              (is-page false))]
+    (driver/start! application)
+    (driver/send! application model/OpenSearch)
+    (driver/send! application (model/ChangeSearchQuery "project"))
+    (driver/send! application
+                  (model/ApplySearchResults "project" [hit]))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          search-panel (nth (apple/children renderer root) 4)
+          results (nth (apple/children renderer search-panel) 2)
+          row (nth (apple/children renderer results) 0)]
+      (assert-equal "search.result.block-a"
+                    (property-string renderer row
+                                     proto/AccessibilityIdentifier)
+                    "the row keeps main's stable search result identifier")
+      (driver/dispatch-event! application (proto/Press row))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "block-a")]
+                    (:search-navigation-path (chat/model application))
+                    "pressing a result requests navigation in LG state"))))
+
 (deftest native-bridge-returns-initial-and-disposal-patch-batches
   (let [initial-patch (bridge/initialize 2 1)]
     (is (not (= "" initial-patch)))

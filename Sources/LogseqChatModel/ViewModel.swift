@@ -224,6 +224,18 @@ public final class LogseqChatCore {
         return ""
         #endif
     }
+
+    /* SKIP EXTERN */ public func logseq_chat_lui_apply_snapshot(
+        _ responseJSON: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_snapshot(
+            responseJSON
+        ))
+        #else
+        return ""
+        #endif
+    }
 }
 
 private struct LogseqPendingSyncCompletion: Encodable {

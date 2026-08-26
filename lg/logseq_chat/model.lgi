@@ -9,14 +9,23 @@
 (type-variant navigation-route
   (NodeRoute :string))
 
+(type-record search-hit
+  (uuid :string)
+  (title :string)
+  (breadcrumb :string)
+  (is-page :bool))
+
 (type-variant chat-effect
-  (SendCaptureEffect :int :string))
+  (SendCaptureEffect :int :string)
+  (SearchNodesEffect :int :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
   (sync-state :sync-state)
   (search-open :bool)
   (search-query :string)
+  (search-results :vector<search-hit>)
+  (search-loading :bool)
   (composer-expanded :bool)
   (composer-draft :string)
   (pending-effects :vector<chat-effect>)
@@ -36,6 +45,8 @@
   (SyncFailed :string)
   (OpenSearch)
   (ChangeSearchQuery :string)
+  (ApplySearchResults :string :vector<search-hit>)
+  (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>)
   (CloseSearch)
   (ExpandComposer)
   (ChangeComposerDraft :string)
@@ -66,4 +77,6 @@
 (signature logseq-chat.model/contains-int? :fn<vector<int>;int;bool>)
 (signature logseq-chat.model/remove-effect
  :fn<vector<chat-effect>;int;vector<chat-effect>>)
+(signature logseq-chat.model/remove-search-effects
+ :fn<vector<chat-effect>;vector<chat-effect>>)
 (signature logseq-chat.model/update :fn<chat-model;chat-action;chat-model>)

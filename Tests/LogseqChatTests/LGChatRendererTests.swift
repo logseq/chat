@@ -1,5 +1,6 @@
 import Testing
 @testable import LogseqChat
+import LogseqChatModel
 
 @MainActor
 @Suite("LG chat renderer")
@@ -78,8 +79,27 @@ struct LGChatRendererTests {
         #expect(native.resolutions == [
             LGChatEffectResolutionProbe(id: 7, succeeded: true, message: "core response")
         ])
+        #expect(native.appliedSnapshots == ["core response"])
         #expect(native.effects.isEmpty)
         #expect(runtime.lastError == nil)
+    }
+
+    @Test("search effects dispatch the existing core search action")
+    func searchEffectsUseCoreSearch() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 9, kind: "search-nodes", text: "project alpha")
+        )
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "searchNodes")
+        #expect(request.params.payload == "project alpha")
+        #expect(resolution.succeeded)
     }
 }
 
@@ -105,6 +125,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var pressedNodes: [Int] = []
     var effects: [String] = []
     var resolutions: [LGChatEffectResolutionProbe] = []
+    var appliedSnapshots: [String] = []
 
     func initialize(platformCode: Int, hostCode: Int) -> String {
         startedPlatforms.append(platformCode)
@@ -144,6 +165,10 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
             succeeded: succeeded,
             message: message
         ))
+        return ""
+    }
+    func applySnapshot(_ response: String) -> String {
+        appliedSnapshots.append(response)
         return ""
     }
 }
