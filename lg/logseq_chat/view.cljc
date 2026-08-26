@@ -800,13 +800,14 @@
    [:text
     {:value (reactive active-node-title model-source)
      :accessibility-identifier "title.node"}]
-   [:list {:accessibility-identifier "list.outliner"}
-    [:keyed
-     {:source (reactive :outliner-rows model-source)
-      :key :uuid
-      :compare compare
-      :as row-source}
-     [outliner-row model-source row-source send]]]
+   [:scroll {:accessibility-identifier "scroll.outliner"}
+    [:list {:accessibility-identifier "list.outliner"}
+     [:keyed
+      {:source (reactive :outliner-rows model-source)
+       :key :uuid
+       :compare compare
+       :as row-source}
+      [outliner-row model-source row-source send]]]]
    [:if {:test (reactive node-can-add-first-block? model-source)}
     [add-first-block-button model-source send]]
    [:if {:test (reactive node-related-section-visible? model-source)}
@@ -1547,13 +1548,14 @@
         :as hit-source}
        [search-result-row hit-source send]]]]]
    [:if {:test (reactive journal-root-visible? model-source)}
-    [:list {:accessibility-identifier "list.outliner"}
-     [:keyed
-      {:source (reactive :outliner-rows model-source)
-       :key :uuid
-       :compare compare
-       :as row-source}
-      [outliner-row model-source row-source send]]]]
+    [:scroll {:accessibility-identifier "scroll.outliner"}
+     [:list {:accessibility-identifier "list.outliner"}
+      [:keyed
+       {:source (reactive :outliner-rows model-source)
+        :key :uuid
+        :compare compare
+        :as row-source}
+       [outliner-row model-source row-source send]]]]]
    [:if {:test (reactive main-can-add-first-block? model-source)}
     [add-first-block-button model-source send]]
    [:if {:test (reactive main-related-section-visible? model-source)}

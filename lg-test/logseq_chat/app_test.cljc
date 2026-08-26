@@ -1471,7 +1471,7 @@
                                            [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (child-with-identifier renderer root "list.outliner")
+          outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)]
       (assert-equal "outliner.block.block-a"
                     (property-string renderer rendered-row
@@ -1494,6 +1494,19 @@
          (:pending-effects (chat/model application))
          "native editor events return to the typed LG reducer")))))
 
+(deftest outliner-rows-live-inside-a-native-scroll-container
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          scroll (descendant-with-identifier renderer root "scroll.outliner")
+          list-node (descendant-with-identifier renderer root "list.outliner")]
+      (is (not (= -1 scroll))
+          "journal blocks use LUI's retained native scroll region")
+      (is (not (= -1 list-node))
+          "the outliner keeps its vertical flow inside the scroll region"))))
+
 (deftest projected-markup-renders-through-the-native-rich-block-extension
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -1515,7 +1528,7 @@
                                            [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (child-with-identifier renderer root "list.outliner")
+          outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
           content (nth (apple/children renderer rendered-row) 0)
           rich-content (nth (apple/children renderer content) 2)]
@@ -1575,7 +1588,7 @@
                                            ["parent"] [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (child-with-identifier renderer root "list.outliner")
+          outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
           toolbar (child-with-identifier
                    renderer root "toolbar.outliner.selection")
@@ -1669,7 +1682,7 @@
                                            [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          outliner (child-with-identifier renderer root "list.outliner")
+          outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row (nth (apple/children renderer outliner) 0)
           content (nth (apple/children renderer rendered-row) 0)
           content-children (apple/children renderer content)
