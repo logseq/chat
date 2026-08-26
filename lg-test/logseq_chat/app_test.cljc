@@ -463,7 +463,7 @@
 
 (deftest outliner-block-content-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"
+   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"
    (ext/fingerprint (view/outliner-block-content-schema))
    "the rich block renderer must match the LG wire schema"))
 
@@ -1644,7 +1644,14 @@
                     (depth 0)
                     (has-children false)
                     (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None))]
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status
+                     (Some (record model/task-status
+                             (uuid "done")
+                             (ident (Some "logseq.property/status.done"))
+                             (title "Done")
+                             (icon-type None) (icon-id None) (icon-color None))))
+                    (tags []) (sync-status None))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -1656,11 +1663,14 @@
           rendered-row (nth (apple/children renderer outliner) 0)
           column (nth (apple/children renderer rendered-row) 0)
           content (nth (apple/children renderer column) 0)
-          rich-content (nth (apple/children renderer content) 2)]
+          rich-content (nth (apple/children renderer content) 3)]
       (assert-equal
        (Some (apple/AppleExtension "outliner-block-content"))
        (apple/node renderer rich-content)
        "non-editing markup uses the registered native rich renderer")
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application rich-content "is-completed")
+                    "completed task styling reaches the native rich renderer")
       (driver/dispatch-event!
        application
        (proto/ExtensionEvent

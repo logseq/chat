@@ -45,6 +45,7 @@
     (ext/property "markup-json" ext/StringScalar true None)
     (ext/property "youtube-target-url" ext/StringScalar true None)
     (ext/property "is-asset" ext/BoolScalar true None)
+    (ext/property "is-completed" ext/BoolScalar true None)
     (ext/property "asset-type" ext/StringScalar true None)
     (ext/property "local-path" ext/StringScalar true None)]
    [(ext/event
@@ -143,6 +144,16 @@
 (defn outliner-row-local-path [row]
   (optional-string (:local-path row)))
 
+(defn outliner-row-completed? [row]
+  (match (:status row)
+    (Some status)
+    (match (:ident status)
+      (Some ident)
+      (or (string/ends-with? ident ".done")
+          (string/ends-with? ident ".canceled"))
+      None false)
+    None false))
+
 (defn request-node-action [current uuid]
   (if (= (:search-open current) true)
     (model/RequestSearchNode uuid)
@@ -160,7 +171,7 @@
 
 (defn outliner-block-content-view
   [ui-context model-source title-source markup-source youtube-target-source
-   is-asset-source asset-type-source local-path-source send]
+   is-asset-source is-completed-source asset-type-source local-path-source send]
   (let [node (ui/extension! ui-context "outliner-block-content")]
     (ui/extension-property-signal!
      ui-context node "title" (reactive string-wire-value title-source))
@@ -171,6 +182,9 @@
      (reactive string-wire-value youtube-target-source))
     (ui/extension-property-signal!
      ui-context node "is-asset" (reactive bool-wire-value is-asset-source))
+    (ui/extension-property-signal!
+     ui-context node "is-completed"
+     (reactive bool-wire-value is-completed-source))
     (ui/extension-property-signal!
      ui-context node "asset-type" (reactive string-wire-value asset-type-source))
     (ui/extension-property-signal!
@@ -652,6 +666,7 @@
         youtube-target-source
         (reactive outliner-row-youtube-target row-source)
         is-asset-source (reactive :is-asset row-source)
+        is-completed-source (reactive outliner-row-completed? row-source)
         asset-type-source (reactive outliner-row-asset-type row-source)
         local-path-source (reactive outliner-row-local-path row-source)
         editing-title-source (reactive editing-title model-source)
@@ -709,7 +724,7 @@
         [:if {:test not-editing-source}
          [outliner-block-content-view
           model-source title-source markup-source youtube-target-source
-          is-asset-source asset-type-source local-path-source send]]
+          is-asset-source is-completed-source asset-type-source local-path-source send]]
         [:if {:test has-children-source}
          [:button
           {:text (reactive outliner-row-collapse-glyph row-source)

@@ -38,11 +38,12 @@ struct LGChatRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"},
+          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Project"},
           {"op":"set-extension-prop","id":2,"property":"markup-json","value":"[]"},
           {"op":"set-extension-prop","id":2,"property":"youtube-target-url","value":""},
           {"op":"set-extension-prop","id":2,"property":"is-asset","value":false},
+          {"op":"set-extension-prop","id":2,"property":"is-completed","value":false},
           {"op":"set-extension-prop","id":2,"property":"asset-type","value":""},
           {"op":"set-extension-prop","id":2,"property":"local-path","value":""},
           {"op":"insert-child","parent":1,"child":2,"index":0}

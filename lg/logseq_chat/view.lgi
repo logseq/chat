@@ -22,6 +22,8 @@
  :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-local-path
  :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-completed?
+ :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-has-status?
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-status-title
@@ -41,7 +43,7 @@
 (signature logseq-chat.view/handle-outliner-block-content-event
  :fn<event;signal<chat-model>;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/outliner-block-content-view
- :fn<ui-context;signal<chat-model>;signal<string>;signal<string>;signal<string>;signal<bool>;signal<string>;signal<string>;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;signal<string>;signal<string>;signal<string>;signal<bool>;signal<bool>;signal<string>;signal<string>;fn<chat-action;bool>;int>)
 
 (signature logseq-chat.view/graph-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-label :fn<chat-model;string>)

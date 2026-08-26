@@ -29,7 +29,7 @@ private final class LGChatYouTubePlaybackState {
 @MainActor
 private enum LGChatRichBlockExtension {
     static let identifier = "outliner-block-content"
-    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"
 
     static func register(
         in registry: LUIAppleExtensionRegistry,
@@ -44,6 +44,7 @@ private enum LGChatRichBlockExtension {
                     .init(name: "markup-json", kind: .string, isRequired: true),
                     .init(name: "youtube-target-url", kind: .string, isRequired: true),
                     .init(name: "is-asset", kind: .bool, isRequired: true),
+                    .init(name: "is-completed", kind: .bool, isRequired: true),
                     .init(name: "asset-type", kind: .string, isRequired: true),
                     .init(name: "local-path", kind: .string, isRequired: true),
                 ],
@@ -91,6 +92,8 @@ private struct LGChatRichBlock: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .strikethrough(boolProperty("is-completed"))
+        .foregroundStyle(boolProperty("is-completed") ? .secondary : .primary)
     }
 
     private func boolProperty(_ name: String) -> Bool {
