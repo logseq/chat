@@ -245,7 +245,9 @@
 
 (deftest encrypted-graph-unlock-is-owned-by-lg
   (let [encrypted (graph "encrypted" "Encrypted" true true)
-        projection
+        catalog-projection
+        (assoc (empty-core-projection) :graphs [encrypted])
+        locked-projection
         (assoc (empty-core-projection)
                :graphs [encrypted]
                :selected-graph-id (Some "encrypted")
@@ -255,11 +257,13 @@
         requested
         (model/update
          (model/update (model/initial)
-                       (model/ApplyCoreSnapshot projection))
+                       (model/ApplyCoreSnapshot catalog-projection))
          (model/RequestOpenGraph "encrypted"))
         opened
         (model/update
-         (model/update requested (model/DequeueEffect 1))
+         (model/update
+          (model/update requested (model/DequeueEffect 1))
+          (model/ApplyCoreSnapshot locked-projection))
          (model/ResolveEffect 1 true ""))
         blank (model/update opened model/SubmitGraphPassword)
         wrong
@@ -274,7 +278,7 @@
         (model/update
          (model/update failed (model/ChangeGraphPassword "correct"))
          model/SubmitGraphPassword)
-        unlocked-projection (assoc projection :is-graph-unlocked true)
+        unlocked-projection (assoc locked-projection :is-graph-unlocked true)
         succeeded
         (model/update
          (model/update
@@ -307,11 +311,37 @@
     (assert-equal "" (:graph-password cancelled)
                   "cancelling unlock clears the password")))
 
+(deftest encrypted-graph-snapshot-prompts-once-per-selection
+  (let [encrypted (graph "encrypted" "Encrypted" true true)
+        catalog (assoc (empty-core-projection) :graphs [encrypted])
+        locked
+        (assoc catalog
+               :selected-graph-id (Some "encrypted")
+               :graph-name (Some "Encrypted")
+               :is-graph-encrypted true
+               :is-graph-unlocked false)
+        selected
+        (model/update (model/initial) (model/ApplyCoreSnapshot locked))
+        cancelled (model/update selected model/CancelGraphUnlock)
+        refreshed (model/update cancelled (model/ApplyCoreSnapshot locked))
+        catalogued
+        (model/update refreshed (model/ApplyCoreSnapshot catalog))
+        selected-again
+        (model/update catalogued (model/ApplyCoreSnapshot locked))]
+    (is (:graph-password-open selected)
+        "cold-start restoration prompts for a locked selected graph")
+    (is (not (:graph-password-open refreshed))
+        "refreshing the same graph does not reopen a cancelled prompt")
+    (is (:graph-password-open selected-again)
+        "selecting the locked graph again presents a fresh prompt")))
+
 (deftest encrypted-graph-unlock-renders-the-secure-field-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         encrypted (graph "encrypted" "Encrypted" true true)
-        projection
+        catalog-projection
+        (assoc (empty-core-projection) :graphs [encrypted])
+        locked-projection
         (assoc (empty-core-projection)
                :graphs [encrypted]
                :selected-graph-id (Some "encrypted")
@@ -319,9 +349,10 @@
                :is-graph-encrypted true
                :is-graph-unlocked false)]
     (driver/start! application)
-    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyCoreSnapshot catalog-projection))
     (driver/send! application (model/RequestOpenGraph "encrypted"))
     (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application (model/ApplyCoreSnapshot locked-projection))
     (driver/send! application (model/ResolveEffect 1 true ""))
     (driver/flush! application)
     (let [root (driver/root-node application)

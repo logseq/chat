@@ -112,6 +112,8 @@ public struct LogseqChatRootView : View {
     private var localLaunchTask: Task<LocalLaunchResult, Never>?
     private var didApplyLocalLaunchResult = false
     private var sharedCaptureTask: Task<Void, Never>?
+    private var didStartLGApplication = false
+    private let graphLifecycle: LGChatGraphLifecycle
 
     private struct SettingsHostPayload: Encodable {
         let appearance: String
@@ -197,6 +199,7 @@ public struct LogseqChatRootView : View {
         self.store = store
         self.authentication = authentication
         self.syncCoordinator = syncCoordinator
+        self.graphLifecycle = graphLifecycle
         let lgRuntime = LGChatRuntime(
             native: LGChatCoreNativeCaller(),
             effectExecutor: effectExecutor
@@ -243,6 +246,28 @@ public struct LogseqChatRootView : View {
         } catch {
             logger.error("Could not start LG renderer: \(String(describing: error))")
         }
+    }
+
+    public func runLGApplication() async {
+        guard !didStartLGApplication else { return }
+        didStartLGApplication = true
+        startLGRenderer()
+        await waitForLocalLaunchLoad()
+        await authentication.restore()
+        await resumeLGApplication()
+        await store.runPendingSyncLoop()
+    }
+
+    public func resumeLGApplication() async {
+        processSharedCaptures()
+        guard authentication.state == .signedIn else { return }
+        if !(await graphLifecycle.connectStoredGraph()) {
+            logger.error("Could not restore the stored graph connection")
+        }
+    }
+
+    public func setNetworkAvailable(_ available: Bool) async {
+        await syncCoordinator.setNetworkAvailable(available)
     }
 
     private static func settingsHostPayload() throws -> String {

@@ -224,18 +224,13 @@
 (defn resolve-successful-effect [current effect message]
   (match effect
     (OpenGraphEffect _id graph-id)
-    (let [opened
-          (match (graph-by-id (:graphs current) graph-id)
-            (Some selected)
-            (assoc current
-                   :destination JournalsDestination
-                   :selected-graph-id (Some graph-id)
-                   :selected-graph (Some (:name selected)))
-            None (assoc current :destination JournalsDestination))]
-      (if (and (:is-graph-encrypted current)
-               (not (:is-graph-unlocked current)))
-        (assoc opened :graph-password-open true :graph-password "")
-        opened))
+    (match (graph-by-id (:graphs current) graph-id)
+      (Some selected)
+      (assoc current
+             :destination JournalsDestination
+             :selected-graph-id (Some graph-id)
+             :selected-graph (Some (:name selected)))
+      None (assoc current :destination JournalsDestination))
     (UnlockGraphEffect _id _password)
     (assoc current :graph-password-open false :graph-password "")
     (CreateGraphEffect _id _name _is-encrypted)
@@ -442,6 +437,9 @@
               (conj (:local-graph-ids current) graph-id))
             None (:local-graph-ids current))
           sidebar (:sidebar projection)
+          selected-graph-changed
+          (not (= (:selected-graph-id current)
+                  (:selected-graph-id projection)))
           updated
           (assoc current
                  :selected-graph (:graph-name projection)
@@ -471,12 +469,26 @@
                  (:outliner-autocomplete-candidates projection)
                  :outliner-selected-block-ids
                  (:outliner-selected-block-ids projection)
-                 :outliner-rows projected-rows)]
-      (if (= (:search-query projection) (:search-query current))
-        (assoc updated
-               :search-results (:search-results projection)
-               :search-loading false)
-        updated))
+                 :outliner-rows projected-rows)
+          searched
+          (if (= (:search-query projection) (:search-query current))
+            (assoc updated
+                   :search-results (:search-results projection)
+                   :search-loading false)
+            updated)]
+      (match (:selected-graph-id projection)
+        None
+        (assoc searched :graph-password-open false :graph-password "")
+        (Some _graph-id)
+        (if (:is-graph-unlocked projection)
+          (assoc searched :graph-password-open false :graph-password "")
+          (if (and selected-graph-changed
+                   (:is-graph-encrypted projection))
+            (assoc searched
+                   :graph-password-open true
+                   :graph-password ""
+                   :effect-error None)
+            searched))))
 
     (BeginOutlinerEdit uuid)
     (let [id (:next-effect-id current)]
@@ -719,7 +731,10 @@
                         (UnlockGraphEffect id (:graph-password current)))))
 
     CancelGraphUnlock
-    (assoc current :graph-password-open false :graph-password "")
+    (assoc current
+           :graph-password-open false
+           :graph-password ""
+           :effect-error None)
 
     OpenCreateGraph
     (assoc current :create-graph-open true)

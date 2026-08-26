@@ -45,6 +45,38 @@ final class LGChatGraphLifecycle {
         }
     }
 
+    func connectStoredGraph() async -> Bool {
+        let defaults = UserDefaults.standard
+        let baseURL = defaults.string(forKey: "logseq.baseURL")
+            ?? "http://127.0.0.1:8787"
+        let storedGraphID = defaults.string(forKey: "logseq.selectedGraphId") ?? ""
+        let graphID = storedGraphID.isEmpty ? nil : storedGraphID
+        guard let accessToken = try? await authentication.accessToken() else {
+            return false
+        }
+        await store.configureAndSelectGraph(
+            baseURL: baseURL,
+            token: accessToken,
+            selectedGraphID: graphID
+        )
+        guard store.lastError == nil else { return false }
+        guard let graphID else { return true }
+
+        let isEncrypted = store.snapshot.graphs?
+            .first(where: { $0.id == graphID })?.isEncrypted ?? false
+        if isEncrypted && store.snapshot.isGraphUnlocked != true {
+            return true
+        }
+        guard await store.bootstrapSelectedGraph(
+            graphID: graphID,
+            baseURL: baseURL,
+            accessToken: accessToken,
+            isEncrypted: isEncrypted
+        ) else { return false }
+        startSync(graphID: graphID, baseURL: baseURL, isEncrypted: isEncrypted)
+        return true
+    }
+
     private func openGraph(_ graphID: String) async -> LGChatEffectResolution {
         UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
         guard await store.selectGraphAndWait(graphID) else {
