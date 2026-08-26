@@ -13,11 +13,18 @@ type outline_row =
   ; is_collapsed : bool
   }
 
+type outliner_editing =
+  { uuid : string
+  ; title : string
+  ; caret_utf16_offset : int
+  }
+
 type t =
   { graph_name : string option
   ; search_query : string
   ; search_results : search_hit list
   ; outliner_rows : outline_row list
+  ; outliner_editing : outliner_editing option
   ; sync_connected : bool
   }
 
@@ -87,6 +94,28 @@ let outline_row = function
   | _ -> None
 ;;
 
+let outliner_editing = function
+  | `Assoc fields ->
+    (match
+       string_member "uuid" fields,
+       string_member "title" fields,
+       int_member "caretUTF16Offset" fields
+     with
+     | Some uuid, Some title, Some caret_utf16_offset ->
+       Some { uuid; title; caret_utf16_offset }
+     | _ -> None)
+  | _ -> None
+;;
+
+let current_outliner_editing result_fields =
+  match member "outlinerState" result_fields with
+  | Some (`Assoc state_fields) ->
+    (match member "editing" state_fields with
+     | Some value -> outliner_editing value
+     | None -> None)
+  | _ -> None
+;;
+
 let error_message fields =
   match member "error" fields with
   | Some (`Assoc error_fields) ->
@@ -115,6 +144,7 @@ let decode_response encoded =
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
            ; outliner_rows
+           ; outliner_editing = current_outliner_editing result_fields
            ; sync_connected = bool_member "syncConnected" result_fields
            }
        | _ -> Error "Core response did not contain a snapshot")

@@ -5,6 +5,7 @@
             [lui.wire :as wire]
             [logseq-chat.app :as chat]
             [logseq-chat.model :as model]
+            [logseq-chat.view :as view]
             [ocaml.Callback :as callback]))
 
 (def latest-patch (atom ""))
@@ -47,7 +48,30 @@
     (model/SearchNodesEffect id query)
     (str "{\"id\":" id
          ",\"kind\":\"search-nodes\",\"text\":"
-         (wire/quoted query) "}")))
+         (wire/quoted query) "}")
+    (model/TapOutlinerBlockEffect id uuid)
+    (str "{\"id\":" id
+         ",\"kind\":\"tap-outliner-block\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/ChangeOutlinerTextEffect id uuid title caret)
+    (str "{\"id\":" id
+         ",\"kind\":\"change-outliner-text\",\"text\":"
+         (wire/quoted title) ",\"uuid\":" (wire/quoted uuid)
+         ",\"value\":" caret "}")
+    (model/ReturnOutlinerEditorEffect id uuid title caret)
+    (str "{\"id\":" id
+         ",\"kind\":\"return-outliner-editor\",\"text\":"
+         (wire/quoted title) ",\"uuid\":" (wire/quoted uuid)
+         ",\"value\":" caret "}")
+    (model/BackspaceOutlinerEditorEffect id uuid title selection-length)
+    (str "{\"id\":" id
+         ",\"kind\":\"backspace-outliner-editor\",\"text\":"
+         (wire/quoted title) ",\"uuid\":" (wire/quoted uuid)
+         ",\"value\":" selection-length "}")
+    (model/MoveOutlinerCaretEffect id uuid caret)
+    (str "{\"id\":" id
+         ",\"kind\":\"move-outliner-caret\",\"text\":\"\",\"uuid\":"
+         (wire/quoted uuid) ",\"value\":" caret "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]
@@ -62,7 +86,9 @@
 
 (defn initialize [platform-code _host-code]
   (reset! latest-patch "")
-  (let [renderer (apple/create-wire send-patch!)
+  (let [renderer
+        (apple/create-wire-with-extensions
+         send-patch! (view/extension-registry))
         application
         (chat/create
          (apple/backend-for renderer
@@ -86,6 +112,24 @@
 (defn dismiss [node] (flush-event! (proto/Dismiss node)))
 (defn double-press [node] (flush-event! (proto/DoublePress node)))
 
+(defn outliner-editor-event [node name text value]
+  (let [values
+        (cond
+          (= name "text-change")
+          {"title" (proto/StringValue text)
+           "caret-utf16-offset" (proto/IntValue value)}
+          (= name "return")
+          {"title" (proto/StringValue text)
+           "caret-utf16-offset" (proto/IntValue value)}
+          (= name "backspace")
+          {"title" (proto/StringValue text)
+           "selection-length" (proto/IntValue value)}
+          (= name "caret-change")
+          {"caret-utf16-offset" (proto/IntValue value)}
+          :else {})]
+    (flush-event!
+     (proto/ExtensionEvent node "outliner-editor" name values))))
+
 (defn dispose []
   (reset! latest-patch "")
   (driver/dispose! (app))
@@ -104,6 +148,8 @@
 (callback/register "logseq_chat_lui_value_changed" value-changed)
 (callback/register "logseq_chat_lui_dismiss" dismiss)
 (callback/register "logseq_chat_lui_double_press" double-press)
+(callback/register
+ "logseq_chat_lui_outliner_editor_event" outliner-editor-event)
 (callback/register "logseq_chat_lui_dispose" dispose)
 (callback/register "logseq_chat_lui_root_node" root-node)
 (callback/register "logseq_chat_lui_take_effect" take-effect)

@@ -1,4 +1,5 @@
 import Foundation
+import LUIAppleBackend
 import Observation
 import LogseqChatModel
 
@@ -14,6 +15,7 @@ public protocol LGChatNativeCalling {
     func valueChanged(node: Int, value: Double) -> String
     func dismiss(node: Int) -> String
     func doublePress(node: Int) -> String
+    func outlinerEditorEvent(node: Int, name: String, text: String, value: Int) -> String
     func dispose() -> String
     func takeEffect() -> String
     func resolveEffect(id: Int, succeeded: Bool, message: String) -> String
@@ -24,6 +26,22 @@ public struct LGChatEffect: Decodable, Equatable, Sendable {
     public let id: Int
     public let kind: String
     public let text: String
+    public let uuid: String?
+    public let value: Int?
+
+    public init(
+        id: Int,
+        kind: String,
+        text: String,
+        uuid: String? = nil,
+        value: Int? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.uuid = uuid
+        self.value = value
+    }
 }
 
 public struct LGChatEffectResolution: Equatable, Sendable {
@@ -54,10 +72,10 @@ private struct LGCoreEffectResponse: Decodable {
 
 @MainActor
 public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
-    private let callCore: (LogseqChatRPCRequest) async -> String
+    private let callCore: @MainActor (LogseqChatRPCRequest) async -> String
 
     public init(
-        callCore: @escaping (LogseqChatRPCRequest) async -> String = { request in
+        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
             await LogseqChatCore.callAsync(request)
         }
     ) {
@@ -96,6 +114,63 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "searchNodes", payload: effect.text)
             )
+        case "tap-outliner-block":
+            do {
+                request = try Self.outlinerRequest(
+                    LogseqOutlinerEvent(type: "tapBlock", uuid: effect.text)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "change-outliner-text", "return-outliner-editor",
+             "backspace-outliner-editor", "move-outliner-caret":
+            guard let uuid = effect.uuid, let value = effect.value else {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "The LG outliner effect is missing its UUID or integer value"
+                )
+            }
+            let event: LogseqOutlinerEvent
+            switch effect.kind {
+            case "change-outliner-text":
+                event = LogseqOutlinerEvent(
+                    type: "textChanged",
+                    uuid: uuid,
+                    title: effect.text,
+                    caretUTF16Offset: value
+                )
+            case "return-outliner-editor":
+                event = LogseqOutlinerEvent(
+                    type: "returnPressed",
+                    uuid: uuid,
+                    title: effect.text,
+                    caretUTF16Offset: value
+                )
+            case "backspace-outliner-editor":
+                event = LogseqOutlinerEvent(
+                    type: "backspacePressed",
+                    uuid: uuid,
+                    title: effect.text,
+                    selectionLength: value
+                )
+            default:
+                event = LogseqOutlinerEvent(
+                    type: "caretMoved",
+                    uuid: uuid,
+                    caretUTF16Offset: value
+                )
+            }
+            do {
+                request = try Self.outlinerRequest(event)
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
         default:
             return LGChatEffectResolution(
                 succeeded: false,
@@ -123,6 +198,23 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             )
         }
     }
+
+    private static func outlinerRequest(
+        _ event: LogseqOutlinerEvent
+    ) throws -> LogseqChatRPCRequest {
+        let payloadData = try JSONEncoder().encode(event)
+        guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
+            throw LGChatEffectEncodingError.invalidUTF8
+        }
+        return LogseqChatRPCRequest(
+            method: "dispatch",
+            params: LogseqChatRPCParams(action: "outlinerEvent", payload: payloadJSON)
+        )
+    }
+}
+
+private enum LGChatEffectEncodingError: Error {
+    case invalidUTF8
 }
 
 @MainActor
@@ -153,6 +245,14 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
     public func dismiss(node: Int) -> String { core.logseq_chat_lui_dismiss(node) }
     public func doublePress(node: Int) -> String {
         core.logseq_chat_lui_double_press(node)
+    }
+    public func outlinerEditorEvent(
+        node: Int,
+        name: String,
+        text: String,
+        value: Int
+    ) -> String {
+        core.logseq_chat_lui_outliner_editor_event(node, name, text, value)
     }
     public func dispose() -> String { core.logseq_chat_lui_dispose() }
     public func takeEffect() -> String { core.logseq_chat_lui_take_effect() }
@@ -249,8 +349,22 @@ public final class LGChatRuntime {
         case .doublePress:
             patch = native.doublePress(node: event.nodeID)
         case .extension:
-            lastError = "LG extension event routing is not configured"
-            return
+            guard event.extensionIdentifier == LGChatOutlinerEditorExtension.identifier,
+                  let name = event.extensionName,
+                  let values = event.extensionValues else {
+                lastError = "Invalid LG extension event"
+                return
+            }
+            let text = Self.extensionString(values, name: "title") ?? ""
+            let value = Self.extensionInt(values, name: "caret-utf16-offset")
+                ?? Self.extensionInt(values, name: "selection-length")
+                ?? 0
+            patch = native.outlinerEditorEvent(
+                node: event.nodeID,
+                name: name,
+                text: text,
+                value: value
+            )
         }
 
         do {
@@ -259,6 +373,24 @@ public final class LGChatRuntime {
         } catch {
             lastError = String(describing: error)
         }
+    }
+
+    private static func extensionString(
+        _ values: [String: LUIExtensionValue],
+        name: String
+    ) -> String? {
+        guard let rawValue = values[name],
+              case let .string(value) = rawValue else { return nil }
+        return value
+    }
+
+    private static func extensionInt(
+        _ values: [String: LUIExtensionValue],
+        name: String
+    ) -> Int? {
+        guard let rawValue = values[name],
+              case let .int(value) = rawValue else { return nil }
+        return value
     }
 
     private func scheduleEffectDrain() {

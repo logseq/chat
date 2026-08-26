@@ -1,10 +1,112 @@
 (ns logseq-chat.view
   (:require [clojure.string :as string]
             [lui.elements :as elements]
+            [lui.extension :as ext]
             [lui.macros :refer [defui reactive event]]
-            [lui.protocol :refer [TextChanged]]
+            [lui.protocol :as proto :refer [TextChanged]]
+            [lui.ui :as ui]
             [logseq-chat.model :as model]
             [signal.core :as signal]))
+
+(defn outliner-editor-schema []
+  (ext/component
+   "outliner-editor"
+   [(proto/profile proto/MacOS proto/SwiftUIHost)
+    (proto/profile proto/IOS proto/SwiftUIHost)
+    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+   false []
+   [(ext/property "block-id" ext/StringScalar true None)
+    (ext/property "title" ext/StringScalar true None)
+    (ext/property "caret-utf16-offset" ext/IntScalar true None)]
+   [(ext/event
+     "text-change"
+     [(ext/event-field "title" ext/StringScalar true)
+      (ext/event-field "caret-utf16-offset" ext/IntScalar true)])
+    (ext/event
+     "return"
+     [(ext/event-field "title" ext/StringScalar true)
+      (ext/event-field "caret-utf16-offset" ext/IntScalar true)])
+    (ext/event
+     "backspace"
+     [(ext/event-field "title" ext/StringScalar true)
+      (ext/event-field "selection-length" ext/IntScalar true)])
+    (ext/event
+     "caret-change"
+     [(ext/event-field "caret-utf16-offset" ext/IntScalar true)])]))
+
+(defn extension-registry []
+  (let [registry (ext/registry)]
+    (ext/register-component! registry (outliner-editor-schema))
+    registry))
+
+(defn string-wire-value [value]
+  (proto/StringValue value))
+
+(defn int-wire-value [value]
+  (proto/IntValue value))
+
+(defn extension-string [values name]
+  (match (clojure.core/get values name)
+    (Some (proto/StringValue value)) value
+    _ ""))
+
+(defn extension-int [values name]
+  (match (clojure.core/get values name)
+    (Some (proto/IntValue value)) value
+    _ 0))
+
+(defn handle-outliner-editor-event [input-event block-id-source send]
+  (match input-event
+    (proto/ExtensionEvent _node _identifier name values)
+    (let [uuid (signal/sample block-id-source)]
+      (cond
+        (= name "text-change")
+        (send
+         (model/ChangeOutlinerText
+          uuid
+          (extension-string values "title")
+          (extension-int values "caret-utf16-offset")))
+
+        (= name "return")
+        (send
+         (model/ReturnOutlinerEditor
+          uuid
+          (extension-string values "title")
+          (extension-int values "caret-utf16-offset")))
+
+        (= name "backspace")
+        (send
+         (model/BackspaceOutlinerEditor
+          uuid
+          (extension-string values "title")
+          (extension-int values "selection-length")))
+
+        (= name "caret-change")
+        (send
+         (model/MoveOutlinerCaret
+          uuid
+          (extension-int values "caret-utf16-offset")))
+
+        :else true))
+    _ true))
+
+(defn outliner-editor-view
+  [ui-context block-id-source title-source caret-source send]
+  (let [node (ui/extension! ui-context "outliner-editor")
+        block-id-value (reactive string-wire-value block-id-source)
+        title-value (reactive string-wire-value title-source)
+        caret-value (reactive int-wire-value caret-source)]
+    (ui/extension-property-signal!
+     ui-context node "block-id" block-id-value)
+    (ui/extension-property-signal!
+     ui-context node "title" title-value)
+    (ui/extension-property-signal!
+     ui-context node "caret-utf16-offset" caret-value)
+    (ui/on-event!
+     ui-context node
+     (fn [input-event]
+       (handle-outliner-editor-event input-event block-id-source send)))
+    node))
 
 (defn graph-label [current]
   (match (:selected-graph current)
@@ -53,16 +155,48 @@
   (let [_depth (:depth row)]
     (:title row)))
 
-(defn outliner-row [ui-context row-source send]
-  (let [row (signal/sample row-source)]
+(defn outliner-row-uuid [row]
+  (let [_depth (:depth row)]
+    (:uuid row)))
+
+(defn row-editing? [current row]
+  (match (:outliner-editing current)
+    (Some editing) (= (:uuid editing) (:uuid row))
+    None false))
+
+(defn row-not-editing? [current row]
+  (not (row-editing? current row)))
+
+(defn editing-title [current]
+  (match (:outliner-editing current)
+    (Some editing) (:title editing)
+    None ""))
+
+(defn editing-caret [current]
+  (match (:outliner-editing current)
+    (Some editing) (:caret-utf16-offset editing)
+    None 0))
+
+(defn outliner-row [ui-context model-source row-source send]
+  (let [row (signal/sample row-source)
+        block-id-source (reactive outliner-row-uuid row-source)
+        editing-title-source (reactive editing-title model-source)
+        editing-caret-source (reactive editing-caret model-source)
+        editing-source (reactive row-editing? model-source row-source)
+        not-editing-source
+        (reactive row-not-editing? model-source row-source)]
     (elements/element
      ui-context nil
      [:list-item
       {:accessibility-identifier (outliner-row-identifier row)
        :on-press
        (event [current-row row-source]
-         (send (model/RequestAppNode (:uuid current-row))))}
-      [:text {:value (reactive outliner-row-title row-source)}]])))
+         (send (model/BeginOutlinerEdit (:uuid current-row))))}
+      [:if {:test editing-source}
+       [outliner-editor-view block-id-source
+        editing-title-source editing-caret-source send]]
+      [:if {:test not-editing-source}
+       [:text {:value (reactive outliner-row-title row-source)}]]])))
 
 (defui composer-view [model-source send]
   [:column
@@ -141,5 +275,5 @@
       :key :uuid
       :compare compare
       :as row-source}
-     [outliner-row row-source send]]]
+     [outliner-row model-source row-source send]]]
    (composer-view model-source send)])

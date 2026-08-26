@@ -58,10 +58,22 @@ public final class LGChatRenderer {
     let backend: LUIAppleBackend
 
     public init() {
-        let backend = LUIAppleBackend()
+        let backend = Self.makeBackend()
         self.backend = backend
         backend.onEvent = { [weak self] event in
             self?.receive(Self.map(event))
+        }
+    }
+
+    private static func makeBackend() -> LUIAppleBackend {
+        do {
+            return try LUIAppleBackend(
+                extensionRegistry: LGChatOutlinerEditorExtension.makeRegistry()
+            )
+        } catch {
+            preconditionFailure(
+                "Invalid LG chat extension registry: \(String(describing: error))"
+            )
         }
     }
 

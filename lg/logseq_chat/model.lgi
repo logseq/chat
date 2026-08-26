@@ -22,9 +22,19 @@
   (has-children :bool)
   (is-collapsed :bool))
 
+(type-record outliner-editing
+  (uuid :string)
+  (title :string)
+  (caret-utf16-offset :int))
+
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
-  (SearchNodesEffect :int :string))
+  (SearchNodesEffect :int :string)
+  (TapOutlinerBlockEffect :int :string)
+  (ChangeOutlinerTextEffect :int :string :string :int)
+  (ReturnOutlinerEditorEffect :int :string :string :int)
+  (BackspaceOutlinerEditorEffect :int :string :string :int)
+  (MoveOutlinerCaretEffect :int :string :int))
 
 (type-record chat-model
   (selected-graph :option<string>)
@@ -34,6 +44,7 @@
   (search-results :vector<search-hit>)
   (search-loading :bool)
   (outliner-rows :vector<outline-row>)
+  (outliner-editing :option<outliner-editing>)
   (composer-expanded :bool)
   (composer-draft :string)
   (pending-effects :vector<chat-effect>)
@@ -55,7 +66,12 @@
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
   (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>
-                     :vector<outline-row>)
+                     :option<outliner-editing> :vector<outline-row>)
+  (BeginOutlinerEdit :string)
+  (ChangeOutlinerText :string :string :int)
+  (ReturnOutlinerEditor :string :string :int)
+  (BackspaceOutlinerEditor :string :string :int)
+  (MoveOutlinerCaret :string :int)
   (CloseSearch)
   (ExpandComposer)
   (ChangeComposerDraft :string)
@@ -82,6 +98,10 @@
 (signature logseq-chat.model/pop-route
  :fn<vector<navigation-route>;vector<navigation-route>>)
 (signature logseq-chat.model/effect-id :fn<chat-effect;int>)
+(signature logseq-chat.model/enqueue-effect
+ :fn<chat-model;chat-effect;chat-model>)
+(signature logseq-chat.model/update-editing
+ :fn<chat-model;string;string;int;chat-model>)
 (signature logseq-chat.model/remove-int :fn<vector<int>;int;vector<int>>)
 (signature logseq-chat.model/contains-int? :fn<vector<int>;int;bool>)
 (signature logseq-chat.model/remove-effect

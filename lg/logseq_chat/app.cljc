@@ -4,7 +4,9 @@
             [logseq-chat.view :as view]))
 
 (defn create [backend]
-  (app/create backend (model/initial) model/update view/chat-view))
+  (app/create-with-extensions
+   backend (view/extension-registry)
+   (model/initial) model/update view/chat-view))
 
 (defn model [application]
   (app/model application))

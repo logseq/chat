@@ -10,6 +10,7 @@
     (search-results [])
     (search-loading false)
     (outliner-rows [])
+    (outliner-editing None)
     (composer-expanded false)
     (composer-draft "")
     (pending-effects [])
@@ -45,7 +46,30 @@
 (defn effect-id [effect]
   (match effect
     (SendCaptureEffect id _text) id
-    (SearchNodesEffect id _query) id))
+    (SearchNodesEffect id _query) id
+    (TapOutlinerBlockEffect id _uuid) id
+    (ChangeOutlinerTextEffect id _uuid _title _caret) id
+    (ReturnOutlinerEditorEffect id _uuid _title _caret) id
+    (BackspaceOutlinerEditorEffect id _uuid _title _selection) id
+    (MoveOutlinerCaretEffect id _uuid _caret) id))
+
+(defn enqueue-effect [current effect]
+  (assoc current
+         :pending-effects (conj (:pending-effects current) effect)
+         :next-effect-id (inc (:next-effect-id current))
+         :effect-error None))
+
+(defn update-editing [current uuid title caret]
+  (match (:outliner-editing current)
+    (Some editing)
+    (if (= (:uuid editing) uuid)
+      (assoc current :outliner-editing
+             (Some (record outliner-editing
+                     (uuid uuid)
+                     (title title)
+                     (caret-utf16-offset caret))))
+      current)
+    None current))
 
 (defn remove-search-effects [effects]
   (filterv
@@ -123,17 +147,50 @@
              :search-loading false)
       current)
 
-    (ApplyCoreSnapshot graph-name sync-connected query results outliner-rows)
+    (ApplyCoreSnapshot graph-name sync-connected query results
+                       outliner-editing outliner-rows)
     (let [updated
           (assoc current
                  :selected-graph graph-name
                  :sync-state (if sync-connected SyncedState OfflineState)
+                 :outliner-editing outliner-editing
                  :outliner-rows outliner-rows)]
       (if (= query (:search-query current))
         (assoc updated
                :search-results results
                :search-loading false)
         updated))
+
+    (BeginOutlinerEdit uuid)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (TapOutlinerBlockEffect id uuid)))
+
+    (ChangeOutlinerText uuid title caret)
+    (let [updated (update-editing current uuid title caret)
+          id (:next-effect-id updated)]
+      (enqueue-effect updated
+                      (ChangeOutlinerTextEffect id uuid title caret)))
+
+    (ReturnOutlinerEditor uuid title caret)
+    (let [updated (update-editing current uuid title caret)
+          id (:next-effect-id updated)]
+      (enqueue-effect updated
+                      (ReturnOutlinerEditorEffect id uuid title caret)))
+
+    (BackspaceOutlinerEditor uuid title selection-length)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect
+       current
+       (BackspaceOutlinerEditorEffect id uuid title selection-length)))
+
+    (MoveOutlinerCaret uuid caret)
+    (let [title
+          (match (:outliner-editing current)
+            (Some editing) (:title editing)
+            None "")
+          updated (update-editing current uuid title caret)
+          id (:next-effect-id updated)]
+      (enqueue-effect updated (MoveOutlinerCaretEffect id uuid caret)))
 
     CloseSearch
     (assoc current

@@ -1,6 +1,7 @@
 import Testing
 @testable import LogseqChat
 import LogseqChatModel
+import LUIAppleBackend
 
 @MainActor
 @Suite("LG chat renderer")
@@ -62,6 +63,36 @@ struct LGChatRendererTests {
         #expect(runtime.renderer.rootID == 1)
     }
 
+    @Test("routes native editor extension events through LG")
+    func routesOutlinerEditorExtensionEvents() throws {
+        let native = LGChatNativeRuntimeProbe()
+        let runtime = LGChatRuntime(native: native)
+        try runtime.start(platformCode: 2)
+
+        runtime.renderer.receiveForTesting(
+            LGChatRendererEvent(
+                kind: .extension,
+                nodeID: 17,
+                extensionIdentifier: "outliner-editor",
+                extensionName: "text-change",
+                extensionValues: [
+                    "title": LUIExtensionValue.string("Updated"),
+                    "caret-utf16-offset": LUIExtensionValue.int(7),
+                ]
+            )
+        )
+
+        #expect(native.outlinerEditorEvents == [
+            LGChatOutlinerEditorEventProbe(
+                node: 17,
+                name: "text-change",
+                text: "Updated",
+                value: 7
+            )
+        ])
+        #expect(runtime.lastError == nil)
+    }
+
     @Test("executes and resolves typed LG effects")
     func executesTypedEffects() async {
         let native = LGChatNativeRuntimeProbe()
@@ -116,12 +147,38 @@ struct LGChatRendererTests {
         #expect(request.params.payload == "project alpha")
         #expect(resolution.succeeded)
     }
+
+    @Test("outliner tap effects dispatch the existing core reducer action")
+    func outlinerTapEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 10, kind: "tap-outliner-block", text: "block-a")
+        )
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("tapBlock") == true)
+        #expect(request.params.payload?.contains("block-a") == true)
+        #expect(resolution.succeeded)
+    }
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {
     let id: Int
     let succeeded: Bool
     let message: String
+}
+
+private struct LGChatOutlinerEditorEventProbe: Equatable {
+    let node: Int
+    let name: String
+    let text: String
+    let value: Int
 }
 
 @MainActor
@@ -141,6 +198,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var effects: [String] = []
     var resolutions: [LGChatEffectResolutionProbe] = []
     var appliedSnapshots: [String] = []
+    var outlinerEditorEvents: [LGChatOutlinerEditorEventProbe] = []
 
     func initialize(platformCode: Int, hostCode: Int) -> String {
         startedPlatforms.append(platformCode)
@@ -170,6 +228,15 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     func valueChanged(node: Int, value: Double) -> String { "" }
     func dismiss(node: Int) -> String { "" }
     func doublePress(node: Int) -> String { "" }
+    func outlinerEditorEvent(node: Int, name: String, text: String, value: Int) -> String {
+        outlinerEditorEvents.append(LGChatOutlinerEditorEventProbe(
+            node: node,
+            name: name,
+            text: text,
+            value: value
+        ))
+        return ""
+    }
     func dispose() -> String { "" }
     func takeEffect() -> String {
         effects.isEmpty ? "" : effects.removeFirst()

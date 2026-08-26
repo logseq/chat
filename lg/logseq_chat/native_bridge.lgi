@@ -20,5 +20,7 @@
 (signature logseq-chat.native-bridge/value-changed :fn<int;float;string>)
 (signature logseq-chat.native-bridge/dismiss :fn<int;string>)
 (signature logseq-chat.native-bridge/double-press :fn<int;string>)
+(signature logseq-chat.native-bridge/outliner-editor-event
+ :fn<int;string;string;int;string>)
 (signature logseq-chat.native-bridge/dispose :fn<string>)
 (signature logseq-chat.native-bridge/root-node :fn<int>)

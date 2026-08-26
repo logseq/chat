@@ -2,10 +2,12 @@
   (:require [clojure.test :refer [deftest is testing]]
             [lui.app :as driver]
             [lui.backend.apple :as apple]
+            [lui.extension :as ext]
             [lui.protocol :as proto :refer [StringValue]]
             [logseq-chat.app :as chat]
             [logseq-chat.native-bridge :as bridge]
-            [logseq-chat.model :as model]))
+            [logseq-chat.model :as model]
+            [logseq-chat.view :as view]))
 
 (defmacro assert-equal [expected actual message]
   `(is (= ~expected ~actual) ~message))
@@ -14,6 +16,12 @@
   (match (apple/property renderer node property)
     (Some (StringValue value)) value
     _ "<missing>"))
+
+(deftest outliner-editor-extension-contract-is-pinned
+  (assert-equal
+   "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+   (ext/fingerprint (view/outliner-editor-schema))
+   "the native editor registry must match the LG wire schema"))
 
 (deftest initial-shell-renders-offline-without-a-selected-graph
   (let [renderer (apple/create)
@@ -329,17 +337,22 @@
                     "pressing a result requests navigation in LG state"))))
 
 (deftest core-snapshot-renders-keyed-outliner-rows
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
               (uuid "block-a")
               (title "Project note")
               (depth 2)
               (has-children true)
-              (is-collapsed false))]
+              (is-collapsed false))
+        editing (record model/outliner-editing
+                  (uuid "block-a")
+                  (title "Project note")
+                  (caret-utf16-offset 4))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] [row]))
+                  (model/ApplyCoreSnapshot None false "" []
+                                           (Some editing) [row]))
     (driver/flush! application)
     (let [root (driver/root-node application)
           outliner (nth (apple/children renderer root) 4)
@@ -347,7 +360,31 @@
       (assert-equal "outliner.block.block-a"
                     (property-string renderer rendered-row
                                      proto/AccessibilityIdentifier)
-                    "the LG row keeps main's stable block identifier"))))
+                    "the LG row keeps main's stable block identifier")
+      (let [editor (nth (apple/children renderer rendered-row) 0)]
+        (assert-equal (Some (apple/AppleExtension "outliner-editor"))
+                      (apple/node renderer editor)
+                      "editing uses the registered native editor service")
+        (driver/dispatch-event!
+         application
+         (proto/ExtensionEvent
+          editor "outliner-editor" "text-change"
+          {"title" (proto/StringValue "Updated")
+           "caret-utf16-offset" (proto/IntValue 7)}))
+        (driver/flush! application)
+        (assert-equal
+         [(model/ChangeOutlinerTextEffect 1 "block-a" "Updated" 7)]
+         (:pending-effects (chat/model application))
+         "native editor events return to the typed LG reducer")))))
+
+(deftest outliner-row-press-publishes-a-typed-core-effect
+  (let [current (model/initial)
+        editing (model/update current (model/BeginOutlinerEdit "block-a"))]
+    (assert-equal [(model/TapOutlinerBlockEffect 1 "block-a")]
+                  (:pending-effects editing)
+                  "tapBlock crosses the LG effect boundary")
+    (assert-equal 2 (:next-effect-id editing)
+                  "outliner effects share the monotonic effect sequence")))
 
 (deftest native-bridge-returns-initial-and-disposal-patch-batches
   (let [initial-patch (bridge/initialize 2 1)]

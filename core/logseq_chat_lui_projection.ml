@@ -18,6 +18,13 @@ let outline_row (row : Snapshot.outline_row) : LG.outline_row =
   }
 ;;
 
+let outliner_editing (editing : Snapshot.outliner_editing) : LG.outliner_editing =
+  { uuid = editing.uuid
+  ; title = editing.title
+  ; caret_utf16_offset = editing.caret_utf16_offset
+  }
+;;
+
 let apply_response encoded =
   let action =
     match Snapshot.decode_response encoded with
@@ -27,6 +34,7 @@ let apply_response encoded =
         , snapshot.sync_connected
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)
+        , Option.map outliner_editing snapshot.outliner_editing
         , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows) )
     | Error message -> LG.SyncFailed message
   in

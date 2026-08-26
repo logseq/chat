@@ -824,7 +824,7 @@ public struct LogseqChatRPCResponse: Decodable {
     public let error: LogseqChatCoreError?
 }
 
-public struct LogseqChatRPCParams: Encodable {
+public struct LogseqChatRPCParams: Encodable, Sendable {
     public let action: String?
     public let payload: String?
     public let path: String?
@@ -836,7 +836,7 @@ public struct LogseqChatRPCParams: Encodable {
     }
 }
 
-public struct LogseqChatRPCRequest: Encodable {
+public struct LogseqChatRPCRequest: Encodable, Sendable {
     public let apiVersion: Int
     public let method: String
     public let params: LogseqChatRPCParams
