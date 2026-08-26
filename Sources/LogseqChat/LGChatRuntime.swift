@@ -99,6 +99,11 @@ private struct LGReviewFlashcardPayload: Encodable {
     let operationId: String
 }
 
+private struct LGCreateGraphPayload: Encodable {
+    let name: String
+    let isEncrypted: Bool
+}
+
 private struct LGCoreEffectResponse: Decodable {
     let ok: Bool
     let error: LogseqChatCoreError?
@@ -124,12 +129,22 @@ private struct LGPlatformCommandResponse: Decodable {
 @MainActor
 public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
     private let callCore: @MainActor (LogseqChatRPCRequest) async -> String
+    private let deleteLocalGraph: (@MainActor (String) async -> String)?
 
     public init(
         callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
             await LogseqChatCore.callAsync(request)
         }
     ) {
+        self.deleteLocalGraph = nil
+        self.callCore = callCore
+    }
+
+    public init(
+        deleteLocalGraph: @escaping @MainActor (String) async -> String,
+        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String
+    ) {
+        self.deleteLocalGraph = deleteLocalGraph
         self.callCore = callCore
     }
 
@@ -209,6 +224,46 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                     payload: String(Int64(Date().timeIntervalSince1970 * 1_000))
                 )
             )
+        case "refresh-graphs":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "refresh")
+            )
+        case "open-graph":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "selectGraph", payload: effect.text)
+            )
+        case "create-graph":
+            do {
+                let data = try JSONEncoder().encode(LGCreateGraphPayload(
+                    name: effect.text,
+                    isEncrypted: effect.value == 1
+                ))
+                guard let payload = String(data: data, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the graph creation payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "createSyncGraph", payload: payload)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "delete-local-graph":
+            guard let deleteLocalGraph else {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "Local graph deletion is unavailable"
+                )
+            }
+            return Self.resolution(from: await deleteLocalGraph(effect.text))
         case "review-flashcard":
             guard let uuid = effect.uuid else {
                 return LGChatEffectResolution(
@@ -345,8 +400,12 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             )
         }
 
+        let responseJSON = await callCore(request)
+        return Self.resolution(from: responseJSON)
+    }
+
+    private static func resolution(from responseJSON: String) -> LGChatEffectResolution {
         do {
-            let responseJSON = await callCore(request)
             let response = try JSONDecoder().decode(
                 LGCoreEffectResponse.self,
                 from: Data(responseJSON.utf8)

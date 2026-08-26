@@ -342,6 +342,52 @@ struct LGChatRendererTests {
         #expect(callCount == 0)
     }
 
+    @Test("graph catalog effects reuse the existing core graph lifecycle")
+    func graphEffectsUseCoreLifecycle() async throws {
+        var capturedRequests: [LogseqChatRPCRequest] = []
+        var deletedGraphID: String?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequests.append(request)
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let refresh = await executor.execute(
+            LGChatEffect(id: 27, kind: "refresh-graphs", text: "")
+        )
+        let open = await executor.execute(
+            LGChatEffect(id: 28, kind: "open-graph", text: "graph-a")
+        )
+        let create = await executor.execute(
+            LGChatEffect(id: 29, kind: "create-graph", text: "New graph", value: 1)
+        )
+        let platformExecutor = LGChatCoreEffectExecutor(
+            deleteLocalGraph: { graphID in
+                deletedGraphID = graphID
+                return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+            },
+            callCore: { _ in
+                return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+            }
+        )
+        let delete = await platformExecutor.execute(
+            LGChatEffect(id: 30, kind: "delete-local-graph", text: "graph-a")
+        )
+
+        #expect(capturedRequests.map(\.params.action) == [
+            "refresh", "selectGraph", "createSyncGraph",
+        ])
+        #expect(capturedRequests[1].params.payload == "graph-a")
+        let createPayload = try #require(capturedRequests[2].params.payload)
+        #expect(createPayload.contains("New graph"))
+        #expect(createPayload.contains("isEncrypted"))
+        #expect(createPayload.contains("true"))
+        #expect(deletedGraphID == "graph-a")
+        #expect(refresh.succeeded)
+        #expect(open.succeeded)
+        #expect(create.succeeded)
+        #expect(delete.succeeded)
+    }
+
     @Test("outliner selection effects reuse the existing core reducer")
     func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []

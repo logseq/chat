@@ -18,6 +18,12 @@
   (uuid :string)
   (title :string))
 
+(type-record graph
+  (id :string)
+  (name :string)
+  (is-encrypted :bool)
+  (is-ready :bool))
+
 (type-record flashcard-answer-row
   (uuid :string)
   (index :int)
@@ -93,6 +99,10 @@
 
 (type-record core-projection
   (graph-name :option<string>)
+  (selected-graph-id :option<string>)
+  (graphs :vector<graph>)
+  (is-graph-encrypted :bool)
+  (is-graph-unlocked :bool)
   (sidebar :sidebar-projection)
   (flashcards :vector<flashcard>)
   (sync-connected :bool)
@@ -129,10 +139,19 @@
   (SelectSidebarPageEffect :int :string)
   (ClearSelectedPageEffect :int)
   (LoadFlashcardsEffect :int)
-  (ReviewFlashcardEffect :int :string :string))
+  (ReviewFlashcardEffect :int :string :string)
+  (RefreshGraphsEffect :int)
+  (OpenGraphEffect :int :string)
+  (CreateGraphEffect :int :string :bool)
+  (DeleteLocalGraphEffect :int :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
+  (selected-graph-id :option<string>)
+  (graphs :vector<graph>)
+  (local-graph-ids :vector<string>)
+  (is-graph-encrypted :bool)
+  (is-graph-unlocked :bool)
   (sync-state :sync-state)
   (destination :primary-destination)
   (sidebar-open :bool)
@@ -146,6 +165,10 @@
   (flashcards :vector<flashcard>)
   (flashcard-cloze-revealed :bool)
   (flashcard-answer-revealed :bool)
+  (create-graph-open :bool)
+  (new-graph-name :string)
+  (new-graph-encrypted :bool)
+  (pending-graph-deletion :option<graph>)
   (search-open :bool)
   (search-query :string)
   (search-results :vector<search-hit>)
@@ -211,6 +234,17 @@
   (ShowJournals)
   (ShowFlashcards)
   (ShowGraphs)
+  (ApplyLocalGraphIds :vector<string>)
+  (RefreshGraphs)
+  (RequestOpenGraph :string)
+  (OpenCreateGraph)
+  (DismissCreateGraph)
+  (ChangeNewGraphName :string)
+  (ToggleNewGraphEncrypted :bool)
+  (SubmitCreateGraph)
+  (RequestDeleteGraph :string)
+  (CancelDeleteGraph)
+  (ConfirmDeleteGraph)
   (RevealFlashcardCloze)
   (RevealFlashcardAnswer)
   (ReviewFlashcard :string))
@@ -229,7 +263,16 @@
  :fn<vector<chat-effect>;int;option<chat-effect>>)
 (signature logseq-chat.model/first-flashcard-id
  :fn<vector<flashcard>;option<string>>)
+(signature logseq-chat.model/graph-by-id
+ :fn<vector<graph>;string;option<graph>>)
+(signature logseq-chat.model/string-vector-contains?
+ :fn<vector<string>;string;bool>)
+(signature logseq-chat.model/graph-local? :fn<chat-model;string;bool>)
+(signature logseq-chat.model/remove-string
+ :fn<vector<string>;string;vector<string>>)
 (signature logseq-chat.model/rollback-navigation-effect
+ :fn<chat-model;chat-effect;chat-model>)
+(signature logseq-chat.model/resolve-successful-effect
  :fn<chat-model;chat-effect;chat-model>)
 (signature logseq-chat.model/enqueue-close-search-effects
  :fn<chat-model;vector<navigation-route>;chat-model>)

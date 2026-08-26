@@ -38,6 +38,21 @@
             child
             (recur (inc index))))))))
 
+(defn descendant-with-identifier [renderer parent identifier]
+  (let [direct (child-with-identifier renderer parent identifier)]
+    (if (not (= direct -1))
+      direct
+      (let [children (apple/children renderer parent)]
+        (loop [index 0]
+          (if (= index (count children))
+            -1
+            (let [found
+                  (descendant-with-identifier renderer (nth children index)
+                                              identifier)]
+              (if (= found -1)
+                (recur (inc index))
+                found))))))))
+
 (defn main-root [renderer application]
   (nth (apple/children renderer (driver/root-node application)) 0))
 
@@ -51,27 +66,49 @@
     (related-rows [])
     (linked-reference-rows [])))
 
+(defn empty-core-projection []
+  (record model/core-projection
+    (graph-name None)
+    (selected-graph-id None)
+    (graphs [])
+    (is-graph-encrypted false)
+    (is-graph-unlocked false)
+    (sidebar (empty-sidebar-projection))
+    (flashcards [])
+    (sync-connected false)
+    (search-query "")
+    (search-results [])
+    (node-routes [])
+    (outliner-editing None)
+    (outliner-autocomplete None)
+    (outliner-autocomplete-candidates [])
+    (outliner-selected-block-ids [])
+    (outliner-rows [])
+    (is-outliner-patch false)
+    (outliner-row-splices [])))
+
 (defn apply-core-snapshot
   [graph-name sidebar flashcards sync-connected search-query search-results
    node-routes outliner-editing outliner-autocomplete
    outliner-autocomplete-candidates outliner-selected-block-ids outliner-rows
    is-outliner-patch outliner-row-splices]
   (model/ApplyCoreSnapshot
-   (record model/core-projection
-     (graph-name graph-name)
-     (sidebar sidebar)
-     (flashcards flashcards)
-     (sync-connected sync-connected)
-     (search-query search-query)
-     (search-results search-results)
-     (node-routes node-routes)
-     (outliner-editing outliner-editing)
-     (outliner-autocomplete outliner-autocomplete)
-     (outliner-autocomplete-candidates outliner-autocomplete-candidates)
-     (outliner-selected-block-ids outliner-selected-block-ids)
-     (outliner-rows outliner-rows)
-     (is-outliner-patch is-outliner-patch)
-     (outliner-row-splices outliner-row-splices))))
+   (assoc
+    (empty-core-projection)
+    :graph-name graph-name
+    :sidebar sidebar
+    :flashcards flashcards
+    :sync-connected sync-connected
+    :search-query search-query
+    :search-results search-results
+    :node-routes node-routes
+    :outliner-editing outliner-editing
+    :outliner-autocomplete outliner-autocomplete
+    :outliner-autocomplete-candidates outliner-autocomplete-candidates
+    :outliner-selected-block-ids outliner-selected-block-ids
+    :outliner-rows outliner-rows
+    :is-outliner-patch is-outliner-patch
+    :outliner-row-splices outliner-row-splices)))
 
 (defn flashcard-answer [uuid index text]
   (record model/flashcard-answer-row
@@ -87,6 +124,13 @@
     (question-revealed question-revealed)
     (answer-rows answer-rows)
     (has-cloze has-cloze)))
+
+(defn graph [id name encrypted ready]
+  (record model/graph
+    (id id)
+    (name name)
+    (is-encrypted encrypted)
+    (is-ready ready)))
 
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
@@ -438,6 +482,98 @@
       (is (not (property-bool renderer root proto/Selected))
           "selecting flashcards closes the controlled drawer"))))
 
+(deftest graph-catalog-and-lifecycle-state-are-owned-by-lg
+  (let [local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" true true)
+        preparing (graph "preparing" "Preparing graph" false false)
+        projection
+        (assoc (empty-core-projection)
+               :graph-name (Some "Local graph")
+               :selected-graph-id (Some "local")
+               :graphs [local remote preparing]
+               :is-graph-encrypted false
+               :is-graph-unlocked true)
+        projected
+        (model/update (model/initial) (model/ApplyCoreSnapshot projection))
+        with-local
+        (model/update projected (model/ApplyLocalGraphIds ["local"]))
+        shown
+        (model/update (model/update with-local model/OpenSidebar) model/ShowGraphs)
+        refreshed (model/update shown model/RefreshGraphs)
+        rejected (model/update refreshed (model/RequestOpenGraph "preparing"))
+        opened (model/update refreshed (model/RequestOpenGraph "remote"))
+        create-open (model/update shown model/OpenCreateGraph)
+        named (model/update create-open (model/ChangeNewGraphName " New graph "))
+        encrypted (model/update named (model/ToggleNewGraphEncrypted true))
+        submitted (model/update encrypted model/SubmitCreateGraph)
+        remote-delete (model/update shown (model/RequestDeleteGraph "remote"))
+        delete-requested (model/update shown (model/RequestDeleteGraph "local"))
+        delete-confirmed (model/update delete-requested model/ConfirmDeleteGraph)]
+    (assert-equal [local remote preparing] (:graphs projected)
+                  "the catalog is projected into LG state")
+    (assert-equal ["local"] (:local-graph-ids with-local)
+                  "downloaded graph identity comes from the platform boundary")
+    (assert-equal model/GraphsDestination (:destination shown)
+                  "graphs is a primary LG destination")
+    (is (not (:sidebar-open shown)) "opening graphs closes the drawer")
+    (assert-equal [(model/RefreshGraphsEffect 1)] (:pending-effects refreshed)
+                  "refresh crosses the typed effect boundary")
+    (assert-equal (:pending-effects refreshed) (:pending-effects rejected)
+                  "preparing graphs cannot be opened")
+    (assert-equal
+     [(model/RefreshGraphsEffect 1) (model/OpenGraphEffect 2 "remote")]
+     (:pending-effects opened)
+     "ready graphs publish their stable id")
+    (is (:create-graph-open create-open) "the add sheet is LG-owned")
+    (assert-equal
+     [(model/CreateGraphEffect 1 "New graph" true)]
+     (:pending-effects submitted)
+     "graph creation trims its name and preserves encryption")
+    (assert-equal (Some local) (:pending-graph-deletion delete-requested)
+                  "deletion confirmation retains the selected graph")
+    (assert-equal None (:pending-graph-deletion remote-delete)
+                  "remote-only graphs cannot enter local deletion")
+    (assert-equal [(model/DeleteLocalGraphEffect 1 "local")]
+                  (:pending-effects delete-confirmed)
+                  "confirming deletion publishes a platform effect")))
+
+(deftest graphs-render-the-existing-catalog-and-modal-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" true true)
+        projection
+        (assoc (empty-core-projection)
+               :selected-graph-id (Some "local")
+               :graphs [local remote])]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenSidebar)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          sidebar (child-with-identifier renderer root "sidebar.navigation")
+          link (child-with-identifier renderer sidebar "link.sidebar.graphs")]
+      (driver/dispatch-event! application (proto/Press link))
+      (driver/flush! application)
+      (let [main (main-root renderer application)
+            screen (child-with-identifier renderer main "screen.graphs")
+            refresh (child-with-identifier renderer screen "button.graphs.refresh")
+            add (child-with-identifier renderer screen "button.graph-add")
+            local-row (child-with-identifier renderer screen "graph.local")
+            remote-row (child-with-identifier renderer screen "graph.remote")
+            delete
+            (descendant-with-identifier renderer screen "button.graph.delete.local")]
+        (is (not (= -1 refresh)) "graphs keeps its refresh identifier")
+        (is (not (= -1 local-row)) "local graphs remain addressable")
+        (is (not (= -1 remote-row)) "remote graphs remain addressable")
+        (is (not (= -1 delete)) "local graphs expose deletion")
+        (driver/dispatch-event! application (proto/Press add))
+        (driver/flush! application)
+        (is (not (= -1
+                    (descendant-with-identifier renderer screen "field.graph-name")))
+            "add graph exposes the existing graph-name field in its modal")))))
+
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
@@ -683,10 +819,10 @@
                     (is-collapsed false))])
                 (linked-reference-rows []))
         row (record model/outline-row
-                    (uuid "child") (title "Child") (depth 1)
+              (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
-              (breadcrumb "") (opens-as-page false)
-                    (has-children false) (is-collapsed false))]
+              (breadcrumb "") (opens-as-page false) (depth 1)
+              (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -946,10 +1082,10 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
-                    (uuid "parent") (title "Parent") (depth 0)
+              (uuid "parent") (title "Parent")
               (markup-json "[]") (youtube-target-url None)
-              (breadcrumb "") (opens-as-page false)
-                    (has-children false) (is-collapsed false))]
+              (breadcrumb "") (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
@@ -985,10 +1121,10 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
-                    (uuid "block-a") (title "Project [[Pro") (depth 0)
+              (uuid "block-a") (title "Project [[Pro")
               (markup-json "[]") (youtube-target-url None)
-              (breadcrumb "") (opens-as-page false)
-                    (has-children false) (is-collapsed false))
+              (breadcrumb "") (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false))
         editing (record model/outliner-editing
                         (uuid "block-a")
                         (title "Project [[Pro")
@@ -1079,25 +1215,25 @@
 
 (deftest outliner-row-splices-update-the-existing-keyed-projection
   (let [parent (record model/outline-row
-                       (uuid "parent") (title "Parent") (depth 0)
+                 (uuid "parent") (title "Parent")
                  (markup-json "[]") (youtube-target-url None)
-                 (breadcrumb "") (opens-as-page false)
-                       (has-children true) (is-collapsed false))
+                 (breadcrumb "") (opens-as-page false) (depth 0)
+                 (has-children true) (is-collapsed false))
         child (record model/outline-row
-                      (uuid "child") (title "Child") (depth 1)
+                (uuid "child") (title "Child")
                 (markup-json "[]") (youtube-target-url None)
-                (breadcrumb "") (opens-as-page false)
-                      (has-children false) (is-collapsed false))
+                (breadcrumb "") (opens-as-page false) (depth 1)
+                (has-children false) (is-collapsed false))
         sibling (record model/outline-row
-                        (uuid "sibling") (title "Sibling") (depth 0)
+                  (uuid "sibling") (title "Sibling")
                   (markup-json "[]") (youtube-target-url None)
-                  (breadcrumb "") (opens-as-page false)
-                        (has-children false) (is-collapsed false))
+                  (breadcrumb "") (opens-as-page false) (depth 0)
+                  (has-children false) (is-collapsed false))
         collapsed-parent (record model/outline-row
-                                 (uuid "parent") (title "Parent") (depth 0)
+                           (uuid "parent") (title "Parent")
                            (markup-json "[]") (youtube-target-url None)
-                           (breadcrumb "") (opens-as-page false)
-                                 (has-children true) (is-collapsed true))
+                           (breadcrumb "") (opens-as-page false) (depth 0)
+                           (has-children true) (is-collapsed true))
         initial
         (model/update
          (model/initial)

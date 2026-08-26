@@ -222,7 +222,8 @@
     "Flashcards"]
    [:button
     {:label "Graphs"
-     :accessibility-identifier "link.sidebar.graphs"}
+     :accessibility-identifier "link.sidebar.graphs"
+     :on-press (fn [_event] (send model/ShowGraphs))}
     "Graphs"]
    [:column {:accessibility-identifier "section.sidebar.favorites"}
     [:text "Favorites"]
@@ -366,6 +367,9 @@
 
 (defn flashcards-destination? [current]
   (= (:destination current) model/FlashcardsDestination))
+
+(defn graphs-destination? [current]
+  (= (:destination current) model/GraphsDestination))
 
 (defn journal-root-visible? [current]
   (and (journals-destination? current)
@@ -954,6 +958,149 @@
       :on-press (fn [_event] (send (model/ReviewFlashcard "easy")))}
      "Easy"]]])
 
+(defn graph-identifier [graph]
+  (str "graph." (:id graph)))
+
+(defn graph-delete-identifier [graph]
+  (str "button.graph.delete." (:id graph)))
+
+(defn graph-title [graph]
+  (:name graph))
+
+(defn graph-not-ready? [graph]
+  (not (:is-ready graph)))
+
+(defn graph-row-local? [current graph]
+  (model/graph-local? current (:id graph)))
+
+(defn local-graphs [current]
+  (filterv
+   (fn [graph] (model/graph-local? current (:id graph)))
+   (:graphs current)))
+
+(defn remote-graphs [current]
+  (filterv
+   (fn [graph] (not (model/graph-local? current (:id graph))))
+   (:graphs current)))
+
+(defn local-graphs-empty? [current]
+  (empty? (local-graphs current)))
+
+(defn remote-graphs-present? [current]
+  (not (empty? (remote-graphs current))))
+
+(defn new-graph-name-empty? [current]
+  (string/blank? (:new-graph-name current)))
+
+(defn graph-deletion-pending? [current]
+  (match (:pending-graph-deletion current)
+    (Some _graph) true
+    None false))
+
+(defn graph-row [ui-context model-source graph-source send]
+  (let [graph (signal/sample graph-source)
+        graph-id (:id graph)]
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:accessibility-identifier (graph-identifier graph)
+       :disabled (reactive graph-not-ready? graph-source)
+       :on-press
+       (event [current-graph graph-source]
+         (send (model/RequestOpenGraph (:id current-graph))))}
+      [:row
+       [:text {:value (reactive graph-title graph-source)}]
+       [:if {:test (reactive graph-not-ready? graph-source)}
+        [:text "Preparing"]]
+       [:if {:test (reactive graph-row-local? model-source graph-source)}
+        [:button
+         {:label "Delete local graph"
+          :accessibility-identifier (graph-delete-identifier graph)
+          :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
+         "Delete local graph"]]]])))
+
+(defui graph-create-sheet [model-source send]
+  [:sheet
+   {:text "Add sync graph"
+    :on-dismiss (fn [_event] (send model/DismissCreateGraph))}
+   [:column
+    [:text-field
+     {:text (reactive :new-graph-name model-source)
+      :placeholder "Graph name"
+      :label "Graph name"
+      :accessibility-identifier "field.graph-name"
+      :on-input
+      (fn [input-event]
+        (match input-event
+          (TextChanged _node text) (send (model/ChangeNewGraphName text))
+          _ true))}]
+    [:toggle
+     {:checked (reactive :new-graph-encrypted model-source)
+      :label "End-to-end encryption"
+      :accessibility-identifier "toggle.graph-encryption"
+      :on-toggle
+      (fn [input-event]
+        (match input-event
+          (proto/ToggleChanged _node enabled)
+          (send (model/ToggleNewGraphEncrypted enabled))
+          _ true))}
+     "End-to-end encryption"]
+    [:text "Encryption cannot be changed after the sync graph is created."]
+    [:button
+     {:on-press (fn [_event] (send model/DismissCreateGraph))}
+     "Cancel"]
+    [:button
+     {:accessibility-identifier "button.graph-add.confirm"
+      :disabled (reactive new-graph-name-empty? model-source)
+      :on-press (fn [_event] (send model/SubmitCreateGraph))}
+     "Add"]]])
+
+(defui graph-delete-dialog [model-source send]
+  [:dialog
+   {:text "Delete local graph"
+    :on-dismiss (fn [_event] (send model/CancelDeleteGraph))}
+   [:column
+    [:text "Are you sure you want to permanently delete this graph from Logseq?"]
+    [:text "⚠️ Notice that we can't recover this graph after being deleted. Make sure you have backups before deleting it."]
+    [:button
+     {:on-press (fn [_event] (send model/CancelDeleteGraph))}
+     "Cancel"]
+    [:button
+     {:on-press (fn [_event] (send model/ConfirmDeleteGraph))}
+     "Confirm"]]])
+
+(defui graphs-screen [model-source send]
+  [:column {:accessibility-identifier "screen.graphs"}
+   [:button
+    {:accessibility-identifier "button.graphs.refresh"
+     :on-press (fn [_event] (send model/RefreshGraphs))}
+    "Refresh"]
+   [:button
+    {:accessibility-identifier "button.graph-add"
+     :on-press (fn [_event] (send model/OpenCreateGraph))}
+    "Add sync graph"]
+   [:text "Local graphs:"]
+   [:if {:test (reactive local-graphs-empty? model-source)}
+    [:text "No local graphs"]]
+   [:keyed
+    {:source (reactive local-graphs model-source)
+     :key :id
+     :compare compare
+     :as graph-source}
+    [graph-row model-source graph-source send]]
+   [:if {:test (reactive remote-graphs-present? model-source)}
+    [:text "Remote graphs:"]]
+   [:keyed
+    {:source (reactive remote-graphs model-source)
+     :key :id
+     :compare compare
+     :as graph-source}
+    [graph-row model-source graph-source send]]
+   [:if {:test (reactive :create-graph-open model-source)}
+    [graph-create-sheet model-source send]]
+   [:if {:test (reactive graph-deletion-pending? model-source)}
+    [graph-delete-dialog model-source send]]])
+
 (defui chat-main-view [model-source send]
   [:column
    [:if {:test (reactive journal-root-visible? model-source)}
@@ -1020,6 +1167,8 @@
     [node-screen model-source send]]
    [:if {:test (reactive flashcards-destination? model-source)}
     [flashcard-screen model-source send]]
+   [:if {:test (reactive graphs-destination? model-source)}
+    [graphs-screen model-source send]]
    [:if {:test (reactive primary-sidebar-button-visible? model-source)}
     [:button
      {:label "Open sidebar"

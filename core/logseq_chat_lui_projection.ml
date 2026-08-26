@@ -48,6 +48,14 @@ let sidebar_projection (snapshot : Snapshot.t) : LG.sidebar_projection =
   }
 ;;
 
+let graph (graph : Snapshot.graph) : LG.graph =
+  { id = graph.id
+  ; name = graph.name
+  ; is_encrypted = graph.is_encrypted
+  ; is_ready = graph.is_ready
+  }
+;;
+
 let flashcard (card : Snapshot.flashcard) : LG.flashcard =
   { uuid = card.uuid
   ; question_hidden = card.question_hidden
@@ -107,6 +115,10 @@ let apply_response encoded =
     | Ok snapshot ->
       LG.ApplyCoreSnapshot
         { graph_name = snapshot.graph_name
+        ; selected_graph_id = snapshot.selected_graph_id
+        ; graphs = Rrbvec.of_list (List.map graph snapshot.graphs)
+        ; is_graph_encrypted = snapshot.is_graph_encrypted
+        ; is_graph_unlocked = snapshot.is_graph_unlocked
         ; sidebar = sidebar_projection snapshot
         ; flashcards = Rrbvec.of_list (List.map flashcard snapshot.flashcards)
         ; sync_connected = snapshot.sync_connected

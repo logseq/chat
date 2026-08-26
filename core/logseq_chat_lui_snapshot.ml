@@ -10,6 +10,13 @@ type sidebar_page =
   ; title : string
   }
 
+type graph =
+  { id : string
+  ; name : string
+  ; is_encrypted : bool
+  ; is_ready : bool
+  }
+
 type flashcard_answer =
   { uuid : string
   ; text : string
@@ -81,6 +88,10 @@ type outliner_row_splice =
 
 type t =
   { graph_name : string option
+  ; selected_graph_id : string option
+  ; graphs : graph list
+  ; is_graph_encrypted : bool
+  ; is_graph_unlocked : bool
   ; favorites : sidebar_page list
   ; recent_pages : sidebar_page list
   ; selected_page : sidebar_page option
@@ -154,6 +165,20 @@ let sidebar_page = function
   | `Assoc fields ->
     (match string_member "uuid" fields, string_member "title" fields with
      | Some uuid, Some title -> Some { uuid; title }
+     | _ -> None)
+  | _ -> None
+;;
+
+let graph = function
+  | `Assoc fields ->
+    (match string_member "id" fields, string_member "name" fields with
+     | Some id, Some name ->
+       Some
+         { id
+         ; name
+         ; is_encrypted = bool_member "isEncrypted" fields
+         ; is_ready = bool_member "isReady" fields
+         }
      | _ -> None)
   | _ -> None
 ;;
@@ -602,6 +627,13 @@ let decode_response encoded =
          in
          Ok
            { graph_name = string_member "graphName" result_fields
+           ; selected_graph_id = string_member "selectedGraphId" result_fields
+           ; graphs =
+               (match member "graphs" result_fields with
+                | Some (`List values) -> List.filter_map graph values
+                | _ -> [])
+           ; is_graph_encrypted = bool_member "isGraphEncrypted" result_fields
+           ; is_graph_unlocked = bool_member "isGraphUnlocked" result_fields
            ; favorites = sidebar_pages_member "favorites" result_fields
            ; recent_pages = sidebar_pages_member "recentPages" result_fields
            ; selected_page = Option.bind (member "selectedPage" result_fields) sidebar_page

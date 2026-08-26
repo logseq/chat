@@ -69,6 +69,7 @@
 (signature logseq-chat.view/node-navigation-inactive? :fn<chat-model;bool>)
 (signature logseq-chat.view/journals-destination? :fn<chat-model;bool>)
 (signature logseq-chat.view/flashcards-destination? :fn<chat-model;bool>)
+(signature logseq-chat.view/graphs-destination? :fn<chat-model;bool>)
 (signature logseq-chat.view/journal-root-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/primary-sidebar-button-visible?
@@ -161,6 +162,25 @@
 (signature logseq-chat.view/flashcard-answer-row
  :fn<ui-context;signal<flashcard-answer-row>;int>)
 (signature logseq-chat.view/flashcard-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-delete-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-title :fn<graph;string>)
+(signature logseq-chat.view/graph-not-ready? :fn<graph;bool>)
+(signature logseq-chat.view/graph-row-local? :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/local-graphs :fn<chat-model;vector<graph>>)
+(signature logseq-chat.view/remote-graphs :fn<chat-model;vector<graph>>)
+(signature logseq-chat.view/local-graphs-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/remote-graphs-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/new-graph-name-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-deletion-pending? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-row
+ :fn<ui-context;signal<chat-model>;signal<graph>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-create-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-delete-dialog
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graphs-screen
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)

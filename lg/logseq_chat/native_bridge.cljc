@@ -116,7 +116,18 @@
     (str "{\"id\":" id ",\"kind\":\"load-flashcards\",\"text\":\"\"}")
     (model/ReviewFlashcardEffect id uuid rating)
     (str "{\"id\":" id ",\"kind\":\"review-flashcard\",\"text\":"
-         (wire/quoted rating) ",\"uuid\":" (wire/quoted uuid) "}")))
+         (wire/quoted rating) ",\"uuid\":" (wire/quoted uuid) "}")
+    (model/RefreshGraphsEffect id)
+    (str "{\"id\":" id ",\"kind\":\"refresh-graphs\",\"text\":\"\"}")
+    (model/OpenGraphEffect id graph-id)
+    (str "{\"id\":" id ",\"kind\":\"open-graph\",\"text\":"
+         (wire/quoted graph-id) "}")
+    (model/CreateGraphEffect id name is-encrypted)
+    (str "{\"id\":" id ",\"kind\":\"create-graph\",\"text\":"
+         (wire/quoted name) ",\"value\":" (if is-encrypted 1 0) "}")
+    (model/DeleteLocalGraphEffect id graph-id)
+    (str "{\"id\":" id ",\"kind\":\"delete-local-graph\",\"text\":"
+         (wire/quoted graph-id) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]

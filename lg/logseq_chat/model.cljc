@@ -4,6 +4,11 @@
 (defn initial []
   (record chat-model
           (selected-graph None)
+          (selected-graph-id None)
+          (graphs [])
+          (local-graph-ids [])
+          (is-graph-encrypted false)
+          (is-graph-unlocked false)
           (sync-state OfflineState)
           (destination JournalsDestination)
           (sidebar-open false)
@@ -17,6 +22,10 @@
           (flashcards [])
           (flashcard-cloze-revealed false)
           (flashcard-answer-revealed false)
+          (create-graph-open false)
+          (new-graph-name "")
+          (new-graph-encrypted false)
+          (pending-graph-deletion None)
           (search-open false)
           (search-query "")
           (search-results [])
@@ -85,7 +94,11 @@
     (SelectSidebarPageEffect id _uuid) id
     (ClearSelectedPageEffect id) id
     (LoadFlashcardsEffect id) id
-    (ReviewFlashcardEffect id _uuid _rating) id))
+    (ReviewFlashcardEffect id _uuid _rating) id
+    (RefreshGraphsEffect id) id
+    (OpenGraphEffect id _graph-id) id
+    (CreateGraphEffect id _name _is-encrypted) id
+    (DeleteLocalGraphEffect id _graph-id) id))
 
 (defn effect-with-id [effects target]
   (loop [index 0]
@@ -100,6 +113,29 @@
   (if (empty? flashcards)
     None
     (Some (:uuid (nth flashcards 0)))))
+
+(defn graph-by-id [graphs target]
+  (loop [index 0]
+    (if (= index (count graphs))
+      None
+      (let [graph (nth graphs index)]
+        (if (= (:id graph) target)
+          (Some graph)
+          (recur (inc index)))))))
+
+(defn string-vector-contains? [values target]
+  (loop [index 0]
+    (if (= index (count values))
+      false
+      (if (= (nth values index) target)
+        true
+        (recur (inc index))))))
+
+(defn graph-local? [current graph-id]
+  (string-vector-contains? (:local-graph-ids current) graph-id))
+
+(defn remove-string [values target]
+  (filterv (fn [value] (not (= value target))) values))
 
 (defn rollback-navigation-effect [current effect]
   (match effect
@@ -119,6 +155,22 @@
            (request-route (:search-navigation-path current) (NodeRoute uuid)))
     (SelectSidebarPageEffect _id _uuid)
     (assoc current :sidebar-open true)
+    _ current))
+
+(defn resolve-successful-effect [current effect]
+  (match effect
+    (OpenGraphEffect _id _graph-id)
+    (assoc current :destination JournalsDestination)
+    (CreateGraphEffect _id _name _is-encrypted)
+    (assoc current
+           :destination JournalsDestination
+           :create-graph-open false
+           :new-graph-name ""
+           :new-graph-encrypted false)
+    (DeleteLocalGraphEffect _id graph-id)
+    (assoc current
+           :pending-graph-deletion None
+           :local-graph-ids (remove-string (:local-graph-ids current) graph-id))
     _ current))
 
 (defn enqueue-effect [current effect]
@@ -292,10 +344,22 @@
           card-changed
           (not (= (first-flashcard-id (:flashcards current))
                   (first-flashcard-id (:flashcards projection))))
+          local-graph-ids
+          (match (:selected-graph-id projection)
+            (Some graph-id)
+            (if (string-vector-contains? (:local-graph-ids current) graph-id)
+              (:local-graph-ids current)
+              (conj (:local-graph-ids current) graph-id))
+            None (:local-graph-ids current))
           sidebar (:sidebar projection)
           updated
           (assoc current
                  :selected-graph (:graph-name projection)
+                 :selected-graph-id (:selected-graph-id projection)
+                 :graphs (:graphs projection)
+                 :local-graph-ids local-graph-ids
+                 :is-graph-encrypted (:is-graph-encrypted projection)
+                 :is-graph-unlocked (:is-graph-unlocked projection)
                  :sync-state
                  (if (:sync-connected projection) SyncedState OfflineState)
                  :favorites (:favorites sidebar)
@@ -426,7 +490,9 @@
     (match (effect-with-id (:in-flight-effects current) id)
       (Some effect)
       (let [resolved-current
-            (if succeeded current (rollback-navigation-effect current effect))]
+            (if succeeded
+              (resolve-successful-effect current effect)
+              (rollback-navigation-effect current effect))]
         (assoc resolved-current
                :in-flight-effects
                (remove-effect (:in-flight-effects current) id)
@@ -535,6 +601,60 @@
     (assoc current
            :sidebar-open false
            :destination GraphsDestination)
+
+    (ApplyLocalGraphIds graph-ids)
+    (assoc current :local-graph-ids graph-ids)
+
+    RefreshGraphs
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (RefreshGraphsEffect id)))
+
+    (RequestOpenGraph graph-id)
+    (match (graph-by-id (:graphs current) graph-id)
+      (Some graph)
+      (if (:is-ready graph)
+        (let [id (:next-effect-id current)]
+          (enqueue-effect current (OpenGraphEffect id graph-id)))
+        current)
+      None current)
+
+    OpenCreateGraph
+    (assoc current :create-graph-open true)
+
+    DismissCreateGraph
+    (assoc current :create-graph-open false)
+
+    (ChangeNewGraphName name)
+    (assoc current :new-graph-name name)
+
+    (ToggleNewGraphEncrypted encrypted)
+    (assoc current :new-graph-encrypted encrypted)
+
+    SubmitCreateGraph
+    (let [name (string/trim (:new-graph-name current))]
+      (if (empty? name)
+        current
+        (let [id (:next-effect-id current)]
+          (enqueue-effect
+           current
+           (CreateGraphEffect id name (:new-graph-encrypted current))))))
+
+    (RequestDeleteGraph graph-id)
+    (if (graph-local? current graph-id)
+      (assoc current :pending-graph-deletion
+             (graph-by-id (:graphs current) graph-id))
+      current)
+
+    CancelDeleteGraph
+    (assoc current :pending-graph-deletion None)
+
+    ConfirmDeleteGraph
+    (match (:pending-graph-deletion current)
+      (Some graph)
+      (let [updated (assoc current :pending-graph-deletion None)
+            id (:next-effect-id updated)]
+        (enqueue-effect updated (DeleteLocalGraphEffect id (:id graph))))
+      None current)
 
     RevealFlashcardCloze
     (assoc current :flashcard-cloze-revealed true)

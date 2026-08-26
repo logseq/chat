@@ -127,6 +127,26 @@ let () =
        if not card.has_cloze then failwith "legacy flashcard cloze metadata was lost"
      | Ok _ -> failwith "legacy flashcard was not projected"
      | Error message -> failwith message);
+    let graph_catalog =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"graphName":"Local graph","selectedGraphId":"local","graphs":[{"id":"local","name":"Local graph","schemaVersion":"65.33","isEncrypted":false,"isReady":true},{"id":"remote","name":"Remote graph","schemaVersion":null,"isEncrypted":true,"isReady":false}],"isGraphEncrypted":false,"isGraphUnlocked":true,"outlinerState":{"editing":null},"outlinerRows":[],"syncConnected":true}}|}
+    in
+    (match graph_catalog with
+     | Ok
+         { selected_graph_id = Some "local"
+         ; graphs = [ local; remote ]
+         ; is_graph_encrypted = false
+         ; is_graph_unlocked = true
+         ; _
+         } ->
+       equal "local" local.id "local graph id";
+       equal "Local graph" local.name "local graph name";
+       if local.is_encrypted || not local.is_ready
+       then failwith "local graph flags were not projected";
+       if not remote.is_encrypted || remote.is_ready
+       then failwith "remote graph flags were not projected"
+     | Ok _ -> failwith "graph catalog was not projected"
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in
