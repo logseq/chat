@@ -33,6 +33,7 @@ default.profraw
 _build/
 _coverage/
 .lg-cache/
+/*.install
 build/
 DerivedData/
 xcuserdata/
