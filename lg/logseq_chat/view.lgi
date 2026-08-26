@@ -18,6 +18,8 @@
 (signature logseq-chat.view/optional-string :fn<option<string>;string>)
 (signature logseq-chat.view/outliner-row-youtube-target
  :fn<outline-row;string>)
+(signature logseq-chat.view/request-node-action
+ :fn<chat-model;string;chat-action>)
 (signature logseq-chat.view/handle-outliner-block-content-event
  :fn<event;signal<chat-model>;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/outliner-block-content-view
@@ -29,6 +31,7 @@
 (signature logseq-chat.view/composer-send-disabled? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-result-identifier :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-title :fn<search-hit;string>)
+(signature logseq-chat.view/search-result-breadcrumb :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-row
  :fn<ui-context;signal<search-hit>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
@@ -67,6 +70,25 @@
  :fn<chat-model;option<node-projection>>)
 (signature logseq-chat.view/active-node-uuid :fn<chat-model;string>)
 (signature logseq-chat.view/active-node-title :fn<chat-model;string>)
+(signature logseq-chat.view/active-node-page-uuid :fn<chat-model;string>)
+(signature logseq-chat.view/active-node-related-rows
+ :fn<chat-model;vector<outline-row>>)
+(signature logseq-chat.view/active-node-linked-reference-rows
+ :fn<chat-model;vector<outline-row>>)
+(signature logseq-chat.view/node-related-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-tag-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-tag-section-empty?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-linked-reference-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-can-add-first-block?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-row-has-breadcrumb?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-breadcrumb
+ :fn<outline-row;string>)
 (signature logseq-chat.view/back-from-node
  :fn<chat-model;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
@@ -81,6 +103,14 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-editor-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-related-row
+ :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-related-section
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-tagged-section
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-linked-reference-section
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/node-screen
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view

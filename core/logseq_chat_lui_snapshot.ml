@@ -10,6 +10,8 @@ type outline_row =
   ; title : string
   ; markup_json : string
   ; youtube_target_url : string option
+  ; breadcrumb : string
+  ; opens_as_page : bool
   ; depth : int
   ; has_children : bool
   ; is_collapsed : bool
@@ -38,10 +40,13 @@ type outliner_autocomplete_candidate =
 
 type node_route =
   { uuid : string
+  ; page_uuid : string
   ; title : string
   ; is_tag : bool
   ; is_property : bool
   ; outliner_rows : outline_row list
+  ; related_rows : outline_row list
+  ; linked_reference_rows : outline_row list
   ; outliner_editing : outliner_editing option
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
@@ -119,26 +124,61 @@ let search_hit = function
   | _ -> None
 ;;
 
+let outline_row_from_block
+      ?youtube_target_url
+      ?(opens_as_page = false)
+      ~depth
+      ~has_children
+      ~is_collapsed
+      block_fields
+  =
+  match string_member "uuid" block_fields, string_member "title" block_fields with
+  | Some uuid, Some title ->
+    Some
+      { uuid
+      ; title
+      ; markup_json =
+          (match member "markup" block_fields with
+           | Some markup -> Yojson.Basic.to_string markup
+           | None -> "[]")
+      ; youtube_target_url
+      ; breadcrumb = breadcrumb block_fields
+      ; opens_as_page
+      ; depth
+      ; has_children
+      ; is_collapsed
+      }
+  | _ -> None
+;;
+
 let outline_row = function
   | `Assoc fields ->
     (match member "block" fields, int_member "depth" fields with
      | Some (`Assoc block_fields), Some depth ->
-       (match string_member "uuid" block_fields, string_member "title" block_fields with
-        | Some uuid, Some title ->
-          Some
-            { uuid
-            ; title
-            ; markup_json =
-                (match member "markup" block_fields with
-                 | Some markup -> Yojson.Basic.to_string markup
-                 | None -> "[]")
-            ; youtube_target_url = string_member "youtubeTargetURL" fields
-            ; depth
-            ; has_children = bool_member "hasChildren" fields
-            ; is_collapsed = bool_member "isCollapsed" fields
-            }
-        | _ -> None)
+       outline_row_from_block
+         ?youtube_target_url:(string_member "youtubeTargetURL" fields)
+         ~depth
+         ~has_children:(bool_member "hasChildren" fields)
+         ~is_collapsed:(bool_member "isCollapsed" fields)
+         block_fields
      | _ -> None)
+  | _ -> None
+;;
+
+let related_row = function
+  | `Assoc block_fields ->
+    let opens_as_page =
+      match string_member "uuid" block_fields, string_member "pageId" block_fields with
+      | Some uuid, Some page_id -> String.equal uuid page_id
+      | _ -> false
+    in
+    outline_row_from_block
+      ?youtube_target_url:(string_member "youtubeTargetURL" block_fields)
+      ~opens_as_page
+      ~depth:0
+      ~has_children:false
+      ~is_collapsed:false
+      block_fields
   | _ -> None
 ;;
 
@@ -246,6 +286,12 @@ let outliner_rows_member name fields =
   | _ -> []
 ;;
 
+let related_rows_member name fields =
+  match member name fields with
+  | Some (`List values) -> List.filter_map related_row values
+  | _ -> []
+;;
+
 let autocomplete_candidates_member name fields =
   match member name fields with
   | Some (`List values) -> List.filter_map outliner_autocomplete_candidate values
@@ -274,6 +320,12 @@ let node_title uuid is_tag fields =
     | _ -> page_title
 ;;
 
+let node_page_uuid uuid fields =
+  match member "page" fields with
+  | Some (`Assoc page_fields) -> Option.value ~default:uuid (string_member "uuid" page_fields)
+  | _ -> uuid
+;;
+
 let node_route = function
   | `Assoc fields ->
     (match string_member "uuid" fields with
@@ -287,10 +339,14 @@ let node_route = function
        in
        Some
          { uuid
+         ; page_uuid = node_page_uuid uuid fields
          ; title = node_title uuid is_tag fields
          ; is_tag
          ; is_property = bool_member "isProperty" fields
          ; outliner_rows = outliner_rows_member "outlinerRows" fields
+         ; related_rows = related_rows_member "relatedBlocks" fields
+         ; linked_reference_rows =
+             related_rows_member "linkedReferenceBlocks" fields
          ; outliner_editing =
              Option.bind (member "editing" state_fields) outliner_editing
          ; outliner_autocomplete =

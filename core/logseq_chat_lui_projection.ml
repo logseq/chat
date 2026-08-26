@@ -9,19 +9,23 @@ let search_hit (hit : Snapshot.search_hit) : LG.search_hit =
   }
 ;;
 
-let node_projection (route : Snapshot.node_route) : LG.node_projection =
+let rec node_projection (route : Snapshot.node_route) : LG.node_projection =
   { uuid = route.uuid
+  ; page_uuid = route.page_uuid
   ; title = route.title
   ; is_tag = route.is_tag
   ; is_property = route.is_property
+  ; related_rows = Rrbvec.of_list (List.map outline_row route.related_rows)
+  ; linked_reference_rows =
+      Rrbvec.of_list (List.map outline_row route.linked_reference_rows)
   }
-;;
-
-let outline_row (row : Snapshot.outline_row) : LG.outline_row =
+and outline_row (row : Snapshot.outline_row) : LG.outline_row =
   { uuid = row.uuid
   ; title = row.title
   ; markup_json = row.markup_json
   ; youtube_target_url = row.youtube_target_url
+  ; breadcrumb = row.breadcrumb
+  ; opens_as_page = row.opens_as_page
   ; depth = row.depth
   ; has_children = row.has_children
   ; is_collapsed = row.is_collapsed

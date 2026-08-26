@@ -131,15 +131,18 @@
 (defn outliner-row-youtube-target [row]
   (optional-string (:youtube-target-url row)))
 
+(defn request-node-action [current uuid]
+  (if (= (:search-open current) true)
+    (model/RequestSearchNode uuid)
+    (model/RequestAppNode uuid)))
+
 (defn handle-outliner-block-content-event [input-event model-source send]
   (match input-event
     (proto/ExtensionEvent _node _identifier name values)
     (if (= name "open-node")
       (let [uuid (extension-string values "uuid")
             current (signal/sample model-source)]
-        (if (= (:search-open current) true)
-          (send (model/RequestSearchNode uuid))
-          (send (model/RequestAppNode uuid))))
+        (send (request-node-action current uuid)))
       true)
     _ true))
 
@@ -185,6 +188,9 @@
   (let [_breadcrumb (:breadcrumb hit)]
     (:title hit)))
 
+(defn search-result-breadcrumb [hit]
+  (:breadcrumb hit))
+
 (defn search-result-row [ui-context hit-source send]
   (let [hit (signal/sample hit-source)]
     (elements/element
@@ -196,7 +202,7 @@
          (send (model/RequestSearchNode (:uuid current-hit))))}
       [:column
        [:text {:value (reactive search-result-title hit-source)}]
-       [:text {:value (reactive :breadcrumb hit-source)}]]])))
+       [:text {:value (reactive search-result-breadcrumb hit-source)}]]])))
 
 (defn outliner-row-identifier [row]
   (let [_depth (:depth row)]
@@ -312,6 +318,54 @@
     (Some route) (:title route)
     None "Untitled"))
 
+(defn active-node-page-uuid [current]
+  (match (active-node-projection current)
+    (Some route) (:page-uuid route)
+    None ""))
+
+(defn active-node-related-rows [current]
+  (match (active-node-projection current)
+    (Some route) (:related-rows route)
+    None []))
+
+(defn active-node-linked-reference-rows [current]
+  (match (active-node-projection current)
+    (Some route) (:linked-reference-rows route)
+    None []))
+
+(defn node-related-section-visible? [current]
+  (match (active-node-projection current)
+    (Some route)
+    (and (not (:is-tag route)) (not (empty? (:related-rows route))))
+    None false))
+
+(defn node-tag-section-visible? [current]
+  (match (active-node-projection current)
+    (Some route) (:is-tag route)
+    None false))
+
+(defn node-tag-section-empty? [current]
+  (match (active-node-projection current)
+    (Some route) (and (:is-tag route) (empty? (:related-rows route)))
+    None false))
+
+(defn node-linked-reference-section-visible? [current]
+  (not (empty? (active-node-linked-reference-rows current))))
+
+(defn node-can-add-first-block? [current]
+  (match (active-node-projection current)
+    (Some route)
+    (and (empty? (:outliner-rows current))
+         (not (:is-tag route))
+         (not (:is-property route)))
+    None false))
+
+(defn outliner-row-has-breadcrumb? [row]
+  (not (empty? (:breadcrumb row))))
+
+(defn outliner-row-breadcrumb [row]
+  (:breadcrumb row))
+
 (defn back-from-node [current send]
   (if (empty? (:search-navigation-path current))
     (send model/BackAppNavigation)
@@ -329,6 +383,7 @@
 
 (defn outliner-row [ui-context model-source row-source send]
   (let [row (signal/sample row-source)
+        search-open (:search-open (signal/sample model-source))
         block-id-source (reactive outliner-row-uuid row-source)
         title-source (reactive outliner-row-title row-source)
         markup-source (reactive :markup-json row-source)
@@ -349,7 +404,11 @@
        :selected selected-source
        :on-press
        (event [current-row row-source]
-         (send (model/BeginOutlinerEdit (:uuid current-row))))
+         (if (= (:opens-as-page current-row) true)
+           (if search-open
+             (send (model/RequestSearchNode (:uuid current-row)))
+             (send (model/RequestAppNode (:uuid current-row))))
+           (send (model/BeginOutlinerEdit (:uuid current-row)))))
        :on-long-press
        (event [current-row row-source]
          (send (model/LongPressOutlinerBlock (:uuid current-row))))}
@@ -520,6 +579,54 @@
        (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}
     "Hide"]])
 
+(defn node-related-row [ui-context model-source row-source send]
+  (let [has-breadcrumb-source
+        (reactive outliner-row-has-breadcrumb? row-source)]
+    (elements/element
+     ui-context nil
+     [:column
+      [:if {:test has-breadcrumb-source}
+       [:text {:value (reactive outliner-row-breadcrumb row-source)}]]
+      [outliner-row model-source row-source send]])))
+
+(defui node-related-section [model-source send]
+  [:column
+   {:accessibility-identifier "section.node.linked-references"}
+   [:text "Linked references"]
+   [:list {:accessibility-identifier "list.node.related"}
+    [:keyed
+     {:source (reactive active-node-related-rows model-source)
+      :key :uuid
+      :compare compare
+      :as row-source}
+     [node-related-row model-source row-source send]]]])
+
+(defui node-tagged-section [model-source send]
+  [:column
+   {:accessibility-identifier "section.tag.tagged-nodes"}
+   [:text "Tagged nodes"]
+   [:if {:test (reactive node-tag-section-empty? model-source)}
+    [:text "No tagged nodes"]]
+   [:list {:accessibility-identifier "list.node.tagged"}
+    [:keyed
+     {:source (reactive active-node-related-rows model-source)
+      :key :uuid
+      :compare compare
+      :as row-source}
+     [node-related-row model-source row-source send]]]])
+
+(defui node-linked-reference-section [model-source send]
+  [:column
+   {:accessibility-identifier "section.node.linked-references"}
+   [:text "Linked references"]
+   [:list {:accessibility-identifier "list.node.linked-references"}
+    [:keyed
+     {:source (reactive active-node-linked-reference-rows model-source)
+      :key :uuid
+      :compare compare
+      :as row-source}
+     [node-related-row model-source row-source send]]]])
+
 (defui node-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.node"}
@@ -533,13 +640,27 @@
    [:text
     {:value (reactive active-node-title model-source)
      :accessibility-identifier "title.node"}]
-   [:list {:accessibility-identifier "outliner.list"}
+   [:list {:accessibility-identifier "list.outliner"}
     [:keyed
      {:source (reactive :outliner-rows model-source)
       :key :uuid
       :compare compare
       :as row-source}
      [outliner-row model-source row-source send]]]
+   [:if {:test (reactive node-can-add-first-block? model-source)}
+    [:button
+     {:label "Add first block"
+      :accessibility-identifier "button.outliner.add-first-block"
+      :on-press
+      (event [current model-source]
+        (send (model/AddRootBlock (active-node-page-uuid current))))}
+     "Add first block"]]
+   [:if {:test (reactive node-related-section-visible? model-source)}
+    [node-related-section model-source send]]
+   [:if {:test (reactive node-tag-section-visible? model-source)}
+    [node-tagged-section model-source send]]
+   [:if {:test (reactive node-linked-reference-section-visible? model-source)}
+    [node-linked-reference-section model-source send]]
    [:if {:test (reactive outliner-selection-active? model-source)}
     [outliner-selection-toolbar send]]
    [:if {:test (reactive outliner-autocomplete-active? model-source)}

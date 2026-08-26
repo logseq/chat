@@ -11,9 +11,12 @@
 
 (type-record node-projection
   (uuid :string)
+  (page-uuid :string)
   (title :string)
   (is-tag :bool)
-  (is-property :bool))
+  (is-property :bool)
+  (related-rows :vector<outline-row>)
+  (linked-reference-rows :vector<outline-row>))
 
 (type-record search-hit
   (uuid :string)
@@ -26,6 +29,8 @@
   (title :string)
   (markup-json :string)
   (youtube-target-url :option<string>)
+  (breadcrumb :string)
+  (opens-as-page :bool)
   (depth :int)
   (has-children :bool)
   (is-collapsed :bool))
@@ -72,7 +77,8 @@
   (OpenAppNodeEffect :int :string)
   (OpenSearchNodeEffect :int :string)
   (CloseAppNodeEffect :int :string)
-  (CloseSearchNodeEffect :int :string))
+  (CloseSearchNodeEffect :int :string)
+  (AddRootBlockEffect :int :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
@@ -140,7 +146,8 @@
   (BackAppNavigation)
   (RequestSearchNode :string)
   (ResolveSearchNode :string :bool)
-  (BackSearchNavigation))
+  (BackSearchNavigation)
+  (AddRootBlock :string))
 
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/request-route

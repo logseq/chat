@@ -226,6 +226,25 @@ struct LGChatRendererTests {
         #expect(zoom.succeeded)
     }
 
+    @Test("add-first-block effects reuse the existing core reducer")
+    func addFirstBlockEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 13, kind: "add-root-block", text: "page-a")
+        )
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("addRootBlock") == true)
+        #expect(request.params.payload?.contains("page-a") == true)
+        #expect(resolution.succeeded)
+    }
+
     @Test("node navigation effects dispatch the existing core actions")
     func nodeNavigationEffectsUseCoreNavigation() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []

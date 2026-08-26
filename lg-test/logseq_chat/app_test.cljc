@@ -328,12 +328,26 @@
         application (chat/create (apple/backend renderer))
         route (record model/node-projection
                       (uuid "node-a")
-                      (title "Project")
-                      (is-tag false)
-                      (is-property false))
+                (page-uuid "page-a")
+                (title "Project")
+                (is-tag false)
+                (is-property false)
+                (related-rows
+                 [(record model/outline-row
+                    (uuid "reference")
+                    (title "Linked from journal")
+                    (markup-json "[]")
+                    (youtube-target-url None)
+                    (breadcrumb "Journal")
+                    (opens-as-page false)
+                    (depth 0)
+                    (has-children false)
+                    (is-collapsed false))])
+                (linked-reference-rows []))
         row (record model/outline-row
                     (uuid "child") (title "Child") (depth 1)
-                    (markup-json "[]") (youtube-target-url None)
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (opens-as-page false)
                     (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
@@ -345,14 +359,47 @@
     (let [root (driver/root-node application)
           screen (child-with-identifier renderer root "screen.node")
           back (child-with-identifier renderer screen "button.outliner.zoom-out")
-          title (child-with-identifier renderer screen "title.node")]
+          title (child-with-identifier renderer screen "title.node")
+          related
+          (child-with-identifier renderer screen "section.node.linked-references")]
       (assert-equal "Project"
                     (property-string renderer title proto/TextValue)
                     "the route title comes from the core projection")
+      (is (not (= related -1))
+          "node routes render their linked references section")
       (driver/dispatch-event! application (proto/Press back))
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
                     "back removes the presented route"))))
+
+(deftest empty-node-routes-add-the-first-block-through-the-core
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        route (record model/node-projection
+                (uuid "page-a")
+                (page-uuid "page-a")
+                (title "Empty page")
+                (is-tag false)
+                (is-property false)
+                (related-rows [])
+                (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "page-a"))
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None false "" [] [route]
+                                           None None [] [] [] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          screen (child-with-identifier renderer root "screen.node")
+          add-button
+          (child-with-identifier renderer screen "button.outliner.add-first-block")]
+      (driver/dispatch-event! application (proto/Press add-button))
+      (driver/flush! application)
+      (assert-equal
+       [(model/OpenAppNodeEffect 1 "page-a")
+        (model/AddRootBlockEffect 2 "page-a")]
+       (:pending-effects (chat/model application))
+       "empty pages reuse the core addRootBlock outliner action"))))
 
 (deftest search-navigation-is-isolated-and-cleared-with-the-presentation
   (let [open-model (model/update (model/initial) model/OpenSearch)
@@ -449,7 +496,9 @@
                     (uuid "block-a")
                     (title "Project note")
                     (markup-json "[]")
-                    (youtube-target-url None)
+              (youtube-target-url None)
+              (breadcrumb "")
+              (opens-as-page false)
                     (depth 2)
                     (has-children true)
                     (is-collapsed false))
@@ -496,6 +545,8 @@
                     (markup-json
                      "[{\"type\":\"nodeReference\",\"uuid\":\"page-a\",\"title\":\"Project\"}]")
                     (youtube-target-url None)
+                    (breadcrumb "")
+                    (opens-as-page false)
                     (depth 0)
                     (has-children false)
                     (is-collapsed false))]
@@ -555,7 +606,8 @@
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
                     (uuid "parent") (title "Parent") (depth 0)
-                    (markup-json "[]") (youtube-target-url None)
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (opens-as-page false)
                     (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
@@ -592,7 +644,8 @@
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
                     (uuid "block-a") (title "Project [[Pro") (depth 0)
-                    (markup-json "[]") (youtube-target-url None)
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (opens-as-page false)
                     (has-children false) (is-collapsed false))
         editing (record model/outliner-editing
                         (uuid "block-a")
@@ -643,7 +696,9 @@
                     (uuid "parent")
                     (title "Parent")
                     (markup-json "[]")
-                    (youtube-target-url None)
+              (youtube-target-url None)
+              (breadcrumb "")
+              (opens-as-page false)
                     (depth 2)
                     (has-children true)
                     (is-collapsed false))]
@@ -682,19 +737,23 @@
 (deftest outliner-row-splices-update-the-existing-keyed-projection
   (let [parent (record model/outline-row
                        (uuid "parent") (title "Parent") (depth 0)
-                       (markup-json "[]") (youtube-target-url None)
+                 (markup-json "[]") (youtube-target-url None)
+                 (breadcrumb "") (opens-as-page false)
                        (has-children true) (is-collapsed false))
         child (record model/outline-row
                       (uuid "child") (title "Child") (depth 1)
-                      (markup-json "[]") (youtube-target-url None)
+                (markup-json "[]") (youtube-target-url None)
+                (breadcrumb "") (opens-as-page false)
                       (has-children false) (is-collapsed false))
         sibling (record model/outline-row
                         (uuid "sibling") (title "Sibling") (depth 0)
-                        (markup-json "[]") (youtube-target-url None)
+                  (markup-json "[]") (youtube-target-url None)
+                  (breadcrumb "") (opens-as-page false)
                         (has-children false) (is-collapsed false))
         collapsed-parent (record model/outline-row
                                  (uuid "parent") (title "Parent") (depth 0)
-                                 (markup-json "[]") (youtube-target-url None)
+                           (markup-json "[]") (youtube-target-url None)
+                           (breadcrumb "") (opens-as-page false)
                                  (has-children true) (is-collapsed true))
         initial
         (model/update

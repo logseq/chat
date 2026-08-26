@@ -72,6 +72,21 @@ let () =
          "cross-block YouTube timestamp target"
      | Ok _ -> failwith "rich outliner rows were not projected"
      | Error message -> failwith message);
+    let related =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"outlinerState":{"editing":null},"nodeRoutes":[{"uuid":"tag-a","isTag":true,"isProperty":false,"page":{"uuid":"tag-a","title":"Project"},"blocks":[],"relatedBlocks":[{"uuid":"page-object","title":"Tagged page","pageId":"page-object","breadcrumbs":[{"uuid":"journal","title":"Journal"}],"markup":[]}],"linkedReferenceBlocks":[{"uuid":"linked","title":"Linked block","pageId":"journal","breadcrumbs":[],"markup":[]}],"outlinerState":{"editing":null},"outlinerRows":[],"outlinerAutocompleteCandidates":[]}],"syncConnected":true}}|}
+    in
+    (match related with
+     | Ok { node_routes = [ route ]; _ } ->
+       (match route.related_rows, route.linked_reference_rows with
+        | [ related_row ], [ linked_row ] ->
+          if not related_row.opens_as_page
+          then failwith "whole-page related rows must navigate";
+          equal "Journal" related_row.breadcrumb "related breadcrumb";
+          equal "linked" linked_row.uuid "linked reference row"
+        | _ -> failwith "related node rows were not projected")
+     | Ok _ -> failwith "related node route was not projected"
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

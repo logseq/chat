@@ -68,7 +68,8 @@
     (OpenAppNodeEffect id _uuid) id
     (OpenSearchNodeEffect id _uuid) id
     (CloseAppNodeEffect id _uuid) id
-    (CloseSearchNodeEffect id _uuid) id))
+    (CloseSearchNodeEffect id _uuid) id
+    (AddRootBlockEffect id _uuid) id))
 
 (defn effect-with-id [effects target]
   (loop [index 0]
@@ -457,4 +458,8 @@
         (let [uuid (navigation-route-uuid (nth path (dec (count path))))
               updated (assoc current :search-navigation-path (pop-route path))
               id (:next-effect-id updated)]
-          (enqueue-effect updated (CloseSearchNodeEffect id uuid)))))))
+          (enqueue-effect updated (CloseSearchNodeEffect id uuid)))))
+
+    (AddRootBlock uuid)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (AddRootBlockEffect id uuid)))))

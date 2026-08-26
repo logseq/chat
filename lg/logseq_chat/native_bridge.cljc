@@ -103,6 +103,9 @@
          (wire/quoted uuid) "}")
     (model/CloseSearchNodeEffect id uuid)
     (str "{\"id\":" id ",\"kind\":\"close-node\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/AddRootBlockEffect id uuid)
+    (str "{\"id\":" id ",\"kind\":\"add-root-block\",\"text\":"
          (wire/quoted uuid) "}")))
 
 (defn take-effect []
