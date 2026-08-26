@@ -93,6 +93,7 @@
 (defn effect-id [effect]
   (match effect
     (SendCaptureEffect id _text) id
+    (PresentAttachmentEffect id _kind) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
     (ChangeOutlinerTextEffect id _uuid _title _caret) id
@@ -189,6 +190,12 @@
              (> (count normalized) 7))
         (and (string/starts-with? normalized "https://")
              (> (count normalized) 8)))))
+
+(defn valid-attachment-kind? [kind]
+  (or (= kind "files")
+      (= kind "camera")
+      (= kind "photos")
+      (= kind "audio")))
 
 (defn current-settings [current]
   (record settings-projection
@@ -608,6 +615,13 @@
 
     CloseAttachmentPicker
     (assoc current :attachment-picker-open false)
+
+    (ChooseAttachment kind)
+    (if (valid-attachment-kind? kind)
+      (let [updated (assoc current :attachment-picker-open false)
+            id (:next-effect-id updated)]
+        (enqueue-effect updated (PresentAttachmentEffect id kind)))
+      current)
 
     OpenTaskStatusPicker
     (assoc current :task-status-picker-open true)

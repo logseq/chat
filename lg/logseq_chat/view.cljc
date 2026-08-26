@@ -851,6 +851,31 @@
       :on-press (fn [_event] (send model/ExpandComposer))}
      "Capture"]]])
 
+(defui attachment-picker-dialog [send]
+  [:dialog
+   {:text "Add attachment"
+    :on-dismiss (fn [_event] (send model/CloseAttachmentPicker))}
+   [:column
+    [:button
+     {:accessibility-identifier "button.attachment.files"
+      :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
+     "Files"]
+    [:button
+     {:accessibility-identifier "button.attachment.camera"
+      :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
+     "Camera"]
+    [:button
+     {:accessibility-identifier "button.attachment.photos"
+      :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
+     "Photos"]
+    [:button
+     {:accessibility-identifier "button.attachment.audio"
+      :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
+     "Audio recording"]
+    [:button
+     {:on-press (fn [_event] (send model/CloseAttachmentPicker))}
+     "Cancel"]]])
+
 (defn first-flashcard [current]
   (if (empty? (:flashcards current))
     None
@@ -1507,7 +1532,9 @@
    [:if {:test (reactive :settings-open model-source)}
     [settings-sheet model-source send]]
    [:if {:test (reactive :graph-password-open model-source)}
-    [graph-password-sheet model-source send]]])
+    [graph-password-sheet model-source send]]
+   [:if {:test (reactive :attachment-picker-open model-source)}
+    [attachment-picker-dialog send]]])
 
 (defui chat-view [model-source send]
   [:drawer

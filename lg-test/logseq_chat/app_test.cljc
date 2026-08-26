@@ -987,6 +987,43 @@
                   (:pending-effects empty-send)
                   "a preserved non-empty draft can still be submitted")))
 
+(deftest composer-attachment-selection-is-owned-by-lg
+  (let [opened (model/update (model/initial) model/OpenAttachmentPicker)
+        selected (model/update opened (model/ChooseAttachment "photos"))]
+    (is (:attachment-picker-open opened)
+        "the composer attachment menu is model-owned")
+    (is (not (:attachment-picker-open selected))
+        "choosing an attachment closes the menu")
+    (assert-equal [(model/PresentAttachmentEffect 1 "photos")]
+                  (:pending-effects selected)
+                  "the chosen system service crosses one typed boundary")
+    (assert-equal
+     "{\"id\":7,\"kind\":\"present-attachment\",\"text\":\"files\"}"
+     (bridge/encode-effect (model/PresentAttachmentEffect 7 "files"))
+     "the native bridge preserves the attachment service kind")))
+
+(deftest composer-attachment-menu-preserves-main-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/ExpandComposer)
+    (driver/send! application model/OpenAttachmentPicker)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          files (descendant-with-identifier renderer root "button.attachment.files")
+          camera (descendant-with-identifier renderer root "button.attachment.camera")
+          photos (descendant-with-identifier renderer root "button.attachment.photos")
+          audio (descendant-with-identifier renderer root "button.attachment.audio")]
+      (is (not (= -1 files)) "the attachment menu includes files")
+      (is (not (= -1 camera)) "the attachment menu includes camera")
+      (is (not (= -1 photos)) "the attachment menu includes photos")
+      (is (not (= -1 audio)) "the attachment menu includes audio recording")
+      (driver/dispatch-event! application (proto/Press photos))
+      (driver/flush! application)
+      (assert-equal [(model/PresentAttachmentEffect 1 "photos")]
+                    (:pending-effects (chat/model application))
+                    "the visible menu dispatches its selected service"))))
+
 (deftest native-bridge-drains-and-resolves-typed-effects-once
   (bridge/initialize 2 1)
   (let [application (bridge/app)]

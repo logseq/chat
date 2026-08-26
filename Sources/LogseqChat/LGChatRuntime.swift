@@ -97,19 +97,22 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let copyText: @MainActor (String) -> Void
     private let signOut: @MainActor () async -> Void
     private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
+    private let presentAttachment: (@MainActor (String) async -> Bool)?
 
     public init(
         saveSettings: @escaping @MainActor (LGChatSettingsPayload) async throws -> Void,
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
         signOut: @escaping @MainActor () async -> Void,
-        graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil
+        graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
+        presentAttachment: (@MainActor (String) async -> Bool)? = nil
     ) {
         self.saveSettings = saveSettings
         self.runtimeLog = runtimeLog
         self.copyText = copyText
         self.signOut = signOut
         self.graphEffect = graphEffect
+        self.presentAttachment = presentAttachment
     }
 
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
@@ -175,6 +178,20 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                 return LGChatEffectResolution(
                     succeeded: true,
                     message: "",
+                    output: .discard
+                )
+            case "present-attachment":
+                guard let presentAttachment else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Attachment presentation is unavailable",
+                        output: .discard
+                    )
+                }
+                let succeeded = await presentAttachment(effect.text)
+                return LGChatEffectResolution(
+                    succeeded: succeeded,
+                    message: succeeded ? "" : "Unknown attachment service: \(effect.text)",
                     output: .discard
                 )
             case "open-graph", "unlock-graph", "create-graph", "delete-local-graph":
@@ -455,7 +472,8 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 )
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
-        case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out":
+        case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
+             "present-attachment":
             guard let platformEffect else {
                 return LGChatEffectResolution(
                     succeeded: false,

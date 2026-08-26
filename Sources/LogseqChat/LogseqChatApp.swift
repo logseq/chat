@@ -113,6 +113,12 @@ public struct LogseqChatRootView : View {
             .onOpenURL { url in
                 runtime.acceptSharedCaptureURL(url)
             }
+            #if !SKIP
+            .modifier(LGChatPlatformPresentationHost(
+                coordinator: runtime.presentationCoordinator,
+                store: runtime.store
+            ))
+            #endif
     }
 
     private var preferredLocale: Locale {
@@ -134,6 +140,7 @@ public struct LogseqChatRootView : View {
     public let store: LogseqChatStore
     public let lgRuntime: LGChatRuntime
     public let authentication: LogseqAuthenticationStore
+    public let presentationCoordinator: LGChatPlatformPresentationCoordinator
     let syncCoordinator: GraphSyncCoordinator
     private struct LocalLaunchResult: Sendable {
         let catalogResponse: String
@@ -146,6 +153,7 @@ public struct LogseqChatRootView : View {
     private var didStartLGApplication = false
     private var isLGApplicationReady = false
     private let graphLifecycle: LGChatGraphLifecycle
+    private let platformCommandRouter: LGChatPlatformCommandRouter
 
     private struct SettingsHostPayload: Encodable {
         let appearance: String
@@ -180,6 +188,7 @@ public struct LogseqChatRootView : View {
             )
         )
         let syncCoordinator = GraphSyncCoordinator()
+        let presentationCoordinator = LGChatPlatformPresentationCoordinator()
         let databasePath = URL.documentsDirectory
             .appendingPathComponent("logseq-chat.sqlite")
             .path
@@ -223,18 +232,51 @@ public struct LogseqChatRootView : View {
                     refreshAfterApply: false
                 )
             },
-            graphEffect: { effect in await graphLifecycle.execute(effect) }
+            graphEffect: { effect in await graphLifecycle.execute(effect) },
+            presentAttachment: { kind in
+                presentationCoordinator.presentAttachment(kind)
+            }
+        )
+        let platformCommandRouter = LGChatPlatformCommandRouter(
+            setClipboardText: Self.copyText,
+            performHaptic: Self.performHaptic,
+            present: { presentation in
+                switch presentation {
+                case .confirmDelete(let blockIDs):
+                    presentationCoordinator.confirmDeletion(of: blockIDs)
+                case .pickAttachment(let blockID):
+                    _ = presentationCoordinator.presentAttachment(
+                        "files",
+                        targetBlockID: blockID
+                    )
+                case .takePhoto(let blockID):
+                    _ = presentationCoordinator.presentAttachment(
+                        "camera",
+                        targetBlockID: blockID
+                    )
+                case .recordAudio(let blockID):
+                    _ = presentationCoordinator.presentAttachment(
+                        "audio",
+                        targetBlockID: blockID
+                    )
+                case .focusBlock:
+                    break
+                }
+            }
         )
         let effectExecutor = LGChatCoreEffectExecutor(
             platformEffect: { effect in await platformHandler.execute(effect) }
         )
         self.store = store
         self.authentication = authentication
+        self.presentationCoordinator = presentationCoordinator
         self.syncCoordinator = syncCoordinator
         self.graphLifecycle = graphLifecycle
+        self.platformCommandRouter = platformCommandRouter
         let lgRuntime = LGChatRuntime(
             native: LGChatCoreNativeCaller(),
-            effectExecutor: effectExecutor
+            effectExecutor: effectExecutor,
+            platformCommandHandler: platformCommandRouter
         )
         self.lgRuntime = lgRuntime
         responseRelay.apply = { [weak lgRuntime] response in
@@ -336,6 +378,16 @@ public struct LogseqChatRootView : View {
         #elseif os(macOS)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        #endif
+    }
+
+    private static func performHaptic(_ style: String?) {
+        #if !SKIP && os(iOS)
+        if style == "selection" {
+            UISelectionFeedbackGenerator().selectionChanged()
+        } else {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
         #endif
     }
 

@@ -2,7 +2,6 @@ import SwiftUI
 import LogseqChatModel
 import Observation
 #if !SKIP
-import CryptoKit
 import PhotosUI
 import UniformTypeIdentifiers
 #if os(iOS)
@@ -2718,8 +2717,8 @@ struct ContentView: View {
                 do {
                     guard let data = try await item.loadTransferable(type: Data.self) else { continue }
                     let fileExtension = item.supportedContentTypes.first?.preferredFilenameExtension ?? "jpg"
-                    let metadata = try await Self.persistImportedData(
-                        data,
+                    let metadata = try await LGChatAssetImporter.persist(
+                        data: data,
                         title: "Photo-\(UUID().uuidString).\(fileExtension)"
                     )
                     addImportedAsset(metadata)
@@ -2738,8 +2737,8 @@ struct ContentView: View {
         }
         Task {
             do {
-                let metadata = try await Self.persistImportedData(
-                    data,
+                let metadata = try await LGChatAssetImporter.persist(
+                    data: data,
                     title: "Camera-\(UUID().uuidString).jpg"
                 )
                 addImportedAsset(metadata)
@@ -2750,7 +2749,7 @@ struct ContentView: View {
     }
     #endif
 
-    private func addImportedAsset(_ metadata: ImportedAsset) {
+    private func addImportedAsset(_ metadata: LGChatImportedAsset) {
         store.addAsset(
             title: metadata.title,
             assetType: metadata.assetType,
@@ -2766,7 +2765,7 @@ struct ContentView: View {
         Task {
             for url in urls {
                 do {
-                    let metadata = try await Self.persistImportedAsset(url)
+                    let metadata = try await LGChatAssetImporter.persist(url)
                     addImportedAsset(metadata)
                 } catch {
                     logger.error("Asset import failed: \(String(describing: error))")
@@ -2775,63 +2774,8 @@ struct ContentView: View {
         }
     }
 
-    private nonisolated static func persistImportedAsset(_ sourceURL: URL) async throws -> ImportedAsset {
-        try await Task.detached(priority: .utility) {
-            let accessed = sourceURL.startAccessingSecurityScopedResource()
-            defer { if accessed { sourceURL.stopAccessingSecurityScopedResource() } }
-            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Assets", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let destination = directory.appendingPathComponent(UUID().uuidString + "-" + sourceURL.lastPathComponent)
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-            let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
-            let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
-            let handle = try FileHandle(forReadingFrom: destination)
-            defer { try? handle.close() }
-            var hash = SHA256()
-            while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
-                hash.update(data: chunk)
-            }
-            let checksum = hash.finalize().map { String(format: "%02x", $0) }.joined()
-            return ImportedAsset(
-                title: sourceURL.lastPathComponent,
-                assetType: destination.pathExtension.lowercased(),
-                size: size,
-                checksum: checksum,
-                path: destination.path
-            )
-        }.value
-    }
-
-    private nonisolated static func persistImportedData(_ data: Data, title: String) async throws -> ImportedAsset {
-        try await Task.detached(priority: .utility) {
-            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("Assets", isDirectory: true)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let destination = directory.appendingPathComponent(title)
-            try data.write(to: destination, options: .atomic)
-            let checksum = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            return ImportedAsset(
-                title: title,
-                assetType: destination.pathExtension.lowercased(),
-                size: data.count,
-                checksum: checksum,
-                path: destination.path
-            )
-        }.value
-    }
     #endif
 }
-
-#if !SKIP
-private struct ImportedAsset: Sendable {
-    let title: String
-    let assetType: String
-    let size: Int
-    let checksum: String
-    let path: String
-}
-#endif
 
 private struct ConnectionSettingsView: View {
     @Binding var baseURL: String
@@ -3808,7 +3752,7 @@ private func taskStatusColor(hex: String) -> Color? {
 }
 
 #if !SKIP && os(iOS)
-private struct CameraPicker: UIViewControllerRepresentable {
+struct CameraPicker: UIViewControllerRepresentable {
     let onCapture: (UIImage) -> Void
     let onCancel: () -> Void
 

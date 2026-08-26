@@ -412,6 +412,7 @@ struct LGChatRendererTests {
             LGChatEffect(id: 36, kind: "unlock-graph", text: "secret"),
             LGChatEffect(id: 37, kind: "create-graph", text: "New", value: 0),
             LGChatEffect(id: 38, kind: "delete-local-graph", text: "graph-a"),
+            LGChatEffect(id: 39, kind: "present-attachment", text: "photos"),
         ]
         for effect in effects {
             #expect((await executor.execute(effect)).succeeded)
@@ -419,6 +420,28 @@ struct LGChatRendererTests {
 
         #expect(platformKinds == effects.map(\.kind))
         #expect(coreCallCount == 0)
+    }
+
+    @Test("attachment effects preserve the selected system service")
+    func attachmentEffectsUsePlatformBoundary() async {
+        var selectedKind: String?
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            presentAttachment: { kind in
+                selectedKind = kind
+                return true
+            }
+        )
+
+        let resolution = await handler.execute(
+            LGChatEffect(id: 40, kind: "present-attachment", text: "photos")
+        )
+
+        #expect(selectedKind == "photos")
+        #expect(resolution.succeeded)
     }
 
     @Test("platform settings handler preserves persisted values and multiline logs")

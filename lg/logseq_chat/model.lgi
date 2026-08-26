@@ -137,6 +137,7 @@
 
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
+  (PresentAttachmentEffect :int :string)
   (SearchNodesEffect :int :string)
   (TapOutlinerBlockEffect :int :string)
   (ChangeOutlinerTextEffect :int :string :string :int)
@@ -259,6 +260,7 @@
   (ResolveEffect :int :bool :string)
   (OpenAttachmentPicker)
   (CloseAttachmentPicker)
+  (ChooseAttachment :string)
   (OpenTaskStatusPicker)
   (CloseTaskStatusPicker)
   (RequestAppNode :string)
@@ -343,6 +345,7 @@
 (signature logseq-chat.model/move-sidebar-tab
  :fn<vector<string>;string;int;vector<string>>)
 (signature logseq-chat.model/valid-base-url? :fn<string;bool>)
+(signature logseq-chat.model/valid-attachment-kind? :fn<string;bool>)
 (signature logseq-chat.model/current-settings
  :fn<chat-model;settings-projection>)
 (signature logseq-chat.model/rollback-navigation-effect

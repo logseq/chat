@@ -72,6 +72,10 @@
     (str "{\"id\":" id
          ",\"kind\":\"send-capture\",\"text\":"
          (wire/quoted text) "}")
+    (model/PresentAttachmentEffect id kind)
+    (str "{\"id\":" id
+         ",\"kind\":\"present-attachment\",\"text\":"
+         (wire/quoted kind) "}")
     (model/SearchNodesEffect id query)
     (str "{\"id\":" id
          ",\"kind\":\"search-nodes\",\"text\":"
