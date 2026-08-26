@@ -184,6 +184,16 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "closeNode")
             )
+        case "select-sidebar-page":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "selectPage", payload: effect.text)
+            )
+        case "clear-selected-page":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "clearSelectedPage")
+            )
         case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block",
              "long-press-outliner-block", "add-root-block":
             do {

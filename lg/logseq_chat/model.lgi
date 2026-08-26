@@ -9,6 +9,19 @@
 (type-variant navigation-route
   (NodeRoute :string))
 
+(type-record sidebar-page
+  (uuid :string)
+  (title :string))
+
+(type-record sidebar-projection
+  (favorites :vector<sidebar-page>)
+  (recent-pages :vector<sidebar-page>)
+  (selected-page :option<sidebar-page>)
+  (selected-page-is-tag :bool)
+  (selected-page-is-property :bool)
+  (related-rows :vector<outline-row>)
+  (linked-reference-rows :vector<outline-row>))
+
 (type-record node-projection
   (uuid :string)
   (page-uuid :string)
@@ -78,11 +91,21 @@
   (OpenSearchNodeEffect :int :string)
   (CloseAppNodeEffect :int :string)
   (CloseSearchNodeEffect :int :string)
-  (AddRootBlockEffect :int :string))
+  (AddRootBlockEffect :int :string)
+  (SelectSidebarPageEffect :int :string)
+  (ClearSelectedPageEffect :int))
 
 (type-record chat-model
   (selected-graph :option<string>)
   (sync-state :sync-state)
+  (sidebar-open :bool)
+  (favorites :vector<sidebar-page>)
+  (recent-pages :vector<sidebar-page>)
+  (selected-page :option<sidebar-page>)
+  (selected-page-is-tag :bool)
+  (selected-page-is-property :bool)
+  (related-rows :vector<outline-row>)
+  (linked-reference-rows :vector<outline-row>)
   (search-open :bool)
   (search-query :string)
   (search-results :vector<search-hit>)
@@ -113,7 +136,8 @@
   (OpenSearch)
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
-  (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>
+  (ApplyCoreSnapshot :option<string> :sidebar-projection
+                     :bool :string :vector<search-hit>
                      :vector<node-projection>
                      :option<outliner-editing> :option<outliner-autocomplete>
                      :vector<outliner-autocomplete-candidate>
@@ -147,7 +171,11 @@
   (RequestSearchNode :string)
   (ResolveSearchNode :string :bool)
   (BackSearchNavigation)
-  (AddRootBlock :string))
+  (AddRootBlock :string)
+  (OpenSidebar)
+  (CloseSidebar)
+  (SelectSidebarPage :string)
+  (ShowJournals))
 
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/request-route

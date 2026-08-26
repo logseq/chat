@@ -174,6 +174,76 @@
     SyncedState "Up to date"
     (FailedState reason) (str "Sync failed: " reason)))
 
+(defn sidebar-page-identifier [page]
+  (str "link.sidebar.page." (:uuid page)))
+
+(defn sidebar-page-title [page]
+  (:title page))
+
+(defn favorites-empty? [current]
+  (empty? (:favorites current)))
+
+(defn recent-pages-empty? [current]
+  (empty? (:recent-pages current)))
+
+(defn sidebar-page-row [ui-context page-source send]
+  (let [page (signal/sample page-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive sidebar-page-title page-source)
+       :label (reactive sidebar-page-title page-source)
+       :accessibility-identifier (sidebar-page-identifier page)
+       :on-press
+       (event [current-page page-source]
+         (send (model/SelectSidebarPage (:uuid current-page))))}])))
+
+(defui sidebar-view [model-source send]
+  [:column
+   {:accessibility-identifier "sidebar.navigation"}
+   [:button
+    {:label "Close sidebar"
+     :accessibility-identifier "button.sidebar.dismiss"
+     :on-press (fn [_event] (send model/CloseSidebar))}
+    "Close"]
+   [:button
+    {:label "Switch graph"
+     :accessibility-identifier "button.graph-switch"}
+    "Switch graph"]
+   [:button
+    {:label "Journals"
+     :accessibility-identifier "link.sidebar.journals"
+     :on-press (fn [_event] (send model/ShowJournals))}
+    "Journals"]
+   [:button
+    {:label "Flashcards"
+     :accessibility-identifier "link.sidebar.flashcards"}
+    "Flashcards"]
+   [:button
+    {:label "Graphs"
+     :accessibility-identifier "link.sidebar.graphs"}
+    "Graphs"]
+   [:column {:accessibility-identifier "section.sidebar.favorites"}
+    [:text "Favorites"]
+    [:if {:test (reactive favorites-empty? model-source)}
+     [:text "No favorites yet"]]
+    [:keyed
+     {:source (reactive :favorites model-source)
+      :key :uuid
+      :compare compare
+      :as page-source}
+     [sidebar-page-row page-source send]]]
+   [:column {:accessibility-identifier "section.sidebar.recent"}
+    [:text "Recent"]
+    [:if {:test (reactive recent-pages-empty? model-source)}
+     [:text "No recent pages"]]
+    [:keyed
+     {:source (reactive :recent-pages model-source)
+      :key :uuid
+      :compare compare
+      :as page-source}
+     [sidebar-page-row page-source send]]]])
+
 (defn composer-collapsed? [current]
   (not (:composer-expanded current)))
 
@@ -318,47 +388,84 @@
     (Some route) (:title route)
     None "Untitled"))
 
+(defn main-title [current]
+  (match (:selected-page current)
+    (Some page) (:title page)
+    None "Logseq"))
+
+(defn current-content-active? [current]
+  (match (active-node-projection current)
+    (Some _route) true
+    None
+    (match (:selected-page current)
+      (Some _page) true
+      None false)))
+
+(defn current-content-is-tag? [current]
+  (match (active-node-projection current)
+    (Some route) (:is-tag route)
+    None (:selected-page-is-tag current)))
+
+(defn current-content-is-property? [current]
+  (match (active-node-projection current)
+    (Some route) (:is-property route)
+    None (:selected-page-is-property current)))
+
 (defn active-node-page-uuid [current]
   (match (active-node-projection current)
     (Some route) (:page-uuid route)
-    None ""))
+    None
+    (match (:selected-page current)
+      (Some page) (:uuid page)
+      None "")))
 
 (defn active-node-related-rows [current]
   (match (active-node-projection current)
     (Some route) (:related-rows route)
-    None []))
+    None (:related-rows current)))
 
 (defn active-node-linked-reference-rows [current]
   (match (active-node-projection current)
     (Some route) (:linked-reference-rows route)
-    None []))
+    None (:linked-reference-rows current)))
 
 (defn node-related-section-visible? [current]
-  (match (active-node-projection current)
-    (Some route)
-    (and (not (:is-tag route)) (not (empty? (:related-rows route))))
-    None false))
+  (and (current-content-active? current)
+       (not (current-content-is-tag? current))
+       (not (empty? (active-node-related-rows current)))))
 
 (defn node-tag-section-visible? [current]
-  (match (active-node-projection current)
-    (Some route) (:is-tag route)
-    None false))
+  (and (current-content-active? current)
+       (current-content-is-tag? current)))
 
 (defn node-tag-section-empty? [current]
-  (match (active-node-projection current)
-    (Some route) (and (:is-tag route) (empty? (:related-rows route)))
-    None false))
+  (and (node-tag-section-visible? current)
+       (empty? (active-node-related-rows current))))
 
 (defn node-linked-reference-section-visible? [current]
   (not (empty? (active-node-linked-reference-rows current))))
 
 (defn node-can-add-first-block? [current]
-  (match (active-node-projection current)
-    (Some route)
-    (and (empty? (:outliner-rows current))
-         (not (:is-tag route))
-         (not (:is-property route)))
-    None false))
+  (and (current-content-active? current)
+       (empty? (:outliner-rows current))
+       (not (current-content-is-tag? current))
+       (not (current-content-is-property? current))))
+
+(defn main-can-add-first-block? [current]
+  (and (node-navigation-inactive? current)
+       (node-can-add-first-block? current)))
+
+(defn main-related-section-visible? [current]
+  (and (node-navigation-inactive? current)
+       (node-related-section-visible? current)))
+
+(defn main-tag-section-visible? [current]
+  (and (node-navigation-inactive? current)
+       (node-tag-section-visible? current)))
+
+(defn main-linked-reference-section-visible? [current]
+  (and (node-navigation-inactive? current)
+       (node-linked-reference-section-visible? current)))
 
 (defn outliner-row-has-breadcrumb? [row]
   (not (empty? (:breadcrumb row))))
@@ -627,6 +734,15 @@
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
+(defui add-first-block-button [model-source send]
+  [:button
+   {:label "Add first block"
+    :accessibility-identifier "button.outliner.add-first-block"
+    :on-press
+    (event [current model-source]
+      (send (model/AddRootBlock (active-node-page-uuid current))))}
+   "Add first block"])
+
 (defui node-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.node"}
@@ -648,13 +764,7 @@
       :as row-source}
      [outliner-row model-source row-source send]]]
    [:if {:test (reactive node-can-add-first-block? model-source)}
-    [:button
-     {:label "Add first block"
-      :accessibility-identifier "button.outliner.add-first-block"
-      :on-press
-      (event [current model-source]
-        (send (model/AddRootBlock (active-node-page-uuid current))))}
-     "Add first block"]]
+    [add-first-block-button model-source send]]
    [:if {:test (reactive node-related-section-visible? model-source)}
     [node-related-section model-source send]]
    [:if {:test (reactive node-tag-section-visible? model-source)}
@@ -708,10 +818,12 @@
       :on-press (fn [_event] (send model/ExpandComposer))}
      "Capture"]]])
 
-(defui chat-view [model-source send]
+(defui chat-main-view [model-source send]
   [:column
    [:if {:test (reactive node-navigation-inactive? model-source)}
-    [:heading {:level 1} "Logseq"]]
+    [:text
+     {:value (reactive main-title model-source)
+      :accessibility-identifier "title.main"}]]
    [:if {:test (reactive node-navigation-inactive? model-source)}
     [:text {:value (reactive graph-label model-source)}]]
    [:if {:test (reactive node-navigation-inactive? model-source)}
@@ -745,13 +857,21 @@
         :as hit-source}
        [search-result-row hit-source send]]]]]
    [:if {:test (reactive node-navigation-inactive? model-source)}
-    [:list {:accessibility-identifier "outliner.list"}
+    [:list {:accessibility-identifier "list.outliner"}
      [:keyed
       {:source (reactive :outliner-rows model-source)
        :key :uuid
        :compare compare
        :as row-source}
       [outliner-row model-source row-source send]]]]
+   [:if {:test (reactive main-can-add-first-block? model-source)}
+    [add-first-block-button model-source send]]
+   [:if {:test (reactive main-related-section-visible? model-source)}
+    [node-related-section model-source send]]
+   [:if {:test (reactive main-tag-section-visible? model-source)}
+    [node-tagged-section model-source send]]
+   [:if {:test (reactive main-linked-reference-section-visible? model-source)}
+    [node-linked-reference-section model-source send]]
    [:if {:test (reactive main-outliner-selection-active? model-source)}
     [outliner-selection-toolbar send]]
    [:if {:test (reactive main-outliner-autocomplete-active? model-source)}
@@ -761,4 +881,24 @@
    [:if {:test (reactive node-navigation-inactive? model-source)}
     [composer-view model-source send]]
    [:if {:test (reactive node-navigation-active? model-source)}
-    [node-screen model-source send]]])
+    [node-screen model-source send]]
+   [:if {:test (reactive node-navigation-inactive? model-source)}
+    [:button
+     {:label "Open sidebar"
+      :accessibility-identifier "button.sidebar"
+      :on-press (fn [_event] (send model/OpenSidebar))}
+     "Menu"]]])
+
+(defui chat-view [model-source send]
+  [:drawer
+   {:selected (reactive :sidebar-open model-source)
+    :width 320
+    :label "Navigation"
+    :on-toggle
+    (fn [input-event]
+      (match input-event
+        (proto/ToggleChanged _node open)
+        (send (if open model/OpenSidebar model/CloseSidebar))
+        _ true))}
+   [chat-main-view model-source send]
+   [sidebar-view model-source send]])

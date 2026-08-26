@@ -87,6 +87,20 @@ let () =
         | _ -> failwith "related node rows were not projected")
      | Ok _ -> failwith "related node route was not projected"
      | Error message -> failwith message);
+    let sidebar =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"favorites":[{"uuid":"page-a","title":"Favorite page"}],"recentPages":[{"uuid":"page-b","title":"Recent page"}],"selectedPage":{"uuid":"page-a","title":"Favorite page"},"selectedPageIsTag":false,"selectedPageIsProperty":false,"relatedBlocks":[{"uuid":"reference","title":"Linked from journal","pageId":"journal","breadcrumbs":[{"uuid":"journal","title":"Journal"}],"markup":[]}],"linkedReferenceBlocks":[],"outlinerState":{"editing":null},"outlinerRows":[],"syncConnected":true}}|}
+    in
+    (match sidebar with
+     | Ok snapshot ->
+       (match snapshot.favorites, snapshot.recent_pages, snapshot.selected_page with
+        | [ { uuid = "page-a"; _ } ], [ { uuid = "page-b"; _ } ],
+          Some { uuid = "page-a"; _ } -> ()
+        | _ -> failwith "sidebar pages were not projected");
+       (match snapshot.related_rows with
+        | [ { uuid = "reference"; breadcrumb = "Journal"; _ } ] -> ()
+        | _ -> failwith "selected-page related rows were not projected")
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

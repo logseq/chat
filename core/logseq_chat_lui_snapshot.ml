@@ -5,6 +5,11 @@ type search_hit =
   ; is_page : bool
   }
 
+type sidebar_page =
+  { uuid : string
+  ; title : string
+  }
+
 type outline_row =
   { uuid : string
   ; title : string
@@ -63,6 +68,13 @@ type outliner_row_splice =
 
 type t =
   { graph_name : string option
+  ; favorites : sidebar_page list
+  ; recent_pages : sidebar_page list
+  ; selected_page : sidebar_page option
+  ; selected_page_is_tag : bool
+  ; selected_page_is_property : bool
+  ; related_rows : outline_row list
+  ; linked_reference_rows : outline_row list
   ; search_query : string
   ; search_results : search_hit list
   ; node_routes : node_route list
@@ -120,6 +132,14 @@ let search_hit = function
     (match string_member "uuid" fields, string_member "title" fields with
      | Some uuid, Some title ->
        Some { uuid; title; breadcrumb = breadcrumb fields; is_page = bool_member "isPage" fields }
+     | _ -> None)
+  | _ -> None
+;;
+
+let sidebar_page = function
+  | `Assoc fields ->
+    (match string_member "uuid" fields, string_member "title" fields with
+     | Some uuid, Some title -> Some { uuid; title }
      | _ -> None)
   | _ -> None
 ;;
@@ -292,6 +312,12 @@ let related_rows_member name fields =
   | _ -> []
 ;;
 
+let sidebar_pages_member name fields =
+  match member name fields with
+  | Some (`List values) -> List.filter_map sidebar_page values
+  | _ -> []
+;;
+
 let autocomplete_candidates_member name fields =
   match member name fields with
   | Some (`List values) -> List.filter_map outliner_autocomplete_candidate values
@@ -425,6 +451,14 @@ let decode_response encoded =
          in
          Ok
            { graph_name = string_member "graphName" result_fields
+           ; favorites = sidebar_pages_member "favorites" result_fields
+           ; recent_pages = sidebar_pages_member "recentPages" result_fields
+           ; selected_page = Option.bind (member "selectedPage" result_fields) sidebar_page
+           ; selected_page_is_tag = bool_member "selectedPageIsTag" result_fields
+           ; selected_page_is_property = bool_member "selectedPageIsProperty" result_fields
+           ; related_rows = related_rows_member "relatedBlocks" result_fields
+           ; linked_reference_rows =
+               related_rows_member "linkedReferenceBlocks" result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
            ; node_routes

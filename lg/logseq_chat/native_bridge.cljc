@@ -106,7 +106,12 @@
          (wire/quoted uuid) "}")
     (model/AddRootBlockEffect id uuid)
     (str "{\"id\":" id ",\"kind\":\"add-root-block\",\"text\":"
-         (wire/quoted uuid) "}")))
+         (wire/quoted uuid) "}")
+    (model/SelectSidebarPageEffect id uuid)
+    (str "{\"id\":" id ",\"kind\":\"select-sidebar-page\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/ClearSelectedPageEffect id)
+    (str "{\"id\":" id ",\"kind\":\"clear-selected-page\",\"text\":\"\"}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]

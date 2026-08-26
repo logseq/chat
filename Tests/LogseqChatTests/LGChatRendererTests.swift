@@ -267,6 +267,28 @@ struct LGChatRendererTests {
         #expect(close.succeeded)
     }
 
+    @Test("sidebar navigation effects dispatch the existing core actions")
+    func sidebarNavigationEffectsUseCoreNavigation() async throws {
+        var capturedRequests: [LogseqChatRPCRequest] = []
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequests.append(request)
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let select = await executor.execute(
+            LGChatEffect(id: 22, kind: "select-sidebar-page", text: "page-a")
+        )
+        let clear = await executor.execute(
+            LGChatEffect(id: 23, kind: "clear-selected-page", text: "")
+        )
+
+        #expect(capturedRequests.map(\.params.action) == ["selectPage", "clearSelectedPage"])
+        #expect(capturedRequests[0].params.payload == "page-a")
+        #expect(capturedRequests[1].params.payload == nil)
+        #expect(select.succeeded)
+        #expect(clear.succeeded)
+    }
+
     @Test("outliner selection effects reuse the existing core reducer")
     func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []

@@ -38,6 +38,19 @@
             child
             (recur (inc index))))))))
 
+(defn main-root [renderer application]
+  (nth (apple/children renderer (driver/root-node application)) 0))
+
+(defn empty-sidebar-projection []
+  (record model/sidebar-projection
+    (favorites [])
+    (recent-pages [])
+    (selected-page None)
+    (selected-page-is-tag false)
+    (selected-page-is-property false)
+    (related-rows [])
+    (linked-reference-rows [])))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
@@ -55,7 +68,7 @@
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/flush! application)
-    (let [children (apple/children renderer (driver/root-node application))
+    (let [children (apple/children renderer (main-root renderer application))
           graph-label (nth children 1)
           sync-label (nth children 2)]
       (assert-equal None (:selected-graph (chat/model application))
@@ -72,7 +85,7 @@
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/flush! application)
-    (let [children (apple/children renderer (driver/root-node application))
+    (let [children (apple/children renderer (main-root renderer application))
           graph-label (nth children 1)
           sync-label (nth children 2)]
       (driver/send! application (model/SelectGraph "Work"))
@@ -85,7 +98,7 @@
                     (property-string renderer sync-label proto/TextValue)
                     "begin sync exposes progress")
       (assert-equal sync-label
-                    (nth (apple/children renderer (driver/root-node application)) 2)
+                    (nth (apple/children renderer (main-root renderer application)) 2)
                     "sync changes retain the native status node")
 
       (driver/send! application model/SyncSucceeded)
@@ -100,12 +113,139 @@
                     (property-string renderer sync-label proto/TextValue)
                     "failure retains its actionable reason"))))
 
+(deftest sidebar-state-and-page-selection-are-owned-by-lg
+  (let [favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
+        recent (record model/sidebar-page (uuid "page-b") (title "Recent"))
+        opened (model/update (model/initial) model/OpenSidebar)
+        projected
+        (model/update
+         opened
+         (model/ApplyCoreSnapshot
+          None
+          (record model/sidebar-projection
+            (favorites [favorite])
+            (recent-pages [recent])
+            (selected-page None)
+            (selected-page-is-tag false)
+            (selected-page-is-property false)
+            (related-rows [])
+            (linked-reference-rows []))
+          false "" [] [] None None [] [] [] false []))
+        selected (model/update projected (model/SelectSidebarPage "page-a"))
+        journals (model/update selected model/ShowJournals)]
+    (is (:sidebar-open opened) "sidebar presentation is LG-owned")
+    (assert-equal [favorite] (:favorites projected)
+                  "favorites come from the core projection")
+    (assert-equal [recent] (:recent-pages projected)
+                  "recent pages come from the core projection")
+    (is (not (:sidebar-open selected))
+        "selecting a page dismisses the sidebar")
+    (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
+                  (:pending-effects selected)
+                  "page selection crosses the typed core boundary")
+    (assert-equal
+     [(model/SelectSidebarPageEffect 1 "page-a")
+      (model/ClearSelectedPageEffect 2)]
+     (:pending-effects journals)
+     "journals clears the selected core page")))
+
+(deftest sidebar-renders-main-branch-navigation-identifiers
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
+        sidebar
+        (record model/sidebar-projection
+          (favorites [favorite])
+          (recent-pages [])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None sidebar false "" [] []
+                                           None None [] [] [] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          main (main-root renderer application)
+          open-button (child-with-identifier renderer main "button.sidebar")]
+      (is (not (property-bool renderer root proto/Selected))
+          "the native drawer starts from LG's closed state")
+      (driver/dispatch-event! application (proto/Press open-button))
+      (driver/flush! application)
+      (is (property-bool renderer root proto/Selected)
+          "opening the sidebar patches the controlled drawer")
+      (let [sidebar-view (child-with-identifier renderer root "sidebar.navigation")
+            dismiss
+            (child-with-identifier renderer sidebar-view "button.sidebar.dismiss")
+            graph-switch
+            (child-with-identifier renderer sidebar-view "button.graph-switch")
+            favorites
+            (child-with-identifier renderer sidebar-view "section.sidebar.favorites")
+            recent
+            (child-with-identifier renderer sidebar-view "section.sidebar.recent")
+            favorite-link
+            (child-with-identifier renderer favorites "link.sidebar.page.page-a")]
+        (is (not (= dismiss -1)) "sidebar keeps its dismiss identifier")
+        (is (not (= graph-switch -1)) "sidebar keeps the graph switch identifier")
+        (is (not (= recent -1)) "sidebar keeps the recent section identifier")
+        (driver/dispatch-event! application (proto/Press favorite-link))
+        (driver/flush! application)
+        (is (not (property-bool renderer root proto/Selected))
+            "page selection closes the controlled drawer")
+        (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
+                      (:pending-effects (chat/model application))
+                      "sidebar page presses reuse the typed selection effect")))))
+
+(deftest selected-sidebar-pages-render-their-outliner-and-related-content
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        related-row
+        (record model/outline-row
+          (uuid "reference")
+          (title "Linked from journal")
+          (markup-json "[]")
+          (youtube-target-url None)
+          (breadcrumb "Journal")
+          (opens-as-page false)
+          (depth 0)
+          (has-children false)
+          (is-collapsed false))
+        sidebar
+        (record model/sidebar-projection
+          (favorites [page])
+          (recent-pages [page])
+          (selected-page (Some page))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [related-row])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None sidebar false "" [] []
+                                           None None [] [] [] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          title (child-with-identifier renderer root "title.main")
+          related
+          (child-with-identifier renderer root "section.node.linked-references")
+          add-first
+          (child-with-identifier renderer root "button.outliner.add-first-block")]
+      (assert-equal "Project" (property-string renderer title proto/TextValue)
+                    "selected pages own the main header title")
+      (is (not (= related -1))
+          "selected pages render their core-projected linked references")
+      (is (not (= add-first -1))
+          "empty selected pages preserve the add-first-block action"))))
+
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           search-button (nth (apple/children renderer root) 3)]
       (assert-equal "button.search"
                     (property-string renderer search-button
@@ -141,7 +281,7 @@
             "close removes the search presentation")
         (assert-equal "" (:search-query (chat/model application))
                       "close clears transient search input")
-        (assert-equal 6 (count (apple/children renderer root))
+        (assert-equal 7 (count (apple/children renderer root))
                       "the retained search subtree is disposed")))))
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
@@ -149,7 +289,7 @@
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           composer (nth (apple/children renderer root) 5)
           collapsed (nth (apple/children renderer composer) 0)]
       (assert-equal "button.composer.expand"
@@ -353,10 +493,10 @@
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None false "" [] [route]
+     (model/ApplyCoreSnapshot None (empty-sidebar-projection) false "" [] [route]
                               None None [] [] [row] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           screen (child-with-identifier renderer root "screen.node")
           back (child-with-identifier renderer screen "button.outliner.zoom-out")
           title (child-with-identifier renderer screen "title.node")
@@ -386,10 +526,11 @@
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "page-a"))
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] [route]
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                           false "" [] [route]
                                            None None [] [] [] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           screen (child-with-identifier renderer root "screen.node")
           add-button
           (child-with-identifier renderer screen "button.outliner.add-first-block")]
@@ -475,7 +616,7 @@
     (driver/send! application
                   (model/ApplySearchResults "project" [hit]))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           search-panel (nth (apple/children renderer root) 4)
           results (nth (apple/children renderer search-panel) 2)
           row (nth (apple/children renderer results) 0)]
@@ -508,11 +649,12 @@
                         (caret-utf16-offset 4))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] []
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                           false "" [] []
                                            (Some editing) None [] []
                                            [row] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           outliner (nth (apple/children renderer root) 4)
           rendered-row (nth (apple/children renderer outliner) 0)]
       (assert-equal "outliner.block.block-a"
@@ -552,10 +694,11 @@
                     (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] [] None None [] []
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                           false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           outliner (nth (apple/children renderer root) 4)
           rendered-row (nth (apple/children renderer outliner) 0)
           content (nth (apple/children renderer rendered-row) 0)
@@ -611,10 +754,11 @@
                     (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] [] None None []
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                           false "" [] [] None None []
                                            ["parent"] [row] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           outliner (nth (apple/children renderer root) 4)
           rendered-row (nth (apple/children renderer outliner) 0)
           toolbar (child-with-identifier
@@ -661,11 +805,11 @@
     (driver/start! application)
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None false "" [] []
+     (model/ApplyCoreSnapshot None (empty-sidebar-projection) false "" [] []
                               (Some editing) (Some autocomplete) [candidate]
                               [] [row] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           autocomplete-bar
           (child-with-identifier renderer root "toolbar.outliner.autocomplete")
           candidate-button (nth (apple/children renderer autocomplete-bar) 0)
@@ -704,10 +848,11 @@
                     (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] [] None None [] []
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                           false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (main-root renderer application)
           outliner (nth (apple/children renderer root) 4)
           rendered-row (nth (apple/children renderer outliner) 0)
           content (nth (apple/children renderer rendered-row) 0)
@@ -758,7 +903,8 @@
         initial
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None false "" [] [] None None [] []
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                  false "" [] [] None None [] []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
                        (start (Some 0))
@@ -769,7 +915,8 @@
         collapsed
         (model/update
          initial
-         (model/ApplyCoreSnapshot None false "" [] [] None None [] [] []
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                                  false "" [] [] None None [] [] []
                                   true [splice]))]
     (assert-equal [collapsed-parent sibling]
                   (:outliner-rows collapsed)

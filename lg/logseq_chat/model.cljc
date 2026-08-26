@@ -5,6 +5,14 @@
   (record chat-model
           (selected-graph None)
           (sync-state OfflineState)
+          (sidebar-open false)
+          (favorites [])
+          (recent-pages [])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows [])
           (search-open false)
           (search-query "")
           (search-results [])
@@ -69,7 +77,9 @@
     (OpenSearchNodeEffect id _uuid) id
     (CloseAppNodeEffect id _uuid) id
     (CloseSearchNodeEffect id _uuid) id
-    (AddRootBlockEffect id _uuid) id))
+    (AddRootBlockEffect id _uuid) id
+    (SelectSidebarPageEffect id _uuid) id
+    (ClearSelectedPageEffect id) id))
 
 (defn effect-with-id [effects target]
   (loop [index 0]
@@ -96,6 +106,8 @@
     (CloseSearchNodeEffect _id uuid)
     (assoc current :search-navigation-path
            (request-route (:search-navigation-path current) (NodeRoute uuid)))
+    (SelectSidebarPageEffect _id _uuid)
+    (assoc current :sidebar-open true)
     _ current))
 
 (defn enqueue-effect [current effect]
@@ -257,7 +269,7 @@
              :search-loading false)
       current)
 
-    (ApplyCoreSnapshot graph-name sync-connected query results node-routes
+    (ApplyCoreSnapshot graph-name sidebar sync-connected query results node-routes
                        outliner-editing outliner-autocomplete
                        outliner-autocomplete-candidates
                        outliner-selected-block-ids
@@ -274,6 +286,13 @@
           (assoc current
                  :selected-graph graph-name
                  :sync-state (if sync-connected SyncedState OfflineState)
+                 :favorites (:favorites sidebar)
+                 :recent-pages (:recent-pages sidebar)
+                 :selected-page (:selected-page sidebar)
+                 :selected-page-is-tag (:selected-page-is-tag sidebar)
+                 :selected-page-is-property (:selected-page-is-property sidebar)
+                 :related-rows (:related-rows sidebar)
+                 :linked-reference-rows (:linked-reference-rows sidebar)
                  :node-routes node-routes
                  :outliner-editing outliner-editing
                  :outliner-autocomplete outliner-autocomplete
@@ -462,4 +481,20 @@
 
     (AddRootBlock uuid)
     (let [id (:next-effect-id current)]
-      (enqueue-effect current (AddRootBlockEffect id uuid)))))
+      (enqueue-effect current (AddRootBlockEffect id uuid)))
+
+    OpenSidebar
+    (assoc current :sidebar-open true)
+
+    CloseSidebar
+    (assoc current :sidebar-open false)
+
+    (SelectSidebarPage uuid)
+    (let [updated (assoc current :sidebar-open false)
+          id (:next-effect-id updated)]
+      (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
+
+    ShowJournals
+    (let [updated (assoc current :sidebar-open false)
+          id (:next-effect-id updated)]
+      (enqueue-effect updated (ClearSelectedPageEffect id)))))

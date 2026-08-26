@@ -32,6 +32,22 @@ and outline_row (row : Snapshot.outline_row) : LG.outline_row =
   }
 ;;
 
+let sidebar_page (page : Snapshot.sidebar_page) : LG.sidebar_page =
+  { uuid = page.uuid; title = page.title }
+;;
+
+let sidebar_projection (snapshot : Snapshot.t) : LG.sidebar_projection =
+  { favorites = Rrbvec.of_list (List.map sidebar_page snapshot.favorites)
+  ; recent_pages = Rrbvec.of_list (List.map sidebar_page snapshot.recent_pages)
+  ; selected_page = Option.map sidebar_page snapshot.selected_page
+  ; selected_page_is_tag = snapshot.selected_page_is_tag
+  ; selected_page_is_property = snapshot.selected_page_is_property
+  ; related_rows = Rrbvec.of_list (List.map outline_row snapshot.related_rows)
+  ; linked_reference_rows =
+      Rrbvec.of_list (List.map outline_row snapshot.linked_reference_rows)
+  }
+;;
+
 let outliner_editing (editing : Snapshot.outliner_editing) : LG.outliner_editing =
   { uuid = editing.uuid
   ; title = editing.title
@@ -77,6 +93,7 @@ let apply_response encoded =
     | Ok snapshot ->
       LG.ApplyCoreSnapshot
         ( snapshot.graph_name
+        , sidebar_projection snapshot
         , snapshot.sync_connected
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)
