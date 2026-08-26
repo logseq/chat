@@ -51,7 +51,9 @@
     (ChangeOutlinerTextEffect id _uuid _title _caret) id
     (ReturnOutlinerEditorEffect id _uuid _title _caret) id
     (BackspaceOutlinerEditorEffect id _uuid _title _selection) id
-    (MoveOutlinerCaretEffect id _uuid _caret) id))
+    (MoveOutlinerCaretEffect id _uuid _caret) id
+    (ToggleOutlinerCollapsedEffect id _uuid) id
+    (ZoomOutlinerBlockEffect id _uuid) id))
 
 (defn enqueue-effect [current effect]
   (assoc current
@@ -70,6 +72,78 @@
                      (caret-utf16-offset caret))))
       current)
     None current))
+
+(defn row-index [rows uuid]
+  (loop [index 0]
+    (if (= index (count rows))
+      None
+      (if (= (:uuid (nth rows index)) uuid)
+        (Some index)
+        (recur (inc index))))))
+
+(defn contains-row? [rows uuid]
+  (match (row-index rows uuid)
+    (Some _index) true
+    None false))
+
+(defn splice-start [rows splice]
+  (match (:after-block-id splice)
+    (Some uuid)
+    (match (row-index rows uuid)
+      (Some index) (Some (inc index))
+      None
+      (match (:before-block-id splice)
+        (Some before-uuid) (row-index rows before-uuid)
+        None (:start splice)))
+    None
+    (match (:before-block-id splice)
+      (Some uuid) (row-index rows uuid)
+      None (:start splice))))
+
+(defn apply-row-splice [rows splice]
+  (match (splice-start rows splice)
+    None rows
+    (Some requested-start)
+    (let [start (min (max requested-start 0) (count rows))
+          delete-end
+          (min (+ start (max (:delete-count splice) 0)) (count rows))
+          inserted (:rows splice)
+          prefix
+          (loop [index 0
+                 result (subvec rows 0 0)]
+            (if (= index start)
+              result
+              (let [row (nth rows index)]
+                (recur
+                 (inc index)
+                 (if (contains-row? inserted (:uuid row))
+                   result
+                   (conj result row))))))]
+      (loop [index delete-end
+             result (into prefix inserted)]
+        (if (= index (count rows))
+          result
+          (let [row (nth rows index)]
+            (recur
+             (inc index)
+             (if (contains-row? inserted (:uuid row))
+               result
+               (conj result row)))))))))
+
+(defn apply-row-splices [rows splices]
+  (loop [index 0
+         result rows]
+    (if (= index (count splices))
+      result
+      (recur (inc index) (apply-row-splice result (nth splices index))))))
+
+(defn merge-row-replacements [rows replacements]
+  (mapv
+   (fn [row]
+     (match (row-index replacements (:uuid row))
+       (Some index) (nth replacements index)
+       None row))
+   rows))
 
 (defn remove-search-effects [effects]
   (filterv
@@ -148,13 +222,21 @@
       current)
 
     (ApplyCoreSnapshot graph-name sync-connected query results
-                       outliner-editing outliner-rows)
-    (let [updated
+                       outliner-editing outliner-rows is-outliner-patch
+                       outliner-row-splices)
+    (let [projected-rows
+          (if is-outliner-patch
+            (if (empty? outliner-row-splices)
+              (merge-row-replacements (:outliner-rows current) outliner-rows)
+              (apply-row-splices (:outliner-rows current)
+                                 outliner-row-splices))
+            outliner-rows)
+          updated
           (assoc current
                  :selected-graph graph-name
                  :sync-state (if sync-connected SyncedState OfflineState)
                  :outliner-editing outliner-editing
-                 :outliner-rows outliner-rows)]
+                 :outliner-rows projected-rows)]
       (if (= query (:search-query current))
         (assoc updated
                :search-results results
@@ -191,6 +273,14 @@
           updated (update-editing current uuid title caret)
           id (:next-effect-id updated)]
       (enqueue-effect updated (MoveOutlinerCaretEffect id uuid caret)))
+
+    (ToggleOutlinerCollapsed uuid)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (ToggleOutlinerCollapsedEffect id uuid)))
+
+    (ZoomOutlinerBlock uuid)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (ZoomOutlinerBlockEffect id uuid)))
 
     CloseSearch
     (assoc current

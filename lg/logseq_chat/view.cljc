@@ -159,6 +159,29 @@
   (let [_depth (:depth row)]
     (:uuid row)))
 
+(defn outliner-row-indent [row]
+  (* (:depth row) 22))
+
+(defn outliner-row-has-children [row]
+  (:has-children row))
+
+(defn outliner-row-zoom-label [row]
+  (str "Zoom into "
+       (if (empty? (:title row)) "Untitled block" (:title row))))
+
+(defn outliner-row-collapse-label [row]
+  (str (if (:is-collapsed row) "Expand " "Collapse ")
+       (if (empty? (:title row)) "Untitled block" (:title row))))
+
+(defn outliner-row-collapse-glyph [row]
+  (if (:is-collapsed row) "›" "⌄"))
+
+(defn outliner-indent-view [ui-context width-source]
+  (let [node (ui/text! ui-context "")]
+    (ui/int-property-signal!
+     ui-context node proto/WidthValue width-source)
+    node))
+
 (defn row-editing? [current row]
   (match (:outliner-editing current)
     (Some editing) (= (:uuid editing) (:uuid row))
@@ -182,9 +205,11 @@
         block-id-source (reactive outliner-row-uuid row-source)
         editing-title-source (reactive editing-title model-source)
         editing-caret-source (reactive editing-caret model-source)
+        indent-source (reactive outliner-row-indent row-source)
         editing-source (reactive row-editing? model-source row-source)
         not-editing-source
-        (reactive row-not-editing? model-source row-source)]
+        (reactive row-not-editing? model-source row-source)
+        has-children-source (reactive outliner-row-has-children row-source)]
     (elements/element
      ui-context nil
      [:list-item
@@ -192,11 +217,30 @@
        :on-press
        (event [current-row row-source]
          (send (model/BeginOutlinerEdit (:uuid current-row))))}
-      [:if {:test editing-source}
-       [outliner-editor-view block-id-source
-        editing-title-source editing-caret-source send]]
-      [:if {:test not-editing-source}
-       [:text {:value (reactive outliner-row-title row-source)}]]])))
+      [:row {:gap 2 :padding-vertical 5}
+       [outliner-indent-view indent-source]
+       [:button
+        {:label (reactive outliner-row-zoom-label row-source)
+         :accessibility-identifier
+         (str "button.outliner.zoom." (:uuid row))
+         :on-press
+         (event [current-row row-source]
+           (send (model/ZoomOutlinerBlock (:uuid current-row))))}
+        "•"]
+       [:if {:test editing-source}
+        [outliner-editor-view block-id-source
+         editing-title-source editing-caret-source send]]
+       [:if {:test not-editing-source}
+        [:text {:value (reactive outliner-row-title row-source)}]]
+       [:if {:test has-children-source}
+        [:button
+         {:text (reactive outliner-row-collapse-glyph row-source)
+          :label (reactive outliner-row-collapse-label row-source)
+          :accessibility-identifier
+          (str "button.outliner.collapse." (:uuid row))
+          :on-press
+          (event [current-row row-source]
+            (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]])))
 
 (defui composer-view [model-source send]
   [:column

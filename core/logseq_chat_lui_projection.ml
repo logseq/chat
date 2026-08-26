@@ -25,6 +25,15 @@ let outliner_editing (editing : Snapshot.outliner_editing) : LG.outliner_editing
   }
 ;;
 
+let outliner_row_splice (splice : Snapshot.outliner_row_splice) : LG.outline_row_splice =
+  { start = splice.start
+  ; after_block_id = splice.after_block_id
+  ; before_block_id = splice.before_block_id
+  ; delete_count = splice.delete_count
+  ; rows = Rrbvec.of_list (List.map outline_row splice.rows)
+  }
+;;
+
 let apply_response encoded =
   let action =
     match Snapshot.decode_response encoded with
@@ -35,7 +44,10 @@ let apply_response encoded =
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)
         , Option.map outliner_editing snapshot.outliner_editing
-        , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows) )
+        , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
+        , snapshot.is_outliner_patch
+        , Rrbvec.of_list
+            (List.map outliner_row_splice snapshot.outliner_row_splices) )
     | Error message -> LG.SyncFailed message
   in
   LG.logseq_chat_native_bridge_flush_action_bang action

@@ -114,10 +114,15 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "searchNodes", payload: effect.text)
             )
-        case "tap-outliner-block":
+        case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block":
             do {
+                let eventType = switch effect.kind {
+                case "toggle-outliner-collapsed": "toggleCollapsed"
+                case "zoom-outliner-block": "zoomIn"
+                default: "tapBlock"
+                }
                 request = try Self.outlinerRequest(
-                    LogseqOutlinerEvent(type: "tapBlock", uuid: effect.text)
+                    LogseqOutlinerEvent(type: eventType, uuid: effect.text)
                 )
             } catch {
                 return LGChatEffectResolution(

@@ -17,6 +17,11 @@
     (Some (StringValue value)) value
     _ "<missing>"))
 
+(defn property-int [renderer node property]
+  (match (apple/property renderer node property)
+    (Some (proto/IntValue value)) value
+    _ -1))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
@@ -352,7 +357,7 @@
     (driver/start! application)
     (driver/send! application
                   (model/ApplyCoreSnapshot None false "" []
-                                           (Some editing) [row]))
+                                           (Some editing) [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
           outliner (nth (apple/children renderer root) 4)
@@ -361,7 +366,8 @@
                     (property-string renderer rendered-row
                                      proto/AccessibilityIdentifier)
                     "the LG row keeps main's stable block identifier")
-      (let [editor (nth (apple/children renderer rendered-row) 0)]
+      (let [content (nth (apple/children renderer rendered-row) 0)
+            editor (nth (apple/children renderer content) 2)]
         (assert-equal (Some (apple/AppleExtension "outliner-editor"))
                       (apple/node renderer editor)
                       "editing uses the registered native editor service")
@@ -385,6 +391,97 @@
                   "tapBlock crosses the LG effect boundary")
     (assert-equal 2 (:next-effect-id editing)
                   "outliner effects share the monotonic effect sequence")))
+
+(deftest outliner-structure-controls-publish-typed-core-effects
+  (let [collapsed
+        (model/update (model/initial)
+                      (model/ToggleOutlinerCollapsed "parent"))
+        zoomed
+        (model/update collapsed (model/ZoomOutlinerBlock "parent"))]
+    (assert-equal
+     [(model/ToggleOutlinerCollapsedEffect 1 "parent")]
+     (:pending-effects collapsed)
+     "collapse crosses the LG effect boundary")
+    (assert-equal
+     [(model/ToggleOutlinerCollapsedEffect 1 "parent")
+      (model/ZoomOutlinerBlockEffect 2 "parent")]
+     (:pending-effects zoomed)
+     "zoom shares the ordered typed effect queue")
+    (assert-equal 3 (:next-effect-id zoomed)
+                  "both structure controls advance stable effect IDs")))
+
+(deftest outliner-rows-preserve-depth-zoom-and-collapse-controls
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+              (uuid "parent")
+              (title "Parent")
+              (depth 2)
+              (has-children true)
+              (is-collapsed false))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None false "" [] None [row]
+                                           false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          outliner (nth (apple/children renderer root) 4)
+          rendered-row (nth (apple/children renderer outliner) 0)
+          content (nth (apple/children renderer rendered-row) 0)
+          content-children (apple/children renderer content)
+          indent (nth content-children 0)
+          zoom (nth content-children 1)
+          collapse (nth content-children 3)]
+      (assert-equal 44 (property-int renderer indent proto/WidthValue)
+                    "depth uses main's 22-point indentation")
+      (assert-equal "button.outliner.zoom.parent"
+                    (property-string renderer zoom
+                                     proto/AccessibilityIdentifier)
+                    "zoom keeps main's stable identifier")
+      (assert-equal "button.outliner.collapse.parent"
+                    (property-string renderer collapse
+                                     proto/AccessibilityIdentifier)
+                    "collapse keeps main's stable identifier")
+      (driver/dispatch-event! application (proto/Press zoom))
+      (driver/dispatch-event! application (proto/Press collapse))
+      (driver/flush! application)
+      (assert-equal
+       [(model/ZoomOutlinerBlockEffect 1 "parent")
+        (model/ToggleOutlinerCollapsedEffect 2 "parent")]
+       (:pending-effects (chat/model application))
+       "both controls route through LG without triggering row editing"))))
+
+(deftest outliner-row-splices-update-the-existing-keyed-projection
+  (let [parent (record model/outline-row
+                 (uuid "parent") (title "Parent") (depth 0)
+                 (has-children true) (is-collapsed false))
+        child (record model/outline-row
+                (uuid "child") (title "Child") (depth 1)
+                (has-children false) (is-collapsed false))
+        sibling (record model/outline-row
+                  (uuid "sibling") (title "Sibling") (depth 0)
+                  (has-children false) (is-collapsed false))
+        collapsed-parent (record model/outline-row
+                           (uuid "parent") (title "Parent") (depth 0)
+                           (has-children true) (is-collapsed true))
+        initial
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot None false "" [] None
+                                  [parent child sibling] false []))
+        splice (record model/outline-row-splice
+                 (start (Some 0))
+                 (after-block-id None)
+                 (before-block-id None)
+                 (delete-count 2)
+                 (rows [collapsed-parent]))
+        collapsed
+        (model/update
+         initial
+         (model/ApplyCoreSnapshot None false "" [] None [] true [splice]))]
+    (assert-equal [collapsed-parent sibling]
+                  (:outliner-rows collapsed)
+                  "a bounded core splice preserves unaffected keyed rows")))
 
 (deftest native-bridge-returns-initial-and-disposal-patch-batches
   (let [initial-patch (bridge/initialize 2 1)]

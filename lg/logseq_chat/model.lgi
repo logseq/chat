@@ -27,6 +27,13 @@
   (title :string)
   (caret-utf16-offset :int))
 
+(type-record outline-row-splice
+  (start :option<int>)
+  (after-block-id :option<string>)
+  (before-block-id :option<string>)
+  (delete-count :int)
+  (rows :vector<outline-row>))
+
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
   (SearchNodesEffect :int :string)
@@ -34,7 +41,9 @@
   (ChangeOutlinerTextEffect :int :string :string :int)
   (ReturnOutlinerEditorEffect :int :string :string :int)
   (BackspaceOutlinerEditorEffect :int :string :string :int)
-  (MoveOutlinerCaretEffect :int :string :int))
+  (MoveOutlinerCaretEffect :int :string :int)
+  (ToggleOutlinerCollapsedEffect :int :string)
+  (ZoomOutlinerBlockEffect :int :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
@@ -66,12 +75,15 @@
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
   (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>
-                     :option<outliner-editing> :vector<outline-row>)
+                     :option<outliner-editing> :vector<outline-row> :bool
+                     :vector<outline-row-splice>)
   (BeginOutlinerEdit :string)
   (ChangeOutlinerText :string :string :int)
   (ReturnOutlinerEditor :string :string :int)
   (BackspaceOutlinerEditor :string :string :int)
   (MoveOutlinerCaret :string :int)
+  (ToggleOutlinerCollapsed :string)
+  (ZoomOutlinerBlock :string)
   (CloseSearch)
   (ExpandComposer)
   (ChangeComposerDraft :string)
@@ -102,6 +114,18 @@
  :fn<chat-model;chat-effect;chat-model>)
 (signature logseq-chat.model/update-editing
  :fn<chat-model;string;string;int;chat-model>)
+(signature logseq-chat.model/row-index
+ :fn<vector<outline-row>;string;option<int>>)
+(signature logseq-chat.model/contains-row?
+ :fn<vector<outline-row>;string;bool>)
+(signature logseq-chat.model/splice-start
+ :fn<vector<outline-row>;outline-row-splice;option<int>>)
+(signature logseq-chat.model/apply-row-splice
+ :fn<vector<outline-row>;outline-row-splice;vector<outline-row>>)
+(signature logseq-chat.model/apply-row-splices
+ :fn<vector<outline-row>;vector<outline-row-splice>;vector<outline-row>>)
+(signature logseq-chat.model/merge-row-replacements
+ :fn<vector<outline-row>;vector<outline-row>;vector<outline-row>>)
 (signature logseq-chat.model/remove-int :fn<vector<int>;int;vector<int>>)
 (signature logseq-chat.model/contains-int? :fn<vector<int>;int;bool>)
 (signature logseq-chat.model/remove-effect

@@ -19,12 +19,22 @@ type outliner_editing =
   ; caret_utf16_offset : int
   }
 
+type outliner_row_splice =
+  { start : int option
+  ; after_block_id : string option
+  ; before_block_id : string option
+  ; delete_count : int
+  ; rows : outline_row list
+  }
+
 type t =
   { graph_name : string option
   ; search_query : string
   ; search_results : search_hit list
   ; outliner_rows : outline_row list
+  ; outliner_row_splices : outliner_row_splice list
   ; outliner_editing : outliner_editing option
+  ; is_outliner_patch : bool
   ; sync_connected : bool
   }
 
@@ -107,6 +117,26 @@ let outliner_editing = function
   | _ -> None
 ;;
 
+let outliner_row_splice = function
+  | `Assoc fields ->
+    (match int_member "deleteCount" fields with
+     | Some delete_count ->
+       let rows =
+         match member "rows" fields with
+         | Some (`List values) -> List.filter_map outline_row values
+         | _ -> []
+       in
+       Some
+         { start = int_member "start" fields
+         ; after_block_id = string_member "afterBlockId" fields
+         ; before_block_id = string_member "beforeBlockId" fields
+         ; delete_count
+         ; rows
+         }
+     | None -> None)
+  | _ -> None
+;;
+
 let current_outliner_editing result_fields =
   match member "outlinerState" result_fields with
   | Some (`Assoc state_fields) ->
@@ -139,12 +169,19 @@ let decode_response encoded =
            | Some (`List values) -> List.filter_map outline_row values
            | _ -> []
          in
+         let outliner_row_splices =
+           match member "outlinerRowSplices" result_fields with
+           | Some (`List values) -> List.filter_map outliner_row_splice values
+           | _ -> []
+         in
          Ok
            { graph_name = string_member "graphName" result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
            ; outliner_rows
+           ; outliner_row_splices
            ; outliner_editing = current_outliner_editing result_fields
+           ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
            ; sync_connected = bool_member "syncConnected" result_fields
            }
        | _ -> Error "Core response did not contain a snapshot")

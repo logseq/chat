@@ -34,4 +34,20 @@ let () =
          equal "Nested note" editing.title "editing title";
          if editing.caret_utf16_offset <> 6 then failwith "editing caret was not projected"
        | None -> failwith "outliner editing was not projected")
+    ; if snapshot.is_outliner_patch then failwith "launch snapshot was marked as a patch";
+    let patch_response =
+      {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
+    in
+    (match decode_response patch_response with
+     | Error message -> failwith message
+     | Ok patch ->
+       if not patch.is_outliner_patch then failwith "outliner patch flag was lost";
+       (match patch.outliner_row_splices with
+        | [ splice ] ->
+          if splice.start <> Some 0 || splice.delete_count <> 2
+          then failwith "outliner splice bounds were not projected";
+          (match splice.rows with
+           | [ row ] when row.uuid = "outline-a" && row.is_collapsed -> ()
+           | _ -> failwith "outliner splice rows were not projected")
+        | _ -> failwith "outliner row splices were not projected"))
 ;;

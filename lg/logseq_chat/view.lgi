@@ -25,6 +25,13 @@
 (signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-title :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-uuid :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-indent :fn<outline-row;int>)
+(signature logseq-chat.view/outliner-row-has-children :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-zoom-label :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-collapse-label :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-collapse-glyph :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-indent-view
+ :fn<ui-context;signal<int>;int>)
 (signature logseq-chat.view/row-editing? :fn<chat-model;outline-row;bool>)
 (signature logseq-chat.view/row-not-editing? :fn<chat-model;outline-row;bool>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)

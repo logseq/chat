@@ -166,6 +166,30 @@ struct LGChatRendererTests {
         #expect(request.params.payload?.contains("block-a") == true)
         #expect(resolution.succeeded)
     }
+
+    @Test("outliner structure effects reuse the existing core reducer")
+    func outlinerStructureEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequests: [LogseqChatRPCRequest] = []
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequests.append(request)
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let collapse = await executor.execute(
+            LGChatEffect(id: 11, kind: "toggle-outliner-collapsed", text: "parent")
+        )
+        let zoom = await executor.execute(
+            LGChatEffect(id: 12, kind: "zoom-outliner-block", text: "parent")
+        )
+
+        #expect(capturedRequests.count == 2)
+        #expect(capturedRequests[0].params.action == "outlinerEvent")
+        #expect(capturedRequests[0].params.payload?.contains("toggleCollapsed") == true)
+        #expect(capturedRequests[1].params.action == "outlinerEvent")
+        #expect(capturedRequests[1].params.payload?.contains("zoomIn") == true)
+        #expect(collapse.succeeded)
+        #expect(zoom.succeeded)
+    }
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {

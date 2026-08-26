@@ -71,7 +71,15 @@
     (model/MoveOutlinerCaretEffect id uuid caret)
     (str "{\"id\":" id
          ",\"kind\":\"move-outliner-caret\",\"text\":\"\",\"uuid\":"
-         (wire/quoted uuid) ",\"value\":" caret "}")))
+         (wire/quoted uuid) ",\"value\":" caret "}")
+    (model/ToggleOutlinerCollapsedEffect id uuid)
+    (str "{\"id\":" id
+         ",\"kind\":\"toggle-outliner-collapsed\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/ZoomOutlinerBlockEffect id uuid)
+    (str "{\"id\":" id
+         ",\"kind\":\"zoom-outliner-block\",\"text\":"
+         (wire/quoted uuid) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]
