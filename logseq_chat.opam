@@ -21,7 +21,7 @@ depends: [
 pin-depends: [
   ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#17ebd36b49432fa0aa9a515c6091aac56fdd504f"]
   ["datascript-ocaml-native.dev" "git+https://github.com/logseq/datascript-ocaml.git#17ebd36b49432fa0aa9a515c6091aac56fdd504f"]
-  ["persistent_sorted_set_ocaml.dev" "git+https://github.com/logseq/persistent-sorted-set-ocaml.git#9b4e736dfe429861efff7d5c388451a2ad6152f7"]
+  ["persistent_sorted_set_ocaml.dev" "git+https://github.com/logseq/persistent-sorted-set-ocaml.git#4016dae1cdf4304207d8277ff9957656cdd8b177"]
   ["melange-edn-core.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
   ["melange-edn-native.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
   ["melange-edn-melange.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
