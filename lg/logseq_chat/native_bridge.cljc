@@ -197,6 +197,8 @@
          (wire/quoted uuid) "}")
     (model/ClearSelectedPageEffect id)
     (str "{\"id\":" id ",\"kind\":\"clear-selected-page\",\"text\":\"\"}")
+    (model/LoadOlderJournalsEffect id)
+    (str "{\"id\":" id ",\"kind\":\"load-older-journals\",\"text\":\"\"}")
     (model/LoadFlashcardsEffect id)
     (str "{\"id\":" id ",\"kind\":\"load-flashcards\",\"text\":\"\"}")
     (model/ReviewFlashcardEffect id uuid rating)

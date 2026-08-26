@@ -462,6 +462,13 @@
   (and (journals-destination? current)
        (node-navigation-inactive? current)))
 
+(defn older-journals-visible? [current]
+  (and (journal-root-visible? current)
+       (:has-older-journals current)
+       (match (:selected-page current)
+         None true
+         (Some _page) false)))
+
 (defn node-screen-visible? [current]
   (and (journals-destination? current)
        (node-navigation-active? current)))
@@ -1796,6 +1803,11 @@
         :compare compare
         :as row-source}
        [outliner-row model-source row-source send]]]]]
+   [:if {:test (reactive older-journals-visible? model-source)}
+    [:button
+     {:accessibility-identifier "button.outliner.load-older-journals"
+      :on-press (fn [_event] (send model/LoadOlderJournals))}
+     "Load older journals"]]
    [:if {:test (reactive main-can-add-first-block? model-source)}
     [add-first-block-button model-source send]]
    [:if {:test (reactive main-related-section-visible? model-source)}

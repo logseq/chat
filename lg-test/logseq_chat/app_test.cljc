@@ -98,6 +98,7 @@
     (outliner-autocomplete-candidates [])
     (outliner-selected-block-ids [])
     (outliner-rows [])
+    (has-older-journals false)
     (is-outliner-patch false)
     (outliner-row-splices [])))
 
@@ -1424,6 +1425,41 @@
         (model/AddRootBlockEffect 2 "page-a")]
        (:pending-effects (chat/model application))
        "empty pages reuse the core addRootBlock outliner action"))))
+
+(deftest older-journals-are-loaded-explicitly
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        projection (assoc (empty-core-projection) :has-older-journals true)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          button (descendant-with-identifier
+                  renderer root "button.outliner.load-older-journals")]
+      (is (not (= button -1))
+          "journals expose an explicit load-older control")
+      (driver/dispatch-event! application (proto/Press button))
+      (driver/flush! application)
+      (assert-equal [(model/LoadOlderJournalsEffect 1)]
+                    (:pending-effects (chat/model application))
+                    "loading older journals remains a typed core effect"))))
+
+(deftest older-journals-only-appear-at-the-journal-root
+  (let [available (assoc (model/initial) :has-older-journals true)
+        selected-page
+        (assoc available
+               :selected-page
+               (Some (record model/sidebar-page
+                       (uuid "page-a") (title "Page"))))
+        nested (assoc available
+                      :node-routes
+                      [(record model/node-projection
+                         (uuid "node-a") (page-uuid "page-a")
+                         (title "Node") (is-tag false) (is-property false)
+                         (related-rows []) (linked-reference-rows []))])]
+    (is (view/older-journals-visible? available))
+    (is (not (view/older-journals-visible? selected-page)))
+    (is (not (view/older-journals-visible? nested)))))
 
 (deftest search-navigation-is-isolated-and-cleared-with-the-presentation
   (let [open-model (model/update (model/initial) model/OpenSearch)

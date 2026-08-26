@@ -79,6 +79,7 @@
           (outliner-autocomplete None)
           (outliner-autocomplete-candidates [])
           (outliner-task-status-block-id None)
+          (has-older-journals false)
           (composer-expanded false)
           (composer-draft "")
           (composer-autofocus false)
@@ -146,6 +147,7 @@
     (AddRootBlockEffect id _uuid) id
     (SelectSidebarPageEffect id _uuid) id
     (ClearSelectedPageEffect id) id
+    (LoadOlderJournalsEffect id) id
     (LoadFlashcardsEffect id) id
     (ReviewFlashcardEffect id _uuid _rating) id
     (RefreshGraphsEffect id) id
@@ -613,6 +615,7 @@
                  (:outliner-autocomplete-candidates projection)
                  :outliner-selected-block-ids
                  (:outliner-selected-block-ids projection)
+                 :has-older-journals (:has-older-journals projection)
                  :outliner-rows projected-rows)
           searched
           (if (= (:search-query projection) (:search-query current))
@@ -872,6 +875,10 @@
     (AddRootBlock uuid)
     (let [id (:next-effect-id current)]
       (enqueue-effect current (AddRootBlockEffect id uuid)))
+
+    LoadOlderJournals
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (LoadOlderJournalsEffect id)))
 
     OpenSidebar
     (assoc current :sidebar-open true)

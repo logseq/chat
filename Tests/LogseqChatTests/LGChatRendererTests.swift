@@ -323,12 +323,19 @@ struct LGChatRendererTests {
         let clear = await executor.execute(
             LGChatEffect(id: 23, kind: "clear-selected-page", text: "")
         )
+        let older = await executor.execute(
+            LGChatEffect(id: 24, kind: "load-older-journals", text: "")
+        )
 
-        #expect(capturedRequests.map(\.params.action) == ["selectPage", "clearSelectedPage"])
+        #expect(capturedRequests.map(\.params.action) == [
+            "selectPage", "clearSelectedPage", "loadOlderJournals",
+        ])
         #expect(capturedRequests[0].params.payload == "page-a")
         #expect(capturedRequests[1].params.payload == nil)
+        #expect(capturedRequests[2].params.payload == nil)
         #expect(select.succeeded)
         #expect(clear.succeeded)
+        #expect(older.succeeded)
     }
 
     @Test("flashcard effects preserve review identity, rating, time, and operation id")

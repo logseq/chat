@@ -7,7 +7,7 @@ let equal expected actual message =
 
 let () =
   let response =
-    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"appliedServerT":42,"hasPendingSemanticOperations":true,"pendingSyncRequest":{"id":7},"syncConnected":true}}|}
+    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"hasOlderJournals":true,"appliedServerT":42,"hasPendingSemanticOperations":true,"pendingSyncRequest":{"id":7},"syncConnected":true}}|}
   in
   match decode_response response with
   | Error message -> failwith message
@@ -20,6 +20,8 @@ let () =
     then failwith "pending semantic operations were not projected";
     if not snapshot.has_pending_sync_request
     then failwith "pending transport request was not projected";
+    if not snapshot.has_older_journals
+    then failwith "older journal availability was not projected";
     (match snapshot.search_results with
      | [ page; block ] ->
        equal "page-a" page.uuid "page uuid";

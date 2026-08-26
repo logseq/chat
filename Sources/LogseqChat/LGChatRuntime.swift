@@ -568,6 +568,11 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "clearSelectedPage")
             )
+        case "load-older-journals":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "loadOlderJournals")
+            )
         case "set-page-favorite":
             do {
                 let data = try JSONEncoder().encode(LGSetPageFavoritePayload(

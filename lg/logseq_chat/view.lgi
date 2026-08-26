@@ -109,6 +109,7 @@
 (signature logseq-chat.view/flashcards-destination? :fn<chat-model;bool>)
 (signature logseq-chat.view/graphs-destination? :fn<chat-model;bool>)
 (signature logseq-chat.view/journal-root-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/older-journals-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/primary-sidebar-button-visible?
  :fn<chat-model;bool>)

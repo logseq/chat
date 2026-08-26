@@ -125,6 +125,7 @@ type t =
   ; outliner_autocomplete : outliner_autocomplete option
   ; outliner_autocomplete_candidates : outliner_autocomplete_candidate list
   ; outliner_selected_block_ids : string list
+  ; has_older_journals : bool
   ; is_outliner_patch : bool
   ; sync_connected : bool
   ; applied_server_t : int option
@@ -709,6 +710,7 @@ let decode_response encoded =
            ; outliner_autocomplete
            ; outliner_autocomplete_candidates
            ; outliner_selected_block_ids
+           ; has_older_journals = bool_member "hasOlderJournals" result_fields
            ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
            ; sync_connected = bool_member "syncConnected" result_fields
            ; applied_server_t = int_member "appliedServerT" result_fields

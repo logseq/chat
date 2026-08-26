@@ -174,6 +174,7 @@ let apply_response encoded =
         ; outliner_selected_block_ids =
             Rrbvec.of_list snapshot.outliner_selected_block_ids
         ; outliner_rows = Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
+        ; has_older_journals = snapshot.has_older_journals
         ; is_outliner_patch = snapshot.is_outliner_patch
         ; outliner_row_splices =
             Rrbvec.of_list
