@@ -48,6 +48,20 @@ let sidebar_projection (snapshot : Snapshot.t) : LG.sidebar_projection =
   }
 ;;
 
+let flashcard (card : Snapshot.flashcard) : LG.flashcard =
+  { uuid = card.uuid
+  ; question_hidden = card.question_hidden
+  ; question_revealed = card.question_revealed
+  ; answer_rows =
+      Rrbvec.of_list
+        (List.mapi
+           (fun index (answer : Snapshot.flashcard_answer) : LG.flashcard_answer_row ->
+              { uuid = answer.uuid; index; text = answer.text })
+           card.answer_rows)
+  ; has_cloze = card.has_cloze
+  }
+;;
+
 let outliner_editing (editing : Snapshot.outliner_editing) : LG.outliner_editing =
   { uuid = editing.uuid
   ; title = editing.title
@@ -94,6 +108,7 @@ let apply_response encoded =
       LG.ApplyCoreSnapshot
         ( snapshot.graph_name
         , sidebar_projection snapshot
+        , Rrbvec.of_list (List.map flashcard snapshot.flashcards)
         , snapshot.sync_connected
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)

@@ -101,6 +101,32 @@ let () =
         | [ { uuid = "reference"; breadcrumb = "Journal"; _ } ] -> ()
         | _ -> failwith "selected-page related rows were not projected")
      | Error message -> failwith message);
+    let flashcards =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"flashcards":[{"block":{"uuid":"card-a","title":"Remember {{cloze this}}","markup":[{"type":"text","text":"Remember "},{"type":"cloze","text":"this"}]},"children":[{"uuid":"answer-a","title":"Child answer","markup":[{"type":"text","text":"Child answer"}]}],"due":1,"repetitions":0,"lapses":0,"state":"new"}],"outlinerState":{"editing":null},"outlinerRows":[],"syncConnected":true}}|}
+    in
+    (match flashcards with
+     | Ok { flashcards = [ card ]; _ } ->
+       equal "card-a" card.uuid "flashcard uuid";
+       equal "Remember […]" card.question_hidden "hidden cloze";
+       equal "Remember this" card.question_revealed "revealed cloze";
+       if not card.has_cloze then failwith "flashcard cloze metadata was lost";
+       (match card.answer_rows with
+        | [ { uuid = "answer-a"; text = "Child answer" } ] -> ()
+        | _ -> failwith "flashcard answer rows were not projected")
+     | Ok _ -> failwith "flashcards were not projected"
+     | Error message -> failwith message);
+    let legacy_flashcards =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"flashcards":[{"block":{"uuid":"legacy-card","title":"Remember {{cloze this}}"},"children":[],"due":1,"repetitions":0,"lapses":0,"state":"new"}],"outlinerState":{"editing":null},"outlinerRows":[],"syncConnected":true}}|}
+    in
+    (match legacy_flashcards with
+     | Ok { flashcards = [ card ]; _ } ->
+       equal "Remember […]" card.question_hidden "legacy hidden cloze";
+       equal "Remember this" card.question_revealed "legacy revealed cloze";
+       if not card.has_cloze then failwith "legacy flashcard cloze metadata was lost"
+     | Ok _ -> failwith "legacy flashcard was not projected"
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

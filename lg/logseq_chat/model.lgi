@@ -9,9 +9,26 @@
 (type-variant navigation-route
   (NodeRoute :string))
 
+(type-variant primary-destination
+  (JournalsDestination)
+  (FlashcardsDestination)
+  (GraphsDestination))
+
 (type-record sidebar-page
   (uuid :string)
   (title :string))
+
+(type-record flashcard-answer-row
+  (uuid :string)
+  (index :int)
+  (text :string))
+
+(type-record flashcard
+  (uuid :string)
+  (question-hidden :string)
+  (question-revealed :string)
+  (answer-rows :vector<flashcard-answer-row>)
+  (has-cloze :bool))
 
 (type-record sidebar-projection
   (favorites :vector<sidebar-page>)
@@ -93,11 +110,14 @@
   (CloseSearchNodeEffect :int :string)
   (AddRootBlockEffect :int :string)
   (SelectSidebarPageEffect :int :string)
-  (ClearSelectedPageEffect :int))
+  (ClearSelectedPageEffect :int)
+  (LoadFlashcardsEffect :int)
+  (ReviewFlashcardEffect :int :string :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
   (sync-state :sync-state)
+  (destination :primary-destination)
   (sidebar-open :bool)
   (favorites :vector<sidebar-page>)
   (recent-pages :vector<sidebar-page>)
@@ -106,6 +126,9 @@
   (selected-page-is-property :bool)
   (related-rows :vector<outline-row>)
   (linked-reference-rows :vector<outline-row>)
+  (flashcards :vector<flashcard>)
+  (flashcard-cloze-revealed :bool)
+  (flashcard-answer-revealed :bool)
   (search-open :bool)
   (search-query :string)
   (search-results :vector<search-hit>)
@@ -136,7 +159,7 @@
   (OpenSearch)
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
-  (ApplyCoreSnapshot :option<string> :sidebar-projection
+  (ApplyCoreSnapshot :option<string> :sidebar-projection :vector<flashcard>
                      :bool :string :vector<search-hit>
                      :vector<node-projection>
                      :option<outliner-editing> :option<outliner-autocomplete>
@@ -175,7 +198,12 @@
   (OpenSidebar)
   (CloseSidebar)
   (SelectSidebarPage :string)
-  (ShowJournals))
+  (ShowJournals)
+  (ShowFlashcards)
+  (ShowGraphs)
+  (RevealFlashcardCloze)
+  (RevealFlashcardAnswer)
+  (ReviewFlashcard :string))
 
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/request-route
@@ -189,6 +217,8 @@
 (signature logseq-chat.model/effect-id :fn<chat-effect;int>)
 (signature logseq-chat.model/effect-with-id
  :fn<vector<chat-effect>;int;option<chat-effect>>)
+(signature logseq-chat.model/first-flashcard-id
+ :fn<vector<flashcard>;option<string>>)
 (signature logseq-chat.model/rollback-navigation-effect
  :fn<chat-model;chat-effect;chat-model>)
 (signature logseq-chat.model/enqueue-close-search-effects

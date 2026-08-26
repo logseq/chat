@@ -217,7 +217,8 @@
     "Journals"]
    [:button
     {:label "Flashcards"
-     :accessibility-identifier "link.sidebar.flashcards"}
+     :accessibility-identifier "link.sidebar.flashcards"
+     :on-press (fn [_event] (send model/ShowFlashcards))}
     "Flashcards"]
    [:button
     {:label "Graphs"
@@ -360,19 +361,36 @@
 (defn node-navigation-inactive? [current]
   (empty? (:node-routes current)))
 
+(defn journals-destination? [current]
+  (= (:destination current) model/JournalsDestination))
+
+(defn flashcards-destination? [current]
+  (= (:destination current) model/FlashcardsDestination))
+
+(defn journal-root-visible? [current]
+  (and (journals-destination? current)
+       (node-navigation-inactive? current)))
+
+(defn node-screen-visible? [current]
+  (and (journals-destination? current)
+       (node-navigation-active? current)))
+
+(defn primary-sidebar-button-visible? [current]
+  (not (node-screen-visible? current)))
+
 (defn search-main-visible? [current]
-  (and (node-navigation-inactive? current) (:search-open current)))
+  (and (journal-root-visible? current) (:search-open current)))
 
 (defn main-outliner-selection-active? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (outliner-selection-active? current)))
 
 (defn main-outliner-autocomplete-active? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (outliner-autocomplete-active? current)))
 
 (defn main-outliner-editor-active? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (outliner-editor-active? current)))
 
 (defn active-node-projection [current]
@@ -452,19 +470,19 @@
        (not (current-content-is-property? current))))
 
 (defn main-can-add-first-block? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (node-can-add-first-block? current)))
 
 (defn main-related-section-visible? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (node-related-section-visible? current)))
 
 (defn main-tag-section-visible? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (node-tag-section-visible? current)))
 
 (defn main-linked-reference-section-visible? [current]
-  (and (node-navigation-inactive? current)
+  (and (journal-root-visible? current)
        (node-linked-reference-section-visible? current)))
 
 (defn outliner-row-has-breadcrumb? [row]
@@ -818,17 +836,135 @@
       :on-press (fn [_event] (send model/ExpandComposer))}
      "Capture"]]])
 
+(defn first-flashcard [current]
+  (if (empty? (:flashcards current))
+    None
+    (Some (nth (:flashcards current) 0))))
+
+(defn flashcards-empty? [current]
+  (empty? (:flashcards current)))
+
+(defn flashcards-present? [current]
+  (not (flashcards-empty? current)))
+
+(defn flashcard-question [current]
+  (match (first-flashcard current)
+    (Some card)
+    (if (:flashcard-cloze-revealed current)
+      (:question-revealed card)
+      (:question-hidden card))
+    None ""))
+
+(defn flashcard-remaining-label [current]
+  (str (count (:flashcards current)) " remaining"))
+
+(defn flashcard-show-cloze? [current]
+  (match (first-flashcard current)
+    (Some card)
+    (and (:has-cloze card)
+         (not (:flashcard-cloze-revealed current)))
+    None false))
+
+(defn flashcard-show-answer? [current]
+  (match (first-flashcard current)
+    (Some card)
+    (and (or (not (:has-cloze card))
+             (:flashcard-cloze-revealed current))
+         (not (:flashcard-answer-revealed current)))
+    None false))
+
+(defn flashcard-show-ratings? [current]
+  (and (flashcards-present? current)
+       (:flashcard-answer-revealed current)))
+
+(defn visible-flashcard-answer-rows [current]
+  (if (:flashcard-answer-revealed current)
+    (match (first-flashcard current)
+      (Some card) (:answer-rows card)
+      None [])
+    []))
+
+(defn flashcard-answer-identifier [answer]
+  (str "flashcard.answer." (:index answer)))
+
+(defn flashcard-answer-text [answer]
+  (:text answer))
+
+(defn flashcard-answer-row [ui-context answer-source]
+  (let [answer (signal/sample answer-source)]
+    (elements/element
+     ui-context nil
+     [:text
+      {:value (reactive flashcard-answer-text answer-source)
+       :accessibility-identifier (flashcard-answer-identifier answer)}])))
+
+(defui flashcard-screen [model-source send]
+  [:column
+   {:accessibility-identifier "screen.flashcards"
+    :gap 18
+    :padding-horizontal 20
+    :padding-top 18
+    :padding-bottom 24}
+   [:if {:test (reactive flashcards-empty? model-source)}
+    [:column {:accessibility-identifier "flashcards.empty" :gap 10 :padding 32}
+     [:heading "No cards due"]
+     [:text "Tag a block with #Card to add it to Flashcards."]]]
+   [:if {:test (reactive flashcards-present? model-source)}
+    [:text "Due now"]]
+   [:if {:test (reactive flashcards-present? model-source)}
+    [:text {:value (reactive flashcard-remaining-label model-source)}]]
+   [:if {:test (reactive flashcards-present? model-source)}
+    [:text
+     {:value (reactive flashcard-question model-source)
+      :accessibility-identifier "flashcard.question"}]]
+   [:keyed
+    {:source (reactive visible-flashcard-answer-rows model-source)
+     :key :uuid
+     :compare compare
+     :as answer-source}
+    [flashcard-answer-row answer-source]]
+   [:if {:test (reactive flashcard-show-cloze? model-source)}
+    [:button
+     {:accessibility-identifier "button.flashcard.show-cloze"
+      :on-press (fn [_event] (send model/RevealFlashcardCloze))}
+     "Show cloze"]]
+   [:if {:test (reactive flashcard-show-answer? model-source)}
+    [:button
+     {:accessibility-identifier "button.flashcard.show-answer"
+      :on-press (fn [_event] (send model/RevealFlashcardAnswer))}
+     "Show answer"]]
+   [:if {:test (reactive flashcard-show-ratings? model-source)}
+    [:button
+     {:accessibility-identifier "button.flashcard.rating.again"
+      :on-press (fn [_event] (send (model/ReviewFlashcard "again")))}
+     "Again"]]
+   [:if {:test (reactive flashcard-show-ratings? model-source)}
+    [:button
+     {:accessibility-identifier "button.flashcard.rating.hard"
+      :on-press (fn [_event] (send (model/ReviewFlashcard "hard")))}
+     "Hard"]]
+   [:if {:test (reactive flashcard-show-ratings? model-source)}
+    [:button
+     {:accessibility-identifier "button.flashcard.rating.good"
+      :on-press (fn [_event] (send (model/ReviewFlashcard "good")))}
+     "Good"]]
+   [:if {:test (reactive flashcard-show-ratings? model-source)}
+    [:button
+     {:accessibility-identifier "button.flashcard.rating.easy"
+      :on-press (fn [_event] (send (model/ReviewFlashcard "easy")))}
+     "Easy"]]])
+
 (defui chat-main-view [model-source send]
   [:column
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive journal-root-visible? model-source)}
     [:text
      {:value (reactive main-title model-source)
       :accessibility-identifier "title.main"}]]
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive journal-root-visible? model-source)}
     [:text {:value (reactive graph-label model-source)}]]
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive journal-root-visible? model-source)}
     [:text {:value (reactive sync-label model-source)}]]
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive journal-root-visible? model-source)}
     [:button
      {:accessibility-identifier "button.search"
       :on-press (fn [_event] (send model/OpenSearch))}
@@ -856,7 +992,7 @@
         :compare compare
         :as hit-source}
        [search-result-row hit-source send]]]]]
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive journal-root-visible? model-source)}
     [:list {:accessibility-identifier "list.outliner"}
      [:keyed
       {:source (reactive :outliner-rows model-source)
@@ -878,11 +1014,13 @@
     [outliner-autocomplete-bar model-source send]]
    [:if {:test (reactive main-outliner-editor-active? model-source)}
     [outliner-editor-toolbar send]]
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive journal-root-visible? model-source)}
     [composer-view model-source send]]
-   [:if {:test (reactive node-navigation-active? model-source)}
+   [:if {:test (reactive node-screen-visible? model-source)}
     [node-screen model-source send]]
-   [:if {:test (reactive node-navigation-inactive? model-source)}
+   [:if {:test (reactive flashcards-destination? model-source)}
+    [flashcard-screen model-source send]]
+   [:if {:test (reactive primary-sidebar-button-visible? model-source)}
     [:button
      {:label "Open sidebar"
       :accessibility-identifier "button.sidebar"

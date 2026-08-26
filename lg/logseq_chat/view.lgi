@@ -67,6 +67,12 @@
  :fn<outliner-autocomplete-candidate;string>)
 (signature logseq-chat.view/node-navigation-active? :fn<chat-model;bool>)
 (signature logseq-chat.view/node-navigation-inactive? :fn<chat-model;bool>)
+(signature logseq-chat.view/journals-destination? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcards-destination? :fn<chat-model;bool>)
+(signature logseq-chat.view/journal-root-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/primary-sidebar-button-visible?
+ :fn<chat-model;bool>)
 (signature logseq-chat.view/search-main-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/main-outliner-selection-active?
  :fn<chat-model;bool>)
@@ -137,6 +143,25 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view
   :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/first-flashcard
+ :fn<chat-model;option<flashcard>>)
+(signature logseq-chat.view/flashcards-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcards-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcard-question :fn<chat-model;string>)
+(signature logseq-chat.view/flashcard-remaining-label :fn<chat-model;string>)
+(signature logseq-chat.view/flashcard-show-cloze? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcard-show-answer? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcard-show-ratings? :fn<chat-model;bool>)
+(signature logseq-chat.view/visible-flashcard-answer-rows
+ :fn<chat-model;vector<flashcard-answer-row>>)
+(signature logseq-chat.view/flashcard-answer-identifier
+ :fn<flashcard-answer-row;string>)
+(signature logseq-chat.view/flashcard-answer-text
+ :fn<flashcard-answer-row;string>)
+(signature logseq-chat.view/flashcard-answer-row
+ :fn<ui-context;signal<flashcard-answer-row>;int>)
+(signature logseq-chat.view/flashcard-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-main-view

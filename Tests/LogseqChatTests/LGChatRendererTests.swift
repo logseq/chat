@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import LogseqChat
 import LogseqChatModel
@@ -289,6 +290,58 @@ struct LGChatRendererTests {
         #expect(clear.succeeded)
     }
 
+    @Test("flashcard effects preserve review identity, rating, time, and operation id")
+    func flashcardEffectsUseCoreFlashcards() async throws {
+        var capturedRequests: [LogseqChatRPCRequest] = []
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequests.append(request)
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let load = await executor.execute(
+            LGChatEffect(id: 24, kind: "load-flashcards", text: "")
+        )
+        let review = await executor.execute(
+            LGChatEffect(
+                id: 25,
+                kind: "review-flashcard",
+                text: "good",
+                uuid: "card-a"
+            )
+        )
+
+        #expect(capturedRequests.map(\.params.action) == ["loadFlashcards", "reviewFlashcard"])
+        let loadPayload = try #require(capturedRequests[0].params.payload)
+        let loadTime = try #require(Int64(loadPayload))
+        #expect(loadTime > 0)
+        let reviewPayload = try #require(capturedRequests[1].params.payload)
+        let reviewData = Data(reviewPayload.utf8)
+        let payload = try JSONDecoder().decode(FlashcardReviewPayload.self, from: reviewData)
+        #expect(payload.uuid == "card-a")
+        #expect(payload.rating == "good")
+        #expect(payload.now > 0)
+        #expect(!payload.operationId.isEmpty)
+        #expect(load.succeeded)
+        #expect(review.succeeded)
+    }
+
+    @Test("flashcard review rejects effects without a card UUID")
+    func flashcardReviewRequiresUUID() async {
+        var callCount = 0
+        let executor = LGChatCoreEffectExecutor { _ in
+            callCount += 1
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 26, kind: "review-flashcard", text: "again")
+        )
+
+        #expect(!resolution.succeeded)
+        #expect(resolution.message.contains("UUID"))
+        #expect(callCount == 0)
+    }
+
     @Test("outliner selection effects reuse the existing core reducer")
     func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequests: [LogseqChatRPCRequest] = []
@@ -432,6 +485,13 @@ struct LGChatRendererTests {
         #expect(hapticStyles == ["selection"])
         #expect(presentations == [.pickAttachment(blockID: "target")])
     }
+}
+
+private struct FlashcardReviewPayload: Decodable {
+    let uuid: String
+    let rating: String
+    let now: Int64
+    let operationId: String
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {

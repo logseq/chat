@@ -10,6 +10,19 @@ type sidebar_page =
   ; title : string
   }
 
+type flashcard_answer =
+  { uuid : string
+  ; text : string
+  }
+
+type flashcard =
+  { uuid : string
+  ; question_hidden : string
+  ; question_revealed : string
+  ; answer_rows : flashcard_answer list
+  ; has_cloze : bool
+  }
+
 type outline_row =
   { uuid : string
   ; title : string
@@ -75,6 +88,7 @@ type t =
   ; selected_page_is_property : bool
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
+  ; flashcards : flashcard list
   ; search_query : string
   ; search_results : search_hit list
   ; node_routes : node_route list
@@ -140,6 +154,137 @@ let sidebar_page = function
   | `Assoc fields ->
     (match string_member "uuid" fields, string_member "title" fields with
      | Some uuid, Some title -> Some { uuid; title }
+     | _ -> None)
+  | _ -> None
+;;
+
+let markup_children fields =
+  match member "children" fields with
+  | Some (`List values) -> values
+  | _ -> []
+;;
+
+let rec markup_text ~reveal_cloze = function
+  | `Assoc fields ->
+    let children =
+      markup_children fields
+      |> List.map (markup_text ~reveal_cloze)
+      |> String.concat ""
+    in
+    (match string_member "type" fields with
+     | Some "cloze" ->
+       if reveal_cloze
+       then Option.value ~default:"" (string_member "text" fields)
+       else "[…]"
+     | Some "nodeReference" -> Option.value ~default:"" (string_member "title" fields)
+     | Some "tagReference" ->
+       "#" ^ Option.value ~default:"" (string_member "title" fields)
+     | Some "link" when not (String.equal children "") -> children
+     | Some "link" | Some "video" | Some "iframe" ->
+       Option.value ~default:"" (string_member "url" fields)
+     | Some "emphasis" | Some "quote" -> children
+     | _ -> Option.value ~default:children (string_member "text" fields))
+  | _ -> ""
+;;
+
+let rec markup_has_cloze = function
+  | `Assoc fields ->
+    Option.equal String.equal (string_member "type" fields) (Some "cloze")
+    || List.exists markup_has_cloze (markup_children fields)
+  | _ -> false
+;;
+
+let find_substring value pattern start =
+  let value_length = String.length value in
+  let pattern_length = String.length pattern in
+  let rec loop index =
+    if index + pattern_length > value_length
+    then None
+    else if String.equal (String.sub value index pattern_length) pattern
+    then Some index
+    else loop (index + 1)
+  in
+  loop start
+;;
+
+let legacy_cloze_text ~reveal value =
+  let prefix = "cloze " in
+  let buffer = Buffer.create (String.length value) in
+  let rec loop offset has_cloze =
+    match find_substring value "{{" offset with
+    | None ->
+      Buffer.add_substring buffer value offset (String.length value - offset);
+      Buffer.contents buffer, has_cloze
+    | Some opening ->
+      Buffer.add_substring buffer value offset (opening - offset);
+      (match find_substring value "}}" (opening + 2) with
+       | None ->
+         Buffer.add_substring buffer value opening (String.length value - opening);
+         Buffer.contents buffer, has_cloze
+       | Some closing ->
+         let body = String.sub value (opening + 2) (closing - opening - 2) in
+         let lowercase = String.lowercase_ascii body in
+         if String.length lowercase >= String.length prefix
+            && String.equal (String.sub lowercase 0 (String.length prefix)) prefix
+         then (
+           let answer =
+             String.sub body (String.length prefix) (String.length body - String.length prefix)
+             |> String.trim
+           in
+           Buffer.add_string buffer (if reveal then answer else "[…]");
+           loop (closing + 2) true)
+         else (
+           Buffer.add_substring buffer value opening (closing + 2 - opening);
+           loop (closing + 2) has_cloze))
+  in
+  loop 0 false
+;;
+
+let block_markup_text ~reveal_cloze fields =
+  match member "markup" fields with
+  | Some (`List (_ :: _ as values)) ->
+    values |> List.map (markup_text ~reveal_cloze) |> String.concat ""
+  | _ ->
+    Option.value ~default:"" (string_member "title" fields)
+    |> legacy_cloze_text ~reveal:reveal_cloze
+    |> fst
+;;
+
+let flashcard_answer = function
+  | `Assoc fields ->
+    Option.map
+      (fun uuid -> { uuid; text = block_markup_text ~reveal_cloze:true fields })
+      (string_member "uuid" fields)
+  | _ -> None
+;;
+
+let flashcard = function
+  | `Assoc fields ->
+    (match member "block" fields with
+     | Some (`Assoc block_fields) ->
+       Option.map
+         (fun uuid ->
+            let markup =
+              match member "markup" block_fields with
+              | Some (`List values) -> values
+              | _ -> []
+            in
+            let answer_rows =
+              match member "children" fields with
+              | Some (`List values) -> List.filter_map flashcard_answer values
+              | _ -> []
+            in
+            { uuid
+            ; question_hidden = block_markup_text ~reveal_cloze:false block_fields
+            ; question_revealed = block_markup_text ~reveal_cloze:true block_fields
+            ; answer_rows
+            ; has_cloze =
+                (List.exists markup_has_cloze markup
+                 || (Option.value ~default:"" (string_member "title" block_fields)
+                     |> legacy_cloze_text ~reveal:false
+                     |> snd))
+            })
+         (string_member "uuid" block_fields)
      | _ -> None)
   | _ -> None
 ;;
@@ -318,6 +463,12 @@ let sidebar_pages_member name fields =
   | _ -> []
 ;;
 
+let flashcards_member fields =
+  match member "flashcards" fields with
+  | Some (`List values) -> List.filter_map flashcard values
+  | _ -> []
+;;
+
 let autocomplete_candidates_member name fields =
   match member name fields with
   | Some (`List values) -> List.filter_map outliner_autocomplete_candidate values
@@ -459,6 +610,7 @@ let decode_response encoded =
            ; related_rows = related_rows_member "relatedBlocks" result_fields
            ; linked_reference_rows =
                related_rows_member "linkedReferenceBlocks" result_fields
+           ; flashcards = flashcards_member result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
            ; node_routes

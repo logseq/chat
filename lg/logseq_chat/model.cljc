@@ -5,6 +5,7 @@
   (record chat-model
           (selected-graph None)
           (sync-state OfflineState)
+          (destination JournalsDestination)
           (sidebar-open false)
           (favorites [])
           (recent-pages [])
@@ -13,6 +14,9 @@
           (selected-page-is-property false)
           (related-rows [])
           (linked-reference-rows [])
+          (flashcards [])
+          (flashcard-cloze-revealed false)
+          (flashcard-answer-revealed false)
           (search-open false)
           (search-query "")
           (search-results [])
@@ -79,7 +83,9 @@
     (CloseSearchNodeEffect id _uuid) id
     (AddRootBlockEffect id _uuid) id
     (SelectSidebarPageEffect id _uuid) id
-    (ClearSelectedPageEffect id) id))
+    (ClearSelectedPageEffect id) id
+    (LoadFlashcardsEffect id) id
+    (ReviewFlashcardEffect id _uuid _rating) id))
 
 (defn effect-with-id [effects target]
   (loop [index 0]
@@ -89,6 +95,11 @@
         (if (= (effect-id effect) target)
           (Some effect)
           (recur (inc index)))))))
+
+(defn first-flashcard-id [flashcards]
+  (if (empty? flashcards)
+    None
+    (Some (:uuid (nth flashcards 0)))))
 
 (defn rollback-navigation-effect [current effect]
   (match effect
@@ -269,7 +280,7 @@
              :search-loading false)
       current)
 
-    (ApplyCoreSnapshot graph-name sidebar sync-connected query results node-routes
+    (ApplyCoreSnapshot graph-name sidebar flashcards sync-connected query results node-routes
                        outliner-editing outliner-autocomplete
                        outliner-autocomplete-candidates
                        outliner-selected-block-ids
@@ -282,6 +293,9 @@
               (apply-row-splices (:outliner-rows current)
                                  outliner-row-splices))
             outliner-rows)
+          card-changed
+          (not (= (first-flashcard-id (:flashcards current))
+                  (first-flashcard-id flashcards)))
           updated
           (assoc current
                  :selected-graph graph-name
@@ -293,6 +307,11 @@
                  :selected-page-is-property (:selected-page-is-property sidebar)
                  :related-rows (:related-rows sidebar)
                  :linked-reference-rows (:linked-reference-rows sidebar)
+                 :flashcards flashcards
+                 :flashcard-cloze-revealed
+                 (if card-changed false (:flashcard-cloze-revealed current))
+                 :flashcard-answer-revealed
+                 (if card-changed false (:flashcard-answer-revealed current))
                  :node-routes node-routes
                  :outliner-editing outliner-editing
                  :outliner-autocomplete outliner-autocomplete
@@ -490,11 +509,43 @@
     (assoc current :sidebar-open false)
 
     (SelectSidebarPage uuid)
-    (let [updated (assoc current :sidebar-open false)
+    (let [updated (assoc current
+                         :sidebar-open false
+                         :destination JournalsDestination)
           id (:next-effect-id updated)]
       (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
 
     ShowJournals
-    (let [updated (assoc current :sidebar-open false)
+    (let [updated (assoc current
+                         :sidebar-open false
+                         :destination JournalsDestination)
           id (:next-effect-id updated)]
-      (enqueue-effect updated (ClearSelectedPageEffect id)))))
+      (enqueue-effect updated (ClearSelectedPageEffect id)))
+
+    ShowFlashcards
+    (let [updated (assoc current
+                         :sidebar-open false
+                         :destination FlashcardsDestination)
+          clear-id (:next-effect-id updated)
+          cleared
+          (enqueue-effect updated (ClearSelectedPageEffect clear-id))
+          load-id (:next-effect-id cleared)]
+      (enqueue-effect cleared (LoadFlashcardsEffect load-id)))
+
+    ShowGraphs
+    (assoc current
+           :sidebar-open false
+           :destination GraphsDestination)
+
+    RevealFlashcardCloze
+    (assoc current :flashcard-cloze-revealed true)
+
+    RevealFlashcardAnswer
+    (assoc current :flashcard-answer-revealed true)
+
+    (ReviewFlashcard rating)
+    (match (first-flashcard-id (:flashcards current))
+      (Some uuid)
+      (let [id (:next-effect-id current)]
+        (enqueue-effect current (ReviewFlashcardEffect id uuid rating)))
+      None current)))

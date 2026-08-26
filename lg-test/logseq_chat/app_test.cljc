@@ -51,6 +51,21 @@
     (related-rows [])
     (linked-reference-rows [])))
 
+(defn flashcard-answer [uuid index text]
+  (record model/flashcard-answer-row
+    (uuid uuid)
+    (index index)
+    (text text)))
+
+(defn flashcard
+  [uuid question-hidden question-revealed answer-rows has-cloze]
+  (record model/flashcard
+    (uuid uuid)
+    (question-hidden question-hidden)
+    (question-revealed question-revealed)
+    (answer-rows answer-rows)
+    (has-cloze has-cloze)))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
@@ -130,7 +145,7 @@
             (selected-page-is-property false)
             (related-rows [])
             (linked-reference-rows []))
-          false "" [] [] None None [] [] [] false []))
+          [] false "" [] [] None None [] [] [] false []))
         selected (model/update projected (model/SelectSidebarPage "page-a"))
         journals (model/update selected model/ShowJournals)]
     (is (:sidebar-open opened) "sidebar presentation is LG-owned")
@@ -164,7 +179,7 @@
           (linked-reference-rows []))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None sidebar false "" [] []
+                  (model/ApplyCoreSnapshot None sidebar [] false "" [] []
                                            None None [] [] [] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -224,7 +239,7 @@
           (linked-reference-rows []))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None sidebar false "" [] []
+                  (model/ApplyCoreSnapshot None sidebar [] false "" [] []
                                            None None [] [] [] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
@@ -239,6 +254,167 @@
           "selected pages render their core-projected linked references")
       (is (not (= add-first -1))
           "empty selected pages preserve the add-first-block action"))))
+
+(deftest flashcard-presentation-and-review-state-are-owned-by-lg
+  (let [card (flashcard "card-a" "Remember […]" "Remember this"
+                        [(flashcard-answer "answer-a" 0 "Child answer")]
+                        true)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [card]
+                                  false "" [] [] None None [] [] [] false []))
+        shown (model/update projected model/ShowFlashcards)
+        cloze (model/update shown model/RevealFlashcardCloze)
+        answer (model/update cloze model/RevealFlashcardAnswer)
+        reviewed (model/update answer (model/ReviewFlashcard "good"))]
+    (assert-equal model/FlashcardsDestination (:destination shown)
+                  "the primary destination is LG-owned")
+    (is (not (:sidebar-open shown))
+        "opening flashcards closes the sidebar")
+    (assert-equal
+     [(model/ClearSelectedPageEffect 1)
+      (model/LoadFlashcardsEffect 2)]
+     (:pending-effects shown)
+     "entering flashcards clears page context before loading due cards")
+    (is (:flashcard-cloze-revealed cloze)
+        "cloze reveal is retained in LG state")
+    (is (:flashcard-answer-revealed answer)
+        "answer reveal is retained in LG state")
+    (assert-equal
+     [(model/ClearSelectedPageEffect 1)
+      (model/LoadFlashcardsEffect 2)
+      (model/ReviewFlashcardEffect 3 "card-a" "good")]
+     (:pending-effects reviewed)
+     "ratings use the current projected card identity")))
+
+(deftest flashcard-reveal-state-resets-only-when-the-current-card-changes
+  (let [first-card (flashcard "card-a" "First […]" "First answer" [] true)
+        same-card (flashcard "card-a" "Updated […]" "Updated answer" [] true)
+        next-card (flashcard "card-b" "Second […]" "Second answer" [] true)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [first-card]
+                                  false "" [] [] None None [] [] [] false []))
+        revealed
+        (model/update
+         (model/update projected model/RevealFlashcardCloze)
+         model/RevealFlashcardAnswer)
+        refreshed
+        (model/update
+         revealed
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [same-card]
+                                  false "" [] [] None None [] [] [] false []))
+        advanced
+        (model/update
+         refreshed
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection) [next-card]
+                                  false "" [] [] None None [] [] [] false []))]
+    (is (:flashcard-cloze-revealed refreshed)
+        "a refresh of the same card retains its reveal state")
+    (is (:flashcard-answer-revealed refreshed)
+        "a refresh of the same card retains its answer state")
+    (is (not (:flashcard-cloze-revealed advanced))
+        "advancing cards hides the next cloze")
+    (is (not (:flashcard-answer-revealed advanced))
+        "advancing cards hides the next answer")
+    (assert-equal []
+                  (:pending-effects
+                   (model/update (model/initial)
+                                 (model/ReviewFlashcard "again")))
+                  "reviewing an empty queue is a no-op")))
+
+(deftest flashcards-render-the-main-branch-reveal-and-rating-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        card (flashcard "card-a" "Remember […]" "Remember this"
+                        [(flashcard-answer "answer-a" 0 "Child answer")]
+                        true)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot None (empty-sidebar-projection) [card]
+                              false "" [] [] None None [] [] [] false []))
+    (driver/send! application model/ShowFlashcards)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          screen (child-with-identifier renderer main "screen.flashcards")
+          question (child-with-identifier renderer screen "flashcard.question")
+          show-cloze
+          (child-with-identifier renderer screen "button.flashcard.show-cloze")]
+      (assert-equal "Remember […]"
+                    (property-string renderer question proto/TextValue)
+                    "clozes start hidden")
+      (driver/dispatch-event! application (proto/Press show-cloze))
+      (driver/flush! application)
+      (assert-equal "Remember this"
+                    (property-string renderer question proto/TextValue)
+                    "cloze reveal patches the retained question")
+      (let [show-answer
+            (child-with-identifier renderer screen "button.flashcard.show-answer")]
+        (driver/dispatch-event! application (proto/Press show-answer))
+        (driver/flush! application)
+        (let [answer-row
+              (child-with-identifier renderer screen "flashcard.answer.0")
+              good
+              (child-with-identifier renderer screen "button.flashcard.rating.good")]
+          (assert-equal "Child answer"
+                        (property-string renderer answer-row proto/TextValue)
+                        "answer children appear after reveal")
+          (driver/dispatch-event! application (proto/Press good))
+          (driver/flush! application)
+          (assert-equal
+           [(model/ClearSelectedPageEffect 1)
+            (model/LoadFlashcardsEffect 2)
+            (model/ReviewFlashcardEffect 3 "card-a" "good")]
+           (:pending-effects (chat/model application))
+           "rating controls publish the typed review effect"))))))
+
+(deftest flashcards-render-empty-and-non-cloze-control-states
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/ShowFlashcards)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          screen (child-with-identifier renderer main "screen.flashcards")]
+      (is (not (= -1 (child-with-identifier renderer screen "flashcards.empty")))
+          "an empty due queue preserves the existing empty state"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      None (empty-sidebar-projection)
+      [(flashcard "card-a" "Plain question" "Plain question" [] false)]
+      false "" [] [] None None [] [] [] false []))
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          screen (child-with-identifier renderer main "screen.flashcards")]
+      (is (= -1
+             (child-with-identifier renderer screen
+                                    "button.flashcard.show-cloze"))
+          "cards without a cloze skip the cloze control")
+      (is (not (= -1
+                  (child-with-identifier renderer screen
+                                         "button.flashcard.show-answer")))
+          "cards without a cloze can reveal their answer immediately"))))
+
+(deftest sidebar-flashcards-link-selects-the-flashcard-destination
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSidebar)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          sidebar (child-with-identifier renderer root "sidebar.navigation")
+          link (child-with-identifier renderer sidebar "link.sidebar.flashcards")]
+      (driver/dispatch-event! application (proto/Press link))
+      (driver/flush! application)
+      (assert-equal model/FlashcardsDestination
+                    (:destination (chat/model application))
+                    "the existing sidebar link enters the LG destination")
+      (is (not (property-bool renderer root proto/Selected))
+          "selecting flashcards closes the controlled drawer"))))
 
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create)
@@ -493,7 +669,7 @@
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None (empty-sidebar-projection) false "" [] [route]
+     (model/ApplyCoreSnapshot None (empty-sidebar-projection) [] false "" [] [route]
                               None None [] [] [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
@@ -526,7 +702,7 @@
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "page-a"))
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                            false "" [] [route]
                                            None None [] [] [] false []))
     (driver/flush! application)
@@ -649,7 +825,7 @@
                         (caret-utf16-offset 4))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                            false "" [] []
                                            (Some editing) None [] []
                                            [row] false []))
@@ -694,7 +870,7 @@
                     (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                            false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
@@ -754,7 +930,7 @@
                     (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                            false "" [] [] None None []
                                            ["parent"] [row] false []))
     (driver/flush! application)
@@ -805,7 +981,7 @@
     (driver/start! application)
     (driver/send!
      application
-     (model/ApplyCoreSnapshot None (empty-sidebar-projection) false "" [] []
+     (model/ApplyCoreSnapshot None (empty-sidebar-projection) [] false "" [] []
                               (Some editing) (Some autocomplete) [candidate]
                               [] [row] false []))
     (driver/flush! application)
@@ -848,7 +1024,7 @@
                     (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+                  (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                            false "" [] [] None None [] []
                                            [row] false []))
     (driver/flush! application)
@@ -903,7 +1079,7 @@
         initial
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                   false "" [] [] None None [] []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
@@ -915,7 +1091,7 @@
         collapsed
         (model/update
          initial
-         (model/ApplyCoreSnapshot None (empty-sidebar-projection)
+         (model/ApplyCoreSnapshot None (empty-sidebar-projection) []
                                   false "" [] [] None None [] [] []
                                   true [splice]))]
     (assert-equal [collapsed-parent sibling]

@@ -92,6 +92,13 @@ private struct LGSendCapturePayload: Encodable {
     let now: Int64
 }
 
+private struct LGReviewFlashcardPayload: Encodable {
+    let uuid: String
+    let rating: String
+    let now: Int64
+    let operationId: String
+}
+
 private struct LGCoreEffectResponse: Decodable {
     let ok: Bool
     let error: LogseqChatCoreError?
@@ -194,6 +201,45 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "clearSelectedPage")
             )
+        case "load-flashcards":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(
+                    action: "loadFlashcards",
+                    payload: String(Int64(Date().timeIntervalSince1970 * 1_000))
+                )
+            )
+        case "review-flashcard":
+            guard let uuid = effect.uuid else {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "Flashcard review is missing its card UUID"
+                )
+            }
+            do {
+                let payload = LGReviewFlashcardPayload(
+                    uuid: uuid,
+                    rating: effect.text,
+                    now: Int64(Date().timeIntervalSince1970 * 1_000),
+                    operationId: UUID().uuidString.lowercased()
+                )
+                let data = try JSONEncoder().encode(payload)
+                guard let payloadJSON = String(data: data, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the flashcard review payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "reviewFlashcard", payload: payloadJSON)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
         case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block",
              "long-press-outliner-block", "add-root-block":
             do {

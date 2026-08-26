@@ -111,7 +111,12 @@
     (str "{\"id\":" id ",\"kind\":\"select-sidebar-page\",\"text\":"
          (wire/quoted uuid) "}")
     (model/ClearSelectedPageEffect id)
-    (str "{\"id\":" id ",\"kind\":\"clear-selected-page\",\"text\":\"\"}")))
+    (str "{\"id\":" id ",\"kind\":\"clear-selected-page\",\"text\":\"\"}")
+    (model/LoadFlashcardsEffect id)
+    (str "{\"id\":" id ",\"kind\":\"load-flashcards\",\"text\":\"\"}")
+    (model/ReviewFlashcardEffect id uuid rating)
+    (str "{\"id\":" id ",\"kind\":\"review-flashcard\",\"text\":"
+         (wire/quoted rating) ",\"uuid\":" (wire/quoted uuid) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]
