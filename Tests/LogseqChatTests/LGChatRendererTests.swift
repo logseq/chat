@@ -238,6 +238,24 @@ struct LGChatRendererTests {
         #expect(resolution.succeeded)
     }
 
+    @Test("autosave effects reuse the existing core save action")
+    func autosaveEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 0, kind: "save-outliner-editing", text: "")
+        )
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("saveEditing") == true)
+        #expect(resolution.succeeded)
+    }
+
     @Test("delivers each core platform command revision exactly once")
     func deliversPlatformCommandsOnce() throws {
         let native = LGChatNativeRuntimeProbe()

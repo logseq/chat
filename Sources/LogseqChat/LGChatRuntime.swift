@@ -98,7 +98,14 @@ private struct LGPlatformCommandResponse: Decodable {
         let graphName: String?
         let outlinerCommandRevision: Int?
         let outlinerCommands: [LogseqOutlinerCommand]?
+        let outlinerState: OutlinerState?
     }
+
+    struct OutlinerState: Decodable {
+        let autocomplete: Autocomplete?
+    }
+
+    struct Autocomplete: Decodable {}
 }
 
 @MainActor
@@ -178,6 +185,17 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             do {
                 request = try Self.outlinerRequest(
                     LogseqOutlinerEvent(type: "chooseAutocomplete", value: effect.text)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "save-outliner-editing":
+            do {
+                request = try Self.outlinerRequest(
+                    LogseqOutlinerEvent(type: "saveEditing")
                 )
             } catch {
                 return LGChatEffectResolution(
@@ -349,14 +367,28 @@ public final class LGChatRuntime {
     @ObservationIgnored
     private var lastPlatformCommandRevision = 0
 
+    @ObservationIgnored
+    private var outlinerAutosaveTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var outlinerAutosavePending = false
+
+    @ObservationIgnored
+    private let outlinerAutosaveDelayNanoseconds: UInt64
+
     public init(
         native: any LGChatNativeCalling,
         effectExecutor: any LGChatEffectExecuting = LGChatCoreEffectExecutor(),
-        platformCommandHandler: (any LGChatPlatformCommandHandling)? = nil
+        platformCommandHandler: (any LGChatPlatformCommandHandling)? = nil,
+        outlinerAutosaveDelayNanoseconds: UInt64 =
+            LogseqOutlinerAutosavePolicy.serverSyncDelayNanoseconds(
+                eventType: "textChanged"
+            )
     ) {
         self.native = native
         self.effectExecutor = effectExecutor
         self.platformCommandHandler = platformCommandHandler
+        self.outlinerAutosaveDelayNanoseconds = outlinerAutosaveDelayNanoseconds
         renderer = LGChatRenderer()
         renderer.onEvent = { [weak self] event in
             self?.receive(event)
@@ -377,6 +409,7 @@ public final class LGChatRuntime {
 
     public func stop() {
         guard isStarted else { return }
+        cancelOutlinerAutosave()
         do {
             try apply(native.dispose())
         } catch {
@@ -475,7 +508,14 @@ public final class LGChatRuntime {
         defer { isDrainingEffects = false }
         while true {
             let encoded = native.takeEffect()
-            guard !encoded.isEmpty else { return }
+            if encoded.isEmpty {
+                if outlinerAutosavePending {
+                    outlinerAutosavePending = false
+                    await executeOutlinerAutosave()
+                    continue
+                }
+                return
+            }
 
             let effect: LGChatEffect
             do {
@@ -488,6 +528,7 @@ public final class LGChatRuntime {
                 return
             }
 
+            cancelOutlinerAutosaveBeforeExecuting(effect)
             let resolution = await effectExecutor.execute(effect)
             do {
                 try apply(native.resolveEffect(
@@ -498,6 +539,10 @@ public final class LGChatRuntime {
                 if resolution.succeeded {
                     try apply(native.applySnapshot(resolution.message))
                     deliverPlatformCommands(from: resolution.message)
+                    scheduleOutlinerAutosaveIfNeeded(
+                        after: effect,
+                        response: resolution.message
+                    )
                 }
                 lastError = resolution.succeeded ? nil : resolution.message
             } catch {
@@ -526,6 +571,66 @@ public final class LGChatRuntime {
             graphName: result.graphName,
             commands: commands
         ))
+    }
+
+    private func cancelOutlinerAutosaveBeforeExecuting(_ effect: LGChatEffect) {
+        guard effect.kind.contains("outliner"),
+              effect.kind != "move-outliner-caret" else { return }
+        cancelOutlinerAutosave()
+    }
+
+    private func cancelOutlinerAutosave() {
+        outlinerAutosaveTask?.cancel()
+        outlinerAutosaveTask = nil
+        outlinerAutosavePending = false
+    }
+
+    private func scheduleOutlinerAutosaveIfNeeded(
+        after effect: LGChatEffect,
+        response: String
+    ) {
+        let shouldSchedule: Bool
+        switch effect.kind {
+        case "choose-outliner-autocomplete":
+            shouldSchedule = true
+        case "change-outliner-text":
+            shouldSchedule = !responseHasOutlinerAutocomplete(response)
+        default:
+            shouldSchedule = false
+        }
+        guard shouldSchedule else { return }
+        outlinerAutosaveTask = Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: outlinerAutosaveDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            outlinerAutosaveTask = nil
+            outlinerAutosavePending = true
+            scheduleEffectDrain()
+        }
+    }
+
+    private func responseHasOutlinerAutocomplete(_ response: String) -> Bool {
+        guard let envelope = try? JSONDecoder().decode(
+            LGPlatformCommandResponse.self,
+            from: Data(response.utf8)
+        ) else { return false }
+        return envelope.result?.outlinerState?.autocomplete != nil
+    }
+
+    private func executeOutlinerAutosave() async {
+        let effect = LGChatEffect(id: 0, kind: "save-outliner-editing", text: "")
+        let resolution = await effectExecutor.execute(effect)
+        guard resolution.succeeded else {
+            lastError = resolution.message
+            return
+        }
+        do {
+            try apply(native.applySnapshot(resolution.message))
+            deliverPlatformCommands(from: resolution.message)
+            lastError = nil
+        } catch {
+            lastError = String(describing: error)
+        }
     }
 
     private func apply(_ patch: String) throws {
