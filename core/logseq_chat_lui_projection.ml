@@ -44,6 +44,7 @@ let apply_response encoded =
         , snapshot.search_query
         , Rrbvec.of_list (List.map search_hit snapshot.search_results)
         , Option.map outliner_editing snapshot.outliner_editing
+        , Rrbvec.of_list snapshot.outliner_selected_block_ids
         , Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
         , snapshot.is_outliner_patch
         , Rrbvec.of_list

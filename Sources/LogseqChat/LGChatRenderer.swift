@@ -4,7 +4,7 @@ import SwiftUI
 
 public enum LGChatRendererEventKind: Equatable, Sendable {
     case press
-    case hold
+    case longPress
     case textChanged
     case submit
     case toggleChanged
@@ -95,8 +95,8 @@ public final class LGChatRenderer {
         switch event {
         case .press(let node):
             return LGChatRendererEvent(kind: .press, nodeID: node)
-        case .hold(let node):
-            return LGChatRendererEvent(kind: .hold, nodeID: node)
+        case .longPress(let node):
+            return LGChatRendererEvent(kind: .longPress, nodeID: node)
         case .textChanged(let node, let text):
             return LGChatRendererEvent(kind: .textChanged, nodeID: node, text: text)
         case .submit(let node):

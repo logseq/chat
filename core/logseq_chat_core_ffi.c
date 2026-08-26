@@ -295,8 +295,8 @@ const char *logseq_chat_lui_press(int64_t node) {
   LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_press", node));
 }
 
-const char *logseq_chat_lui_hold(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_hold", node));
+const char *logseq_chat_lui_long_press(int64_t node) {
+  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_long_press", node));
 }
 
 const char *logseq_chat_lui_text_changed(int64_t node, const char *text) {

@@ -7,7 +7,7 @@ let equal expected actual message =
 
 let () =
   let response =
-    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6}},"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"syncConnected":true}}|}
+    {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"]},"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":2,"hasChildren":true,"isCollapsed":false}],"syncConnected":true}}|}
   in
   match decode_response response with
   | Error message -> failwith message
@@ -35,6 +35,9 @@ let () =
          if editing.caret_utf16_offset <> 6 then failwith "editing caret was not projected"
        | None -> failwith "outliner editing was not projected")
     ; if snapshot.is_outliner_patch then failwith "launch snapshot was marked as a patch";
+    (match snapshot.outliner_selected_block_ids with
+     | [ "outline-a" ] -> ()
+     | _ -> failwith "selected outliner blocks were not projected");
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

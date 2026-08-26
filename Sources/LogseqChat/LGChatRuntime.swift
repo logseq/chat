@@ -7,7 +7,7 @@ import LogseqChatModel
 public protocol LGChatNativeCalling {
     func initialize(platformCode: Int, hostCode: Int) -> String
     func press(node: Int) -> String
-    func hold(node: Int) -> String
+    func longPress(node: Int) -> String
     func textChanged(node: Int, text: String) -> String
     func submit(node: Int) -> String
     func toggleChanged(node: Int, checked: Bool) -> String
@@ -114,15 +114,28 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 method: "dispatch",
                 params: LogseqChatRPCParams(action: "searchNodes", payload: effect.text)
             )
-        case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block":
+        case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block",
+             "long-press-outliner-block":
             do {
                 let eventType = switch effect.kind {
                 case "toggle-outliner-collapsed": "toggleCollapsed"
                 case "zoom-outliner-block": "zoomIn"
+                case "long-press-outliner-block": "longPressBlock"
                 default: "tapBlock"
                 }
                 request = try Self.outlinerRequest(
                     LogseqOutlinerEvent(type: eventType, uuid: effect.text)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "outliner-toolbar":
+            do {
+                request = try Self.outlinerRequest(
+                    LogseqOutlinerEvent(type: "toolbar", action: effect.text)
                 )
             } catch {
                 return LGChatEffectResolution(
@@ -235,7 +248,7 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
     }
 
     public func press(node: Int) -> String { core.logseq_chat_lui_press(node) }
-    public func hold(node: Int) -> String { core.logseq_chat_lui_hold(node) }
+    public func longPress(node: Int) -> String { core.logseq_chat_lui_long_press(node) }
     public func textChanged(node: Int, text: String) -> String {
         core.logseq_chat_lui_text_changed(node, text)
     }
@@ -334,8 +347,8 @@ public final class LGChatRuntime {
         switch event.kind {
         case .press:
             patch = native.press(node: event.nodeID)
-        case .hold:
-            patch = native.hold(node: event.nodeID)
+        case .longPress:
+            patch = native.longPress(node: event.nodeID)
         case .textChanged:
             patch = native.textChanged(node: event.nodeID, text: event.text ?? "")
         case .submit:

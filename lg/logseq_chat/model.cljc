@@ -10,6 +10,7 @@
     (search-results [])
     (search-loading false)
     (outliner-rows [])
+    (outliner-selected-block-ids [])
     (outliner-editing None)
     (composer-expanded false)
     (composer-draft "")
@@ -53,7 +54,9 @@
     (BackspaceOutlinerEditorEffect id _uuid _title _selection) id
     (MoveOutlinerCaretEffect id _uuid _caret) id
     (ToggleOutlinerCollapsedEffect id _uuid) id
-    (ZoomOutlinerBlockEffect id _uuid) id))
+    (ZoomOutlinerBlockEffect id _uuid) id
+    (LongPressOutlinerBlockEffect id _uuid) id
+    (OutlinerToolbarEffect id _action) id))
 
 (defn enqueue-effect [current effect]
   (assoc current
@@ -222,7 +225,8 @@
       current)
 
     (ApplyCoreSnapshot graph-name sync-connected query results
-                       outliner-editing outliner-rows is-outliner-patch
+                       outliner-editing outliner-selected-block-ids
+                       outliner-rows is-outliner-patch
                        outliner-row-splices)
     (let [projected-rows
           (if is-outliner-patch
@@ -236,6 +240,7 @@
                  :selected-graph graph-name
                  :sync-state (if sync-connected SyncedState OfflineState)
                  :outliner-editing outliner-editing
+                 :outliner-selected-block-ids outliner-selected-block-ids
                  :outliner-rows projected-rows)]
       (if (= query (:search-query current))
         (assoc updated
@@ -281,6 +286,14 @@
     (ZoomOutlinerBlock uuid)
     (let [id (:next-effect-id current)]
       (enqueue-effect current (ZoomOutlinerBlockEffect id uuid)))
+
+    (LongPressOutlinerBlock uuid)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (LongPressOutlinerBlockEffect id uuid)))
+
+    (PerformOutlinerToolbarAction action)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (OutlinerToolbarEffect id action)))
 
     CloseSearch
     (assoc current

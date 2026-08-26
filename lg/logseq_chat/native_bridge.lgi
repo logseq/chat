@@ -12,7 +12,7 @@
 (signature logseq-chat.native-bridge/resolve-effect :fn<int;bool;string;string>)
 (signature logseq-chat.native-bridge/initialize :fn<int;int;string>)
 (signature logseq-chat.native-bridge/press :fn<int;string>)
-(signature logseq-chat.native-bridge/hold :fn<int;string>)
+(signature logseq-chat.native-bridge/long-press :fn<int;string>)
 (signature logseq-chat.native-bridge/text-changed :fn<int;string;string>)
 (signature logseq-chat.native-bridge/submit :fn<int;string>)
 (signature logseq-chat.native-bridge/toggle-changed :fn<int;bool;string>)

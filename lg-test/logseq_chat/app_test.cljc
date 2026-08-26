@@ -22,6 +22,22 @@
     (Some (proto/IntValue value)) value
     _ -1))
 
+(defn property-bool [renderer node property]
+  (match (apple/property renderer node property)
+    (Some (proto/BoolValue value)) value
+    _ false))
+
+(defn child-with-identifier [renderer parent identifier]
+  (let [children (apple/children renderer parent)]
+    (loop [index 0]
+      (if (= index (count children))
+        -1
+        (let [child (nth children index)]
+          (if (= identifier
+                 (property-string renderer child proto/AccessibilityIdentifier))
+            child
+            (recur (inc index))))))))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
@@ -357,7 +373,7 @@
     (driver/start! application)
     (driver/send! application
                   (model/ApplyCoreSnapshot None false "" []
-                                           (Some editing) [row] false []))
+                                           (Some editing) [] [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
           outliner (nth (apple/children renderer root) 4)
@@ -410,6 +426,42 @@
     (assert-equal 3 (:next-effect-id zoomed)
                   "both structure controls advance stable effect IDs")))
 
+(deftest outliner-long-press-selection-and-toolbar-use-typed-effects
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+              (uuid "parent") (title "Parent") (depth 0)
+              (has-children false) (is-collapsed false))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None false "" [] None
+                                           ["parent"] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          outliner (nth (apple/children renderer root) 4)
+          rendered-row (nth (apple/children renderer outliner) 0)
+          toolbar (child-with-identifier
+                   renderer root "toolbar.outliner.selection")
+          copy-button (nth (apple/children renderer toolbar) 0)]
+      (is (property-bool renderer rendered-row proto/Selected)
+          "the selected block is projected into retained row state")
+      (assert-equal "toolbar.outliner.selection"
+                    (property-string renderer toolbar
+                                     proto/AccessibilityIdentifier)
+                    "selection exposes main's stable toolbar identifier")
+      (assert-equal "button.outliner.selection.copy"
+                    (property-string renderer copy-button
+                                     proto/AccessibilityIdentifier)
+                    "selection actions keep main's automation identifiers")
+      (driver/dispatch-event! application (proto/LongPress rendered-row))
+      (driver/dispatch-event! application (proto/Press copy-button))
+      (driver/flush! application)
+      (assert-equal
+       [(model/LongPressOutlinerBlockEffect 1 "parent")
+        (model/OutlinerToolbarEffect 2 "copy")]
+       (:pending-effects (chat/model application))
+       "selection gestures and toolbar actions cross one typed boundary"))))
+
 (deftest outliner-rows-preserve-depth-zoom-and-collapse-controls
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -421,7 +473,7 @@
               (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
-                  (model/ApplyCoreSnapshot None false "" [] None [row]
+                  (model/ApplyCoreSnapshot None false "" [] None [] [row]
                                            false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -467,7 +519,7 @@
         initial
         (model/update
          (model/initial)
-         (model/ApplyCoreSnapshot None false "" [] None
+         (model/ApplyCoreSnapshot None false "" [] None []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
                  (start (Some 0))
@@ -478,7 +530,7 @@
         collapsed
         (model/update
          initial
-         (model/ApplyCoreSnapshot None false "" [] None [] true [splice]))]
+         (model/ApplyCoreSnapshot None false "" [] None [] [] true [splice]))]
     (assert-equal [collapsed-parent sibling]
                   (:outliner-rows collapsed)
                   "a bounded core splice preserves unaffected keyed rows")))

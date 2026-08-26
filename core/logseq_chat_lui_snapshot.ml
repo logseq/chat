@@ -34,6 +34,7 @@ type t =
   ; outliner_rows : outline_row list
   ; outliner_row_splices : outliner_row_splice list
   ; outliner_editing : outliner_editing option
+  ; outliner_selected_block_ids : string list
   ; is_outliner_patch : bool
   ; sync_connected : bool
   }
@@ -146,6 +147,19 @@ let current_outliner_editing result_fields =
   | _ -> None
 ;;
 
+let current_outliner_selected_block_ids result_fields =
+  match member "outlinerState" result_fields with
+  | Some (`Assoc state_fields) ->
+    (match member "selectedBlockIds" state_fields with
+     | Some (`List values) ->
+       List.filter_map (function
+         | `String value -> Some value
+         | _ -> None)
+         values
+     | _ -> [])
+  | _ -> []
+;;
+
 let error_message fields =
   match member "error" fields with
   | Some (`Assoc error_fields) ->
@@ -181,6 +195,7 @@ let decode_response encoded =
            ; outliner_rows
            ; outliner_row_splices
            ; outliner_editing = current_outliner_editing result_fields
+           ; outliner_selected_block_ids = current_outliner_selected_block_ids result_fields
            ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
            ; sync_connected = bool_member "syncConnected" result_fields
            }

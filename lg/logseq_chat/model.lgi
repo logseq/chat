@@ -43,7 +43,9 @@
   (BackspaceOutlinerEditorEffect :int :string :string :int)
   (MoveOutlinerCaretEffect :int :string :int)
   (ToggleOutlinerCollapsedEffect :int :string)
-  (ZoomOutlinerBlockEffect :int :string))
+  (ZoomOutlinerBlockEffect :int :string)
+  (LongPressOutlinerBlockEffect :int :string)
+  (OutlinerToolbarEffect :int :string))
 
 (type-record chat-model
   (selected-graph :option<string>)
@@ -53,6 +55,7 @@
   (search-results :vector<search-hit>)
   (search-loading :bool)
   (outliner-rows :vector<outline-row>)
+  (outliner-selected-block-ids :vector<string>)
   (outliner-editing :option<outliner-editing>)
   (composer-expanded :bool)
   (composer-draft :string)
@@ -75,7 +78,8 @@
   (ChangeSearchQuery :string)
   (ApplySearchResults :string :vector<search-hit>)
   (ApplyCoreSnapshot :option<string> :bool :string :vector<search-hit>
-                     :option<outliner-editing> :vector<outline-row> :bool
+                     :option<outliner-editing> :vector<string>
+                     :vector<outline-row> :bool
                      :vector<outline-row-splice>)
   (BeginOutlinerEdit :string)
   (ChangeOutlinerText :string :string :int)
@@ -84,6 +88,8 @@
   (MoveOutlinerCaret :string :int)
   (ToggleOutlinerCollapsed :string)
   (ZoomOutlinerBlock :string)
+  (LongPressOutlinerBlock :string)
+  (PerformOutlinerToolbarAction :string)
   (CloseSearch)
   (ExpandComposer)
   (ChangeComposerDraft :string)

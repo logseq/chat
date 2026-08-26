@@ -34,10 +34,16 @@
  :fn<ui-context;signal<int>;int>)
 (signature logseq-chat.view/row-editing? :fn<chat-model;outline-row;bool>)
 (signature logseq-chat.view/row-not-editing? :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/string-vector-contains?
+ :fn<vector<string>;string;bool>)
+(signature logseq-chat.view/row-selected? :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-selection-active? :fn<chat-model;bool>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
  :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-selection-toolbar
+ :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view
   :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view

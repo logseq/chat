@@ -190,6 +190,21 @@
 (defn row-not-editing? [current row]
   (not (row-editing? current row)))
 
+(defn string-vector-contains? [values target]
+  (loop [index 0]
+    (if (= index (count values))
+      false
+      (if (= (nth values index) target)
+        true
+        (recur (inc index))))))
+
+(defn row-selected? [current row]
+  (string-vector-contains?
+   (:outliner-selected-block-ids current) (:uuid row)))
+
+(defn outliner-selection-active? [current]
+  (not (empty? (:outliner-selected-block-ids current))))
+
 (defn editing-title [current]
   (match (:outliner-editing current)
     (Some editing) (:title editing)
@@ -207,6 +222,7 @@
         editing-caret-source (reactive editing-caret model-source)
         indent-source (reactive outliner-row-indent row-source)
         editing-source (reactive row-editing? model-source row-source)
+        selected-source (reactive row-selected? model-source row-source)
         not-editing-source
         (reactive row-not-editing? model-source row-source)
         has-children-source (reactive outliner-row-has-children row-source)]
@@ -214,9 +230,13 @@
      ui-context nil
      [:list-item
       {:accessibility-identifier (outliner-row-identifier row)
+       :selected selected-source
        :on-press
        (event [current-row row-source]
-         (send (model/BeginOutlinerEdit (:uuid current-row))))}
+         (send (model/BeginOutlinerEdit (:uuid current-row))))
+       :on-long-press
+       (event [current-row row-source]
+         (send (model/LongPressOutlinerBlock (:uuid current-row))))}
       [:row {:gap 2 :padding-vertical 5}
        [outliner-indent-view indent-source]
        [:button
@@ -241,6 +261,56 @@
           :on-press
           (event [current-row row-source]
             (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]])))
+
+(defui outliner-selection-toolbar [send]
+  [:toolbar
+   {:orientation "horizontal"
+    :label "Outliner selection"
+    :accessibility-identifier "toolbar.outliner.selection"
+    :gap 6}
+   [:button
+    {:label "Copy"
+     :accessibility-identifier "button.outliner.selection.copy"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "copy")))}
+    "Copy"]
+   [:button
+    {:label "Outdent"
+     :accessibility-identifier "button.outliner.selection.outdent"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}
+    "Outdent"]
+   [:button
+    {:label "Indent"
+     :accessibility-identifier "button.outliner.selection.indent"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}
+    "Indent"]
+   [:button
+    {:label "Delete"
+     :accessibility-identifier "button.outliner.selection.delete"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "delete")))}
+    "Delete"]
+   [:button
+    {:label "Copy reference"
+     :accessibility-identifier "button.outliner.selection.copyReference"
+     :on-press
+     (fn [_event]
+       (send (model/PerformOutlinerToolbarAction "copyReference")))}
+    "Copy reference"]
+   [:button
+    {:label "Copy URL"
+     :accessibility-identifier "button.outliner.selection.copyURL"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "copyURL")))}
+    "Copy URL"]
+   [:button
+    {:label "Unselect"
+     :accessibility-identifier "button.outliner.selection.unselect"
+     :on-press
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}
+    "Unselect"]])
 
 (defui composer-view [model-source send]
   [:column
@@ -320,4 +390,6 @@
       :compare compare
       :as row-source}
      [outliner-row model-source row-source send]]]
+   [:if {:test (reactive outliner-selection-active? model-source)}
+    [outliner-selection-toolbar send]]
    (composer-view model-source send)])

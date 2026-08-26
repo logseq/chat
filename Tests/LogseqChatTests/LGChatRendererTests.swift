@@ -190,6 +190,30 @@ struct LGChatRendererTests {
         #expect(collapse.succeeded)
         #expect(zoom.succeeded)
     }
+
+    @Test("outliner selection effects reuse the existing core reducer")
+    func outlinerSelectionEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequests: [LogseqChatRPCRequest] = []
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequests.append(request)
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let longPress = await executor.execute(
+            LGChatEffect(id: 13, kind: "long-press-outliner-block", text: "parent")
+        )
+        let copy = await executor.execute(
+            LGChatEffect(id: 14, kind: "outliner-toolbar", text: "copy")
+        )
+
+        #expect(capturedRequests.count == 2)
+        #expect(capturedRequests[0].params.payload?.contains("longPressBlock") == true)
+        #expect(capturedRequests[0].params.payload?.contains("parent") == true)
+        #expect(capturedRequests[1].params.payload?.contains("toolbar") == true)
+        #expect(capturedRequests[1].params.payload?.contains("copy") == true)
+        #expect(longPress.succeeded)
+        #expect(copy.succeeded)
+    }
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {
@@ -244,7 +268,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
         """
     }
 
-    func hold(node: Int) -> String { "" }
+    func longPress(node: Int) -> String { "" }
     func textChanged(node: Int, text: String) -> String { "" }
     func submit(node: Int) -> String { "" }
     func toggleChanged(node: Int, checked: Bool) -> String { "" }

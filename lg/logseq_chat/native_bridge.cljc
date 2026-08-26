@@ -79,7 +79,15 @@
     (model/ZoomOutlinerBlockEffect id uuid)
     (str "{\"id\":" id
          ",\"kind\":\"zoom-outliner-block\",\"text\":"
-         (wire/quoted uuid) "}")))
+         (wire/quoted uuid) "}")
+    (model/LongPressOutlinerBlockEffect id uuid)
+    (str "{\"id\":" id
+         ",\"kind\":\"long-press-outliner-block\",\"text\":"
+         (wire/quoted uuid) "}")
+    (model/OutlinerToolbarEffect id action)
+    (str "{\"id\":" id
+         ",\"kind\":\"outliner-toolbar\",\"text\":"
+         (wire/quoted action) "}")))
 
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]
@@ -108,7 +116,7 @@
     (deref latest-patch)))
 
 (defn press [node] (flush-event! (proto/Press node)))
-(defn hold [node] (flush-event! (proto/Hold node)))
+(defn long-press [node] (flush-event! (proto/LongPress node)))
 (defn text-changed [node text]
   (flush-event! (proto/TextChanged node text)))
 (defn submit [node] (flush-event! (proto/Submit node)))
@@ -148,7 +156,7 @@
 
 (callback/register "logseq_chat_lui_init" initialize)
 (callback/register "logseq_chat_lui_press" press)
-(callback/register "logseq_chat_lui_hold" hold)
+(callback/register "logseq_chat_lui_long_press" long-press)
 (callback/register "logseq_chat_lui_text_changed" text-changed)
 (callback/register "logseq_chat_lui_submit" submit)
 (callback/register "logseq_chat_lui_toggle_changed" toggle-changed)
