@@ -8,6 +8,8 @@ type search_hit =
 type outline_row =
   { uuid : string
   ; title : string
+  ; markup_json : string
+  ; youtube_target_url : string option
   ; depth : int
   ; has_children : bool
   ; is_collapsed : bool
@@ -126,6 +128,11 @@ let outline_row = function
           Some
             { uuid
             ; title
+            ; markup_json =
+                (match member "markup" block_fields with
+                 | Some markup -> Yojson.Basic.to_string markup
+                 | None -> "[]")
+            ; youtube_target_url = string_member "youtubeTargetURL" fields
             ; depth
             ; has_children = bool_member "hasChildren" fields
             ; is_collapsed = bool_member "isCollapsed" fields

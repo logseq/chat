@@ -30,6 +30,24 @@ struct LGChatRendererTests {
         #expect(renderer.rootID == 1)
     }
 
+    @Test("registers the native rich block renderer with the LG fingerprint")
+    func registersRichBlockRenderer() throws {
+        let renderer = LGChatRenderer()
+
+        try renderer.apply(patchJSON: """
+        {"generation":1,"ops":[
+          {"op":"create-node","id":1,"kind":"root"},
+          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none|events:9:open-node[4:uuid:string:required]"},
+          {"op":"set-extension-prop","id":2,"property":"title","value":"Project"},
+          {"op":"set-extension-prop","id":2,"property":"markup-json","value":"[]"},
+          {"op":"set-extension-prop","id":2,"property":"youtube-target-url","value":""},
+          {"op":"insert-child","parent":1,"child":2,"index":0}
+        ]}
+        """)
+
+        #expect(renderer.rootID == 1)
+    }
+
     @Test("forwards renderer events without owning application state")
     func forwardsEvents() {
         let renderer = LGChatRenderer()
@@ -63,8 +81,8 @@ struct LGChatRendererTests {
         #expect(runtime.renderer.rootID == 1)
     }
 
-    @Test("routes native editor extension events through LG")
-    func routesOutlinerEditorExtensionEvents() throws {
+    @Test("routes native extension events through one LG bridge")
+    func routesNativeExtensionEvents() throws {
         let native = LGChatNativeRuntimeProbe()
         let runtime = LGChatRuntime(native: native)
         try runtime.start(platformCode: 2)
@@ -81,14 +99,31 @@ struct LGChatRendererTests {
                 ]
             )
         )
+        runtime.renderer.receiveForTesting(
+            LGChatRendererEvent(
+                kind: .extension,
+                nodeID: 18,
+                extensionIdentifier: "outliner-block-content",
+                extensionName: "open-node",
+                extensionValues: ["uuid": LUIExtensionValue.string("page-a")]
+            )
+        )
 
-        #expect(native.outlinerEditorEvents == [
-            LGChatOutlinerEditorEventProbe(
+        #expect(native.extensionEvents == [
+            LGChatExtensionEventProbe(
                 node: 17,
+                identifier: "outliner-editor",
                 name: "text-change",
                 text: "Updated",
                 value: 7
-            )
+            ),
+            LGChatExtensionEventProbe(
+                node: 18,
+                identifier: "outliner-block-content",
+                name: "open-node",
+                text: "page-a",
+                value: 0
+            ),
         ])
         #expect(runtime.lastError == nil)
     }
@@ -364,8 +399,9 @@ private struct LGChatEffectResolutionProbe: Equatable {
     let message: String
 }
 
-private struct LGChatOutlinerEditorEventProbe: Equatable {
+private struct LGChatExtensionEventProbe: Equatable {
     let node: Int
+    let identifier: String
     let name: String
     let text: String
     let value: Int
@@ -397,7 +433,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var effects: [String] = []
     var resolutions: [LGChatEffectResolutionProbe] = []
     var appliedSnapshots: [String] = []
-    var outlinerEditorEvents: [LGChatOutlinerEditorEventProbe] = []
+    var extensionEvents: [LGChatExtensionEventProbe] = []
 
     func initialize(platformCode: Int, hostCode: Int) -> String {
         startedPlatforms.append(platformCode)
@@ -427,9 +463,16 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     func valueChanged(node: Int, value: Double) -> String { "" }
     func dismiss(node: Int) -> String { "" }
     func doublePress(node: Int) -> String { "" }
-    func outlinerEditorEvent(node: Int, name: String, text: String, value: Int) -> String {
-        outlinerEditorEvents.append(LGChatOutlinerEditorEventProbe(
+    func extensionEvent(
+        node: Int,
+        identifier: String,
+        name: String,
+        text: String,
+        value: Int
+    ) -> String {
+        extensionEvents.append(LGChatExtensionEventProbe(
             node: node,
+            identifier: identifier,
             name: name,
             text: text,
             value: value

@@ -9,6 +9,7 @@ module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
 module Order = Logseq_chat_fractional_order
 module Graph_bootstrap = Logseq_chat_graph_bootstrap
+module Markup = Logseq_chat_markup
 
 type pending_transport =
   | Json_request of Api.request
@@ -809,18 +810,77 @@ let outliner_state_json state =
     ]
 ;;
 
+let contains_case_insensitive value fragment =
+  try
+    ignore
+      (Str.search_forward
+         (Str.regexp_string (String.lowercase_ascii fragment))
+         (String.lowercase_ascii value)
+         0);
+    true
+  with
+  | Not_found -> false
+;;
+
+let is_youtube_url url =
+  contains_case_insensitive url "youtube.com"
+  || contains_case_insensitive url "youtu.be"
+;;
+
+let youtube_target_urls (blocks : Model.block list) =
+  let _, targets =
+    List.fold_left
+      (fun (current_url, targets) (block : Model.block) ->
+        let nodes = Markup.parse ~references:block.references ~tags:block.tags block.title in
+        let current_url, target_url =
+          List.fold_left
+            (fun (current_url, target_url) node ->
+              match node with
+              | Markup.Video url when is_youtube_url url -> Some url, target_url
+              | Markup.Youtube_timestamp _ ->
+                current_url,
+                (match current_url with Some _ -> current_url | None -> target_url)
+              | _ -> current_url, target_url)
+            (current_url, None)
+            nodes
+        in
+        let targets =
+          match target_url with
+          | Some url -> (block.uuid, url) :: targets
+          | None -> targets
+        in
+        current_url, targets)
+      (None, [])
+      blocks
+  in
+  List.rev targets
+;;
+
+let outliner_row_json_with ?youtube_target_url serialize_block row =
+  `Assoc
+    ([ "block", serialize_block row.Outliner_state.block
+     ; "depth", `Int row.depth
+     ; "hasChildren", `Bool row.has_children
+     ; "isCollapsed", `Bool row.is_collapsed
+     ]
+     @
+     match youtube_target_url with
+     | Some url -> [ "youtubeTargetURL", `String url ]
+     | None -> [])
+;;
+
 let outliner_rows_json ?serialize_block session context state =
   let serialize_block =
     Option.value serialize_block ~default:(visible_block_json session.model)
   in
-  Outliner_state.visible_rows context state
+  let rows = Outliner_state.visible_rows context state in
+  let targets = youtube_target_urls (List.map (fun row -> row.Outliner_state.block) rows) in
+  rows
   |> List.map (fun row ->
-    `Assoc
-      [ "block", serialize_block row.Outliner_state.block
-      ; "depth", `Int row.depth
-      ; "hasChildren", `Bool row.has_children
-      ; "isCollapsed", `Bool row.is_collapsed
-      ])
+    outliner_row_json_with
+      ?youtube_target_url:(List.assoc_opt row.Outliner_state.block.uuid targets)
+      serialize_block
+      row)
   |> fun rows -> `List rows
 ;;
 
@@ -1039,15 +1099,6 @@ let snapshot session ~context_blocks blocks =
       ])
 ;;
 
-let outliner_row_json session row =
-  `Assoc
-    [ "block", visible_block_json session.model row.Outliner_state.block
-    ; "depth", `Int row.depth
-    ; "hasChildren", `Bool row.has_children
-    ; "isCollapsed", `Bool row.is_collapsed
-    ]
-;;
-
 let outliner_patch_result
       session
       (context : Outliner_state.context)
@@ -1125,6 +1176,11 @@ let structural_outliner_patch
   let after_rows =
     Outliner_state.visible_rows after_context session.outliner_state |> Array.of_list
   in
+  let after_youtube_targets =
+    Array.to_list after_rows
+    |> List.map (fun row -> row.Outliner_state.block)
+    |> youtube_target_urls
+  in
   let before_length = Array.length before_rows in
   let after_length = Array.length after_rows in
   let rec common_prefix index =
@@ -1154,7 +1210,12 @@ let structural_outliner_patch
       let rows =
         Array.sub after_rows start insert_count
         |> Array.to_list
-        |> List.map (outliner_row_json session)
+        |> List.map (fun row ->
+          outliner_row_json_with
+            ?youtube_target_url:
+              (List.assoc_opt row.Outliner_state.block.uuid after_youtube_targets)
+            (visible_block_json session.model)
+            row)
       in
       let position =
         if not anchored

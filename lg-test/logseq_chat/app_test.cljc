@@ -44,6 +44,12 @@
    (ext/fingerprint (view/outliner-editor-schema))
    "the native editor registry must match the LG wire schema"))
 
+(deftest outliner-block-content-extension-contract-is-pinned
+  (assert-equal
+   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:11:markup-json:string:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none|events:9:open-node[4:uuid:string:required]"
+   (ext/fingerprint (view/outliner-block-content-schema))
+   "the rich block renderer must match the LG wire schema"))
+
 (deftest initial-shell-renders-offline-without-a-selected-graph
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
@@ -321,13 +327,14 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         route (record model/node-projection
-                (uuid "node-a")
-                (title "Project")
-                (is-tag false)
-                (is-property false))
+                      (uuid "node-a")
+                      (title "Project")
+                      (is-tag false)
+                      (is-property false))
         row (record model/outline-row
-              (uuid "child") (title "Child") (depth 1)
-              (has-children false) (is-collapsed false))]
+                    (uuid "child") (title "Child") (depth 1)
+                    (markup-json "[]") (youtube-target-url None)
+                    (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -387,10 +394,10 @@
   (let [queried (model/update (model/initial)
                               (model/ChangeSearchQuery "project alpha"))
         hit (record model/search-hit
-              (uuid "page-a")
-              (title "Project Alpha")
-              (breadcrumb "")
-              (is-page true))
+                    (uuid "page-a")
+                    (title "Project Alpha")
+                    (breadcrumb "")
+                    (is-page true))
         stale (model/update queried
                             (model/ApplySearchResults "older" [hit]))
         current (model/update queried
@@ -411,10 +418,10 @@
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))
         hit (record model/search-hit
-              (uuid "block-a")
-              (title "Project note")
-              (breadcrumb "Journal › Parent")
-              (is-page false))]
+                    (uuid "block-a")
+                    (title "Project note")
+                    (breadcrumb "Journal › Parent")
+                    (is-page false))]
     (driver/start! application)
     (driver/send! application model/OpenSearch)
     (driver/send! application (model/ChangeSearchQuery "project"))
@@ -439,15 +446,17 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
-              (uuid "block-a")
-              (title "Project note")
-              (depth 2)
-              (has-children true)
-              (is-collapsed false))
+                    (uuid "block-a")
+                    (title "Project note")
+                    (markup-json "[]")
+                    (youtube-target-url None)
+                    (depth 2)
+                    (has-children true)
+                    (is-collapsed false))
         editing (record model/outliner-editing
-                  (uuid "block-a")
-                  (title "Project note")
-                  (caret-utf16-offset 4))]
+                        (uuid "block-a")
+                        (title "Project note")
+                        (caret-utf16-offset 4))]
     (driver/start! application)
     (driver/send! application
                   (model/ApplyCoreSnapshot None false "" [] []
@@ -477,6 +486,42 @@
          [(model/ChangeOutlinerTextEffect 1 "block-a" "Updated" 7)]
          (:pending-effects (chat/model application))
          "native editor events return to the typed LG reducer")))))
+
+(deftest projected-markup-renders-through-the-native-rich-block-extension
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+                    (uuid "block-a")
+                    (title "See [[Project]]")
+                    (markup-json
+                     "[{\"type\":\"nodeReference\",\"uuid\":\"page-a\",\"title\":\"Project\"}]")
+                    (youtube-target-url None)
+                    (depth 0)
+                    (has-children false)
+                    (is-collapsed false))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot None false "" [] [] None None [] []
+                                           [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          outliner (nth (apple/children renderer root) 4)
+          rendered-row (nth (apple/children renderer outliner) 0)
+          content (nth (apple/children renderer rendered-row) 0)
+          rich-content (nth (apple/children renderer content) 2)]
+      (assert-equal
+       (Some (apple/AppleExtension "outliner-block-content"))
+       (apple/node renderer rich-content)
+       "non-editing markup uses the registered native rich renderer")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "open-node"
+        {"uuid" (proto/StringValue "page-a")}))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "page-a")]
+                    (:app-navigation-path (chat/model application))
+                    "rich node references return to LG-owned navigation"))))
 
 (deftest outliner-row-press-publishes-a-typed-core-effect
   (let [current (model/initial)
@@ -509,8 +554,9 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
-              (uuid "parent") (title "Parent") (depth 0)
-              (has-children false) (is-collapsed false))]
+                    (uuid "parent") (title "Parent") (depth 0)
+                    (markup-json "[]") (youtube-target-url None)
+                    (has-children false) (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
                   (model/ApplyCoreSnapshot None false "" [] [] None None []
@@ -545,19 +591,20 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
-              (uuid "block-a") (title "Project [[Pro") (depth 0)
-              (has-children false) (is-collapsed false))
+                    (uuid "block-a") (title "Project [[Pro") (depth 0)
+                    (markup-json "[]") (youtube-target-url None)
+                    (has-children false) (is-collapsed false))
         editing (record model/outliner-editing
-                  (uuid "block-a")
-                  (title "Project [[Pro")
-                  (caret-utf16-offset 13))
+                        (uuid "block-a")
+                        (title "Project [[Pro")
+                        (caret-utf16-offset 13))
         autocomplete (record model/outliner-autocomplete
-                       (kind model/NodeAutocomplete)
-                       (query "Pro"))
+                             (kind model/NodeAutocomplete)
+                             (query "Pro"))
         candidate (record model/outliner-autocomplete-candidate
-                    (index 0)
-                    (label "Project Alpha")
-                    (value "page-a"))]
+                          (index 0)
+                          (label "Project Alpha")
+                          (value "page-a"))]
     (driver/start! application)
     (driver/send!
      application
@@ -593,11 +640,13 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         row (record model/outline-row
-              (uuid "parent")
-              (title "Parent")
-              (depth 2)
-              (has-children true)
-              (is-collapsed false))]
+                    (uuid "parent")
+                    (title "Parent")
+                    (markup-json "[]")
+                    (youtube-target-url None)
+                    (depth 2)
+                    (has-children true)
+                    (is-collapsed false))]
     (driver/start! application)
     (driver/send! application
                   (model/ApplyCoreSnapshot None false "" [] [] None None [] []
@@ -632,28 +681,32 @@
 
 (deftest outliner-row-splices-update-the-existing-keyed-projection
   (let [parent (record model/outline-row
-                 (uuid "parent") (title "Parent") (depth 0)
-                 (has-children true) (is-collapsed false))
+                       (uuid "parent") (title "Parent") (depth 0)
+                       (markup-json "[]") (youtube-target-url None)
+                       (has-children true) (is-collapsed false))
         child (record model/outline-row
-                (uuid "child") (title "Child") (depth 1)
-                (has-children false) (is-collapsed false))
+                      (uuid "child") (title "Child") (depth 1)
+                      (markup-json "[]") (youtube-target-url None)
+                      (has-children false) (is-collapsed false))
         sibling (record model/outline-row
-                  (uuid "sibling") (title "Sibling") (depth 0)
-                  (has-children false) (is-collapsed false))
+                        (uuid "sibling") (title "Sibling") (depth 0)
+                        (markup-json "[]") (youtube-target-url None)
+                        (has-children false) (is-collapsed false))
         collapsed-parent (record model/outline-row
-                           (uuid "parent") (title "Parent") (depth 0)
-                           (has-children true) (is-collapsed true))
+                                 (uuid "parent") (title "Parent") (depth 0)
+                                 (markup-json "[]") (youtube-target-url None)
+                                 (has-children true) (is-collapsed true))
         initial
         (model/update
          (model/initial)
          (model/ApplyCoreSnapshot None false "" [] [] None None [] []
                                   [parent child sibling] false []))
         splice (record model/outline-row-splice
-                 (start (Some 0))
-                 (after-block-id None)
-                 (before-block-id None)
-                 (delete-count 2)
-                 (rows [collapsed-parent]))
+                       (start (Some 0))
+                       (after-block-id None)
+                       (before-block-id None)
+                       (delete-count 2)
+                       (rows [collapsed-parent]))
         collapsed
         (model/update
          initial

@@ -144,9 +144,12 @@
 (defn dismiss [node] (flush-event! (proto/Dismiss node)))
 (defn double-press [node] (flush-event! (proto/DoublePress node)))
 
-(defn outliner-editor-event [node name text value]
+(defn extension-event [node identifier name text value]
   (let [values
         (cond
+          (and (= identifier "outliner-block-content") (= name "open-node"))
+          {"uuid" (proto/StringValue text)}
+
           (= name "text-change")
           {"title" (proto/StringValue text)
            "caret-utf16-offset" (proto/IntValue value)}
@@ -160,7 +163,7 @@
           {"caret-utf16-offset" (proto/IntValue value)}
           :else {})]
     (flush-event!
-     (proto/ExtensionEvent node "outliner-editor" name values))))
+     (proto/ExtensionEvent node identifier name values))))
 
 (defn dispose []
   (reset! latest-patch "")
@@ -180,8 +183,7 @@
 (callback/register "logseq_chat_lui_value_changed" value-changed)
 (callback/register "logseq_chat_lui_dismiss" dismiss)
 (callback/register "logseq_chat_lui_double_press" double-press)
-(callback/register
- "logseq_chat_lui_outliner_editor_event" outliner-editor-event)
+(callback/register "logseq_chat_lui_extension_event" extension-event)
 (callback/register "logseq_chat_lui_dispose" dispose)
 (callback/register "logseq_chat_lui_root_node" root-node)
 (callback/register "logseq_chat_lui_take_effect" take-effect)

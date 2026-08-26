@@ -120,6 +120,27 @@ let () =
   | _ -> failwith "block JSON must remain an object"
 ;;
 
+let () =
+  let rich_block uuid title =
+    Logseq_chat_model.
+      { uuid; title; page_id = "page"; parent_id = None; order = None
+      ; created_at = 0; updated_at = 0; sync_status = "synced"; tags = []
+      ; references = []; breadcrumbs = []; status = None; is_asset = false
+      ; asset_type = None; asset_size = None; asset_checksum = None
+      ; local_path = None; journal = None
+      }
+  in
+  let targets =
+    Logseq_chat_rpc.youtube_target_urls
+      [ rich_block "video" "{{youtube dQw4w9WgXcQ}}"
+      ; rich_block "timestamp" "{{youtube-timestamp 01:23}}"
+      ]
+  in
+  match List.assoc_opt "timestamp" targets with
+  | Some "https://www.youtube.com/watch?v=dQw4w9WgXcQ" -> ()
+  | _ -> failwith "outliner projection must associate timestamps with the preceding YouTube video"
+;;
+
 let contains text fragment =
   try
     ignore (Str.search_forward (Str.regexp_string fragment) text 0);

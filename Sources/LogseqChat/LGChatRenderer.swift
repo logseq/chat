@@ -68,7 +68,7 @@ public final class LGChatRenderer {
     private static func makeBackend() -> LUIAppleBackend {
         do {
             return try LUIAppleBackend(
-                extensionRegistry: LGChatOutlinerEditorExtension.makeRegistry()
+                extensionRegistry: LGChatExtensionRegistry.makeRegistry()
             )
         } catch {
             preconditionFailure(

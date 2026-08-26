@@ -56,6 +56,22 @@ let () =
           Some { uuid = "child"; _ } -> ()
         | _ -> failwith "the active node route did not become the outliner surface")
      | Error message -> failwith message);
+    let rich =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"video","title":"{{youtube dQw4w9WgXcQ}}","markup":[{"type":"video","url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}]},"depth":0,"hasChildren":false,"isCollapsed":false},{"block":{"uuid":"timestamp","title":"{{youtube-timestamp 01:23}}","markup":[{"type":"youtubeTimestamp","text":"01:23","style":"83"}]},"depth":0,"hasChildren":false,"isCollapsed":false,"youtubeTargetURL":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}],"syncConnected":true}}|}
+    in
+    (match rich with
+     | Ok { outliner_rows = [ video; timestamp ]; _ } ->
+       equal
+         {|[{"type":"video","url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}]|}
+         video.markup_json
+         "rich markup JSON";
+       equal
+         "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+         (Option.value ~default:"" timestamp.youtube_target_url)
+         "cross-block YouTube timestamp target"
+     | Ok _ -> failwith "rich outliner rows were not projected"
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

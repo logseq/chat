@@ -256,23 +256,26 @@ static const char *call_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
   CAMLreturnT(const char *, response);
 }
 
-static const char *call_lui_outliner_editor_event(
-    int64_t node, const char *name, const char *text, int64_t number) {
+static const char *call_lui_extension_event(
+    int64_t node, const char *identifier, const char *name, const char *text,
+    int64_t number) {
   const char *response;
   CAMLparam0();
-  CAMLlocal3(name_value, text_value, result);
-  value arguments[4];
-  const value *callback = caml_named_value("logseq_chat_lui_outliner_editor_event");
-  if (callback == NULL || name == NULL || text == NULL) {
+  CAMLlocal4(identifier_value, name_value, text_value, result);
+  value arguments[5];
+  const value *callback = caml_named_value("logseq_chat_lui_extension_event");
+  if (callback == NULL || identifier == NULL || name == NULL || text == NULL) {
     response = missing_lui_callback();
   } else {
+    identifier_value = caml_copy_string(identifier);
     name_value = caml_copy_string(name);
     text_value = caml_copy_string(text);
     arguments[0] = Val_long(node);
-    arguments[1] = name_value;
-    arguments[2] = text_value;
-    arguments[3] = Val_long(number);
-    result = caml_callbackN_exn(*callback, 4, arguments);
+    arguments[1] = identifier_value;
+    arguments[2] = name_value;
+    arguments[3] = text_value;
+    arguments[4] = Val_long(number);
+    result = caml_callbackN_exn(*callback, 5, arguments);
     response = Is_exception_result(result)
       ? missing_lui_callback()
       : replace_response(String_val(result));
@@ -327,9 +330,11 @@ const char *logseq_chat_lui_double_press(int64_t node) {
   LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_double_press", node));
 }
 
-const char *logseq_chat_lui_outliner_editor_event(
-    int64_t node, const char *name, const char *text, int64_t value) {
-  LUI_RUNTIME_CALL(call_lui_outliner_editor_event(node, name, text, value));
+const char *logseq_chat_lui_extension_event(
+    int64_t node, const char *identifier, const char *name, const char *text,
+    int64_t value) {
+  LUI_RUNTIME_CALL(
+      call_lui_extension_event(node, identifier, name, text, value));
 }
 
 const char *logseq_chat_lui_dispose(void) {

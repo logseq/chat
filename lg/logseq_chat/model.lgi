@@ -24,6 +24,8 @@
 (type-record outline-row
   (uuid :string)
   (title :string)
+  (markup-json :string)
+  (youtube-target-url :option<string>)
   (depth :int)
   (has-children :bool)
   (is-collapsed :bool))

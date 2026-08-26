@@ -895,7 +895,7 @@ private extension View {
     }
 }
 
-private struct OutlinerMixedRichMarkupContent: View {
+struct OutlinerMixedRichMarkupContent: View {
     let nodes: [LogseqMarkupNode]
     let fallback: String
     let precedingYouTubeURL: String?

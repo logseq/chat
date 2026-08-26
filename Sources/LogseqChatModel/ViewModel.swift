@@ -193,15 +193,17 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_outliner_editor_event(
+    /* SKIP EXTERN */ public func logseq_chat_lui_extension_event(
         _ node: Int,
+        _ identifier: String,
         _ name: String,
         _ text: String,
         _ value: Int
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_outliner_editor_event(
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_extension_event(
             Int64(node),
+            identifier,
             name,
             text,
             Int64(value)

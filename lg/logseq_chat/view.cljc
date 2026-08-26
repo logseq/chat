@@ -34,9 +34,24 @@
      "caret-change"
      [(ext/event-field "caret-utf16-offset" ext/IntScalar true)])]))
 
+(defn outliner-block-content-schema []
+  (ext/component
+   "outliner-block-content"
+   [(proto/profile proto/MacOS proto/SwiftUIHost)
+    (proto/profile proto/IOS proto/SwiftUIHost)
+    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+   false []
+   [(ext/property "title" ext/StringScalar true None)
+    (ext/property "markup-json" ext/StringScalar true None)
+    (ext/property "youtube-target-url" ext/StringScalar true None)]
+   [(ext/event
+     "open-node"
+     [(ext/event-field "uuid" ext/StringScalar true)])]))
+
 (defn extension-registry []
   (let [registry (ext/registry)]
     (ext/register-component! registry (outliner-editor-schema))
+    (ext/register-component! registry (outliner-block-content-schema))
     registry))
 
 (defn string-wire-value [value]
@@ -106,6 +121,42 @@
      ui-context node
      (fn [input-event]
        (handle-outliner-editor-event input-event block-id-source send)))
+    node))
+
+(defn optional-string [value]
+  (match value
+    (Some current) current
+    None ""))
+
+(defn outliner-row-youtube-target [row]
+  (optional-string (:youtube-target-url row)))
+
+(defn handle-outliner-block-content-event [input-event model-source send]
+  (match input-event
+    (proto/ExtensionEvent _node _identifier name values)
+    (if (= name "open-node")
+      (let [uuid (extension-string values "uuid")
+            current (signal/sample model-source)]
+        (if (= (:search-open current) true)
+          (send (model/RequestSearchNode uuid))
+          (send (model/RequestAppNode uuid))))
+      true)
+    _ true))
+
+(defn outliner-block-content-view
+  [ui-context model-source title-source markup-source youtube-target-source send]
+  (let [node (ui/extension! ui-context "outliner-block-content")]
+    (ui/extension-property-signal!
+     ui-context node "title" (reactive string-wire-value title-source))
+    (ui/extension-property-signal!
+     ui-context node "markup-json" (reactive string-wire-value markup-source))
+    (ui/extension-property-signal!
+     ui-context node "youtube-target-url"
+     (reactive string-wire-value youtube-target-source))
+    (ui/on-event!
+     ui-context node
+     (fn [input-event]
+       (handle-outliner-block-content-event input-event model-source send)))
     node))
 
 (defn graph-label [current]
@@ -279,6 +330,10 @@
 (defn outliner-row [ui-context model-source row-source send]
   (let [row (signal/sample row-source)
         block-id-source (reactive outliner-row-uuid row-source)
+        title-source (reactive outliner-row-title row-source)
+        markup-source (reactive :markup-json row-source)
+        youtube-target-source
+        (reactive outliner-row-youtube-target row-source)
         editing-title-source (reactive editing-title model-source)
         editing-caret-source (reactive editing-caret model-source)
         indent-source (reactive outliner-row-indent row-source)
@@ -309,10 +364,11 @@
            (send (model/ZoomOutlinerBlock (:uuid current-row))))}
         "•"]
        [:if {:test editing-source}
-        [outliner-editor-view block-id-source
+       [outliner-editor-view block-id-source
          editing-title-source editing-caret-source send]]
        [:if {:test not-editing-source}
-        [:text {:value (reactive outliner-row-title row-source)}]]
+        [outliner-block-content-view
+         model-source title-source markup-source youtube-target-source send]]
        [:if {:test has-children-source}
         [:button
          {:text (reactive outliner-row-collapse-glyph row-source)

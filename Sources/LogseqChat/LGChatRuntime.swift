@@ -15,7 +15,13 @@ public protocol LGChatNativeCalling {
     func valueChanged(node: Int, value: Double) -> String
     func dismiss(node: Int) -> String
     func doublePress(node: Int) -> String
-    func outlinerEditorEvent(node: Int, name: String, text: String, value: Int) -> String
+    func extensionEvent(
+        node: Int,
+        identifier: String,
+        name: String,
+        text: String,
+        value: Int
+    ) -> String
     func dispose() -> String
     func takeEffect() -> String
     func resolveEffect(id: Int, succeeded: Bool, message: String) -> String
@@ -350,13 +356,14 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
     public func doublePress(node: Int) -> String {
         core.logseq_chat_lui_double_press(node)
     }
-    public func outlinerEditorEvent(
+    public func extensionEvent(
         node: Int,
+        identifier: String,
         name: String,
         text: String,
         value: Int
     ) -> String {
-        core.logseq_chat_lui_outliner_editor_event(node, name, text, value)
+        core.logseq_chat_lui_extension_event(node, identifier, name, text, value)
     }
     public func dispose() -> String { core.logseq_chat_lui_dispose() }
     public func takeEffect() -> String { core.logseq_chat_lui_take_effect() }
@@ -478,18 +485,21 @@ public final class LGChatRuntime {
         case .doublePress:
             patch = native.doublePress(node: event.nodeID)
         case .extension:
-            guard event.extensionIdentifier == LGChatOutlinerEditorExtension.identifier,
+            guard let identifier = event.extensionIdentifier,
                   let name = event.extensionName,
                   let values = event.extensionValues else {
                 lastError = "Invalid LG extension event"
                 return
             }
-            let text = Self.extensionString(values, name: "title") ?? ""
+            let text = Self.extensionString(values, name: "title")
+                ?? Self.extensionString(values, name: "uuid")
+                ?? ""
             let value = Self.extensionInt(values, name: "caret-utf16-offset")
                 ?? Self.extensionInt(values, name: "selection-length")
                 ?? 0
-            patch = native.outlinerEditorEvent(
+            patch = native.extensionEvent(
                 node: event.nodeID,
+                identifier: identifier,
                 name: name,
                 text: text,
                 value: value
