@@ -45,6 +45,20 @@
        (string/join "," (mapv wire/quoted values))
        "]"))
 
+(defn encode-option-string [value]
+  (match value
+    (Some text) (wire/quoted text)
+    None "null"))
+
+(defn encode-task-status [status]
+  (str "{\"uuid\":" (wire/quoted (:uuid status))
+       ",\"ident\":" (encode-option-string (:ident status))
+       ",\"title\":" (wire/quoted (:title status))
+       ",\"iconType\":" (encode-option-string (:icon-type status))
+       ",\"iconId\":" (encode-option-string (:icon-id status))
+       ",\"iconColor\":" (encode-option-string (:icon-color status))
+       "}"))
+
 (defn encode-settings [settings]
   (str "{\"appearance\":" (wire/quoted (:appearance settings))
        ",\"language\":" (wire/quoted (:language settings))
@@ -72,6 +86,11 @@
     (str "{\"id\":" id
          ",\"kind\":\"send-capture\",\"text\":"
          (wire/quoted text) "}")
+    (model/SendTaskEffect id text status)
+    (str "{\"id\":" id
+         ",\"kind\":\"send-task\",\"text\":"
+         (wire/quoted text) ",\"metadata\":"
+         (wire/quoted (encode-task-status status)) "}")
     (model/PresentAttachmentEffect id kind)
     (str "{\"id\":" id
          ",\"kind\":\"present-attachment\",\"text\":"

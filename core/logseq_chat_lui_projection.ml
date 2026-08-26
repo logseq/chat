@@ -57,6 +57,16 @@ let graph (graph : Snapshot.graph) : LG.graph =
   }
 ;;
 
+let task_status (status : Snapshot.task_status) : LG.task_status =
+  { uuid = status.uuid
+  ; ident = status.ident
+  ; title = status.title
+  ; icon_type = status.icon_type
+  ; icon_id = status.icon_id
+  ; icon_color = status.icon_color
+  }
+;;
+
 let flashcard (card : Snapshot.flashcard) : LG.flashcard =
   { uuid = card.uuid
   ; question_hidden = card.question_hidden
@@ -121,6 +131,7 @@ let apply_response encoded =
         ; is_graph_encrypted = snapshot.is_graph_encrypted
         ; is_graph_unlocked = snapshot.is_graph_unlocked
         ; sidebar = sidebar_projection snapshot
+        ; task_statuses = Rrbvec.of_list (List.map task_status snapshot.task_statuses)
         ; flashcards = Rrbvec.of_list (List.map flashcard snapshot.flashcards)
         ; sync_connected = snapshot.sync_connected
         ; search_query = snapshot.search_query

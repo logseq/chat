@@ -17,6 +17,15 @@ type graph =
   ; is_ready : bool
   }
 
+type task_status =
+  { uuid : string
+  ; ident : string option
+  ; title : string
+  ; icon_type : string option
+  ; icon_id : string option
+  ; icon_color : string option
+  }
+
 type flashcard_answer =
   { uuid : string
   ; text : string
@@ -99,6 +108,7 @@ type t =
   ; selected_page_is_property : bool
   ; related_rows : outline_row list
   ; linked_reference_rows : outline_row list
+  ; task_statuses : task_status list
   ; flashcards : flashcard list
   ; search_query : string
   ; search_results : search_hit list
@@ -178,6 +188,27 @@ let graph = function
          ; name
          ; is_encrypted = bool_member "isEncrypted" fields
          ; is_ready = bool_member "isReady" fields
+         }
+     | _ -> None)
+  | _ -> None
+;;
+
+let task_status = function
+  | `Assoc fields ->
+    (match string_member "uuid" fields, string_member "title" fields with
+     | Some uuid, Some title ->
+       let icon_fields =
+         match member "icon" fields with
+         | Some (`Assoc values) -> values
+         | _ -> []
+       in
+       Some
+         { uuid
+         ; ident = string_member "ident" fields
+         ; title
+         ; icon_type = string_member "type" icon_fields
+         ; icon_id = string_member "id" icon_fields
+         ; icon_color = string_member "color" icon_fields
          }
      | _ -> None)
   | _ -> None
@@ -494,6 +525,12 @@ let flashcards_member fields =
   | _ -> []
 ;;
 
+let task_statuses_member fields =
+  match member "taskStatuses" fields with
+  | Some (`List values) -> List.filter_map task_status values
+  | _ -> []
+;;
+
 let autocomplete_candidates_member name fields =
   match member name fields with
   | Some (`List values) -> List.filter_map outliner_autocomplete_candidate values
@@ -642,6 +679,7 @@ let decode_response encoded =
            ; related_rows = related_rows_member "relatedBlocks" result_fields
            ; linked_reference_rows =
                related_rows_member "linkedReferenceBlocks" result_fields
+           ; task_statuses = task_statuses_member result_fields
            ; flashcards = flashcards_member result_fields
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results

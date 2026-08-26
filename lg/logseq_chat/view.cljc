@@ -263,6 +263,17 @@
 (defn composer-send-disabled? [current]
   (string/blank? (:composer-draft current)))
 
+(defn task-status-identifier [status]
+  (str "button.task-status.option." (:uuid status)))
+
+(defn task-status-title [status]
+  (:title status))
+
+(defn task-status-selected? [current]
+  (match (:selected-task-status current)
+    (Some _status) true
+    None false))
+
 (defn search-result-identifier [hit]
   (let [_breadcrumb (:breadcrumb hit)]
     (str "search.result." (:uuid hit))))
@@ -874,6 +885,38 @@
      "Audio recording"]
     [:button
      {:on-press (fn [_event] (send model/CloseAttachmentPicker))}
+     "Cancel"]]])
+
+(defn task-status-row [ui-context status-source send]
+  (let [status (signal/sample status-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive task-status-title status-source)
+       :label (reactive task-status-title status-source)
+       :accessibility-identifier (task-status-identifier status)
+       :on-press
+       (event [current-status status-source]
+         (send (model/ChooseTaskStatus (:uuid current-status))))}])))
+
+(defui task-status-picker-dialog [model-source send]
+  [:dialog
+   {:text "Task status"
+    :on-dismiss (fn [_event] (send model/CloseTaskStatusPicker))}
+   [:column
+    [:keyed
+     {:source (reactive :task-statuses model-source)
+      :key :uuid
+      :compare compare
+      :as status-source}
+     [task-status-row status-source send]]
+    [:if {:test (reactive task-status-selected? model-source)}
+     [:button
+      {:accessibility-identifier "button.task-status.clear"
+       :on-press (fn [_event] (send model/ClearTaskStatus))}
+      "Clear task status"]]
+    [:button
+     {:on-press (fn [_event] (send model/CloseTaskStatusPicker))}
      "Cancel"]]])
 
 (defn first-flashcard [current]
@@ -1534,7 +1577,9 @@
    [:if {:test (reactive :graph-password-open model-source)}
     [graph-password-sheet model-source send]]
    [:if {:test (reactive :attachment-picker-open model-source)}
-    [attachment-picker-dialog send]]])
+    [attachment-picker-dialog send]]
+   [:if {:test (reactive :task-status-picker-open model-source)}
+    [task-status-picker-dialog model-source send]]])
 
 (defui chat-view [model-source send]
   [:drawer

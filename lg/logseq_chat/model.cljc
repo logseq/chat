@@ -1,6 +1,23 @@
 (ns logseq-chat.model
   (:require [clojure.string :as string]))
 
+(defn task-status [uuid ident title icon-id]
+  (record task-status
+    (uuid uuid)
+    (ident (Some ident))
+    (title title)
+    (icon-type (Some "tabler-icon"))
+    (icon-id (Some icon-id))
+    (icon-color None)))
+
+(defn built-in-task-statuses []
+  [(task-status "backlog" "logseq.property/status.backlog" "Backlog" "Backlog")
+   (task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+   (task-status "doing" "logseq.property/status.doing" "Doing" "InProgress50")
+   (task-status "in-review" "logseq.property/status.in-review" "In Review" "InReview")
+   (task-status "done" "logseq.property/status.done" "Done" "Done")
+   (task-status "canceled" "logseq.property/status.canceled" "Canceled" "Cancelled")])
+
 (defn initial []
   (record chat-model
           (selected-graph None)
@@ -21,6 +38,8 @@
           (selected-page-is-property false)
           (related-rows [])
           (linked-reference-rows [])
+          (task-statuses (built-in-task-statuses))
+          (selected-task-status None)
           (flashcards [])
           (flashcard-cloze-revealed false)
           (flashcard-answer-revealed false)
@@ -93,6 +112,7 @@
 (defn effect-id [effect]
   (match effect
     (SendCaptureEffect id _text) id
+    (SendTaskEffect id _text _status) id
     (PresentAttachmentEffect id _kind) id
     (SearchNodesEffect id _query) id
     (TapOutlinerBlockEffect id _uuid) id
@@ -146,6 +166,43 @@
         (if (= (:id graph) target)
           (Some graph)
           (recur (inc index)))))))
+
+(defn task-status-by-id [statuses target]
+  (loop [index 0]
+    (if (= index (count statuses))
+      None
+      (let [status (nth statuses index)]
+        (if (= (:uuid status) target)
+          (Some status)
+          (recur (inc index)))))))
+
+(defn task-status-identity [status]
+  (match (:ident status)
+    (Some ident) ident
+    None (:uuid status)))
+
+(defn contains-task-status-identity? [statuses target]
+  (loop [index 0]
+    (if (= index (count statuses))
+      false
+      (if (= (task-status-identity (nth statuses index)) target)
+        true
+        (recur (inc index))))))
+
+(defn available-task-statuses [catalog]
+  (loop [index 0
+         choices catalog
+         fallbacks (built-in-task-statuses)]
+    (if (= index (count fallbacks))
+      choices
+      (let [status (nth fallbacks index)]
+        (recur
+         (inc index)
+         (if (contains-task-status-identity?
+              choices (task-status-identity status))
+           choices
+           (conj choices status))
+         fallbacks)))))
 
 (defn string-vector-contains? [values target]
   (loop [index 0]
@@ -464,6 +521,8 @@
                  :selected-page-is-property (:selected-page-is-property sidebar)
                  :related-rows (:related-rows sidebar)
                  :linked-reference-rows (:linked-reference-rows sidebar)
+                 :task-statuses
+                 (available-task-statuses (:task-statuses projection))
                  :flashcards (:flashcards projection)
                  :flashcard-cloze-revealed
                  (if card-changed false (:flashcard-cloze-revealed current))
@@ -576,14 +635,13 @@
       (if (empty? submission)
         current
         (let [id (:next-effect-id current)]
-          (assoc current
-                 :composer-expanded true
-                 :composer-draft ""
-                 :pending-effects
-                 (conj (:pending-effects current)
-                       (SendCaptureEffect id submission))
-                 :next-effect-id (inc id)
-                 :effect-error None))))
+          (enqueue-effect
+           (assoc current
+                  :composer-expanded true
+                  :composer-draft "")
+           (match (:selected-task-status current)
+             (Some status) (SendTaskEffect id submission status)
+             None (SendCaptureEffect id submission))))))
 
     (DequeueEffect id)
     (let [pending (:pending-effects current)]
@@ -628,6 +686,19 @@
 
     CloseTaskStatusPicker
     (assoc current :task-status-picker-open false)
+
+    (ChooseTaskStatus uuid)
+    (match (task-status-by-id (:task-statuses current) uuid)
+      (Some status)
+      (assoc current
+             :selected-task-status (Some status)
+             :task-status-picker-open false)
+      None current)
+
+    ClearTaskStatus
+    (assoc current
+           :selected-task-status None
+           :task-status-picker-open false)
 
     (RequestAppNode uuid)
     (let [path (:app-navigation-path current)

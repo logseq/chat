@@ -41,6 +41,9 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-collapsed? :fn<chat-model;bool>)
 (signature logseq-chat.view/composer-send-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/task-status-identifier :fn<task-status;string>)
+(signature logseq-chat.view/task-status-title :fn<task-status;string>)
+(signature logseq-chat.view/task-status-selected? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-result-identifier :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-title :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-breadcrumb :fn<search-hit;string>)
@@ -150,6 +153,10 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/attachment-picker-dialog
  :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/task-status-row
+ :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/task-status-picker-dialog
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/first-flashcard
  :fn<chat-model;option<flashcard>>)
 (signature logseq-chat.view/flashcards-empty? :fn<chat-model;bool>)

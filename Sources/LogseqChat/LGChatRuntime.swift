@@ -35,19 +35,22 @@ public struct LGChatEffect: Decodable, Equatable, Sendable {
     public let text: String
     public let uuid: String?
     public let value: Int?
+    public let metadata: String?
 
     public init(
         id: Int,
         kind: String,
         text: String,
         uuid: String? = nil,
-        value: Int? = nil
+        value: Int? = nil,
+        metadata: String? = nil
     ) {
         self.id = id
         self.kind = kind
         self.text = text
         self.uuid = uuid
         self.value = value
+        self.metadata = metadata
     }
 }
 
@@ -257,6 +260,22 @@ private struct LGSendCapturePayload: Encodable {
     let now: Int64
 }
 
+private struct LGSendTaskPayload: Encodable {
+    let text: String
+    let uuid: String
+    let now: Int64
+    let status: LGTaskStatusPayload
+}
+
+private struct LGTaskStatusPayload: Codable, Equatable, Sendable {
+    let uuid: String
+    let ident: String?
+    let title: String
+    let iconType: String?
+    let iconId: String?
+    let iconColor: String?
+}
+
 private struct LGReviewFlashcardPayload: Encodable {
     let uuid: String
     let rating: String
@@ -359,6 +378,41 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 request = LogseqChatRPCRequest(
                     method: "dispatch",
                     params: LogseqChatRPCParams(action: "send", payload: payloadJSON)
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "send-task":
+            do {
+                guard let metadata = effect.metadata else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "The task capture effect did not include a task status"
+                    )
+                }
+                let status = try JSONDecoder().decode(
+                    LGTaskStatusPayload.self,
+                    from: Data(metadata.utf8)
+                )
+                let payload = LGSendTaskPayload(
+                    text: effect.text,
+                    uuid: UUID().uuidString.lowercased(),
+                    now: Int64(Date().timeIntervalSince1970 * 1_000),
+                    status: status
+                )
+                let payloadData = try JSONEncoder().encode(payload)
+                guard let payloadJSON = String(data: payloadData, encoding: .utf8) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Could not encode the task capture payload as UTF-8"
+                    )
+                }
+                request = LogseqChatRPCRequest(
+                    method: "dispatch",
+                    params: LogseqChatRPCParams(action: "sendTask", payload: payloadJSON)
                 )
             } catch {
                 return LGChatEffectResolution(

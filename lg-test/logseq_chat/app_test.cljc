@@ -74,6 +74,7 @@
     (is-graph-encrypted false)
     (is-graph-unlocked false)
     (sidebar (empty-sidebar-projection))
+    (task-statuses [])
     (flashcards [])
     (sync-connected false)
     (search-query "")
@@ -131,6 +132,15 @@
     (name name)
     (is-encrypted encrypted)
     (is-ready ready)))
+
+(defn task-status [uuid ident title icon-type icon-id icon-color]
+  (record model/task-status
+    (uuid uuid)
+    (ident ident)
+    (title title)
+    (icon-type icon-type)
+    (icon-id icon-id)
+    (icon-color icon-color)))
 
 (defn settings [tabs]
   (record model/settings-projection
@@ -1023,6 +1033,91 @@
       (assert-equal [(model/PresentAttachmentEffect 1 "photos")]
                     (:pending-effects (chat/model application))
                     "the visible menu dispatches its selected service"))))
+
+(deftest composer-task-status-selection-and-send-are-owned-by-lg
+  (let [todo
+        (task-status
+         "todo" (Some "logseq.property/status.todo") "Todo"
+         (Some "tabler-icon") (Some "Todo") None)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection) :task-statuses [todo])))
+        opened (model/update projected model/OpenTaskStatusPicker)
+        selected (model/update opened (model/ChooseTaskStatus "todo"))
+        drafted (model/update selected (model/ChangeComposerDraft " Follow up "))
+        sent (model/update drafted model/SendComposer)
+        cleared (model/update selected model/ClearTaskStatus)]
+    (assert-equal todo (nth (:task-statuses projected) 0)
+                  "core task statuses enter LG state before fallbacks")
+    (is (:task-status-picker-open opened)
+        "the task status menu is model-owned")
+    (assert-equal (Some todo) (:selected-task-status selected)
+                  "the chosen status remains selected for subsequent captures")
+    (is (not (:task-status-picker-open selected))
+        "choosing a status closes the menu")
+    (assert-equal [(model/SendTaskEffect 1 "Follow up" todo)]
+                  (:pending-effects sent)
+                  "task capture preserves its full semantic status")
+    (assert-equal (Some todo) (:selected-task-status sent)
+                  "sending a task preserves the selected status like main")
+    (assert-equal None (:selected-task-status cleared)
+                  "the status can be cleared without changing the draft")))
+
+(deftest composer-task-status-menu-preserves-main-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        todo
+        (task-status
+         "todo" (Some "logseq.property/status.todo") "Todo"
+         (Some "tabler-icon") (Some "Todo") None)]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection) :task-statuses [todo])))
+    (driver/send! application model/ExpandComposer)
+    (driver/send! application model/OpenTaskStatusPicker)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          option
+          (descendant-with-identifier
+           renderer root "button.task-status.option.todo")]
+      (is (not (= -1 option)) "the task status menu renders Todo")
+      (driver/dispatch-event! application (proto/Press option))
+      (driver/flush! application)
+      (assert-equal (Some todo)
+                    (:selected-task-status (chat/model application))
+                    "the visible task status action updates LG"))))
+
+(deftest task-capture-has-a-stable-native-effect-payload
+  (let [todo
+        (task-status
+         "todo" (Some "logseq.property/status.todo") "Todo"
+         (Some "tabler-icon") (Some "Todo") None)]
+    (assert-equal
+     "{\"id\":8,\"kind\":\"send-task\",\"text\":\"Follow up\",\"metadata\":\"{\\\"uuid\\\":\\\"todo\\\",\\\"ident\\\":\\\"logseq.property/status.todo\\\",\\\"title\\\":\\\"Todo\\\",\\\"iconType\\\":\\\"tabler-icon\\\",\\\"iconId\\\":\\\"Todo\\\",\\\"iconColor\\\":null}\"}"
+     (bridge/encode-effect (model/SendTaskEffect 8 "Follow up" todo))
+     "the native task payload preserves semantic status metadata")))
+
+(deftest task-status-choices-preserve-main-built-in-fallbacks
+  (let [custom
+        (task-status
+         "waiting" (Some "user.status/waiting") "Waiting"
+         (Some "tabler-icon") (Some "clock") None)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection) :task-statuses [custom])))]
+    (assert-equal
+     ["Backlog" "Todo" "Doing" "In Review" "Done" "Canceled"]
+     (mapv :title (:task-statuses (model/initial)))
+     "the composer offers main's built-in choices before remote refresh")
+    (assert-equal custom (nth (:task-statuses projected) 0)
+                  "graph-specific statuses remain first")
+    (assert-equal 7 (count (:task-statuses projected))
+                  "built-in fallbacks are appended after custom statuses")))
 
 (deftest native-bridge-drains-and-resolves-typed-effects-once
   (bridge/initialize 2 1)

@@ -24,6 +24,14 @@
   (is-encrypted :bool)
   (is-ready :bool))
 
+(type-record task-status
+  (uuid :string)
+  (ident :option<string>)
+  (title :string)
+  (icon-type :option<string>)
+  (icon-id :option<string>)
+  (icon-color :option<string>))
+
 (type-record settings-projection
   (appearance :string)
   (language :string)
@@ -121,6 +129,7 @@
   (is-graph-encrypted :bool)
   (is-graph-unlocked :bool)
   (sidebar :sidebar-projection)
+  (task-statuses :vector<task-status>)
   (flashcards :vector<flashcard>)
   (sync-connected :bool)
   (search-query :string)
@@ -137,6 +146,7 @@
 
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
+  (SendTaskEffect :int :string :task-status)
   (PresentAttachmentEffect :int :string)
   (SearchNodesEffect :int :string)
   (TapOutlinerBlockEffect :int :string)
@@ -187,6 +197,8 @@
   (selected-page-is-property :bool)
   (related-rows :vector<outline-row>)
   (linked-reference-rows :vector<outline-row>)
+  (task-statuses :vector<task-status>)
+  (selected-task-status :option<task-status>)
   (flashcards :vector<flashcard>)
   (flashcard-cloze-revealed :bool)
   (flashcard-answer-revealed :bool)
@@ -263,6 +275,8 @@
   (ChooseAttachment :string)
   (OpenTaskStatusPicker)
   (CloseTaskStatusPicker)
+  (ChooseTaskStatus :string)
+  (ClearTaskStatus)
   (RequestAppNode :string)
   (ResolveAppNode :string :bool)
   (BackAppNavigation)
@@ -318,6 +332,10 @@
   (RevealFlashcardAnswer)
   (ReviewFlashcard :string))
 
+(signature logseq-chat.model/task-status
+ :fn<string;string;string;string;task-status>)
+(signature logseq-chat.model/built-in-task-statuses
+ :fn<vector<task-status>>)
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/request-route
  :fn<vector<navigation-route>;navigation-route;vector<navigation-route>>)
@@ -334,6 +352,13 @@
  :fn<vector<flashcard>;option<string>>)
 (signature logseq-chat.model/graph-by-id
  :fn<vector<graph>;string;option<graph>>)
+(signature logseq-chat.model/task-status-by-id
+ :fn<vector<task-status>;string;option<task-status>>)
+(signature logseq-chat.model/task-status-identity :fn<task-status;string>)
+(signature logseq-chat.model/contains-task-status-identity?
+ :fn<vector<task-status>;string;bool>)
+(signature logseq-chat.model/available-task-statuses
+ :fn<vector<task-status>;vector<task-status>>)
 (signature logseq-chat.model/string-vector-contains?
  :fn<vector<string>;string;bool>)
 (signature logseq-chat.model/graph-local? :fn<chat-model;string;bool>)

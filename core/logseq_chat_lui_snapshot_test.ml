@@ -147,6 +147,25 @@ let () =
        then failwith "remote graph flags were not projected"
      | Ok _ -> failwith "graph catalog was not projected"
      | Error message -> failwith message);
+    let task_statuses =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"taskStatuses":[{"uuid":"waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}],"outlinerState":{"editing":null},"outlinerRows":[],"syncConnected":true}}|}
+    in
+    (match task_statuses with
+     | Ok
+         { task_statuses =
+             [ { uuid = "waiting"
+               ; ident = Some "user.status/waiting"
+               ; title = "Waiting"
+               ; icon_type = Some "tabler-icon"
+               ; icon_id = Some "clock"
+               ; icon_color = Some "#7c3aed"
+               }
+             ]
+         ; _
+         } -> ()
+     | Ok _ -> failwith "task statuses were not projected"
+     | Error message -> failwith message);
     let patch_response =
       {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[],"outlinerRowSplices":[{"start":0,"afterBlockId":null,"beforeBlockId":null,"deleteCount":2,"rows":[{"block":{"uuid":"outline-a","title":"Nested note"},"depth":0,"hasChildren":true,"isCollapsed":true}]}],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
     in

@@ -151,6 +151,44 @@ struct LGChatRendererTests {
         #expect(runtime.lastError == nil)
     }
 
+    @Test("task capture effects preserve the complete task status")
+    func taskCaptureEffectsPreserveTaskStatus() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+        let metadata = """
+        {"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo","iconType":"tabler-icon","iconId":"Todo","iconColor":null}
+        """
+
+        let resolution = await executor.execute(
+            LGChatEffect(
+                id: 8,
+                kind: "send-task",
+                text: "Follow up",
+                metadata: metadata
+            )
+        )
+        let request = try #require(capturedRequest)
+        let payloadData = try #require(request.params.payload?.data(using: .utf8))
+        let payload = try JSONDecoder().decode(LGSendTaskPayloadProbe.self, from: payloadData)
+
+        #expect(request.params.action == "sendTask")
+        #expect(payload.text == "Follow up")
+        #expect(!payload.uuid.isEmpty)
+        #expect(payload.now > 0)
+        #expect(payload.status == LGTaskStatusPayloadProbe(
+            uuid: "todo",
+            ident: "logseq.property/status.todo",
+            title: "Todo",
+            iconType: "tabler-icon",
+            iconId: "Todo",
+            iconColor: nil
+        ))
+        #expect(resolution.succeeded)
+    }
+
     @Test("applies a launch snapshot that arrives before the renderer starts")
     func queuesLaunchSnapshotUntilStart() throws {
         let native = LGChatNativeRuntimeProbe()
@@ -720,6 +758,22 @@ private struct FlashcardReviewPayload: Decodable {
     let rating: String
     let now: Int64
     let operationId: String
+}
+
+private struct LGSendTaskPayloadProbe: Decodable {
+    let text: String
+    let uuid: String
+    let now: Int64
+    let status: LGTaskStatusPayloadProbe
+}
+
+private struct LGTaskStatusPayloadProbe: Decodable, Equatable {
+    let uuid: String
+    let ident: String?
+    let title: String
+    let iconType: String?
+    let iconId: String?
+    let iconColor: String?
 }
 
 private struct LGChatEffectResolutionProbe: Equatable {
