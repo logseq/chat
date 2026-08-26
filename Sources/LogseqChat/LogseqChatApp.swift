@@ -62,7 +62,11 @@ private final class LGChatCoreResponseRelay {
 ///
 /// The default implementation merely loads the `ContentView` for the app and logs a message.
 public struct LogseqChatRootView : View {
-    @State private var authentication = LogseqChatRuntime.shared.authentication
+    @AppStorage("logseq.appearance") private var appearance = "system"
+    @AppStorage("logseq.language") private var language = "system"
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let runtime = LogseqChatRuntime.shared
 
     public init() {
     }
@@ -70,30 +74,57 @@ public struct LogseqChatRootView : View {
     public var body: some View {
         ZStack {
             appContent
-            if authentication.state == .signedOut || authentication.state == .signingIn {
-                CognitoSignInView(authentication: authentication)
+            if runtime.authentication.state == .signedOut
+                || runtime.authentication.state == .signingIn {
+                CognitoSignInView(authentication: runtime.authentication)
             }
         }
+        .preferredColorScheme(
+            appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
+        )
+        .environment(\.locale, preferredLocale)
+        .tint(LogseqThemePolicy.accent)
+        .foregroundStyle(themePalette.primaryText)
+        .background(themePalette.background.ignoresSafeArea())
     }
 
     private var appContent: some View {
-        ContentView(
-            store: LogseqChatRuntime.shared.store,
-            authentication: LogseqChatRuntime.shared.authentication,
-            syncCoordinator: LogseqChatRuntime.shared.syncCoordinator
-        )
+        LGChatRendererRoot(renderer: runtime.lgRuntime.renderer)
             .onAppear {
                 DispatchQueue.main.async {
                     LogseqChatAppDelegate.shared.onFirstUIRendered()
                 }
             }
             .task {
-                LogseqChatRuntime.shared.startLGRenderer()
+                await runtime.runLGApplication()
                 logger.info("Skip app logs are viewable in the Xcode console for iOS; Android logs can be viewed in Studio or using adb logcat")
             }
-            .onOpenURL { url in
-                LogseqChatRuntime.shared.acceptSharedCaptureURL(url)
+            #if !SKIP
+            .task {
+                for await available in NetworkAvailabilityStream.values() {
+                    await runtime.setNetworkAvailable(available)
+                }
             }
+            #endif
+            .onChange(of: runtime.authentication.state) { _, state in
+                guard state == .signedIn else { return }
+                Task { await runtime.resumeLGApplication() }
+            }
+            .onOpenURL { url in
+                runtime.acceptSharedCaptureURL(url)
+            }
+    }
+
+    private var preferredLocale: Locale {
+        let identifier = LogseqSettingsPolicy.normalizedLanguageID(language)
+        return identifier == "system" ? Locale.current : Locale(identifier: identifier)
+    }
+
+    private var themePalette: LogseqThemePalette {
+        LogseqThemePolicy.palette(
+            mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+            systemIsDark: colorScheme == .dark
+        )
     }
 }
 
@@ -113,6 +144,7 @@ public struct LogseqChatRootView : View {
     private var didApplyLocalLaunchResult = false
     private var sharedCaptureTask: Task<Void, Never>?
     private var didStartLGApplication = false
+    private var isLGApplicationReady = false
     private let graphLifecycle: LGChatGraphLifecycle
 
     private struct SettingsHostPayload: Encodable {
@@ -254,11 +286,13 @@ public struct LogseqChatRootView : View {
         startLGRenderer()
         await waitForLocalLaunchLoad()
         await authentication.restore()
+        isLGApplicationReady = true
         await resumeLGApplication()
         await store.runPendingSyncLoop()
     }
 
     public func resumeLGApplication() async {
+        guard isLGApplicationReady else { return }
         processSharedCaptures()
         guard authentication.state == .signedIn else { return }
         if !(await graphLifecycle.connectStoredGraph()) {
@@ -750,6 +784,7 @@ public final class LogseqChatAppDelegate : Sendable {
 
     @MainActor public func onResume() {
         LogseqChatRuntime.shared.processSharedCaptures()
+        Task { await LogseqChatRuntime.shared.resumeLGApplication() }
         logger.debug("onResume")
     }
 
