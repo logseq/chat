@@ -5,6 +5,41 @@ import Testing
 @testable import LogseqChat
 
 @Suite struct OutlinerEditingTests {
+    @Test func keyboardHideDiagnosticsSpanInlineEditorHandoffs() {
+        var counter = OutlinerKeyboardHideCounter()
+
+        counter.editorAppeared(id: "first")
+        counter.keyboardWillHide()
+        #expect(counter.hideCount == 1)
+
+        counter.editorDisappeared(id: "first")
+        #expect(counter.hasPendingHandoff)
+        counter.editorAppeared(id: "second")
+        #expect(counter.hideCount == 1)
+
+        counter.keyboardWillHide()
+        #expect(counter.hideCount == 2)
+        counter.editorDisappeared(id: "second")
+        counter.finishPendingHandoff()
+        #expect(!counter.isEditing)
+
+        counter.editorAppeared(id: "third")
+        #expect(counter.hideCount == 0)
+    }
+
+    @Test func keyboardHideDiagnosticsCountHidesDuringPendingHandoffs() {
+        var counter = OutlinerKeyboardHideCounter()
+
+        counter.editorAppeared(id: "first")
+        counter.editorDisappeared(id: "first")
+        counter.keyboardWillHide()
+
+        #expect(counter.hideCount == 1)
+        counter.finishPendingHandoff()
+        counter.keyboardWillHide()
+        #expect(counter.hideCount == 1)
+    }
+
     @Test func autocompleteHeightFitsItsRowsUntilTheScrollLimit() {
         #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 0) == 0)
         #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 1) == 60)

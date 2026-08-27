@@ -817,3 +817,46 @@ enum OutlinerDropZone {
         return .inside
     }
 }
+
+struct OutlinerKeyboardHideCounter {
+    private(set) var hideCount = 0
+    private(set) var hasPendingHandoff = false
+    private var activeEditorIDs: Set<String> = []
+
+    var isEditing: Bool {
+        !activeEditorIDs.isEmpty || hasPendingHandoff
+    }
+
+    mutating func editorAppeared(id: String) {
+        if activeEditorIDs.isEmpty && !hasPendingHandoff {
+            hideCount = 0
+        }
+        hasPendingHandoff = false
+        activeEditorIDs.insert(id)
+    }
+
+    mutating func editorChanged(from previousID: String, to currentID: String) {
+        activeEditorIDs.remove(previousID)
+        activeEditorIDs.insert(currentID)
+        hasPendingHandoff = false
+    }
+
+    mutating func editorDisappeared(id: String) {
+        activeEditorIDs.remove(id)
+        if activeEditorIDs.isEmpty {
+            hasPendingHandoff = true
+        }
+    }
+
+    mutating func finishPendingHandoff() {
+        if activeEditorIDs.isEmpty {
+            hasPendingHandoff = false
+        }
+    }
+
+    mutating func keyboardWillHide() {
+        if isEditing {
+            hideCount += 1
+        }
+    }
+}

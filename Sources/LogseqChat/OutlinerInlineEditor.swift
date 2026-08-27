@@ -12,9 +12,13 @@ struct OutlinerInlineEditor: View {
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
 
+    #if !SKIP && os(iOS) && DEBUG
+    @ObservedObject private var keyboardHideMonitor = OutlinerKeyboardHideMonitor.shared
+    #endif
+
     var body: some View {
         #if !SKIP && os(iOS)
-        NativeOutlinerTextView(
+        let editor = NativeOutlinerTextView(
             blockID: blockID,
             text: text,
             accessibilityIdentifier: "field.outliner.block.\(blockID)",
@@ -25,6 +29,28 @@ struct OutlinerInlineEditor: View {
             onCaretChange: onCaretChange
         )
         .frame(minHeight: 24)
+        #if DEBUG
+        editor
+            .onAppear {
+                keyboardHideMonitor.editorAppeared(id: blockID)
+            }
+            .onChange(of: blockID) { previousID, currentID in
+                keyboardHideMonitor.editorChanged(from: previousID, to: currentID)
+            }
+            .onDisappear {
+                keyboardHideMonitor.editorDisappeared(id: blockID)
+            }
+            .overlay(alignment: .topLeading) {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier(
+                        "debug.keyboard-hide-count.\(keyboardHideMonitor.hideCount)"
+                    )
+            }
+        #else
+        editor
+        #endif
         #else
         TextField(
             "Block",
@@ -45,6 +71,62 @@ struct OutlinerInlineEditor: View {
 }
 
 #if !SKIP && os(iOS)
+#if DEBUG
+@MainActor
+private final class OutlinerKeyboardHideMonitor: NSObject, ObservableObject {
+    static let shared = OutlinerKeyboardHideMonitor()
+
+    @Published private(set) var hideCount = 0
+    private var counter = OutlinerKeyboardHideCounter()
+
+    private override init() {
+        super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    func editorAppeared(id: String) {
+        counter.editorAppeared(id: id)
+        publish()
+    }
+
+    func editorChanged(from previousID: String, to currentID: String) {
+        counter.editorChanged(from: previousID, to: currentID)
+        publish()
+    }
+
+    func editorDisappeared(id: String) {
+        counter.editorDisappeared(id: id)
+        publish()
+        DispatchQueue.main.async { [weak self] in
+            self?.finishPendingHandoff()
+        }
+    }
+
+    @objc private func keyboardWillHide() {
+        counter.keyboardWillHide()
+        publish()
+    }
+
+    private func finishPendingHandoff() {
+        counter.finishPendingHandoff()
+        publish()
+    }
+
+    private func publish() {
+        hideCount = counter.hideCount
+    }
+}
+#endif
+
 private struct NativeOutlinerTextView: UIViewRepresentable {
     let blockID: String
     let text: String
