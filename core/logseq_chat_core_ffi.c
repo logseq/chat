@@ -313,6 +313,10 @@ const char *logseq_chat_lui_initialize(int32_t platform_code, int32_t host_code)
   LUI_RUNTIME_CALL(call_lui_initialize(platform_code, host_code));
 }
 
+const char *logseq_chat_lui_appear(int64_t node) {
+  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_appear", node));
+}
+
 const char *logseq_chat_lui_press(int64_t node) {
   LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_press", node));
 }

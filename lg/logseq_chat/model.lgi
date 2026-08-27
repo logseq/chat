@@ -247,6 +247,7 @@
   (sync-details-open :bool)
   (destination :primary-destination)
   (sidebar-open :bool)
+  (graph-menu-open :bool)
   (favorites :vector<sidebar-page>)
   (recent-pages :vector<sidebar-page>)
   (selected-page :option<sidebar-page>)
@@ -357,6 +358,9 @@
   (LoadOlderJournals)
   (OpenSidebar)
   (CloseSidebar)
+  (OpenGraphMenu)
+  (DismissGraphMenu)
+  (SelectSidebarGraph :string)
   (SelectSidebarPage :string)
   (ShowJournals)
   (ShowFlashcards)
@@ -515,6 +519,8 @@
  :fn<chat-model;vector<navigation-route>;chat-model>)
 (signature logseq-chat.model/enqueue-effect
  :fn<chat-model;chat-effect;chat-model>)
+(signature logseq-chat.model/enqueue-open-graph
+ :fn<chat-model;string;chat-model>)
 (signature logseq-chat.model/persist-settings-change
  :fn<chat-model;chat-model;chat-model>)
 (signature logseq-chat.model/update-editing

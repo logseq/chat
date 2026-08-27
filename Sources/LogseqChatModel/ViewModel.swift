@@ -111,6 +111,14 @@ public final class LogseqChatCore {
         #endif
     }
 
+    /* SKIP EXTERN */ public func logseq_chat_lui_appear(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return String(cString: LogseqChatCoreABI.logseq_chat_lui_appear(Int64(node)))
+        #else
+        return ""
+        #endif
+    }
+
     /* SKIP EXTERN */ public func logseq_chat_lui_long_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return String(cString: LogseqChatCoreABI.logseq_chat_lui_long_press(Int64(node)))

@@ -10,6 +10,7 @@ extern "C" {
 const char *logseq_chat_call(const char *request_json);
 void logseq_chat_initialize(void);
 const char *logseq_chat_lui_initialize(int32_t platform_code, int32_t host_code);
+const char *logseq_chat_lui_appear(int64_t node);
 const char *logseq_chat_lui_press(int64_t node);
 const char *logseq_chat_lui_long_press(int64_t node);
 const char *logseq_chat_lui_text_changed(int64_t node, const char *text);

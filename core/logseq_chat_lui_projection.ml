@@ -241,7 +241,7 @@ let apply_host_update kind payload =
   LG.logseq_chat_native_bridge_flush_action_bang action
 ;;
 
-let () =
+let register_callbacks () =
   Callback.register "logseq_chat_lui_apply_snapshot" apply_response;
   Callback.register "logseq_chat_lui_apply_host_update" apply_host_update
 ;;

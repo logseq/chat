@@ -23,3 +23,14 @@ let () =
      | _ -> failwith "journal rows were not retained behind node navigation")
   | Ok _ -> failwith "expected one node route"
 ;;
+
+let () =
+  ignore (LG.logseq_chat_native_bridge_initialize 2 1);
+  let patch =
+    Projection.apply_response
+      {|{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Local graph","selectedGraphId":"local","graphs":[{"id":"local","name":"Local graph","schemaVersion":"65.33","isEncrypted":false,"isReady":true}]}}|}
+  in
+  if String.equal patch "" then
+    failwith "applying the first authoritative graph snapshot must publish a retained patch";
+  ignore (LG.logseq_chat_native_bridge_dispose ())
+;;

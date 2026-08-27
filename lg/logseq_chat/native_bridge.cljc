@@ -277,6 +277,7 @@
 (defn linked [] true)
 
 (defn press [node] (flush-event! (proto/Press node)))
+(defn appear [node] (flush-event! (proto/Appear node)))
 (defn long-press [node] (flush-event! (proto/LongPress node)))
 (defn text-changed [node text]
   (flush-event! (proto/TextChanged node text)))
@@ -330,6 +331,7 @@
 (defn root-node [] (driver/root-node (app)))
 
 (callback/register "logseq_chat_lui_init" initialize)
+(callback/register "logseq_chat_lui_appear" appear)
 (callback/register "logseq_chat_lui_press" press)
 (callback/register "logseq_chat_lui_long_press" long-press)
 (callback/register "logseq_chat_lui_text_changed" text-changed)

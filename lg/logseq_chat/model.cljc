@@ -90,6 +90,7 @@
           (sync-details-open false)
           (destination JournalsDestination)
           (sidebar-open false)
+          (graph-menu-open false)
           (favorites [])
           (recent-pages [])
           (selected-page None)
@@ -646,6 +647,11 @@
          :next-effect-id (inc (:next-effect-id current))
          :effect-error None))
 
+(defn enqueue-open-graph [current graph-id]
+  (let [loading (assoc current :graph-loading true)
+        id (:next-effect-id loading)]
+    (enqueue-effect loading (OpenGraphEffect id graph-id))))
+
 (defn persist-settings-change [current updated]
   (if (= (current-settings current) (current-settings updated))
     updated
@@ -1170,11 +1176,37 @@
     (assoc current :sidebar-open true)
 
     CloseSidebar
-    (assoc current :sidebar-open false)
+    (assoc current :sidebar-open false :graph-menu-open false)
+
+    OpenGraphMenu
+    (assoc current :graph-menu-open true)
+
+    DismissGraphMenu
+    (assoc current :graph-menu-open false)
+
+    (SelectSidebarGraph graph-id)
+    (match (graph-by-id (:graphs current) graph-id)
+      (Some graph)
+      (if (:is-ready graph)
+        (let [updated
+              (assoc (cancel-outliner-editing current)
+                     :sidebar-open false
+                     :graph-menu-open false)
+              selected
+              (match (:selected-graph-id updated)
+                (Some selected-id) (= selected-id graph-id)
+                None false)]
+          (if selected
+            (let [id (:next-effect-id updated)]
+              (enqueue-effect updated (ClearSelectedPageEffect id)))
+            (enqueue-open-graph updated graph-id)))
+        current)
+      None current)
 
     (SelectSidebarPage uuid)
     (let [updated (assoc (cancel-outliner-editing current)
                          :sidebar-open false
+                         :graph-menu-open false
                          :destination JournalsDestination)
           id (:next-effect-id updated)]
       (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
@@ -1182,6 +1214,7 @@
     ShowJournals
     (let [updated (assoc (cancel-outliner-editing current)
                          :sidebar-open false
+                         :graph-menu-open false
                          :destination JournalsDestination)
           id (:next-effect-id updated)]
       (enqueue-effect updated (ClearSelectedPageEffect id)))
@@ -1189,6 +1222,7 @@
     ShowFlashcards
     (let [updated (assoc (cancel-outliner-editing current)
                          :sidebar-open false
+                         :graph-menu-open false
                          :destination FlashcardsDestination)
           clear-id (:next-effect-id updated)
           cleared
@@ -1199,6 +1233,7 @@
     ShowGraphs
     (assoc (cancel-outliner-editing current)
            :sidebar-open false
+           :graph-menu-open false
            :destination GraphsDestination)
 
     (ApplyLocalGraphIds graph-ids)
@@ -1217,10 +1252,7 @@
     (match (graph-by-id (:graphs current) graph-id)
       (Some graph)
       (if (:is-ready graph)
-        (let [updated
-              (assoc (cancel-outliner-editing current) :graph-loading true)
-              id (:next-effect-id updated)]
-          (enqueue-effect updated (OpenGraphEffect id graph-id)))
+        (enqueue-open-graph (cancel-outliner-editing current) graph-id)
         current)
       None current)
 

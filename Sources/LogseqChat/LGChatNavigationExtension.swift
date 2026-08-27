@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none|events:4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none|events:4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -14,6 +14,7 @@ enum LGChatNavigationExtension {
                 acceptsStandardChildren: true,
                 properties: [
                     .init(name: "depth", kind: .int, isRequired: true),
+                    .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
                 ],
                 events: [
                     .init(name: "back", fields: [
@@ -35,14 +36,24 @@ private struct LGChatNavigationStack: View {
         LGChatNavigationContent(
             context: context,
             rootIndex: 0,
-            routeStartIndex: 1,
+            routeStartIndex: 6,
             depth: depth,
-            synchronizationName: "navigation"
+            synchronizationName: "navigation",
+            toolbarStartIndex: 1,
+            bottomChromeIndex: 5,
+            bottomOccupiesLayoutSpace: bottomOccupiesLayoutSpace
         )
     }
 
     private var depth: Int {
         guard case let .int(value) = context.property("depth") else { return 0 }
+        return value
+    }
+
+    private var bottomOccupiesLayoutSpace: Bool {
+        guard case let .bool(value) = context.property("bottom-occupies-layout-space") else {
+            return false
+        }
         return value
     }
 
@@ -106,7 +117,10 @@ private struct LGChatSearchPresentation: View {
             rootIndex: 1,
             routeStartIndex: 2,
             depth: depth,
-            synchronizationName: "search navigation"
+            synchronizationName: "search navigation",
+            toolbarStartIndex: nil,
+            bottomChromeIndex: nil,
+            bottomOccupiesLayoutSpace: false
         )
     }
 
@@ -147,9 +161,41 @@ private struct LGChatNavigationContent: View {
     let routeStartIndex: Int
     let depth: Int
     let synchronizationName: String
+    let toolbarStartIndex: Int?
+    let bottomChromeIndex: Int?
+    let bottomOccupiesLayoutSpace: Bool
     @State private var path: [Int] = []
 
+    @ViewBuilder
     var body: some View {
+        #if SKIP
+        if bottomOccupiesLayoutSpace {
+            VStack(spacing: 0) {
+                navigationStack
+                bottomChrome
+            }
+        } else {
+            navigationStack
+                .overlay(alignment: .bottom) {
+                    bottomChrome
+                }
+        }
+        #else
+        navigationStack
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if bottomOccupiesLayoutSpace {
+                    bottomChrome
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if !bottomOccupiesLayoutSpace {
+                    bottomChrome
+                }
+            }
+        #endif
+    }
+
+    private var navigationStack: some View {
         NavigationStack(path: pathBinding) {
             rootContent
                 .frame(
@@ -159,6 +205,36 @@ private struct LGChatNavigationContent: View {
                 )
                 .navigationDestination(for: Int.self) { childID in
                     context.content(for: childID)
+                }
+                .toolbar {
+                    if let toolbarStartIndex {
+                        #if SKIP
+                        ToolbarItemGroup(placement: .navigation) {
+                            context.content(for: context.childIDs[toolbarStartIndex])
+                            context.content(for: context.childIDs[toolbarStartIndex + 1])
+                        }
+                        #else
+                        ToolbarItem(placement: .navigation) {
+                            context.content(for: context.childIDs[toolbarStartIndex])
+                        }
+                        if #available(iOS 26.0, macOS 26.0, *) {
+                            ToolbarItem(placement: .navigation) {
+                                context.content(for: context.childIDs[toolbarStartIndex + 1])
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .sharedBackgroundVisibility(.hidden)
+                        } else {
+                            ToolbarItem(placement: .navigation) {
+                                context.content(for: context.childIDs[toolbarStartIndex + 1])
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                        }
+                        #endif
+                        ToolbarItemGroup(placement: .primaryAction) {
+                            context.content(for: context.childIDs[toolbarStartIndex + 2])
+                            context.content(for: context.childIDs[toolbarStartIndex + 3])
+                        }
+                    }
                 }
         }
         .frame(
@@ -181,6 +257,13 @@ private struct LGChatNavigationContent: View {
             return AnyView(EmptyView())
         }
         return context.content(for: context.childIDs[rootIndex])
+    }
+
+    private var bottomChrome: AnyView {
+        guard let bottomChromeIndex,
+              context.childIDs.count > bottomChromeIndex
+        else { return AnyView(EmptyView()) }
+        return context.content(for: context.childIDs[bottomChromeIndex])
     }
 
     private var desiredPath: [Int] {

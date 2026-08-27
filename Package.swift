@@ -13,7 +13,7 @@ if let localLUIPath = ProcessInfo.processInfo.environment["LUI_PACKAGE_PATH"] {
 } else {
     luiPackageDependency = .package(
         url: "ssh://git@github.com/tiensonqin/lui.git",
-        revision: "8e7ead2bfb8f36b5205038866f47c08ae8e54272"
+        revision: "4cfb19b3c453679b40538705e3989fc582fb4fd1"
     )
 }
 let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [

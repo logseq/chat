@@ -1,5 +1,13 @@
 (ns logseq-chat.view)
 
+(type-record journal-view-section
+  (section-id :string)
+  (page-id :string)
+  (title :string)
+  (has-divider :bool)
+  (has-heading :bool)
+  (rows :vector<outline-row>))
+
 (signature logseq-chat.view/outliner-editor-schema
  :fn<extension-component-schema>)
 (signature logseq-chat.view/outliner-block-content-schema
@@ -63,6 +71,8 @@
 (signature logseq-chat.view/sync-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-accessibility-identifier
  :fn<chat-model;string>)
+(signature logseq-chat.view/sync-indicator-foreground
+ :fn<chat-model;string>)
 (signature logseq-chat.view/sync-connection-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-pending-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-cursor-label :fn<chat-model;string>)
@@ -76,6 +86,16 @@
  :fn<chat-model;bool>)
 (signature logseq-chat.view/sidebar-page-identifier :fn<sidebar-page;string>)
 (signature logseq-chat.view/sidebar-page-title :fn<sidebar-page;string>)
+(signature logseq-chat.view/sidebar-graph-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-title :fn<graph;string>)
+(signature logseq-chat.view/sidebar-graph-selected?
+ :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/sidebar-graph-disabled? :fn<graph;bool>)
+(signature logseq-chat.view/journals-sidebar-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcards-sidebar-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/graphs-sidebar-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-page-selected?
+ :fn<chat-model;sidebar-page;bool>)
 (signature logseq-chat.view/favorites-empty? :fn<chat-model;bool>)
 (signature logseq-chat.view/recent-pages-empty? :fn<chat-model;bool>)
 (signature logseq-chat.view/sidebar-tab-visible?
@@ -83,7 +103,11 @@
 (signature logseq-chat.view/flashcards-tab-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/graphs-tab-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/sidebar-page-row
- :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;signal<sidebar-page>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/sidebar-graph-menu-item
+ :fn<ui-context;signal<chat-model>;signal<graph>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/sidebar-section-heading
+ :fn<ui-context;string;string;int>)
 (signature logseq-chat.view/sidebar-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-collapsed? :fn<chat-model;bool>)
@@ -139,16 +163,16 @@
  :fn<vector<journal-section-marker>;string;option<journal-section-marker>>)
 (signature logseq-chat.view/outliner-journal-marker
  :fn<chat-model;outline-row;option<journal-section-marker>>)
-(signature logseq-chat.view/outliner-journal-heading-visible?
- :fn<chat-model;outline-row;bool>)
-(signature logseq-chat.view/outliner-journal-divider-visible?
- :fn<chat-model;outline-row;bool>)
-(signature logseq-chat.view/outliner-journal-title
- :fn<chat-model;outline-row;string>)
-(signature logseq-chat.view/outliner-journal-page-id
- :fn<chat-model;outline-row;string>)
-(signature logseq-chat.view/outliner-journal-button-identifier
- :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/append-journal-section-row
+ :fn<vector<journal-view-section>;outline-row;vector<journal-view-section>>)
+(signature logseq-chat.view/journal-sections-loop
+ :fn<chat-model;vector<outline-row>;vector<journal-view-section>;vector<journal-view-section>>)
+(signature logseq-chat.view/journal-sections
+ :fn<chat-model;vector<journal-view-section>>)
+(signature logseq-chat.view/journal-section-identifier
+ :fn<journal-view-section;string>)
+(signature logseq-chat.view/journal-section-heading-identifier
+ :fn<journal-view-section;string>)
 (signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/primary-sidebar-button-visible?
  :fn<chat-model;bool>)
@@ -156,11 +180,14 @@
 (signature logseq-chat.view/search-main-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/connection-control-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-query-present? :fn<chat-model;bool>)
-(signature logseq-chat.view/main-outliner-selection-active?
+(signature logseq-chat.view/bottom-chrome-presentation :fn<chat-model;string>)
+(signature logseq-chat.view/bottom-chrome-selection? :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-editor? :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-expanded-composer?
  :fn<chat-model;bool>)
-(signature logseq-chat.view/main-outliner-autocomplete-active?
+(signature logseq-chat.view/bottom-chrome-capture-and-search?
  :fn<chat-model;bool>)
-(signature logseq-chat.view/main-outliner-editor-active?
+(signature logseq-chat.view/bottom-chrome-occupies-layout-space?
  :fn<chat-model;bool>)
 (signature logseq-chat.view/active-node-projection
  :fn<chat-model;option<node-projection>>)
@@ -211,8 +238,8 @@
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
  :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/outliner-entry
- :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/journal-section
+ :fn<ui-context;signal<chat-model>;signal<journal-view-section>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-selection-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-autocomplete-row
@@ -272,7 +299,6 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-identifier :fn<graph;string>)
 (signature logseq-chat.view/graph-delete-identifier :fn<graph;string>)
-(signature logseq-chat.view/graph-title :fn<graph;string>)
 (signature logseq-chat.view/graph-status-identifier :fn<graph;string>)
 (signature logseq-chat.view/graph-status-visible? :fn<graph;bool>)
 (signature logseq-chat.view/graph-status-title :fn<graph;string>)
@@ -391,6 +417,16 @@
 (signature logseq-chat.view/chat-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-main-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-bottom-chrome
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-header-leading
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-header-title
+ :fn<ui-context;signal<chat-model>;int>)
+(signature logseq-chat.view/main-header-sync
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-header-connection
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/search-screen
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)

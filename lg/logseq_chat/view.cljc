@@ -67,7 +67,8 @@
     (proto/profile proto/IOS proto/SwiftUIHost)
     (proto/profile proto/AndroidOS proto/SwiftUIHost)]
    true []
-   [(ext/property "depth" ext/IntScalar true None)]
+   [(ext/property "depth" ext/IntScalar true None)
+    (ext/property "bottom-occupies-layout-space" ext/BoolScalar true None)]
    [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])]))
 
 (defn native-search-presentation-schema []
@@ -315,6 +316,15 @@
     OfflineState "sync.disconnected"
     _ "sync.connected"))
 
+(defn sync-indicator-foreground [current]
+  (if (or (:has-pending-semantic-operations current)
+          (:has-pending-sync-request current))
+    "warning"
+    (match (:sync-state current)
+      SyncedState "success-foreground"
+      SyncingState "warning-foreground"
+      _ "error-foreground")))
+
 (defn sync-connection-label [current]
   (match (:sync-state current)
     OfflineState "Disconnected"
@@ -358,11 +368,43 @@
 (defn sidebar-page-title [page]
   (:title page))
 
+(defn sidebar-graph-identifier [graph]
+  (str "menu.graph." (:id graph)))
+
+(defn graph-title [graph]
+  (:name graph))
+
+(defn sidebar-graph-selected? [current graph]
+  (match (:selected-graph-id current)
+    (Some graph-id) (= graph-id (:id graph))
+    None false))
+
+(defn sidebar-graph-disabled? [graph]
+  (not (:is-ready graph)))
+
 (defn favorites-empty? [current]
   (empty? (:favorites current)))
 
 (defn recent-pages-empty? [current]
   (empty? (:recent-pages current)))
+
+(defn journals-sidebar-selected? [current]
+  (and
+   (= (:destination current) model/JournalsDestination)
+   (match (:selected-page current)
+     None true
+     (Some _page) false)))
+
+(defn flashcards-sidebar-selected? [current]
+  (= (:destination current) model/FlashcardsDestination))
+
+(defn graphs-sidebar-selected? [current]
+  (= (:destination current) model/GraphsDestination))
+
+(defn sidebar-page-selected? [current page]
+  (match (:selected-page current)
+    (Some selected) (= (:uuid selected) (:uuid page))
+    None false))
 
 (defn sidebar-tab-visible? [current tab]
   (model/string-vector-contains? (:sidebar-tabs current) tab))
@@ -373,68 +415,121 @@
 (defn graphs-tab-visible? [current]
   (sidebar-tab-visible? current "graphs"))
 
-(defn sidebar-page-row [ui-context page-source send]
+(defn sidebar-page-row [ui-context model-source page-source send]
   (let [page (signal/sample page-source)]
     (elements/element
      ui-context nil
-     [:button
+     [:list-item
       {:text (reactive sidebar-page-title page-source)
        :label (reactive sidebar-page-title page-source)
+       :role "navigation"
+       :icon "app:document"
+       :selected (reactive sidebar-page-selected? model-source page-source)
        :accessibility-identifier (sidebar-page-identifier page)
        :on-press
        (event [current-page page-source]
          (send (model/SelectSidebarPage (:uuid current-page))))}])))
 
+(defn sidebar-graph-menu-item [ui-context model-source graph-source send]
+  (let [graph (signal/sample graph-source)]
+    (elements/element
+     ui-context nil
+     [:menu-item
+      {:text (reactive graph-title graph-source)
+       :selected (reactive sidebar-graph-selected? model-source graph-source)
+       :disabled (reactive sidebar-graph-disabled? graph-source)
+       :accessibility-identifier (sidebar-graph-identifier graph)
+       :on-press
+       (event [current-graph graph-source]
+         (send (model/SelectSidebarGraph (:id current-graph))))}])))
+
+(defui sidebar-section-heading [title icon]
+  [:row {:gap 6 :cross "center" :padding-horizontal 12}
+   [:icon {:name icon :size "sm" :foreground "muted-foreground"}]
+   [:text {:class "footnote" :foreground "muted-foreground"} title]])
+
 (defui sidebar-view [model-source send]
-  [:column
-   {:accessibility-identifier "sidebar.navigation"}
-   [:button
-    {:label "Close sidebar"
-     :accessibility-identifier "button.sidebar.dismiss"
-     :on-press (fn [_event] (send model/CloseSidebar))}
-    "Close"]
-   [:button
-    {:label "Switch graph"
-     :accessibility-identifier "button.graph-switch"
-     :on-press (fn [_event] (send model/ShowGraphs))}
-    "Switch graph"]
-   [:button
+  [:scroll
+   [:list
+    {:accessibility-identifier "sidebar.navigation"
+     :gap 4
+     :padding 12
+     :background "background"}
+   [:stack
+    [:list-item
+     {:text (reactive graph-label model-source)
+      :label "Switch graph"
+      :role "navigation-heading"
+      :icon "app:chevron-down"
+      :icon-placement "trailing"
+      :accessibility-identifier "button.graph-switch"
+      :on-press (fn [_event] (send model/OpenGraphMenu))}]
+    [:if {:test (reactive :graph-menu-open model-source)}
+     [:dropdown-menu
+      {:anchor "below"
+       :anchor-alignment "start"
+       :min-width 240
+       :accessibility-identifier "menu.graph-switch"
+       :on-dismiss (fn [_event] (send model/DismissGraphMenu))}
+      [:keyed
+       {:source (reactive :graphs model-source)
+        :key :id
+        :compare compare
+        :as graph-source}
+       [sidebar-graph-menu-item model-source graph-source send]]]]]
+   [:box {:height 16}]
+   [:list-item
     {:label "Journals"
+     :role "navigation"
+     :icon "app:calendar"
+     :selected (reactive journals-sidebar-selected? model-source)
      :accessibility-identifier "link.sidebar.journals"
      :on-press (fn [_event] (send model/ShowJournals))}
     "Journals"]
    [:if {:test (reactive flashcards-tab-visible? model-source)}
-    [:button
+    [:list-item
      {:label "Flashcards"
+      :role "navigation"
+      :icon "app:flashcards"
+      :selected (reactive flashcards-sidebar-selected? model-source)
       :accessibility-identifier "link.sidebar.flashcards"
       :on-press (fn [_event] (send model/ShowFlashcards))}
      "Flashcards"]]
    [:if {:test (reactive graphs-tab-visible? model-source)}
-    [:button
+    [:list-item
      {:label "Graphs"
+      :role "navigation"
+      :icon "app:folder"
+      :selected (reactive graphs-sidebar-selected? model-source)
       :accessibility-identifier "link.sidebar.graphs"
       :on-press (fn [_event] (send model/ShowGraphs))}
      "Graphs"]]
-   [:column {:accessibility-identifier "section.sidebar.favorites"}
-    [:text "Favorites"]
+   [:column {:accessibility-identifier "section.sidebar.favorites" :gap 2}
+    [:box {:height 12}]
+    [sidebar-section-heading "Favorites" "app:star"]
     [:if {:test (reactive favorites-empty? model-source)}
-     [:text "No favorites yet"]]
+     [:row {:padding-horizontal 12}
+      [:text {:class "footnote" :foreground "muted-foreground"}
+       "No favorites yet"]]]
     [:keyed
      {:source (reactive :favorites model-source)
       :key :uuid
       :compare compare
       :as page-source}
-     [sidebar-page-row page-source send]]]
-   [:column {:accessibility-identifier "section.sidebar.recent"}
-    [:text "Recent"]
+     [sidebar-page-row model-source page-source send]]]
+   [:column {:accessibility-identifier "section.sidebar.recent" :gap 2}
+    [:box {:height 12}]
+    [sidebar-section-heading "Recent" "app:history"]
     [:if {:test (reactive recent-pages-empty? model-source)}
-     [:text "No recent pages"]]
+     [:row {:padding-horizontal 12}
+      [:text {:class "footnote" :foreground "muted-foreground"}
+       "No recent pages"]]]
     [:keyed
      {:source (reactive :recent-pages model-source)
       :key :uuid
       :compare compare
       :as page-source}
-     [sidebar-page-row page-source send]]]])
+     [sidebar-page-row model-source page-source send]]]]])
 
 (defn composer-collapsed? [current]
   (not (:composer-expanded current)))
@@ -642,33 +737,46 @@
   (journal-section-marker-for
    (:outliner-section-markers current) (:uuid row)))
 
-(defn outliner-journal-heading-visible? [current row]
-  (and
-   (journal-root-visible? current)
-   (match (:selected-page current)
-     None
-     (match (outliner-journal-marker current row)
-       (Some _marker) true
-       None false)
-     (Some _page) false)))
+(defn append-journal-section-row [sections row]
+  (let [index (dec (count sections))
+        section (nth sections index)]
+    (assoc sections index
+           (assoc section :rows (conj (:rows section) row)))))
 
-(defn outliner-journal-divider-visible? [current row]
-  (match (outliner-journal-marker current row)
-    (Some marker) (:has-divider marker)
-    None false))
+(defn journal-sections-loop [current rows sections]
+  (if (empty? rows)
+    sections
+    (let [row (nth rows 0)
+          next-sections
+          (match (outliner-journal-marker current row)
+            (Some marker)
+            (conj sections
+                  {:section-id (:block-id marker)
+                   :page-id (:page-id marker)
+                   :title (:title marker)
+                   :has-divider (:has-divider marker)
+                   :has-heading true
+                   :rows [row]})
+            None
+            (if (empty? sections)
+              (conj sections
+                    {:section-id (:uuid row)
+                     :page-id ""
+                     :title ""
+                     :has-divider false
+                     :has-heading false
+                     :rows [row]})
+              (append-journal-section-row sections row)))]
+      (journal-sections-loop current (subvec rows 1) next-sections))))
 
-(defn outliner-journal-title [current row]
-  (match (outliner-journal-marker current row)
-    (Some marker) (:title marker)
-    None ""))
+(defn journal-sections [current]
+  (journal-sections-loop current (:outliner-rows current) []))
 
-(defn outliner-journal-page-id [current row]
-  (match (outliner-journal-marker current row)
-    (Some marker) (:page-id marker)
-    None ""))
+(defn journal-section-identifier [section]
+  (str "journal.section." (:page-id section)))
 
-(defn outliner-journal-button-identifier [current row]
-  (str "button.journal." (outliner-journal-page-id current row)))
+(defn journal-section-heading-identifier [section]
+  (str "button.journal." (:page-id section)))
 
 (defn node-screen-visible? [current]
   (and (journals-destination? current)
@@ -698,17 +806,33 @@
 (defn search-query-present? [current]
   (not (empty? (:search-query current))))
 
-(defn main-outliner-selection-active? [current]
-  (and (journal-root-visible? current)
-       (outliner-selection-active? current)))
+(defn bottom-chrome-presentation [current]
+  (if (outliner-selection-active? current)
+    "outliner-selection"
+    (if (outliner-editor-active? current)
+      "outliner-editor"
+      (if (empty? (:app-navigation-path current))
+        (if (journal-root-visible? current)
+          (if (:composer-expanded current)
+            "expanded-composer"
+            "capture-and-search")
+          "hidden")
+        "hidden"))))
 
-(defn main-outliner-autocomplete-active? [current]
-  (and (journal-root-visible? current)
-       (outliner-autocomplete-active? current)))
+(defn bottom-chrome-selection? [current]
+  (= (bottom-chrome-presentation current) "outliner-selection"))
 
-(defn main-outliner-editor-active? [current]
-  (and (journal-root-visible? current)
-       (outliner-editor-active? current)))
+(defn bottom-chrome-editor? [current]
+  (= (bottom-chrome-presentation current) "outliner-editor"))
+
+(defn bottom-chrome-expanded-composer? [current]
+  (= (bottom-chrome-presentation current) "expanded-composer"))
+
+(defn bottom-chrome-capture-and-search? [current]
+  (= (bottom-chrome-presentation current) "capture-and-search"))
+
+(defn bottom-chrome-occupies-layout-space? [current]
+  (bottom-chrome-editor? current))
 
 (defn active-node-projection [current]
   (last (:node-routes current)))
@@ -724,9 +848,16 @@
     None "Untitled"))
 
 (defn main-title [current]
-  (match (:selected-page current)
-    (Some page) (:title page)
-    None "Logseq"))
+  (if (= (:destination current) model/FlashcardsDestination)
+    "Flashcards"
+    (if (= (:destination current) model/GraphsDestination)
+      "Graphs"
+      (match (active-node-projection current)
+        (Some route) (:title route)
+        None
+        (match (:selected-page current)
+          (Some page) (:title page)
+          None "Logseq")))))
 
 (defn current-content-active? [current]
   (match (active-node-projection current)
@@ -882,6 +1013,7 @@
      [:button
       {:text (reactive outliner-tag-title tag-source)
        :label (reactive outliner-tag-title tag-source)
+       :variant "ghost"
        :accessibility-identifier (outliner-tag-identifier tag)
        :on-press
        (event [current-tag tag-source]
@@ -914,6 +1046,7 @@
      ui-context nil
      [:list-item
       {:accessibility-identifier (outliner-row-identifier row)
+       :padding 0
        :selected selected-source
        :on-press
        (event [current-row row-source]
@@ -932,18 +1065,23 @@
         [outliner-indent-view indent-source]
         [:button
          {:label (reactive outliner-row-zoom-label row-source)
+          :icon "app:status-dot"
+          :variant "ghost"
+          :foreground "border"
+          :width 24
+          :height 24
           :accessibility-identifier
           (str "button.outliner.zoom." (:uuid row))
           :on-press
           (event [current-row row-source]
-            (if search-open
+           (if search-open
               (send (model/RequestSearchNode (:uuid current-row)))
-              (send (model/RequestAppNode (:uuid current-row)))))}
-         "•"]
+              (send (model/RequestAppNode (:uuid current-row)))))}]
         [:if {:test has-status-source}
          [:button
           {:text status-title-source
            :label "Task status"
+           :variant "ghost"
            :accessibility-identifier "button.block-task-status"
            :on-press
            (event [current-row row-source]
@@ -960,6 +1098,9 @@
          [:button
           {:text (reactive outliner-row-collapse-glyph row-source)
            :label (reactive outliner-row-collapse-label row-source)
+           :variant "ghost"
+           :width 28
+           :height 28
            :accessibility-identifier
            (str "button.outliner.collapse." (:uuid row))
            :on-press
@@ -979,26 +1120,32 @@
           (str "outliner.sync-failed." (:uuid row))}
          "Sync failed"]]]])))
 
-(defui outliner-entry [model-source row-source send]
-  [:column
-   [:if {:test
-         (reactive outliner-journal-heading-visible?
-                   model-source row-source)}
-    [:column
-     [:if {:test
-           (reactive outliner-journal-divider-visible?
-                     model-source row-source)}
-      [:separator {:accessibility-identifier "journal.divider"}]]
-     [:button
-      {:text (reactive outliner-journal-title model-source row-source)
-       :label (reactive outliner-journal-title model-source row-source)
-       :accessibility-identifier-signal
-       (reactive outliner-journal-button-identifier
-                 model-source row-source)
-       :on-press
-       (event [current-row row-source]
-         (send (model/RequestAppNode (:page-id current-row))))}]]]
-   [outliner-row model-source row-source send]])
+(defui journal-section [model-source section-source send]
+  [:box
+   {:accessibility-identifier-signal
+    (reactive journal-section-identifier section-source)
+    :container-relative-frame "vertical"}
+   [:if {:test (reactive :has-divider section-source)}
+    [:separator {:accessibility-identifier "journal.divider"}]]
+   [:if {:test (reactive :has-heading section-source)}
+    [:list-item
+     {:label (reactive :title section-source)
+      :padding 0
+      :accessibility-identifier-signal
+      (reactive journal-section-heading-identifier section-source)
+      :on-press
+      (event [section section-source]
+        (send (model/RequestAppNode (:page-id section))))}
+     [:box {:padding-horizontal 8 :padding-vertical 12}
+      [:box {:height 14}]
+      [:heading {:level 3 :value (reactive :title section-source)}]]]]
+   [:list
+    [:keyed
+     {:source (reactive :rows section-source)
+      :key :uuid
+      :compare compare
+      :as row-source}
+     [outliner-row model-source row-source send]]]])
 
 (defui outliner-selection-toolbar [send]
   [:toolbar
@@ -1225,18 +1372,17 @@
    [:if {:test (reactive node-tag-section-visible? model-source)}
     [node-tagged-section model-source send]]
    [:if {:test (reactive node-linked-reference-section-visible? model-source)}
-    [node-linked-reference-section model-source send]]
-   [:if {:test (reactive outliner-selection-active? model-source)}
-    [outliner-selection-toolbar send]]
-   [:if {:test (reactive outliner-autocomplete-active? model-source)}
-    [outliner-autocomplete-bar model-source send]]
-   [:if {:test (reactive outliner-editor-active? model-source)}
-    [outliner-editor-toolbar send]]
-   (composer-view model-source send)])
+    [node-linked-reference-section model-source send]]])
 
 (defui composer-view [model-source send]
-  [:column
+  [:box
    {:accessibility-identifier "surface.composer.root"
+    :grow 1.0
+    :min-height 58
+    :padding-horizontal 12
+    :padding-vertical 6
+    :background "secondary"
+    :corner-radius 30
     :on-press (fn [_event] (send model/FocusComposer))}
    [:if {:test (reactive :composer-expanded model-source)}
     [:column
@@ -1272,7 +1418,9 @@
         :on-press (fn [_event] (send model/SendComposer))}]]]]
    [:if {:test (reactive composer-collapsed? model-source)}
     [:button
-     {:accessibility-identifier "button.composer.expand"
+     {:variant "ghost"
+      :grow 1.0
+      :accessibility-identifier "button.composer.expand"
       :on-press (fn [_event] (send model/ExpandComposer))}
      "Capture"]]])
 
@@ -1505,9 +1653,6 @@
 
 (defn graph-delete-identifier [graph]
   (str "button.graph.delete." (:id graph)))
-
-(defn graph-title [graph]
-  (:name graph))
 
 (defn graph-status-identifier [graph]
   (str "graph.status." (:id graph)))
@@ -2323,36 +2468,139 @@
       :as hit-source}
      [search-result-row hit-source send]]]])
 
+(defui main-bottom-chrome [model-source send]
+  [:stack
+   {:accessibility-identifier "chrome.bottom"}
+   [:if {:test (reactive bottom-chrome-selection? model-source)}
+    [outliner-selection-toolbar send]]
+   [:if {:test (reactive bottom-chrome-editor? model-source)}
+    [:box
+     [:if {:test (reactive outliner-autocomplete-active? model-source)}
+      [outliner-autocomplete-bar model-source send]]
+     [outliner-editor-toolbar send]]]
+   [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
+    [:row {:padding-horizontal 16 :padding-vertical 8}
+     [composer-view model-source send]]]
+   [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
+    [:row
+     {:gap 10
+      :cross "center"
+      :padding-horizontal 16
+      :padding-vertical 8}
+     [composer-view model-source send]
+     [:button
+      {:icon "search"
+       :variant "ghost"
+       :size "icon"
+       :width 58
+       :height 58
+       :background "secondary"
+       :corner-radius 30
+       :label "Search"
+       :accessibility-identifier "button.search"
+       :on-press (fn [_event] (send model/OpenSearch))}]]]])
+
 (defui chat-main-view [model-source send]
   [:column
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:text
-     {:value (reactive main-title model-source)
-      :accessibility-identifier "title.main"}]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:text {:value (reactive graph-label model-source)}]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:button
-     {:text (reactive sync-label model-source)
-      :label (reactive sync-label model-source)
-      :accessibility-identifier-signal
-      (reactive sync-accessibility-identifier model-source)
-      :on-press (fn [_event] (send model/OpenSyncDetails))}]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:button
-     {:accessibility-identifier "button.search"
-      :on-press (fn [_event] (send model/OpenSearch))}
-     "Search"]]
-   [:if {:test (reactive connection-control-visible? model-source)}
-    [:button
-     {:label "Connection"
-      :accessibility-identifier "button.connection"
-      :on-press (fn [_event] (send model/OpenConnectionMenu))}
-     "Connection"]]
    [:if {:test (reactive global-effect-error-present? model-source)}
     [:text
      {:value (reactive effect-error-message model-source)
       :accessibility-identifier "error.banner"}]]
+   [:if {:test (reactive graph-loading-visible? model-source)}
+    [:column {:accessibility-identifier "journals.loading"}
+     [:text "Loading journals"]]]
+   [:if {:test (reactive journal-root-visible? model-source)}
+    [:text
+     {:accessibility-label "Journal graph load status"
+      :accessibility-identifier "journals.graph-loaded"}
+     ""]]
+   [:if {:test (reactive graph-picker-visible? model-source)}
+    [graph-picker-screen model-source send]]
+   [:if {:test (reactive journal-root-visible? model-source)}
+    [:scroll {:accessibility-identifier "scroll.outliner"}
+     [:box
+      {:accessibility-identifier "surface.outliner.content"
+       :padding-horizontal 8}
+      [:list {:accessibility-identifier "list.outliner"}
+       [:keyed
+        {:source (reactive journal-sections model-source)
+         :key :section-id
+         :compare compare
+         :as section-source}
+        [journal-section model-source section-source send]]]
+      [:if {:test (reactive older-journals-visible? model-source)}
+       [:box
+        {:height 1
+         :accessibility-identifier "outliner.load-older-sentinel"
+         :on-appear
+         (fn [_event] (send model/LoadOlderJournals))}]]]]]
+   [:if {:test (reactive main-can-add-first-block? model-source)}
+    [add-first-block-button model-source send]]
+   [:if {:test (reactive main-related-section-visible? model-source)}
+    [node-related-section model-source send]]
+   [:if {:test (reactive main-tag-section-visible? model-source)}
+    [node-tagged-section model-source send]]
+   [:if {:test (reactive main-linked-reference-section-visible? model-source)}
+    [node-linked-reference-section model-source send]]
+   [:if {:test (reactive flashcards-destination? model-source)}
+    [flashcard-screen model-source send]]
+   [:if {:test (reactive graphs-destination? model-source)}
+    [graphs-screen model-source send]]
+   [:if {:test (reactive :settings-open model-source)}
+    [settings-sheet model-source send]]
+   [:if {:test (reactive :graph-password-open model-source)}
+    [graph-password-sheet model-source send]]
+   [:if {:test (reactive :attachment-picker-open model-source)}
+    [attachment-picker-dialog send]]
+   [:if {:test (reactive :task-status-picker-open model-source)}
+    [task-status-picker-dialog model-source send]]
+   [:if {:test (reactive outliner-task-status-picker-open? model-source)}
+    [outliner-task-status-dialog model-source send]]
+   [:if {:test (reactive page-deletion-pending? model-source)}
+    [page-delete-dialog send]]
+   [:if {:test (reactive :sync-details-open model-source)}
+    [sync-status-sheet model-source send]]])
+
+(defui main-header-leading [model-source send]
+  [:stack
+   [:if {:test (reactive primary-sidebar-button-visible? model-source)}
+    [:button
+     {:icon "app:sidebar-toggle"
+      :variant "ghost"
+      :size "icon"
+      :label "Open sidebar"
+      :accessibility-identifier "button.sidebar"
+      :on-press (fn [_event] (send model/OpenSidebar))}]]])
+
+(defui main-header-title [model-source]
+  [:text
+   {:value (reactive main-title model-source)
+    :class "subheadline"
+    :accessibility-identifier "title.main"}])
+
+(defui main-header-sync [model-source send]
+  [:stack
+   [:if {:test (reactive connection-control-visible? model-source)}
+    [:button
+     {:icon "app:status-dot"
+      :variant "ghost"
+      :size "icon"
+      :foreground-signal (reactive sync-indicator-foreground model-source)
+      :label (reactive sync-label model-source)
+      :accessibility-identifier-signal
+      (reactive sync-accessibility-identifier model-source)
+      :on-press (fn [_event] (send model/OpenSyncDetails))}]]])
+
+(defui main-header-connection [model-source send]
+  [:stack
+   [:if {:test (reactive connection-control-visible? model-source)}
+    [:button
+     {:icon "app:more-horiz"
+      :variant "ghost"
+      :size "icon"
+      :label "Connection"
+      :accessibility-identifier "button.connection"
+      :on-press (fn [_event] (send model/OpenConnectionMenu))}]]
    [:if {:test (reactive :connection-menu-open model-source)}
     [:dropdown-menu {:on-dismiss (fn [_event] (send model/CloseConnectionMenu))}
      [:if {:test (reactive active-page-actions-visible? model-source)}
@@ -2372,71 +2620,7 @@
        "Delete"]]
      [:if {:test (reactive connection-settings-visible? model-source)}
       [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
-       "Settings"]]]]
-   [:if {:test (reactive graph-loading-visible? model-source)}
-    [:column {:accessibility-identifier "journals.loading"}
-     [:text "Loading journals"]]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:text
-     {:accessibility-label "Journal graph load status"
-      :accessibility-identifier "journals.graph-loaded"}
-     ""]]
-   [:if {:test (reactive graph-picker-visible? model-source)}
-    [graph-picker-screen model-source send]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:scroll {:accessibility-identifier "scroll.outliner"}
-     [:list {:accessibility-identifier "list.outliner"}
-      [:keyed
-       {:source (reactive :outliner-rows model-source)
-        :key :uuid
-        :compare compare
-        :as row-source}
-       [outliner-entry model-source row-source send]]]]]
-   [:if {:test (reactive older-journals-visible? model-source)}
-    [:button
-     {:accessibility-identifier "button.outliner.load-older-journals"
-      :on-press (fn [_event] (send model/LoadOlderJournals))}
-     "Load older journals"]]
-   [:if {:test (reactive main-can-add-first-block? model-source)}
-    [add-first-block-button model-source send]]
-   [:if {:test (reactive main-related-section-visible? model-source)}
-    [node-related-section model-source send]]
-   [:if {:test (reactive main-tag-section-visible? model-source)}
-    [node-tagged-section model-source send]]
-   [:if {:test (reactive main-linked-reference-section-visible? model-source)}
-    [node-linked-reference-section model-source send]]
-   [:if {:test (reactive main-outliner-selection-active? model-source)}
-    [outliner-selection-toolbar send]]
-   [:if {:test (reactive main-outliner-autocomplete-active? model-source)}
-    [outliner-autocomplete-bar model-source send]]
-   [:if {:test (reactive main-outliner-editor-active? model-source)}
-    [outliner-editor-toolbar send]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [composer-view model-source send]]
-   [:if {:test (reactive flashcards-destination? model-source)}
-    [flashcard-screen model-source send]]
-   [:if {:test (reactive graphs-destination? model-source)}
-    [graphs-screen model-source send]]
-   [:if {:test (reactive primary-sidebar-button-visible? model-source)}
-    [:button
-     {:label "Open sidebar"
-      :accessibility-identifier "button.sidebar"
-      :on-press (fn [_event] (send model/OpenSidebar))}
-     "Menu"]]
-   [:if {:test (reactive :settings-open model-source)}
-    [settings-sheet model-source send]]
-   [:if {:test (reactive :graph-password-open model-source)}
-    [graph-password-sheet model-source send]]
-   [:if {:test (reactive :attachment-picker-open model-source)}
-    [attachment-picker-dialog send]]
-   [:if {:test (reactive :task-status-picker-open model-source)}
-    [task-status-picker-dialog model-source send]]
-   [:if {:test (reactive outliner-task-status-picker-open? model-source)}
-    [outliner-task-status-dialog model-source send]]
-   [:if {:test (reactive page-deletion-pending? model-source)}
-    [page-delete-dialog send]]
-   [:if {:test (reactive :sync-details-open model-source)}
-    [sync-status-sheet model-source send]]])
+       "Settings"]]]]])
 
 (defn journal-navigation-model [current]
   (let [rows (:journal-outliner-rows current)
@@ -2533,9 +2717,15 @@
 (defui native-navigation-view [model-source send]
   (let [node (ui/extension! ui-context "native-navigation-stack")
         depth-source (reactive app-navigation-depth model-source)
-        depth-value-source (reactive int-wire-value depth-source)]
+        depth-value-source (reactive int-wire-value depth-source)
+        bottom-occupies-source
+        (reactive bottom-chrome-occupies-layout-space? model-source)
+        bottom-occupies-value-source
+        (reactive bool-wire-value bottom-occupies-source)]
     (ui/extension-property-signal!
      ui-context node "depth" depth-value-source)
+    (ui/extension-property-signal!
+     ui-context node "bottom-occupies-layout-space" bottom-occupies-value-source)
     (ui/on-event!
      ui-context node
      (fn [input-event]
@@ -2544,6 +2734,11 @@
      ui-context node
      [:column
       [native-search-view model-source send]])
+    (elements/element ui-context node [main-header-leading model-source send])
+    (elements/element ui-context node [main-header-title model-source])
+    (elements/element ui-context node [main-header-sync model-source send])
+    (elements/element ui-context node [main-header-connection model-source send])
+    (elements/element ui-context node [main-bottom-chrome model-source send])
     (elements/element
      ui-context node
      [:keyed
@@ -2592,7 +2787,7 @@
   [:drawer
    {:selected (reactive :sidebar-open model-source)
     :disabled (reactive sidebar-drag-disabled? model-source)
-    :width 320
+    :width 360
     :label "Navigation"
     :on-toggle
     (fn [input-event]

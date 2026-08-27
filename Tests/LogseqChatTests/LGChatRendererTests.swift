@@ -77,8 +77,9 @@ struct LGChatRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"native-navigation-stack","fingerprint":"lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none|events:4:back[5:count:int:required]"},
+          {"op":"create-extension","id":2,"identifier":"native-navigation-stack","fingerprint":"\(LGChatNavigationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":2,"property":"depth","value":0},
+          {"op":"set-extension-prop","id":2,"property":"bottom-occupies-layout-space","value":false},
           {"op":"create-node","id":3,"kind":"column"},
           {"op":"insert-child","parent":2,"child":3,"index":0},
           {"op":"insert-child","parent":1,"child":2,"index":0}
@@ -1000,6 +1001,72 @@ struct LGChatRendererTests {
         #expect(envelope.result.graphs?.map(\.id) == ["graph-new"])
     }
 
+    @Test("creating a graph persists the authoritative selected graph")
+    func graphCreationPersistsSelectedGraph() async {
+        let defaults = UserDefaults.standard
+        let key = "logseq.selectedGraphId"
+        let previousValue = defaults.object(forKey: key)
+        defaults.removeObject(forKey: key)
+        defer {
+            if let previousValue {
+                defaults.set(previousValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        let store = LogseqChatStore { _ in
+            #"{"apiVersion":1,"ok":true,"result":{"revision":3,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"New graph","selectedGraphId":"graph-new","graphs":[{"id":"graph-new","name":"New graph","schemaVersion":"65.33","isEncrypted":true,"isReady":true}]}}"#
+        }
+        let lifecycle = LGChatGraphLifecycle(
+            store: store,
+            authentication: LogseqAuthenticationStore(
+                provider: LGChatGraphLifecycleCognitoProbe()
+            ),
+            syncCoordinator: GraphSyncCoordinator(),
+            databasePath: "/tmp/unused-logseq-chat.sqlite"
+        )
+
+        let resolution = await lifecycle.execute(
+            LGChatEffect(id: 49, kind: "create-graph", text: "New graph", value: 1)
+        )
+
+        #expect(resolution.succeeded)
+        #expect(defaults.string(forKey: key) == "graph-new")
+    }
+
+    @Test("failed graph creation preserves the previous selected graph")
+    func failedGraphCreationPreservesSelectedGraph() async {
+        let defaults = UserDefaults.standard
+        let key = "logseq.selectedGraphId"
+        let previousValue = defaults.object(forKey: key)
+        defaults.set("graph-old", forKey: key)
+        defer {
+            if let previousValue {
+                defaults.set(previousValue, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        let store = LogseqChatStore { _ in
+            #"{"apiVersion":1,"ok":false,"error":{"code":"graph_create_failed","message":"Could not create graph"}}"#
+        }
+        let lifecycle = LGChatGraphLifecycle(
+            store: store,
+            authentication: LogseqAuthenticationStore(
+                provider: LGChatGraphLifecycleCognitoProbe()
+            ),
+            syncCoordinator: GraphSyncCoordinator(),
+            databasePath: "/tmp/unused-logseq-chat.sqlite"
+        )
+
+        let resolution = await lifecycle.execute(
+            LGChatEffect(id: 50, kind: "create-graph", text: "New graph", value: 0)
+        )
+
+        #expect(!resolution.succeeded)
+        #expect(defaults.string(forKey: key) == "graph-old")
+    }
+
     @Test("runtime routes platform output to host updates instead of core snapshots")
     func runtimeRoutesPlatformOutputToHostUpdates() async {
         let native = LGChatNativeRuntimeProbe()
@@ -1300,6 +1367,12 @@ private final class LGChatEffectExecutorProbe: LGChatEffectExecuting {
     }
 }
 
+private struct LGChatGraphLifecycleCognitoProbe: LogseqCognitoProviding {
+    func accessToken() async throws -> String? { nil }
+    func signIn() async throws -> String { "" }
+    func signOut() async throws {}
+}
+
 @MainActor
 private final class LGChatPlatformCommandHandlerProbe: LGChatPlatformCommandHandling {
     var batches: [LGChatPlatformCommandBatch] = []
@@ -1329,6 +1402,8 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
         startedPlatforms.append(platformCode)
         return initialPatch
     }
+
+    func appear(node: Int) -> String { "" }
 
     func press(node: Int) -> String {
         pressedNodes.append(node)

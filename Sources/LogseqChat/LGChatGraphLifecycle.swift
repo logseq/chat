@@ -76,11 +76,14 @@ final class LGChatGraphLifecycle {
         case "unlock-graph":
             return await unlockGraph(effect.text)
         case "create-graph":
-            let succeeded = await store.createSyncGraph(
+            guard await store.createSyncGraph(
                 name: effect.text,
                 isEncrypted: effect.value == 1
-            )
-            return resolution(succeeded: succeeded)
+            ), let graphID = store.snapshot.selectedGraphId, !graphID.isEmpty else {
+                return resolution(succeeded: false)
+            }
+            UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
+            return resolution(succeeded: true)
         case "delete-local-graph":
             return await deleteLocalGraph(effect.text)
         default:

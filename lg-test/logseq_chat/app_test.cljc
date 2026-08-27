@@ -127,6 +127,10 @@
           wrapper))
       container)))
 
+(defn native-bottom-chrome [renderer application]
+  (let [navigation (extension-node application "native-navigation-stack")]
+    (nth (apple/children renderer navigation) 5)))
+
 (defn empty-sidebar-projection []
   (record model/sidebar-projection
     (favorites [])
@@ -711,6 +715,8 @@
     (driver/send! application model/OpenSettingsTabs)
     (driver/flush! application)
     (let [root (driver/root-node application)]
+      (assert-equal 360 (property-int renderer root proto/WidthValue)
+                    "the drawer leaves the same visible main edge as main")
       (assert-equal (Some false)
                     (descendant-enabled
                      renderer root "toggle.settings.tab.journals")
@@ -988,7 +994,7 @@
                            "native-navigation-stack")]
     (assert-equal
      (Some
-      "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none|events:4:back[5:count:int:required]")
+      "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none|events:4:back[5:count:int:required]")
      (match schema
        (Some current) (Some (ext/fingerprint current))
        None None)
@@ -1164,31 +1170,32 @@
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
-    (let [children (apple/children renderer (main-root renderer application))
-          graph-label (nth children 1)
-          sync-label (nth children 2)]
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (apple/children renderer navigation)
+          title (nth chrome 2)
+          sync-control (nth (apple/children renderer (nth chrome 3)) 0)]
       (driver/send! application model/BeginSync)
       (driver/flush! application)
-      (assert-equal "Work"
-                    (property-string renderer graph-label proto/TextValue)
-                    "selecting a graph patches its title")
+      (assert-equal "Logseq"
+                    (property-string renderer title proto/TextValue)
+                    "the journal root keeps the main navigation title")
       (assert-equal "Syncing"
-                    (property-string renderer sync-label proto/TextValue)
+                    (property-string renderer sync-control proto/AccessibilityLabel)
                     "begin sync exposes progress")
-      (assert-equal sync-label
-                    (nth (apple/children renderer (main-root renderer application)) 2)
+      (assert-equal sync-control
+                    (nth (apple/children renderer (nth chrome 3)) 0)
                     "sync changes retain the native status node")
 
       (driver/send! application model/SyncSucceeded)
       (driver/flush! application)
       (assert-equal "Up to date"
-                    (property-string renderer sync-label proto/TextValue)
+                    (property-string renderer sync-control proto/AccessibilityLabel)
                     "success is visible")
 
       (driver/send! application (model/SyncFailed "Network unavailable"))
       (driver/flush! application)
       (assert-equal "Sync failed: Network unavailable"
-                    (property-string renderer sync-label proto/TextValue)
+                    (property-string renderer sync-control proto/AccessibilityLabel)
                     "failure retains its actionable reason"))))
 
 (deftest sync-details-render-projected-cursor-and-trigger-the-existing-pump
@@ -1203,8 +1210,10 @@
     (driver/start! application)
     (driver/send! application (model/ApplyCoreSnapshot projection))
     (driver/flush! application)
-    (let [root (main-root renderer application)
-          sync-button (descendant-with-identifier renderer root "sync.connected")]
+    (let [application-root (driver/root-node application)
+          root (main-root renderer application)
+          sync-button
+          (descendant-with-identifier renderer application-root "sync.connected")]
       (driver/dispatch-event! application (proto/Press sync-button))
       (driver/flush! application)
       (is (:sync-details-open (chat/model application))
@@ -1301,6 +1310,9 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
+        current-graph (graph "current" "sync 2" false true)
+        remote-graph (graph "remote" "Remote graph" false true)
+        preparing-graph (graph "preparing" "Preparing graph" false false)
         sidebar
         (record model/sidebar-projection
           (favorites [favorite])
@@ -1312,8 +1324,13 @@
           (linked-reference-rows []))]
     (driver/start! application)
     (driver/send! application
-                  (apply-core-snapshot None sidebar [] false "" [] []
-                                           None None [] [] [] false []))
+                  (model/ApplyCoreSnapshot
+                   (assoc
+                    (empty-core-projection)
+                    :graph-name (Some "sync 2")
+                    :selected-graph-id (Some "current")
+                    :graphs [current-graph remote-graph preparing-graph]
+                    :sidebar sidebar)))
     (driver/flush! application)
     (let [root (driver/root-node application)]
       (is (not (property-bool renderer root proto/Selected))
@@ -1331,25 +1348,71 @@
       (driver/dispatch-event!
        application
        (proto/Press
-        (child-with-identifier
-         renderer (main-root renderer application) "button.sidebar")))
+        (descendant-with-identifier renderer root "button.sidebar")))
       (driver/flush! application)
       (is (property-bool renderer root proto/Selected)
           "opening the sidebar patches the controlled drawer")
-      (let [sidebar-view (child-with-identifier renderer root "sidebar.navigation")
+      (let [sidebar-view (descendant-with-identifier renderer root "sidebar.navigation")
             dismiss
             (child-with-identifier renderer sidebar-view "button.sidebar.dismiss")
             graph-switch
-            (child-with-identifier renderer sidebar-view "button.graph-switch")
+            (descendant-with-identifier renderer sidebar-view
+                                        "button.graph-switch")
+            journals
+            (child-with-identifier renderer sidebar-view "link.sidebar.journals")
+            flashcards
+            (child-with-identifier renderer sidebar-view "link.sidebar.flashcards")
+            graphs
+            (child-with-identifier renderer sidebar-view "link.sidebar.graphs")
             favorites
             (child-with-identifier renderer sidebar-view "section.sidebar.favorites")
             recent
             (child-with-identifier renderer sidebar-view "section.sidebar.recent")
             favorite-link
             (child-with-identifier renderer favorites "link.sidebar.page.page-a")]
-        (is (not (= dismiss -1)) "sidebar keeps its dismiss identifier")
+        (assert-equal 12 (property-int renderer sidebar-view proto/PaddingValue)
+                      "sidebar keeps the main branch content inset")
+        (assert-equal graph-switch
+                      (descendant-with-identifier
+                       renderer
+                       (nth (apple/children renderer sidebar-view) 0)
+                       "button.graph-switch")
+                      "the graph switch follows the native safe area directly")
+        (assert-equal 4 (property-int renderer sidebar-view proto/Gap)
+                      "sidebar keeps the main branch row spacing")
+        (assert-equal -1 dismiss
+                      "the main surface owns dismissal instead of rendering a close row")
         (is (not (= graph-switch -1)) "sidebar keeps the graph switch identifier")
+        (assert-equal "sync 2"
+                      (property-string renderer graph-switch proto/TextValue)
+                      "the graph switch displays the selected graph name")
+        (assert-equal "navigation-heading"
+                      (property-string renderer graph-switch proto/RoleValue)
+                      "the graph switch uses the reusable navigation heading role")
+        (assert-equal "app:chevron-down"
+                      (property-string renderer graph-switch proto/InlineIconName)
+                      "the graph switch keeps the disclosure affordance")
+        (assert-equal "trailing"
+                      (property-string renderer graph-switch proto/IconPlacementValue)
+                      "the graph switch places its disclosure icon after the title")
+        (assert-equal "navigation"
+                      (property-string renderer journals proto/RoleValue)
+                      "sidebar destinations use native navigation rows")
+        (assert-equal "app:calendar"
+                      (property-string renderer journals proto/InlineIconName)
+                      "journals keeps its navigation icon")
+        (is (property-bool renderer journals proto/Selected)
+            "the current journal destination keeps its selected row")
+        (assert-equal "app:flashcards"
+                      (property-string renderer flashcards proto/InlineIconName)
+                      "flashcards keeps its navigation icon")
+        (assert-equal "app:folder"
+                      (property-string renderer graphs proto/InlineIconName)
+                      "graphs keeps its navigation icon")
         (is (not (= recent -1)) "sidebar keeps the recent section identifier")
+        (assert-equal "app:document"
+                      (property-string renderer favorite-link proto/InlineIconName)
+                      "sidebar pages keep their document icon")
         (driver/dispatch-event! application (proto/Press favorite-link))
         (driver/flush! application)
         (is (not (property-bool renderer root proto/Selected))
@@ -1360,21 +1423,58 @@
         (driver/dispatch-event!
          application
          (proto/Press
-          (child-with-identifier
-           renderer (main-root renderer application) "button.sidebar")))
+          (descendant-with-identifier renderer root "button.sidebar")))
         (driver/flush! application)
         (let [reopened-sidebar
-              (child-with-identifier renderer root "sidebar.navigation")
+              (descendant-with-identifier renderer root "sidebar.navigation")
               switch-button
-              (child-with-identifier
+              (descendant-with-identifier
                renderer reopened-sidebar "button.graph-switch")]
           (driver/dispatch-event! application (proto/Press switch-button))
           (driver/flush! application)
-          (assert-equal model/GraphsDestination
-                        (:destination (chat/model application))
-                        "switch graph opens the graph catalog")
-          (is (not (property-bool renderer root proto/Selected))
-              "switching graphs closes the controlled drawer"))))))
+          (let [menu
+                (descendant-with-identifier renderer reopened-sidebar
+                                            "menu.graph-switch")]
+            (is (not (= menu -1)) "the graph heading opens a native menu")
+            (when (not (= menu -1))
+              (let [current-item
+                    (child-with-identifier renderer menu "menu.graph.current")
+                    preparing-item
+                    (child-with-identifier renderer menu "menu.graph.preparing")]
+                (is (property-bool renderer current-item proto/Selected)
+                    "the current graph is selected in the native menu")
+                (is (not (property-bool renderer preparing-item proto/Enabled))
+                    "graphs that are not ready stay disabled"))
+              (assert-equal model/JournalsDestination
+                            (:destination (chat/model application))
+                            "opening the graph menu keeps the current destination")
+              (is (property-bool renderer root proto/Selected)
+                  "opening the graph menu keeps the drawer visible")
+              (driver/dispatch-event! application (proto/Dismiss menu))
+              (driver/flush! application)
+              (assert-equal
+               -1
+               (descendant-with-identifier renderer reopened-sidebar
+                                           "menu.graph-switch")
+               "native menu dismissal removes the retained menu")
+              (driver/dispatch-event! application (proto/Press switch-button))
+              (driver/flush! application)
+              (let [reopened-menu
+                    (descendant-with-identifier renderer reopened-sidebar
+                                                "menu.graph-switch")]
+                (when (not (= reopened-menu -1))
+                  (let [remote-item
+                        (child-with-identifier renderer reopened-menu
+                                               "menu.graph.remote")]
+                    (driver/dispatch-event! application (proto/Press remote-item))
+                    (driver/flush! application)
+                    (assert-equal
+                     [(model/SelectSidebarPageEffect 1 "page-a")
+                      (model/OpenGraphEffect 2 "remote")]
+                     (:pending-effects (chat/model application))
+                     "choosing another graph reuses the typed open-graph effect")
+                    (is (not (property-bool renderer root proto/Selected))
+                        "choosing a graph closes the controlled drawer")))))))))))
 
 (deftest sidebar-drag-reserves-app-navigation
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -1433,7 +1533,8 @@
                                            None None [] [] [] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          title (child-with-identifier renderer root "title.main")
+          title (descendant-with-identifier
+                 renderer (driver/root-node application) "title.main")
           related
           (child-with-identifier renderer root "section.node.linked-references")
           add-first
@@ -1596,7 +1697,7 @@
     (driver/send! application model/OpenSidebar)
     (driver/flush! application)
     (let [root (driver/root-node application)
-          sidebar (child-with-identifier renderer root "sidebar.navigation")
+          sidebar (descendant-with-identifier renderer root "sidebar.navigation")
           link (child-with-identifier renderer sidebar "link.sidebar.flashcards")]
       (driver/dispatch-event! application (proto/Press link))
       (driver/flush! application)
@@ -1678,7 +1779,7 @@
     (driver/send! application model/OpenSidebar)
     (driver/flush! application)
     (let [root (driver/root-node application)
-          sidebar (child-with-identifier renderer root "sidebar.navigation")
+          sidebar (descendant-with-identifier renderer root "sidebar.navigation")
           link (child-with-identifier renderer sidebar "link.sidebar.graphs")]
       (driver/dispatch-event! application (proto/Press link))
       (driver/flush! application)
@@ -1838,8 +1939,9 @@
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
-    (let [root (main-root renderer application)
-          search-button (nth (apple/children renderer root) 3)]
+    (let [chrome (native-bottom-chrome renderer application)
+          search-button
+          (descendant-with-identifier renderer chrome "button.search")]
       (assert-equal "button.search"
                     (property-string renderer search-button
                                      proto/AccessibilityIdentifier)
@@ -1892,15 +1994,60 @@
                        renderer (main-root renderer application) "screen.search")
                       "the retained search subtree is disposed")))))
 
+(deftest bottom-chrome-presentation-is-mutually-exclusive
+  (let [journal
+        (assoc (model/initial)
+               :selected-graph (Some "Work")
+               :selected-graph-id (Some "graph-a"))
+        expanded (assoc journal :composer-expanded true)
+        editing (record model/outliner-editing
+                        (uuid "block-a")
+                        (title "Draft")
+                        (caret-utf16-offset 5))]
+    (assert-equal "capture-and-search"
+                  (view/bottom-chrome-presentation journal)
+                  "the journal root defaults to Capture and Search")
+    (assert-equal "expanded-composer"
+                  (view/bottom-chrome-presentation expanded)
+                  "expanded Capture replaces Search")
+    (assert-equal "outliner-editor"
+                  (view/bottom-chrome-presentation
+                   (assoc expanded :outliner-editing (Some editing)))
+                  "the editor replaces an expanded composer")
+    (assert-equal "outliner-selection"
+                  (view/bottom-chrome-presentation
+                   (assoc expanded
+                          :outliner-editing (Some editing)
+                          :outliner-selected-block-ids ["block-a"]))
+                  "selection has highest priority")
+    (assert-equal "hidden"
+                  (view/bottom-chrome-presentation
+                   (assoc journal
+                          :app-navigation-path [(model/NodeRoute "node-a")]))
+                  "node pages do not duplicate Capture")))
+
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
-    (let [root (main-root renderer application)
-          composer (child-with-identifier renderer root "surface.composer.root")
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (native-bottom-chrome renderer application)
+          composer
+          (descendant-with-identifier renderer chrome "surface.composer.root")
+          search (descendant-with-identifier renderer chrome "button.search")
           collapsed (nth (apple/children renderer composer) 0)]
+      (assert-equal (Some apple/AppleBox)
+                    (apple/node renderer composer)
+                    "the composer keeps intrinsic height inside a bottom overlay")
+      (assert-equal (Some (proto/BoolValue false))
+                    (extension-property application navigation
+                                        "bottom-occupies-layout-space")
+                    "Capture floats above the Outliner like main")
+      (assert-equal "search"
+                    (property-string renderer search proto/InlineIconName)
+                    "collapsed search uses the main branch icon control")
       (assert-equal "button.composer.expand"
                     (property-string renderer collapsed
                                      proto/AccessibilityIdentifier)
@@ -1909,7 +2056,12 @@
       (driver/flush! application)
       (is (:composer-expanded (chat/model application))
           "capture expands from LG-owned state")
-      (let [expanded (nth (apple/children renderer composer) 0)
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome "button.search")
+                    "expanded Capture replaces Search")
+      (let [expanded-composer
+            (descendant-with-identifier renderer chrome "surface.composer.root")
+            expanded (nth (apple/children renderer expanded-composer) 0)
             field (nth (apple/children renderer expanded) 0)
             controls (nth (apple/children renderer expanded) 1)
             attachment (nth (apple/children renderer controls) 0)
@@ -2212,6 +2364,27 @@
                    (model/update nested-request (model/BackAppNavigation 1)))
                   "the back action removes exactly one route")))
 
+(deftest native-header-title-follows-the-active-destination
+  (let [initial (model/initial)
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        route (node-projection "node-a" "page-a" "Nested" [] [])]
+    (assert-equal "Logseq" (view/main-title initial)
+                  "journals use the root application title")
+    (assert-equal "Project"
+                  (view/main-title (assoc initial :selected-page (Some page)))
+                  "selected pages use their projected title")
+    (assert-equal "Nested"
+                  (view/main-title (assoc initial :node-routes [route]))
+                  "native routes use their projected title")
+    (assert-equal "Flashcards"
+                  (view/main-title
+                   (assoc initial :destination model/FlashcardsDestination))
+                  "flashcards use their destination title")
+    (assert-equal "Graphs"
+                  (view/main-title
+                   (assoc initial :destination model/GraphsDestination))
+                  "graphs use their destination title")))
+
 (deftest native-back-count-is-reduced-as-one-navigation-transition
   (let [requested-a
         (model/update (model/initial) (model/RequestAppNode "page-a"))
@@ -2410,9 +2583,18 @@
                           None None [] [] [] false []))
     (driver/flush! application)
     (let [navigation (extension-node application "native-navigation-stack")
-          screen (descendant-with-identifier renderer navigation "screen.node")]
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          chrome (native-bottom-chrome renderer application)]
       (assert-equal -1 (child-with-identifier renderer screen "BackButton")
                     "the retained node does not duplicate the system back button")
+      (assert-equal -1
+                    (descendant-with-identifier renderer screen
+                                                "surface.composer.root")
+                    "node content does not contain a duplicate composer")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "surface.composer.root")
+                    "the global bottom slot hides Capture on node pages")
       (driver/dispatch-event!
        application
        (proto/ExtensionEvent navigation "native-navigation-stack" "back"
@@ -2459,16 +2641,36 @@
                     (extension-property application navigation "depth")
                     "the native path depth follows LG state")
       (let [children (apple/children renderer navigation)]
-        (assert-equal 3 (count children)
-                      "the root and both pushed routes remain retained")
+        (assert-equal 8 (count children)
+                      "native chrome slots remain separate from retained routes")
         (is (not (= -1 (descendant-with-identifier
                         renderer (nth children 0) "outliner.block.journal")))
             "the navigation root retains the journal Outliner")
+        (assert-equal 0
+                      (count (apple/children renderer (nth children 1)))
+                      "the system back action replaces the root sidebar control")
+        (assert-equal "title.main"
+                      (property-string renderer (nth children 2)
+                                       proto/AccessibilityIdentifier)
+                      "LG supplies the native title")
+        (assert-equal "app:status-dot"
+                      (property-string
+                       renderer
+                       (nth (apple/children renderer (nth children 3)) 0)
+                       proto/InlineIconName)
+                      "LG supplies the native sync control")
         (is (not (= -1 (descendant-with-identifier
-                        renderer (nth children 1) "outliner.block.first-child")))
+                        renderer (nth children 4) "button.connection")))
+            "LG supplies the native trailing menu")
+        (assert-equal "chrome.bottom"
+                      (property-string renderer (nth children 5)
+                                       proto/AccessibilityIdentifier)
+                      "LG supplies one fixed bottom chrome slot")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 6) "outliner.block.first-child")))
             "the first pushed route retains its own Outliner")
         (is (not (= -1 (descendant-with-identifier
-                        renderer (nth children 2) "outliner.block.second-child")))
+                        renderer (nth children 7) "outliner.block.second-child")))
             "the active route renders the deepest Outliner"))
       (driver/dispatch-event!
        application
@@ -2523,12 +2725,12 @@
       (assert-equal (Some (proto/IntValue 1))
                     (extension-property application search-navigation "depth")
                     "the full-screen search stack owns only its route depth")
-      (assert-equal 2 (count app-children)
-                    "the app stack retains its root and app route")
+      (assert-equal 7 (count app-children)
+                    "the app stack retains chrome, its root, and app route")
       (assert-equal 3 (count search-children)
                     "search retains the app surface, search root, and search route")
       (is (not (= -1 (descendant-with-identifier
-                      renderer (nth app-children 1) "outliner.block.app-child")))
+                      renderer (nth app-children 6) "outliner.block.app-child")))
           "the app route remains behind the search presentation")
       (is (not (= -1 (descendant-with-identifier
                       renderer (nth search-children 2)
@@ -2558,7 +2760,7 @@
        (:pending-effects (chat/model application))
        "empty pages reuse the core addRootBlock outliner action"))))
 
-(deftest older-journals-are-loaded-explicitly
+(deftest older-journals-use-an-invisible-scroll-sentinel
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         projection (assoc (empty-core-projection)
@@ -2568,15 +2770,32 @@
     (driver/send! application (model/ApplyCoreSnapshot projection))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          button (descendant-with-identifier
-                  renderer root "button.outliner.load-older-journals")]
-      (is (not (= button -1))
-          "journals expose an explicit load-older control")
-      (driver/dispatch-event! application (proto/Press button))
+          scroll (descendant-with-identifier renderer root "scroll.outliner")
+          sentinel (descendant-with-identifier
+                    renderer root "outliner.load-older-sentinel")]
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.outliner.load-older-journals")
+                    "main does not expose load-more as a visible button")
+      (is (not (= sentinel -1))
+          "journals expose an invisible end-of-scroll sentinel")
+      (assert-equal sentinel
+                    (descendant-with-identifier
+                     renderer scroll "outliner.load-older-sentinel")
+                    "the sentinel remains inside the scrollable Outliner content")
+      (assert-equal 1 (property-int renderer sentinel proto/HeightValue)
+                    "the sentinel matches main's one-point marker")
+      (assert-equal [] (:pending-effects (chat/model application))
+                    "retained rendering alone does not eagerly load journals")
+      (driver/send!
+       application
+       (model/ApplyCoreSnapshot (assoc projection :has-older-journals false)))
       (driver/flush! application)
-      (assert-equal [(model/LoadOlderJournalsEffect 1)]
-                    (:pending-effects (chat/model application))
-                    "loading older journals remains a typed core effect"))))
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer (main-root renderer application)
+                     "outliner.load-older-sentinel")
+                    "the sentinel disappears when the core reaches the oldest journal"))))
 
 (deftest older-journals-only-appear-at-the-journal-root
   (let [available (assoc (model/initial)
@@ -2668,14 +2887,88 @@
              :outliner-rows [day-a day-b])))
     (driver/flush! application)
     (let [root (main-root renderer application)
+          outliner-content
+          (descendant-with-identifier renderer root "surface.outliner.content")
           first-heading
           (descendant-with-identifier renderer root "button.journal.page-a")
           second-heading
-          (descendant-with-identifier renderer root "button.journal.page-b")]
+          (descendant-with-identifier renderer root "button.journal.page-b")
+          first-section
+          (descendant-with-identifier renderer root "journal.section.page-a")
+          second-section
+          (descendant-with-identifier renderer root "journal.section.page-b")
+          heading-children (apple/children renderer first-heading)
+          heading-surface
+          (if (empty? heading-children) -1 (nth heading-children 0))
+          heading-surface-children
+          (if (= heading-surface -1)
+            []
+            (apple/children renderer heading-surface))
+          heading-top-space
+          (if (empty? heading-surface-children)
+            -1
+            (nth heading-surface-children 0))
+          heading-content
+          (if (< (count heading-surface-children) 2)
+            -1
+            (nth heading-surface-children 1))]
+      (assert-equal 8
+                    (property-int renderer outliner-content
+                                  proto/PaddingHorizontal)
+                    "journal content keeps main's outer horizontal inset")
       (is (not (= first-heading -1))
           "the first journal heading is visible and navigable")
       (is (not (= second-heading -1))
           "the second journal heading is visible and navigable")
+      (is (not (= first-section -1))
+          "the first journal day owns one viewport-relative section")
+      (is (not (= second-section -1))
+          "the second journal day owns one viewport-relative section")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer first-section "outliner.block.day-a")))
+          "the first day's rows stay inside its section")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer first-section "outliner.block.day-b")
+                    "the next day cannot leak into the first section")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer second-section "outliner.block.day-b")))
+          "the second day's rows stay inside its section")
+      (assert-equal (Some apple/AppleListItem)
+                    (apple/node renderer first-heading)
+                    "journal headings use a plain interactive content row")
+      (assert-equal 0
+                    (property-int renderer first-heading proto/PaddingValue)
+                    "the interactive heading row does not add a native inset")
+      (assert-equal (Some apple/AppleBox)
+                    (if (= heading-surface -1)
+                      None
+                      (apple/node renderer heading-surface))
+                    "journal heading spacing is owned by one intrinsic surface")
+      (assert-equal 8
+                    (property-int renderer heading-surface
+                                  proto/PaddingHorizontal)
+                    "journal titles keep main's inner horizontal inset")
+      (assert-equal 12
+                    (property-int renderer heading-surface
+                                  proto/PaddingVertical)
+                    "journal titles keep main's bottom inset")
+      (assert-equal (Some apple/AppleBox)
+                    (if (= heading-top-space -1)
+                      None
+                      (apple/node renderer heading-top-space))
+                    "journal titles express their extra top inset as layout")
+      (assert-equal 14
+                    (property-int renderer heading-top-space proto/HeightValue)
+                    "journal title top spacing completes main's 26-point inset")
+      (assert-equal (Some apple/AppleHeading)
+                    (if (= heading-content -1)
+                      None
+                      (apple/node renderer heading-content))
+                    "journal titles retain semantic heading typography")
+      (assert-equal 3
+                    (property-int renderer heading-content proto/HeadingLevel)
+                    "journal titles map main's title2 scale")
       (is (not (= -1
                   (descendant-with-identifier
                    renderer root "journals.graph-loaded")))
@@ -3124,7 +3417,7 @@
                   (apply-core-snapshot None sidebar [] true "" [] []
                                        None None [] [] [] false []))
     (driver/flush! application)
-    (let [root (main-root renderer application)
+    (let [root (driver/root-node application)
           connection (descendant-with-identifier renderer root "button.connection")]
       (driver/dispatch-event! application (proto/Press connection))
       (driver/flush! application)
@@ -3202,12 +3495,19 @@
     (let [root (main-root renderer application)
           rendered-row (descendant-with-identifier
                         renderer root "outliner.block.block-a")]
-      (is (not (= -1 (descendant-with-identifier
-                       renderer rendered-row "button.block-task-status")))
-          "task blocks expose their status control")
-      (let [tag-button (descendant-with-identifier
+      (let [status-button (descendant-with-identifier
+                           renderer rendered-row "button.block-task-status")
+            tag-button (descendant-with-identifier
                         renderer rendered-row "button.block-tag.tag-a")]
+        (is (not (= -1 status-button))
+            "task blocks expose their status control")
         (is (not (= -1 tag-button)) "trailing tags remain interactive")
+        (assert-equal "ghost"
+                      (property-string renderer status-button proto/VariantValue)
+                      "task status uses a plain inline-control style")
+        (assert-equal "ghost"
+                      (property-string renderer tag-button proto/VariantValue)
+                      "block tags use a plain inline-control style")
         (driver/dispatch-event! application (proto/Press tag-button))
         (driver/flush! application)
         (assert-equal [(model/NodeRoute "tag-a")]
@@ -3233,11 +3533,12 @@
                                            ["parent"] [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
+          chrome (native-bottom-chrome renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row
           (descendant-with-identifier renderer outliner "outliner.block.parent")
-          toolbar (child-with-identifier
-                   renderer root "toolbar.outliner.selection")
+          toolbar (descendant-with-identifier
+                   renderer chrome "toolbar.outliner.selection")
           copy-button (nth (apple/children renderer toolbar) 0)]
       (is (property-bool renderer rendered-row proto/Selected)
           "the selected block is projected into retained row state")
@@ -3252,6 +3553,14 @@
                     (property-string renderer copy-button
                                      proto/AccessibilityIdentifier)
                     "selection actions keep main's automation identifiers")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "surface.composer.root")
+                    "selection replaces Capture")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "toolbar.outliner.editor")
+                    "selection replaces the editor toolbar")
       (driver/dispatch-event! application (proto/LongPress rendered-row))
       (driver/dispatch-event! application (proto/Press copy-button))
       (driver/flush! application)
@@ -3288,13 +3597,19 @@
                               (Some editing) (Some autocomplete) [candidate]
                               [] [row] false []))
     (driver/flush! application)
-    (let [root (main-root renderer application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (native-bottom-chrome renderer application)
           autocomplete-bar
-          (child-with-identifier renderer root "toolbar.outliner.autocomplete")
+          (descendant-with-identifier renderer chrome
+                                      "toolbar.outliner.autocomplete")
           candidate-button (nth (apple/children renderer autocomplete-bar) 0)
           editor-toolbar
-          (child-with-identifier renderer root "toolbar.outliner.editor")
+          (descendant-with-identifier renderer chrome "toolbar.outliner.editor")
           task-button (nth (apple/children renderer editor-toolbar) 0)]
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application navigation
+                                        "bottom-occupies-layout-space")
+                    "the editor reserves safe-area layout space like main")
       (assert-equal "button.outliner.autocomplete.0"
                     (property-string renderer candidate-button
                                      proto/AccessibilityIdentifier)
@@ -3310,6 +3625,14 @@
                     (property-string renderer task-button
                                      proto/AccessibilityIdentifier)
                     "the editor toolbar keeps main's task identifier")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "surface.composer.root")
+                    "the editor replaces Capture")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "toolbar.outliner.selection")
+                    "the editor excludes the selection toolbar")
       (driver/dispatch-event! application (proto/Press candidate-button))
       (driver/dispatch-event! application (proto/Press task-button))
       (driver/flush! application)
@@ -3356,10 +3679,32 @@
                     (property-string renderer zoom
                                      proto/AccessibilityIdentifier)
                     "zoom keeps main's stable identifier")
+      (assert-equal 24 (property-int renderer zoom proto/WidthValue)
+                    "zoom uses main's 24-point bullet hit width")
+      (assert-equal 24 (property-int renderer zoom proto/HeightValue)
+                    "zoom uses main's 24-point bullet hit height")
+      (assert-equal "app:status-dot"
+                    (property-string renderer zoom proto/InlineIconName)
+                    "zoom renders main's circular bullet instead of a text glyph")
+      (assert-equal "border"
+                    (property-string renderer zoom proto/ForegroundValue)
+                    "the bullet uses main's translucent secondary color")
+      (assert-equal 0 (count (apple/children renderer zoom))
+                    "the graphical bullet has no baseline-dependent text child")
+      (assert-equal "ghost"
+                    (property-string renderer zoom proto/VariantValue)
+                    "zoom uses main's plain bullet control style")
       (assert-equal "button.outliner.collapse.parent"
                     (property-string renderer collapse
                                      proto/AccessibilityIdentifier)
                     "collapse keeps main's stable identifier")
+      (assert-equal 28 (property-int renderer collapse proto/WidthValue)
+                    "collapse keeps main's 28-point disclosure width")
+      (assert-equal 28 (property-int renderer collapse proto/HeightValue)
+                    "collapse keeps main's 28-point disclosure height")
+      (assert-equal "ghost"
+                    (property-string renderer collapse proto/VariantValue)
+                    "collapse uses main's plain disclosure control style")
       (driver/dispatch-event! application (proto/Press zoom))
       (driver/dispatch-event! application (proto/Press collapse))
       (driver/flush! application)

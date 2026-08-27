@@ -3,6 +3,7 @@ import Observation
 import SwiftUI
 
 public enum LGChatRendererEventKind: Equatable, Sendable {
+    case appear
     case press
     case longPress
     case textChanged
@@ -68,6 +69,19 @@ public final class LGChatRenderer {
     private static func makeBackend() -> LUIAppleBackend {
         do {
             return try LUIAppleBackend(
+                appIcons: [
+                    "calendar": .assetName("calendar"),
+                    "chevron-down": .assetName("chevron_down"),
+                    "document": .assetName("document"),
+                    "flashcards": .assetName("flashcards"),
+                    "folder": .assetName("folder"),
+                    "history": .assetName("history"),
+                    "more-horiz": .assetName("more_horiz"),
+                    "sidebar-toggle": .assetName("sidebar_toggle"),
+                    "star": .assetName("star"),
+                    "status-dot": .assetName("status_dot"),
+                ],
+                appIconBundle: .module,
                 extensionRegistry: LGChatExtensionRegistry.makeRegistry()
             )
         } catch {
@@ -93,6 +107,8 @@ public final class LGChatRenderer {
 
     private static func map(_ event: LUIEvent) -> LGChatRendererEvent {
         switch event {
+        case .appear(let node):
+            return LGChatRendererEvent(kind: .appear, nodeID: node)
         case .press(let node):
             return LGChatRendererEvent(kind: .press, nodeID: node)
         case .longPress(let node):

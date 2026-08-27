@@ -6,6 +6,7 @@ import LogseqChatModel
 @MainActor
 public protocol LGChatNativeCalling {
     func initialize(platformCode: Int, hostCode: Int) -> String
+    func appear(node: Int) -> String
     func press(node: Int) -> String
     func longPress(node: Int) -> String
     func textChanged(node: Int, text: String) -> String
@@ -1007,6 +1008,7 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
         core.logseq_chat_lui_initialize(platformCode, hostCode)
     }
 
+    public func appear(node: Int) -> String { core.logseq_chat_lui_appear(node) }
     public func press(node: Int) -> String { core.logseq_chat_lui_press(node) }
     public func longPress(node: Int) -> String { core.logseq_chat_lui_long_press(node) }
     public func textChanged(node: Int, text: String) -> String {
@@ -1157,6 +1159,8 @@ public final class LGChatRuntime {
     private func receive(_ event: LGChatRendererEvent) {
         let patch: String
         switch event.kind {
+        case .appear:
+            patch = native.appear(node: event.nodeID)
         case .press:
             patch = native.press(node: event.nodeID)
         case .longPress:

@@ -6,6 +6,8 @@ let () =
   if not (Logseq_chat_lui_native.logseq_chat_native_bridge_linked ())
   then failwith "LG/LUI native bridge failed to link"
 
+let () = Logseq_chat_lui_projection.register_callbacks ()
+
 let e2ee_keyring =
   Logseq_chat_e2ee_keyring.create
     ~crypto:Logseq_chat_platform_crypto.crypto
