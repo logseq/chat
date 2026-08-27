@@ -248,6 +248,7 @@
 (signature logseq-chat.view/remote-graphs-present? :fn<chat-model;bool>)
 (signature logseq-chat.view/new-graph-name-empty? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-deletion-pending? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-deletion-message :fn<chat-model;string>)
 (signature logseq-chat.view/graph-password-empty? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-unlock-error-present? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-unlock-error-message :fn<chat-model;string>)
@@ -316,6 +317,8 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/page-delete-dialog
  :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/sync-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/sync-error-message :fn<chat-model;string>)
 (signature logseq-chat.view/sync-status-sheet
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/authentication-screen-visible? :fn<chat-model;bool>)

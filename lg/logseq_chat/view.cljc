@@ -1412,6 +1412,14 @@
     (Some _graph) true
     None false))
 
+(defn graph-deletion-message [current]
+  (match (:pending-graph-deletion current)
+    (Some graph)
+    (str "Are you sure you want to permanently delete the graph \""
+         (:name graph)
+         "\" from Logseq?")
+    None ""))
+
 (defn graph-password-empty? [current]
   (string/blank? (:graph-password current)))
 
@@ -1488,7 +1496,9 @@
    {:text "Delete local graph"
     :on-dismiss (fn [_event] (send model/CancelDeleteGraph))}
    [:column
-    [:text "Are you sure you want to permanently delete this graph from Logseq?"]
+    [:text
+     {:value (reactive graph-deletion-message model-source)
+      :accessibility-identifier "text.graph-delete-warning"}]
     [:text "⚠️ Notice that we can't recover this graph after being deleted. Make sure you have backups before deleting it."]
     [:button
      {:on-press (fn [_event] (send model/CancelDeleteGraph))}
@@ -1936,6 +1946,16 @@
       :on-press (fn [_event] (send model/ConfirmDeleteActivePage))}
      "Delete"]]])
 
+(defn sync-error-present? [current]
+  (match (:sync-state current)
+    (FailedState _reason) true
+    _ false))
+
+(defn sync-error-message [current]
+  (match (:sync-state current)
+    (FailedState reason) reason
+    _ ""))
+
 (defui sync-status-sheet [model-source send]
   [:sheet
    {:text "Sync status"
@@ -1957,6 +1977,12 @@
      [:text
       {:value (reactive sync-cursor-label model-source)
        :accessibility-identifier "sync.cursor"}]]
+    [:if {:test (reactive sync-error-present? model-source)}
+     [:column
+      [:text "Last error"]
+      [:text
+       {:value (reactive sync-error-message model-source)
+        :accessibility-identifier "sync.error"}]]]
     [:button
      {:accessibility-identifier "button.sync-now"
       :on-press (fn [_event] (send model/SyncNow))}

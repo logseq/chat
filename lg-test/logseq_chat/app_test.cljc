@@ -996,6 +996,23 @@
                       (:pending-effects (chat/model application))
                       "Sync now reuses the existing platform sync pump")))))
 
+(deftest sync-details-show-the-last-sync-failure
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application (model/SyncFailed "Network unavailable"))
+    (driver/send! application model/OpenSyncDetails)
+    (driver/flush! application)
+    (let [error
+          (descendant-with-identifier
+           renderer (driver/root-node application) "sync.error")]
+      (is (not (= -1 error))
+          "the sync failure has a stable status-sheet identifier")
+      (assert-equal "Network unavailable"
+                    (property-string renderer error proto/TextValue)
+                    "the status sheet preserves the actionable failure reason"))))
+
 (deftest pending-sync-patches-preserve-the-current-screen-and-cursor
   (let [full (assoc (empty-core-projection)
                     :graph-name (Some "Work")
@@ -1409,6 +1426,32 @@
         (is (not (= -1
                     (descendant-with-identifier renderer screen "field.graph-name")))
             "add graph exposes the existing graph-name field in its modal")))))
+
+(deftest graph-deletion-confirmation-names-the-local-graph
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        local (graph "local" "Local graph" false true)
+        projection
+        (assoc (empty-core-projection)
+               :graphs [local]
+               :selected-graph-id None)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/flush! application)
+    (let [warning
+          (descendant-with-identifier
+           renderer
+           (driver/root-node application)
+           "text.graph-delete-warning")]
+      (is (not (= -1 warning))
+          "the graph deletion warning has a stable identifier")
+      (assert-equal
+       "Are you sure you want to permanently delete the graph \"Local graph\" from Logseq?"
+       (property-string renderer warning proto/TextValue)
+       "the confirmation identifies the graph being deleted"))))
 
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create)
