@@ -242,6 +242,38 @@
               _ false)]
         (if found true (recur (inc index)))))))
 
+(defn graph-effect-key [effect]
+  (match effect
+    (RefreshGraphsEffect _id) "refresh"
+    (CreateGraphEffect _id _name _is-encrypted) "create"
+    (UnlockGraphEffect _id _password) "unlock"
+    (DeleteLocalGraphEffect _id graph-id) (str "delete:" graph-id)
+    _ ""))
+
+(defn contains-graph-effect? [effects key]
+  (loop [index 0]
+    (if (= index (count effects))
+      false
+      (if (= key (graph-effect-key (nth effects index)))
+        true
+        (recur (inc index))))))
+
+(defn graph-effect-active? [current key]
+  (or (contains-graph-effect? (:pending-effects current) key)
+      (contains-graph-effect? (:in-flight-effects current) key)))
+
+(defn graph-refresh-active? [current]
+  (graph-effect-active? current "refresh"))
+
+(defn graph-create-active? [current]
+  (graph-effect-active? current "create"))
+
+(defn graph-unlock-active? [current]
+  (graph-effect-active? current "unlock"))
+
+(defn graph-delete-active? [current graph-id]
+  (graph-effect-active? current (str "delete:" graph-id)))
+
 (defn sign-in-active? [current]
   (or (contains-sign-in-effect? (:pending-effects current))
       (contains-sign-in-effect? (:in-flight-effects current))))
@@ -1137,8 +1169,10 @@
     (assoc current :graph-loading loading)
 
     RefreshGraphs
-    (let [id (:next-effect-id current)]
-      (enqueue-effect current (RefreshGraphsEffect id)))
+    (if (graph-refresh-active? current)
+      current
+      (let [id (:next-effect-id current)]
+        (enqueue-effect current (RefreshGraphsEffect id))))
 
     (RequestOpenGraph graph-id)
     (match (graph-by-id (:graphs current) graph-id)
@@ -1154,7 +1188,8 @@
     (assoc current :graph-password password)
 
     SubmitGraphPassword
-    (if (string/blank? (:graph-password current))
+    (if (or (string/blank? (:graph-password current))
+            (graph-unlock-active? current))
       current
       (let [id (:next-effect-id current)]
         (enqueue-effect current
@@ -1180,7 +1215,7 @@
 
     SubmitCreateGraph
     (let [name (string/trim (:new-graph-name current))]
-      (if (empty? name)
+      (if (or (empty? name) (graph-create-active? current))
         current
         (let [id (:next-effect-id current)]
           (enqueue-effect
@@ -1188,7 +1223,8 @@
            (CreateGraphEffect id name (:new-graph-encrypted current))))))
 
     (RequestDeleteGraph graph-id)
-    (if (graph-local? current graph-id)
+    (if (and (graph-local? current graph-id)
+             (not (graph-delete-active? current graph-id)))
       (assoc current :pending-graph-deletion
              (graph-by-id (:graphs current) graph-id))
       current)

@@ -444,6 +444,17 @@
  :fn<vector<chat-effect>;int;option<chat-effect>>)
 (signature logseq-chat.model/contains-sign-in-effect?
  :fn<vector<chat-effect>;bool>)
+(signature logseq-chat.model/graph-effect-key
+ :fn<chat-effect;string>)
+(signature logseq-chat.model/contains-graph-effect?
+ :fn<vector<chat-effect>;string;bool>)
+(signature logseq-chat.model/graph-effect-active?
+ :fn<chat-model;string;bool>)
+(signature logseq-chat.model/graph-refresh-active? :fn<chat-model;bool>)
+(signature logseq-chat.model/graph-create-active? :fn<chat-model;bool>)
+(signature logseq-chat.model/graph-unlock-active? :fn<chat-model;bool>)
+(signature logseq-chat.model/graph-delete-active?
+ :fn<chat-model;string;bool>)
 (signature logseq-chat.model/sign-in-active? :fn<chat-model;bool>)
 (signature logseq-chat.model/first-flashcard-id
  :fn<vector<flashcard>;option<string>>)

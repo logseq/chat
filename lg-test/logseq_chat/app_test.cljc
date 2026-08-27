@@ -1514,6 +1514,68 @@
                     (descendant-with-identifier renderer screen "field.graph-name")))
             "add graph exposes the existing graph-name field in its modal")))))
 
+(deftest graph-lifecycle-effects-disable-duplicate-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" true true)
+        projection
+        (assoc (empty-core-projection)
+               :graphs [local remote]
+               :selected-graph-id None)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application model/RefreshGraphs)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/flush! application)
+    (let [screen (child-with-identifier
+                  renderer (main-root renderer application) "screen.graphs")
+          refresh (child-with-identifier renderer screen "button.graphs.refresh")
+          loading (child-with-identifier renderer screen "graphs.loading")]
+      (assert-equal (Some false)
+                    (descendant-enabled renderer screen "button.graphs.refresh")
+                    "an in-flight refresh cannot be requested twice")
+      (is (not (= -1 loading)) "refresh renders native progress feedback")
+      (assert-equal "Encrypted"
+                    (property-string
+                     renderer
+                     (descendant-with-identifier
+                      renderer screen "graph.status.remote")
+                     proto/TextValue)
+                    "encrypted remote graphs keep main's visible status")
+      (driver/dispatch-event! application (proto/Press refresh))
+      (driver/flush! application)
+      (assert-equal [] (:pending-effects (chat/model application))
+                    "disabled refresh does not enqueue duplicate work"))
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/send! application model/ConfirmDeleteGraph)
+    (driver/send! application (model/DequeueEffect 2))
+    (driver/flush! application)
+    (assert-equal
+     (Some false)
+     (descendant-enabled
+      renderer (main-root renderer application) "button.graph.delete.local")
+     "a graph cannot be deleted again while deletion is in flight")))
+
+(deftest empty-graph-picker-replaces-refresh-with-progress-while-loading
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/RefreshGraphs)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/flush! application)
+    (let [picker (child-with-identifier
+                  renderer (main-root renderer application)
+                  "screen.graph-picker")]
+      (is (not (= -1 (child-with-identifier renderer picker "graphs.loading")))
+          "an empty refreshing catalog shows progress")
+      (assert-equal -1
+                    (child-with-identifier
+                     renderer picker "button.graphs.refresh")
+                    "the empty picker hides refresh while it is running"))))
+
 (deftest graph-deletion-confirmation-names-the-local-graph
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))

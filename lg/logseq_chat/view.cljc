@@ -1435,8 +1435,24 @@
 (defn graph-title [graph]
   (:name graph))
 
+(defn graph-status-identifier [graph]
+  (str "graph.status." (:id graph)))
+
+(defn graph-status-visible? [graph]
+  (or (:is-encrypted graph) (not (:is-ready graph))))
+
+(defn graph-status-title [graph]
+  (if (:is-encrypted graph) "Encrypted" "Preparing"))
+
 (defn graph-not-ready? [graph]
   (not (:is-ready graph)))
+
+(defn graph-row-disabled? [current graph]
+  (or (graph-not-ready? graph)
+      (model/graph-delete-active? current (:id graph))))
+
+(defn graph-delete-active? [current graph]
+  (model/graph-delete-active? current (:id graph)))
 
 (defn graph-row-local? [current graph]
   (model/graph-local? current (:id graph)))
@@ -1464,6 +1480,16 @@
 (defn new-graph-name-empty? [current]
   (string/blank? (:new-graph-name current)))
 
+(defn graph-create-disabled? [current]
+  (or (new-graph-name-empty? current)
+      (model/graph-create-active? current)))
+
+(defn empty-graphs-loading? [current]
+  (and (graphs-empty? current) (model/graph-refresh-active? current)))
+
+(defn empty-graphs-refreshable? [current]
+  (and (graphs-empty? current) (not (model/graph-refresh-active? current))))
+
 (defn graph-deletion-pending? [current]
   (match (:pending-graph-deletion current)
     (Some _graph) true
@@ -1479,6 +1505,10 @@
 
 (defn graph-password-empty? [current]
   (string/blank? (:graph-password current)))
+
+(defn graph-unlock-disabled? [current]
+  (or (graph-password-empty? current)
+      (model/graph-unlock-active? current)))
 
 (defn effect-error-present? [current]
   (match (:effect-error current)
@@ -1509,18 +1539,21 @@
      ui-context nil
      [:list-item
       {:accessibility-identifier (graph-identifier graph)
-       :disabled (reactive graph-not-ready? graph-source)
+       :disabled (reactive graph-row-disabled? model-source graph-source)
        :on-press
        (event [current-graph graph-source]
          (send (model/RequestOpenGraph (:id current-graph))))}
       [:row
        [:text {:value (reactive graph-title graph-source)}]
-       [:if {:test (reactive graph-not-ready? graph-source)}
-        [:text "Preparing"]]
+       [:if {:test (reactive graph-status-visible? graph-source)}
+        [:text
+         {:value (reactive graph-status-title graph-source)
+          :accessibility-identifier (graph-status-identifier graph)}]]
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:button
          {:label "Delete local graph"
           :accessibility-identifier (graph-delete-identifier graph)
+          :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
 
@@ -1556,7 +1589,7 @@
      "Cancel"]
     [:button
      {:accessibility-identifier "button.graph-add.confirm"
-      :disabled (reactive new-graph-name-empty? model-source)
+      :disabled (reactive graph-create-disabled? model-source)
       :on-press (fn [_event] (send model/SubmitCreateGraph))}
      "Add"]]])
 
@@ -1602,7 +1635,7 @@
      "Cancel"]
     [:button
      {:accessibility-identifier "button.graph-unlock"
-      :disabled (reactive graph-password-empty? model-source)
+      :disabled (reactive graph-unlock-disabled? model-source)
       :on-press (fn [_event] (send model/SubmitGraphPassword))}
      "Unlock"]]])
 
@@ -1610,8 +1643,11 @@
   [:column {:accessibility-identifier "screen.graphs"}
    [:button
     {:accessibility-identifier "button.graphs.refresh"
+     :disabled (reactive model/graph-refresh-active? model-source)
      :on-press (fn [_event] (send model/RefreshGraphs))}
     "Refresh"]
+   [:if {:test (reactive model/graph-refresh-active? model-source)}
+    [:spinner {:accessibility-identifier "graphs.loading"}]]
    [:button
     {:accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
@@ -1646,7 +1682,9 @@
     {:accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
     "Add sync graph"]
-   [:if {:test (reactive graphs-empty? model-source)}
+   [:if {:test (reactive empty-graphs-loading? model-source)}
+    [:spinner {:accessibility-identifier "graphs.loading"}]]
+   [:if {:test (reactive empty-graphs-refreshable? model-source)}
     [:button
      {:accessibility-identifier "button.graphs.refresh"
       :on-press (fn [_event] (send model/RefreshGraphs))}
