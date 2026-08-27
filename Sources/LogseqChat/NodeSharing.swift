@@ -68,6 +68,10 @@ struct NodeSharePayload: Identifiable {
         }
         self.items = items
     }
+
+    init(fileURL: URL) {
+        items = [fileURL]
+    }
 }
 
 struct NodeShareSheet: UIViewControllerRepresentable {

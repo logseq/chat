@@ -88,6 +88,13 @@ public final class LGChatPlatformPresentationCoordinator {
         return true
     }
 
+    @discardableResult
+    public func presentFile(_ url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        pageSharePayload = NodeSharePayload(fileURL: url)
+        return true
+    }
+
     public func updatePageSharePayload(_ payload: NodeSharePayload?) {
         pageSharePayload = payload
     }

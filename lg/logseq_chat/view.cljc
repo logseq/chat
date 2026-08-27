@@ -513,6 +513,11 @@
   (and (journals-destination? current)
        (not (graph-selected? current))))
 
+(defn selected-graph-local? [current]
+  (match (:selected-graph-id current)
+    (Some graph-id) (model/graph-local? current graph-id)
+    None false))
+
 (defn journal-root-visible? [current]
   (and (journals-destination? current)
        (graph-selected? current)
@@ -1804,6 +1809,13 @@
          _ true))}]
    [:if {:test (reactive settings-base-url-invalid? model-source)}
     [:text "Enter a valid HTTP or HTTPS URL."]]
+   [:if {:test (reactive selected-graph-local? model-source)}
+    [:column
+     [:heading {:level 2} "Advanced"]
+     [:button
+      {:accessibility-identifier "button.export-graph-database"
+       :on-press (fn [_event] (send model/ExportGraphDatabase))}
+      "Export Graph SQLite DB"]]]
    [:heading {:level 2} "About"]
    [:row [:text "Version"] [:text {:value (reactive settings-version model-source)}]]
    [:row [:text "Revision"] [:text {:value (reactive settings-revision model-source)}]]

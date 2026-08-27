@@ -622,6 +622,31 @@ struct LGChatRendererTests {
         #expect(resolution.output == .discard)
     }
 
+    @Test("graph database export stays on the platform presentation boundary")
+    func graphDatabaseExportUsesPlatformBoundary() async {
+        var presented = false
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            exportGraphDatabase: {
+                presented = true
+                return true
+            }
+        )
+
+        let resolution = await handler.execute(LGChatEffect(
+            id: 45,
+            kind: "export-graph-database",
+            text: ""
+        ))
+
+        #expect(presented)
+        #expect(resolution.succeeded)
+        #expect(resolution.output == .discard)
+    }
+
     @Test("sync now reuses the platform sync pump")
     func syncNowEffectsUsePlatformBoundary() async {
         var syncCount = 0

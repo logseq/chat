@@ -122,6 +122,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let runtimeLog: LogseqRuntimeLog
     private let copyText: @MainActor (String) -> Void
     private let signOut: @MainActor () async -> Void
+    private let exportGraphDatabase: (@MainActor () async -> Bool)?
     private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
     private let presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)?
@@ -134,6 +135,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
         signOut: @escaping @MainActor () async -> Void,
+        exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
         graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
         presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)? = nil,
@@ -145,6 +147,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         self.runtimeLog = runtimeLog
         self.copyText = copyText
         self.signOut = signOut
+        self.exportGraphDatabase = exportGraphDatabase
         self.graphEffect = graphEffect
         self.presentAttachment = presentAttachment
         self.presentAsset = presentAsset
@@ -222,6 +225,20 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                 return LGChatEffectResolution(
                     succeeded: true,
                     message: "",
+                    output: .discard
+                )
+            case "export-graph-database":
+                guard let exportGraphDatabase else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Graph database export is unavailable",
+                        output: .discard
+                    )
+                }
+                let succeeded = await exportGraphDatabase()
+                return LGChatEffectResolution(
+                    succeeded: succeeded,
+                    message: succeeded ? "" : "The graph database is unavailable",
                     output: .discard
                 )
             case "present-attachment":

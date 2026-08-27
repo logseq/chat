@@ -226,6 +226,9 @@
     (model/SaveSettingsEffect id settings)
     (str "{\"id\":" id ",\"kind\":\"save-settings\",\"text\":"
          (wire/quoted (encode-settings settings)) "}")
+    (model/ExportGraphDatabaseEffect id)
+    (str "{\"id\":" id
+         ",\"kind\":\"export-graph-database\",\"text\":\"\"}")
     (model/RefreshRuntimeLogEffect id source errors-only newest-first)
     (str "{\"id\":" id ",\"kind\":\"refresh-runtime-log\",\"text\":"
          (wire/quoted source) ",\"value\":"

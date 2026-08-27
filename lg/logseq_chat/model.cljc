@@ -158,6 +158,7 @@
     (CreateGraphEffect id _name _is-encrypted) id
     (DeleteLocalGraphEffect id _graph-id) id
     (SaveSettingsEffect id _settings) id
+    (ExportGraphDatabaseEffect id) id
     (RefreshRuntimeLogEffect id _source _errors-only _newest-first) id
     (CopyRuntimeLogEffect id _records) id
     (SignOutEffect id) id))
@@ -1201,6 +1202,10 @@
                 :runtime-log-open false)
          (SaveSettingsEffect id (current-settings current))))
       current)
+
+    ExportGraphDatabase
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (ExportGraphDatabaseEffect id)))
 
     OpenRuntimeLog
     (assoc current :runtime-log-open true)

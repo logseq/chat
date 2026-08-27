@@ -456,10 +456,23 @@
    (bridge/encode-effect (model/UnlockGraphEffect 9 "secret \"phrase\""))
    "the native bridge escapes passwords in a typed unlock effect"))
 
+(deftest graph-database-export-has-a-stable-native-effect-payload
+  (assert-equal
+   "{\"id\":9,\"kind\":\"export-graph-database\",\"text\":\"\"}"
+   (bridge/encode-effect (model/ExportGraphDatabaseEffect 9))
+   "database export leaves file resolution at the platform boundary"))
+
 (deftest settings-render-the-main-branch-navigation-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
     (driver/send! application
                   (model/ApplySettingsSnapshot
                    (settings ["journals" "flashcards" "graphs"])))
@@ -473,6 +486,16 @@
       (is (not (= -1 (descendant-with-identifier renderer root
                                                   "link.settings.tabs")))
           "settings expose tabs navigation")
+      (let [export
+            (descendant-with-identifier
+             renderer root "button.export-graph-database")]
+        (is (not (= -1 export))
+            "settings expose database export for a downloaded graph")
+        (driver/dispatch-event! application (proto/Press export))
+        (driver/flush! application)
+        (assert-equal [(model/ExportGraphDatabaseEffect 1)]
+                      (:pending-effects (chat/model application))
+                      "database export stays on the typed platform boundary"))
       (driver/send! application model/OpenSettingsTabs)
       (driver/flush! application)
       (is (not (= -1 (descendant-with-identifier renderer root

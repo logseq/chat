@@ -235,6 +235,23 @@ public struct LogseqChatRootView : View {
                     refreshAfterApply: false
                 )
             },
+            exportGraphDatabase: {
+                guard let graphID = store.snapshot.selectedGraphId,
+                      !graphID.isEmpty
+                else { return false }
+                let databaseURL = LogseqGraphLocalStorage.directoryURL(
+                    databasePath: databasePath,
+                    graphID: graphID
+                ).appendingPathComponent("graph.sqlite")
+                #if SKIP
+                AndroidAssetImporter.share(text: "", paths: [databaseURL.path])
+                return true
+                #elseif os(iOS)
+                return presentationCoordinator.presentFile(databaseURL)
+                #else
+                return false
+                #endif
+            },
             graphEffect: { effect in await graphLifecycle.execute(effect) },
             presentAttachment: { kind in
                 presentationCoordinator.presentAttachment(kind)
