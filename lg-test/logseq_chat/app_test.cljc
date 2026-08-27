@@ -501,9 +501,41 @@
 
 (deftest outliner-block-content-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"
+   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],9:open-node[4:uuid:string:required]"
    (ext/fingerprint (view/outliner-block-content-schema))
    "the rich block renderer must match the LG wire schema"))
+
+(deftest outliner-drag-selects-once-and-drop-keeps-placement
+  (let [unselected (chat/create (apple/backend (apple/create)))
+        selected (chat/create (apple/backend (apple/create)))]
+    (driver/start! unselected)
+    (driver/send! unselected (model/BeginOutlinerDrag "source"))
+    (driver/flush! unselected)
+    (assert-equal
+     [(model/LongPressOutlinerBlockEffect 1 "source")]
+     (:pending-effects (chat/model unselected))
+     "dragging an unselected block first selects it through the core")
+    (driver/start! selected)
+    (driver/send!
+     selected
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                          None None [] ["source"] [] false []))
+    (driver/flush! selected)
+    (driver/send! selected (model/BeginOutlinerDrag "source"))
+    (driver/flush! selected)
+    (assert-equal [] (:pending-effects (chat/model selected))
+                  "dragging an already selected block does not toggle selection")
+    (driver/send! selected (model/DropOutlinerBlocks "target" "inside"))
+    (driver/flush! selected)
+    (assert-equal
+     [(model/DropOutlinerBlocksEffect 1 "target" "inside")]
+     (:pending-effects (chat/model selected))
+     "drop placement crosses the typed LG boundary unchanged")
+    (assert-equal
+     "{\"id\":9,\"kind\":\"drop-outliner-blocks\",\"text\":\"target\",\"metadata\":\"after\"}"
+     (bridge/encode-effect
+      (model/DropOutlinerBlocksEffect 9 "target" "after"))
+     "the native bridge preserves the drop target and placement")))
 
 (deftest initial-shell-renders-offline-without-a-selected-graph
   (let [renderer (apple/create)
@@ -1824,6 +1856,20 @@
       (assert-equal (Some (proto/BoolValue true))
                     (extension-property application rich-content "is-completed")
                     "completed task styling reaches the native rich renderer")
+      (assert-equal (Some (proto/StringValue "block-a"))
+                    (extension-property application rich-content "block-id")
+                    "the native rich renderer receives its draggable block id")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "drag-start"
+        {"uuid" (proto/StringValue "block-a")}))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "drop"
+        {"uuid" (proto/StringValue "target-a")
+         "placement" (proto/StringValue "before")}))
       (driver/dispatch-event!
        application
        (proto/ExtensionEvent
@@ -1832,7 +1878,13 @@
       (driver/flush! application)
       (assert-equal [(model/NodeRoute "page-a")]
                     (:app-navigation-path (chat/model application))
-                    "rich node references return to LG-owned navigation"))))
+                    "rich node references return to LG-owned navigation")
+      (assert-equal
+       [(model/LongPressOutlinerBlockEffect 1 "block-a")
+        (model/DropOutlinerBlocksEffect 2 "target-a" "before")
+        (model/OpenAppNodeEffect 3 "page-a")]
+       (:pending-effects (chat/model application))
+       "native drag events return to the typed LG reducer"))))
 
 (deftest projected-assets-render-and-open-through-the-native-extension
   (let [renderer (apple/create-with-extensions (view/extension-registry))

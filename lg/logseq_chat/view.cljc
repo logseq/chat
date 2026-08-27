@@ -42,6 +42,7 @@
     (proto/profile proto/AndroidOS proto/SwiftUIHost)]
    false []
    [(ext/property "title" ext/StringScalar true None)
+    (ext/property "block-id" ext/StringScalar true None)
     (ext/property "markup-json" ext/StringScalar true None)
     (ext/property "youtube-target-url" ext/StringScalar true None)
     (ext/property "is-asset" ext/BoolScalar true None)
@@ -49,6 +50,13 @@
     (ext/property "asset-type" ext/StringScalar true None)
     (ext/property "local-path" ext/StringScalar true None)]
    [(ext/event
+     "drag-start"
+     [(ext/event-field "uuid" ext/StringScalar true)])
+    (ext/event
+     "drop"
+     [(ext/event-field "uuid" ext/StringScalar true)
+      (ext/event-field "placement" ext/StringScalar true)])
+    (ext/event
      "open-node"
      [(ext/event-field "uuid" ext/StringScalar true)])]))
 
@@ -66,6 +74,12 @@
 
 (defn bool-wire-value [value]
   (proto/BoolValue value))
+
+(defn outliner-row-id-wire-value [row]
+  (proto/StringValue (outliner-row-uuid row)))
+
+(defn outliner-row-completed-wire-value [row]
+  (proto/BoolValue (outliner-row-completed? row)))
 
 (defn extension-string [values name]
   (match (clojure.core/get values name)
@@ -154,6 +168,10 @@
       None false)
     None false))
 
+(defn outliner-row-uuid [row]
+  (let [_depth (:depth row)]
+    (:uuid row)))
+
 (defn request-node-action [current uuid]
   (if (= (:search-open current) true)
     (model/RequestSearchNode uuid)
@@ -162,17 +180,30 @@
 (defn handle-outliner-block-content-event [input-event model-source send]
   (match input-event
     (proto/ExtensionEvent _node _identifier name values)
-    (if (= name "open-node")
+    (cond
+      (= name "open-node")
       (let [uuid (extension-string values "uuid")
             current (signal/sample model-source)]
         (send (request-node-action current uuid)))
-      true)
+
+      (= name "drag-start")
+      (send (model/BeginOutlinerDrag (extension-string values "uuid")))
+
+      (= name "drop")
+      (send
+       (model/DropOutlinerBlocks
+        (extension-string values "uuid")
+        (extension-string values "placement")))
+
+      :else true)
     _ true))
 
-(defn outliner-block-content-view
+(defn outliner-rich-block-view
   [ui-context model-source title-source markup-source youtube-target-source
-   is-asset-source is-completed-source asset-type-source local-path-source send]
+   is-asset-source row-source asset-type-source local-path-source send]
   (let [node (ui/extension! ui-context "outliner-block-content")]
+    (ui/extension-property-signal!
+     ui-context node "block-id" (reactive outliner-row-id-wire-value row-source))
     (ui/extension-property-signal!
      ui-context node "title" (reactive string-wire-value title-source))
     (ui/extension-property-signal!
@@ -184,7 +215,7 @@
      ui-context node "is-asset" (reactive bool-wire-value is-asset-source))
     (ui/extension-property-signal!
      ui-context node "is-completed"
-     (reactive bool-wire-value is-completed-source))
+     (reactive outliner-row-completed-wire-value row-source))
     (ui/extension-property-signal!
      ui-context node "asset-type" (reactive string-wire-value asset-type-source))
     (ui/extension-property-signal!
@@ -384,10 +415,6 @@
 (defn outliner-row-title [row]
   (let [_depth (:depth row)]
     (:title row)))
-
-(defn outliner-row-uuid [row]
-  (let [_depth (:depth row)]
-    (:uuid row)))
 
 (defn outliner-row-indent [row]
   (* (:depth row) 22))
@@ -707,7 +734,6 @@
         youtube-target-source
         (reactive outliner-row-youtube-target row-source)
         is-asset-source (reactive :is-asset row-source)
-        is-completed-source (reactive outliner-row-completed? row-source)
         asset-type-source (reactive outliner-row-asset-type row-source)
         local-path-source (reactive outliner-row-local-path row-source)
         editing-title-source (reactive editing-title model-source)
@@ -763,9 +789,9 @@
          [outliner-editor-view block-id-source
           editing-title-source editing-caret-source send]]
         [:if {:test not-editing-source}
-         [outliner-block-content-view
+         [outliner-rich-block-view
           model-source title-source markup-source youtube-target-source
-          is-asset-source is-completed-source asset-type-source local-path-source send]]
+          is-asset-source row-source asset-type-source local-path-source send]]
         [:if {:test has-children-source}
          [:button
           {:text (reactive outliner-row-collapse-glyph row-source)

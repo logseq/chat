@@ -744,6 +744,25 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                     message: String(describing: error)
                 )
             }
+        case "drop-outliner-blocks":
+            guard let placement = effect.metadata else {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: "The outliner drop effect is missing its placement"
+                )
+            }
+            do {
+                request = try Self.outlinerRequest(LogseqOutlinerEvent(
+                    type: "dropBlocks",
+                    targetUuid: effect.text,
+                    placement: placement
+                ))
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
         case "set-outliner-task-status":
             do {
                 guard let metadata = effect.metadata else {
@@ -1084,6 +1103,7 @@ public final class LGChatRuntime {
                 ?? ""
             let value = Self.extensionInt(values, name: "caret-utf16-offset")
                 ?? Self.extensionInt(values, name: "selection-length")
+                ?? Self.extensionPlacement(values)
                 ?? 0
             patch = native.extensionEvent(
                 node: event.nodeID,
@@ -1109,6 +1129,16 @@ public final class LGChatRuntime {
         guard let rawValue = values[name],
               case let .string(value) = rawValue else { return nil }
         return value
+    }
+
+    private static func extensionPlacement(_ values: [String: LUIExtensionValue]) -> Int? {
+        guard let placement = extensionString(values, name: "placement") else { return nil }
+        switch placement {
+        case "before": return 0
+        case "inside": return 1
+        case "after": return 2
+        default: return nil
+        }
     }
 
     private static func extensionInt(

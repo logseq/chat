@@ -139,6 +139,7 @@
     (ToggleOutlinerCollapsedEffect id _uuid) id
     (ZoomOutlinerBlockEffect id _uuid) id
     (LongPressOutlinerBlockEffect id _uuid) id
+    (DropOutlinerBlocksEffect id _target-uuid _placement) id
     (OutlinerToolbarEffect id _action) id
     (ChooseOutlinerAutocompleteEffect id _value) id
     (OpenAppNodeEffect id _uuid) id
@@ -731,6 +732,18 @@
     (LongPressOutlinerBlock uuid)
     (let [id (:next-effect-id current)]
       (enqueue-effect current (LongPressOutlinerBlockEffect id uuid)))
+
+    (BeginOutlinerDrag uuid)
+    (if (string-vector-contains? (:outliner-selected-block-ids current) uuid)
+      current
+      (let [id (:next-effect-id current)]
+        (enqueue-effect current (LongPressOutlinerBlockEffect id uuid))))
+
+    (DropOutlinerBlocks target-uuid placement)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect
+       current
+       (DropOutlinerBlocksEffect id target-uuid placement)))
 
     (PerformOutlinerToolbarAction action)
     (let [id (:next-effect-id current)]

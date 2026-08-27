@@ -169,6 +169,11 @@
     (str "{\"id\":" id
          ",\"kind\":\"long-press-outliner-block\",\"text\":"
          (wire/quoted uuid) "}")
+    (model/DropOutlinerBlocksEffect id target-uuid placement)
+    (str "{\"id\":" id
+         ",\"kind\":\"drop-outliner-blocks\",\"text\":"
+         (wire/quoted target-uuid) ",\"metadata\":"
+         (wire/quoted placement) "}")
     (model/OutlinerToolbarEffect id action)
     (str "{\"id\":" id
          ",\"kind\":\"outliner-toolbar\",\"text\":"
@@ -275,6 +280,17 @@
         (cond
           (and (= identifier "outliner-block-content") (= name "open-node"))
           {"uuid" (proto/StringValue text)}
+
+          (and (= identifier "outliner-block-content") (= name "drag-start"))
+          {"uuid" (proto/StringValue text)}
+
+          (and (= identifier "outliner-block-content") (= name "drop"))
+          {"uuid" (proto/StringValue text)
+           "placement"
+           (proto/StringValue
+            (cond (= value 0) "before"
+                  (= value 1) "inside"
+                  :else "after"))}
 
           (= name "text-change")
           {"title" (proto/StringValue text)

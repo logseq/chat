@@ -54,7 +54,8 @@ struct LGChatRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:is-asset:bool:required:none|events:9:open-node[4:uuid:string:required]"},
+          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],9:open-node[4:uuid:string:required]"},
+          {"op":"set-extension-prop","id":2,"property":"block-id","value":"block-a"},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Project"},
           {"op":"set-extension-prop","id":2,"property":"markup-json","value":"[]"},
           {"op":"set-extension-prop","id":2,"property":"youtube-target-url","value":""},
@@ -129,6 +130,18 @@ struct LGChatRendererTests {
                 extensionValues: ["uuid": LUIExtensionValue.string("page-a")]
             )
         )
+        runtime.renderer.receiveForTesting(
+            LGChatRendererEvent(
+                kind: .extension,
+                nodeID: 19,
+                extensionIdentifier: "outliner-block-content",
+                extensionName: "drop",
+                extensionValues: [
+                    "uuid": LUIExtensionValue.string("target-a"),
+                    "placement": LUIExtensionValue.string("inside"),
+                ]
+            )
+        )
 
         #expect(native.extensionEvents == [
             LGChatExtensionEventProbe(
@@ -144,6 +157,13 @@ struct LGChatRendererTests {
                 name: "open-node",
                 text: "page-a",
                 value: 0
+            ),
+            LGChatExtensionEventProbe(
+                node: 19,
+                identifier: "outliner-block-content",
+                name: "drop",
+                text: "target-a",
+                value: 1
             ),
         ])
         #expect(runtime.lastError == nil)
@@ -816,6 +836,29 @@ struct LGChatRendererTests {
         #expect(request.params.payload?.contains("setTaskStatus") == true)
         #expect(request.params.payload?.contains("block-a") == true)
         #expect(request.params.payload?.contains("logseq.property/status.done") == true)
+        #expect(resolution.succeeded)
+    }
+
+    @Test("outliner drop effects preserve the core event contract")
+    func outlinerDropEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return #"{"apiVersion":1,"ok":true,"result":null}"#
+        }
+
+        let resolution = await executor.execute(LGChatEffect(
+            id: 17,
+            kind: "drop-outliner-blocks",
+            text: "target-a",
+            metadata: "before"
+        ))
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("dropBlocks") == true)
+        #expect(request.params.payload?.contains("target-a") == true)
+        #expect(request.params.payload?.contains("before") == true)
         #expect(resolution.succeeded)
     }
 

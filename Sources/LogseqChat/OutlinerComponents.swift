@@ -1123,7 +1123,7 @@ struct OutlinerAutocompleteBar: View {
 }
 
 #if !SKIP && os(iOS)
-private struct OutlinerRowHeightPreferenceKey: PreferenceKey {
+struct OutlinerRowHeightPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 44
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -1131,7 +1131,7 @@ private struct OutlinerRowHeightPreferenceKey: PreferenceKey {
     }
 }
 
-private struct OutlinerRowDropDelegate: DropDelegate {
+struct OutlinerRowDropDelegate: DropDelegate {
     let rowHeight: CGFloat
     let onDrop: (OutlinerDropPlacement) -> Bool
 
