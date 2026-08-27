@@ -22,6 +22,7 @@ type t =
   | Runtime_log of runtime_log_record list
   | Local_graph_ids of string list
   | Composer_draft of string
+  | Graph_loading of bool
   | Open_capture
 
 val decode : string -> string -> (t, string) result

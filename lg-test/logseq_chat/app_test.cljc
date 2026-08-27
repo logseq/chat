@@ -299,6 +299,10 @@
                   "opening a graph updates LG selection after platform success")
     (assert-equal (Some "Local") (:selected-graph opened)
                   "opening a graph projects its title without waiting for a refresh")
+    (is (:graph-loading requested)
+        "opening a graph enters the retained loading state")
+    (is (not (:graph-loading opened))
+        "platform completion exits the retained loading state")
     (assert-equal None (:selected-graph-id deleted)
                   "deleting the selected local graph clears its identifier")
     (assert-equal None (:selected-graph deleted)
@@ -593,6 +597,36 @@
         (assert-equal [(model/OpenGraphEffect 1 "remote")]
                       (:pending-effects (chat/model application))
                       "a launch graph uses the typed graph lifecycle")))))
+
+(deftest persisted-graph-loading-hides-the-launch-picker
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/ApplyGraphLoading true))
+    (driver/flush! application)
+    (let [main (main-root renderer application)]
+      (is (not (= -1 (child-with-identifier
+                       renderer main "journals.loading")))
+          "a persisted graph renders the main loading state")
+      (assert-equal -1
+                    (child-with-identifier renderer main "screen.graph-picker")
+                    "the launch picker does not flash while a graph loads"))
+    (driver/send! application (model/ApplyGraphLoading false))
+    (driver/flush! application)
+    (is (not (= -1
+                (child-with-identifier
+                 renderer (main-root renderer application)
+                 "screen.graph-picker")))
+        "the empty catalog picker appears after loading completes")
+    (let [cached
+          (assoc (model/initial)
+                 :selected-graph-id (Some "local")
+                 :graph-loading true
+                 :outliner-rows
+                 [(journal-outline-row
+                   "cached" "journal" "Cached" "Today" 20260827 0)])]
+      (is (view/journal-root-visible? cached)
+          "cached journals remain visible during a background reload"))))
 
 (deftest graph-and-sync-actions-update-retained-status-in-place
   (let [renderer (apple/create)

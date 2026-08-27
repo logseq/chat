@@ -511,7 +511,13 @@
 
 (defn graph-picker-visible? [current]
   (and (journals-destination? current)
+       (not (:graph-loading current))
        (not (graph-selected? current))))
+
+(defn graph-loading-visible? [current]
+  (and (journals-destination? current)
+       (:graph-loading current)
+       (empty? (:outliner-rows current))))
 
 (defn selected-graph-local? [current]
   (match (:selected-graph-id current)
@@ -521,6 +527,8 @@
 (defn journal-root-visible? [current]
   (and (journals-destination? current)
        (graph-selected? current)
+       (or (not (:graph-loading current))
+           (not (empty? (:outliner-rows current))))
        (node-navigation-inactive? current)))
 
 (defn older-journals-visible? [current]
@@ -577,6 +585,7 @@
 
 (defn primary-sidebar-button-visible? [current]
   (and (not (node-screen-visible? current))
+       (not (graph-loading-visible? current))
        (not (graph-picker-visible? current))))
 
 (defn search-main-visible? [current]
@@ -1934,6 +1943,9 @@
      [:if {:test (reactive connection-settings-visible? model-source)}
       [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
        "Settings"]]]]
+   [:if {:test (reactive graph-loading-visible? model-source)}
+    [:column {:accessibility-identifier "journals.loading"}
+     [:text "Loading journals"]]]
    [:if {:test (reactive graph-picker-visible? model-source)}
     [graph-picker-screen model-source send]]
    [:if {:test (reactive search-main-visible? model-source)}

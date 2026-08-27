@@ -364,6 +364,15 @@ public struct LogseqChatRootView : View {
     public func startLGRenderer() {
         do {
             try lgRuntime.start(platformCode: Self.lgPlatformCode)
+            let storedGraphID = UserDefaults.standard.string(
+                forKey: "logseq.selectedGraphId"
+            ) ?? ""
+            try lgRuntime.applyHostUpdate(
+                kind: "graph-loading",
+                payload: !storedGraphID.isEmpty && !didApplyLocalLaunchResult
+                    ? "true"
+                    : "false"
+            )
             try lgRuntime.applyHostUpdate(
                 kind: "settings",
                 payload: try Self.settingsHostPayload()
@@ -573,6 +582,18 @@ public struct LogseqChatRootView : View {
                 databasePath: databasePath
             )
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
+        }
+        if lgRuntime.isStarted {
+            do {
+                try lgRuntime.applyHostUpdate(kind: "graph-loading", payload: "false")
+            } catch {
+                logger.error(
+                    "Could not finish LG graph loading: " + String(describing: error)
+                )
+            }
+        }
+        if result.graphResponse != nil {
+            LogseqChatAppDelegate.shared.onJournalsUIReady()
         }
         drainSharedCapturesIfReady()
     }

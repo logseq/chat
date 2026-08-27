@@ -26,6 +26,7 @@
           (local-graph-ids [])
           (is-graph-encrypted false)
           (is-graph-unlocked false)
+          (graph-loading false)
           (graph-password-open false)
           (graph-password "")
           (sync-state OfflineState)
@@ -396,6 +397,8 @@
            (request-route (:search-navigation-path current) (NodeRoute uuid)))
     (SelectSidebarPageEffect _id _uuid)
     (assoc current :sidebar-open true)
+    (OpenGraphEffect _id _graph-id)
+    (assoc current :graph-loading false)
     _ current))
 
 (defn resolve-successful-effect [current effect message]
@@ -405,9 +408,12 @@
       (Some selected)
       (assoc current
              :destination JournalsDestination
+             :graph-loading false
              :selected-graph-id (Some graph-id)
              :selected-graph (Some (:name selected)))
-      None (assoc current :destination JournalsDestination))
+      None (assoc current
+                  :destination JournalsDestination
+                  :graph-loading false))
     (UnlockGraphEffect _id _password)
     (assoc current :graph-password-open false :graph-password "")
     (CreateGraphEffect _id _name _is-encrypted)
@@ -984,6 +990,9 @@
     (ApplyLocalGraphIds graph-ids)
     (assoc current :local-graph-ids graph-ids)
 
+    (ApplyGraphLoading loading)
+    (assoc current :graph-loading loading)
+
     RefreshGraphs
     (let [id (:next-effect-id current)]
       (enqueue-effect current (RefreshGraphsEffect id)))
@@ -992,8 +1001,9 @@
     (match (graph-by-id (:graphs current) graph-id)
       (Some graph)
       (if (:is-ready graph)
-        (let [id (:next-effect-id current)]
-          (enqueue-effect current (OpenGraphEffect id graph-id)))
+        (let [updated (assoc current :graph-loading true)
+              id (:next-effect-id updated)]
+          (enqueue-effect updated (OpenGraphEffect id graph-id)))
         current)
       None current)
 

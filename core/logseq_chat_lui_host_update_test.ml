@@ -42,6 +42,9 @@ let () =
   (match decode "composer-draft" {|"稍后处理\nsecond line"|} with
    | Ok (Composer_draft "稍后处理\nsecond line") -> ()
    | _ -> fail "composer draft host updates lost Unicode or newlines");
+  (match decode "graph-loading" {|true|} with
+   | Ok (Graph_loading true) -> ()
+   | _ -> fail "graph loading host updates were not decoded");
   (match decode "unknown" {|{}|} with
    | Error _ -> ()
    | Ok _ -> fail "unknown host updates must be rejected")

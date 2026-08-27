@@ -216,6 +216,7 @@ let apply_host_update kind payload =
     | Ok (Local_graph_ids graph_ids) ->
       LG.ApplyLocalGraphIds (Rrbvec.of_list graph_ids)
     | Ok (Composer_draft draft) -> LG.ApplyComposerDraft draft
+    | Ok (Graph_loading loading) -> LG.ApplyGraphLoading loading
     | Ok Open_capture -> LG.ExpandComposer
     | Error message -> LG.SyncFailed message
   in
