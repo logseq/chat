@@ -128,6 +128,7 @@
    (assoc
     (empty-core-projection)
     :graph-name graph-name
+    :selected-graph-id (Some "test-graph")
     :sidebar sidebar
     :flashcards flashcards
     :sync-connected sync-connected
@@ -537,32 +538,48 @@
       (model/DropOutlinerBlocksEffect 9 "target" "after"))
      "the native bridge preserves the drop target and placement")))
 
-(deftest initial-shell-renders-offline-without-a-selected-graph
-  (let [renderer (apple/create)
-        application (chat/create (apple/backend renderer))]
+(deftest initial-shell-renders-the-graph-picker-without-a-selected-graph
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        remote (graph "remote" "Remote graph" false true)]
     (driver/start! application)
     (driver/flush! application)
-    (let [children (apple/children renderer (main-root renderer application))
-          graph-label (nth children 1)
-          sync-label (nth children 2)]
+    (let [main (main-root renderer application)
+          picker (child-with-identifier renderer main "screen.graph-picker")]
       (assert-equal None (:selected-graph (chat/model application))
                     "the shell starts without an invented graph")
-      (assert-equal "No graph selected"
-                    (property-string renderer graph-label proto/TextValue)
-                    "the empty graph state is visible")
-      (assert-equal "Offline"
-                    (property-string renderer sync-label proto/TextValue)
-                    "the initial sync state is explicit"))))
+      (is (not (= -1 picker))
+          "an empty launch matches main's graph picker")
+      (is (not (= -1 (child-with-identifier
+                       renderer picker "button.graph-add")))
+          "the launch picker can create a graph")
+      (driver/send!
+      application
+      (model/ApplyCoreSnapshot
+       (assoc (empty-core-projection) :graphs [remote])))
+      (driver/flush! application)
+      (let [updated-main (main-root renderer application)
+            updated-picker
+            (child-with-identifier renderer updated-main "screen.graph-picker")
+            graph-row
+            (descendant-with-identifier renderer updated-picker "graph.remote")]
+        (is (not (= -1 graph-row))
+            "catalog updates retain the launch picker")
+        (driver/dispatch-event! application (proto/Press graph-row))
+        (driver/flush! application)
+        (assert-equal [(model/OpenGraphEffect 1 "remote")]
+                      (:pending-effects (chat/model application))
+                      "a launch graph uses the typed graph lifecycle")))))
 
 (deftest graph-and-sync-actions-update-retained-status-in-place
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
     (let [children (apple/children renderer (main-root renderer application))
           graph-label (nth children 1)
           sync-label (nth children 2)]
-      (driver/send! application (model/SelectGraph "Work"))
       (driver/send! application model/BeginSync)
       (driver/flush! application)
       (assert-equal "Work"
@@ -723,7 +740,21 @@
             "page selection closes the controlled drawer")
         (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
                       (:pending-effects (chat/model application))
-                      "sidebar page presses reuse the typed selection effect")))))
+                      "sidebar page presses reuse the typed selection effect")
+        (driver/dispatch-event! application (proto/Press open-button))
+        (driver/flush! application)
+        (let [reopened-sidebar
+              (child-with-identifier renderer root "sidebar.navigation")
+              switch-button
+              (child-with-identifier
+               renderer reopened-sidebar "button.graph-switch")]
+          (driver/dispatch-event! application (proto/Press switch-button))
+          (driver/flush! application)
+          (assert-equal model/GraphsDestination
+                        (:destination (chat/model application))
+                        "switch graph opens the graph catalog")
+          (is (not (property-bool renderer root proto/Selected))
+              "switching graphs closes the controlled drawer"))))))
 
 (deftest selected-sidebar-pages-render-their-outliner-and-related-content
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -1025,6 +1056,7 @@
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
     (let [root (main-root renderer application)
           search-button (nth (apple/children renderer root) 3)]
@@ -1069,6 +1101,7 @@
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
     (let [root (main-root renderer application)
           composer (child-with-identifier renderer root "surface.composer.root")
@@ -1162,6 +1195,7 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/ExpandComposer)
     (driver/flush! application)
     (let [root (driver/root-node application)
@@ -1499,7 +1533,9 @@
 (deftest older-journals-are-loaded-explicitly
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
-        projection (assoc (empty-core-projection) :has-older-journals true)]
+        projection (assoc (empty-core-projection)
+                          :selected-graph-id (Some "test-graph")
+                          :has-older-journals true)]
     (driver/start! application)
     (driver/send! application (model/ApplyCoreSnapshot projection))
     (driver/flush! application)
@@ -1515,7 +1551,9 @@
                     "loading older journals remains a typed core effect"))))
 
 (deftest older-journals-only-appear-at-the-journal-root
-  (let [available (assoc (model/initial) :has-older-journals true)
+  (let [available (assoc (model/initial)
+                         :selected-graph (Some "Work")
+                         :has-older-journals true)
         selected-page
         (assoc available
                :selected-page
@@ -1599,7 +1637,9 @@
     (driver/send!
      application
      (model/ApplyCoreSnapshot
-      (assoc (empty-core-projection) :outliner-rows [day-a day-b])))
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "test-graph")
+             :outliner-rows [day-a day-b])))
     (driver/flush! application)
     (let [root (main-root renderer application)
           first-heading
@@ -1713,6 +1753,7 @@
                     (breadcrumb "Journal › Parent")
                     (is-page false))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
     (driver/send! application (model/ChangeSearchQuery "project"))
     (driver/send! application
@@ -1736,6 +1777,7 @@
   (let [renderer (apple/create)
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
     (driver/send! application (model/ChangeSearchQuery "project"))
     (driver/flush! application)
@@ -1805,6 +1847,7 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
     (let [root (driver/root-node application)
           scroll (descendant-with-identifier renderer root "scroll.outliner")

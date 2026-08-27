@@ -327,7 +327,8 @@
     "Close"]
    [:button
     {:label "Switch graph"
-     :accessibility-identifier "button.graph-switch"}
+     :accessibility-identifier "button.graph-switch"
+     :on-press (fn [_event] (send model/ShowGraphs))}
     "Switch graph"]
    [:button
     {:label "Journals"
@@ -499,8 +500,22 @@
 (defn graphs-destination? [current]
   (= (:destination current) model/GraphsDestination))
 
+(defn graph-selected? [current]
+  (or
+   (match (:selected-graph-id current)
+     (Some _graph-id) true
+     None false)
+   (match (:selected-graph current)
+     (Some _graph-name) true
+     None false)))
+
+(defn graph-picker-visible? [current]
+  (and (journals-destination? current)
+       (not (graph-selected? current))))
+
 (defn journal-root-visible? [current]
   (and (journals-destination? current)
+       (graph-selected? current)
        (node-navigation-inactive? current)))
 
 (defn older-journals-visible? [current]
@@ -556,7 +571,8 @@
        (node-navigation-active? current)))
 
 (defn primary-sidebar-button-visible? [current]
-  (not (node-screen-visible? current)))
+  (and (not (node-screen-visible? current))
+       (not (graph-picker-visible? current))))
 
 (defn search-main-visible? [current]
   (and (journal-root-visible? current) (:search-open current)))
@@ -1367,6 +1383,10 @@
 (defn local-graphs-empty? [current]
   (empty? (local-graphs current)))
 
+(defn graphs-empty? [current]
+  (let [_destination (:destination current)]
+    (empty? (:graphs current))))
+
 (defn remote-graphs-present? [current]
   (not (empty? (remote-graphs current))))
 
@@ -1524,6 +1544,29 @@
     [graph-create-sheet model-source send]]
    [:if {:test (reactive graph-deletion-pending? model-source)}
    [graph-delete-dialog model-source send]]])
+
+(defui graph-picker-screen [model-source send]
+  [:column {:accessibility-identifier "screen.graph-picker"}
+   [:heading "Choose a graph"]
+   [:text "Select a Logseq graph to download and sync on this device."]
+   [:button
+    {:accessibility-identifier "button.graph-add"
+     :on-press (fn [_event] (send model/OpenCreateGraph))}
+    "Add sync graph"]
+   [:if {:test (reactive graphs-empty? model-source)}
+    [:button
+     {:accessibility-identifier "button.graphs.refresh"
+      :on-press (fn [_event] (send model/RefreshGraphs))}
+     "Refresh graphs"]]
+   [:list
+    [:keyed
+     {:source (reactive :graphs model-source)
+      :key :id
+      :compare compare
+      :as graph-source}
+     [graph-row model-source graph-source send]]]
+   [:if {:test (reactive :create-graph-open model-source)}
+    [graph-create-sheet model-source send]]])
 
 (defn settings-main-visible? [current]
   (and (not (:settings-tabs-open current))
@@ -1879,6 +1922,8 @@
      [:if {:test (reactive connection-settings-visible? model-source)}
       [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
        "Settings"]]]]
+   [:if {:test (reactive graph-picker-visible? model-source)}
+    [graph-picker-screen model-source send]]
    [:if {:test (reactive search-main-visible? model-source)}
     [:column {:accessibility-identifier "screen.search"}
      [:search-field
