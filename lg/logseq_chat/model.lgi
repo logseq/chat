@@ -477,6 +477,8 @@
  :fn<chat-model;vector<navigation-route>;chat-model>)
 (signature logseq-chat.model/enqueue-effect
  :fn<chat-model;chat-effect;chat-model>)
+(signature logseq-chat.model/persist-settings-change
+ :fn<chat-model;chat-model;chat-model>)
 (signature logseq-chat.model/update-editing
  :fn<chat-model;string;string;int;chat-model>)
 (signature logseq-chat.model/row-index

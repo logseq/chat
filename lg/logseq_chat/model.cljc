@@ -521,6 +521,14 @@
          :next-effect-id (inc (:next-effect-id current))
          :effect-error None))
 
+(defn persist-settings-change [current updated]
+  (if (= (current-settings current) (current-settings updated))
+    updated
+    (let [id (:next-effect-id updated)]
+      (enqueue-effect
+       updated
+       (SaveSettingsEffect id (current-settings updated))))))
+
 (defn enqueue-close-search-effects [current path]
   (loop [index (dec (count path))
          updated current]
@@ -1256,7 +1264,9 @@
     (assoc current :settings-tabs-open false :runtime-log-open false)
 
     (ChangeAppearance appearance)
-    (assoc current :appearance appearance)
+    (persist-settings-change
+     current
+     (assoc current :appearance appearance))
 
     OpenSettingsLanguageMenu
     (assoc current :settings-language-menu-open true)
@@ -1267,24 +1277,34 @@
     (ChooseSettingsLanguage language)
     (match (settings-language-by-id (:language-choices current) language)
       (Some choice)
-      (assoc current
-             :language (:id choice)
-             :settings-language-menu-open false)
+      (persist-settings-change
+       current
+       (assoc current
+              :language (:id choice)
+              :settings-language-menu-open false))
       None (assoc current :settings-language-menu-open false))
 
     (ToggleSpellCheck enabled)
-    (assoc current :spell-check enabled)
+    (persist-settings-change
+     current
+     (assoc current :spell-check enabled))
 
     (ToggleAutoCorrection enabled)
-    (assoc current :auto-correction enabled)
+    (persist-settings-change
+     current
+     (assoc current :auto-correction enabled))
 
     (ToggleSidebarTab tab)
-    (assoc current :sidebar-tabs
-           (toggle-sidebar-tab (:sidebar-tabs current) tab))
+    (persist-settings-change
+     current
+     (assoc current :sidebar-tabs
+            (toggle-sidebar-tab (:sidebar-tabs current) tab)))
 
     (MoveSidebarTab tab offset)
-    (assoc current :sidebar-tabs
-           (move-sidebar-tab (:sidebar-tabs current) tab offset))
+    (persist-settings-change
+     current
+     (assoc current :sidebar-tabs
+            (move-sidebar-tab (:sidebar-tabs current) tab offset)))
 
     (ChangeBaseURL base-url)
     (assoc current :base-url base-url)

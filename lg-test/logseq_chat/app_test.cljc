@@ -236,9 +236,64 @@
     (is (:runtime-log-open logs) "runtime diagnostics are model-owned")
     (is (:runtime-log-errors-only filtered) "log filtering is model-owned")
     (assert-equal
-     [(model/RefreshRuntimeLogEffect 1 "ui" true false)]
+     [(model/SaveSettingsEffect 1 (model/current-settings hidden))
+      (model/RefreshRuntimeLogEffect 2 "ui" true false)]
      (:pending-effects refreshed)
-     "refreshing diagnostics crosses one typed platform boundary")))
+     "tabs persist immediately before diagnostics refresh")))
+
+(deftest settings-preferences-persist-without-dismissing-the-sheet
+  (let [opened
+        (model/update
+         (model/update
+          (model/initial)
+          (model/ApplySettingsSnapshot
+           (settings ["journals" "flashcards" "graphs"])))
+         model/OpenSettings)
+        themed (model/update opened (model/ChangeAppearance "dark"))
+        theme-saved
+        (model/update
+         (model/update themed (model/DequeueEffect 1))
+         (model/ResolveEffect 1 true ""))
+        language-opened
+        (model/update theme-saved model/OpenSettingsLanguageMenu)
+        localized
+        (model/update language-opened
+                      (model/ChooseSettingsLanguage "zh-CN"))
+        language-saved
+        (model/update
+         (model/update localized (model/DequeueEffect 2))
+         (model/ResolveEffect 2 true ""))
+        spell-check-disabled
+        (model/update language-saved (model/ToggleSpellCheck false))
+        spell-check-saved
+        (model/update
+         (model/update spell-check-disabled (model/DequeueEffect 3))
+         (model/ResolveEffect 3 true ""))
+        auto-correction-disabled
+        (model/update spell-check-saved
+                      (model/ToggleAutoCorrection false))]
+    (assert-equal
+     [(model/SaveSettingsEffect 1 (model/current-settings themed))]
+     (:pending-effects themed)
+     "theme changes persist immediately like main's AppStorage picker")
+    (is (:settings-open themed)
+        "persisting a preference does not dismiss settings")
+    (assert-equal
+     [(model/SaveSettingsEffect 2 (model/current-settings localized))]
+     (:pending-effects localized)
+     "language changes persist immediately like main's AppStorage picker")
+    (is (:settings-open localized)
+        "language persistence keeps settings visible")
+    (assert-equal
+     [(model/SaveSettingsEffect
+       3 (model/current-settings spell-check-disabled))]
+     (:pending-effects spell-check-disabled)
+     "spell check changes persist immediately")
+    (assert-equal
+     [(model/SaveSettingsEffect
+       4 (model/current-settings auto-correction-disabled))]
+     (:pending-effects auto-correction-disabled)
+     "auto-correction changes persist immediately")))
 
 (deftest settings-reject-invalid-connections-and-preserve-required-tabs
   (let [opened (assoc (model/initial)
@@ -266,7 +321,11 @@
                   "journals cannot be hidden")
     (assert-equal ["journals" "flashcards" "graphs"]
                   (:sidebar-tabs required-moved)
-                  "journals remains the first required tab")))
+                  "journals remains the first required tab")
+    (assert-equal [] (:pending-effects required-toggled)
+                  "required tab no-ops do not persist settings")
+    (assert-equal [] (:pending-effects required-moved)
+                  "required tab moves do not persist settings")))
 
 (deftest runtime-log-filters-refresh-and-successful-results-enter-lg-state
   (let [filtered (model/update (model/initial) model/ToggleRuntimeLogErrors)
