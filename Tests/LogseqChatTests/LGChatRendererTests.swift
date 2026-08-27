@@ -88,6 +88,27 @@ struct LGChatRendererTests {
         #expect(renderer.rootID == 1)
     }
 
+    @Test("registers native full-screen search navigation")
+    func registersNativeSearchNavigation() throws {
+        let renderer = LGChatRenderer()
+
+        try renderer.apply(patchJSON: """
+        {"generation":1,"ops":[
+          {"op":"create-node","id":1,"kind":"root"},
+          {"op":"create-extension","id":2,"identifier":"native-search-presentation","fingerprint":"lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,9:presented:bool:required:none|events:4:back[5:count:int:required],7:dismiss[]"},
+          {"op":"set-extension-prop","id":2,"property":"presented","value":false},
+          {"op":"set-extension-prop","id":2,"property":"depth","value":0},
+          {"op":"create-node","id":3,"kind":"column"},
+          {"op":"create-node","id":4,"kind":"column"},
+          {"op":"insert-child","parent":2,"child":3,"index":0},
+          {"op":"insert-child","parent":2,"child":4,"index":1},
+          {"op":"insert-child","parent":1,"child":2,"index":0}
+        ]}
+        """)
+
+        #expect(renderer.rootID == 1)
+    }
+
     @Test("forwards renderer events without owning application state")
     func forwardsEvents() {
         let renderer = LGChatRenderer()

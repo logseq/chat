@@ -70,11 +70,24 @@
    [(ext/property "depth" ext/IntScalar true None)]
    [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])]))
 
+(defn native-search-presentation-schema []
+  (ext/component
+   "native-search-presentation"
+   [(proto/profile proto/MacOS proto/SwiftUIHost)
+    (proto/profile proto/IOS proto/SwiftUIHost)
+    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+   true []
+   [(ext/property "presented" ext/BoolScalar true None)
+    (ext/property "depth" ext/IntScalar true None)]
+   [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])
+    (ext/event "dismiss" [])]))
+
 (defn extension-registry []
   (let [registry (ext/registry)]
     (ext/register-component! registry (outliner-editor-schema))
     (ext/register-component! registry (outliner-block-content-schema))
     (ext/register-component! registry (native-navigation-stack-schema))
+    (ext/register-component! registry (native-search-presentation-schema))
     registry))
 
 (defn string-wire-value [value]
@@ -105,31 +118,26 @@
 (defn navigation-path-depth [path]
   (count path))
 
-(defn send-navigation-back [search-count app-count requested send]
-  (let [search-pops (min requested search-count)
-        app-pops (min (- requested search-pops) app-count)]
-    (loop [remaining search-pops]
-      (if (> remaining 0)
-        (do
-          (send model/BackSearchNavigation)
-          (recur (dec remaining)))
-        true))
-    (loop [remaining app-pops]
-      (if (> remaining 0)
-        (do
-          (send model/BackAppNavigation)
-          (recur (dec remaining)))
-        true))))
+(defn send-back [action requested send]
+  (loop [remaining requested]
+    (if (> remaining 0)
+      (do
+        (send action)
+        (recur (dec remaining)))
+      true)))
 
-(defn handle-native-navigation-event [input-event model-source send]
+(defn handle-native-navigation-event [input-event send]
   (match input-event
     (proto/ExtensionEvent _node _identifier "back" values)
-    (let [current (signal/sample model-source)]
-      (send-navigation-back
-       (navigation-path-depth (:search-navigation-path current))
-       (navigation-path-depth (:app-navigation-path current))
-       (extension-int values "count")
-       send))
+    (send-back model/BackAppNavigation (extension-int values "count") send)
+    _ true))
+
+(defn handle-native-search-event [input-event send]
+  (match input-event
+    (proto/ExtensionEvent _node _identifier "back" values)
+    (send-back model/BackSearchNavigation (extension-int values "count") send)
+    (proto/ExtensionEvent _node _identifier "dismiss" _values)
+    (send model/CloseSearch)
     _ true))
 
 (defn handle-outliner-editor-event [input-event block-id-source send]
@@ -661,9 +669,6 @@
            (not (empty? (:app-navigation-path current)))
            (outliner-editor-active? current)
            (outliner-selection-active? current))))
-
-(defn search-main-visible? [current]
-  (and (journal-route-active? current) (:search-open current)))
 
 (defn connection-control-visible? [current]
   (and (not (:search-open current))
@@ -2170,6 +2175,51 @@
      {:on-press (fn [_event] (send model/CloseSyncDetails))}
      "Done"]]])
 
+(defui search-screen [model-source send]
+  [:column {:accessibility-identifier "screen.search"}
+   [:search-field
+    {:text (reactive :search-query model-source)
+     :placeholder "Search pages and blocks"
+     :label "Search pages and blocks"
+     :accessibility-identifier "field.search"
+     :on-input
+     (fn [input-event]
+       (match input-event
+         (TextChanged _node text) (send (model/ChangeSearchQuery text))
+         _ true))}]
+   [:if {:test (reactive search-query-present? model-source)}
+    [:button
+     {:label "Clear search"
+      :accessibility-identifier "button.search.clear"
+      :on-press (fn [_event] (send (model/ChangeSearchQuery "")))}
+     "Clear"]]
+   [:button
+    {:accessibility-identifier "button.search.close"
+     :on-press (fn [_event] (send model/CloseSearch))}
+    "Close"]
+   [:if {:test (reactive search-empty-state-present? model-source)}
+    [:text
+     {:value (reactive search-empty-message model-source)
+      :accessibility-identifier "search.empty"}]]
+   [:if {:test (reactive page-search-results-present? model-source)}
+    [:text {:accessibility-identifier "search.section.pages"} "Pages"]]
+   [:list
+    [:keyed
+     {:source (reactive page-search-results model-source)
+      :key :uuid
+      :compare compare
+      :as hit-source}
+     [search-result-row hit-source send]]]
+   [:if {:test (reactive block-search-results-present? model-source)}
+    [:text {:accessibility-identifier "search.section.blocks"} "Blocks"]]
+   [:list
+    [:keyed
+     {:source (reactive block-search-results model-source)
+      :key :uuid
+      :compare compare
+      :as hit-source}
+     [search-result-row hit-source send]]]])
+
 (defui chat-main-view [model-source send]
   [:column
    [:if {:test (reactive journal-root-visible? model-source)}
@@ -2230,50 +2280,6 @@
      ""]]
    [:if {:test (reactive graph-picker-visible? model-source)}
     [graph-picker-screen model-source send]]
-   [:if {:test (reactive search-main-visible? model-source)}
-    [:column {:accessibility-identifier "screen.search"}
-     [:search-field
-     {:text (reactive :search-query model-source)
-       :placeholder "Search pages and blocks"
-       :label "Search pages and blocks"
-       :accessibility-identifier "field.search"
-       :on-input
-       (fn [input-event]
-         (match input-event
-           (TextChanged _node text) (send (model/ChangeSearchQuery text))
-           _ true))}]
-     [:if {:test (reactive search-query-present? model-source)}
-      [:button
-       {:label "Clear search"
-        :accessibility-identifier "button.search.clear"
-        :on-press (fn [_event] (send (model/ChangeSearchQuery "")))}
-       "Clear"]]
-     [:button
-     {:accessibility-identifier "button.search.close"
-       :on-press (fn [_event] (send model/CloseSearch))}
-      "Close"]
-     [:if {:test (reactive search-empty-state-present? model-source)}
-      [:text
-       {:value (reactive search-empty-message model-source)
-        :accessibility-identifier "search.empty"}]]
-     [:if {:test (reactive page-search-results-present? model-source)}
-      [:text {:accessibility-identifier "search.section.pages"} "Pages"]]
-     [:list
-      [:keyed
-       {:source (reactive page-search-results model-source)
-        :key :uuid
-        :compare compare
-        :as hit-source}
-       [search-result-row hit-source send]]]
-     [:if {:test (reactive block-search-results-present? model-source)}
-      [:text {:accessibility-identifier "search.section.blocks"} "Blocks"]]
-     [:list
-      [:keyed
-       {:source (reactive block-search-results model-source)
-        :key :uuid
-        :compare compare
-        :as hit-source}
-       [search-result-row hit-source send]]]]]
    [:if {:test (reactive journal-root-visible? model-source)}
     [:scroll {:accessibility-identifier "scroll.outliner"}
      [:list {:accessibility-identifier "list.outliner"}
@@ -2335,6 +2341,8 @@
         (assoc current
                :node-routes []
                :app-navigation-path []
+               :search-open false
+               :search-navigation-path []
                :outliner-rows rows
                :outliner-section-markers (model/journal-section-markers rows))]
     (if (empty? (:node-routes current))
@@ -2356,8 +2364,30 @@
          :outliner-autocomplete-candidates
          (:outliner-autocomplete-candidates route)))
 
-(defn native-navigation-depth [current]
-  (count (:node-routes current)))
+(defn app-navigation-depth [current]
+  (navigation-path-depth (:app-navigation-path current)))
+
+(defn search-navigation-depth [current]
+  (navigation-path-depth (:search-navigation-path current)))
+
+(defn app-node-routes [current]
+  (let [limit (min (app-navigation-depth current)
+                   (count (:node-routes current)))]
+    (loop [index 0
+           routes []]
+      (if (= index limit)
+        routes
+        (recur (inc index)
+               (conj routes (nth (:node-routes current) index)))))))
+
+(defn search-node-routes [current]
+  (let [routes (:node-routes current)
+        start (min (app-navigation-depth current) (count routes))]
+    (loop [index start
+           result []]
+      (if (= index (count routes))
+        result
+        (recur (inc index) (conj result (nth routes index)))))))
 
 (defui native-node-screen [model-source route-source send]
   (let [route-model-source
@@ -2366,23 +2396,55 @@
      ui-context nil
      [node-screen route-model-source send])))
 
+(defui native-search-view [model-source send]
+  (let [node (ui/extension! ui-context "native-search-presentation")
+        presented-source (reactive :search-open model-source)
+        depth-source (reactive search-navigation-depth model-source)
+        presented-value-source (reactive bool-wire-value presented-source)
+        depth-value-source (reactive int-wire-value depth-source)]
+    (ui/extension-property-signal!
+     ui-context node "presented" presented-value-source)
+    (ui/extension-property-signal!
+     ui-context node "depth" depth-value-source)
+    (ui/on-event!
+     ui-context node
+     (fn [input-event]
+       (handle-native-search-event input-event send)))
+    (elements/element
+     ui-context node
+     [chat-main-view (reactive journal-navigation-model model-source) send])
+    (elements/element
+     ui-context node
+     [:column
+      [search-screen model-source send]])
+    (elements/element
+     ui-context node
+     [:keyed
+      {:source (reactive search-node-routes model-source)
+       :key :uuid
+       :compare compare
+       :as route-source}
+      [native-node-screen model-source route-source send]])
+    node))
+
 (defui native-navigation-view [model-source send]
   (let [node (ui/extension! ui-context "native-navigation-stack")
-        depth-source (reactive native-navigation-depth model-source)
+        depth-source (reactive app-navigation-depth model-source)
         depth-value-source (reactive int-wire-value depth-source)]
     (ui/extension-property-signal!
      ui-context node "depth" depth-value-source)
     (ui/on-event!
      ui-context node
      (fn [input-event]
-       (handle-native-navigation-event input-event model-source send)))
+       (handle-native-navigation-event input-event send)))
     (elements/element
      ui-context node
-     [chat-main-view (reactive journal-navigation-model model-source) send])
+     [:column
+      [native-search-view model-source send]])
     (elements/element
      ui-context node
      [:keyed
-      {:source (reactive :node-routes model-source)
+      {:source (reactive app-node-routes model-source)
        :key :uuid
        :compare compare
        :as route-source}

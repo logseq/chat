@@ -115,7 +115,15 @@
         (deref (:runtime-extension-nodes (driver/runtime application)))]
     (if (= (clojure.core/get extensions container)
            (Some "native-navigation-stack"))
-      (nth (apple/children renderer container) 0)
+      (let [wrapper (nth (apple/children renderer container) 0)
+            search (nth (apple/children renderer wrapper) 0)]
+        (if (= (clojure.core/get extensions search)
+               (Some "native-search-presentation"))
+          (let [presented
+                (= (extension-property application search "presented")
+                   (Some (proto/BoolValue true)))]
+            (nth (apple/children renderer search) (if presented 1 0)))
+          wrapper))
       container)))
 
 (defn empty-sidebar-projection []
@@ -970,6 +978,17 @@
        None None)
      "native navigation must share one pinned LG and Swift wire contract")))
 
+(deftest native-search-presentation-extension-contract-is-pinned
+  (let [schema (ext/schema (view/extension-registry)
+                           "native-search-presentation")]
+    (assert-equal
+     (Some
+      "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,9:presented:bool:required:none|events:4:back[5:count:int:required],7:dismiss[]")
+     (match schema
+       (Some current) (Some (ext/fingerprint current))
+       None None)
+     "search must use a distinct native full-screen navigation contract")))
+
 (deftest outliner-drag-selects-once-and-drop-keeps-placement
   (let [unselected
         (chat/create
@@ -1728,7 +1747,9 @@
       (driver/flush! application)
       (is (:search-open (chat/model application))
           "search presentation is model-owned")
-      (let [search-panel (child-with-identifier renderer root "screen.search")
+      (let [search-root (main-root renderer application)
+            search-panel
+            (child-with-identifier renderer search-root "screen.search")
             search-field (nth (apple/children renderer search-panel) 0)
             close-button (nth (apple/children renderer search-panel) 1)]
         (assert-equal "screen.search"
@@ -1744,13 +1765,15 @@
                                        proto/AccessibilityIdentifier)
                       "close keeps its automation identifier")
         (assert-equal -1
-                      (descendant-with-identifier renderer root "list.outliner")
+                      (descendant-with-identifier renderer search-root
+                                                  "list.outliner")
                       "full-screen search replaces the journal list")
         (assert-equal -1
-                      (child-with-identifier renderer root "button.sidebar")
+                      (child-with-identifier renderer search-root "button.sidebar")
                       "full-screen search hides the journal header controls")
         (assert-equal -1
-                      (child-with-identifier renderer root "button.connection")
+                      (child-with-identifier renderer search-root
+                                             "button.connection")
                       "full-screen search owns the complete visible surface")
         (driver/dispatch-event!
          application (proto/TextChanged search-field "project alpha"))
@@ -1763,7 +1786,9 @@
             "close removes the search presentation")
         (assert-equal "" (:search-query (chat/model application))
                       "close clears transient search input")
-        (assert-equal -1 (child-with-identifier renderer root "screen.search")
+        (assert-equal -1
+                      (child-with-identifier
+                       renderer (main-root renderer application) "screen.search")
                       "the retained search subtree is disposed")))))
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
@@ -2096,17 +2121,18 @@
      (:pending-effects returned)
      "back closes the matching core projection")))
 
-(deftest native-back-prefers-the-full-screen-search-navigation-path
+(deftest native-search-back-and-dismiss-own-the-full-screen-search-path
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "app-node"))
     (driver/send! application (model/RequestSearchNode "search-node"))
     (driver/flush! application)
-    (let [navigation (extension-node application "native-navigation-stack")]
+    (let [navigation
+          (extension-node application "native-search-presentation")]
       (driver/dispatch-event!
        application
-       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+       (proto/ExtensionEvent navigation "native-search-presentation" "back"
                              {"count" (proto/IntValue 1)}))
       (driver/flush! application)
       (assert-equal [(model/NodeRoute "app-node")]
@@ -2120,7 +2146,14 @@
         (model/OpenSearchNodeEffect 2 "search-node")
         (model/CloseSearchNodeEffect 3 "search-node")]
        (:pending-effects (chat/model application))
-       "native search back closes the matching core projection"))))
+       "native search back closes the matching core projection")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-search-presentation" "dismiss"
+                             {}))
+      (driver/flush! application)
+      (is (not (:search-open (chat/model application)))
+          "system dismissal closes the LG-owned search presentation"))))
 
 (deftest destination-navigation-ends-active-outliner-editing
   (let [editing
@@ -2327,6 +2360,55 @@
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
                     "a native multi-pop is safely clamped to the LG path"))))
+
+(deftest app-and-search-routes-are-retained-by-distinct-native-stacks
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        app-row
+        (journal-outline-row "app-child" "app-page" "App child" "" 0 0)
+        search-row
+        (journal-outline-row "search-child" "search-page" "Search child" "" 0 0)
+        app-route
+        (assoc (node-projection "app-node" "app-page" "App" [] [])
+               :outliner-rows [app-row])
+        search-route
+        (assoc (node-projection "search-node" "search-page" "Search" [] [])
+               :outliner-rows [search-row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "app-node"))
+    (driver/send! application model/OpenSearch)
+    (driver/send! application (model/RequestSearchNode "search-node"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :node-routes [app-route search-route]
+             :outliner-rows [search-row])))
+    (driver/flush! application)
+    (let [app-navigation (extension-node application "native-navigation-stack")
+          search-navigation
+          (extension-node application "native-search-presentation")
+          app-children (apple/children renderer app-navigation)
+          search-children (apple/children renderer search-navigation)]
+      (assert-equal (Some (proto/IntValue 1))
+                    (extension-property application app-navigation "depth")
+                    "the app stack owns only the app route depth")
+      (assert-equal (Some (proto/IntValue 1))
+                    (extension-property application search-navigation "depth")
+                    "the full-screen search stack owns only its route depth")
+      (assert-equal 2 (count app-children)
+                    "the app stack retains its root and app route")
+      (assert-equal 3 (count search-children)
+                    "search retains the app surface, search root, and search route")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer (nth app-children 1) "outliner.block.app-child")))
+          "the app route remains behind the search presentation")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer (nth search-children 2)
+                      "outliner.block.search-child")))
+          "the search route is retained only by the search stack"))))
 
 (deftest empty-node-routes-add-the-first-block-through-the-core
   (let [renderer (apple/create-with-extensions (view/extension-registry))
