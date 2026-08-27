@@ -1172,12 +1172,24 @@
                   (apply-core-snapshot None sidebar [] false "" [] []
                                            None None [] [] [] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)
-          main (main-root renderer application)
-          open-button (child-with-identifier renderer main "button.sidebar")]
+    (let [root (driver/root-node application)]
       (is (not (property-bool renderer root proto/Selected))
           "the native drawer starts from LG's closed state")
-      (driver/dispatch-event! application (proto/Press open-button))
+      (is (property-bool renderer root proto/Enabled)
+          "the journal surface accepts horizontal sidebar gestures")
+      (driver/send! application model/OpenSearch)
+      (driver/flush! application)
+      (is (not (property-bool renderer root proto/Enabled))
+          "full-screen search owns the horizontal gesture")
+      (driver/send! application model/CloseSearch)
+      (driver/flush! application)
+      (is (property-bool renderer root proto/Enabled)
+          "closing search restores sidebar gestures")
+      (driver/dispatch-event!
+       application
+       (proto/Press
+        (child-with-identifier
+         renderer (main-root renderer application) "button.sidebar")))
       (driver/flush! application)
       (is (property-bool renderer root proto/Selected)
           "opening the sidebar patches the controlled drawer")
@@ -1202,7 +1214,11 @@
         (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
                       (:pending-effects (chat/model application))
                       "sidebar page presses reuse the typed selection effect")
-        (driver/dispatch-event! application (proto/Press open-button))
+        (driver/dispatch-event!
+         application
+         (proto/Press
+          (child-with-identifier
+           renderer (main-root renderer application) "button.sidebar")))
         (driver/flush! application)
         (let [reopened-sidebar
               (child-with-identifier renderer root "sidebar.navigation")
@@ -1216,6 +1232,31 @@
                         "switch graph opens the graph catalog")
           (is (not (property-bool renderer root proto/Selected))
               "switching graphs closes the controlled drawer"))))))
+
+(deftest sidebar-drag-reserves-app-navigation
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        sidebar
+        (record model/sidebar-projection
+          (favorites [])
+          (recent-pages [])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] false "" [] []
+                                       None None [] [] [] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)]
+      (is (property-bool renderer root proto/Enabled)
+          "the journal surface accepts horizontal sidebar gestures")
+      (driver/send! application (model/RequestAppNode "node-a"))
+      (driver/flush! application)
+      (is (not (property-bool renderer root proto/Enabled))
+          "node navigation reserves the leading-edge back gesture"))))
 
 (deftest selected-sidebar-pages-render-their-outliner-and-related-content
   (let [renderer (apple/create-with-extensions (view/extension-registry))

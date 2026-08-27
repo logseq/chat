@@ -22,6 +22,9 @@ baseline on iOS and Android.
   and media behavior as validated LUI extensions rather than standard LUI
   elements.
 - Do not introduce Flutter or Dart into Logseq Chat.
+- Exclude Chat mode, its composer and send flow, and Chat-specific automatic
+  scrolling from this rewrite. The Outliner keeps its current scroll position
+  when it opens and when blocks are added.
 
 ## Non-negotiable interaction parity
 
@@ -52,7 +55,6 @@ features. The following are authoritative evidence:
 | Surface | Baseline evidence | Rewrite gate |
 | --- | --- | --- |
 | Authentication and graph lifecycle | `ios-graphs*.yaml`, `ios-staging-connect.yaml`, `android-staging-connect.yaml` | Same sign-in, graph selection/create/delete, unlock, and offline-open behavior |
-| Journal chat and composer | `ios-chat-send-regression.yaml`, `ios-cold-start-composer.yaml`, `ios-capture-responsive.yaml` | Same draft, expand/dismiss, send, attachment, task, and scroll behavior |
 | Search and node navigation | `ios-search-*.yaml`, `android-capture-search.yaml`, node/tag/sidebar navigation flows | Same full-screen search, result navigation stack, back, close, query, and status behavior |
 | Outliner presentation | `ios-outliner-mode.yaml`, layout, hierarchy, anchor, and page flows | Same ordering, nesting, pagination, collapse, zoom, linked references, and anchor retention |
 | Outliner editing | edit baseline, inline editor, continuous editing, rapid-enter, caret, toolbar, autocomplete flows | Same UTF-16/IME, focus, split/merge, pair deletion, toolbar, and handoff behavior |

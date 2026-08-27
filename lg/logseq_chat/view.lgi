@@ -138,6 +138,7 @@
 (signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/primary-sidebar-button-visible?
  :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-drag-disabled? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-main-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/connection-control-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-query-present? :fn<chat-model;bool>)

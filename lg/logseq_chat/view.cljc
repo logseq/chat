@@ -614,6 +614,13 @@
        (not (= (:authentication-state current) "signedOut"))
        (not (= (:authentication-state current) "signingIn"))))
 
+(defn sidebar-drag-disabled? [current]
+  (and (not (:sidebar-open current))
+       (or (not (primary-sidebar-button-visible? current))
+           (not (empty? (:app-navigation-path current)))
+           (outliner-editor-active? current)
+           (outliner-selection-active? current))))
+
 (defn search-main-visible? [current]
   (and (journal-route-active? current) (:search-open current)))
 
@@ -2335,6 +2342,7 @@
 (defui chat-view [model-source send]
   [:drawer
    {:selected (reactive :sidebar-open model-source)
+    :disabled (reactive sidebar-drag-disabled? model-source)
     :width 320
     :label "Navigation"
     :on-toggle
