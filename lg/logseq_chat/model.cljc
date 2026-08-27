@@ -131,6 +131,7 @@
           (search-results [])
           (search-loading false)
           (node-routes [])
+          (journal-outliner-rows [])
           (outliner-rows [])
           (outliner-selected-block-ids [])
           (outliner-editing None)
@@ -842,6 +843,7 @@
                  :flashcard-answer-revealed
                  (if card-changed false (:flashcard-answer-revealed current))
                  :node-routes (:node-routes projection)
+                 :journal-outliner-rows (:journal-outliner-rows projection)
                  :outliner-editing (:outliner-editing projection)
                  :outliner-autocomplete (:outliner-autocomplete projection)
                  :outliner-autocomplete-candidates

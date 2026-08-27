@@ -124,6 +124,7 @@ type t =
   ; search_query : string
   ; search_results : search_hit list
   ; node_routes : node_route list
+  ; journal_outliner_rows : outline_row list
   ; outliner_rows : outline_row list
   ; outliner_row_splices : outliner_row_splice list
   ; outliner_editing : outliner_editing option
@@ -718,6 +719,7 @@ let decode_response encoded =
            ; search_query = Option.value ~default:"" (string_member "searchQuery" result_fields)
            ; search_results
            ; node_routes
+           ; journal_outliner_rows = base_outliner_rows
            ; outliner_rows
            ; outliner_row_splices
            ; outliner_editing

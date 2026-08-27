@@ -171,6 +171,7 @@
   (search-query :string)
   (search-results :vector<search-hit>)
   (node-routes :vector<node-projection>)
+  (journal-outliner-rows :vector<outline-row>)
   (outliner-editing :option<outliner-editing>)
   (outliner-autocomplete :option<outliner-autocomplete>)
   (outliner-autocomplete-candidates
@@ -287,6 +288,7 @@
   (search-results :vector<search-hit>)
   (search-loading :bool)
   (node-routes :vector<node-projection>)
+  (journal-outliner-rows :vector<outline-row>)
   (outliner-rows :vector<outline-row>)
   (outliner-selected-block-ids :vector<string>)
   (outliner-editing :option<outliner-editing>)

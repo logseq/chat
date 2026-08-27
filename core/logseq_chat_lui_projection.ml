@@ -158,45 +158,46 @@ let outliner_row_splice (splice : Snapshot.outliner_row_splice) : LG.outline_row
   }
 ;;
 
+let core_projection (snapshot : Snapshot.t) : LG.core_projection =
+  { graph_name = snapshot.graph_name
+  ; selected_graph_id = snapshot.selected_graph_id
+  ; graphs = Rrbvec.of_list (List.map graph snapshot.graphs)
+  ; is_graph_encrypted = snapshot.is_graph_encrypted
+  ; is_graph_unlocked = snapshot.is_graph_unlocked
+  ; sidebar = sidebar_projection snapshot
+  ; task_statuses = Rrbvec.of_list (List.map task_status snapshot.task_statuses)
+  ; flashcards = Rrbvec.of_list (List.map flashcard snapshot.flashcards)
+  ; sync_connected = snapshot.sync_connected
+  ; applied_server_t = snapshot.applied_server_t
+  ; has_pending_semantic_operations = snapshot.has_pending_semantic_operations
+  ; has_pending_sync_request = snapshot.has_pending_sync_request
+  ; is_pending_sync_patch = snapshot.is_pending_sync_patch
+  ; search_query = snapshot.search_query
+  ; search_results = Rrbvec.of_list (List.map search_hit snapshot.search_results)
+  ; node_routes = Rrbvec.of_list (List.map node_projection snapshot.node_routes)
+  ; journal_outliner_rows =
+      Rrbvec.of_list (List.map outline_row snapshot.journal_outliner_rows)
+  ; outliner_editing = Option.map outliner_editing snapshot.outliner_editing
+  ; outliner_autocomplete =
+      Option.map outliner_autocomplete snapshot.outliner_autocomplete
+  ; outliner_autocomplete_candidates =
+      Rrbvec.of_list
+        (List.mapi
+           outliner_autocomplete_candidate
+           snapshot.outliner_autocomplete_candidates)
+  ; outliner_selected_block_ids = Rrbvec.of_list snapshot.outliner_selected_block_ids
+  ; outliner_rows = Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
+  ; has_older_journals = snapshot.has_older_journals
+  ; is_outliner_patch = snapshot.is_outliner_patch
+  ; outliner_row_splices =
+      Rrbvec.of_list (List.map outliner_row_splice snapshot.outliner_row_splices)
+  }
+;;
+
 let apply_response encoded =
   let action =
     match Snapshot.decode_response encoded with
-    | Ok snapshot ->
-      LG.ApplyCoreSnapshot
-        { graph_name = snapshot.graph_name
-        ; selected_graph_id = snapshot.selected_graph_id
-        ; graphs = Rrbvec.of_list (List.map graph snapshot.graphs)
-        ; is_graph_encrypted = snapshot.is_graph_encrypted
-        ; is_graph_unlocked = snapshot.is_graph_unlocked
-        ; sidebar = sidebar_projection snapshot
-        ; task_statuses = Rrbvec.of_list (List.map task_status snapshot.task_statuses)
-        ; flashcards = Rrbvec.of_list (List.map flashcard snapshot.flashcards)
-        ; sync_connected = snapshot.sync_connected
-        ; applied_server_t = snapshot.applied_server_t
-        ; has_pending_semantic_operations =
-            snapshot.has_pending_semantic_operations
-        ; has_pending_sync_request = snapshot.has_pending_sync_request
-        ; is_pending_sync_patch = snapshot.is_pending_sync_patch
-        ; search_query = snapshot.search_query
-        ; search_results = Rrbvec.of_list (List.map search_hit snapshot.search_results)
-        ; node_routes = Rrbvec.of_list (List.map node_projection snapshot.node_routes)
-        ; outliner_editing = Option.map outliner_editing snapshot.outliner_editing
-        ; outliner_autocomplete =
-            Option.map outliner_autocomplete snapshot.outliner_autocomplete
-        ; outliner_autocomplete_candidates =
-            Rrbvec.of_list
-              (List.mapi
-                 outliner_autocomplete_candidate
-                 snapshot.outliner_autocomplete_candidates)
-        ; outliner_selected_block_ids =
-            Rrbvec.of_list snapshot.outliner_selected_block_ids
-        ; outliner_rows = Rrbvec.of_list (List.map outline_row snapshot.outliner_rows)
-        ; has_older_journals = snapshot.has_older_journals
-        ; is_outliner_patch = snapshot.is_outliner_patch
-        ; outliner_row_splices =
-            Rrbvec.of_list
-              (List.map outliner_row_splice snapshot.outliner_row_splices)
-        }
+    | Ok snapshot -> LG.ApplyCoreSnapshot (core_projection snapshot)
     | Error message -> LG.SyncFailed message
   in
   LG.logseq_chat_native_bridge_flush_action_bang action

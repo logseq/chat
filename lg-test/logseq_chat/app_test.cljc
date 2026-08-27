@@ -144,6 +144,7 @@
     (search-query "")
     (search-results [])
     (node-routes [])
+    (journal-outliner-rows [])
     (outliner-editing None)
     (outliner-autocomplete None)
     (outliner-autocomplete-candidates [])
