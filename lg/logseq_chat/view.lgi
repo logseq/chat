@@ -258,8 +258,11 @@
 (signature logseq-chat.view/graph-deletion-pending? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-deletion-message :fn<chat-model;string>)
 (signature logseq-chat.view/graph-password-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/effect-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/effect-error-message :fn<chat-model;string>)
 (signature logseq-chat.view/graph-unlock-error-present? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-unlock-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/global-effect-error-present? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-row
  :fn<ui-context;signal<chat-model>;signal<graph>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-create-sheet

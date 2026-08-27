@@ -1443,15 +1443,27 @@
 (defn graph-password-empty? [current]
   (string/blank? (:graph-password current)))
 
-(defn graph-unlock-error-present? [current]
+(defn effect-error-present? [current]
   (match (:effect-error current)
-    (Some _message) true
+    (Some message) (not (empty? message))
     None false))
 
-(defn graph-unlock-error-message [current]
+(defn effect-error-message [current]
   (match (:effect-error current)
     (Some message) message
     None ""))
+
+(defn graph-unlock-error-present? [current]
+  (effect-error-present? current))
+
+(defn graph-unlock-error-message [current]
+  (effect-error-message current))
+
+(defn global-effect-error-present? [current]
+  (and (effect-error-present? current)
+       (not (:graph-password-open current))
+       (not (= (:authentication-state current) "signedOut"))
+       (not (= (:authentication-state current) "signingIn"))))
 
 (defn graph-row [ui-context model-source graph-source send]
   (let [graph (signal/sample graph-source)
@@ -2059,6 +2071,10 @@
      :accessibility-identifier "button.connection"
      :on-press (fn [_event] (send model/OpenConnectionMenu))}
     "Connection"]
+   [:if {:test (reactive global-effect-error-present? model-source)}
+    [:text
+     {:value (reactive effect-error-message model-source)
+      :accessibility-identifier "error.banner"}]]
    [:if {:test (reactive :connection-menu-open model-source)}
     [:dropdown-menu {:on-dismiss (fn [_event] (send model/CloseConnectionMenu))}
      [:if {:test (reactive active-page-actions-visible? model-source)}

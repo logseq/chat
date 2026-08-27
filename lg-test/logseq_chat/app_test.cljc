@@ -538,7 +538,11 @@
         (is (not (= -1 error)) "an unlock failure stays inside the sheet")
         (assert-equal "Wrong password"
                       (property-string renderer error proto/TextValue)
-                      "the unlock failure explains why the graph stayed locked")))))
+                      "the unlock failure explains why the graph stayed locked")
+        (assert-equal
+         0
+         (descendant-count-with-identifier renderer root "error.banner")
+         "the password sheet does not duplicate its error globally")))))
 
 (deftest encrypted-graph-unlock-has-a-stable-native-effect-payload
   (assert-equal
@@ -1508,7 +1512,20 @@
       (assert-equal
        "Are you sure you want to permanently delete the graph \"Local graph\" from Logseq?"
        (property-string renderer warning proto/TextValue)
-       "the confirmation identifies the graph being deleted"))))
+       "the confirmation identifies the graph being deleted")
+      (driver/send! application model/ConfirmDeleteGraph)
+      (driver/send! application (model/DequeueEffect 1))
+      (driver/send! application
+                    (model/ResolveEffect 1 false "Could not delete graph"))
+      (driver/flush! application)
+      (let [error
+            (descendant-with-identifier
+             renderer (driver/root-node application) "error.banner")]
+        (is (not (= -1 error))
+            "a platform failure remains visible after the confirmation closes")
+        (assert-equal "Could not delete graph"
+                      (property-string renderer error proto/TextValue)
+                      "the visible error preserves the platform reason")))))
 
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create)
