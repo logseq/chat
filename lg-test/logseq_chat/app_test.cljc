@@ -111,6 +111,21 @@
     (related-rows [])
     (linked-reference-rows [])))
 
+(defn node-projection [uuid page-uuid title related-rows linked-reference-rows]
+  (record model/node-projection
+    (uuid uuid)
+    (page-uuid page-uuid)
+    (title title)
+    (is-tag false)
+    (is-property false)
+    (outliner-rows [])
+    (related-rows related-rows)
+    (linked-reference-rows linked-reference-rows)
+    (outliner-editing None)
+    (outliner-autocomplete None)
+    (outliner-autocomplete-candidates [])
+    (outliner-selected-block-ids [])))
+
 (defn empty-core-projection []
   (record model/core-projection
     (graph-name None)
@@ -2065,28 +2080,24 @@
 (deftest active-node-route-renders-a-core-backed-navigation-screen
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
-        route (record model/node-projection
-                      (uuid "node-a")
-                (page-uuid "page-a")
-                (title "Project")
-                (is-tag false)
-                (is-property false)
-                (related-rows
-                 [(record model/outline-row
-                    (uuid "reference")
-                    (title "Linked from journal")
-                    (markup-json "[]")
-                    (youtube-target-url None)
-                    (breadcrumb "Journal")
-                    (breadcrumbs
-                     [(record model/sidebar-page
-                        (uuid "journal") (title "Journal"))])
-                    (opens-as-page false)
-                    (depth 0)
-                    (has-children false)
-                    (is-collapsed false)
-                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))])
-                (linked-reference-rows []))
+        route
+        (node-projection
+         "node-a" "page-a" "Project"
+         [(record model/outline-row
+            (uuid "reference")
+            (title "Linked from journal")
+            (markup-json "[]")
+            (youtube-target-url None)
+            (breadcrumb "Journal")
+            (breadcrumbs
+             [(record model/sidebar-page
+                (uuid "journal") (title "Journal"))])
+            (opens-as-page false)
+            (depth 0)
+            (has-children false)
+            (is-collapsed false)
+            (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+         [])
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
@@ -2135,14 +2146,7 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application
         (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
-        route (record model/node-projection
-                (uuid "node-a")
-                (page-uuid "page-a")
-                (title "Project")
-                (is-tag false)
-                (is-property false)
-                (related-rows [])
-                (linked-reference-rows []))]
+        route (node-projection "node-a" "page-a" "Project" [] [])]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -2163,14 +2167,7 @@
 (deftest empty-node-routes-add-the-first-block-through-the-core
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
-        route (record model/node-projection
-                (uuid "page-a")
-                (page-uuid "page-a")
-                (title "Empty page")
-                (is-tag false)
-                (is-property false)
-                (related-rows [])
-                (linked-reference-rows []))]
+        route (node-projection "page-a" "page-a" "Empty page" [] [])]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "page-a"))
     (driver/send! application
@@ -2221,10 +2218,8 @@
                        (uuid "page-a") (title "Page"))))
         nested (assoc available
                       :node-routes
-                      [(record model/node-projection
-                         (uuid "node-a") (page-uuid "page-a")
-                         (title "Node") (is-tag false) (is-property false)
-                         (related-rows []) (linked-reference-rows []))])]
+                      [(node-projection
+                        "node-a" "page-a" "Node" [] [])])]
     (is (view/older-journals-visible? available))
     (is (not (view/older-journals-visible? selected-page)))
     (is (not (view/older-journals-visible? nested)))))

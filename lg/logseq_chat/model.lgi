@@ -85,8 +85,14 @@
   (title :string)
   (is-tag :bool)
   (is-property :bool)
+  (outliner-rows :vector<outline-row>)
   (related-rows :vector<outline-row>)
-  (linked-reference-rows :vector<outline-row>))
+  (linked-reference-rows :vector<outline-row>)
+  (outliner-editing :option<outliner-editing>)
+  (outliner-autocomplete :option<outliner-autocomplete>)
+  (outliner-autocomplete-candidates
+   :vector<outliner-autocomplete-candidate>)
+  (outliner-selected-block-ids :vector<string>))
 
 (type-record search-hit
   (uuid :string)

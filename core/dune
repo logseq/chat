@@ -63,7 +63,8 @@
  (target logseq_chat_lui_native.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
-  (source_tree %{lib:lui:lg/lui})
+  (glob_files %{lib:lui:lg/lui}/*.clj*)
+  (glob_files %{lib:lui:lg/lui/backend}/*.clj*)
   (source_tree ../lg/logseq_chat)
   %{bin:lg})
  (action
@@ -72,8 +73,10 @@
    --target native
    --compile-files-from %{lib:signal-lg.states:signal_native.state}
    %{lib:lui:lg/lui}
-   %{lib:lui:lg/lui/backend/retained}
-   %{lib:lui:lg/lui/backend/apple}
+   %{lib:lui:lg/lui/backend/retained.lgi}
+   %{lib:lui:lg/lui/backend/retained.cljc}
+   %{lib:lui:lg/lui/backend/apple.lgi}
+   %{lib:lui:lg/lui/backend/apple.cljc}
    ../lg/logseq_chat
    -o %{target})))
 
@@ -85,7 +88,8 @@
   logseq_chat_lui_projection
   logseq_chat_platform_crypto
   logseq_chat_sqlite)
- (modes exe object shared_object)
+ (modes object)
+ (flags (:standard -w -27-32-37-39-69))
  (libraries
   logseq_chat_core
   datascript-ocaml-native.sqlite
@@ -128,6 +132,19 @@
  (name logseq_chat_lui_snapshot_test)
  (modules logseq_chat_lui_snapshot_test)
  (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_lui_projection_test)
+ (modules
+  logseq_chat_lui_projection_test
+  logseq_chat_lui_native
+  logseq_chat_lui_projection)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries
+  logseq_chat_core
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec))
 
 (test
  (name logseq_chat_lui_host_update_test)

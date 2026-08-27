@@ -15,17 +15,7 @@ let search_hit (hit : Snapshot.search_hit) : LG.search_hit =
   }
 ;;
 
-let rec node_projection (route : Snapshot.node_route) : LG.node_projection =
-  { uuid = route.uuid
-  ; page_uuid = route.page_uuid
-  ; title = route.title
-  ; is_tag = route.is_tag
-  ; is_property = route.is_property
-  ; related_rows = Rrbvec.of_list (List.map outline_row route.related_rows)
-  ; linked_reference_rows =
-      Rrbvec.of_list (List.map outline_row route.linked_reference_rows)
-  }
-and outline_row (row : Snapshot.outline_row) : LG.outline_row =
+let rec outline_row (row : Snapshot.outline_row) : LG.outline_row =
   { uuid = row.uuid
   ; title = row.title
   ; markup_json = row.markup_json
@@ -136,6 +126,29 @@ let outliner_autocomplete_candidate
   { index; label = candidate.label; value = candidate.value }
 ;;
 
+let node_projection (route : Snapshot.node_route) : LG.node_projection =
+  { uuid = route.uuid
+  ; page_uuid = route.page_uuid
+  ; title = route.title
+  ; is_tag = route.is_tag
+  ; is_property = route.is_property
+  ; outliner_rows = Rrbvec.of_list (List.map outline_row route.outliner_rows)
+  ; related_rows = Rrbvec.of_list (List.map outline_row route.related_rows)
+  ; linked_reference_rows =
+      Rrbvec.of_list (List.map outline_row route.linked_reference_rows)
+  ; outliner_editing = Option.map outliner_editing route.outliner_editing
+  ; outliner_autocomplete =
+      Option.map outliner_autocomplete route.outliner_autocomplete
+  ; outliner_autocomplete_candidates =
+      Rrbvec.of_list
+        (List.mapi
+           outliner_autocomplete_candidate
+           route.outliner_autocomplete_candidates)
+  ; outliner_selected_block_ids =
+      Rrbvec.of_list route.outliner_selected_block_ids
+  }
+;;
+
 let outliner_row_splice (splice : Snapshot.outliner_row_splice) : LG.outline_row_splice =
   { start = splice.start
   ; after_block_id = splice.after_block_id
@@ -219,7 +232,8 @@ let apply_host_update kind payload =
     | Ok (Composer_draft draft) -> LG.ApplyComposerDraft draft
     | Ok (Graph_loading loading) -> LG.ApplyGraphLoading loading
     | Ok (Authentication authentication) ->
-      LG.ApplyAuthentication authentication.state authentication.error_message
+      LG.ApplyAuthentication
+        (authentication.state, authentication.error_message)
     | Ok Open_capture -> LG.ExpandComposer
     | Error message -> LG.SyncFailed message
   in

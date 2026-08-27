@@ -36,6 +36,12 @@ for context in ios_simulator ios_device android_arm64 android_x86_64 macos_arm64
 done
 grep -Fq '"$dune" build' "$builder"
 grep -Fq 'target="_build/$context/core/logseq_chat_mobile_entry.exe.o"' "$builder"
+grep -Fq '(modes object)' "$core_dune"
+
+if grep -Eq '\(modes[^)]*(exe|shared_object)' "$core_dune"; then
+  echo "error: mobile OCaml must only build the host-linked object" >&2
+  exit 1
+fi
 
 if grep -Eq 'ocamlopt|\.cmx|output-complete-obj|yojson|melange|mldoc|datascript|curl|git|patch|find|sed|awk' "$builder"; then
   echo "error: mobile OCaml builder contains dependency or linker internals" >&2
