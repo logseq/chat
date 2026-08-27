@@ -82,12 +82,28 @@
    [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])
     (ext/event "dismiss" [])]))
 
+(defn native-overflow-menu-schema []
+  (ext/component
+   "native-overflow-menu"
+   [(proto/profile proto/MacOS proto/SwiftUIHost)
+    (proto/profile proto/IOS proto/SwiftUIHost)
+    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+   false []
+   [(ext/property "page-actions-visible" ext/BoolScalar true None)
+    (ext/property "favorite-label" ext/StringScalar true None)
+    (ext/property "settings-visible" ext/BoolScalar true None)]
+   [(ext/event "favorite" [])
+    (ext/event "share" [])
+    (ext/event "delete" [])
+    (ext/event "settings" [])]))
+
 (defn extension-registry []
   (let [registry (ext/registry)]
     (ext/register-component! registry (outliner-editor-schema))
     (ext/register-component! registry (outliner-block-content-schema))
     (ext/register-component! registry (native-navigation-stack-schema))
     (ext/register-component! registry (native-search-presentation-schema))
+    (ext/register-component! registry (native-overflow-menu-schema))
     registry))
 
 (defn string-wire-value [value]
@@ -138,6 +154,17 @@
     (send-back model/BackSearchNavigation (extension-int values "count") send)
     (proto/ExtensionEvent _node _identifier "dismiss" _values)
     (send model/CloseSearch)
+    _ true))
+
+(defn handle-native-overflow-menu-event [input-event send]
+  (match input-event
+    (proto/ExtensionEvent _node _identifier name _values)
+    (cond
+      (= name "favorite") (send model/ToggleActivePageFavorite)
+      (= name "share") (send model/ShareActivePage)
+      (= name "delete") (send model/RequestDeleteActivePage)
+      (= name "settings") (send model/OpenSettings)
+      :else true)
     _ true))
 
 (defn handle-outliner-editor-event [input-event block-id-source send]
@@ -672,6 +699,7 @@
 
 (defn connection-control-visible? [current]
   (and (not (:search-open current))
+       (not (graph-picker-visible? current))
        (not (= (:authentication-state current) "signedOut"))
        (not (= (:authentication-state current) "signingIn"))))
 
@@ -1584,7 +1612,10 @@
   (and (effect-error-present? current)
        (not (:graph-password-open current))
        (not (= (:authentication-state current) "signedOut"))
-       (not (= (:authentication-state current) "signingIn"))))
+       (not (= (:authentication-state current) "signingIn"))
+       (match (:sync-state current)
+         (FailedState _reason) false
+         _ true)))
 
 (defn graph-row [ui-context model-source graph-source send]
   (let [graph (signal/sample graph-source)
@@ -1663,6 +1694,58 @@
      {:on-press (fn [_event] (send model/ConfirmDeleteGraph))}
      "Confirm"]]])
 
+(defui graph-picker-overflow-menu [send]
+  (let [node (ui/extension! ui-context "native-overflow-menu")]
+    (ui/extension-property!
+     ui-context node "page-actions-visible" (proto/BoolValue false))
+    (ui/extension-property!
+     ui-context node "favorite-label" (proto/StringValue "Favorite"))
+    (ui/extension-property!
+     ui-context node "settings-visible" (proto/BoolValue true))
+    (ui/on-event!
+     ui-context node
+     (fn [input-event]
+       (handle-native-overflow-menu-event input-event send)))
+    node))
+
+(defn graph-picker-error-present? [current]
+  (match (:sync-state current)
+    (FailedState _reason) true
+    _ false))
+
+(defn error-separator [reason]
+  (string/index-of reason "\n"))
+
+(defn graph-picker-error-code [current]
+  (match (:sync-state current)
+    (FailedState reason)
+    (let [separator (error-separator reason)]
+      (if (< separator 0) "sync_failed" (subs reason 0 separator)))
+    _ ""))
+
+(defn graph-picker-error-message [current]
+  (match (:sync-state current)
+    (FailedState reason)
+    (let [separator (error-separator reason)]
+      (if (< separator 0) reason (subs reason (inc separator))))
+    _ ""))
+
+(defui graph-picker-error-banner [model-source]
+  [:alert
+   {:variant "destructive"
+    :accessibility-identifier "error.banner"
+    :padding 14
+    :corner-radius 16
+    :border-width 0}
+   [:column {:gap 4}
+    [:heading
+     {:level 5
+      :value (reactive graph-picker-error-code model-source)
+      :accessibility-identifier "error.banner.code"}]
+    [:text
+     {:value (reactive graph-picker-error-message model-source)
+      :accessibility-identifier "error.banner.message"}]]])
+
 (defui graph-password-sheet [model-source send]
   [:sheet
    {:text "Unlock encrypted graphs"
@@ -1729,18 +1812,31 @@
    [graph-delete-dialog model-source send]]])
 
 (defui graph-picker-screen [model-source send]
-  [:column {:accessibility-identifier "screen.graph-picker"}
-   [:heading "Choose a graph"]
-   [:text "Select a Logseq graph to download and sync on this device."]
+  [:column
+   {:accessibility-identifier "screen.graph-picker"
+    :gap 20
+    :padding 24}
+   [:row {:main "space_between" :cross "center"}
+    [:heading "Choose a graph"]
+    [graph-picker-overflow-menu send]]
+   [:text
+    {:foreground "muted-foreground"}
+    "Select a Logseq graph to download and sync on this device."]
    [:button
-    {:accessibility-identifier "button.graph-add"
+    {:variant "ghost"
+     :foreground "foreground"
+     :accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
     "Add sync graph"]
+   [:if {:test (reactive graph-picker-error-present? model-source)}
+    [graph-picker-error-banner model-source]]
    [:if {:test (reactive empty-graphs-loading? model-source)}
     [:spinner {:accessibility-identifier "graphs.loading"}]]
    [:if {:test (reactive empty-graphs-refreshable? model-source)}
     [:button
-     {:accessibility-identifier "button.graphs.refresh"
+     {:variant "ghost"
+      :foreground "foreground"
+      :accessibility-identifier "button.graphs.refresh"
       :on-press (fn [_event] (send model/RefreshGraphs))}
      "Refresh graphs"]]
    [:list

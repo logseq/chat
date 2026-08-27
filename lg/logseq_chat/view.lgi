@@ -8,6 +8,8 @@
  :fn<extension-component-schema>)
 (signature logseq-chat.view/native-search-presentation-schema
  :fn<extension-component-schema>)
+(signature logseq-chat.view/native-overflow-menu-schema
+ :fn<extension-component-schema>)
 (signature logseq-chat.view/extension-registry :fn<extension-registry>)
 (signature logseq-chat.view/string-wire-value :fn<string;wire-value>)
 (signature logseq-chat.view/int-wire-value :fn<int;wire-value>)
@@ -20,6 +22,8 @@
 (signature logseq-chat.view/handle-native-navigation-event
  :fn<event;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/handle-native-search-event
+ :fn<event;fn<chat-action;bool>;bool>)
+(signature logseq-chat.view/handle-native-overflow-menu-event
  :fn<event;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/handle-outliner-editor-event
  :fn<event;signal<string>;fn<chat-action;bool>;bool>)
@@ -301,6 +305,14 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-delete-dialog
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-picker-overflow-menu
+ :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-picker-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/error-separator :fn<string;int>)
+(signature logseq-chat.view/graph-picker-error-code :fn<chat-model;string>)
+(signature logseq-chat.view/graph-picker-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/graph-picker-error-banner
+ :fn<ui-context;signal<chat-model>;int>)
 (signature logseq-chat.view/graph-password-sheet
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graphs-screen

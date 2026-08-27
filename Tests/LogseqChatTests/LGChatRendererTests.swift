@@ -109,6 +109,24 @@ struct LGChatRendererTests {
         #expect(renderer.rootID == 1)
     }
 
+    @Test("registers the native overflow menu with the LG fingerprint")
+    func registersNativeOverflowMenu() throws {
+        let renderer = LGChatRenderer()
+
+        try renderer.apply(patchJSON: """
+        {"generation":1,"ops":[
+          {"op":"create-node","id":1,"kind":"root"},
+          {"op":"create-extension","id":2,"identifier":"native-overflow-menu","fingerprint":"\(LGChatOverflowMenuExtension.fingerprint)"},
+          {"op":"set-extension-prop","id":2,"property":"page-actions-visible","value":false},
+          {"op":"set-extension-prop","id":2,"property":"favorite-label","value":"Favorite"},
+          {"op":"set-extension-prop","id":2,"property":"settings-visible","value":true},
+          {"op":"insert-child","parent":1,"child":2,"index":0}
+        ]}
+        """)
+
+        #expect(renderer.rootID == 1)
+    }
+
     @Test("forwards renderer events without owning application state")
     func forwardsEvents() {
         let renderer = LGChatRenderer()
@@ -240,6 +258,35 @@ struct LGChatRendererTests {
         #expect(native.appliedSnapshots == ["core response"])
         #expect(native.effects.isEmpty)
         #expect(runtime.lastError == nil)
+    }
+
+    @Test("applies the dequeue patch before the effect resolution patch")
+    func appliesDequeuePatchBeforeResolution() async {
+        let native = LGChatNativeRuntimeProbe()
+        let executor = LGChatEffectExecutorProbe()
+        executor.resolution = LGChatEffectResolution(
+            succeeded: false,
+            message: "Connection refused",
+            output: .discard
+        )
+        let runtime = LGChatRuntime(native: native, effectExecutor: executor)
+        native.effects = [
+            """
+            {"effect":{"id":8,"kind":"refresh-graphs","text":""},"patch":"{\\"generation\\":1,\\"ops\\":[{\\"op\\":\\"create-node\\",\\"id\\":1,\\"kind\\":\\"root\\"},{\\"op\\":\\"create-node\\",\\"id\\":2,\\"kind\\":\\"text\\"},{\\"op\\":\\"insert-child\\",\\"parent\\":1,\\"child\\":2,\\"index\\":0}]}"}
+            """
+        ]
+        native.resolutionPatch = """
+        {"generation":2,"ops":[
+          {"op":"set-prop","id":2,"property":"text","value":"Resolved"}
+        ]}
+        """
+
+        await runtime.drainEffectsForTesting()
+
+        #expect(executor.effects == [
+            LGChatEffect(id: 8, kind: "refresh-graphs", text: "")
+        ])
+        #expect(runtime.lastError == "Connection refused")
     }
 
     @Test("task capture effects preserve the complete task status")
@@ -516,6 +563,24 @@ struct LGChatRendererTests {
         #expect(open.succeeded)
         #expect(create.succeeded)
         #expect(delete.succeeded)
+    }
+
+    @Test("graph catalog failures preserve the core error code and message")
+    func graphFailuresPreserveStructuredReason() async {
+        let executor = LGChatCoreEffectExecutor { _ in
+            """
+            {"apiVersion":1,"ok":false,"result":null,"error":{
+              "code":"graph_discovery_failed","message":"Connection refused"
+            }}
+            """
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 31, kind: "refresh-graphs", text: "")
+        )
+
+        #expect(!resolution.succeeded)
+        #expect(resolution.message == "graph_discovery_failed\nConnection refused")
     }
 
     @Test("settings and diagnostics effects stay on the platform boundary")
@@ -1229,6 +1294,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var pressedNodes: [Int] = []
     var effects: [String] = []
     var resolutions: [LGChatEffectResolutionProbe] = []
+    var resolutionPatch = ""
     var appliedSnapshots: [String] = []
     var extensionEvents: [LGChatExtensionEventProbe] = []
     var hostUpdates: [LGChatHostUpdateProbe] = []
@@ -1283,7 +1349,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
             succeeded: succeeded,
             message: message
         ))
-        return ""
+        return resolutionPatch
     }
     func applySnapshot(_ response: String) -> String {
         appliedSnapshots.append(response)

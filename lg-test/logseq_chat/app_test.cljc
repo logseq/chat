@@ -1,5 +1,6 @@
 (ns logseq-chat.app-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as string]
+            [clojure.test :refer [deftest is testing]]
             [lui.app :as driver]
             [lui.backend.apple :as apple]
             [lui.extension :as ext]
@@ -461,6 +462,21 @@
                   "deleting the selected local graph clears its title")
     (assert-equal [] (:local-graph-ids deleted)
                   "deleting a local graph removes it from local storage state")))
+
+(deftest graph-refresh-failure-enters-the-picker-error-state
+  (let [requested (model/update (model/initial) model/RefreshGraphs)
+        in-flight (model/update requested (model/DequeueEffect 1))
+        failed
+        (model/update
+         in-flight
+         (model/ResolveEffect
+          1 false "graph_discovery_failed\nConnection refused"))]
+    (assert-equal
+     (model/FailedState "graph_discovery_failed\nConnection refused")
+     (:sync-state failed)
+     "a failed catalog refresh renders the picker-specific error state")
+    (is (not (view/global-effect-error-present? failed))
+        "the picker error does not also render the global effect error")))
 
 (deftest encrypted-graph-unlock-is-owned-by-lg
   (let [encrypted (graph "encrypted" "Encrypted" true true)
@@ -1059,6 +1075,58 @@
         (assert-equal [(model/OpenGraphEffect 1 "remote")]
                       (:pending-effects (chat/model application))
                       "a launch graph uses the typed graph lifecycle")))))
+
+(deftest graph-picker-matches-main-layout-actions-errors-and-overflow-menu
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          picker (child-with-identifier renderer main "screen.graph-picker")
+          add (child-with-identifier renderer picker "button.graph-add")
+          refresh (child-with-identifier renderer picker "button.graphs.refresh")
+          overflow (extension-node application "native-overflow-menu")]
+      (assert-equal 20 (property-int renderer picker proto/Gap)
+                    "the picker preserves main's vertical spacing")
+      (assert-equal 24 (property-int renderer picker proto/PaddingValue)
+                    "the picker preserves main's page inset")
+      (assert-equal "ghost" (property-string renderer add proto/VariantValue)
+                    "the add action is a plain text button")
+      (assert-equal "ghost" (property-string renderer refresh proto/VariantValue)
+                    "the refresh action is a plain text button")
+      (is (not (= -1 overflow))
+          "the picker renders the native overflow menu in its header")
+      (assert-equal -1
+                    (child-with-identifier renderer main "button.connection")
+                    "the picker does not render a second connection control")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent overflow "native-overflow-menu" "settings" {}))
+      (driver/flush! application)
+      (is (:settings-open (chat/model application))
+          "the native overflow menu routes settings through LG"))
+    (driver/send!
+     application
+     (model/SyncFailed "graph_discovery_failed\nConnection refused"))
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          picker (child-with-identifier renderer main "screen.graph-picker")
+          banner (child-with-identifier renderer picker "error.banner")]
+      (is (not (= -1 banner)) "the picker displays core failures")
+      (assert-equal
+       "graph_discovery_failed"
+       (property-string
+        renderer
+        (descendant-with-identifier renderer banner "error.banner.code")
+        proto/TextValue)
+       "the failure code remains visible")
+      (assert-equal
+       "Connection refused"
+       (property-string
+        renderer
+        (descendant-with-identifier renderer banner "error.banner.message")
+        proto/TextValue)
+       "the failure message remains visible"))))
 
 (deftest persisted-graph-loading-hides-the-launch-picker
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -2035,14 +2103,22 @@
     (driver/send! application (model/ChangeComposerDraft "Project \"alpha\"\nNext"))
     (driver/send! application model/SendComposer)
     (driver/flush! application)
-    (assert-equal
-     "{\"id\":2,\"kind\":\"persist-composer-draft\",\"text\":\"\"}"
-     (bridge/take-effect)
-     "the bridge clears persisted text before capture")
-    (assert-equal
-     "{\"id\":3,\"kind\":\"send-capture\",\"text\":\"Project \\\"alpha\\\"\\nNext\"}"
-     (bridge/take-effect)
-     "the bridge emits escaped capture JSON for the host executor")
+    (let [persist-dispatch (bridge/take-effect)
+          capture-dispatch (bridge/take-effect)]
+      (is (string/includes?
+           persist-dispatch
+           "\"effect\":{\"id\":2,\"kind\":\"persist-composer-draft\",\"text\":\"\"}")
+          "the bridge clears persisted text before capture")
+      (is (string/includes?
+           capture-dispatch
+           "\"effect\":{\"id\":3,\"kind\":\"send-capture\",\"text\":\"Project \\\"alpha\\\"\\nNext\"}")
+          "the bridge emits escaped capture JSON for the host executor")
+      (is (and
+           (string/includes? persist-dispatch
+                             "\"patch\":\"{\\\"generation\\\":")
+           (string/includes? capture-dispatch
+                             "\"patch\":\"{\\\"generation\\\":"))
+          "each dispatch carries the dequeue patch needed for contiguous generations"))
     (assert-equal "" (bridge/take-effect)
                   "an effect is never dispatched to the host twice")
     (assert-equal [(model/PersistComposerDraftEffect 2 "")

@@ -14,6 +14,7 @@ enum LGChatExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
         try LGChatNavigationExtension.register(in: registry)
         try LGChatSearchPresentationExtension.register(in: registry)
+        try LGChatOverflowMenuExtension.register(in: registry)
         try LGChatOutlinerEditorExtension.register(in: registry)
         try LGChatRichBlockExtension.register(
             in: registry,

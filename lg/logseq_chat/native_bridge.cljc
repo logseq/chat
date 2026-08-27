@@ -243,13 +243,18 @@
     (model/SignOutEffect id)
     (str "{\"id\":" id ",\"kind\":\"sign-out\",\"text\":\"\"}")))
 
+(defn encode-effect-dispatch [effect patch]
+  (str "{\"effect\":" (encode-effect effect)
+       ",\"patch\":" (wire/quoted patch) "}"))
+
 (defn take-effect []
   (let [effects (:pending-effects (chat/model (app)))]
     (if (empty? effects)
       ""
       (let [effect (nth effects 0)]
-        (flush-action! (model/DequeueEffect (model/effect-id effect)))
-        (encode-effect effect)))))
+        (let [patch
+              (flush-action! (model/DequeueEffect (model/effect-id effect)))]
+          (encode-effect-dispatch effect patch))))))
 
 (defn resolve-effect [id succeeded message]
   (flush-action! (model/ResolveEffect id succeeded message)))

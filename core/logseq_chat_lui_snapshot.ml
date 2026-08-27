@@ -635,8 +635,14 @@ let node_route = function
 let error_message fields =
   match member "error" fields with
   | Some (`Assoc error_fields) ->
-    Option.value ~default:"Core request failed" (string_member "message" error_fields)
-  | _ -> "Core request failed"
+    let code =
+      Option.value ~default:"core_request_failed" (string_member "code" error_fields)
+    in
+    let message =
+      Option.value ~default:"Core request failed" (string_member "message" error_fields)
+    in
+    code ^ "\n" ^ message
+  | _ -> "core_request_failed\nCore request failed"
 ;;
 
 let decode_response encoded =

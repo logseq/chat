@@ -6,6 +6,16 @@ let equal expected actual message =
 ;;
 
 let () =
+  (match
+     decode_response
+       {|{"apiVersion":1,"ok":false,"error":{"code":"graph_discovery_failed","message":"Connection refused"}}|}
+   with
+   | Error message ->
+     equal
+       "graph_discovery_failed\nConnection refused"
+       message
+       "core failure identity"
+   | Ok _ -> failwith "failed core response decoded as a snapshot");
   let response =
     {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","searchQuery":"project","searchResults":[{"uuid":"page-a","title":"Project Alpha","isPage":true,"page":null,"breadcrumbs":[]},{"uuid":"block-a","title":"Project note","isPage":false,"page":{"uuid":"page-a","title":"Project Alpha"},"breadcrumbs":[{"uuid":"parent-a","title":"Parent"}]}],"outlinerState":{"editing":{"uuid":"outline-a","title":"Nested note","caretUTF16Offset":6},"selectedBlockIds":["outline-a"],"autocomplete":{"kind":"node","query":"Pro"}},"outlinerAutocompleteCandidates":[{"label":"Project Alpha","value":"page-a"}],"outlinerRows":[{"block":{"uuid":"outline-a","title":"Nested note","pageId":"journal-a","journalTitle":"August 27th, 2026","journalDay":20260827},"depth":2,"hasChildren":true,"isCollapsed":false}],"hasOlderJournals":true,"appliedServerT":42,"hasPendingSemanticOperations":true,"pendingSyncRequest":{"id":7},"syncConnected":true}}|}
   in

@@ -561,6 +561,8 @@
     (assoc current
            :authentication-state "signedOut"
            :authentication-error (Some message))
+    (RefreshGraphsEffect _id)
+    (assoc current :sync-state (FailedState message))
     _ (rollback-navigation-effect current effect)))
 
 (defn resolve-successful-effect [current effect message]

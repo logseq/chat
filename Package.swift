@@ -9,11 +9,11 @@ let logseqChatNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_CHA
 let logseqChatSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS"]
 let luiPackageDependency: Package.Dependency
 if let localLUIPath = ProcessInfo.processInfo.environment["LUI_PACKAGE_PATH"] {
-    luiPackageDependency = .package(path: localLUIPath)
+    luiPackageDependency = .package(name: "lui", path: localLUIPath)
 } else {
     luiPackageDependency = .package(
         url: "ssh://git@github.com/tiensonqin/lui.git",
-        revision: "970daf39104d1196ca386a0f5849363c3062b682"
+        revision: "c60fbb1365efe9aa1053b7a0d0d251b6a5be1781"
     )
 }
 let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [

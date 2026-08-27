@@ -22,6 +22,7 @@
 (signature logseq-chat.native-bridge/encode-runtime-log-records
  :fn<vector<runtime-log-record>;string>)
 (signature logseq-chat.native-bridge/encode-effect :fn<chat-effect;string>)
+(signature logseq-chat.native-bridge/encode-effect-dispatch :fn<chat-effect;string;string>)
 (signature logseq-chat.native-bridge/take-effect :fn<string>)
 (signature logseq-chat.native-bridge/resolve-effect :fn<int;bool;string;string>)
 (signature logseq-chat.native-bridge/initialize :fn<int;int;string>)

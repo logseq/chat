@@ -54,6 +54,11 @@ public struct LGChatEffect: Decodable, Equatable, Sendable {
     }
 }
 
+private struct LGChatEffectDispatch: Decodable {
+    let effect: LGChatEffect
+    let patch: String
+}
+
 public enum LGChatEffectOutput: Equatable, Sendable {
     case coreResponse
     case hostUpdate(String)
@@ -958,9 +963,11 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             if response.ok {
                 return LGChatEffectResolution(succeeded: true, message: responseJSON)
             }
+            let errorCode = response.error?.code ?? "core_error"
+            let errorMessage = response.error?.message ?? "The OCaml core rejected the effect"
             return LGChatEffectResolution(
                 succeeded: false,
-                message: response.error?.message ?? "The OCaml core rejected the effect"
+                message: errorCode + "\n" + errorMessage
             )
         } catch {
             return LGChatEffectResolution(
@@ -1253,10 +1260,16 @@ public final class LGChatRuntime {
 
             let effect: LGChatEffect
             do {
-                effect = try JSONDecoder().decode(
-                    LGChatEffect.self,
-                    from: Data(encoded.utf8)
-                )
+                let data = Data(encoded.utf8)
+                if let dispatch = try? JSONDecoder().decode(
+                    LGChatEffectDispatch.self,
+                    from: data
+                ) {
+                    try apply(dispatch.patch)
+                    effect = dispatch.effect
+                } else {
+                    effect = try JSONDecoder().decode(LGChatEffect.self, from: data)
+                }
             } catch {
                 lastError = "Invalid LG effect: \(String(describing: error))"
                 return
@@ -1291,6 +1304,9 @@ public final class LGChatRuntime {
                 lastError = resolution.succeeded ? nil : resolution.message
             } catch {
                 lastError = String(describing: error)
+                logger.error(
+                    "Could not apply LG effect resolution: \(String(describing: error))"
+                )
                 return
             }
         }

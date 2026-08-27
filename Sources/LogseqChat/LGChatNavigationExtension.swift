@@ -152,10 +152,20 @@ private struct LGChatNavigationContent: View {
     var body: some View {
         NavigationStack(path: pathBinding) {
             rootContent
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
                 .navigationDestination(for: Int.self) { childID in
                     context.content(for: childID)
                 }
         }
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
         .onAppear {
             path = desiredPath
         }
