@@ -366,12 +366,30 @@
                   (subvec without target)))
           (recur (inc index))))))))
 
+(defn bounded-url-delimiter [index fallback]
+  (if (< index 0) fallback index))
+
 (defn valid-base-url? [value]
-  (let [normalized (string/trim value)]
-    (or (and (string/starts-with? normalized "http://")
-             (> (count normalized) 7))
-        (and (string/starts-with? normalized "https://")
-             (> (count normalized) 8)))))
+  (let [normalized (string/trim value)
+        prefix-length
+        (cond
+          (string/starts-with? normalized "https://") 8
+          (string/starts-with? normalized "http://") 7
+          :else 0)]
+    (if (= prefix-length 0)
+      false
+      (let [remainder (subs normalized prefix-length)
+            length (count remainder)
+            host-end
+            (min
+             (bounded-url-delimiter (string/index-of remainder "/") length)
+             (bounded-url-delimiter (string/index-of remainder "?") length)
+             (bounded-url-delimiter (string/index-of remainder "#") length))
+            host (subs remainder 0 host-end)]
+        (and (not (string/blank? host))
+             (not (string/includes? normalized " "))
+             (not (string/includes? normalized "\n"))
+             (not (string/includes? normalized "\r")))))))
 
 (defn valid-attachment-kind? [kind]
   (or (= kind "files")

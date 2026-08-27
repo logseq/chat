@@ -456,6 +456,7 @@
  :fn<vector<string>;string;vector<string>>)
 (signature logseq-chat.model/move-sidebar-tab
  :fn<vector<string>;string;int;vector<string>>)
+(signature logseq-chat.model/bounded-url-delimiter :fn<int;int;int>)
 (signature logseq-chat.model/valid-base-url? :fn<string;bool>)
 (signature logseq-chat.model/valid-attachment-kind? :fn<string;bool>)
 (signature logseq-chat.model/current-settings
