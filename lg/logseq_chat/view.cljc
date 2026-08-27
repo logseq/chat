@@ -544,12 +544,15 @@
     (Some graph-id) (model/graph-local? current graph-id)
     None false))
 
-(defn journal-root-visible? [current]
+(defn journal-route-active? [current]
   (and (journals-destination? current)
        (graph-selected? current)
        (or (not (:graph-loading current))
            (not (empty? (:outliner-rows current))))
        (node-navigation-inactive? current)))
+
+(defn journal-root-visible? [current]
+  (and (journal-route-active? current) (not (:search-open current))))
 
 (defn older-journals-visible? [current]
   (and (journal-root-visible? current)
@@ -606,10 +609,18 @@
 (defn primary-sidebar-button-visible? [current]
   (and (not (node-screen-visible? current))
        (not (graph-loading-visible? current))
-       (not (graph-picker-visible? current))))
+       (not (graph-picker-visible? current))
+       (not (:search-open current))
+       (not (= (:authentication-state current) "signedOut"))
+       (not (= (:authentication-state current) "signingIn"))))
 
 (defn search-main-visible? [current]
-  (and (journal-root-visible? current) (:search-open current)))
+  (and (journal-route-active? current) (:search-open current)))
+
+(defn connection-control-visible? [current]
+  (and (not (:search-open current))
+       (not (= (:authentication-state current) "signedOut"))
+       (not (= (:authentication-state current) "signingIn"))))
 
 (defn search-query-present? [current]
   (not (empty? (:search-query current))))
@@ -1123,12 +1134,17 @@
       (send (model/AddRootBlock (active-node-page-uuid current))))}
    "Add first block"])
 
+(defn node-back-identifier [ui-context]
+  (if (= (ui/platform ui-context) proto/IOS)
+    "BackButton"
+    "button.outliner.zoom-out"))
+
 (defui node-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.node"}
    [:button
     {:label "Back"
-     :accessibility-identifier "button.outliner.zoom-out"
+     :accessibility-identifier (node-back-identifier ui-context)
      :on-press
      (event [current model-source]
        (back-from-node current send))}
@@ -2141,11 +2157,12 @@
      {:accessibility-identifier "button.search"
       :on-press (fn [_event] (send model/OpenSearch))}
      "Search"]]
-   [:button
-    {:label "Connection"
-     :accessibility-identifier "button.connection"
-     :on-press (fn [_event] (send model/OpenConnectionMenu))}
-    "Connection"]
+   [:if {:test (reactive connection-control-visible? model-source)}
+    [:button
+     {:label "Connection"
+      :accessibility-identifier "button.connection"
+      :on-press (fn [_event] (send model/OpenConnectionMenu))}
+     "Connection"]]
    [:if {:test (reactive global-effect-error-present? model-source)}
     [:text
      {:value (reactive effect-error-message model-source)

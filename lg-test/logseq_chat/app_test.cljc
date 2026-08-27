@@ -1646,6 +1646,15 @@
                       (property-string renderer close-button
                                        proto/AccessibilityIdentifier)
                       "close keeps its automation identifier")
+        (assert-equal -1
+                      (descendant-with-identifier renderer root "list.outliner")
+                      "full-screen search replaces the journal list")
+        (assert-equal -1
+                      (child-with-identifier renderer root "button.sidebar")
+                      "full-screen search hides the journal header controls")
+        (assert-equal -1
+                      (child-with-identifier renderer root "button.connection")
+                      "full-screen search owns the complete visible surface")
         (driver/dispatch-event!
          application (proto/TextChanged search-field "project alpha"))
         (driver/flush! application)
@@ -2080,6 +2089,35 @@
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
                     "back removes the presented route"))))
+
+(deftest ios-node-navigation-keeps-the-system-back-automation-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        route (record model/node-projection
+                (uuid "node-a")
+                (page-uuid "page-a")
+                (title "Project")
+                (is-tag false)
+                (is-property false)
+                (related-rows [])
+                (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
+                          None None [] [] [] false []))
+    (driver/flush! application)
+    (let [screen (child-with-identifier
+                  renderer (main-root renderer application) "screen.node")
+          back (child-with-identifier renderer screen "BackButton")]
+      (is (not (= -1 back))
+          "iOS exposes the same back identifier as main's navigation stack")
+      (driver/dispatch-event! application (proto/Press back))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "the iOS back control pops the LG route"))))
 
 (deftest empty-node-routes-add-the-first-block-through-the-core
   (let [renderer (apple/create-with-extensions (view/extension-registry))
