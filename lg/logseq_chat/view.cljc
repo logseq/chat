@@ -396,6 +396,26 @@
 (defn search-result-breadcrumb [hit]
   (:breadcrumb hit))
 
+(defn page-search-results [current]
+  (filterv (fn [hit] (:is-page hit)) (:search-results current)))
+
+(defn block-search-results [current]
+  (filterv (fn [hit] (not (:is-page hit))) (:search-results current)))
+
+(defn page-search-results-present? [current]
+  (not (empty? (page-search-results current))))
+
+(defn block-search-results-present? [current]
+  (not (empty? (block-search-results current))))
+
+(defn search-empty-state-present? [current]
+  (empty? (:search-results current)))
+
+(defn search-empty-message [current]
+  (if (string/blank? (:search-query current))
+    "Search your graph"
+    "No results"))
+
 (defn search-result-row [ui-context hit-source send]
   (let [hit (signal/sample hit-source)]
     (elements/element
@@ -2086,9 +2106,24 @@
      {:accessibility-identifier "button.search.close"
        :on-press (fn [_event] (send model/CloseSearch))}
       "Close"]
+     [:if {:test (reactive search-empty-state-present? model-source)}
+      [:text
+       {:value (reactive search-empty-message model-source)
+        :accessibility-identifier "search.empty"}]]
+     [:if {:test (reactive page-search-results-present? model-source)}
+      [:text {:accessibility-identifier "search.section.pages"} "Pages"]]
      [:list
       [:keyed
-       {:source (reactive :search-results model-source)
+       {:source (reactive page-search-results model-source)
+        :key :uuid
+        :compare compare
+        :as hit-source}
+       [search-result-row hit-source send]]]
+     [:if {:test (reactive block-search-results-present? model-source)}
+      [:text {:accessibility-identifier "search.section.blocks"} "Blocks"]]
+     [:list
+      [:keyed
+       {:source (reactive block-search-results model-source)
         :key :uuid
         :compare compare
         :as hit-source}

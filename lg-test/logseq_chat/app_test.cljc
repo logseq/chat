@@ -2219,8 +2219,9 @@
     (driver/flush! application)
     (let [root (main-root renderer application)
           search-panel (child-with-identifier renderer root "screen.search")
-          results (nth (apple/children renderer search-panel) 3)
-          row (nth (apple/children renderer results) 0)]
+          row
+          (descendant-with-identifier
+           renderer search-panel "search.result.block-a")]
       (assert-equal "search.result.block-a"
                     (property-string renderer row
                                      proto/AccessibilityIdentifier)
@@ -2230,6 +2231,62 @@
       (assert-equal [(model/NodeRoute "block-a")]
                     (:search-navigation-path (chat/model application))
                     "pressing a result requests navigation in LG state"))))
+
+(deftest search-renders-main-empty-states-and-result-sections
+  (let [renderer (apple/create)
+        application (chat/create (apple/backend renderer))
+        page (record model/search-hit
+                     (uuid "page-a")
+                     (title "Project")
+                     (breadcrumb "")
+                     (is-page true))
+        block (record model/search-hit
+                      (uuid "block-a")
+                      (title "Project note")
+                      (breadcrumb "Journal")
+                      (is-page false))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/OpenSearch)
+    (driver/flush! application)
+    (let [panel
+          (child-with-identifier
+           renderer (main-root renderer application) "screen.search")
+          empty-state
+          (descendant-with-identifier renderer panel "search.empty")]
+      (assert-equal "Search your graph"
+                    (property-string renderer empty-state proto/TextValue)
+                    "an empty query explains the search entry state")
+      (driver/send! application (model/ChangeSearchQuery "missing"))
+      (driver/send! application (model/ApplySearchResults "missing" []))
+      (driver/flush! application)
+      (assert-equal
+       "No results"
+       (property-string
+        renderer
+        (descendant-with-identifier renderer panel "search.empty")
+        proto/TextValue)
+       "an empty result set is distinguished from an empty query")
+      (driver/send! application (model/ChangeSearchQuery "project"))
+      (driver/send! application
+                    (model/ApplySearchResults "project" [block page]))
+      (driver/flush! application)
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.section.pages")))
+          "page results have the main section label")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.section.blocks")))
+          "block results have the main section label")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.result.page-a")))
+          "page results remain addressable")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.result.block-a")))
+          "block results remain addressable"))))
 
 (deftest non-empty-search-renders-an-explicit-clear-control
   (let [renderer (apple/create)
