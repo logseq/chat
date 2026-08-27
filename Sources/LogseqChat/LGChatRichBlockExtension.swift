@@ -27,6 +27,32 @@ private final class LGChatYouTubePlaybackState {
     var starts: [String: Int] = [:]
 }
 
+#if !SKIP && os(iOS)
+private struct OutlinerRowHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 44
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct OutlinerRowDropDelegate: DropDelegate {
+    let rowHeight: CGFloat
+    let onDrop: (OutlinerDropPlacement) -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.plainText])
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onDrop(OutlinerDropZone.placement(
+            locationY: info.location.y,
+            rowHeight: rowHeight
+        ))
+    }
+}
+#endif
+
 @MainActor
 private enum LGChatRichBlockExtension {
     static let identifier = "outliner-block-content"

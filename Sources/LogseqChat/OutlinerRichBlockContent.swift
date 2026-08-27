@@ -22,6 +22,119 @@ import dev.hossain.highlight.ui.HighlightThemeProvider
 import dev.hossain.highlight.ui.SyntaxHighlightedCode
 #endif
 
+struct OutlinerMixedRichMarkupContent: View {
+    let nodes: [LogseqMarkupNode]
+    let fallback: String
+    let precedingYouTubeURL: String?
+    let youtubePlaybackStarts: [String: Int]
+    let onSeekYouTube: (String, Int) -> Void
+    let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
+
+    private var targetedNodes: [LogseqMarkupNode] {
+        OutlinerYouTubeTimestampPolicy.associateTargets(
+            nodes,
+            precedingYouTubeURL: precedingYouTubeURL
+        )
+    }
+
+    private var chunks: [[LogseqMarkupNode]] {
+        OutlinerRichMarkupPolicy.chunks(targetedNodes)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(0..<chunks.count, id: \.self) { index in
+                let chunk = chunks[index]
+                if chunk.count == 1,
+                   let node = chunk.first,
+                   OutlinerRichMarkupPolicy.isRich(node.type) {
+                    OutlinerRichBlockContent(
+                        node: node,
+                        youtubeStartSeconds: node.url.flatMap { youtubePlaybackStarts[$0] },
+                        onSeekYouTube: onSeekYouTube,
+                        onOpenMarkupLink: onOpenMarkupLink
+                    )
+                } else {
+                    inlineContent(chunk)
+                        .accessibilityIdentifier("block.rich.inline.\(index)")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func inlineContent(_ chunk: [LogseqMarkupNode]) -> some View {
+        #if !SKIP
+        Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
+            .environment(\.openURL, OpenURLAction { url in
+                guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
+                onOpenMarkupLink(link)
+                return .handled
+            })
+        #else
+        let presentation = OutlinerMarkupPresentation.make(nodes: chunk, fallback: fallback)
+        Text(verbatim: presentation.plainText)
+        #endif
+    }
+}
+
+#if !SKIP
+enum OutlinerMarkupAttributedString {
+    static func make(nodes: [LogseqMarkupNode], fallback: String) -> AttributedString {
+        guard !nodes.isEmpty else { return AttributedString(fallback) }
+        var result = AttributedString()
+        for node in nodes {
+            result.append(make(node))
+        }
+        return result
+    }
+
+    private static func make(_ node: LogseqMarkupNode) -> AttributedString {
+        switch node.type {
+        case .text:
+            return AttributedString(node.text ?? "")
+        case .code:
+            var value = AttributedString(node.text ?? "")
+            value.font = .system(.body, design: .monospaced)
+            value.backgroundColor = Color.secondary.opacity(0.12)
+            return value
+        case .codeBlock, .math, .cloze:
+            return AttributedString(node.text ?? "")
+        case .youtubeTimestamp:
+            return AttributedString("◷ " + (node.text ?? ""))
+        case .emphasis, .quote:
+            var value = make(nodes: node.children, fallback: "")
+            switch node.style {
+            case "bold": value.font = .body.bold()
+            case "italic": value.font = .body.italic()
+            case "underline": value.underlineStyle = .single
+            case "strikeThrough": value.strikethroughStyle = .single
+            case "highlight": value.backgroundColor = Color.yellow.opacity(0.25)
+            default: break
+            }
+            return value
+        case .link:
+            var value = make(nodes: node.children, fallback: node.url ?? "")
+            value.link = node.url.flatMap(URL.init(string:))
+            return value
+        case .nodeReference:
+            var value = AttributedString(node.title ?? "")
+            if let uuid = node.uuid {
+                value.link = OutlinerMarkupLink.node(uuid: uuid).url
+            }
+            return value
+        case .tagReference:
+            var value = AttributedString("#" + (node.title ?? ""))
+            if let uuid = node.uuid {
+                value.link = OutlinerMarkupLink.node(uuid: uuid).url
+            }
+            return value
+        case .video, .iframe:
+            return AttributedString(node.url ?? "")
+        }
+    }
+}
+#endif
+
 struct OutlinerRichBlockContent: View {
     let node: LogseqMarkupNode
     let youtubeStartSeconds: Int?
