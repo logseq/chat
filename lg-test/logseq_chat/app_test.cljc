@@ -2176,13 +2176,29 @@
                   "an unresolved route is removed")
     (assert-equal [(model/NodeRoute "page-a")]
                   (:app-navigation-path
-                   (model/update nested-request model/BackAppNavigation))
+                   (model/update nested-request (model/BackAppNavigation 1)))
                   "the back action removes exactly one route")))
+
+(deftest native-back-count-is-reduced-as-one-navigation-transition
+  (let [requested-a
+        (model/update (model/initial) (model/RequestAppNode "page-a"))
+        requested-b
+        (model/update requested-a (model/RequestAppNode "page-b"))
+        returned (model/update requested-b (model/BackAppNavigation 2))]
+    (assert-equal [] (:app-navigation-path returned)
+                  "one native callback removes its complete returned path")
+    (assert-equal
+     [(model/OpenAppNodeEffect 1 "page-a")
+      (model/OpenAppNodeEffect 2 "page-b")
+      (model/CloseAppNodeEffect 3 "page-b")
+      (model/CloseAppNodeEffect 4 "page-a")]
+     (:pending-effects returned)
+     "the one transition retains top-to-root core close ordering")))
 
 (deftest navigation-requests-and-back-cross-the-core-effect-boundary
   (let [requested
         (model/update (model/initial) (model/RequestSearchNode "node-a"))
-        returned (model/update requested model/BackSearchNavigation)]
+        returned (model/update requested (model/BackSearchNavigation 1))]
     (assert-equal [(model/NodeRoute "node-a")]
                   (:search-navigation-path requested)
                   "search navigation remains optimistic")
@@ -2271,7 +2287,7 @@
         (model/update
          (model/update opened-again (model/DequeueEffect 2))
          (model/ResolveEffect 2 true "{\"ok\":true}"))
-        returned (model/update opened model/BackAppNavigation)
+        returned (model/update opened (model/BackAppNavigation 1))
         closing (model/update returned (model/DequeueEffect 3))
         close-failed
         (model/update closing (model/ResolveEffect 3 false "Close failed"))]
@@ -2338,7 +2354,7 @@
       (assert-equal [(model/NodeRoute "node-a") (model/NodeRoute "journal")]
                     (:app-navigation-path (chat/model application))
                     "pressing a breadcrumb opens its retained node identity")
-      (driver/send! application model/BackAppNavigation)
+      (driver/send! application (model/BackAppNavigation 1))
       (driver/flush! application)
       (driver/dispatch-event!
        application

@@ -173,6 +173,36 @@
     path
     (subvec path 0 (dec (count path)))))
 
+(defn back-app-navigation [current requested]
+  (loop [remaining (min (max requested 0)
+                        (count (:app-navigation-path current)))
+         updated current]
+    (if (= remaining 0)
+      updated
+      (let [path (:app-navigation-path updated)
+            uuid (navigation-route-uuid (nth path (dec (count path))))
+            popped
+            (assoc (cancel-outliner-editing updated)
+                   :app-navigation-path (pop-route path))
+            id (:next-effect-id popped)]
+        (recur (dec remaining)
+               (enqueue-effect popped (CloseAppNodeEffect id uuid)))))))
+
+(defn back-search-navigation [current requested]
+  (loop [remaining (min (max requested 0)
+                        (count (:search-navigation-path current)))
+         updated current]
+    (if (= remaining 0)
+      updated
+      (let [path (:search-navigation-path updated)
+            uuid (navigation-route-uuid (nth path (dec (count path))))
+            popped
+            (assoc (cancel-outliner-editing updated)
+                   :search-navigation-path (pop-route path))
+            id (:next-effect-id popped)]
+        (recur (dec remaining)
+               (enqueue-effect popped (CloseSearchNodeEffect id uuid)))))))
+
 (defn navigation-route-uuid [route]
   (match route
     (NodeRoute uuid) uuid))
@@ -1105,16 +1135,8 @@
                           (NodeRoute uuid)
                           resolved))
 
-    BackAppNavigation
-    (let [path (:app-navigation-path current)]
-      (if (empty? path)
-        current
-        (let [uuid (navigation-route-uuid (nth path (dec (count path))))
-              updated
-              (assoc (cancel-outliner-editing current)
-                     :app-navigation-path (pop-route path))
-              id (:next-effect-id updated)]
-          (enqueue-effect updated (CloseAppNodeEffect id uuid)))))
+    (BackAppNavigation count)
+    (back-app-navigation current count)
 
     (RequestSearchNode uuid)
     (let [path (:search-navigation-path current)
@@ -1134,16 +1156,8 @@
                           (NodeRoute uuid)
                           resolved))
 
-    BackSearchNavigation
-    (let [path (:search-navigation-path current)]
-      (if (empty? path)
-        current
-        (let [uuid (navigation-route-uuid (nth path (dec (count path))))
-              updated
-              (assoc (cancel-outliner-editing current)
-                     :search-navigation-path (pop-route path))
-              id (:next-effect-id updated)]
-          (enqueue-effect updated (CloseSearchNodeEffect id uuid)))))
+    (BackSearchNavigation count)
+    (back-search-navigation current count)
 
     (AddRootBlock uuid)
     (let [id (:next-effect-id current)]

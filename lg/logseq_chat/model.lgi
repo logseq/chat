@@ -349,10 +349,10 @@
   (ClearTaskStatus)
   (RequestAppNode :string)
   (ResolveAppNode :string :bool)
-  (BackAppNavigation)
+  (BackAppNavigation :int)
   (RequestSearchNode :string)
   (ResolveSearchNode :string :bool)
-  (BackSearchNavigation)
+  (BackSearchNavigation :int)
   (AddRootBlock :string)
   (LoadOlderJournals)
   (OpenSidebar)
@@ -444,6 +444,10 @@
  :fn<vector<navigation-route>;navigation-route;bool;vector<navigation-route>>)
 (signature logseq-chat.model/pop-route
  :fn<vector<navigation-route>;vector<navigation-route>>)
+(signature logseq-chat.model/back-app-navigation
+ :fn<chat-model;int;chat-model>)
+(signature logseq-chat.model/back-search-navigation
+ :fn<chat-model;int;chat-model>)
 (signature logseq-chat.model/navigation-route-uuid
  :fn<navigation-route;string>)
 (signature logseq-chat.model/effect-id :fn<chat-effect;int>)

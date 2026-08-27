@@ -134,24 +134,16 @@
 (defn navigation-path-depth [path]
   (count path))
 
-(defn send-back [action requested send]
-  (loop [remaining requested]
-    (if (> remaining 0)
-      (do
-        (send action)
-        (recur (dec remaining)))
-      true)))
-
 (defn handle-native-navigation-event [input-event send]
   (match input-event
     (proto/ExtensionEvent _node _identifier "back" values)
-    (send-back model/BackAppNavigation (extension-int values "count") send)
+    (send (model/BackAppNavigation (extension-int values "count")))
     _ true))
 
 (defn handle-native-search-event [input-event send]
   (match input-event
     (proto/ExtensionEvent _node _identifier "back" values)
-    (send-back model/BackSearchNavigation (extension-int values "count") send)
+    (send (model/BackSearchNavigation (extension-int values "count")))
     (proto/ExtensionEvent _node _identifier "dismiss" _values)
     (send model/CloseSearch)
     _ true))
