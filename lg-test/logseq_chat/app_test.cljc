@@ -45,6 +45,17 @@
             child
             (recur (inc index))))))))
 
+(defn child-index-with-identifier [renderer parent identifier]
+  (let [children (apple/children renderer parent)]
+    (loop [index 0]
+      (if (= index (count children))
+        -1
+        (if (= identifier
+               (property-string
+                renderer (nth children index) proto/AccessibilityIdentifier))
+          index
+          (recur (inc index)))))))
+
 (defn descendant-with-identifier [renderer parent identifier]
   (let [direct (child-with-identifier renderer parent identifier)]
     (if (not (= direct -1))
@@ -665,6 +676,52 @@
                       (descendant-enabled
                        renderer updated-root "button.settings.tab.graphs.down")
                       "a lone configurable position cannot move down")))))
+
+(deftest settings-tabs-render-saved-order-and-separate-available-tabs
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplySettingsSnapshot
+      (settings ["journals" "graphs" "flashcards"])))
+    (driver/send! application model/OpenSettings)
+    (driver/send! application model/OpenSettingsTabs)
+    (driver/flush! application)
+    (let [screen
+          (descendant-with-identifier
+           renderer (driver/root-node application) "screen.settings.tabs")
+          journals
+          (child-index-with-identifier
+           renderer screen "row.settings.tab.journals")
+          graphs
+          (child-index-with-identifier renderer screen "row.settings.tab.graphs")
+          flashcards
+          (child-index-with-identifier
+           renderer screen "row.settings.tab.flashcards")]
+      (is (and (< journals graphs) (< graphs flashcards))
+          "visible tab rows follow the persisted order")
+      (assert-equal
+       -1
+       (child-index-with-identifier
+        renderer screen "text.settings.tabs.available")
+       "the available section is absent while every tab is visible")
+      (driver/dispatch-event!
+       application
+       (proto/Press
+        (descendant-with-identifier
+         renderer screen "toggle.settings.tab.flashcards")))
+      (driver/flush! application)
+      (let [available
+            (child-index-with-identifier
+             renderer screen "text.settings.tabs.available")
+            available-flashcards
+            (child-index-with-identifier
+             renderer screen "row.settings.tab.flashcards")]
+        (is (not (= -1 available))
+            "hiding a configurable tab creates the available section")
+        (is (< available available-flashcards)
+            "hidden tabs render under the available section")))))
 
 (deftest settings-language-picker-exposes-and-validates-all-main-choices
   (let [renderer (apple/create-with-extensions (view/extension-registry))

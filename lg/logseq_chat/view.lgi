@@ -289,6 +289,12 @@
 (signature logseq-chat.view/tab-toggle-label :fn<chat-model;string;string>)
 (signature logseq-chat.view/tab-index :fn<chat-model;string;int>)
 (signature logseq-chat.view/tab-movement-visible? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/settings-flashcards-before-graphs?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-flashcards-after-graphs?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-available-tabs-present?
+ :fn<chat-model;bool>)
 (signature logseq-chat.view/tab-move-up-disabled? :fn<chat-model;string;bool>)
 (signature logseq-chat.view/tab-move-down-disabled? :fn<chat-model;string;bool>)
 (signature logseq-chat.view/tab-toggle-identifier :fn<string;string>)

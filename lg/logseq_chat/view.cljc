@@ -1690,6 +1690,19 @@
   (and (not (= tab "journals"))
        (tab-enabled? current tab)))
 
+(defn settings-flashcards-before-graphs? [current]
+  (and (tab-enabled? current "flashcards")
+       (< (tab-index current "flashcards")
+          (tab-index current "graphs"))))
+
+(defn settings-flashcards-after-graphs? [current]
+  (and (tab-enabled? current "flashcards")
+       (> (tab-index current "flashcards")
+          (tab-index current "graphs"))))
+
+(defn settings-available-tabs-present? [current]
+  (not (tab-enabled? current "flashcards")))
+
 (defn tab-move-up-disabled? [current tab]
   (<= (tab-index current tab) 1))
 
@@ -1755,6 +1768,7 @@
     (elements/element
      ui-context nil
      [:row
+      {:accessibility-identifier (str "row.settings.tab." tab)}
      [:button
       {:label label-source
        :disabled toggle-disabled-source
@@ -1785,9 +1799,18 @@
     [:heading {:level 1} "Tabs"]]
    [:text "Visible tabs"]
    [settings-tab-row model-source "journals" "Journals" send]
-   [settings-tab-row model-source "flashcards" "Flashcards" send]
+   [:if {:test (reactive settings-flashcards-before-graphs? model-source)}
+    [settings-tab-row model-source "flashcards" "Flashcards" send]]
    [settings-tab-row model-source "graphs" "Graphs" send]
-   [:text "Journals and Graphs are always available. Use the arrows to reorder tabs."]])
+   [:if {:test (reactive settings-flashcards-after-graphs? model-source)}
+    [settings-tab-row model-source "flashcards" "Flashcards" send]]
+   [:text "Journals and Graphs are always available. Use the arrows to reorder tabs."]
+   [:if {:test (reactive settings-available-tabs-present? model-source)}
+    [:text
+     {:accessibility-identifier "text.settings.tabs.available"}
+     "Available tabs"]]
+   [:if {:test (reactive settings-available-tabs-present? model-source)}
+    [settings-tab-row model-source "flashcards" "Flashcards" send]]])
 
 (defui runtime-log-screen [model-source send]
   [:column {:accessibility-identifier "screen.runtime-log"}
