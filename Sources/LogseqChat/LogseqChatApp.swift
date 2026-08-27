@@ -205,9 +205,8 @@ public struct LogseqChatRootView : View {
                     settings.autoCorrection,
                     forKey: "logseq.editor.autoCorrection"
                 )
-                let tabs = settings.sidebarTabs.compactMap(SidebarContentItem.init(rawValue:))
                 defaults.set(
-                    SidebarTabPolicy.rawValue(for: tabs),
+                    settings.sidebarTabs.joined(separator: ","),
                     forKey: "logseq.mobile.sidebarTabs"
                 )
                 defaults.set(settings.baseURL, forKey: "logseq.baseURL")
@@ -466,7 +465,9 @@ public struct LogseqChatRootView : View {
             spellCheck: defaults.object(forKey: "logseq.editor.spellCheck") as? Bool ?? true,
             autoCorrection: defaults.object(forKey: "logseq.editor.autoCorrection") as? Bool
                 ?? true,
-            sidebarTabs: SidebarTabPolicy.selectedItems(rawValue: rawTabs).map(\.rawValue),
+            sidebarTabs: rawTabs.isEmpty
+                ? []
+                : rawTabs.split(separator: ",").map(String.init),
             baseURL: defaults.string(forKey: "logseq.baseURL")
                 ?? "http://127.0.0.1:8787",
             version: LogseqSettingsPolicy.version,

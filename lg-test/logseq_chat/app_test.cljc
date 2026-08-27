@@ -346,6 +346,30 @@
     (assert-equal [] (:pending-effects required-moved)
                   "required tab moves do not persist settings")))
 
+(deftest settings-snapshot-normalizes-sidebar-tabs-at-the-lg-boundary
+  (let [defaulted
+        (model/update
+         (model/initial)
+         (model/ApplySettingsSnapshot (settings [])))
+        sanitized
+        (model/update
+         (model/initial)
+         (model/ApplySettingsSnapshot
+          (settings ["graphs" "graphs" "unknown" "flashcards"])))
+        required
+        (model/update
+         (model/initial)
+         (model/ApplySettingsSnapshot (settings ["journals"])))]
+    (assert-equal ["journals" "flashcards" "graphs"]
+                  (:sidebar-tabs defaulted)
+                  "missing persisted tabs use the complete default")
+    (assert-equal ["journals" "graphs" "flashcards"]
+                  (:sidebar-tabs sanitized)
+                  "LG discards unknown and duplicate persisted tabs")
+    (assert-equal ["journals" "graphs"]
+                  (:sidebar-tabs required)
+                  "LG restores the required graphs tab without re-enabling flashcards")))
+
 (deftest runtime-log-filters-refresh-and-successful-results-enter-lg-state
   (let [filtered (model/update (model/initial) model/ToggleRuntimeLogErrors)
         in-flight (model/update filtered (model/DequeueEffect 1))

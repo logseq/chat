@@ -460,6 +460,9 @@
 (signature logseq-chat.model/remove-string
  :fn<vector<string>;string;vector<string>>)
 (signature logseq-chat.model/required-sidebar-tab? :fn<string;bool>)
+(signature logseq-chat.model/valid-sidebar-tab? :fn<string;bool>)
+(signature logseq-chat.model/normalize-sidebar-tabs
+ :fn<vector<string>;vector<string>>)
 (signature logseq-chat.model/toggle-sidebar-tab
  :fn<vector<string>;string;vector<string>>)
 (signature logseq-chat.model/move-sidebar-tab

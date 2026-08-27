@@ -363,8 +363,31 @@
 (defn required-sidebar-tab? [tab]
   (or (= tab "journals") (= tab "graphs")))
 
+(defn valid-sidebar-tab? [tab]
+  (or (= tab "journals") (= tab "flashcards") (= tab "graphs")))
+
+(defn normalize-sidebar-tabs [tabs]
+  (if (empty? tabs)
+    ["journals" "flashcards" "graphs"]
+    (let [normalized
+          (loop [index 0
+                 result ["journals"]]
+            (if (= index (count tabs))
+              result
+              (let [tab (nth tabs index)]
+                (recur
+                 (inc index)
+                 (if (and (valid-sidebar-tab? tab)
+                          (not (= tab "journals"))
+                          (not (string-vector-contains? result tab)))
+                   (conj result tab)
+                   result)))))]
+      (if (string-vector-contains? normalized "graphs")
+        normalized
+        (conj normalized "graphs")))))
+
 (defn toggle-sidebar-tab [tabs tab]
-  (if (required-sidebar-tab? tab)
+  (if (not (= tab "flashcards"))
     tabs
     (if (string-vector-contains? tabs tab)
       (remove-string tabs tab)
@@ -1206,7 +1229,7 @@
            :language (:language settings)
            :spell-check (:spell-check settings)
            :auto-correction (:auto-correction settings)
-           :sidebar-tabs (:sidebar-tabs settings)
+           :sidebar-tabs (normalize-sidebar-tabs (:sidebar-tabs settings))
            :base-url (:base-url settings)
            :version (:version settings)
            :revision (:revision settings))
