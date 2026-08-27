@@ -161,10 +161,6 @@
     (str "{\"id\":" id
          ",\"kind\":\"toggle-outliner-collapsed\",\"text\":"
          (wire/quoted uuid) "}")
-    (model/ZoomOutlinerBlockEffect id uuid)
-    (str "{\"id\":" id
-         ",\"kind\":\"zoom-outliner-block\",\"text\":"
-         (wire/quoted uuid) "}")
     (model/LongPressOutlinerBlockEffect id uuid)
     (str "{\"id\":" id
          ",\"kind\":\"long-press-outliner-block\",\"text\":"
@@ -182,6 +178,9 @@
     (str "{\"id\":" id
          ",\"kind\":\"choose-outliner-autocomplete\",\"text\":"
          (wire/quoted value) "}")
+    (model/CancelOutlinerEditingEffect id)
+    (str "{\"id\":" id
+         ",\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}")
     (model/OpenAppNodeEffect id uuid)
     (str "{\"id\":" id ",\"kind\":\"open-node\",\"text\":"
          (wire/quoted uuid) "}")

@@ -299,28 +299,22 @@ struct LGChatRendererTests {
         #expect(resolution.succeeded)
     }
 
-    @Test("outliner structure effects reuse the existing core reducer")
-    func outlinerStructureEffectsUseCoreOutlinerEvent() async throws {
-        var capturedRequests: [LogseqChatRPCRequest] = []
+    @Test("outliner collapse effects reuse the existing core reducer")
+    func outlinerCollapseEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
         let executor = LGChatCoreEffectExecutor { request in
-            capturedRequests.append(request)
+            capturedRequest = request
             return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
         }
 
         let collapse = await executor.execute(
             LGChatEffect(id: 11, kind: "toggle-outliner-collapsed", text: "parent")
         )
-        let zoom = await executor.execute(
-            LGChatEffect(id: 12, kind: "zoom-outliner-block", text: "parent")
-        )
+        let request = try #require(capturedRequest)
 
-        #expect(capturedRequests.count == 2)
-        #expect(capturedRequests[0].params.action == "outlinerEvent")
-        #expect(capturedRequests[0].params.payload?.contains("toggleCollapsed") == true)
-        #expect(capturedRequests[1].params.action == "outlinerEvent")
-        #expect(capturedRequests[1].params.payload?.contains("zoomIn") == true)
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("toggleCollapsed") == true)
         #expect(collapse.succeeded)
-        #expect(zoom.succeeded)
     }
 
     @Test("add-first-block effects reuse the existing core reducer")
@@ -1028,6 +1022,24 @@ struct LGChatRendererTests {
 
         #expect(request.params.action == "outlinerEvent")
         #expect(request.params.payload?.contains("saveEditing") == true)
+        #expect(resolution.succeeded)
+    }
+
+    @Test("destination changes cancel the existing core editor")
+    func cancelEditingEffectsUseCoreOutlinerEvent() async throws {
+        var capturedRequest: LogseqChatRPCRequest?
+        let executor = LGChatCoreEffectExecutor { request in
+            capturedRequest = request
+            return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+        }
+
+        let resolution = await executor.execute(
+            LGChatEffect(id: 18, kind: "cancel-outliner-editing", text: "")
+        )
+        let request = try #require(capturedRequest)
+
+        #expect(request.params.action == "outlinerEvent")
+        #expect(request.params.payload?.contains("cancelEditing") == true)
         #expect(resolution.succeeded)
     }
 

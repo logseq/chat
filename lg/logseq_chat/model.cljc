@@ -196,11 +196,11 @@
     (BackspaceOutlinerEditorEffect id _uuid _title _selection) id
     (MoveOutlinerCaretEffect id _uuid _caret) id
     (ToggleOutlinerCollapsedEffect id _uuid) id
-    (ZoomOutlinerBlockEffect id _uuid) id
     (LongPressOutlinerBlockEffect id _uuid) id
     (DropOutlinerBlocksEffect id _target-uuid _placement) id
     (OutlinerToolbarEffect id _action) id
     (ChooseOutlinerAutocompleteEffect id _value) id
+    (CancelOutlinerEditingEffect id) id
     (OpenAppNodeEffect id _uuid) id
     (OpenSearchNodeEffect id _uuid) id
     (CloseAppNodeEffect id _uuid) id
@@ -645,6 +645,18 @@
       current)
     None current))
 
+(defn cancel-outliner-editing [current]
+  (match (:outliner-editing current)
+    (Some _editing)
+    (let [updated
+          (assoc current
+                 :outliner-editing None
+                 :outliner-autocomplete None
+                 :outliner-autocomplete-candidates [])
+          id (:next-effect-id updated)]
+      (enqueue-effect updated (CancelOutlinerEditingEffect id)))
+    None current))
+
 (defn row-index [rows uuid]
   (loop [index 0]
     (if (= index (count rows))
@@ -913,10 +925,6 @@
     (let [id (:next-effect-id current)]
       (enqueue-effect current (ToggleOutlinerCollapsedEffect id uuid)))
 
-    (ZoomOutlinerBlock uuid)
-    (let [id (:next-effect-id current)]
-      (enqueue-effect current (ZoomOutlinerBlockEffect id uuid)))
-
     (LongPressOutlinerBlock uuid)
     (let [id (:next-effect-id current)]
       (enqueue-effect current (LongPressOutlinerBlockEffect id uuid)))
@@ -963,8 +971,10 @@
 
     CloseSearch
     (let [path (:search-navigation-path current)
+          editing-ended
+          (if (empty? path) current (cancel-outliner-editing current))
           closed
-          (assoc current
+          (assoc editing-ended
                  :search-open false
                  :search-query ""
                  :search-results []
@@ -1080,7 +1090,9 @@
           requested (request-route path (NodeRoute uuid))]
       (if (= path requested)
         current
-        (let [updated (assoc current :app-navigation-path requested)
+        (let [updated
+              (assoc (cancel-outliner-editing current)
+                     :app-navigation-path requested)
               id (:next-effect-id updated)]
           (enqueue-effect updated (OpenAppNodeEffect id uuid)))))
 
@@ -1096,7 +1108,9 @@
       (if (empty? path)
         current
         (let [uuid (navigation-route-uuid (nth path (dec (count path))))
-              updated (assoc current :app-navigation-path (pop-route path))
+              updated
+              (assoc (cancel-outliner-editing current)
+                     :app-navigation-path (pop-route path))
               id (:next-effect-id updated)]
           (enqueue-effect updated (CloseAppNodeEffect id uuid)))))
 
@@ -1105,7 +1119,9 @@
           requested (request-route path (NodeRoute uuid))]
       (if (= path requested)
         current
-        (let [updated (assoc current :search-navigation-path requested)
+        (let [updated
+              (assoc (cancel-outliner-editing current)
+                     :search-navigation-path requested)
               id (:next-effect-id updated)]
           (enqueue-effect updated (OpenSearchNodeEffect id uuid)))))
 
@@ -1121,7 +1137,9 @@
       (if (empty? path)
         current
         (let [uuid (navigation-route-uuid (nth path (dec (count path))))
-              updated (assoc current :search-navigation-path (pop-route path))
+              updated
+              (assoc (cancel-outliner-editing current)
+                     :search-navigation-path (pop-route path))
               id (:next-effect-id updated)]
           (enqueue-effect updated (CloseSearchNodeEffect id uuid)))))
 
@@ -1140,21 +1158,21 @@
     (assoc current :sidebar-open false)
 
     (SelectSidebarPage uuid)
-    (let [updated (assoc current
+    (let [updated (assoc (cancel-outliner-editing current)
                          :sidebar-open false
                          :destination JournalsDestination)
           id (:next-effect-id updated)]
       (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
 
     ShowJournals
-    (let [updated (assoc current
+    (let [updated (assoc (cancel-outliner-editing current)
                          :sidebar-open false
                          :destination JournalsDestination)
           id (:next-effect-id updated)]
       (enqueue-effect updated (ClearSelectedPageEffect id)))
 
     ShowFlashcards
-    (let [updated (assoc current
+    (let [updated (assoc (cancel-outliner-editing current)
                          :sidebar-open false
                          :destination FlashcardsDestination)
           clear-id (:next-effect-id updated)
@@ -1164,7 +1182,7 @@
       (enqueue-effect cleared (LoadFlashcardsEffect load-id)))
 
     ShowGraphs
-    (assoc current
+    (assoc (cancel-outliner-editing current)
            :sidebar-open false
            :destination GraphsDestination)
 
@@ -1184,7 +1202,8 @@
     (match (graph-by-id (:graphs current) graph-id)
       (Some graph)
       (if (:is-ready graph)
-        (let [updated (assoc current :graph-loading true)
+        (let [updated
+              (assoc (cancel-outliner-editing current) :graph-loading true)
               id (:next-effect-id updated)]
           (enqueue-effect updated (OpenGraphEffect id graph-id)))
         current)

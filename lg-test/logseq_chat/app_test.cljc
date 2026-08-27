@@ -614,6 +614,12 @@
    (bridge/encode-effect (model/ExportGraphDatabaseEffect 9))
    "database export leaves file resolution at the platform boundary"))
 
+(deftest cancel-outliner-editing-has-a-stable-native-effect-payload
+  (assert-equal
+   "{\"id\":9,\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}"
+   (bridge/encode-effect (model/CancelOutlinerEditingEffect 9))
+   "destination changes preserve the typed cancel-editing boundary"))
+
 (deftest settings-render-the-main-branch-navigation-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
@@ -2090,6 +2096,60 @@
      (:pending-effects returned)
      "back closes the matching core projection")))
 
+(deftest native-back-prefers-the-full-screen-search-navigation-path
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "app-node"))
+    (driver/send! application (model/RequestSearchNode "search-node"))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 1)}))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "app-node")]
+                    (:app-navigation-path (chat/model application))
+                    "native back leaves the underlying app route intact")
+      (assert-equal []
+                    (:search-navigation-path (chat/model application))
+                    "native back first pops the full-screen search route")
+      (assert-equal
+       [(model/OpenAppNodeEffect 1 "app-node")
+        (model/OpenSearchNodeEffect 2 "search-node")
+        (model/CloseSearchNodeEffect 3 "search-node")]
+       (:pending-effects (chat/model application))
+       "native search back closes the matching core projection"))))
+
+(deftest destination-navigation-ends-active-outliner-editing
+  (let [editing
+        (record model/outliner-editing
+                (uuid "block-a")
+                (title "Draft")
+                (caret-utf16-offset 5))
+        current (assoc (model/initial) :outliner-editing (Some editing))
+        node (model/update current (model/RequestAppNode "page-a"))
+        sidebar (model/update current (model/SelectSidebarPage "page-a"))
+        journals (model/update current model/ShowJournals)
+        flashcards (model/update current model/ShowFlashcards)
+        graphs (model/update current model/ShowGraphs)
+        graph-switch
+        (model/update
+         (assoc current :graphs [(graph "graph-a" "Work" false true)])
+         (model/RequestOpenGraph "graph-a"))]
+    (doseq [updated [node sidebar journals flashcards graphs graph-switch]]
+      (assert-equal None (:outliner-editing updated)
+                    "destination changes clear the retained editor immediately"))
+    (assert-equal 2 (count (:pending-effects node))
+                  "node navigation cancels editing before opening the route")
+    (assert-equal 2 (count (:pending-effects sidebar))
+                  "sidebar navigation cancels editing before selecting the page")
+    (assert-equal 1 (count (:pending-effects graphs))
+                  "a local-only destination still cancels core editing")
+    (assert-equal 2 (count (:pending-effects graph-switch))
+                  "graph switches cancel editing before opening the graph")))
+
 (deftest failed-navigation-effects-restore-the-optimistic-path
   (let [requested
         (model/update (model/initial) (model/RequestAppNode "node-a"))
@@ -2877,21 +2937,24 @@
                       (:pending-page-deletion (chat/model application))
                       "Delete opens the LG-owned confirmation state")))))
 
-(deftest outliner-structure-controls-publish-typed-core-effects
+(deftest outliner-structure-controls-use-native-navigation-and-core-effects
   (let [collapsed
         (model/update (model/initial)
                       (model/ToggleOutlinerCollapsed "parent"))
         zoomed
-        (model/update collapsed (model/ZoomOutlinerBlock "parent"))]
+        (model/update collapsed (model/RequestAppNode "parent"))]
     (assert-equal
      [(model/ToggleOutlinerCollapsedEffect 1 "parent")]
      (:pending-effects collapsed)
      "collapse crosses the LG effect boundary")
     (assert-equal
      [(model/ToggleOutlinerCollapsedEffect 1 "parent")
-      (model/ZoomOutlinerBlockEffect 2 "parent")]
+      (model/OpenAppNodeEffect 2 "parent")]
      (:pending-effects zoomed)
-     "zoom shares the ordered typed effect queue")
+     "zoom enters the native route through the ordered core effect queue")
+    (assert-equal [(model/NodeRoute "parent")]
+                  (:app-navigation-path zoomed)
+                  "zoom is represented in the native navigation path")
     (assert-equal 3 (:next-effect-id zoomed)
                   "both structure controls advance stable effect IDs")))
 
@@ -3094,10 +3157,13 @@
       (driver/dispatch-event! application (proto/Press collapse))
       (driver/flush! application)
       (assert-equal
-       [(model/ZoomOutlinerBlockEffect 1 "parent")
+       [(model/OpenAppNodeEffect 1 "parent")
         (model/ToggleOutlinerCollapsedEffect 2 "parent")]
        (:pending-effects (chat/model application))
-       "both controls route through LG without triggering row editing"))))
+       "both controls route through LG without triggering row editing")
+      (assert-equal [(model/NodeRoute "parent")]
+                    (:app-navigation-path (chat/model application))
+                    "zoom participates in native Back navigation"))))
 
 (deftest outliner-row-splices-update-the-existing-keyed-projection
   (let [parent (record model/outline-row

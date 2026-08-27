@@ -13,8 +13,10 @@
  :fn<map<string;wire-value>;string;string>)
 (signature logseq-chat.view/extension-int
  :fn<map<string;wire-value>;string;int>)
+(signature logseq-chat.view/navigation-path-depth
+ :fn<vector<navigation-route>;int>)
 (signature logseq-chat.view/handle-native-navigation-event
- :fn<event;fn<chat-action;bool>;bool>)
+ :fn<event;signal<chat-model>;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/handle-outliner-editor-event
  :fn<event;signal<string>;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/outliner-editor-view

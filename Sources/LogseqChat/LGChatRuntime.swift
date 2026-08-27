@@ -787,12 +787,11 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                     message: String(describing: error)
                 )
             }
-        case "tap-outliner-block", "toggle-outliner-collapsed", "zoom-outliner-block",
+        case "tap-outliner-block", "toggle-outliner-collapsed",
              "long-press-outliner-block", "add-root-block":
             do {
                 let eventType = switch effect.kind {
                 case "toggle-outliner-collapsed": "toggleCollapsed"
-                case "zoom-outliner-block": "zoomIn"
                 case "long-press-outliner-block": "longPressBlock"
                 case "add-root-block": "addRootBlock"
                 default: "tapBlock"
@@ -875,6 +874,17 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             do {
                 request = try Self.outlinerRequest(
                     LogseqOutlinerEvent(type: "saveEditing")
+                )
+            } catch {
+                return LGChatEffectResolution(
+                    succeeded: false,
+                    message: String(describing: error)
+                )
+            }
+        case "cancel-outliner-editing":
+            do {
+                request = try Self.outlinerRequest(
+                    LogseqOutlinerEvent(type: "cancelEditing")
                 )
             } catch {
                 return LGChatEffectResolution(

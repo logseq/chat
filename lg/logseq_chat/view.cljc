@@ -102,15 +102,34 @@
     (Some (proto/IntValue value)) value
     _ 0))
 
-(defn handle-native-navigation-event [input-event send]
-  (match input-event
-    (proto/ExtensionEvent _node _identifier "back" values)
-    (loop [remaining (extension-int values "count")]
-      (if (<= remaining 0)
-        true
+(defn navigation-path-depth [path]
+  (count path))
+
+(defn send-navigation-back [search-count app-count requested send]
+  (let [search-pops (min requested search-count)
+        app-pops (min (- requested search-pops) app-count)]
+    (loop [remaining search-pops]
+      (if (> remaining 0)
+        (do
+          (send model/BackSearchNavigation)
+          (recur (dec remaining)))
+        true))
+    (loop [remaining app-pops]
+      (if (> remaining 0)
         (do
           (send model/BackAppNavigation)
-          (recur (dec remaining)))))
+          (recur (dec remaining)))
+        true))))
+
+(defn handle-native-navigation-event [input-event model-source send]
+  (match input-event
+    (proto/ExtensionEvent _node _identifier "back" values)
+    (let [current (signal/sample model-source)]
+      (send-navigation-back
+       (navigation-path-depth (:search-navigation-path current))
+       (navigation-path-depth (:app-navigation-path current))
+       (extension-int values "count")
+       send))
     _ true))
 
 (defn handle-outliner-editor-event [input-event block-id-source send]
@@ -892,7 +911,9 @@
           (str "button.outliner.zoom." (:uuid row))
           :on-press
           (event [current-row row-source]
-            (send (model/ZoomOutlinerBlock (:uuid current-row))))}
+            (if search-open
+              (send (model/RequestSearchNode (:uuid current-row)))
+              (send (model/RequestAppNode (:uuid current-row)))))}
          "•"]
         [:if {:test has-status-source}
          [:button
@@ -2354,7 +2375,7 @@
     (ui/on-event!
      ui-context node
      (fn [input-event]
-       (handle-native-navigation-event input-event send)))
+       (handle-native-navigation-event input-event model-source send)))
     (elements/element
      ui-context node
      [chat-main-view (reactive journal-navigation-model model-source) send])
