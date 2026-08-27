@@ -1667,14 +1667,26 @@
           :else "Graphs")]
     (str title (if (tab-enabled? current tab) ", on" ", off"))))
 
-(defn journals-tab-toggle-label [current]
-  (tab-toggle-label current "journals"))
+(defn tab-index [current tab]
+  (let [tabs (:sidebar-tabs current)]
+    (loop [index 0]
+      (if (= index (count tabs))
+        -1
+        (if (= (nth tabs index) tab)
+          index
+          (recur (inc index)))))))
 
-(defn flashcards-tab-toggle-label [current]
-  (tab-toggle-label current "flashcards"))
+(defn tab-movement-visible? [current tab]
+  (and (not (= tab "journals"))
+       (tab-enabled? current tab)))
 
-(defn graphs-tab-toggle-label [current]
-  (tab-toggle-label current "graphs"))
+(defn tab-move-up-disabled? [current tab]
+  (<= (tab-index current tab) 1))
+
+(defn tab-move-down-disabled? [current tab]
+  (let [index (tab-index current tab)]
+    (or (< index 0)
+        (>= index (dec (count (:sidebar-tabs current)))))))
 
 (defn tab-toggle-identifier [tab]
   (str "toggle.settings.tab." tab))
@@ -1719,44 +1731,42 @@
     [:text {:value (reactive runtime-log-message record-source)}]
     [:separator]]))
 
-(defn settings-tab-row [ui-context label-source tab title send]
-  (let [row (ui/row! ui-context)
-        toggle (ui/button! ui-context)
-        up (ui/button! ui-context)
-        down (ui/button! ui-context)]
-    (ui/string-property-signal!
-     ui-context toggle proto/AccessibilityLabel label-source)
-    (ui/accessibility-identifier!
-     ui-context toggle (tab-toggle-identifier tab))
-    (ui/on-event!
-     ui-context toggle
-     (fn [input-event]
-       (match input-event
-         (proto/Press _node) (send (model/ToggleSidebarTab tab))
-         _ true)))
-    (ui/string-property! ui-context toggle proto/TextValue title)
-    (ui/accessibility-label! ui-context up (str "Move " title " up"))
-    (ui/accessibility-identifier! ui-context up (tab-up-identifier tab))
-    (ui/on-event!
-     ui-context up
-     (fn [input-event]
-       (match input-event
-         (proto/Press _node) (send (model/MoveSidebarTab tab -1))
-         _ true)))
-    (ui/string-property! ui-context up proto/TextValue "↑")
-    (ui/accessibility-label! ui-context down (str "Move " title " down"))
-    (ui/accessibility-identifier! ui-context down (tab-down-identifier tab))
-    (ui/on-event!
-     ui-context down
-     (fn [input-event]
-       (match input-event
-         (proto/Press _node) (send (model/MoveSidebarTab tab 1))
-         _ true)))
-    (ui/string-property! ui-context down proto/TextValue "↓")
-    (ui/append! ui-context row toggle)
-    (ui/append! ui-context row up)
-    (ui/append! ui-context row down)
-    row))
+(defui settings-tab-row [model-source tab title send]
+  (let [label-source
+        (reactive (fn [current] (tab-toggle-label current tab)) model-source)
+        toggle-disabled-source
+        (reactive (fn [_current] (model/required-sidebar-tab? tab)) model-source)
+        movement-visible-source
+        (reactive (fn [current] (tab-movement-visible? current tab)) model-source)
+        up-disabled-source
+        (reactive (fn [current] (tab-move-up-disabled? current tab)) model-source)
+        down-disabled-source
+        (reactive (fn [current] (tab-move-down-disabled? current tab)) model-source)]
+    (elements/element
+     ui-context nil
+     [:row
+     [:button
+      {:label label-source
+       :disabled toggle-disabled-source
+       :accessibility-identifier (tab-toggle-identifier tab)
+       :on-press (fn [_event] (send (model/ToggleSidebarTab tab)))}
+      title]
+     [:if {:test movement-visible-source}
+      [:button
+       {:disabled up-disabled-source
+        :accessibility-label (str "Move " title " up")
+        :accessibility-identifier (tab-up-identifier tab)
+        :on-press
+        (fn [_event] (send (model/MoveSidebarTab tab -1)))}
+       "↑"]]
+     [:if {:test movement-visible-source}
+      [:button
+       {:disabled down-disabled-source
+        :accessibility-label (str "Move " title " down")
+        :accessibility-identifier (tab-down-identifier tab)
+        :on-press
+        (fn [_event] (send (model/MoveSidebarTab tab 1)))}
+       "↓"]]])))
 
 (defui settings-tabs-screen [model-source send]
   [:column {:accessibility-identifier "screen.settings.tabs"}
@@ -1764,12 +1774,9 @@
     [:button {:on-press (fn [_event] (send model/BackSettings))} "Settings"]
     [:heading {:level 1} "Tabs"]]
    [:text "Visible tabs"]
-   [settings-tab-row (reactive journals-tab-toggle-label model-source)
-    "journals" "Journals" send]
-   [settings-tab-row (reactive flashcards-tab-toggle-label model-source)
-    "flashcards" "Flashcards" send]
-   [settings-tab-row (reactive graphs-tab-toggle-label model-source)
-    "graphs" "Graphs" send]
+   [settings-tab-row model-source "journals" "Journals" send]
+   [settings-tab-row model-source "flashcards" "Flashcards" send]
+   [settings-tab-row model-source "graphs" "Graphs" send]
    [:text "Journals and Graphs are always available. Use the arrows to reorder tabs."]])
 
 (defui runtime-log-screen [model-source send]

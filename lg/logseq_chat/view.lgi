@@ -286,9 +286,10 @@
 (signature logseq-chat.view/runtime-log-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/tab-enabled? :fn<chat-model;string;bool>)
 (signature logseq-chat.view/tab-toggle-label :fn<chat-model;string;string>)
-(signature logseq-chat.view/journals-tab-toggle-label :fn<chat-model;string>)
-(signature logseq-chat.view/flashcards-tab-toggle-label :fn<chat-model;string>)
-(signature logseq-chat.view/graphs-tab-toggle-label :fn<chat-model;string>)
+(signature logseq-chat.view/tab-index :fn<chat-model;string;int>)
+(signature logseq-chat.view/tab-movement-visible? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/tab-move-up-disabled? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/tab-move-down-disabled? :fn<chat-model;string;bool>)
 (signature logseq-chat.view/tab-toggle-identifier :fn<string;string>)
 (signature logseq-chat.view/tab-up-identifier :fn<string;string>)
 (signature logseq-chat.view/tab-down-identifier :fn<string;string>)
@@ -304,7 +305,7 @@
 (signature logseq-chat.view/runtime-log-row
  :fn<ui-context;signal<runtime-log-record>;int>)
 (signature logseq-chat.view/settings-tab-row
- :fn<ui-context;signal<string>;string;string;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;string;string;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/settings-tabs-screen
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/runtime-log-screen

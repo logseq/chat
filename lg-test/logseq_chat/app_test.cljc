@@ -77,6 +77,14 @@
             (descendant-count-with-identifier
              renderer (nth children index) identifier)))))))
 
+(defn descendant-enabled [renderer parent identifier]
+  (let [node (descendant-with-identifier renderer parent identifier)]
+    (if (= node -1)
+      None
+      (match (apple/property renderer node proto/Enabled)
+        (Some (proto/BoolValue enabled)) (Some enabled)
+        _ None))))
+
 (defn main-root [renderer application]
   (let [stack (nth (apple/children renderer (driver/root-node application)) 0)
         children (apple/children renderer stack)]
@@ -587,6 +595,76 @@
       (is (not (= -1 (descendant-with-identifier renderer root
                                                   "button.log-copy")))
           "runtime diagnostics retain their actions"))))
+
+(deftest settings-tabs-match-main-visibility-and-movement-boundaries
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplySettingsSnapshot
+      (settings ["journals" "flashcards" "graphs"])))
+    (driver/send! application model/OpenSettings)
+    (driver/send! application model/OpenSettingsTabs)
+    (driver/flush! application)
+    (let [root (driver/root-node application)]
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "toggle.settings.tab.journals")
+                    "journals remains visibly required")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.settings.tab.journals.up")
+                    "journals does not render movement controls")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "toggle.settings.tab.flashcards")
+                    "flashcards remains configurable")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.flashcards.up")
+                    "the first configurable tab cannot move above journals")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.flashcards.down")
+                    "the first configurable tab can move down")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "toggle.settings.tab.graphs")
+                    "graphs remains visibly required")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.graphs.up")
+                    "the last required tab can move within visible tabs")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.graphs.down")
+                    "the last tab cannot move beyond the visible list")
+      (driver/dispatch-event!
+       application
+       (proto/Press
+        (descendant-with-identifier
+         renderer root "toggle.settings.tab.flashcards")))
+      (driver/flush! application)
+      (let [updated-root (driver/root-node application)]
+        (assert-equal -1
+                      (descendant-with-identifier
+                       renderer updated-root
+                       "button.settings.tab.flashcards.up")
+                      "hidden tabs do not retain movement controls")
+        (assert-equal -1
+                      (descendant-with-identifier
+                       renderer updated-root
+                       "button.settings.tab.flashcards.down")
+                      "hidden tabs do not expose invalid downward movement")
+        (assert-equal (Some false)
+                      (descendant-enabled
+                       renderer updated-root "button.settings.tab.graphs.up")
+                      "a lone configurable position cannot move up")
+        (assert-equal (Some false)
+                      (descendant-enabled
+                       renderer updated-root "button.settings.tab.graphs.down")
+                      "a lone configurable position cannot move down")))))
 
 (deftest settings-language-picker-exposes-and-validates-all-main-choices
   (let [renderer (apple/create-with-extensions (view/extension-registry))
