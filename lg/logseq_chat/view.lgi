@@ -269,6 +269,19 @@
 (signature logseq-chat.view/settings-apply-disabled? :fn<chat-model;bool>)
 (signature logseq-chat.view/settings-version :fn<chat-model;string>)
 (signature logseq-chat.view/settings-revision :fn<chat-model;string>)
+(signature logseq-chat.view/settings-language-title :fn<chat-model;string>)
+(signature logseq-chat.view/settings-language-choice-title
+ :fn<settings-language-choice;string>)
+(signature logseq-chat.view/settings-language-choice-identifier
+ :fn<settings-language-choice;string>)
+(signature logseq-chat.view/settings-language-choice-row
+ :fn<ui-context;signal<settings-language-choice>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-community-link-title
+ :fn<settings-community-link;string>)
+(signature logseq-chat.view/settings-community-link-identifier
+ :fn<settings-community-link;string>)
+(signature logseq-chat.view/settings-community-link-row
+ :fn<ui-context;signal<settings-community-link>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/settings-tabs-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/runtime-log-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/tab-enabled? :fn<chat-model;string;bool>)

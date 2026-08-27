@@ -42,6 +42,15 @@
   (version :string)
   (revision :string))
 
+(type-record settings-language-choice
+  (id :string)
+  (title :string))
+
+(type-record settings-community-link
+  (id :string)
+  (title :string)
+  (url :string))
+
 (type-record runtime-log-record
   (id :string)
   (level :string)
@@ -204,6 +213,7 @@
   (DeleteLocalGraphEffect :int :string)
   (SaveSettingsEffect :int :settings-projection)
   (ExportGraphDatabaseEffect :int)
+  (OpenExternalURLEffect :int :string)
   (RefreshRuntimeLogEffect :int :string :bool :bool)
   (CopyRuntimeLogEffect :int :vector<runtime-log-record>)
   (SignOutEffect :int))
@@ -248,6 +258,9 @@
   (runtime-log-open :bool)
   (appearance :string)
   (language :string)
+  (language-choices :vector<settings-language-choice>)
+  (settings-language-menu-open :bool)
+  (community-links :vector<settings-community-link>)
   (spell-check :bool)
   (auto-correction :bool)
   (sidebar-tabs :vector<string>)
@@ -370,7 +383,9 @@
   (OpenSettingsTabs)
   (BackSettings)
   (ChangeAppearance :string)
-  (ChangeLanguage :string)
+  (OpenSettingsLanguageMenu)
+  (CloseSettingsLanguageMenu)
+  (ChooseSettingsLanguage :string)
   (ToggleSpellCheck :bool)
   (ToggleAutoCorrection :bool)
   (ToggleSidebarTab :string)
@@ -378,6 +393,7 @@
   (ChangeBaseURL :string)
   (ApplySettings)
   (ExportGraphDatabase)
+  (OpenExternalURL :string)
   (OpenRuntimeLog)
   (DismissRuntimeLog)
   (ToggleRuntimeLogErrors)
@@ -395,6 +411,12 @@
  :fn<string;string;string;string;task-status>)
 (signature logseq-chat.model/built-in-task-statuses
  :fn<vector<task-status>>)
+(signature logseq-chat.model/settings-language-choices
+ :fn<vector<settings-language-choice>>)
+(signature logseq-chat.model/settings-community-links
+ :fn<vector<settings-community-link>>)
+(signature logseq-chat.model/settings-language-by-id
+ :fn<vector<settings-language-choice>;string;option<settings-language-choice>>)
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/journal-section-key
  :fn<outline-row;option<string>>)

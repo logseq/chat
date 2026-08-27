@@ -235,6 +235,17 @@ public struct LogseqChatRootView : View {
                     refreshAfterApply: false
                 )
             },
+            openExternalURL: { url in
+                #if SKIP
+                return AndroidAssetImporter.openURL(url.absoluteString)
+                #elseif os(iOS)
+                return await UIApplication.shared.open(url)
+                #elseif os(macOS)
+                return NSWorkspace.shared.open(url)
+                #else
+                return false
+                #endif
+            },
             exportGraphDatabase: {
                 guard let graphID = store.snapshot.selectedGraphId,
                       !graphID.isEmpty

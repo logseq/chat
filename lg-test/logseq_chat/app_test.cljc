@@ -521,6 +521,77 @@
                                                   "button.log-copy")))
           "runtime diagnostics retain their actions"))))
 
+(deftest settings-language-picker-exposes-and-validates-all-main-choices
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          picker
+          (descendant-with-identifier
+           renderer root "picker.settings.language")]
+      (assert-equal "System"
+                    (property-string renderer picker proto/TextValue)
+                    "the language picker renders the selected language")
+      (driver/dispatch-event! application (proto/Press picker))
+      (driver/flush! application)
+      (let [menu
+            (descendant-with-identifier
+             renderer root "menu.settings.language")
+            simplified-chinese
+            (descendant-with-identifier
+             renderer menu "button.settings.language.zh-CN")
+            arabic
+            (descendant-with-identifier
+             renderer menu "button.settings.language.ar")]
+        (is (not (= -1 menu)) "the language picker opens a controlled menu")
+        (is (not (= -1 simplified-chinese))
+            "the picker retains the Simplified Chinese choice")
+        (is (not (= -1 arabic))
+            "the picker retains the final main-branch language choice")
+        (driver/dispatch-event!
+         application (proto/Press simplified-chinese))
+        (driver/flush! application)
+        (assert-equal "zh-CN" (:language (chat/model application))
+                      "selecting a language updates LG settings state")
+        (is (not (:settings-language-menu-open (chat/model application)))
+            "selecting a language dismisses its menu")))
+    (driver/send! application model/OpenSettingsLanguageMenu)
+    (driver/send! application (model/ChooseSettingsLanguage "unknown"))
+    (driver/flush! application)
+    (assert-equal "zh-CN" (:language (chat/model application))
+                  "unknown language identifiers cannot enter LG state")
+    (is (not (:settings-language-menu-open (chat/model application)))
+        "rejecting an unknown language still dismisses the menu")))
+
+(deftest settings-community-links-use-a-typed-platform-boundary
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          report-bug
+          (descendant-with-identifier
+           renderer root "link.settings.community.report-bug")
+          github
+          (descendant-with-identifier
+           renderer root "link.settings.community.github")]
+      (is (not (= -1 report-bug)) "settings retain the issue tracker link")
+      (is (not (= -1 github)) "settings retain the GitHub community link")
+      (driver/dispatch-event! application (proto/Press github))
+      (driver/flush! application)
+      (assert-equal
+       [(model/OpenExternalURLEffect 1 "https://github.com/logseq/logseq")]
+       (:pending-effects (chat/model application))
+       "community navigation stays on the typed platform boundary")
+      (assert-equal
+       "{\"id\":1,\"kind\":\"open-external-url\",\"text\":\"https://github.com/logseq/logseq\"}"
+       (bridge/encode-effect
+        (model/OpenExternalURLEffect 1 "https://github.com/logseq/logseq"))
+       "the native bridge preserves the trusted community URL"))))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"

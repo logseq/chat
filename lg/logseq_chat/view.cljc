@@ -1608,6 +1608,48 @@
 (defn settings-revision [current]
   (:revision current))
 
+(defn settings-language-title [current]
+  (match (model/settings-language-by-id
+          (:language-choices current) (:language current))
+    (Some choice) (:title choice)
+    None "System"))
+
+(defn settings-language-choice-title [choice]
+  (:title choice))
+
+(defn settings-language-choice-identifier [choice]
+  (str "button.settings.language." (:id choice)))
+
+(defn settings-language-choice-row [ui-context choice-source send]
+  (let [choice (signal/sample choice-source)]
+    (elements/element
+     ui-context nil
+     [:menu-item
+      {:text (reactive settings-language-choice-title choice-source)
+       :accessibility-identifier
+       (settings-language-choice-identifier choice)
+       :on-press
+       (event [current-choice choice-source]
+         (send (model/ChooseSettingsLanguage (:id current-choice))))}])))
+
+(defn settings-community-link-title [link]
+  (:title link))
+
+(defn settings-community-link-identifier [link]
+  (str "link.settings.community." (:id link)))
+
+(defn settings-community-link-row [ui-context link-source send]
+  (let [link (signal/sample link-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive settings-community-link-title link-source)
+       :accessibility-identifier
+       (settings-community-link-identifier link)
+       :on-press
+       (event [current-link link-source]
+         (send (model/OpenExternalURL (:url current-link))))}])))
+
 (defn settings-tabs-visible? [current]
   (:settings-tabs-open current))
 
@@ -1778,9 +1820,20 @@
     [:button {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
      "Dark"]]
    [:button
-    {:accessibility-identifier "picker.settings.language"
-     :on-press (fn [_event] (send (model/ChangeLanguage "system")))}
-    "Language"]
+    {:text (reactive settings-language-title model-source)
+     :label "Language"
+     :accessibility-identifier "picker.settings.language"
+     :on-press (fn [_event] (send model/OpenSettingsLanguageMenu))}]
+   [:if {:test (reactive :settings-language-menu-open model-source)}
+    [:dropdown-menu
+     {:accessibility-identifier "menu.settings.language"
+      :on-dismiss (fn [_event] (send model/CloseSettingsLanguageMenu))}
+     [:keyed
+      {:source (reactive :language-choices model-source)
+       :key :id
+       :compare compare
+       :as choice-source}
+      [settings-language-choice-row choice-source send]]]]
    [:button
     {:accessibility-identifier "link.settings.tabs"
      :on-press (fn [_event] (send model/OpenSettingsTabs))}
@@ -1829,6 +1882,13 @@
    [:row [:text "Version"] [:text {:value (reactive settings-version model-source)}]]
    [:row [:text "Revision"] [:text {:value (reactive settings-revision model-source)}]]
    [:button {:on-press (fn [_event] (send model/OpenRuntimeLog))} "Check log"]
+   [:heading {:level 2} "Community"]
+   [:keyed
+    {:source (reactive :community-links model-source)
+     :key :id
+     :compare compare
+     :as link-source}
+    [settings-community-link-row link-source send]]
    [:button
     {:accessibility-identifier "button.sign-out"
      :on-press (fn [_event] (send model/SignOut))}

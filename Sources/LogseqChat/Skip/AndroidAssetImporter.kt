@@ -83,6 +83,16 @@ object AndroidAssetImporter {
         }.onFailure { android.util.Log.e("LogseqChat", "Could not open asset", it) }
     }
 
+    fun openURL(url: String): Boolean = runCatching {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        true
+    }.onFailure {
+        android.util.Log.e("LogseqChat", "Could not open URL", it)
+    }.getOrDefault(false)
+
     fun share(text: String, paths: SkipArray<String>) {
         runCatching {
             val uris = ArrayList(paths.mapNotNull { path ->

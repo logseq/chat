@@ -229,6 +229,9 @@
     (model/ExportGraphDatabaseEffect id)
     (str "{\"id\":" id
          ",\"kind\":\"export-graph-database\",\"text\":\"\"}")
+    (model/OpenExternalURLEffect id url)
+    (str "{\"id\":" id ",\"kind\":\"open-external-url\",\"text\":"
+         (wire/quoted url) "}")
     (model/RefreshRuntimeLogEffect id source errors-only newest-first)
     (str "{\"id\":" id ",\"kind\":\"refresh-runtime-log\",\"text\":"
          (wire/quoted source) ",\"value\":"

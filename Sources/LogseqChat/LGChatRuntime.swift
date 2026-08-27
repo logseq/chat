@@ -122,6 +122,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let runtimeLog: LogseqRuntimeLog
     private let copyText: @MainActor (String) -> Void
     private let signOut: @MainActor () async -> Void
+    private let openExternalURL: (@MainActor (URL) async -> Bool)?
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
     private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
@@ -135,6 +136,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
         signOut: @escaping @MainActor () async -> Void,
+        openExternalURL: (@MainActor (URL) async -> Bool)? = nil,
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
         graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
@@ -147,6 +149,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         self.runtimeLog = runtimeLog
         self.copyText = copyText
         self.signOut = signOut
+        self.openExternalURL = openExternalURL
         self.exportGraphDatabase = exportGraphDatabase
         self.graphEffect = graphEffect
         self.presentAttachment = presentAttachment
@@ -225,6 +228,25 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                 return LGChatEffectResolution(
                     succeeded: true,
                     message: "",
+                    output: .discard
+                )
+            case "open-external-url":
+                guard let url = URL(string: effect.text),
+                      let scheme = url.scheme?.lowercased(),
+                      (scheme == "http" || scheme == "https"),
+                      url.host != nil,
+                      let openExternalURL
+                else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "External URL is unavailable",
+                        output: .discard
+                    )
+                }
+                let succeeded = await openExternalURL(url)
+                return LGChatEffectResolution(
+                    succeeded: succeeded,
+                    message: succeeded ? "" : "Could not open the external URL",
                     output: .discard
                 )
             case "export-graph-database":

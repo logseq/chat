@@ -647,6 +647,56 @@ struct LGChatRendererTests {
         #expect(resolution.output == .discard)
     }
 
+    @Test("external URLs stay on the platform presentation boundary")
+    func externalURLsUsePlatformBoundary() async {
+        var openedURL: URL?
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            openExternalURL: { url in
+                openedURL = url
+                return true
+            }
+        )
+
+        let resolution = await handler.execute(LGChatEffect(
+            id: 46,
+            kind: "open-external-url",
+            text: "https://github.com/logseq/logseq"
+        ))
+
+        #expect(openedURL?.absoluteString == "https://github.com/logseq/logseq")
+        #expect(resolution.succeeded)
+        #expect(resolution.output == .discard)
+    }
+
+    @Test("external URL effects reject non-web schemes")
+    func externalURLsRejectNonWebSchemes() async {
+        var presentationCount = 0
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signOut: {},
+            openExternalURL: { _ in
+                presentationCount += 1
+                return true
+            }
+        )
+
+        let resolution = await handler.execute(LGChatEffect(
+            id: 47,
+            kind: "open-external-url",
+            text: "file:///private/data"
+        ))
+
+        #expect(presentationCount == 0)
+        #expect(!resolution.succeeded)
+        #expect(resolution.output == .discard)
+    }
+
     @Test("sync now reuses the platform sync pump")
     func syncNowEffectsUsePlatformBoundary() async {
         var syncCount = 0

@@ -18,6 +18,58 @@
    (task-status "done" "logseq.property/status.done" "Done" "Done")
    (task-status "canceled" "logseq.property/status.canceled" "Canceled" "Cancelled")])
 
+(defn settings-language-choice [id title]
+  (record settings-language-choice (id id) (title title)))
+
+(defn settings-language-choices []
+  [(settings-language-choice "system" "System")
+   (settings-language-choice "en" "English")
+   (settings-language-choice "fr" "Français")
+   (settings-language-choice "de" "Deutsch")
+   (settings-language-choice "nl" "Dutch (Nederlands)")
+   (settings-language-choice "zh-CN" "简体中文")
+   (settings-language-choice "zh-Hant" "繁體中文")
+   (settings-language-choice "af" "Afrikaans")
+   (settings-language-choice "ca" "Català")
+   (settings-language-choice "es" "Español")
+   (settings-language-choice "vi" "Tiếng Việt")
+   (settings-language-choice "nb-NO" "Norsk (bokmål)")
+   (settings-language-choice "pl" "Polski")
+   (settings-language-choice "pt-BR" "Português (Brasileiro)")
+   (settings-language-choice "pt-PT" "Português (Europeu)")
+   (settings-language-choice "ru" "Русский")
+   (settings-language-choice "ja" "日本語")
+   (settings-language-choice "it" "Italiano")
+   (settings-language-choice "tr" "Türkçe")
+   (settings-language-choice "uk" "Українська")
+   (settings-language-choice "ko" "한국어")
+   (settings-language-choice "sk" "Slovenčina")
+   (settings-language-choice "fa" "فارسی")
+   (settings-language-choice "id" "Bahasa Indonesia")
+   (settings-language-choice "cs" "Čeština")
+   (settings-language-choice "ar" "العربية")])
+
+(defn settings-community-link [id title url]
+  (record settings-community-link (id id) (title title) (url url)))
+
+(defn settings-community-links []
+  [(settings-community-link
+    "report-bug" "Report bug" "https://github.com/logseq/db-test/issues")
+   (settings-community-link
+    "discord" "Discord community" "https://discord.com/invite/KpN4eHY")
+   (settings-community-link "forum" "Forum" "https://discuss.logseq.com")
+   (settings-community-link
+    "github" "GitHub" "https://github.com/logseq/logseq")])
+
+(defn settings-language-by-id [choices target]
+  (loop [index 0]
+    (if (= index (count choices))
+      None
+      (let [choice (nth choices index)]
+        (if (= target (:id choice))
+          (Some choice)
+          (recur (inc index)))))))
+
 (defn initial []
   (record chat-model
           (selected-graph None)
@@ -59,6 +111,9 @@
           (runtime-log-open false)
           (appearance "system")
           (language "system")
+          (language-choices (settings-language-choices))
+          (settings-language-menu-open false)
+          (community-links (settings-community-links))
           (spell-check true)
           (auto-correction true)
           (sidebar-tabs ["journals" "flashcards" "graphs"])
@@ -160,6 +215,7 @@
     (DeleteLocalGraphEffect id _graph-id) id
     (SaveSettingsEffect id _settings) id
     (ExportGraphDatabaseEffect id) id
+    (OpenExternalURLEffect id _url) id
     (RefreshRuntimeLogEffect id _source _errors-only _newest-first) id
     (CopyRuntimeLogEffect id _records) id
     (SignOutEffect id) id))
@@ -1165,12 +1221,14 @@
            :connection-menu-open false
            :settings-open true
            :settings-tabs-open false
+           :settings-language-menu-open false
            :runtime-log-open false)
 
     DismissSettings
     (assoc current
            :settings-open false
            :settings-tabs-open false
+           :settings-language-menu-open false
            :runtime-log-open false)
 
     OpenSettingsTabs
@@ -1182,8 +1240,19 @@
     (ChangeAppearance appearance)
     (assoc current :appearance appearance)
 
-    (ChangeLanguage language)
-    (assoc current :language language)
+    OpenSettingsLanguageMenu
+    (assoc current :settings-language-menu-open true)
+
+    CloseSettingsLanguageMenu
+    (assoc current :settings-language-menu-open false)
+
+    (ChooseSettingsLanguage language)
+    (match (settings-language-by-id (:language-choices current) language)
+      (Some choice)
+      (assoc current
+             :language (:id choice)
+             :settings-language-menu-open false)
+      None (assoc current :settings-language-menu-open false))
 
     (ToggleSpellCheck enabled)
     (assoc current :spell-check enabled)
@@ -1209,6 +1278,7 @@
          (assoc current
                 :settings-open false
                 :settings-tabs-open false
+                :settings-language-menu-open false
                 :runtime-log-open false)
          (SaveSettingsEffect id (current-settings current))))
       current)
@@ -1216,6 +1286,10 @@
     ExportGraphDatabase
     (let [id (:next-effect-id current)]
       (enqueue-effect current (ExportGraphDatabaseEffect id)))
+
+    (OpenExternalURL url)
+    (let [id (:next-effect-id current)]
+      (enqueue-effect current (OpenExternalURLEffect id url)))
 
     OpenRuntimeLog
     (assoc current :runtime-log-open true)
