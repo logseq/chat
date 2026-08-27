@@ -974,6 +974,32 @@ struct LGChatRendererTests {
         ])
     }
 
+    @Test("successful graph lifecycle effects publish the authoritative graph snapshot")
+    func graphLifecycleEffectsPublishSnapshot() throws {
+        let snapshot = try JSONDecoder().decode(
+            LogseqChatSnapshot.self,
+            from: Data(
+                #"{"revision":3,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"New graph","selectedGraphId":"graph-new","graphs":[{"id":"graph-new","name":"New graph","schemaVersion":"65.33","isEncrypted":true,"isReady":true}]}"#.utf8
+            )
+        )
+
+        let resolution = LGChatGraphEffectResolution.make(
+            succeeded: true,
+            snapshot: snapshot,
+            errorMessage: nil
+        )
+
+        #expect(resolution.succeeded)
+        #expect(resolution.output == .coreResponse)
+        let envelope = try JSONDecoder().decode(
+            LGChatGraphSnapshotEnvelope.self,
+            from: Data(resolution.message.utf8)
+        )
+        #expect(envelope.ok)
+        #expect(envelope.result.selectedGraphId == "graph-new")
+        #expect(envelope.result.graphs?.map(\.id) == ["graph-new"])
+    }
+
     @Test("runtime routes platform output to host updates instead of core snapshots")
     func runtimeRoutesPlatformOutputToHostUpdates() async {
         let native = LGChatNativeRuntimeProbe()

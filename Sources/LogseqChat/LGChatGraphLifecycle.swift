@@ -1,6 +1,53 @@
 import Foundation
 import LogseqChatModel
 
+struct LGChatGraphSnapshotEnvelope: Codable {
+    let apiVersion: Int
+    let ok: Bool
+    let result: LogseqChatSnapshot
+}
+
+enum LGChatGraphEffectResolution {
+    static func make(
+        succeeded: Bool,
+        snapshot: LogseqChatSnapshot,
+        errorMessage: String?
+    ) -> LGChatEffectResolution {
+        guard succeeded else {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: errorMessage ?? "The graph operation failed",
+                output: .discard
+            )
+        }
+        do {
+            let data = try JSONEncoder().encode(LGChatGraphSnapshotEnvelope(
+                apiVersion: 1,
+                ok: true,
+                result: snapshot
+            ))
+            guard let message = String(data: data, encoding: .utf8) else {
+                throw LGChatGraphSnapshotEncodingError.invalidUTF8
+            }
+            return LGChatEffectResolution(
+                succeeded: true,
+                message: message,
+                output: .coreResponse
+            )
+        } catch {
+            return LGChatEffectResolution(
+                succeeded: false,
+                message: "Could not encode the graph snapshot: \(error)",
+                output: .discard
+            )
+        }
+    }
+}
+
+private enum LGChatGraphSnapshotEncodingError: Error {
+    case invalidUTF8
+}
+
 @MainActor
 final class LGChatGraphLifecycle {
     var localGraphIDsChanged: (([String]) -> Void)?
@@ -175,12 +222,10 @@ final class LGChatGraphLifecycle {
     }
 
     private func resolution(succeeded: Bool) -> LGChatEffectResolution {
-        LGChatEffectResolution(
+        LGChatGraphEffectResolution.make(
             succeeded: succeeded,
-            message: succeeded
-                ? ""
-                : store.lastError?.message ?? "The graph operation failed",
-            output: .discard
+            snapshot: store.snapshot,
+            errorMessage: store.lastError?.message
         )
     }
 
