@@ -1637,8 +1637,12 @@
 (defui graph-create-sheet [model-source send]
   [:sheet
    {:text "Add sync graph"
+    :class "navigation-form"
+    :accessibility-identifier "sheet.graph-create"
     :on-dismiss (fn [_event] (send model/DismissCreateGraph))}
    [:column
+    {:class "form"
+     :accessibility-identifier "form.graph-create"}
     [:text-field
      {:text (reactive :new-graph-name model-source)
       :placeholder "Graph name"
@@ -1660,12 +1664,23 @@
           (send (model/ToggleNewGraphEncrypted enabled))
           _ true))}
      "End-to-end encryption"]
-    [:text "Encryption cannot be changed after the sync graph is created."]
+    [:text
+     {:class "footnote"
+      :foreground "muted-foreground"}
+     "Encryption cannot be changed after the sync graph is created."]]
+   [:toolbar
+    {:orientation "horizontal"
+     :label "Graph creation actions"
+     :class "navigation-actions"
+     :accessibility-identifier "toolbar.graph-create"}
     [:button
-     {:on-press (fn [_event] (send model/DismissCreateGraph))}
+     {:class "cancellation-action"
+      :accessibility-identifier "button.graph-add.cancel"
+      :on-press (fn [_event] (send model/DismissCreateGraph))}
      "Cancel"]
     [:button
-     {:accessibility-identifier "button.graph-add.confirm"
+     {:class "confirmation-action"
+      :accessibility-identifier "button.graph-add.confirm"
       :disabled (reactive graph-create-disabled? model-source)
       :on-press (fn [_event] (send model/SubmitCreateGraph))}
      "Add"]]])

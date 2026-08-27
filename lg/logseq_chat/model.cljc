@@ -104,7 +104,7 @@
           (flashcard-answer-revealed false)
           (create-graph-open false)
           (new-graph-name "")
-          (new-graph-encrypted false)
+          (new-graph-encrypted true)
           (pending-graph-deletion None)
           (pending-page-deletion None)
           (connection-menu-open false)
@@ -618,8 +618,7 @@
     (assoc current
            :destination JournalsDestination
            :create-graph-open false
-           :new-graph-name ""
-           :new-graph-encrypted false)
+           :new-graph-name "")
     (DeleteLocalGraphEffect _id graph-id)
     (let [deleting-selected
           (match (:selected-graph-id current)

@@ -1649,6 +1649,8 @@
      (:pending-effects opened)
      "ready graphs publish their stable id")
     (is (:create-graph-open create-open) "the add sheet is LG-owned")
+    (is (:new-graph-encrypted create-open)
+        "new graphs preserve main's encrypted-by-default behavior")
     (assert-equal
      [(model/CreateGraphEffect 1 "New graph" true)]
      (:pending-effects submitted)
@@ -1694,9 +1696,40 @@
         (is (not (= -1 delete)) "local graphs expose deletion")
         (driver/dispatch-event! application (proto/Press add))
         (driver/flush! application)
-        (is (not (= -1
-                    (descendant-with-identifier renderer screen "field.graph-name")))
-            "add graph exposes the existing graph-name field in its modal")))))
+        (let [form
+              (descendant-with-identifier renderer screen "form.graph-create")
+              toolbar
+              (descendant-with-identifier renderer screen "toolbar.graph-create")]
+          (is (not (= -1 form)) "graph fields use one native form group")
+          (is (not (= -1 toolbar)) "graph actions use the navigation toolbar")
+          (when (and (not (= -1 form)) (not (= -1 toolbar)))
+            (assert-equal "form"
+                          (property-string renderer form proto/StyleClass)
+                          "graph fields retain their form presentation")
+            (assert-equal "navigation-actions"
+                          (property-string renderer toolbar proto/StyleClass)
+                          "modal actions retain their navigation placement")
+            (is (not (= -1
+                        (descendant-with-identifier renderer form "field.graph-name")))
+                "add graph exposes the existing graph-name field")
+            (assert-equal
+             "cancellation-action"
+             (property-string
+              renderer
+              (descendant-with-identifier renderer toolbar "button.graph-add.cancel")
+              proto/StyleClass)
+             "Cancel uses the platform cancellation placement")
+            (assert-equal
+             "confirmation-action"
+             (property-string
+              renderer
+              (descendant-with-identifier renderer toolbar "button.graph-add.confirm")
+              proto/StyleClass)
+             "Add uses the platform confirmation placement")
+            (assert-equal
+             (Some false)
+             (descendant-enabled renderer toolbar "button.graph-add.confirm")
+             "Add remains disabled while the graph name is blank")))))))
 
 (deftest graph-lifecycle-effects-disable-duplicate-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
