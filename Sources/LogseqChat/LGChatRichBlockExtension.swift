@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 enum LGChatExtensionRegistry {
     static func makeRegistry() throws -> LUIAppleExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
+        try LGChatNavigationExtension.register(in: registry)
         try LGChatOutlinerEditorExtension.register(in: registry)
         try LGChatRichBlockExtension.register(
             in: registry,

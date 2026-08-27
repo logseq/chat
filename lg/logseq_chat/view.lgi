@@ -4,6 +4,8 @@
  :fn<extension-component-schema>)
 (signature logseq-chat.view/outliner-block-content-schema
  :fn<extension-component-schema>)
+(signature logseq-chat.view/native-navigation-stack-schema
+ :fn<extension-component-schema>)
 (signature logseq-chat.view/extension-registry :fn<extension-registry>)
 (signature logseq-chat.view/string-wire-value :fn<string;wire-value>)
 (signature logseq-chat.view/int-wire-value :fn<int;wire-value>)
@@ -11,6 +13,8 @@
  :fn<map<string;wire-value>;string;string>)
 (signature logseq-chat.view/extension-int
  :fn<map<string;wire-value>;string;int>)
+(signature logseq-chat.view/handle-native-navigation-event
+ :fn<event;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/handle-outliner-editor-event
  :fn<event;signal<string>;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/outliner-editor-view
@@ -193,8 +197,6 @@
  :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/related-row-breadcrumbs
  :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/back-from-node
- :fn<chat-model;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
@@ -219,7 +221,6 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/add-first-block-button
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/node-back-identifier :fn<ui-context;string>)
 (signature logseq-chat.view/node-screen
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-view
@@ -372,4 +373,14 @@
 (signature logseq-chat.view/chat-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-main-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/journal-navigation-model
+ :fn<chat-model;chat-model>)
+(signature logseq-chat.view/node-route-model
+ :fn<chat-model;node-projection;chat-model>)
+(signature logseq-chat.view/native-navigation-depth
+ :fn<chat-model;int>)
+(signature logseq-chat.view/native-node-screen
+ :fn<ui-context;signal<chat-model>;signal<node-projection>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/native-navigation-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)

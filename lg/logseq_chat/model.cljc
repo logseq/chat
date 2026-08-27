@@ -799,6 +799,10 @@
               (apply-row-splices (:outliner-rows current)
                                  (:outliner-row-splices projection)))
             (:outliner-rows projection))
+          journal-rows
+          (if (empty? (:node-routes projection))
+            projected-rows
+            (:journal-outliner-rows projection))
           card-changed
           (not (= (first-flashcard-id (:flashcards current))
                   (first-flashcard-id (:flashcards projection))))
@@ -843,7 +847,7 @@
                  :flashcard-answer-revealed
                  (if card-changed false (:flashcard-answer-revealed current))
                  :node-routes (:node-routes projection)
-                 :journal-outliner-rows (:journal-outliner-rows projection)
+                 :journal-outliner-rows journal-rows
                  :outliner-editing (:outliner-editing projection)
                  :outliner-autocomplete (:outliner-autocomplete projection)
                  :outliner-autocomplete-candidates

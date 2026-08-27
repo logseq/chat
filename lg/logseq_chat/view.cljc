@@ -60,10 +60,21 @@
      "open-node"
      [(ext/event-field "uuid" ext/StringScalar true)])]))
 
+(defn native-navigation-stack-schema []
+  (ext/component
+   "native-navigation-stack"
+   [(proto/profile proto/MacOS proto/SwiftUIHost)
+    (proto/profile proto/IOS proto/SwiftUIHost)
+    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+   true []
+   [(ext/property "depth" ext/IntScalar true None)]
+   [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])]))
+
 (defn extension-registry []
   (let [registry (ext/registry)]
     (ext/register-component! registry (outliner-editor-schema))
     (ext/register-component! registry (outliner-block-content-schema))
+    (ext/register-component! registry (native-navigation-stack-schema))
     registry))
 
 (defn string-wire-value [value]
@@ -90,6 +101,17 @@
   (match (clojure.core/get values name)
     (Some (proto/IntValue value)) value
     _ 0))
+
+(defn handle-native-navigation-event [input-event send]
+  (match input-event
+    (proto/ExtensionEvent _node _identifier "back" values)
+    (loop [remaining (extension-int values "count")]
+      (if (<= remaining 0)
+        true
+        (do
+          (send model/BackAppNavigation)
+          (recur (dec remaining)))))
+    _ true))
 
 (defn handle-outliner-editor-event [input-event block-id-source send]
   (match input-event
@@ -775,11 +797,6 @@
      :as breadcrumb-source}
     [breadcrumb-button breadcrumb-source send]]])
 
-(defn back-from-node [current send]
-  (if (empty? (:search-navigation-path current))
-    (send model/BackAppNavigation)
-    (send model/BackSearchNavigation)))
-
 (defn editing-title [current]
   (match (:outliner-editing current)
     (Some editing) (:title editing)
@@ -1141,21 +1158,9 @@
       (send (model/AddRootBlock (active-node-page-uuid current))))}
    "Add first block"])
 
-(defn node-back-identifier [ui-context]
-  (if (= (ui/platform ui-context) proto/IOS)
-    "BackButton"
-    "button.outliner.zoom-out"))
-
 (defui node-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.node"}
-   [:button
-    {:label "Back"
-     :accessibility-identifier (node-back-identifier ui-context)
-     :on-press
-     (event [current model-source]
-       (back-from-node current send))}
-    "Back"]
    [:text
     {:value (reactive active-node-title model-source)
      :accessibility-identifier "title.node"}]
@@ -2278,8 +2283,6 @@
     [outliner-editor-toolbar send]]
    [:if {:test (reactive journal-root-visible? model-source)}
     [composer-view model-source send]]
-   [:if {:test (reactive node-screen-visible? model-source)}
-    [node-screen model-source send]]
    [:if {:test (reactive flashcards-destination? model-source)}
     [flashcard-screen model-source send]]
    [:if {:test (reactive graphs-destination? model-source)}
@@ -2304,6 +2307,66 @@
     [page-delete-dialog send]]
    [:if {:test (reactive :sync-details-open model-source)}
     [sync-status-sheet model-source send]]])
+
+(defn journal-navigation-model [current]
+  (let [rows (:journal-outliner-rows current)
+        root
+        (assoc current
+               :node-routes []
+               :app-navigation-path []
+               :outliner-rows rows
+               :outliner-section-markers (model/journal-section-markers rows))]
+    (if (empty? (:node-routes current))
+      root
+      (assoc root
+             :outliner-selected-block-ids []
+             :outliner-editing None
+             :outliner-autocomplete None
+             :outliner-autocomplete-candidates []))))
+
+(defn node-route-model [current route]
+  (assoc current
+         :node-routes [route]
+         :outliner-rows (:outliner-rows route)
+         :outliner-section-markers []
+         :outliner-selected-block-ids (:outliner-selected-block-ids route)
+         :outliner-editing (:outliner-editing route)
+         :outliner-autocomplete (:outliner-autocomplete route)
+         :outliner-autocomplete-candidates
+         (:outliner-autocomplete-candidates route)))
+
+(defn native-navigation-depth [current]
+  (count (:node-routes current)))
+
+(defui native-node-screen [model-source route-source send]
+  (let [route-model-source
+        (reactive node-route-model model-source route-source)]
+    (elements/element
+     ui-context nil
+     [node-screen route-model-source send])))
+
+(defui native-navigation-view [model-source send]
+  (let [node (ui/extension! ui-context "native-navigation-stack")
+        depth-source (reactive native-navigation-depth model-source)
+        depth-value-source (reactive int-wire-value depth-source)]
+    (ui/extension-property-signal!
+     ui-context node "depth" depth-value-source)
+    (ui/on-event!
+     ui-context node
+     (fn [input-event]
+       (handle-native-navigation-event input-event send)))
+    (elements/element
+     ui-context node
+     [chat-main-view (reactive journal-navigation-model model-source) send])
+    (elements/element
+     ui-context node
+     [:keyed
+      {:source (reactive :node-routes model-source)
+       :key :uuid
+       :compare compare
+       :as route-source}
+      [native-node-screen model-source route-source send]])
+    node))
 
 (defn authentication-screen-visible? [current]
   (or (= (:authentication-state current) "signedOut")
@@ -2354,7 +2417,7 @@
    [:stack
     [:if {:test (reactive :composer-expanded model-source)}
      [composer-dismissal-surface send]]
-    [chat-main-view model-source send]
+    [native-navigation-view model-source send]
     [:if {:test (reactive authentication-screen-visible? model-source)}
      [authentication-screen model-source send]]]
    [sidebar-view model-source send]])

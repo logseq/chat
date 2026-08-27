@@ -34,6 +34,17 @@
     (Some properties) (clojure.core/get properties property)
     None None))
 
+(defn extension-node [application identifier]
+  (let [runtime (driver/runtime application)
+        nodes (deref (:runtime-extension-nodes runtime))
+        limit (deref (:next-node-id runtime))]
+    (loop [node 1]
+      (if (> node limit)
+        -1
+        (if (= (clojure.core/get nodes node) (Some identifier))
+          node
+          (recur (inc node)))))))
+
 (defn child-with-identifier [renderer parent identifier]
   (let [children (apple/children renderer parent)]
     (loop [index 0]
@@ -98,8 +109,14 @@
 
 (defn main-root [renderer application]
   (let [stack (nth (apple/children renderer (driver/root-node application)) 0)
-        children (apple/children renderer stack)]
-    (nth children (dec (count children)))))
+        children (apple/children renderer stack)
+        container (nth children (dec (count children)))
+        extensions
+        (deref (:runtime-extension-nodes (driver/runtime application)))]
+    (if (= (clojure.core/get extensions container)
+           (Some "native-navigation-stack"))
+      (nth (apple/children renderer container) 0)
+      container)))
 
 (defn empty-sidebar-projection []
   (record model/sidebar-projection
@@ -936,9 +953,26 @@
    (ext/fingerprint (view/outliner-block-content-schema))
    "the rich block renderer must match the LG wire schema"))
 
+(deftest native-navigation-stack-extension-contract-is-pinned
+  (let [schema (ext/schema (view/extension-registry)
+                           "native-navigation-stack")]
+    (assert-equal
+     (Some
+      "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none|events:4:back[5:count:int:required]")
+     (match schema
+       (Some current) (Some (ext/fingerprint current))
+       None None)
+     "native navigation must share one pinned LG and Swift wire contract")))
+
 (deftest outliner-drag-selects-once-and-drop-keeps-placement
-  (let [unselected (chat/create (apple/backend (apple/create)))
-        selected (chat/create (apple/backend (apple/create)))]
+  (let [unselected
+        (chat/create
+         (apple/backend
+          (apple/create-with-extensions (view/extension-registry))))
+        selected
+        (chat/create
+         (apple/backend
+          (apple/create-with-extensions (view/extension-registry))))]
     (driver/start! unselected)
     (driver/send! unselected (model/BeginOutlinerDrag "source"))
     (driver/flush! unselected)
@@ -1032,7 +1066,7 @@
           "cached journals remain visible during a background reload"))))
 
 (deftest graph-and-sync-actions-update-retained-status-in-place
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
@@ -1673,7 +1707,7 @@
                       "the visible error preserves the platform reason")))))
 
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
@@ -1727,7 +1761,7 @@
                       "the retained search subtree is disposed")))))
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
@@ -2112,9 +2146,8 @@
      (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
                               None None [] [] [row] false []))
     (driver/flush! application)
-    (let [root (main-root renderer application)
-          screen (child-with-identifier renderer root "screen.node")
-          back (child-with-identifier renderer screen "button.outliner.zoom-out")
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
           title (child-with-identifier renderer screen "title.node")
           related
           (child-with-identifier renderer screen "section.node.linked-references")
@@ -2138,12 +2171,15 @@
                     "pressing a breadcrumb opens its retained node identity")
       (driver/send! application model/BackAppNavigation)
       (driver/flush! application)
-      (driver/dispatch-event! application (proto/Press back))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 1)}))
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
-                    "back removes the presented route"))))
+                    "native back removes the presented route"))))
 
-(deftest ios-node-navigation-keeps-the-system-back-automation-contract
+(deftest ios-node-navigation-is-owned-by-the-native-stack
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application
         (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
@@ -2155,15 +2191,82 @@
      (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
                           None None [] [] [] false []))
     (driver/flush! application)
-    (let [screen (child-with-identifier
-                  renderer (main-root renderer application) "screen.node")
-          back (child-with-identifier renderer screen "BackButton")]
-      (is (not (= -1 back))
-          "iOS exposes the same back identifier as main's navigation stack")
-      (driver/dispatch-event! application (proto/Press back))
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")]
+      (assert-equal -1 (child-with-identifier renderer screen "BackButton")
+                    "the retained node does not duplicate the system back button")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 1)}))
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
-                    "the iOS back control pops the LG route"))))
+                    "the native iOS back action pops the LG route"))))
+
+(deftest native-navigation-retains-the-journal-and-every-node-route
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        journal-row
+        (journal-outline-row "journal" "journal-page" "Journal"
+                             "Aug 27th, 2026" 20260827 0)
+        first-row
+        (journal-outline-row "first-child" "first-page" "First child"
+                             "" 0 0)
+        second-row
+        (journal-outline-row "second-child" "second-page" "Second child"
+                             "" 0 0)
+        first-route
+        (assoc (node-projection "node-a" "page-a" "First" [] [])
+               :outliner-rows [first-row])
+        second-route
+        (assoc (node-projection "node-b" "page-b" "Second" [] [])
+               :outliner-rows [second-row])
+        projection
+        (assoc (empty-core-projection)
+               :graph-name (Some "Work")
+               :selected-graph-id (Some "test-graph")
+               :node-routes [first-route second-route]
+               :journal-outliner-rows [journal-row]
+               :outliner-rows [second-row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send! application (model/RequestAppNode "node-b"))
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (is (not (= navigation -1))
+          "the Outliner is hosted by the native navigation extension")
+      (assert-equal (Some (proto/IntValue 2))
+                    (extension-property application navigation "depth")
+                    "the native path depth follows LG state")
+      (let [children (apple/children renderer navigation)]
+        (assert-equal 3 (count children)
+                      "the root and both pushed routes remain retained")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 0) "outliner.block.journal")))
+            "the navigation root retains the journal Outliner")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 1) "outliner.block.first-child")))
+            "the first pushed route retains its own Outliner")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 2) "outliner.block.second-child")))
+            "the active route renders the deepest Outliner"))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue -1)}))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "node-a") (model/NodeRoute "node-b")]
+                    (:app-navigation-path (chat/model application))
+                    "an invalid native back count does not mutate the path")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 5)}))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "a native multi-pop is safely clamped to the LG path"))))
 
 (deftest empty-node-routes-add-the-first-block-through-the-core
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -2176,8 +2279,8 @@
                                            false "" [] [route]
                                            None None [] [] [] false []))
     (driver/flush! application)
-    (let [root (main-root renderer application)
-          screen (child-with-identifier renderer root "screen.node")
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
           add-button
           (child-with-identifier renderer screen "button.outliner.add-first-block")]
       (driver/dispatch-event! application (proto/Press add-button))
@@ -2406,7 +2509,7 @@
         "the current result ends the loading state")))
 
 (deftest search-results-render-as-keyed-native-rows
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         hit (record model/search-hit
                     (uuid "block-a")
@@ -2437,7 +2540,7 @@
                     "pressing a result requests navigation in LG state"))))
 
 (deftest search-renders-main-empty-states-and-result-sections
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         page (record model/search-hit
                      (uuid "page-a")
@@ -2495,7 +2598,7 @@
           "block results remain addressable"))))
 
 (deftest non-empty-search-renders-an-explicit-clear-control
-  (let [renderer (apple/create)
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
