@@ -191,6 +191,7 @@
     (markup-json "[]")
     (youtube-target-url None)
     (breadcrumb "")
+    (breadcrumbs [])
     (opens-as-page false)
     (depth depth)
     (has-children false)
@@ -1227,6 +1228,7 @@
           (markup-json "[]")
           (youtube-target-url None)
           (breadcrumb "Journal")
+          (breadcrumbs [])
           (opens-as-page false)
           (depth 0)
           (has-children false)
@@ -1964,6 +1966,9 @@
                     (markup-json "[]")
                     (youtube-target-url None)
                     (breadcrumb "Journal")
+                    (breadcrumbs
+                     [(record model/sidebar-page
+                        (uuid "journal") (title "Journal"))])
                     (opens-as-page false)
                     (depth 0)
                     (has-children false)
@@ -1973,7 +1978,7 @@
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
-              (breadcrumb "") (opens-as-page false) (depth 1)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 1)
               (has-children false) (is-collapsed false)
               (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
@@ -1988,12 +1993,27 @@
           back (child-with-identifier renderer screen "button.outliner.zoom-out")
           title (child-with-identifier renderer screen "title.node")
           related
-          (child-with-identifier renderer screen "section.node.linked-references")]
+          (child-with-identifier renderer screen "section.node.linked-references")
+          breadcrumb
+          (descendant-with-identifier renderer related "breadcrumb.related-blocks")
+          journal
+          (descendant-with-identifier renderer related "button.breadcrumb.journal")]
       (assert-equal "Project"
                     (property-string renderer title proto/TextValue)
                     "the route title comes from the core projection")
       (is (not (= related -1))
           "node routes render their linked references section")
+      (is (not (= breadcrumb -1))
+          "related rows retain the main breadcrumb container")
+      (is (not (= journal -1))
+          "each structured breadcrumb remains independently navigable")
+      (driver/dispatch-event! application (proto/Press journal))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "node-a") (model/NodeRoute "journal")]
+                    (:app-navigation-path (chat/model application))
+                    "pressing a breadcrumb opens its retained node identity")
+      (driver/send! application model/BackAppNavigation)
+      (driver/flush! application)
       (driver/dispatch-event! application (proto/Press back))
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
@@ -2149,6 +2169,10 @@
           "the first journal heading is visible and navigable")
       (is (not (= second-heading -1))
           "the second journal heading is visible and navigable")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer root "journals.graph-loaded")))
+          "the loaded journal graph keeps main's readiness contract")
       (assert-equal 1
                     (descendant-count-with-identifier
                      renderer root "journal.divider")
@@ -2226,6 +2250,7 @@
                     (uuid "page-a")
                     (title "Project Alpha")
                     (breadcrumb "")
+                    (breadcrumbs [])
                     (is-page true))
         stale (model/update queried
                             (model/ApplySearchResults "older" [hit]))
@@ -2250,6 +2275,7 @@
                     (uuid "block-a")
                     (title "Project note")
                     (breadcrumb "Journal › Parent")
+                    (breadcrumbs [])
                     (is-page false))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
@@ -2280,11 +2306,13 @@
                      (uuid "page-a")
                      (title "Project")
                      (breadcrumb "")
+                     (breadcrumbs [])
                      (is-page true))
         block (record model/search-hit
                       (uuid "block-a")
                       (title "Project note")
                       (breadcrumb "Journal")
+                      (breadcrumbs [])
                       (is-page false))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
@@ -2357,6 +2385,7 @@
                     (markup-json "[]")
               (youtube-target-url None)
               (breadcrumb "")
+              (breadcrumbs [])
               (opens-as-page false)
                     (depth 2)
                     (has-children true)
@@ -2423,6 +2452,7 @@
                      "[{\"type\":\"nodeReference\",\"uuid\":\"page-a\",\"title\":\"Project\"}]")
                     (youtube-target-url None)
                     (breadcrumb "")
+                    (breadcrumbs [])
                     (opens-as-page false)
                     (depth 0)
                     (has-children false)
@@ -2494,6 +2524,7 @@
                     (markup-json "[]")
                     (youtube-target-url None)
                     (breadcrumb "")
+                    (breadcrumbs [])
                     (opens-as-page false)
                     (depth 0)
                     (has-children false)
@@ -2545,7 +2576,7 @@
         asset (record model/outline-row
                       (uuid "asset-a") (title "Photo.jpg")
                       (markup-json "[]") (youtube-target-url None)
-                      (breadcrumb "") (opens-as-page false) (depth 0)
+                      (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
                       (has-children false) (is-collapsed false)
                       (is-asset true) (asset-type (Some "image/jpeg"))
                       (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
@@ -2646,7 +2677,7 @@
         row (record model/outline-row
                     (uuid "block-a") (title "Ship it")
                     (markup-json "[]") (youtube-target-url None)
-                    (breadcrumb "") (opens-as-page false) (depth 0)
+                    (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
                     (has-children false) (is-collapsed false)
                     (is-asset false) (asset-type None) (local-path None)
                     (status (Some todo)) (tags [tag])
@@ -2682,7 +2713,7 @@
         row (record model/outline-row
               (uuid "parent") (title "Parent")
               (markup-json "[]") (youtube-target-url None)
-              (breadcrumb "") (opens-as-page false) (depth 0)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
               (has-children false) (is-collapsed false)
               (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
     (driver/start! application)
@@ -2726,7 +2757,7 @@
         row (record model/outline-row
               (uuid "block-a") (title "Project [[Pro")
               (markup-json "[]") (youtube-target-url None)
-              (breadcrumb "") (opens-as-page false) (depth 0)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
               (has-children false) (is-collapsed false)
               (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         editing (record model/outliner-editing
@@ -2787,6 +2818,7 @@
                     (markup-json "[]")
               (youtube-target-url None)
               (breadcrumb "")
+              (breadcrumbs [])
               (opens-as-page false)
                     (depth 2)
                     (has-children true)
@@ -2831,25 +2863,25 @@
   (let [parent (record model/outline-row
                  (uuid "parent") (title "Parent")
                  (markup-json "[]") (youtube-target-url None)
-                 (breadcrumb "") (opens-as-page false) (depth 0)
+                 (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
                  (has-children true) (is-collapsed false)
                  (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         child (record model/outline-row
                 (uuid "child") (title "Child")
                 (markup-json "[]") (youtube-target-url None)
-                (breadcrumb "") (opens-as-page false) (depth 1)
+                (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 1)
                 (has-children false) (is-collapsed false)
                 (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         sibling (record model/outline-row
                   (uuid "sibling") (title "Sibling")
                   (markup-json "[]") (youtube-target-url None)
-                  (breadcrumb "") (opens-as-page false) (depth 0)
+                  (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
                   (has-children false) (is-collapsed false)
                   (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         collapsed-parent (record model/outline-row
                            (uuid "parent") (title "Parent")
                            (markup-json "[]") (youtube-target-url None)
-                           (breadcrumb "") (opens-as-page false) (depth 0)
+                           (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
                            (has-children true) (is-collapsed true)
                            (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
         initial

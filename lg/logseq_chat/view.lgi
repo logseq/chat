@@ -180,6 +180,16 @@
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-breadcrumb
  :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-structured-breadcrumb?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-fallback-breadcrumb?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/breadcrumb-identifier :fn<sidebar-page;string>)
+(signature logseq-chat.view/breadcrumb-title :fn<sidebar-page;string>)
+(signature logseq-chat.view/breadcrumb-button
+ :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/related-row-breadcrumbs
+ :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/back-from-node
  :fn<chat-model;fn<chat-action;bool>;bool>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)

@@ -26,7 +26,10 @@ let () =
      | [ page; block ] ->
        equal "page-a" page.uuid "page uuid";
        if not page.is_page then failwith "page result lost its kind";
-       equal "Parent" block.breadcrumb "block breadcrumb"
+       equal "Parent" block.breadcrumb "block breadcrumb";
+       (match block.breadcrumbs with
+        | [ { uuid = "parent-a"; title = "Parent" } ] -> ()
+        | _ -> failwith "search breadcrumb identity was not projected")
      | _ -> failwith "search results were not projected");
     (match snapshot.outliner_rows with
      | [ row ] ->
@@ -132,6 +135,9 @@ let () =
           if not related_row.opens_as_page
           then failwith "whole-page related rows must navigate";
           equal "Journal" related_row.breadcrumb "related breadcrumb";
+          (match related_row.breadcrumbs with
+           | [ { uuid = "journal"; title = "Journal" } ] -> ()
+           | _ -> failwith "related breadcrumb identity was not projected");
           equal "linked" linked_row.uuid "linked reference row"
         | _ -> failwith "related node rows were not projected")
      | Ok _ -> failwith "related node route was not projected"

@@ -92,6 +92,7 @@
   (uuid :string)
   (title :string)
   (breadcrumb :string)
+  (breadcrumbs :vector<sidebar-page>)
   (is-page :bool))
 
 (type-record outline-row
@@ -100,6 +101,7 @@
   (markup-json :string)
   (youtube-target-url :option<string>)
   (breadcrumb :string)
+  (breadcrumbs :vector<sidebar-page>)
   (opens-as-page :bool)
   (depth :int)
   (has-children :bool)

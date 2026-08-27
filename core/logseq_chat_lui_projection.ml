@@ -2,10 +2,15 @@ module LG = Logseq_chat_lui_native
 module Host_update = Logseq_chat_lui_host_update
 module Snapshot = Logseq_chat_lui_snapshot
 
+let sidebar_page (page : Snapshot.sidebar_page) : LG.sidebar_page =
+  { uuid = page.uuid; title = page.title }
+;;
+
 let search_hit (hit : Snapshot.search_hit) : LG.search_hit =
   { uuid = hit.uuid
   ; title = hit.title
   ; breadcrumb = hit.breadcrumb
+  ; breadcrumbs = Rrbvec.of_list (List.map sidebar_page hit.breadcrumbs)
   ; is_page = hit.is_page
   }
 ;;
@@ -26,6 +31,7 @@ and outline_row (row : Snapshot.outline_row) : LG.outline_row =
   ; markup_json = row.markup_json
   ; youtube_target_url = row.youtube_target_url
   ; breadcrumb = row.breadcrumb
+  ; breadcrumbs = Rrbvec.of_list (List.map sidebar_page row.breadcrumbs)
   ; opens_as_page = row.opens_as_page
   ; depth = row.depth
   ; has_children = row.has_children
@@ -47,18 +53,13 @@ and outline_row (row : Snapshot.outline_row) : LG.outline_row =
   ; tags =
       Rrbvec.of_list
         (List.map
-           (fun (page : Snapshot.sidebar_page) : LG.sidebar_page ->
-              { uuid = page.uuid; title = page.title })
+           sidebar_page
            row.tags)
   ; sync_status = row.sync_status
   ; page_id = row.page_id
   ; journal_title = row.journal_title
   ; journal_day = row.journal_day
   }
-;;
-
-let sidebar_page (page : Snapshot.sidebar_page) : LG.sidebar_page =
-  { uuid = page.uuid; title = page.title }
 ;;
 
 let sidebar_projection (snapshot : Snapshot.t) : LG.sidebar_projection =

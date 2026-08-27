@@ -724,6 +724,39 @@
 (defn outliner-row-breadcrumb [row]
   (:breadcrumb row))
 
+(defn outliner-row-structured-breadcrumb? [row]
+  (not (empty? (:breadcrumbs row))))
+
+(defn outliner-row-fallback-breadcrumb? [row]
+  (and (empty? (:breadcrumbs row))
+       (outliner-row-has-breadcrumb? row)))
+
+(defn breadcrumb-identifier [breadcrumb]
+  (str "button.breadcrumb." (:uuid breadcrumb)))
+
+(defn breadcrumb-title [breadcrumb]
+  (:title breadcrumb))
+
+(defn breadcrumb-button [ui-context breadcrumb-source send]
+  (let [breadcrumb (signal/sample breadcrumb-source)]
+    (elements/element
+     ui-context nil
+     [:button
+      {:text (reactive breadcrumb-title breadcrumb-source)
+       :accessibility-identifier (breadcrumb-identifier breadcrumb)
+       :on-press
+       (event [current-breadcrumb breadcrumb-source]
+         (send (model/RequestAppNode (:uuid current-breadcrumb))))}])))
+
+(defui related-row-breadcrumbs [row-source send]
+  [:row {:accessibility-identifier "breadcrumb.related-blocks"}
+   [:keyed
+    {:source (reactive :breadcrumbs row-source)
+     :key :uuid
+     :compare compare
+     :as breadcrumb-source}
+    [breadcrumb-button breadcrumb-source send]]])
+
 (defn back-from-node [current send]
   (if (empty? (:search-navigation-path current))
     (send model/BackAppNavigation)
@@ -1030,12 +1063,16 @@
     "Hide"]])
 
 (defn node-related-row [ui-context model-source row-source send]
-  (let [has-breadcrumb-source
-        (reactive outliner-row-has-breadcrumb? row-source)]
+  (let [structured-breadcrumb-source
+        (reactive outliner-row-structured-breadcrumb? row-source)
+        fallback-breadcrumb-source
+        (reactive outliner-row-fallback-breadcrumb? row-source)]
     (elements/element
      ui-context nil
      [:column
-      [:if {:test has-breadcrumb-source}
+      [:if {:test structured-breadcrumb-source}
+       [related-row-breadcrumbs row-source send]]
+      [:if {:test fallback-breadcrumb-source}
        [:text {:value (reactive outliner-row-breadcrumb row-source)}]]
       [outliner-row model-source row-source send]])))
 
@@ -2098,6 +2135,11 @@
    [:if {:test (reactive graph-loading-visible? model-source)}
     [:column {:accessibility-identifier "journals.loading"}
      [:text "Loading journals"]]]
+   [:if {:test (reactive journal-root-visible? model-source)}
+    [:text
+     {:accessibility-label "Journal graph load status"
+      :accessibility-identifier "journals.graph-loaded"}
+     ""]]
    [:if {:test (reactive graph-picker-visible? model-source)}
     [graph-picker-screen model-source send]]
    [:if {:test (reactive search-main-visible? model-source)}

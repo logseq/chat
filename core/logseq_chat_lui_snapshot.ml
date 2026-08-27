@@ -1,13 +1,14 @@
+type sidebar_page =
+  { uuid : string
+  ; title : string
+  }
+
 type search_hit =
   { uuid : string
   ; title : string
   ; breadcrumb : string
+  ; breadcrumbs : sidebar_page list
   ; is_page : bool
-  }
-
-type sidebar_page =
-  { uuid : string
-  ; title : string
   }
 
 type graph =
@@ -45,6 +46,7 @@ type outline_row =
   ; markup_json : string
   ; youtube_target_url : string option
   ; breadcrumb : string
+  ; breadcrumbs : sidebar_page list
   ; opens_as_page : bool
   ; depth : int
   ; has_children : bool
@@ -157,16 +159,23 @@ let int_member name fields =
   | _ -> None
 ;;
 
-let title_from_summary = function
-  | `Assoc fields -> string_member "title" fields
+let sidebar_page = function
+  | `Assoc fields ->
+    (match string_member "uuid" fields, string_member "title" fields with
+     | Some uuid, Some title -> Some { uuid; title }
+     | _ -> None)
   | _ -> None
+;;
+
+let breadcrumbs fields =
+  match member "breadcrumbs" fields with
+  | Some (`List values) -> List.filter_map sidebar_page values
+  | _ -> []
 ;;
 
 let breadcrumb fields =
   let titles =
-    match member "breadcrumbs" fields with
-    | Some (`List values) -> List.filter_map title_from_summary values
-    | _ -> []
+    List.map (fun (summary : sidebar_page) -> summary.title) (breadcrumbs fields)
   in
   match titles with
   | _ :: _ -> String.concat " › " titles
@@ -180,15 +189,13 @@ let search_hit = function
   | `Assoc fields ->
     (match string_member "uuid" fields, string_member "title" fields with
      | Some uuid, Some title ->
-       Some { uuid; title; breadcrumb = breadcrumb fields; is_page = bool_member "isPage" fields }
-     | _ -> None)
-  | _ -> None
-;;
-
-let sidebar_page = function
-  | `Assoc fields ->
-    (match string_member "uuid" fields, string_member "title" fields with
-     | Some uuid, Some title -> Some { uuid; title }
+       Some
+         { uuid
+         ; title
+         ; breadcrumb = breadcrumb fields
+         ; breadcrumbs = breadcrumbs fields
+         ; is_page = bool_member "isPage" fields
+         }
      | _ -> None)
   | _ -> None
 ;;
@@ -378,6 +385,7 @@ let outline_row_from_block
            | None -> "[]")
       ; youtube_target_url
       ; breadcrumb = breadcrumb block_fields
+      ; breadcrumbs = breadcrumbs block_fields
       ; opens_as_page
       ; depth
       ; has_children
