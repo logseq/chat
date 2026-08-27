@@ -104,7 +104,8 @@ xcodebuild \
   ONLY_ACTIVE_ARCH=YES \
   CONFIGURATION_BUILD_DIR="$extension_build_dir" \
   CODE_SIGNING_ALLOWED=NO \
-  build >/dev/null
+  -quiet \
+  build
 
 if [[ -d $app_dir ]]; then
   chmod -R u+w "$app_dir"

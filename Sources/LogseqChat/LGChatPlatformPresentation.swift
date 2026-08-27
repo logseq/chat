@@ -95,9 +95,6 @@ public final class LGChatPlatformPresentationCoordinator {
         return true
     }
 
-    public func updatePageSharePayload(_ payload: NodeSharePayload?) {
-        pageSharePayload = payload
-    }
     #endif
 }
 
@@ -277,7 +274,7 @@ struct LGChatPlatformPresentationHost: ViewModifier {
     private var pageSharePayloadBinding: Binding<NodeSharePayload?> {
         Binding(
             get: { coordinator.pageSharePayload },
-            set: { coordinator.updatePageSharePayload($0) }
+            set: { coordinator.pageSharePayload = $0 }
         )
     }
     #endif
