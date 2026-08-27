@@ -239,6 +239,8 @@
     (model/CopyRuntimeLogEffect id records)
     (str "{\"id\":" id ",\"kind\":\"copy-runtime-log\",\"text\":"
          (wire/quoted (encode-runtime-log-records records)) "}")
+    (model/SignInEffect id)
+    (str "{\"id\":" id ",\"kind\":\"sign-in\",\"text\":\"\"}")
     (model/SignOutEffect id)
     (str "{\"id\":" id ",\"kind\":\"sign-out\",\"text\":\"\"}")))
 

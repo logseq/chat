@@ -45,10 +45,6 @@ struct LogseqAppLogger {
 
 let logger = LogseqAppLogger()
 
-private enum LGChatHostEncodingError: Error {
-    case invalidUTF8
-}
-
 @MainActor
 private final class LGChatCoreResponseRelay {
     var apply: ((String) -> Void)?
@@ -72,13 +68,7 @@ public struct LogseqChatRootView : View {
     }
 
     public var body: some View {
-        ZStack {
-            appContent
-            if runtime.authentication.state == .signedOut
-                || runtime.authentication.state == .signingIn {
-                CognitoSignInView(authentication: runtime.authentication)
-            }
-        }
+        appContent
         .preferredColorScheme(
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
@@ -107,6 +97,7 @@ public struct LogseqChatRootView : View {
             }
             #endif
             .onChange(of: runtime.authentication.state) { _, state in
+                runtime.publishAuthenticationState()
                 guard state == .signedIn else { return }
                 Task { await runtime.resumeLGApplication() }
             }
@@ -166,6 +157,11 @@ public struct LogseqChatRootView : View {
         let revision: String
     }
 
+    private struct AuthenticationHostPayload: Encodable {
+        let state: String
+        let errorMessage: String?
+    }
+
     private init() {
         try? FileManager.default.removeItem(
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
@@ -223,6 +219,13 @@ public struct LogseqChatRootView : View {
             },
             runtimeLog: .shared,
             copyText: Self.copyText,
+            signIn: {
+                await authentication.signIn()
+                let message = authentication.state == .signedIn
+                    ? nil
+                    : authentication.errorMessage ?? "Hosted sign-in failed"
+                return message
+            },
             signOut: {
                 await syncCoordinator.stopForeground()
                 await authentication.signOut()
@@ -388,6 +391,10 @@ public struct LogseqChatRootView : View {
                 kind: "settings",
                 payload: try Self.settingsHostPayload()
             )
+            try lgRuntime.applyHostUpdate(
+                kind: "authentication",
+                payload: try authenticationHostPayload()
+            )
             let persistedDraft = UserDefaults.standard.string(
                 forKey: "logseq.composerDraft"
             ) ?? ""
@@ -409,6 +416,7 @@ public struct LogseqChatRootView : View {
         startLGRenderer()
         await waitForLocalLaunchLoad()
         await authentication.restore()
+        publishAuthenticationState()
         isLGApplicationReady = true
         await resumeLGApplication()
         await store.runPendingSyncLoop()
@@ -425,6 +433,28 @@ public struct LogseqChatRootView : View {
 
     public func setNetworkAvailable(_ available: Bool) async {
         await syncCoordinator.setNetworkAvailable(available)
+    }
+
+    public func publishAuthenticationState() {
+        do {
+            try lgRuntime.applyHostUpdate(
+                kind: "authentication",
+                payload: try authenticationHostPayload()
+            )
+        } catch {
+            logger.error(
+                "Could not publish authentication state to LG: "
+                    + String(describing: error)
+            )
+        }
+    }
+
+    private func authenticationHostPayload() throws -> String {
+        let payload = AuthenticationHostPayload(
+            state: authentication.state.rawValue,
+            errorMessage: authentication.errorMessage
+        )
+        return String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
     }
 
     private static func settingsHostPayload() throws -> String {
@@ -444,11 +474,7 @@ public struct LogseqChatRootView : View {
             version: LogseqSettingsPolicy.version,
             revision: LogseqSettingsPolicy.revision
         )
-        let data = try JSONEncoder().encode(payload)
-        guard let encoded = String(data: data, encoding: .utf8) else {
-            throw LGChatHostEncodingError.invalidUTF8
-        }
-        return encoded
+        return String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
     }
 
     private static func copyText(_ text: String) {

@@ -17,12 +17,18 @@ type runtime_log_record =
   ; message : string
   }
 
+type authentication =
+  { state : string
+  ; error_message : string option
+  }
+
 type t =
   | Settings of settings
   | Runtime_log of runtime_log_record list
   | Local_graph_ids of string list
   | Composer_draft of string
   | Graph_loading of bool
+  | Authentication of authentication
   | Open_capture
 
 let string_field name json = Yojson.Safe.Util.(json |> member name |> to_string)
@@ -52,6 +58,13 @@ let runtime_log_record json =
   }
 ;;
 
+let authentication json =
+  Authentication
+    { state = string_field "state" json
+    ; error_message = Yojson.Safe.Util.(json |> member "errorMessage" |> to_string_option)
+    }
+;;
+
 let decode kind payload =
   try
     let json = Yojson.Safe.from_string payload in
@@ -62,6 +75,7 @@ let decode kind payload =
     | "local-graph-ids" -> Ok (Local_graph_ids (string_list json))
     | "composer-draft" -> Ok (Composer_draft Yojson.Safe.Util.(json |> to_string))
     | "graph-loading" -> Ok (Graph_loading Yojson.Safe.Util.(json |> to_bool))
+    | "authentication" -> Ok (authentication json)
     | "open-capture" -> Ok Open_capture
     | _ -> Error ("Unsupported host update: " ^ kind)
   with

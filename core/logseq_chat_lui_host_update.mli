@@ -17,12 +17,18 @@ type runtime_log_record =
   ; message : string
   }
 
+type authentication =
+  { state : string
+  ; error_message : string option
+  }
+
 type t =
   | Settings of settings
   | Runtime_log of runtime_log_record list
   | Local_graph_ids of string list
   | Composer_draft of string
   | Graph_loading of bool
+  | Authentication of authentication
   | Open_capture
 
 val decode : string -> string -> (t, string) result

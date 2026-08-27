@@ -2101,6 +2101,40 @@
    [:if {:test (reactive :sync-details-open model-source)}
     [sync-status-sheet model-source send]]])
 
+(defn authentication-screen-visible? [current]
+  (or (= (:authentication-state current) "signedOut")
+      (= (:authentication-state current) "signingIn")))
+
+(defn authentication-signing-in? [current]
+  (= (:authentication-state current) "signingIn"))
+
+(defn authentication-error-present? [current]
+  (match (:authentication-error current)
+    (Some message) (not (empty? message))
+    None false))
+
+(defn authentication-error-message [current]
+  (match (:authentication-error current)
+    (Some message) message
+    None ""))
+
+(defui authentication-screen [model-source send]
+  [:column
+   {:accessibility-identifier "screen.authentication"
+    :gap 20
+    :padding 32}
+   [:heading {:level 1} "Logseq"]
+   [:text "Sign in to connect your sync graphs."]
+   [:button
+    {:accessibility-identifier "button.hosted-sign-in"
+     :disabled (reactive authentication-signing-in? model-source)
+     :on-press (fn [_event] (send model/SignIn))}
+    "Sign in"]
+   [:if {:test (reactive authentication-error-present? model-source)}
+    [:text
+     {:value (reactive authentication-error-message model-source)
+      :accessibility-identifier "text.authentication-error"}]]])
+
 (defui chat-view [model-source send]
   [:drawer
    {:selected (reactive :sidebar-open model-source)
@@ -2115,5 +2149,7 @@
    [:stack
     [:if {:test (reactive :composer-expanded model-source)}
      [composer-dismissal-surface send]]
-    [chat-main-view model-source send]]
+    [chat-main-view model-source send]
+    [:if {:test (reactive authentication-screen-visible? model-source)}
+     [authentication-screen model-source send]]]
    [sidebar-view model-source send]])

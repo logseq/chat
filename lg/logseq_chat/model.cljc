@@ -81,6 +81,8 @@
           (graph-loading false)
           (graph-password-open false)
           (graph-password "")
+          (authentication-state "restoring")
+          (authentication-error None)
           (sync-state OfflineState)
           (applied-server-t None)
           (has-pending-semantic-operations false)
@@ -218,6 +220,7 @@
     (OpenExternalURLEffect id _url) id
     (RefreshRuntimeLogEffect id _source _errors-only _newest-first) id
     (CopyRuntimeLogEffect id _records) id
+    (SignInEffect id) id
     (SignOutEffect id) id))
 
 (defn effect-with-id [effects target]
@@ -228,6 +231,20 @@
         (if (= (effect-id effect) target)
           (Some effect)
           (recur (inc index)))))))
+
+(defn contains-sign-in-effect? [effects]
+  (loop [index 0]
+    (if (= index (count effects))
+      false
+      (let [found
+            (match (nth effects index)
+              (SignInEffect _id) true
+              _ false)]
+        (if found true (recur (inc index)))))))
+
+(defn sign-in-active? [current]
+  (or (contains-sign-in-effect? (:pending-effects current))
+      (contains-sign-in-effect? (:in-flight-effects current))))
 
 (defn first-flashcard-id [flashcards]
   (if (empty? flashcards)
@@ -397,6 +414,13 @@
       (= kind "photos")
       (= kind "audio")))
 
+(defn valid-authentication-state? [state]
+  (or (= state "restoring")
+      (= state "signedOut")
+      (= state "signingIn")
+      (= state "signedIn")
+      (= state "signingOut")))
+
 (defn current-settings [current]
   (record settings-projection
     (appearance (:appearance current))
@@ -475,8 +499,20 @@
     (assoc current :graph-loading false)
     _ current))
 
+(defn resolve-failed-effect [current effect message]
+  (match effect
+    (SignInEffect _id)
+    (assoc current
+           :authentication-state "signedOut"
+           :authentication-error (Some message))
+    _ (rollback-navigation-effect current effect)))
+
 (defn resolve-successful-effect [current effect message]
   (match effect
+    (SignInEffect _id)
+    (assoc current
+           :authentication-state "signedIn"
+           :authentication-error None)
     (OpenGraphEffect _id graph-id)
     (match (graph-by-id (:graphs current) graph-id)
       (Some selected)
@@ -510,6 +546,8 @@
              (if deleting-selected None (:selected-graph current))))
     (SignOutEffect _id)
     (assoc current
+           :authentication-state "signedOut"
+           :authentication-error None
            :settings-open false
            :settings-tabs-open false
            :runtime-log-open false)
@@ -935,7 +973,7 @@
       (let [resolved-current
             (if succeeded
               (resolve-successful-effect current effect message)
-              (rollback-navigation-effect current effect))]
+              (resolve-failed-effect current effect message))]
         (assoc resolved-current
                :in-flight-effects
                (remove-effect (:in-flight-effects current) id)
@@ -1142,6 +1180,25 @@
             id (:next-effect-id updated)]
         (enqueue-effect updated (DeleteLocalGraphEffect id (:id graph))))
       None current)
+
+    (ApplyAuthentication state error)
+    (if (valid-authentication-state? state)
+      (if (and (= state "signedOut") (sign-in-active? current))
+        current
+        (assoc current
+               :authentication-state state
+               :authentication-error error))
+      current)
+
+    SignIn
+    (if (= (:authentication-state current) "signedOut")
+      (let [updated
+            (assoc current
+                   :authentication-state "signingIn"
+                   :authentication-error None)
+            id (:next-effect-id updated)]
+        (enqueue-effect updated (SignInEffect id)))
+      current)
 
     (ApplySettingsSnapshot settings)
     (assoc current

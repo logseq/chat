@@ -45,6 +45,21 @@ let () =
   (match decode "graph-loading" {|true|} with
    | Ok (Graph_loading true) -> ()
    | _ -> fail "graph loading host updates were not decoded");
+  (match
+     decode
+       "authentication"
+       {|{"state":"signedOut","errorMessage":"Authorization was cancelled"}|}
+   with
+   | Ok
+       (Authentication
+         { state = "signedOut"; error_message = Some "Authorization was cancelled" }) ->
+     ()
+   | Error message -> fail ("authentication host update was rejected: " ^ message)
+   | Ok _ -> fail "authentication host update lost its state or error");
+  (match decode "authentication" {|{"state":"signedIn","errorMessage":null}|} with
+   | Ok (Authentication { state = "signedIn"; error_message = None }) -> ()
+   | Error message -> fail ("nullable authentication errors were rejected: " ^ message)
+   | Ok _ -> fail "signed-in authentication did not preserve a null error");
   (match decode "unknown" {|{}|} with
    | Error _ -> ()
    | Ok _ -> fail "unknown host updates must be rejected")

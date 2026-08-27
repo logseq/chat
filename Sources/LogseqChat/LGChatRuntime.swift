@@ -121,6 +121,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let persistComposerDraft: @MainActor (String) -> Void
     private let runtimeLog: LogseqRuntimeLog
     private let copyText: @MainActor (String) -> Void
+    private let signIn: (@MainActor () async -> String?)?
     private let signOut: @MainActor () async -> Void
     private let openExternalURL: (@MainActor (URL) async -> Bool)?
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
@@ -135,6 +136,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         persistComposerDraft: @escaping @MainActor (String) -> Void = { _ in },
         runtimeLog: LogseqRuntimeLog,
         copyText: @escaping @MainActor (String) -> Void,
+        signIn: (@MainActor () async -> String?)? = nil,
         signOut: @escaping @MainActor () async -> Void,
         openExternalURL: (@MainActor (URL) async -> Bool)? = nil,
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
@@ -148,6 +150,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         self.persistComposerDraft = persistComposerDraft
         self.runtimeLog = runtimeLog
         self.copyText = copyText
+        self.signIn = signIn
         self.signOut = signOut
         self.openExternalURL = openExternalURL
         self.exportGraphDatabase = exportGraphDatabase
@@ -218,6 +221,26 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                 copyText(records.map { record in
                     "\(record.timestamp) \(record.level) \(record.source) \(record.message)"
                 }.joined(separator: "\n"))
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            case "sign-in":
+                guard let signIn else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "Hosted sign-in is unavailable",
+                        output: .discard
+                    )
+                }
+                if let message = await signIn() {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: message,
+                        output: .discard
+                    )
+                }
                 return LGChatEffectResolution(
                     succeeded: true,
                     message: "",
@@ -724,7 +747,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 )
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
-        case "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
+        case "sign-in", "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
              "present-attachment", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
                 return LGChatEffectResolution(

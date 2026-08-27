@@ -737,6 +737,91 @@
         (model/OpenExternalURLEffect 1 "https://github.com/logseq/logseq"))
        "the native bridge preserves the trusted community URL"))))
 
+(deftest authentication-entry-is-lg-owned-and-idempotent
+  (let [signed-out
+        (model/update (model/initial)
+                      (model/ApplyAuthentication "signedOut" None))
+        signing-in (model/update signed-out model/SignIn)
+        duplicate (model/update signing-in model/SignIn)
+        in-flight (model/update signing-in (model/DequeueEffect 1))
+        premature-host-failure
+        (model/update
+         in-flight
+         (model/ApplyAuthentication
+          "signedOut" (Some "Authorization was cancelled")))
+        failed
+        (model/update in-flight
+                      (model/ResolveEffect 1 false "Hosted sign-in was cancelled"))
+        signed-in
+        (model/update failed (model/ApplyAuthentication "signedIn" None))
+        invalid
+        (model/update signed-in
+                      (model/ApplyAuthentication "unexpected" (Some "bad")))]
+    (assert-equal "signedOut" (:authentication-state signed-out)
+                  "the platform can publish signed-out authentication")
+    (assert-equal [(model/SignInEffect 1)] (:pending-effects signing-in)
+                  "sign-in crosses one typed platform boundary")
+    (assert-equal "signingIn" (:authentication-state signing-in)
+                  "LG disables repeated sign-in while Hosted UI is active")
+    (assert-equal signing-in duplicate
+                  "repeated sign-in requests are ignored")
+    (assert-equal "signingIn" (:authentication-state premature-host-failure)
+                  "host callbacks cannot re-enable sign-in before effect resolution")
+    (assert-equal "signedOut" (:authentication-state failed)
+                  "failed Hosted UI returns to the signed-out screen")
+    (assert-equal (Some "Hosted sign-in was cancelled")
+                  (:authentication-error failed)
+                  "authentication failures remain visible in LG state")
+    (assert-equal "signedIn" (:authentication-state signed-in)
+                  "successful authentication restores the application")
+    (assert-equal signed-in invalid
+                  "unknown platform authentication states are rejected")
+    (assert-equal "{\"id\":9,\"kind\":\"sign-in\",\"text\":\"\"}"
+                  (bridge/encode-effect (model/SignInEffect 9))
+                  "Hosted UI uses a stable typed effect payload")))
+
+(deftest authentication-screen-renders-from-lg-state
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyAuthentication "signedOut" None))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          sign-in (descendant-with-identifier
+                   renderer root "button.hosted-sign-in")]
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "screen.authentication")))
+          "signed-out authentication renders the LG entry screen")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "button.hosted-sign-in")
+                    "the signed-out action is enabled")
+      (driver/dispatch-event! application (proto/Press sign-in))
+      (driver/flush! application)
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "button.hosted-sign-in")
+                    "the button disables while Hosted UI is active")
+      (driver/send! application (model/DequeueEffect 1))
+      (driver/send!
+       application
+       (model/ResolveEffect 1 false "Authorization was cancelled"))
+      (driver/flush! application)
+      (let [error
+            (descendant-with-identifier
+             renderer root "text.authentication-error")]
+        (assert-equal "Authorization was cancelled"
+                      (property-string renderer error proto/TextValue)
+                      "authentication errors render inside the LG screen"))
+      (driver/send! application
+                    (model/ApplyAuthentication "signedIn" None))
+      (driver/flush! application)
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "screen.authentication")
+                    "signed-in authentication dismisses the LG entry screen"))))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
    "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"

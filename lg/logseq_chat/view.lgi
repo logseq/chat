@@ -318,6 +318,12 @@
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/sync-status-sheet
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/authentication-screen-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-signing-in? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/authentication-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-main-view

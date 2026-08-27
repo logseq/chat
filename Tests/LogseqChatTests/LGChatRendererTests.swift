@@ -489,6 +489,7 @@ struct LGChatRendererTests {
         )
 
         let effects = [
+            LGChatEffect(id: 30, kind: "sign-in", text: ""),
             LGChatEffect(id: 31, kind: "save-settings", text: "{}"),
             LGChatEffect(id: 32, kind: "refresh-runtime-log", text: "ui", value: 3),
             LGChatEffect(id: 33, kind: "copy-runtime-log", text: "[]"),
@@ -511,6 +512,40 @@ struct LGChatRendererTests {
 
         #expect(platformKinds == effects.map(\.kind))
         #expect(coreCallCount == 0)
+    }
+
+    @Test("Hosted sign-in stays on the platform authentication boundary")
+    func signInEffectsUseAuthenticationService() async {
+        var signInCount = 0
+        let handler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signIn: {
+                signInCount += 1
+                return nil
+            },
+            signOut: {}
+        )
+        let succeeded = await handler.execute(
+            LGChatEffect(id: 30, kind: "sign-in", text: "")
+        )
+        let failingHandler = LGChatPlatformEffectHandler(
+            saveSettings: { _ in },
+            runtimeLog: LogseqRuntimeLog(capacity: 1),
+            copyText: { _ in },
+            signIn: { "Authorization was cancelled" },
+            signOut: {}
+        )
+        let failed = await failingHandler.execute(
+            LGChatEffect(id: 31, kind: "sign-in", text: "")
+        )
+
+        #expect(signInCount == 1)
+        #expect(succeeded.succeeded)
+        #expect(succeeded.output == .discard)
+        #expect(!failed.succeeded)
+        #expect(failed.message == "Authorization was cancelled")
     }
 
     @Test("attachment effects preserve the selected system service")

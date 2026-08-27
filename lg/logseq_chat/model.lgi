@@ -216,6 +216,7 @@
   (OpenExternalURLEffect :int :string)
   (RefreshRuntimeLogEffect :int :string :bool :bool)
   (CopyRuntimeLogEffect :int :vector<runtime-log-record>)
+  (SignInEffect :int)
   (SignOutEffect :int))
 
 (type-record chat-model
@@ -228,6 +229,8 @@
   (graph-loading :bool)
   (graph-password-open :bool)
   (graph-password :string)
+  (authentication-state :string)
+  (authentication-error :option<string>)
   (sync-state :sync-state)
   (applied-server-t :option<int>)
   (has-pending-semantic-operations :bool)
@@ -364,6 +367,8 @@
   (RequestDeleteGraph :string)
   (CancelDeleteGraph)
   (ConfirmDeleteGraph)
+  (ApplyAuthentication :string :option<string>)
+  (SignIn)
   (ApplySettingsSnapshot :settings-projection)
   (OpenConnectionMenu)
   (CloseConnectionMenu)
@@ -435,6 +440,9 @@
 (signature logseq-chat.model/effect-id :fn<chat-effect;int>)
 (signature logseq-chat.model/effect-with-id
  :fn<vector<chat-effect>;int;option<chat-effect>>)
+(signature logseq-chat.model/contains-sign-in-effect?
+ :fn<vector<chat-effect>;bool>)
+(signature logseq-chat.model/sign-in-active? :fn<chat-model;bool>)
 (signature logseq-chat.model/first-flashcard-id
  :fn<vector<flashcard>;option<string>>)
 (signature logseq-chat.model/graph-by-id
@@ -459,6 +467,7 @@
 (signature logseq-chat.model/bounded-url-delimiter :fn<int;int;int>)
 (signature logseq-chat.model/valid-base-url? :fn<string;bool>)
 (signature logseq-chat.model/valid-attachment-kind? :fn<string;bool>)
+(signature logseq-chat.model/valid-authentication-state? :fn<string;bool>)
 (signature logseq-chat.model/current-settings
  :fn<chat-model;settings-projection>)
 (signature logseq-chat.model/active-page
@@ -472,6 +481,8 @@
 (signature logseq-chat.model/rollback-navigation-effect
  :fn<chat-model;chat-effect;chat-model>)
 (signature logseq-chat.model/resolve-successful-effect
+ :fn<chat-model;chat-effect;string;chat-model>)
+(signature logseq-chat.model/resolve-failed-effect
  :fn<chat-model;chat-effect;string;chat-model>)
 (signature logseq-chat.model/enqueue-close-search-effects
  :fn<chat-model;vector<navigation-route>;chat-model>)
