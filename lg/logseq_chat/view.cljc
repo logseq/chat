@@ -841,6 +841,7 @@
    {:orientation "horizontal"
     :label "Outliner selection"
     :accessibility-identifier "toolbar.outliner.selection"
+    :class "scroll-leading"
     :gap 6}
    [:button
     {:label "Copy"
@@ -919,6 +920,7 @@
    {:orientation "horizontal"
     :label "Outliner editor"
     :accessibility-identifier "toolbar.outliner.editor"
+    :class "scroll-leading"
     :gap 4}
    [:button
     {:label "Task"

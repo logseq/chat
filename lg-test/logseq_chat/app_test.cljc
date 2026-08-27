@@ -2105,6 +2105,9 @@
                     (property-string renderer toolbar
                                      proto/AccessibilityIdentifier)
                     "selection exposes main's stable toolbar identifier")
+      (assert-equal "scroll-leading"
+                    (property-string renderer toolbar proto/StyleClass)
+                    "selection keeps its trailing action visible on narrow screens")
       (assert-equal "button.outliner.selection.copy"
                     (property-string renderer copy-button
                                      proto/AccessibilityIdentifier)
@@ -2156,6 +2159,13 @@
                     (property-string renderer candidate-button
                                      proto/AccessibilityIdentifier)
                     "autocomplete keeps main's first candidate identifier")
+      (assert-equal "vertical"
+                    (property-string renderer autocomplete-bar
+                                     proto/OrientationValue)
+                    "autocomplete candidates retain their vertical layout")
+      (assert-equal "scroll-leading"
+                    (property-string renderer editor-toolbar proto/StyleClass)
+                    "the editor keeps hide-keyboard visible on narrow screens")
       (assert-equal "button.outliner.editor.task"
                     (property-string renderer task-button
                                      proto/AccessibilityIdentifier)
