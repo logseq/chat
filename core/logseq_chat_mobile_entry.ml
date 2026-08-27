@@ -2,6 +2,10 @@ module Sync_session = Logseq_chat_sync_session
 module Checkpoint = Logseq_chat_sync_checkpoint
 module E2ee_keyring = Logseq_chat_e2ee_keyring
 
+let () =
+  if not (Logseq_chat_lui_native.logseq_chat_native_bridge_linked ())
+  then failwith "LG/LUI native bridge failed to link"
+
 let e2ee_keyring =
   Logseq_chat_e2ee_keyring.create
     ~crypto:Logseq_chat_platform_crypto.crypto

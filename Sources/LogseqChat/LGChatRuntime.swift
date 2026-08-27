@@ -1039,6 +1039,10 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
     }
 }
 
+public enum LGChatRuntimeError: Error, Equatable {
+    case emptyInitializationPatch
+}
+
 @MainActor
 @Observable
 public final class LGChatRuntime {
@@ -1097,7 +1101,11 @@ public final class LGChatRuntime {
 
     public func start(platformCode: Int, hostCode: Int = 1) throws {
         guard !isStarted else { return }
-        try apply(native.initialize(platformCode: platformCode, hostCode: hostCode))
+        let initialPatch = native.initialize(platformCode: platformCode, hostCode: hostCode)
+        guard !initialPatch.isEmpty else {
+            throw LGChatRuntimeError.emptyInitializationPatch
+        }
+        try apply(initialPatch)
         isStarted = true
         while !pendingCoreResponses.isEmpty {
             let response = pendingCoreResponses.removeFirst()

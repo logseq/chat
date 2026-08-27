@@ -142,6 +142,18 @@ struct LGChatRendererTests {
         #expect(runtime.renderer.rootID == 1)
     }
 
+    @Test("rejects an empty initialization patch")
+    func rejectsEmptyInitializationPatch() {
+        let native = LGChatNativeRuntimeProbe()
+        native.initialPatch = ""
+        let runtime = LGChatRuntime(native: native)
+
+        #expect(throws: LGChatRuntimeError.emptyInitializationPatch) {
+            try runtime.start(platformCode: 2)
+        }
+        #expect(!runtime.isStarted)
+    }
+
     @Test("routes native extension events through one LG bridge")
     func routesNativeExtensionEvents() throws {
         let native = LGChatNativeRuntimeProbe()
@@ -1208,6 +1220,11 @@ private final class LGChatPlatformCommandHandlerProbe: LGChatPlatformCommandHand
 
 @MainActor
 private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
+    var initialPatch = """
+    {"generation":1,"ops":[
+      {"op":"create-node","id":1,"kind":"root"}
+    ]}
+    """
     var startedPlatforms: [Int] = []
     var pressedNodes: [Int] = []
     var effects: [String] = []
@@ -1218,11 +1235,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
 
     func initialize(platformCode: Int, hostCode: Int) -> String {
         startedPlatforms.append(platformCode)
-        return """
-        {"generation":1,"ops":[
-          {"op":"create-node","id":1,"kind":"root"}
-        ]}
-        """
+        return initialPatch
     }
 
     func press(node: Int) -> String {

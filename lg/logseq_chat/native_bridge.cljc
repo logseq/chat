@@ -269,6 +269,8 @@
     (driver/flush! application)
     (deref latest-patch)))
 
+(defn linked [] true)
+
 (defn press [node] (flush-event! (proto/Press node)))
 (defn long-press [node] (flush-event! (proto/LongPress node)))
 (defn text-changed [node text]

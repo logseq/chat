@@ -25,6 +25,7 @@
 (signature logseq-chat.native-bridge/take-effect :fn<string>)
 (signature logseq-chat.native-bridge/resolve-effect :fn<int;bool;string;string>)
 (signature logseq-chat.native-bridge/initialize :fn<int;int;string>)
+(signature logseq-chat.native-bridge/linked :fn<bool>)
 (signature logseq-chat.native-bridge/press :fn<int;string>)
 (signature logseq-chat.native-bridge/long-press :fn<int;string>)
 (signature logseq-chat.native-bridge/text-changed :fn<int;string;string>)

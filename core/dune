@@ -63,8 +63,8 @@
  (target logseq_chat_lui_native.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
-  (glob_files %{lib:lui:lg/lui}/*.clj*)
-  (glob_files %{lib:lui:lg/lui/backend}/*.clj*)
+  (glob_files %{libexec:lui:lg/lui}/*.clj*)
+  (glob_files %{libexec:lui:lg/lui/backend}/*.clj*)
   (source_tree ../lg/logseq_chat)
   %{bin:lg})
  (action
@@ -72,11 +72,11 @@
    %{bin:lg}
    --target native
    --compile-files-from %{lib:signal-lg.states:signal_native.state}
-   %{lib:lui:lg/lui}
-   %{lib:lui:lg/lui/backend/retained.lgi}
-   %{lib:lui:lg/lui/backend/retained.cljc}
-   %{lib:lui:lg/lui/backend/apple.lgi}
-   %{lib:lui:lg/lui/backend/apple.cljc}
+   %{libexec:lui:lg/lui}
+   %{libexec:lui:lg/lui/backend/retained.lgi}
+   %{libexec:lui:lg/lui/backend/retained.cljc}
+   %{libexec:lui:lg/lui/backend/apple.lgi}
+   %{libexec:lui:lg/lui/backend/apple.cljc}
    ../lg/logseq_chat
    -o %{target})))
 
