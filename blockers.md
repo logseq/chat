@@ -486,6 +486,17 @@ Entries stay concise so work can continue on the highest-signal path.
   sync. Simulator comparison against main confirms system black for Graphs and
   unchanged `#002D38` for Journals and Sidebar. This does not add wire fields or
   page-specific properties.
+- 2026-08-29 02:36 CST — The 02:13 app-root surface switch was not how main
+  handles safe areas and made the transparent sidebar inherit Graphs black.
+  Main keeps the app root `#002D38`, lets the native List own its black surface,
+  and always places a full-screen material behind the drawer main panel. LUI's
+  generic surface modifier clipped the drawer before `ignoresSafeArea` could
+  expand it, and LUI also reserved the system bottom inset while main reserves
+  zero. Excluding drawer from the generic surface, keeping its main material
+  active while closed, and letting page content own the bottom safe area removes
+  both horizontal bands without app-specific protocol fields. Dark simulator
+  comparison now shows a continuous black Graphs surface while closed and a
+  full-height teal sidebar beside a full-height rounded main panel while open.
 
 ## Decisions
 

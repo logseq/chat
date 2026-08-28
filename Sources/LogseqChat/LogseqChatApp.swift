@@ -1,6 +1,5 @@
 import Foundation
 import OSLog
-import Observation
 import SwiftUI
 import LogseqChatModel
 import LUIAppleBackend
@@ -48,14 +47,6 @@ struct LogseqAppLogger {
 let logger = LogseqAppLogger()
 
 @MainActor
-@Observable
-final class LGChatRootSurfaceState {
-    static let shared = LGChatRootSurfaceState()
-
-    var usesSystemGroupedBackground = false
-}
-
-@MainActor
 private final class LGChatCoreResponseRelay {
     var apply: ((String) -> Void)?
 
@@ -73,7 +64,6 @@ public struct LogseqChatRootView : View {
     @Environment(\.colorScheme) private var colorScheme
 
     private let runtime = LogseqChatRuntime.shared
-    private let rootSurfaceState = LGChatRootSurfaceState.shared
 
     public init() {
     }
@@ -91,7 +81,7 @@ public struct LogseqChatRootView : View {
         ])
         .tint(LogseqThemePolicy.accent)
         .foregroundStyle(themePalette.primaryText)
-        .background(rootBackground.ignoresSafeArea())
+        .background(themePalette.background.ignoresSafeArea())
     }
 
     private var appContent: some View {
@@ -140,14 +130,6 @@ public struct LogseqChatRootView : View {
         )
     }
 
-    private var rootBackground: Color {
-        #if !SKIP && os(iOS)
-        if rootSurfaceState.usesSystemGroupedBackground {
-            return Color(uiColor: .systemGroupedBackground)
-        }
-        #endif
-        return themePalette.background
-    }
 }
 
 @MainActor public final class LogseqChatRuntime {

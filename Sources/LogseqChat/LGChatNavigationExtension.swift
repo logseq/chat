@@ -323,7 +323,6 @@ private struct LGChatNavigationContent: View {
         navigationLayout
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
-                LGChatRootSurfaceState.shared.usesSystemGroupedBackground = usesSystemBackground
             }
         #endif
     }
