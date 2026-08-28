@@ -446,6 +446,15 @@ Entries stay concise so work can continue on the highest-signal path.
   target. The production iOS simulator build succeeds. Keep this separate from
   the dark-mode background fix and repair the diagnostics target boundary when
   resuming journal scroll root-cause instrumentation.
+- 2026-08-29 00:23 CST — A closed native drawer still rendered its panel at
+  35% opacity and applied the open-state shadow to every opaque descendant of a
+  transparent main pane. This made retained sidebar content and large gray card
+  shadows bleed through the launch graph picker even though LG correctly sent
+  `selected=false`. LUI now drives panel opacity and main-pane shadow from the
+  actual reveal progress, with a pixel regression test for the closed state.
+  App theme tokens are injected once through a generic semantic-color
+  environment map, so exact `surface` and `muted-foreground` colors no longer
+  require app-specific wire or Swift protocol fields.
 
 ## Decisions
 

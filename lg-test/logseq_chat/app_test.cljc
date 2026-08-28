@@ -51,6 +51,32 @@
           node
           (recur (inc node)))))))
 
+(defn descendant-with-node-kind [renderer parent kind]
+  (if (= (apple/node renderer parent) (Some kind))
+    parent
+    (let [children (apple/children renderer parent)]
+      (loop [index 0]
+        (if (= index (count children))
+          -1
+          (let [match (descendant-with-node-kind
+                       renderer (nth children index) kind)]
+            (if (= match -1)
+              (recur (inc index))
+              match)))))))
+
+(defn descendant-count-with-node-kind [renderer parent kind]
+  (let [children (apple/children renderer parent)
+        own (if (= (apple/node renderer parent) (Some kind)) 1 0)]
+    (loop [index 0
+           total own]
+      (if (= index (count children))
+        total
+        (recur
+         (inc index)
+         (+ total
+            (descendant-count-with-node-kind
+             renderer (nth children index) kind)))))))
+
 (defn descendant-with-extension
   [renderer application parent identifier]
   (let [extensions
@@ -105,6 +131,20 @@
                 (recur (inc index))
                 found))))))))
 
+(defn parent-with-child-identifier [renderer parent identifier]
+  (if (not (= -1 (child-with-identifier renderer parent identifier)))
+    parent
+    (let [children (apple/children renderer parent)]
+      (loop [index 0]
+        (if (= index (count children))
+          -1
+          (let [found
+                (parent-with-child-identifier
+                 renderer (nth children index) identifier)]
+            (if (= found -1)
+              (recur (inc index))
+              found)))))))
+
 (defn descendant-count-with-identifier [renderer parent identifier]
   (let [own (if (= identifier
                    (property-string renderer parent
@@ -131,23 +171,28 @@
         _ None))))
 
 (defn main-root [renderer application]
-  (let [stack (nth (apple/children renderer (driver/root-node application)) 0)
+  (let [runtime-root (driver/root-node application)
+        picker-parent
+        (parent-with-child-identifier renderer runtime-root "screen.graph-picker")
+        stack (nth (apple/children renderer runtime-root) 0)
         children (apple/children renderer stack)
         container (nth children (dec (count children)))
         extensions
         (deref (:runtime-extension-nodes (driver/runtime application)))]
-    (if (= (clojure.core/get extensions container)
-           (Some "native-navigation-stack"))
-      (let [wrapper (nth (apple/children renderer container) 0)
-            search (nth (apple/children renderer wrapper) 0)]
-        (if (= (clojure.core/get extensions search)
-               (Some "native-search-presentation"))
-          (let [presented
-                (= (extension-property application search "presented")
-                   (Some (proto/BoolValue true)))]
-            (nth (apple/children renderer search) (if presented 1 0)))
-          wrapper))
-      container)))
+    (if (not (= picker-parent -1))
+      picker-parent
+      (if (= (clojure.core/get extensions container)
+             (Some "native-navigation-stack"))
+        (let [wrapper (nth (apple/children renderer container) 0)
+              search (nth (apple/children renderer wrapper) 0)]
+          (if (= (clojure.core/get extensions search)
+                 (Some "native-search-presentation"))
+            (let [presented
+                  (= (extension-property application search "presented")
+                     (Some (proto/BoolValue true)))]
+              (nth (apple/children renderer search) (if presented 1 0)))
+            wrapper))
+        runtime-root))))
 
 (defn native-bottom-chrome [renderer application]
   (let [navigation (extension-node application "native-navigation-stack")]
@@ -1152,9 +1197,24 @@
                     "the shell starts without an invented graph")
       (is (not (= -1 picker))
           "an empty launch matches main's graph picker")
+      (assert-equal -1
+                    (extension-node application "native-navigation-stack")
+                    "the launch picker bypasses journal navigation chrome")
       (is (not (= -1 (child-with-identifier
                        renderer picker "button.graph-add")))
           "the launch picker can create a graph")
+      (driver/send! application model/OpenSidebar)
+      (driver/flush! application)
+      (let [drawer (descendant-with-node-kind
+                    renderer (driver/root-node application) apple/AppleDrawer)]
+        (assert-equal false
+                      (property-bool renderer drawer proto/Enabled)
+                      "the graph picker keeps sidebar content non-interactive")
+        (assert-equal false
+                      (property-bool renderer drawer proto/Selected)
+                      "the graph picker cannot reveal a retained open drawer"))
+      (driver/send! application model/CloseSidebar)
+      (driver/flush! application)
       (driver/send!
       application
       (model/ApplyCoreSnapshot
@@ -1164,14 +1224,54 @@
             updated-picker
             (child-with-identifier renderer updated-main "screen.graph-picker")
             graph-row
-            (descendant-with-identifier renderer updated-picker "graph.remote")]
+            (descendant-with-identifier renderer updated-picker "graph.remote")
+            graph-scroll
+            (descendant-with-node-kind
+             renderer updated-picker apple/AppleScrollView)]
         (is (not (= -1 graph-row))
             "catalog updates retain the launch picker")
+        (is (not (= -1 graph-scroll))
+            "the graph catalog uses main's plain scrolling card stack")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer graph-row)
+                      "a graph card keeps native list-item interaction")
+        (assert-equal 0
+                      (descendant-count-with-node-kind
+                       renderer graph-row apple/AppleIcon)
+                      "main's graph cards do not add graph-type icons")
+        (assert-equal 16
+                      (property-int renderer graph-row proto/PaddingValue)
+                      "graph cards preserve main's content inset")
+        (assert-equal 16
+                      (property-int renderer graph-row proto/CornerRadius)
+                      "graph cards preserve main's corner radius")
+        (assert-equal "surface"
+                      (property-string renderer graph-row proto/BackgroundValue)
+                      "graph cards use the app theme surface")
         (driver/dispatch-event! application (proto/Press graph-row))
         (driver/flush! application)
         (assert-equal [(model/OpenGraphEffect 1 "remote")]
                       (:pending-effects (chat/model application))
                       "a launch graph uses the typed graph lifecycle")))))
+
+(deftest graph-picker-not-ready-status-matches-main-copy
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        preparing (graph "preparing" "Preparing graph" false false)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection) :graphs [preparing])))
+    (driver/flush! application)
+    (let [picker (child-with-identifier
+                  renderer (main-root renderer application)
+                  "screen.graph-picker")
+          status (descendant-with-identifier
+                  renderer picker "graph.status.preparing")]
+      (assert-equal "Graph is not ready for sync."
+                    (property-string renderer status proto/TextValue)
+                    "the unavailable graph explanation matches main"))))
 
 (deftest graph-picker-matches-main-layout-actions-errors-and-overflow-menu
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -1321,29 +1421,31 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         projection (assoc (empty-core-projection)
+                          :selected-graph-id (Some "work")
                           :graph-name (Some "Work")
                           :sync-connected true
                           :applied-server-t (Some 42)
                           :has-pending-semantic-operations true
                           :has-pending-sync-request false)]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application (model/ApplyCoreSnapshot projection))
     (driver/flush! application)
     (assert-equal model/SyncingState (:sync-state (chat/model application))
                   "projected pending work keeps the compact status syncing")
     (let [application-root (driver/root-node application)
-          root (main-root renderer application)
           sync-button
           (descendant-with-identifier renderer application-root "sync.connected")]
       (driver/dispatch-event! application (proto/Press sync-button))
       (driver/flush! application)
       (is (:sync-details-open (chat/model application))
           "sync detail presentation is LG-owned")
-      (let [root-children (apple/children renderer root)
-            sheet (nth root-children (dec (count root-children)))
-            cursor (descendant-with-identifier renderer sheet "sync.cursor")
-            pending (descendant-with-identifier renderer sheet "sync.pending")
-            sync-now (descendant-with-identifier renderer sheet "button.sync-now")]
+      (let [cursor (descendant-with-identifier
+                    renderer application-root "sync.cursor")
+            pending (descendant-with-identifier
+                     renderer application-root "sync.pending")
+            sync-now (descendant-with-identifier
+                      renderer application-root "button.sync-now")]
         (assert-equal "42" (property-string renderer cursor proto/TextValue)
                       "the authoritative server cursor is visible")
         (assert-equal "Waiting to save"
@@ -2767,6 +2869,7 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application (model/RequestAppNode "app-node"))
     (driver/send! application (model/RequestSearchNode "search-node"))
     (driver/flush! application)
@@ -2801,6 +2904,7 @@
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
     (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
     (driver/flush! application)
     (let [navigation
@@ -4234,6 +4338,7 @@
 (deftest native-bridge-preserves-native-search-query-values
   (bridge/initialize 2 1)
   (let [application (bridge/app)]
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
     (driver/flush! application)
     (let [search (extension-node application "native-search-presentation")]
@@ -4246,6 +4351,7 @@
 (deftest native-bridge-preserves-native-navigation-back-counts
   (bridge/initialize 2 1)
   (let [application (bridge/app)]
+    (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application (model/RequestAppNode "page-a"))
     (driver/flush! application)
     (let [navigation (extension-node application "native-navigation-stack")]

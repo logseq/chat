@@ -1881,7 +1881,7 @@
   (or (:is-encrypted graph) (not (:is-ready graph))))
 
 (defn graph-status-title [graph]
-  (if (:is-encrypted graph) "Encrypted" "Preparing"))
+  (if (:is-encrypted graph) "Encrypted" "Graph is not ready for sync."))
 
 (defn graph-not-ready? [graph]
   (not (:is-ready graph)))
@@ -1981,29 +1981,29 @@
 
 (defn graph-row [ui-context model-source graph-source local? send]
   (let [graph (signal/sample graph-source)
-        graph-id (:id graph)
-        icon-name (graph-icon-name local? graph)]
+        graph-id (:id graph)]
     (elements/element
      ui-context nil
      [:list-item
       {:accessibility-identifier (graph-identifier graph)
+       :padding 16
+       :corner-radius 16
+       :background "surface"
        :disabled (reactive graph-row-disabled? model-source graph-source)
        :on-press
        (event [current-graph graph-source]
          (send (model/RequestOpenGraph (:id current-graph))))}
-      [:row
-       {:gap 12 :cross "center"}
-       [:icon
-        {:name icon-name
-         :size "lg"}]
-       [:column {:gap 4 :grow 1.0}
-        [:text {:value (reactive graph-title graph-source)}]
+      [:column {:gap 4 :grow 1.0}
+       [:text
+        {:class "semibold"
+         :value (reactive graph-title graph-source)}]
         [:if {:test (reactive graph-status-visible? graph-source)}
          [:text
           {:value (reactive graph-status-title graph-source)
+            :class "caption"
            :foreground "muted-foreground"
-           :accessibility-identifier (graph-status-identifier graph)}]]]]
-       [:context-menu
+           :accessibility-identifier (graph-status-identifier graph)}]]]
+      [:context-menu
         [:if {:test (reactive graph-row-local? model-source graph-source)}
          [:menu-item
           {:icon "trash"
@@ -2229,13 +2229,14 @@
       :accessibility-identifier "button.graphs.refresh"
       :on-press (fn [_event] (send model/RefreshGraphs))}
      "Refresh graphs"]]
-   [:list {:grow 1.0}
-    [:keyed
-     {:source (reactive :graphs model-source)
-      :key :id
-      :compare compare
-      :as graph-source}
-     [graph-row model-source graph-source false send]]]
+   [:scroll {:grow 1.0}
+    [:column {:gap 12}
+     [:keyed
+      {:source (reactive :graphs model-source)
+       :key :id
+       :compare compare
+       :as graph-source}
+      [graph-row model-source graph-source false send]]]]
    [:if {:test (reactive :create-graph-open model-source)}
     [graph-create-sheet model-source send]]])
 
@@ -2894,8 +2895,6 @@
      {:accessibility-label "Journal graph load status"
       :accessibility-identifier "journals.graph-loaded"}
      ""]]
-   [:if {:test (reactive graph-picker-visible? model-source)}
-    [graph-picker-screen model-source send]]
    [:if {:test (reactive journal-root-visible? model-source)}
     [:stack {:grow 1.0}
      [:if {:test (reactive selected-page-present? model-source)}
@@ -2906,16 +2905,7 @@
     [flashcard-screen model-source send]]
    [:if {:test (reactive graphs-destination? model-source)}
     [graphs-screen model-source send]]
-   [:if {:test (reactive :settings-open model-source)}
-    [settings-sheet model-source send]]
-   [:if {:test (reactive :graph-password-open model-source)}
-    [graph-password-sheet model-source send]]
-   [:if {:test (reactive outliner-task-status-picker-open? model-source)}
-    [outliner-task-status-dialog model-source send]]
-   [:if {:test (reactive page-deletion-pending? model-source)}
-    [page-delete-dialog send]]
-   [:if {:test (reactive :sync-details-open model-source)}
-    [sync-status-sheet model-source send]]])
+   ])
 
 (defui main-header-leading [model-source send]
   [:stack
@@ -3133,6 +3123,19 @@
     (Some message) message
     None ""))
 
+(defn graph-picker-hidden? [current]
+  (not (graph-picker-visible? current)))
+
+(defn drawer-selected? [current]
+  (and (:sidebar-open current)
+       (graph-picker-hidden? current)
+       (not (authentication-screen-visible? current))))
+
+(defn drawer-disabled? [current]
+  (or (graph-picker-visible? current)
+      (authentication-screen-visible? current)
+      (sidebar-drag-disabled? current)))
+
 (defui authentication-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.authentication"
@@ -3157,8 +3160,8 @@
 
 (defui chat-view [model-source send]
   [:drawer
-   {:selected (reactive :sidebar-open model-source)
-    :disabled (reactive sidebar-drag-disabled? model-source)
+   {:selected (reactive drawer-selected? model-source)
+    :disabled (reactive drawer-disabled? model-source)
     :width 360
     :label "Navigation"
     :on-toggle
@@ -3168,7 +3171,20 @@
         (send (if open model/OpenSidebar model/CloseSidebar))
         _ true))}
    [:stack
-    [native-navigation-view model-source send]
+    [:if {:test (reactive graph-picker-hidden? model-source)}
+     [native-navigation-view model-source send]]
+    [:if {:test (reactive graph-picker-visible? model-source)}
+     [graph-picker-screen model-source send]]
     [:if {:test (reactive authentication-screen-visible? model-source)}
-     [authentication-screen model-source send]]]
+     [authentication-screen model-source send]]
+    [:if {:test (reactive :settings-open model-source)}
+     [settings-sheet model-source send]]
+    [:if {:test (reactive :graph-password-open model-source)}
+     [graph-password-sheet model-source send]]
+    [:if {:test (reactive outliner-task-status-picker-open? model-source)}
+     [outliner-task-status-dialog model-source send]]
+    [:if {:test (reactive page-deletion-pending? model-source)}
+     [page-delete-dialog send]]
+    [:if {:test (reactive :sync-details-open model-source)}
+     [sync-status-sheet model-source send]]]
    [sidebar-view model-source send]])

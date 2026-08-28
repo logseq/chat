@@ -2,6 +2,7 @@ import Foundation
 import OSLog
 import SwiftUI
 import LogseqChatModel
+import LUIAppleBackend
 
 #if os(iOS) && !SKIP
 @preconcurrency import BackgroundTasks
@@ -73,6 +74,10 @@ public struct LogseqChatRootView : View {
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
         .environment(\.locale, preferredLocale)
+        .luiSemanticColors([
+            "surface": themePalette.surface,
+            "muted-foreground": themePalette.secondaryText,
+        ])
         .tint(LogseqThemePolicy.accent)
         .foregroundStyle(themePalette.primaryText)
         .background(themePalette.background.ignoresSafeArea())
