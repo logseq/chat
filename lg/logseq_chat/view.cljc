@@ -757,6 +757,11 @@
 (defn journal-root-visible? [current]
   (and (journal-route-active? current) (not (:search-open current))))
 
+(defn journal-tree-retained? [current]
+  (and (graph-selected? current)
+       (or (not (:graph-loading current))
+           (not (empty? (:outliner-rows current))))))
+
 (defn older-journals-visible? [current]
   (and (journal-root-visible? current)
        (:has-older-journals current)
@@ -1816,6 +1821,8 @@
 (defui flashcard-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.flashcards"
+    :grow 1.0
+    :background "background"
     :gap 18
     :padding-horizontal 20
     :padding-top 18
@@ -2877,10 +2884,12 @@
     (Some page) (:title page)
     None ""))
 
-(defui root-outliner-view [model-source send]
+(defui root-outliner-view [model-source visible-source send]
   [:virtual-list
    {:grow 1.0
     :padding 16
+    :class "retained-pane"
+    :selected visible-source
     :accessibility-identifier "list.outliner"}
    [:box {:height 24}]
    [:if {:test (reactive selected-page-content-title-visible? model-source)}
@@ -2918,7 +2927,16 @@
         (fn [_event] (send model/LoadOlderJournals))}]]])
 
 (defui chat-main-view [model-source send]
-  [:column {:grow 1.0}
+  [:stack {:grow 1.0}
+   [:if {:test (reactive journal-tree-retained? model-source)}
+    [root-outliner-view
+     (reactive journal-navigation-model model-source)
+     (reactive journal-root-visible? model-source)
+     send]]
+   [:if {:test (reactive flashcards-destination? model-source)}
+    [flashcard-screen model-source send]]
+   [:if {:test (reactive graphs-destination? model-source)}
+    [graphs-screen model-source send]]
    [:if {:test (reactive global-effect-error-present? model-source)}
     [:text
      {:value (reactive effect-error-message model-source)
@@ -2931,16 +2949,6 @@
      {:accessibility-label "Journal graph load status"
       :accessibility-identifier "journals.graph-loaded"}
      ""]]
-   [:if {:test (reactive journal-root-visible? model-source)}
-    [:stack {:grow 1.0}
-     [:if {:test (reactive selected-page-present? model-source)}
-      [root-outliner-view model-source send]]
-     [:if {:test (reactive selected-page-absent? model-source)}
-      [root-outliner-view model-source send]]]]
-   [:if {:test (reactive flashcards-destination? model-source)}
-    [flashcard-screen model-source send]]
-   [:if {:test (reactive graphs-destination? model-source)}
-    [graphs-screen model-source send]]
    ])
 
 (defui main-header-leading [model-source send]
@@ -3009,6 +3017,7 @@
   (let [rows (:journal-outliner-rows current)
         root
         (assoc current
+               :destination model/JournalsDestination
                :node-routes []
                :app-navigation-path []
                :search-open false
@@ -3086,7 +3095,7 @@
        (handle-native-search-event input-event send)))
     (elements/element
      ui-context node
-     [chat-main-view (reactive journal-navigation-model model-source) send])
+     [chat-main-view model-source send])
     (elements/element
      ui-context node
      [:column {:grow 1.0}

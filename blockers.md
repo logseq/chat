@@ -530,6 +530,15 @@ Entries stay concise so work can continue on the highest-signal path.
   iPhone even when CoreDevice and Instruments can see it. Gesture arbitration
   is therefore automated on the iOS simulator; physical-device verification
   remains install-and-manual until the Maestro device bridge is available.
+- 2026-08-29 04:40 CST — `virtual-list` was virtualizing SwiftUI view bodies
+  correctly (only eight visible rich rows appeared), but destination changes
+  unmounted the complete retained journals wire tree. Returning to Journals
+  rebuilt 221,290 bytes / 2,652 operations before SwiftUI could benefit from
+  `LazyVStack`. The journal tree now stays retained across sidebar destinations;
+  its projection is pinned to the journal route, while a generic retained-pane
+  state hides it from hit testing and accessibility on other pages. On the same
+  64-journal fixture, Graphs → Journals produced no renderer patch batch and no
+  hidden journal buttons were exposed in the Graphs accessibility hierarchy.
 
 ## Decisions
 

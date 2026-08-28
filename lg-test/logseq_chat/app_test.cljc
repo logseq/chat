@@ -4408,3 +4408,24 @@
       (assert-equal [] (:app-navigation-path (chat/model application))
                     "the native bridge preserves the declared back count"))
     (bridge/dispose)))
+
+(deftest journal-list-remains-retained-across-sidebar-destinations
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot (Some "Work") (empty-sidebar-projection) []
+                          false "" [] [] None None [] [] [] false []))
+    (driver/flush! application)
+    (let [initial-list
+          (descendant-with-identifier
+           renderer (driver/root-node application) "list.outliner")]
+      (is (not (= -1 initial-list)) "journals render the retained virtual list")
+      (driver/send! application model/ShowGraphs)
+      (driver/flush! application)
+      (assert-equal
+       initial-list
+       (descendant-with-identifier
+        renderer (driver/root-node application) "list.outliner")
+       "switching destinations keeps the expensive journal tree mounted"))))
