@@ -501,6 +501,17 @@ Entries stay concise so work can continue on the highest-signal path.
   the paired iPhone as `com.logseq.chat`, but CoreDevice could not launch it
   because the phone was locked. Unlocking the phone is sufficient to open the
   already-installed build; no rebuild or reinstall is required.
+- 2026-08-29 03:18 CST — The existing direct `sidebar.yaml` run did not reach
+  the sidebar because its setup left the keyboard active in Add sync graph and
+  the confirmation did not complete. A temporary verification flow reused an
+  existing graph and passed button-open, backdrop-close, swipe-open, and
+  swipe-close without changing the checked-in E2E flow. Fix the shared setup
+  independently instead of weakening sidebar assertions.
+- 2026-08-29 03:20 CST — Journals now has the same retained equatable row
+  boundary used by main while preserving `ScrollView + LazyVStack`. Focused
+  rich-block and drag flows pass, but a repeatable 100+ rich-row fixture and
+  frame-time comparison are still missing, so the long-list performance claim
+  is not yet considered verified.
 
 ## Decisions
 
