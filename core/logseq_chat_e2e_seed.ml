@@ -1,15 +1,37 @@
 let () =
-  if Array.length Sys.argv <> 2
+  if Array.length Sys.argv < 2 || Array.length Sys.argv > 3
   then (
-    prerr_endline "usage: logseq_chat_e2e_seed <graph.sqlite>";
+    prerr_endline
+      "usage: logseq_chat_e2e_seed <graph.sqlite> [--header-navigation|--composer|--outliner|--fixture]";
     exit 2);
   let path = Sys.argv.(1) in
+  let seed =
+    if Array.length Sys.argv = 3
+    then
+      match Sys.argv.(2) with
+      | "--header-navigation" -> Logseq_chat_e2e_seed_data.seed_header_navigation
+      | "--composer" ->
+        (fun conn ->
+          Logseq_chat_e2e_seed_data.seed_composer
+            conn
+            ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
+      | "--outliner" ->
+        (fun conn ->
+          Logseq_chat_e2e_seed_data.seed_outliner
+            conn
+            ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
+      | "--fixture" -> Logseq_chat_e2e_seed_data.seed_fixture
+      | mode ->
+        prerr_endline ("unknown seed mode: " ^ mode);
+        exit 2
+    else Logseq_chat_e2e_seed_data.seed
+  in
   match Logseq_chat_graph_store.restore_conn ~path with
   | Error message ->
     prerr_endline message;
     exit 1
   | Ok conn ->
-    (match Logseq_chat_e2e_seed_data.seed conn with
+    (match seed conn with
      | Ok () ->
        (match Logseq_chat_graph_store.restore_db ~path with
         | Error message ->

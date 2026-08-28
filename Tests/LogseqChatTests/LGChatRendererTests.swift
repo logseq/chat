@@ -194,6 +194,26 @@ struct LGChatRendererTests {
         runtime.renderer.receiveForTesting(
             LGChatRendererEvent(
                 kind: .extension,
+                nodeID: 21,
+                extensionIdentifier: "native-navigation-stack",
+                extensionName: "back",
+                extensionValues: ["count": LUIExtensionValue.int(2)]
+            )
+        )
+        runtime.renderer.receiveForTesting(
+            LGChatRendererEvent(
+                kind: .extension,
+                nodeID: 20,
+                extensionIdentifier: "native-search-presentation",
+                extensionName: "query-changed",
+                extensionValues: [
+                    "query": LUIExtensionValue.string("project alpha"),
+                ]
+            )
+        )
+        runtime.renderer.receiveForTesting(
+            LGChatRendererEvent(
+                kind: .extension,
                 nodeID: 18,
                 extensionIdentifier: "outliner-block-content",
                 extensionName: "open-node",
@@ -220,6 +240,20 @@ struct LGChatRendererTests {
                 name: "text-change",
                 text: "Updated",
                 value: 7
+            ),
+            LGChatExtensionEventProbe(
+                node: 21,
+                identifier: "native-navigation-stack",
+                name: "back",
+                text: "",
+                value: 2
+            ),
+            LGChatExtensionEventProbe(
+                node: 20,
+                identifier: "native-search-presentation",
+                name: "query-changed",
+                text: "project alpha",
+                value: 0
             ),
             LGChatExtensionEventProbe(
                 node: 18,
@@ -539,11 +573,11 @@ struct LGChatRendererTests {
             LGChatEffect(id: 29, kind: "create-graph", text: "New graph", value: 1)
         )
         let platformExecutor = LGChatCoreEffectExecutor(
-            deleteLocalGraph: { graphID in
-                deletedGraphID = graphID
+            callCore: { _ in
                 return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
             },
-            callCore: { _ in
+            deleteLocalGraph: { graphID in
+                deletedGraphID = graphID
                 return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
             }
         )
@@ -589,29 +623,30 @@ struct LGChatRendererTests {
         var platformKinds: [String] = []
         var coreCallCount = 0
         let executor = LGChatCoreEffectExecutor(
-            platformEffect: { effect in
-                platformKinds.append(effect.kind)
-                return LGChatEffectResolution(succeeded: true, message: "ok")
-            },
             callCore: { _ in
                 coreCallCount += 1
                 return "{\"apiVersion\":1,\"ok\":true,\"result\":null}"
+            },
+            platformEffect: { effect in
+                platformKinds.append(effect.kind)
+                return LGChatEffectResolution(succeeded: true, message: "ok")
             }
         )
 
         let effects = [
-            LGChatEffect(id: 30, kind: "sign-in", text: ""),
-            LGChatEffect(id: 31, kind: "save-settings", text: "{}"),
-            LGChatEffect(id: 32, kind: "refresh-runtime-log", text: "ui", value: 3),
-            LGChatEffect(id: 33, kind: "copy-runtime-log", text: "[]"),
-            LGChatEffect(id: 34, kind: "sign-out", text: ""),
-            LGChatEffect(id: 35, kind: "open-graph", text: "graph-a"),
-            LGChatEffect(id: 36, kind: "unlock-graph", text: "secret"),
-            LGChatEffect(id: 37, kind: "create-graph", text: "New", value: 0),
-            LGChatEffect(id: 38, kind: "delete-local-graph", text: "graph-a"),
-            LGChatEffect(id: 39, kind: "present-attachment", text: "photos"),
+            LGChatEffect(id: 30, kind: "persist-composer-draft", text: "Draft"),
+            LGChatEffect(id: 31, kind: "sign-in", text: ""),
+            LGChatEffect(id: 32, kind: "save-settings", text: "{}"),
+            LGChatEffect(id: 33, kind: "refresh-runtime-log", text: "ui", value: 3),
+            LGChatEffect(id: 34, kind: "copy-runtime-log", text: "[]"),
+            LGChatEffect(id: 35, kind: "sign-out", text: ""),
+            LGChatEffect(id: 36, kind: "open-graph", text: "graph-a"),
+            LGChatEffect(id: 37, kind: "unlock-graph", text: "secret"),
+            LGChatEffect(id: 38, kind: "create-graph", text: "New", value: 0),
+            LGChatEffect(id: 39, kind: "delete-local-graph", text: "graph-a"),
+            LGChatEffect(id: 40, kind: "present-attachment", text: "photos"),
             LGChatEffect(
-                id: 40,
+                id: 41,
                 kind: "present-asset",
                 text: "",
                 metadata: #"{"title":"Photo.jpg","assetType":"image/jpeg","localPath":"Assets/Photo.jpg"}"#
@@ -1023,7 +1058,14 @@ struct LGChatRendererTests {
                 provider: LGChatGraphLifecycleCognitoProbe()
             ),
             syncCoordinator: GraphSyncCoordinator(),
-            databasePath: "/tmp/unused-logseq-chat.sqlite"
+            databasePath: "/tmp/unused-logseq-chat.sqlite",
+            openCreatedGraph: { _ in
+                LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            }
         )
 
         let resolution = await lifecycle.execute(
@@ -1216,6 +1258,75 @@ struct LGChatRendererTests {
         #expect(resolution.succeeded)
     }
 
+    @Test("successful outliner autosave starts the sync pump")
+    func successfulOutlinerAutosaveStartsSyncPump() async {
+        let native = LGChatNativeRuntimeProbe()
+        native.effects = [
+            "{\"id\":19,\"kind\":\"change-outliner-text\",\"text\":\"Updated\"}"
+        ]
+        let executor = LGChatEffectExecutorProbe()
+        executor.resolve = { effect in
+            if effect.kind == "sync-now" {
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            }
+            return LGChatEffectResolution(
+                succeeded: true,
+                message: #"{"apiVersion":1,"ok":true,"result":{"hasPendingSemanticOperations":true}}"#
+            )
+        }
+        let runtime = LGChatRuntime(
+            native: native,
+            effectExecutor: executor,
+            outlinerAutosaveDelayNanoseconds: 0
+        )
+
+        await runtime.drainEffectsForTesting()
+        for _ in 0..<10 {
+            await Task.yield()
+            await runtime.drainEffectsForTesting()
+        }
+
+        #expect(executor.effects.map(\.kind) == [
+            "change-outliner-text",
+            "save-outliner-editing",
+            "sync-now",
+        ])
+    }
+
+    @Test("pending outliner mutation starts the sync pump")
+    func pendingOutlinerMutationStartsSyncPump() async {
+        let native = LGChatNativeRuntimeProbe()
+        native.effects = [
+            "{\"id\":20,\"kind\":\"outliner-toolbar\",\"text\":\"task\"}"
+        ]
+        let executor = LGChatEffectExecutorProbe()
+        executor.resolve = { effect in
+            if effect.kind == "sync-now" {
+                return LGChatEffectResolution(
+                    succeeded: true,
+                    message: "",
+                    output: .discard
+                )
+            }
+            return LGChatEffectResolution(
+                succeeded: true,
+                message: #"{"apiVersion":1,"ok":true,"result":{"hasPendingSemanticOperations":true}}"#
+            )
+        }
+        let runtime = LGChatRuntime(native: native, effectExecutor: executor)
+
+        await runtime.drainEffectsForTesting()
+
+        #expect(executor.effects.map(\.kind) == [
+            "outliner-toolbar",
+            "sync-now",
+        ])
+    }
+
     @Test("destination changes cancel the existing core editor")
     func cancelEditingEffectsUseCoreOutlinerEvent() async throws {
         var capturedRequest: LogseqChatRPCRequest?
@@ -1360,10 +1471,11 @@ private struct LGChatHostUpdateProbe: Equatable {
 private final class LGChatEffectExecutorProbe: LGChatEffectExecuting {
     var effects: [LGChatEffect] = []
     var resolution = LGChatEffectResolution(succeeded: true, message: "core response")
+    var resolve: ((LGChatEffect) -> LGChatEffectResolution)?
 
     func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
         effects.append(effect)
-        return resolution
+        return resolve?(effect) ?? resolution
     }
 }
 

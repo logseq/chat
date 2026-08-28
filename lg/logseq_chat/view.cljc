@@ -68,8 +68,10 @@
     (proto/profile proto/AndroidOS proto/SwiftUIHost)]
    true []
    [(ext/property "depth" ext/IntScalar true None)
-    (ext/property "bottom-occupies-layout-space" ext/BoolScalar true None)]
-   [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])]))
+    (ext/property "bottom-occupies-layout-space" ext/BoolScalar true None)
+    (ext/property "composer-dismissal-enabled" ext/BoolScalar true None)]
+   [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])
+    (ext/event "dismiss-composer" [])]))
 
 (defn native-search-presentation-schema []
   (ext/component
@@ -79,9 +81,13 @@
     (proto/profile proto/AndroidOS proto/SwiftUIHost)]
    true []
    [(ext/property "presented" ext/BoolScalar true None)
-    (ext/property "depth" ext/IntScalar true None)]
+    (ext/property "depth" ext/IntScalar true None)
+    (ext/property "query" ext/StringScalar true None)]
    [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])
-    (ext/event "dismiss" [])]))
+    (ext/event "dismiss" [])
+    (ext/event
+     "query-changed"
+     [(ext/event-field "query" ext/StringScalar true)])]))
 
 (defn native-overflow-menu-schema []
   (ext/component
@@ -98,6 +104,13 @@
     (ext/event "delete" [])
     (ext/event "settings" [])]))
 
+(defn liquid-glass-schema []
+  (ext/tweak
+   "liquid-glass"
+   [(proto/profile proto/IOS proto/SwiftUIHost)]
+   [(ext/property "shape" ext/StringScalar true None)
+    (ext/property "leading-inset" ext/IntScalar true None)]))
+
 (defn extension-registry []
   (let [registry (ext/registry)]
     (ext/register-component! registry (outliner-editor-schema))
@@ -105,6 +118,7 @@
     (ext/register-component! registry (native-navigation-stack-schema))
     (ext/register-component! registry (native-search-presentation-schema))
     (ext/register-component! registry (native-overflow-menu-schema))
+    (ext/register-tweak! registry (liquid-glass-schema))
     registry))
 
 (defn string-wire-value [value]
@@ -139,6 +153,8 @@
   (match input-event
     (proto/ExtensionEvent _node _identifier "back" values)
     (send (model/BackAppNavigation (extension-int values "count")))
+    (proto/ExtensionEvent _node _identifier "dismiss-composer" _values)
+    (send model/DismissComposer)
     _ true))
 
 (defn handle-native-search-event [input-event send]
@@ -147,6 +163,8 @@
     (send (model/BackSearchNavigation (extension-int values "count")))
     (proto/ExtensionEvent _node _identifier "dismiss" _values)
     (send model/CloseSearch)
+    (proto/ExtensionEvent _node _identifier "query-changed" values)
+    (send (model/ChangeSearchQuery (extension-string values "query")))
     _ true))
 
 (defn handle-native-overflow-menu-event [input-event send]
@@ -310,6 +328,16 @@
       SyncedState "Up to date"
       (FailedState reason) (str "Sync failed: " reason))))
 
+(defn sync-indicator-label [current]
+  (if (or (:has-pending-semantic-operations current)
+          (:has-pending-sync-request current))
+    "Syncing"
+    (match (:sync-state current)
+      SyncedState "Synced"
+      SyncingState "Syncing"
+      OfflineState "Not connected"
+      (FailedState _reason) "Sync failed")))
+
 (defn sync-accessibility-identifier [current]
   (match (:sync-state current)
     (FailedState _reason) "sync.failed"
@@ -450,11 +478,10 @@
 
 (defui sidebar-view [model-source send]
   [:scroll
-   [:list
+   [:column
     {:accessibility-identifier "sidebar.navigation"
      :gap 4
-     :padding 12
-     :background "background"}
+     :padding 12}
    [:stack
     [:list-item
      {:text (reactive graph-label model-source)
@@ -537,6 +564,9 @@
 (defn composer-send-disabled? [current]
   (string/blank? (:composer-draft current)))
 
+(defn composer-send-background [current]
+  (if (composer-send-disabled? current) "border" "black"))
+
 (defn task-status-identifier [status]
   (str "button.task-status.option." (:uuid status)))
 
@@ -608,6 +638,12 @@
 
 (defn outliner-row-zoom-label [row]
   (str "Zoom into "
+       (if (empty? (:title row)) "Untitled block" (:title row))))
+
+(defn outliner-row-action-label [current row]
+  (str (if (empty? (:outliner-selected-block-ids current))
+         "Edit block "
+         "Select block ")
        (if (empty? (:title row)) "Untitled block" (:title row))))
 
 (defn outliner-row-collapse-label [row]
@@ -702,6 +738,9 @@
        (:graph-loading current)
        (empty? (:outliner-rows current))))
 
+(defn graph-loading-message [current]
+  (if (graph-selected? current) "Loading journals" "Loading graphs"))
+
 (defn selected-graph-local? [current]
   (match (:selected-graph-id current)
     (Some graph-id) (model/graph-local? current graph-id)
@@ -737,46 +776,36 @@
   (journal-section-marker-for
    (:outliner-section-markers current) (:uuid row)))
 
-(defn append-journal-section-row [sections row]
-  (let [index (dec (count sections))
-        section (nth sections index)]
-    (assoc sections index
-           (assoc section :rows (conj (:rows section) row)))))
+(defn outliner-journal-heading-visible? [current row]
+  (and
+   (journal-root-visible? current)
+   (match (:selected-page current)
+     None
+     (match (outliner-journal-marker current row)
+       (Some _marker) true
+       None false)
+     (Some _page) false)))
 
-(defn journal-sections-loop [current rows sections]
-  (if (empty? rows)
-    sections
-    (let [row (nth rows 0)
-          next-sections
-          (match (outliner-journal-marker current row)
-            (Some marker)
-            (conj sections
-                  {:section-id (:block-id marker)
-                   :page-id (:page-id marker)
-                   :title (:title marker)
-                   :has-divider (:has-divider marker)
-                   :has-heading true
-                   :rows [row]})
-            None
-            (if (empty? sections)
-              (conj sections
-                    {:section-id (:uuid row)
-                     :page-id ""
-                     :title ""
-                     :has-divider false
-                     :has-heading false
-                     :rows [row]})
-              (append-journal-section-row sections row)))]
-      (journal-sections-loop current (subvec rows 1) next-sections))))
+(defn outliner-journal-divider-visible? [current row]
+  (match (outliner-journal-marker current row)
+    (Some marker) (:has-divider marker)
+    None false))
 
-(defn journal-sections [current]
-  (journal-sections-loop current (:outliner-rows current) []))
+(defn outliner-journal-title [current row]
+  (match (outliner-journal-marker current row)
+    (Some marker) (:title marker)
+    None ""))
 
-(defn journal-section-identifier [section]
-  (str "journal.section." (:page-id section)))
+(defn outliner-journal-page-id [current row]
+  (match (outliner-journal-marker current row)
+    (Some marker) (:page-id marker)
+    None ""))
 
-(defn journal-section-heading-identifier [section]
-  (str "button.journal." (:page-id section)))
+(defn outliner-journal-button-identifier [current row]
+  (str "button.journal." (outliner-journal-page-id current row)))
+
+(defn outliner-journal-accessibility-label [current row]
+  (str "Open " (outliner-journal-title current row)))
 
 (defn node-screen-visible? [current]
   (and (journals-destination? current)
@@ -851,13 +880,13 @@
   (if (= (:destination current) model/FlashcardsDestination)
     "Flashcards"
     (if (= (:destination current) model/GraphsDestination)
-      "Graphs"
+      "Journal"
       (match (active-node-projection current)
         (Some route) (:title route)
         None
         (match (:selected-page current)
           (Some page) (:title page)
-          None "Logseq")))))
+          None "Journal")))))
 
 (defn current-content-active? [current]
   (match (active-node-projection current)
@@ -958,6 +987,8 @@
      ui-context nil
      [:button
       {:text (reactive breadcrumb-title breadcrumb-source)
+       :variant "ghost"
+       :foreground "muted-foreground"
        :accessibility-identifier (breadcrumb-identifier breadcrumb)
        :on-press
        (event [current-breadcrumb breadcrumb-source]
@@ -992,6 +1023,31 @@
     (Some status) (:title status)
     None ""))
 
+(defn outliner-task-status-icon [row]
+  (match (:status row)
+    (Some status)
+    (case (:uuid status)
+      "backlog" "app:task-backlog"
+      "todo" "app:task-todo"
+      "doing" "app:task-doing"
+      "in-review" "app:task-review"
+      "done" "app:task-done"
+      "canceled" "app:task-canceled"
+      "app:task-todo")
+    None "app:task-todo"))
+
+(defn outliner-editor-task-label [current]
+  (match (:outliner-editing current)
+    (Some editing)
+    (match (model/row-index (:outliner-rows current) (:uuid editing))
+      (Some index)
+      (str "Task: "
+           (match (:status (nth (:outliner-rows current) index))
+             (Some status) (:title status)
+             None "None"))
+      None "Task: None")
+    None "Task: None"))
+
 (defn outliner-row-has-tags? [row]
   (not (empty? (:tags row))))
 
@@ -999,6 +1055,40 @@
   (match (:sync-status row)
     (Some status) (= status "failed")
     None false))
+
+(defn make-retained-outline-row [current row]
+  (match (:outliner-editing current)
+    (Some editing)
+    (if (= (:uuid editing) (:uuid row))
+      (record retained-outline-row
+        (render-key "active-outliner-editor")
+        (value row)
+        (is-editing true)
+        (editing-title (:title editing))
+        (editing-caret (:caret-utf16-offset editing)))
+      (record retained-outline-row
+        (render-key (:uuid row))
+        (value row)
+        (is-editing false)
+        (editing-title "")
+        (editing-caret 0)))
+    None
+    (record retained-outline-row
+      (render-key (:uuid row))
+      (value row)
+      (is-editing false)
+      (editing-title "")
+      (editing-caret 0))))
+
+(defn retained-outliner-rows [current]
+  (mapv
+   (fn [row] (make-retained-outline-row current row))
+   (:outliner-rows current)))
+
+(defn retained-row-value [retained] (:value retained))
+(defn retained-row-editing? [retained] (:is-editing retained))
+(defn retained-row-editing-title [retained] (:editing-title retained))
+(defn retained-row-editing-caret [retained] (:editing-caret retained))
 
 (defn outliner-tag-identifier [tag]
   (str "button.block-tag." (:uuid tag)))
@@ -1014,12 +1104,14 @@
       {:text (reactive outliner-tag-title tag-source)
        :label (reactive outliner-tag-title tag-source)
        :variant "ghost"
+       :foreground "primary"
        :accessibility-identifier (outliner-tag-identifier tag)
        :on-press
        (event [current-tag tag-source]
          (send (model/RequestAppNode (:uuid current-tag))))}])))
 
-(defn outliner-row [ui-context model-source row-source send]
+(defn outliner-row
+  [ui-context model-source retained-row-source row-source send]
   (let [row (signal/sample row-source)
         search-open (:search-open (signal/sample model-source))
         block-id-source (reactive outliner-row-uuid row-source)
@@ -1030,22 +1122,26 @@
         is-asset-source (reactive :is-asset row-source)
         asset-type-source (reactive outliner-row-asset-type row-source)
         local-path-source (reactive outliner-row-local-path row-source)
-        editing-title-source (reactive editing-title model-source)
-        editing-caret-source (reactive editing-caret model-source)
+        editing-title-source
+        (reactive retained-row-editing-title retained-row-source)
+        editing-caret-source
+        (reactive retained-row-editing-caret retained-row-source)
         indent-source (reactive outliner-row-indent row-source)
-        editing-source (reactive row-editing? model-source row-source)
+        editing-source (reactive retained-row-editing? retained-row-source)
         selected-source (reactive row-selected? model-source row-source)
         not-editing-source
         (reactive row-not-editing? model-source row-source)
         has-children-source (reactive outliner-row-has-children row-source)
         has-status-source (reactive outliner-row-has-status? row-source)
         status-title-source (reactive outliner-row-status-title row-source)
+        status-icon-source (reactive outliner-task-status-icon row-source)
         has-tags-source (reactive outliner-row-has-tags? row-source)
         sync-failed-source (reactive outliner-row-sync-failed? row-source)]
     (elements/element
      ui-context nil
      [:list-item
       {:accessibility-identifier (outliner-row-identifier row)
+       :label (reactive outliner-row-action-label model-source row-source)
        :padding 0
        :selected selected-source
        :on-press
@@ -1060,7 +1156,7 @@
        :on-long-press
        (event [current-row row-source]
          (send (model/LongPressOutlinerBlock (:uuid current-row))))}
-      [:column
+      [:column {:grow 1.0}
        [:row {:gap 2 :padding-vertical 5}
         [outliner-indent-view indent-source]
         [:button
@@ -1079,21 +1175,26 @@
               (send (model/RequestAppNode (:uuid current-row)))))}]
         [:if {:test has-status-source}
          [:button
-          {:text status-title-source
-           :label "Task status"
+          {:icon status-icon-source
+           :label status-title-source
            :variant "ghost"
+           :size "icon"
+           :width 24
+           :height 24
            :accessibility-identifier "button.block-task-status"
            :on-press
            (event [current-row row-source]
              (send
               (model/OpenOutlinerTaskStatusPicker (:uuid current-row))))}]]
         [:if {:test editing-source}
-         [outliner-editor-view block-id-source
-          editing-title-source editing-caret-source send]]
+         [:box {:grow 1.0}
+          [outliner-editor-view block-id-source
+           editing-title-source editing-caret-source send]]]
         [:if {:test not-editing-source}
-         [outliner-rich-block-view
-          model-source title-source markup-source youtube-target-source
-          is-asset-source row-source asset-type-source local-path-source send]]
+         [:box {:grow 1.0}
+          [outliner-rich-block-view
+           model-source title-source markup-source youtube-target-source
+           is-asset-source row-source asset-type-source local-path-source send]]]
         [:if {:test has-children-source}
          [:button
           {:text (reactive outliner-row-collapse-glyph row-source)
@@ -1107,7 +1208,7 @@
            (event [current-row row-source]
              (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]
        [:if {:test has-tags-source}
-        [:row
+        [:row {:gap 8}
          [:keyed
           {:source (reactive :tags row-source)
            :key :uuid
@@ -1120,79 +1221,118 @@
           (str "outliner.sync-failed." (:uuid row))}
          "Sync failed"]]]])))
 
-(defui journal-section [model-source section-source send]
-  [:box
-   {:accessibility-identifier-signal
-    (reactive journal-section-identifier section-source)
-    :container-relative-frame "vertical"}
-   [:if {:test (reactive :has-divider section-source)}
-    [:separator {:accessibility-identifier "journal.divider"}]]
-   [:if {:test (reactive :has-heading section-source)}
-    [:list-item
-     {:label (reactive :title section-source)
-      :padding 0
-      :accessibility-identifier-signal
-      (reactive journal-section-heading-identifier section-source)
-      :on-press
-      (event [section section-source]
-        (send (model/RequestAppNode (:page-id section))))}
-     [:box {:padding-horizontal 8 :padding-vertical 12}
-      [:box {:height 14}]
-      [:heading {:level 3 :value (reactive :title section-source)}]]]]
-   [:list
-    [:keyed
-     {:source (reactive :rows section-source)
-      :key :uuid
-      :compare compare
-      :as row-source}
-     [outliner-row model-source row-source send]]]])
+(defn outliner-entry
+  [ui-context model-source retained-row-source row-source send]
+  (let [journal-page-id-source
+        (reactive outliner-journal-page-id model-source row-source)]
+    (elements/element
+     ui-context nil
+     [:column {:padding-horizontal 8}
+      [:if {:test
+            (reactive outliner-journal-heading-visible?
+                      model-source row-source)}
+       [:column
+        [:list-item
+         {:label (reactive outliner-journal-accessibility-label
+                           model-source row-source)
+          :padding 0
+          :accessibility-identifier-signal
+          (reactive outliner-journal-button-identifier
+                    model-source row-source)
+          :on-press
+          (event [page-id journal-page-id-source]
+            (send (model/RequestAppNode page-id)))}
+         [:box {:padding-horizontal 8 :padding-vertical 12}
+          [:box {:height 14}]
+          [:heading
+           {:level 3
+            :value (reactive outliner-journal-title
+                             model-source row-source)}]]]]]
+      [outliner-row model-source retained-row-source row-source send]])))
 
 (defui outliner-selection-toolbar [send]
   [:toolbar
    {:orientation "horizontal"
+    :ios [[:liquid-glass {:shape "capsule" :leading-inset 0}]]
     :label "Outliner selection"
     :accessibility-identifier "toolbar.outliner.selection"
     :class "scroll-leading"
+    :height 54
     :gap 6}
    [:button
-    {:label "Copy"
+    {:icon "app:toolbar-copy"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Copy"
      :accessibility-identifier "button.outliner.selection.copy"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "copy")))}
     "Copy"]
    [:button
-    {:label "Outdent"
+    {:icon "app:toolbar-outdent"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Outdent"
      :accessibility-identifier "button.outliner.selection.outdent"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}
     "Outdent"]
    [:button
-    {:label "Indent"
+    {:icon "app:toolbar-indent"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Indent"
      :accessibility-identifier "button.outliner.selection.indent"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}
     "Indent"]
    [:button
-    {:label "Delete"
+    {:icon "app:toolbar-delete"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Delete"
      :accessibility-identifier "button.outliner.selection.delete"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "delete")))}
     "Delete"]
    [:button
-    {:label "Copy reference"
+    {:icon "app:toolbar-copy-reference"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Copy reference"
      :accessibility-identifier "button.outliner.selection.copyReference"
      :on-press
      (fn [_event]
        (send (model/PerformOutlinerToolbarAction "copyReference")))}
     "Copy reference"]
    [:button
-    {:label "Copy URL"
+    {:icon "app:toolbar-copy-url"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Copy URL"
      :accessibility-identifier "button.outliner.selection.copyURL"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "copyURL")))}
     "Copy URL"]
    [:button
-    {:label "Unselect"
+    {:icon "app:toolbar-unselect"
+     :variant "ghost"
+     :width 58
+     :height 46
+     :icon-placement "top"
+     :label "Unselect"
      :accessibility-identifier "button.outliner.selection.unselect"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}
@@ -1221,60 +1361,75 @@
     :gap 2}
    [:keyed
     {:source (reactive :outliner-autocomplete-candidates model-source)
-     :key :value
+     :key :index
      :compare compare
      :as candidate-source}
     [outliner-autocomplete-row candidate-source send]]])
 
-(defui outliner-editor-toolbar [send]
+(defui outliner-editor-toolbar [model-source send]
   [:toolbar
    {:orientation "horizontal"
     :label "Outliner editor"
     :accessibility-identifier "toolbar.outliner.editor"
     :class "scroll-leading"
+    :height 50
     :gap 4}
    [:button
-    {:label "Task"
+    {:icon "app:toolbar-task"
+     :variant "ghost"
+     :size "icon"
+     :label (reactive outliner-editor-task-label model-source)
      :accessibility-identifier "button.outliner.editor.task"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "task")))}
-    "Task"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "task")))}]
    [:button
-    {:label "Outdent"
+    {:icon "app:toolbar-outdent"
+     :variant "ghost"
+     :size "icon"
+     :label "Outdent"
      :accessibility-identifier "button.outliner.editor.outdent"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}
-    "Outdent"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}]
    [:button
-    {:label "Indent"
+    {:icon "app:toolbar-indent"
+     :variant "ghost"
+     :size "icon"
+     :label "Indent"
      :accessibility-identifier "button.outliner.editor.indent"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}
-    "Indent"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}]
    [:button
-    {:label "Tag"
+    {:icon "app:toolbar-tag"
+     :variant "ghost"
+     :size "icon"
+     :label "Tag"
      :accessibility-identifier "button.outliner.editor.tag"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "tag")))}
-    "Tag"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "tag")))}]
    [:button
-    {:label "Photo"
+    {:icon "app:toolbar-camera"
+     :variant "ghost"
+     :size "icon"
+     :label "Photo"
      :accessibility-identifier "button.outliner.editor.camera"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "camera")))}
-    "Photo"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "camera")))}]
    [:button
-    {:label "Record audio"
+    {:icon "app:toolbar-audio"
+     :variant "ghost"
+     :size "icon"
+     :label "Record audio"
      :accessibility-identifier "button.outliner.editor.audio"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "audio")))}
-    "Audio"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "audio")))}]
    [:button
-    {:label "Upload asset"
+    {:icon "app:toolbar-attachment"
+     :variant "ghost"
+     :size "icon"
+     :label "Upload asset"
      :accessibility-identifier "button.outliner.editor.attachment"
      :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}
-    "Attach"]
+     (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
    [:button
     {:label "Page reference"
      :accessibility-identifier "button.outliner.editor.pageReference"
@@ -1283,18 +1438,22 @@
        (send (model/PerformOutlinerToolbarAction "pageReference")))}
     "[[]]"]
    [:button
-    {:label "Hide keyboard"
+    {:icon "app:toolbar-hide-keyboard"
+     :variant "ghost"
+     :size "icon"
+     :label "Hide keyboard"
      :accessibility-identifier "button.outliner.editor.hideKeyboard"
      :on-press
      (fn [_event]
-       (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}
-    "Hide"]])
+       (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]])
 
 (defn node-related-row [ui-context model-source row-source send]
   (let [structured-breadcrumb-source
         (reactive outliner-row-structured-breadcrumb? row-source)
         fallback-breadcrumb-source
-        (reactive outliner-row-fallback-breadcrumb? row-source)]
+        (reactive outliner-row-fallback-breadcrumb? row-source)
+        retained-row-source
+        (reactive make-retained-outline-row model-source row-source)]
     (elements/element
      ui-context nil
      [:column
@@ -1302,13 +1461,14 @@
        [related-row-breadcrumbs row-source send]]
       [:if {:test fallback-breadcrumb-source}
        [:text {:value (reactive outliner-row-breadcrumb row-source)}]]
-      [outliner-row model-source row-source send]])))
+      [outliner-row model-source retained-row-source row-source send]])))
 
 (defui node-related-section [model-source send]
   [:column
-   {:accessibility-identifier "section.node.linked-references"}
-   [:text "Linked references"]
-   [:list {:accessibility-identifier "list.node.related"}
+   {:gap 12
+    :accessibility-identifier "section.node.linked-references"}
+   [:heading {:level 3} "Linked references"]
+   [:column {:accessibility-identifier "list.node.related"}
     [:keyed
      {:source (reactive active-node-related-rows model-source)
       :key :uuid
@@ -1318,11 +1478,12 @@
 
 (defui node-tagged-section [model-source send]
   [:column
-   {:accessibility-identifier "section.tag.tagged-nodes"}
-   [:text "Tagged nodes"]
+   {:gap 12
+    :accessibility-identifier "section.tag.tagged-nodes"}
+   [:heading {:level 3} "Tagged nodes"]
    [:if {:test (reactive node-tag-section-empty? model-source)}
     [:text "No tagged nodes"]]
-   [:list {:accessibility-identifier "list.node.tagged"}
+   [:column {:accessibility-identifier "list.node.tagged"}
     [:keyed
      {:source (reactive active-node-related-rows model-source)
       :key :uuid
@@ -1332,9 +1493,10 @@
 
 (defui node-linked-reference-section [model-source send]
   [:column
-   {:accessibility-identifier "section.node.linked-references"}
-   [:text "Linked references"]
-   [:list {:accessibility-identifier "list.node.linked-references"}
+   {:gap 12
+    :accessibility-identifier "section.node.linked-references"}
+   [:heading {:level 3} "Linked references"]
+   [:column {:accessibility-identifier "list.node.linked-references"}
     [:keyed
      {:source (reactive active-node-linked-reference-rows model-source)
       :key :uuid
@@ -1354,41 +1516,57 @@
 (defui node-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.node"}
-   [:text
-    {:value (reactive active-node-title model-source)
-     :accessibility-identifier "title.node"}]
-   [:scroll {:accessibility-identifier "scroll.outliner"}
-    [:list {:accessibility-identifier "list.outliner"}
-     [:keyed
-      {:source (reactive :outliner-rows model-source)
-       :key :uuid
-       :compare compare
-       :as row-source}
-      [outliner-row model-source row-source send]]]]
-   [:if {:test (reactive node-can-add-first-block? model-source)}
-    [add-first-block-button model-source send]]
-   [:if {:test (reactive node-related-section-visible? model-source)}
-    [node-related-section model-source send]]
-   [:if {:test (reactive node-tag-section-visible? model-source)}
-    [node-tagged-section model-source send]]
-   [:if {:test (reactive node-linked-reference-section-visible? model-source)}
-    [node-linked-reference-section model-source send]]])
+   [:scroll {:grow 1.0 :accessibility-identifier "scroll.outliner"}
+    [:column {:gap 24 :padding-horizontal 16}
+     [:if {:test (reactive (fn [current]
+                             (not (current-content-is-tag? current)))
+                           model-source)}
+      [:heading
+       {:level 2
+        :value (reactive active-node-title model-source)
+        :accessibility-identifier "title.node"}]]
+     [:column {:accessibility-identifier "list.outliner"}
+      [:keyed
+       {:source (reactive retained-outliner-rows model-source)
+        :key :render-key
+        :compare compare
+        :as retained-row-source}
+       [outliner-row model-source retained-row-source
+        (reactive retained-row-value retained-row-source) send]]]
+     [:if {:test (reactive node-can-add-first-block? model-source)}
+      [add-first-block-button model-source send]]
+     [:if {:test (reactive node-related-section-visible? model-source)}
+      [node-related-section model-source send]]
+     [:if {:test (reactive node-tag-section-visible? model-source)}
+      [node-tagged-section model-source send]]
+     [:if {:test (reactive node-linked-reference-section-visible? model-source)}
+      [node-linked-reference-section model-source send]]
+     [:box {:height 120}]]]])
+
+(declare attachment-picker-dialog task-status-picker-dialog)
 
 (defui composer-view [model-source send]
   [:box
    {:accessibility-identifier "surface.composer.root"
     :grow 1.0
-    :min-height 58
-    :padding-horizontal 12
-    :padding-vertical 6
-    :background "secondary"
-    :corner-radius 30
-    :on-press (fn [_event] (send model/FocusComposer))}
+    :min-height 58}
    [:if {:test (reactive :composer-expanded model-source)}
     [:column
+     {:ios [[:liquid-glass {:shape "rounded-rectangle" :leading-inset 0}]]
+      :grow 1.0
+      :gap 0
+      :padding-horizontal 16
+      :padding-vertical 8
+      :background "glass-fallback"
+      :corner-radius 10
+      :on-press (fn [_event] (send model/FocusComposer))}
+     [:box
+      {:height 6
+       :accessibility-identifier "spacer.composer.top"}]
      [:textarea
       {:text (reactive :composer-draft model-source)
        :autofocus (reactive :composer-autofocus model-source)
+       :min-height 36
        :placeholder "Capture"
        :label "Capture"
        :accessibility-identifier "field.composer"
@@ -1399,19 +1577,67 @@
            (send (model/ChangeComposerDraft text))
            _ true))
        :on-submit (fn [_event] (send model/SendComposer))}]
+     [:box
+      {:height 8
+       :accessibility-identifier "spacer.composer.field-controls"}]
      [:row
+      {:gap 8
+       :cross-alignment "center"
+       :accessibility-identifier "row.composer.controls"}
       [:button
        {:icon "plus"
+        :variant "ghost"
+        :size "icon"
+        :width 32
+        :height 32
         :label "Add attachment"
         :accessibility-identifier "button.attachment"
-        :on-press (fn [_event] (send model/OpenAttachmentPicker))}]
+        :on-press (fn [_event] (send model/OpenAttachmentPicker))}
+       [:context-menu
+        [:menu-item
+         {:icon "app:toolbar-attachment"
+          :accessibility-identifier "button.attachment.files"
+          :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
+         "File"]
+        [:menu-item
+         {:icon "app:toolbar-camera"
+          :accessibility-identifier "button.attachment.camera"
+          :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
+         "Camera"]
+        [:menu-item
+         {:icon "app:composer-photo"
+          :accessibility-identifier "button.attachment.photos"
+          :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
+         "Photo"]
+        [:menu-item
+         {:icon "app:toolbar-audio"
+          :accessibility-identifier "button.attachment.audio"
+          :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
+         "Audio recording"]]]
+      [:stack
+       [:button
+        {:icon "app:task-todo"
+         :variant "ghost"
+         :size "icon"
+         :width 32
+         :height 32
+         :foreground "border"
+         :label "Task status"
+         :accessibility-identifier "button.task-status"
+         :on-press (fn [_event] (send model/OpenTaskStatusPicker))}]
+       [:if {:test (reactive :task-status-picker-open model-source)}
+        [task-status-picker-dialog model-source send]]]
+      [:spacer
+       {:grow 1.0
+        :accessibility-identifier "spacer.composer.controls"}]
       [:button
-       {:icon "check"
-        :label "Task status"
-        :accessibility-identifier "button.task-status"
-        :on-press (fn [_event] (send model/OpenTaskStatusPicker))}]
-      [:button
-       {:icon "send"
+       {:icon "arrow-up"
+        :variant "ghost"
+        :width 40
+        :height 40
+        :background-signal (reactive composer-send-background model-source)
+        :foreground "white"
+        :corner-radius 20
         :label "Send"
         :accessibility-identifier "button.send"
         :disabled (reactive composer-send-disabled? model-source)
@@ -1419,74 +1645,68 @@
    [:if {:test (reactive composer-collapsed? model-source)}
     [:button
      {:variant "ghost"
+      :ios [[:liquid-glass {:shape "capsule" :leading-inset 16}]]
       :grow 1.0
+      :height 58
       :accessibility-identifier "button.composer.expand"
       :on-press (fn [_event] (send model/ExpandComposer))}
      "Capture"]]])
 
 (defui attachment-picker-dialog [send]
-  [:dialog
-   {:text "Add attachment"
+  [:dropdown-menu
+   {:anchor "above"
+    :anchor-alignment "start"
+    :min-width 240
     :on-dismiss (fn [_event] (send model/CloseAttachmentPicker))}
-   [:column
-    [:button
-     {:accessibility-identifier "button.attachment.files"
+   [:menu-item
+     {:icon "app:toolbar-attachment"
+      :accessibility-identifier "button.attachment.files"
       :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
-     "Files"]
-    [:button
-     {:accessibility-identifier "button.attachment.camera"
+     "File"]
+   [:menu-item
+     {:icon "app:toolbar-camera"
+      :accessibility-identifier "button.attachment.camera"
       :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
      "Camera"]
-    [:button
-     {:accessibility-identifier "button.attachment.photos"
+   [:menu-item
+     {:icon "app:composer-photo"
+      :accessibility-identifier "button.attachment.photos"
       :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
-     "Photos"]
-    [:button
-     {:accessibility-identifier "button.attachment.audio"
+     "Photo"]
+   [:menu-item
+     {:icon "app:toolbar-audio"
+      :accessibility-identifier "button.attachment.audio"
       :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
-     "Audio recording"]
-    [:button
-     {:on-press (fn [_event] (send model/CloseAttachmentPicker))}
-     "Cancel"]]])
-
-(defui composer-dismissal-surface [send]
-  [:button
-   {:label "Dismiss composer"
-    :accessibility-identifier "surface.composer.dismiss"
-    :grow 1.0
-    :on-press (fn [_event] (send model/DismissComposer))}])
+     "Audio recording"]])
 
 (defn task-status-row [ui-context status-source send]
   (let [status (signal/sample status-source)]
     (elements/element
      ui-context nil
-     [:button
+     [:menu-item
       {:text (reactive task-status-title status-source)
-       :label (reactive task-status-title status-source)
        :accessibility-identifier (task-status-identifier status)
        :on-press
        (event [current-status status-source]
          (send (model/ChooseTaskStatus (:uuid current-status))))}])))
 
 (defui task-status-picker-dialog [model-source send]
-  [:dialog
-   {:text "Task status"
+  [:dropdown-menu
+   {:anchor "above"
+    :anchor-alignment "start"
+    :min-width 220
     :on-dismiss (fn [_event] (send model/CloseTaskStatusPicker))}
-   [:column
-    [:keyed
+   [:keyed
      {:source (reactive :task-statuses model-source)
       :key :uuid
       :compare compare
       :as status-source}
      [task-status-row status-source send]]
-    [:if {:test (reactive task-status-selected? model-source)}
-     [:button
+   [:if {:test (reactive task-status-selected? model-source)}
+     [:menu-item
       {:accessibility-identifier "button.task-status.clear"
        :on-press (fn [_event] (send model/ClearTaskStatus))}
-      "Clear task status"]]
-    [:button
-     {:on-press (fn [_event] (send model/CloseTaskStatusPicker))}
-     "Cancel"]]])
+      "Clear task status"]]])
 
 (defn outliner-task-status-picker-open? [current]
   (match (:outliner-task-status-block-id current)
@@ -1676,6 +1896,11 @@
 (defn graph-row-local? [current graph]
   (model/graph-local? current (:id graph)))
 
+(defn graph-icon-name [local? graph]
+  (if local?
+    "app:graph-local"
+    (if (:is-encrypted graph) "app:graph-locked" "app:graph-remote")))
+
 (defn local-graphs [current]
   (filterv
    (fn [graph] (model/graph-local? current (:id graph)))
@@ -1754,9 +1979,10 @@
          (FailedState _reason) false
          _ true)))
 
-(defn graph-row [ui-context model-source graph-source send]
+(defn graph-row [ui-context model-source graph-source local? send]
   (let [graph (signal/sample graph-source)
-        graph-id (:id graph)]
+        graph-id (:id graph)
+        icon-name (graph-icon-name local? graph)]
     (elements/element
      ui-context nil
      [:list-item
@@ -1766,18 +1992,26 @@
        (event [current-graph graph-source]
          (send (model/RequestOpenGraph (:id current-graph))))}
       [:row
-       [:text {:value (reactive graph-title graph-source)}]
-       [:if {:test (reactive graph-status-visible? graph-source)}
-        [:text
-         {:value (reactive graph-status-title graph-source)
-          :accessibility-identifier (graph-status-identifier graph)}]]
-       [:if {:test (reactive graph-row-local? model-source graph-source)}
-        [:button
-         {:label "Delete local graph"
-          :accessibility-identifier (graph-delete-identifier graph)
-          :disabled (reactive graph-delete-active? model-source graph-source)
-          :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
-         "Delete local graph"]]]])))
+       {:gap 12 :cross "center"}
+       [:icon
+        {:name icon-name
+         :size "lg"}]
+       [:column {:gap 4 :grow 1.0}
+        [:text {:value (reactive graph-title graph-source)}]
+        [:if {:test (reactive graph-status-visible? graph-source)}
+         [:text
+          {:value (reactive graph-status-title graph-source)
+           :foreground "muted-foreground"
+           :accessibility-identifier (graph-status-identifier graph)}]]]]
+       [:context-menu
+        [:if {:test (reactive graph-row-local? model-source graph-source)}
+         [:menu-item
+          {:icon "trash"
+           :variant "destructive"
+           :accessibility-identifier (graph-delete-identifier graph)
+           :disabled (reactive graph-delete-active? model-source graph-source)
+           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
+          "Delete local graph"]]]])))
 
 (defui graph-create-sheet [model-source send]
   [:sheet
@@ -1929,9 +2163,10 @@
      "Unlock"]]])
 
 (defui graphs-screen [model-source send]
-  [:column {:accessibility-identifier "screen.graphs"}
+  [:list {:accessibility-identifier "screen.graphs"}
    [:button
-    {:accessibility-identifier "button.graphs.refresh"
+    {:icon "refresh-cw"
+     :accessibility-identifier "button.graphs.refresh"
      :disabled (reactive model/graph-refresh-active? model-source)
      :on-press (fn [_event] (send model/RefreshGraphs))}
     "Refresh"]
@@ -1941,7 +2176,7 @@
     {:accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
     "Add sync graph"]
-   [:text "Local graphs:"]
+   [:heading {:level 5} "Local graphs:"]
    [:if {:test (reactive local-graphs-empty? model-source)}
     [:text "No local graphs"]]
    [:keyed
@@ -1949,15 +2184,15 @@
      :key :id
      :compare compare
      :as graph-source}
-    [graph-row model-source graph-source send]]
+    [graph-row model-source graph-source true send]]
    [:if {:test (reactive remote-graphs-present? model-source)}
-    [:text "Remote graphs:"]]
+    [:heading {:level 5} "Remote graphs:"]]
    [:keyed
     {:source (reactive remote-graphs model-source)
      :key :id
      :compare compare
      :as graph-source}
-    [graph-row model-source graph-source send]]
+    [graph-row model-source graph-source false send]]
    [:if {:test (reactive :create-graph-open model-source)}
     [graph-create-sheet model-source send]]
    [:if {:test (reactive graph-deletion-pending? model-source)}
@@ -1966,6 +2201,9 @@
 (defui graph-picker-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.graph-picker"
+    :main "start"
+    :grow 1.0
+    :container-relative-frame "vertical"
     :gap 20
     :padding 24}
    [:row {:main "space_between" :cross "center"}
@@ -1991,13 +2229,13 @@
       :accessibility-identifier "button.graphs.refresh"
       :on-press (fn [_event] (send model/RefreshGraphs))}
      "Refresh graphs"]]
-   [:list
+   [:list {:grow 1.0}
     [:keyed
      {:source (reactive :graphs model-source)
       :key :id
       :compare compare
       :as graph-source}
-     [graph-row model-source graph-source send]]]
+     [graph-row model-source graph-source false send]]]
    [:if {:test (reactive :create-graph-open model-source)}
     [graph-create-sheet model-source send]]])
 
@@ -2033,6 +2271,12 @@
     (Some choice) (:title choice)
     None "System"))
 
+(defn settings-appearance-title [current]
+  (cond
+    (= (:appearance current) "light") "Light"
+    (= (:appearance current) "dark") "Dark"
+    :else "System"))
+
 (defn settings-language-choice-title [choice]
   (:title choice))
 
@@ -2061,13 +2305,15 @@
   (let [link (signal/sample link-source)]
     (elements/element
      ui-context nil
-     [:button
-      {:text (reactive settings-community-link-title link-source)
-       :accessibility-identifier
-       (settings-community-link-identifier link)
-       :on-press
-       (event [current-link link-source]
-         (send (model/OpenExternalURL (:url current-link))))}])))
+     [:column
+      [:list-item
+       {:text (reactive settings-community-link-title link-source)
+        :accessibility-identifier
+        (settings-community-link-identifier link)
+        :on-press
+        (event [current-link link-source]
+          (send (model/OpenExternalURL (:url current-link))))}]
+      [:separator]])))
 
 (defn settings-tabs-visible? [current]
   (:settings-tabs-open current))
@@ -2257,116 +2503,204 @@
     [runtime-log-row record-source]]])
 
 (defui settings-screen [model-source send]
-  [:column {:accessibility-identifier "screen.settings"}
-   [:heading {:level 1} "Settings"]
-   [:heading {:level 2} "General"]
-   [:text "Theme"]
-   [:row
-    [:button {:on-press (fn [_event] (send (model/ChangeAppearance "system")))}
-     "System"]
-    [:button {:on-press (fn [_event] (send (model/ChangeAppearance "light")))}
-     "Light"]
-    [:button {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
-     "Dark"]]
-   [:button
-    {:text (reactive settings-language-title model-source)
-     :label "Language"
-     :accessibility-identifier "picker.settings.language"
-     :on-press (fn [_event] (send model/OpenSettingsLanguageMenu))}]
-   [:if {:test (reactive :settings-language-menu-open model-source)}
-    [:dropdown-menu
-     {:accessibility-identifier "menu.settings.language"
-      :on-dismiss (fn [_event] (send model/CloseSettingsLanguageMenu))}
+  [:column
+   {:gap 18
+    :padding 20
+    :accessibility-identifier "screen.settings"}
+   [:column {:gap 8}
+    [:text
+     {:class "headline"
+      :foreground "muted-foreground"
+      :accessibility-identifier "label.settings.general"}
+     "General"]
+    [:column
+     {:gap 12 :padding 16 :background "secondary" :corner-radius 14}
+     [:row {:cross "center"}
+      [:text "Theme"]
+      [:spacer]
+      [:stack
+       [:select
+        {:text (reactive settings-appearance-title model-source)
+         :label "Theme"
+         :on-press (fn [_event] (send model/OpenSettingsAppearanceMenu))}]
+       [:if {:test (reactive :settings-appearance-menu-open model-source)}
+        [:dropdown-menu
+         {:anchor "below"
+          :anchor-alignment "end"
+          :min-width 160
+          :on-dismiss (fn [_event] (send model/CloseSettingsAppearanceMenu))}
+         [:menu-item
+          {:on-press (fn [_event] (send (model/ChangeAppearance "system")))}
+          "System"]
+         [:menu-item
+          {:on-press (fn [_event] (send (model/ChangeAppearance "light")))}
+          "Light"]
+         [:menu-item
+          {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
+          "Dark"]]]]]
+     [:separator]
+     [:row {:cross "center"}
+      [:text "Language"]
+      [:spacer]
+      [:stack
+       [:select
+        {:text (reactive settings-language-title model-source)
+         :label "Language"
+         :accessibility-identifier "picker.settings.language"
+         :on-press (fn [_event] (send model/OpenSettingsLanguageMenu))}]
+       [:if {:test (reactive :settings-language-menu-open model-source)}
+        [:dropdown-menu
+         {:anchor "below"
+          :anchor-alignment "end"
+          :min-width 220
+          :accessibility-identifier "menu.settings.language"
+          :on-dismiss (fn [_event] (send model/CloseSettingsLanguageMenu))}
+         [:keyed
+          {:source (reactive :language-choices model-source)
+           :key :id
+           :compare compare
+           :as choice-source}
+          [settings-language-choice-row choice-source send]]]]]]
+     [:separator]
+     [:list-item
+      {:accessibility-identifier "link.settings.tabs"
+       :on-press (fn [_event] (send model/OpenSettingsTabs))}
+      "Tabs"]]]
+   [:column {:gap 8}
+    [:text
+     {:class "headline"
+      :foreground "muted-foreground"
+      :accessibility-identifier "label.settings.editor"}
+     "Editor"]
+    [:column
+     {:gap 12 :padding 16 :background "secondary" :corner-radius 14}
+     [:toggle
+      {:checked (reactive settings-spell-check model-source)
+       :on-toggle
+       (fn [input-event]
+         (match input-event
+           (proto/ToggleChanged _node enabled)
+           (send (model/ToggleSpellCheck enabled))
+           _ true))}
+      "Spell check"]
+     [:separator]
+     [:toggle
+      {:checked (reactive settings-auto-correction model-source)
+       :on-toggle
+       (fn [input-event]
+         (match input-event
+           (proto/ToggleChanged _node enabled)
+           (send (model/ToggleAutoCorrection enabled))
+           _ true))}
+      "Auto-correction"]]]
+   [:column {:gap 8}
+    [:text
+     {:class "headline"
+      :foreground "muted-foreground"
+      :accessibility-identifier "label.settings.sync-server"}
+     "Sync server"]
+    [:column
+     {:gap 8 :padding 16 :background "secondary" :corner-radius 14}
+     [:text-field
+      {:text (reactive settings-base-url model-source)
+       :placeholder "Server URL"
+       :label "Server URL"
+       :accessibility-identifier "field.base-url"
+       :on-input
+       (fn [input-event]
+         (match input-event
+           (TextChanged _node text) (send (model/ChangeBaseURL text))
+           _ true))}]
+     [:if {:test (reactive settings-base-url-invalid? model-source)}
+      [:text {:foreground "destructive"}
+       "Enter a valid HTTP or HTTPS URL."]]]]
+   [:if {:test (reactive selected-graph-local? model-source)}
+    [:column {:gap 8}
+     [:text
+      {:class "headline"
+       :foreground "muted-foreground"
+       :accessibility-identifier "label.settings.advanced"}
+      "Advanced"]
+     [:column
+      {:padding 16 :background "secondary" :corner-radius 14}
+      [:list-item
+       {:accessibility-identifier "button.export-graph-database"
+        :on-press (fn [_event] (send model/ExportGraphDatabase))}
+       "Export Graph SQLite DB"]]]]
+   [:column {:gap 8}
+    [:text
+     {:class "headline"
+      :foreground "muted-foreground"
+      :accessibility-identifier "label.settings.about"}
+     "About"]
+    [:column
+     {:gap 12 :padding 16 :background "secondary" :corner-radius 14}
+     [:row
+      [:text "Version"]
+      [:spacer]
+      [:text {:value (reactive settings-version model-source)
+              :foreground "secondary"}]]
+     [:separator]
+     [:row
+      [:text "Revision"]
+      [:spacer]
+      [:text {:value (reactive settings-revision model-source)
+              :foreground "secondary"}]]
+     [:separator]
+     [:list-item {:on-press (fn [_event] (send model/OpenRuntimeLog))}
+      "Check log"]]]
+   [:column {:gap 8}
+    [:text
+     {:class "headline"
+      :foreground "muted-foreground"
+      :accessibility-identifier "label.settings.community"}
+     "Community"]
+    [:column
+     {:background "secondary" :corner-radius 14 :padding 16}
      [:keyed
-      {:source (reactive :language-choices model-source)
+      {:source (reactive :community-links model-source)
        :key :id
        :compare compare
-       :as choice-source}
-      [settings-language-choice-row choice-source send]]]]
-   [:button
-    {:accessibility-identifier "link.settings.tabs"
-     :on-press (fn [_event] (send model/OpenSettingsTabs))}
-    "Tabs"]
-   [:heading {:level 2} "Editor"]
-   [:toggle
-    {:checked (reactive settings-spell-check model-source)
-     :on-toggle
-     (fn [input-event]
-       (match input-event
-         (proto/ToggleChanged _node enabled)
-         (send (model/ToggleSpellCheck enabled))
-         _ true))}
-    "Spell check"]
-   [:toggle
-    {:checked (reactive settings-auto-correction model-source)
-     :on-toggle
-     (fn [input-event]
-       (match input-event
-         (proto/ToggleChanged _node enabled)
-         (send (model/ToggleAutoCorrection enabled))
-         _ true))}
-    "Auto-correction"]
-   [:heading {:level 2} "Sync server"]
-   [:text "Connection"]
-   [:text-field
-    {:text (reactive settings-base-url model-source)
-     :placeholder "Server URL"
-     :label "Server URL"
-     :accessibility-identifier "field.base-url"
-     :on-input
-     (fn [input-event]
-       (match input-event
-         (TextChanged _node text) (send (model/ChangeBaseURL text))
-         _ true))}]
-   [:if {:test (reactive settings-base-url-invalid? model-source)}
-    [:text "Enter a valid HTTP or HTTPS URL."]]
-   [:if {:test (reactive selected-graph-local? model-source)}
-    [:column
-     [:heading {:level 2} "Advanced"]
-     [:button
-      {:accessibility-identifier "button.export-graph-database"
-       :on-press (fn [_event] (send model/ExportGraphDatabase))}
-      "Export Graph SQLite DB"]]]
-   [:heading {:level 2} "About"]
-   [:row [:text "Version"] [:text {:value (reactive settings-version model-source)}]]
-   [:row [:text "Revision"] [:text {:value (reactive settings-revision model-source)}]]
-   [:button {:on-press (fn [_event] (send model/OpenRuntimeLog))} "Check log"]
-   [:heading {:level 2} "Community"]
-   [:keyed
-    {:source (reactive :community-links model-source)
-     :key :id
-     :compare compare
-     :as link-source}
-    [settings-community-link-row link-source send]]
-   [:button
-    {:accessibility-identifier "button.sign-out"
-     :on-press (fn [_event] (send model/SignOut))}
-    "Sign Out"]
-   [:row
-    [:button
-     {:accessibility-identifier "button.connection.cancel"
-      :on-press (fn [_event] (send model/DismissSettings))}
-     "Cancel"]
-    [:button
-     {:accessibility-identifier "button.connection.apply"
-      :disabled (reactive settings-apply-disabled? model-source)
-      :on-press (fn [_event] (send model/ApplySettings))}
-     "Apply"]]])
+       :as link-source}
+      [settings-community-link-row link-source send]]]]
+   [:column {:padding 16 :background "secondary" :corner-radius 14}
+    [:list-item
+     {:accessibility-identifier "button.sign-out"
+      :on-press (fn [_event] (send model/SignOut))}
+     "Sign Out"]]])
 
 (defui settings-sheet [model-source send]
   [:sheet
    {:text "Settings"
+    :class "navigation-scroll"
     :on-dismiss (fn [_event] (send model/DismissSettings))}
    [:if {:test (reactive settings-main-visible? model-source)}
     [settings-screen model-source send]]
    [:if {:test (reactive settings-tabs-visible? model-source)}
     [settings-tabs-screen model-source send]]
    [:if {:test (reactive runtime-log-visible? model-source)}
-    [runtime-log-screen model-source send]]])
+    [runtime-log-screen model-source send]]
+   [:toolbar
+    {:orientation "horizontal"
+     :label "Settings actions"
+     :class "navigation-actions"
+     :accessibility-identifier "toolbar.settings.actions"}
+    [:button
+     {:class "cancellation-action"
+      :accessibility-identifier "button.connection.cancel"
+      :on-press (fn [_event] (send model/DismissSettings))}
+     "Cancel"]
+    [:button
+     {:class "confirmation-action"
+      :accessibility-identifier "button.connection.apply"
+      :disabled (reactive settings-apply-disabled? model-source)
+      :on-press (fn [_event] (send model/ApplySettings))}
+     "Apply"]]])
 
 (defui page-delete-dialog [send]
   [:dialog
    {:text "Delete page?"
+    :class "alert"
     :on-dismiss (fn [_event] (send model/CancelDeleteActivePage))}
    [:column
     [:text "The page will be moved to Recycle."]
@@ -2424,34 +2758,18 @@
      "Done"]]])
 
 (defui search-screen [model-source send]
-  [:column {:accessibility-identifier "screen.search"}
-   [:search-field
-    {:text (reactive :search-query model-source)
-     :placeholder "Search pages and blocks"
-     :label "Search pages and blocks"
-     :accessibility-identifier "field.search"
-     :on-input
-     (fn [input-event]
-       (match input-event
-         (TextChanged _node text) (send (model/ChangeSearchQuery text))
-         _ true))}]
-   [:if {:test (reactive search-query-present? model-source)}
-    [:button
-     {:label "Clear search"
-      :accessibility-identifier "button.search.clear"
-      :on-press (fn [_event] (send (model/ChangeSearchQuery "")))}
-     "Clear"]]
-   [:button
-    {:accessibility-identifier "button.search.close"
-     :on-press (fn [_event] (send model/CloseSearch))}
-    "Close"]
+  [:column
+   {:grow 1.0
+    :accessibility-identifier "screen.search"}
    [:if {:test (reactive search-empty-state-present? model-source)}
-    [:text
-     {:value (reactive search-empty-message model-source)
-      :accessibility-identifier "search.empty"}]]
+    [:column {:grow 1.0 :main "center"}
+     [:row {:main "center"}
+      [:text
+       {:value (reactive search-empty-message model-source)
+        :accessibility-identifier "search.empty"}]]]]
    [:if {:test (reactive page-search-results-present? model-source)}
     [:text {:accessibility-identifier "search.section.pages"} "Pages"]]
-   [:list
+   [:column
     [:keyed
      {:source (reactive page-search-results model-source)
       :key :uuid
@@ -2460,7 +2778,7 @@
      [search-result-row hit-source send]]]
    [:if {:test (reactive block-search-results-present? model-source)}
     [:text {:accessibility-identifier "search.section.blocks"} "Blocks"]]
-   [:list
+   [:column
     [:keyed
      {:source (reactive block-search-results model-source)
       :key :uuid
@@ -2470,45 +2788,107 @@
 
 (defui main-bottom-chrome [model-source send]
   [:stack
-   {:accessibility-identifier "chrome.bottom"}
    [:if {:test (reactive bottom-chrome-selection? model-source)}
-    [outliner-selection-toolbar send]]
+    [:column {:gap 0 :padding-horizontal 16}
+     [outliner-selection-toolbar send]
+     [:box {:height 21}]]]
    [:if {:test (reactive bottom-chrome-editor? model-source)}
     [:box
      [:if {:test (reactive outliner-autocomplete-active? model-source)}
       [outliner-autocomplete-bar model-source send]]
-     [outliner-editor-toolbar send]]]
+     [outliner-editor-toolbar model-source send]]]
    [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
-    [:row {:padding-horizontal 16 :padding-vertical 8}
-     [composer-view model-source send]]]
+    [:column {:gap 0 :padding-horizontal 16}
+     [:box {:height 6}]
+     [:row
+      {:cross "center"
+       :accessibility-identifier "row.composer.placement"}
+      [composer-view model-source send]]
+     [:box {:height 21}]]]
    [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
-    [:row
-     {:gap 10
-      :cross "center"
-      :padding-horizontal 16
-      :padding-vertical 8}
-     [composer-view model-source send]
-     [:button
-      {:icon "search"
-       :variant "ghost"
-       :size "icon"
-       :width 58
-       :height 58
-       :background "secondary"
-       :corner-radius 30
-       :label "Search"
-       :accessibility-identifier "button.search"
-       :on-press (fn [_event] (send model/OpenSearch))}]]]])
+    [:column {:gap 0 :padding-horizontal 16}
+     [:box {:height 8}]
+     [:row
+      {:gap 10 :cross "center"}
+      [composer-view model-source send]
+      [:button
+       {:icon "search"
+        :variant "ghost"
+        :ios [[:liquid-glass {:shape "circle" :leading-inset 0}]]
+        :size "icon"
+        :width 58
+        :height 58
+        :label "Search"
+        :accessibility-identifier "button.search"
+        :on-press (fn [_event] (send model/OpenSearch))}]]
+     [:box {:height 21}]]]])
+
+(defn selected-page-present? [current]
+  (match (:selected-page current)
+    (Some _page) true
+    None false))
+
+(defn selected-page-absent? [current]
+  (not (selected-page-present? current)))
+
+(defn selected-page-content-title-visible? [current]
+  (and (selected-page-present? current)
+       (not (:selected-page-is-tag current))))
+
+(defn selected-page-title [current]
+  (match (:selected-page current)
+    (Some page) (:title page)
+    None ""))
+
+(defui root-outliner-view [model-source send]
+  [:virtual-list
+   {:grow 1.0
+    :padding 16
+    :accessibility-identifier "list.outliner"}
+   [:box {:height 24}]
+   [:if {:test (reactive selected-page-content-title-visible? model-source)}
+    [:heading
+     {:level 2
+      :value (reactive selected-page-title model-source)
+      :accessibility-identifier "title.selected-page"}]]
+     [:keyed
+     {:source (reactive retained-outliner-rows model-source)
+       :key :render-key
+       :compare compare
+       :as retained-row-source}
+      [outliner-entry model-source retained-row-source
+       (reactive retained-row-value retained-row-source) send]]
+     [:if {:test (reactive main-can-add-first-block? model-source)}
+      [add-first-block-button model-source send]]
+     [:if {:test (reactive main-related-section-visible? model-source)}
+      [:column
+       [:box {:height 48}]
+       [node-related-section model-source send]]]
+     [:if {:test (reactive main-tag-section-visible? model-source)}
+      [:column
+       [:box {:height 48}]
+       [node-tagged-section model-source send]]]
+     [:if {:test (reactive main-linked-reference-section-visible? model-source)}
+      [:column
+       [:box {:height 48}]
+       [node-linked-reference-section model-source send]]]
+     [:box {:height 120}]
+     [:if {:test (reactive older-journals-visible? model-source)}
+      [:box
+       {:height 1
+        :accessibility-identifier "outliner.load-older-sentinel"
+       :on-appear
+        (fn [_event] (send model/LoadOlderJournals))}]]])
 
 (defui chat-main-view [model-source send]
-  [:column
+  [:column {:grow 1.0}
    [:if {:test (reactive global-effect-error-present? model-source)}
     [:text
      {:value (reactive effect-error-message model-source)
       :accessibility-identifier "error.banner"}]]
    [:if {:test (reactive graph-loading-visible? model-source)}
     [:column {:accessibility-identifier "journals.loading"}
-     [:text "Loading journals"]]]
+     [:text {:value (reactive graph-loading-message model-source)}]]]
    [:if {:test (reactive journal-root-visible? model-source)}
     [:text
      {:accessibility-label "Journal graph load status"
@@ -2517,31 +2897,11 @@
    [:if {:test (reactive graph-picker-visible? model-source)}
     [graph-picker-screen model-source send]]
    [:if {:test (reactive journal-root-visible? model-source)}
-    [:scroll {:accessibility-identifier "scroll.outliner"}
-     [:box
-      {:accessibility-identifier "surface.outliner.content"
-       :padding-horizontal 8}
-      [:list {:accessibility-identifier "list.outliner"}
-       [:keyed
-        {:source (reactive journal-sections model-source)
-         :key :section-id
-         :compare compare
-         :as section-source}
-        [journal-section model-source section-source send]]]
-      [:if {:test (reactive older-journals-visible? model-source)}
-       [:box
-        {:height 1
-         :accessibility-identifier "outliner.load-older-sentinel"
-         :on-appear
-         (fn [_event] (send model/LoadOlderJournals))}]]]]]
-   [:if {:test (reactive main-can-add-first-block? model-source)}
-    [add-first-block-button model-source send]]
-   [:if {:test (reactive main-related-section-visible? model-source)}
-    [node-related-section model-source send]]
-   [:if {:test (reactive main-tag-section-visible? model-source)}
-    [node-tagged-section model-source send]]
-   [:if {:test (reactive main-linked-reference-section-visible? model-source)}
-    [node-linked-reference-section model-source send]]
+    [:stack {:grow 1.0}
+     [:if {:test (reactive selected-page-present? model-source)}
+      [root-outliner-view model-source send]]
+     [:if {:test (reactive selected-page-absent? model-source)}
+      [root-outliner-view model-source send]]]]
    [:if {:test (reactive flashcards-destination? model-source)}
     [flashcard-screen model-source send]]
    [:if {:test (reactive graphs-destination? model-source)}
@@ -2550,10 +2910,6 @@
     [settings-sheet model-source send]]
    [:if {:test (reactive :graph-password-open model-source)}
     [graph-password-sheet model-source send]]
-   [:if {:test (reactive :attachment-picker-open model-source)}
-    [attachment-picker-dialog send]]
-   [:if {:test (reactive :task-status-picker-open model-source)}
-    [task-status-picker-dialog model-source send]]
    [:if {:test (reactive outliner-task-status-picker-open? model-source)}
     [outliner-task-status-dialog model-source send]]
    [:if {:test (reactive page-deletion-pending? model-source)}
@@ -2570,12 +2926,13 @@
       :size "icon"
       :label "Open sidebar"
       :accessibility-identifier "button.sidebar"
+      :disabled (reactive sidebar-drag-disabled? model-source)
       :on-press (fn [_event] (send model/OpenSidebar))}]]])
 
 (defui main-header-title [model-source]
   [:text
    {:value (reactive main-title model-source)
-    :class "subheadline"
+    :class "headline"
     :accessibility-identifier "title.main"}])
 
 (defui main-header-sync [model-source send]
@@ -2586,41 +2943,41 @@
       :variant "ghost"
       :size "icon"
       :foreground-signal (reactive sync-indicator-foreground model-source)
-      :label (reactive sync-label model-source)
+      :label (reactive sync-indicator-label model-source)
       :accessibility-identifier-signal
       (reactive sync-accessibility-identifier model-source)
       :on-press (fn [_event] (send model/OpenSyncDetails))}]]])
 
+(defui active-overflow-menu [model-source send]
+  (let [node (ui/extension! ui-context "native-overflow-menu")
+        page-actions-source
+        (reactive active-page-actions-visible? model-source)
+        favorite-label-source
+        (reactive active-page-favorite-label model-source)
+        settings-source
+        (reactive connection-settings-visible? model-source)
+        page-actions-value-source
+        (reactive bool-wire-value page-actions-source)
+        favorite-label-value-source
+        (reactive string-wire-value favorite-label-source)
+        settings-value-source
+        (reactive bool-wire-value settings-source)]
+    (ui/extension-property-signal!
+     ui-context node "page-actions-visible" page-actions-value-source)
+    (ui/extension-property-signal!
+     ui-context node "favorite-label" favorite-label-value-source)
+    (ui/extension-property-signal!
+     ui-context node "settings-visible" settings-value-source)
+    (ui/on-event!
+     ui-context node
+     (fn [input-event]
+       (handle-native-overflow-menu-event input-event send)))
+    node))
+
 (defui main-header-connection [model-source send]
   [:stack
    [:if {:test (reactive connection-control-visible? model-source)}
-    [:button
-     {:icon "app:more-horiz"
-      :variant "ghost"
-      :size "icon"
-      :label "Connection"
-      :accessibility-identifier "button.connection"
-      :on-press (fn [_event] (send model/OpenConnectionMenu))}]]
-   [:if {:test (reactive :connection-menu-open model-source)}
-    [:dropdown-menu {:on-dismiss (fn [_event] (send model/CloseConnectionMenu))}
-     [:if {:test (reactive active-page-actions-visible? model-source)}
-      [:menu-item
-       {:text (reactive active-page-favorite-label model-source)
-        :accessibility-identifier "button.page-favorite"
-        :on-press (fn [_event] (send model/ToggleActivePageFavorite))}]]
-     [:if {:test (reactive active-page-actions-visible? model-source)}
-      [:menu-item
-       {:accessibility-identifier "button.page-share"
-        :on-press (fn [_event] (send model/ShareActivePage))}
-       "Share"]]
-     [:if {:test (reactive active-page-actions-visible? model-source)}
-      [:menu-item
-       {:accessibility-identifier "button.page-delete"
-        :on-press (fn [_event] (send model/RequestDeleteActivePage))}
-       "Delete"]]
-     [:if {:test (reactive connection-settings-visible? model-source)}
-      [:menu-item {:on-press (fn [_event] (send model/OpenSettings))}
-       "Settings"]]]]])
+    [active-overflow-menu model-source send]]])
 
 (defn journal-navigation-model [current]
   (let [rows (:journal-outliner-rows current)
@@ -2687,12 +3044,16 @@
   (let [node (ui/extension! ui-context "native-search-presentation")
         presented-source (reactive :search-open model-source)
         depth-source (reactive search-navigation-depth model-source)
+        query-source (reactive :search-query model-source)
         presented-value-source (reactive bool-wire-value presented-source)
-        depth-value-source (reactive int-wire-value depth-source)]
+        depth-value-source (reactive int-wire-value depth-source)
+        query-value-source (reactive string-wire-value query-source)]
     (ui/extension-property-signal!
      ui-context node "presented" presented-value-source)
     (ui/extension-property-signal!
      ui-context node "depth" depth-value-source)
+    (ui/extension-property-signal!
+     ui-context node "query" query-value-source)
     (ui/on-event!
      ui-context node
      (fn [input-event]
@@ -2702,7 +3063,7 @@
      [chat-main-view (reactive journal-navigation-model model-source) send])
     (elements/element
      ui-context node
-     [:column
+     [:column {:grow 1.0}
       [search-screen model-source send]])
     (elements/element
      ui-context node
@@ -2721,11 +3082,17 @@
         bottom-occupies-source
         (reactive bottom-chrome-occupies-layout-space? model-source)
         bottom-occupies-value-source
-        (reactive bool-wire-value bottom-occupies-source)]
+        (reactive bool-wire-value bottom-occupies-source)
+        composer-dismissal-source
+        (reactive bottom-chrome-expanded-composer? model-source)
+        composer-dismissal-value-source
+        (reactive bool-wire-value composer-dismissal-source)]
     (ui/extension-property-signal!
      ui-context node "depth" depth-value-source)
     (ui/extension-property-signal!
      ui-context node "bottom-occupies-layout-space" bottom-occupies-value-source)
+    (ui/extension-property-signal!
+     ui-context node "composer-dismissal-enabled" composer-dismissal-value-source)
     (ui/on-event!
      ui-context node
      (fn [input-event]
@@ -2796,8 +3163,6 @@
         (send (if open model/OpenSidebar model/CloseSidebar))
         _ true))}
    [:stack
-    [:if {:test (reactive :composer-expanded model-source)}
-     [composer-dismissal-surface send]]
     [native-navigation-view model-source send]
     [:if {:test (reactive authentication-screen-visible? model-source)}
      [authentication-screen model-source send]]]

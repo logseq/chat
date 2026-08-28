@@ -414,6 +414,93 @@ let () =
     ; "block/title", one ~value_type:StringType ()
     ; "block/page", one ~value_type:RefType ()
     ; "block/parent", one ~value_type:RefType ()
+    ; "block/order", one ~value_type:StringType ()
+    ; "block/created-at", one ~value_type:InstantType ()
+    ; "block/journal-day", one ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "older-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "older-page")
+               ; "block/name", One_value (String "older-page")
+               ; "block/title", One_value (String "Older")
+               ; "block/journal-day", One_value (Int 20260827)
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "newer-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "newer-page")
+               ; "block/name", One_value (String "newer-page")
+               ; "block/title", One_value (String "Newer")
+               ; "block/journal-day", One_value (Int 20260828)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "older-first")
+               ; "block/title", One_value (String "Older first")
+               ; "block/page", One_value (Ref_to (Temp_id "older-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "older-page"))
+               ; "block/order", One_value (String "a0")
+               ; "block/created-at", One_value (Instant 10)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "newer-second")
+               ; "block/title", One_value (String "Newer second")
+               ; "block/page", One_value (Ref_to (Temp_id "newer-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "newer-page"))
+               ; "block/order", One_value (String "a1")
+               ; "block/created-at", One_value (Instant 20)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "older-second")
+               ; "block/title", One_value (String "Older second")
+               ; "block/page", One_value (Ref_to (Temp_id "older-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "older-page"))
+               ; "block/order", One_value (String "a1")
+               ; "block/created-at", One_value (Instant 30)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "newer-first")
+               ; "block/title", One_value (String "Newer first")
+               ; "block/page", One_value (Ref_to (Temp_id "newer-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "newer-page"))
+               ; "block/order", One_value (String "a0")
+               ; "block/created-at", One_value (Instant 40)
+               ]
+           }
+       ]);
+  let uuids =
+    Logseq_chat_graph_read.blocks ~journal_limit:2 (conn_db conn)
+    |> List.map (fun block -> block.Logseq_chat_model.uuid)
+  in
+  if uuids <> [ "newer-first"; "newer-second"; "older-first"; "older-second" ]
+  then failwith "journal blocks must stay grouped newest-first in outliner order"
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/name", one ~value_type:StringType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ; "block/page", one ~value_type:RefType ()
+    ; "block/parent", one ~value_type:RefType ()
     ; "block/tags", many ~value_type:RefType ()
     ; "logseq.property.class/extends", many ~value_type:RefType ()
     ; "block/created-at", one ~value_type:InstantType ()
@@ -951,7 +1038,7 @@ let () =
   then failwith "bounded reads must retain an accurate older-journal indicator";
   if
     List.map (fun block -> block.Logseq_chat_model.uuid) visible
-    <> List.init 7 (fun offset -> "large-block-" ^ string_of_int (993 + offset))
+    <> List.init 7 (fun offset -> "large-block-" ^ string_of_int (999 - offset))
   then failwith "bounded journal reads must preserve stable block identities and order"
 ;;
 

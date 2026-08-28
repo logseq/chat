@@ -270,6 +270,7 @@
   (settings-tabs-open :bool)
   (runtime-log-open :bool)
   (appearance :string)
+  (settings-appearance-menu-open :bool)
   (language :string)
   (language-choices :vector<settings-language-choice>)
   (settings-language-menu-open :bool)
@@ -400,6 +401,8 @@
   (DismissSettings)
   (OpenSettingsTabs)
   (BackSettings)
+  (OpenSettingsAppearanceMenu)
+  (CloseSettingsAppearanceMenu)
   (ChangeAppearance :string)
   (OpenSettingsLanguageMenu)
   (CloseSettingsLanguageMenu)
@@ -471,6 +474,14 @@
 (signature logseq-chat.model/graph-delete-active?
  :fn<chat-model;string;bool>)
 (signature logseq-chat.model/sign-in-active? :fn<chat-model;bool>)
+(signature logseq-chat.model/change-outliner-text-effect-for?
+ :fn<chat-effect;string;bool>)
+(signature logseq-chat.model/contains-change-outliner-text-effect?
+ :fn<vector<chat-effect>;string;bool>)
+(signature logseq-chat.model/change-outliner-text-active?
+ :fn<chat-model;string;bool>)
+(signature logseq-chat.model/snapshot-outliner-editing
+ :fn<chat-model;core-projection;option<outliner-editing>>)
 (signature logseq-chat.model/first-flashcard-id
  :fn<vector<flashcard>;option<string>>)
 (signature logseq-chat.model/graph-by-id

@@ -1844,7 +1844,7 @@ private struct DeletePagePayload: Encodable {
                 selectedPage: snapshot.selectedPage,
                 selectedPageIsTag: snapshot.selectedPageIsTag,
                 selectedPageIsProperty: snapshot.selectedPageIsProperty,
-                appliedServerT: snapshot.appliedServerT,
+                appliedServerT: result.appliedServerT ?? snapshot.appliedServerT,
                 syncConnected: snapshot.syncConnected,
                 relatedBlocks: snapshot.relatedBlocks,
                 linkedReferenceBlocks: snapshot.linkedReferenceBlocks,

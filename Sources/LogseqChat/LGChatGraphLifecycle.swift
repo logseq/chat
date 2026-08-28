@@ -56,17 +56,20 @@ final class LGChatGraphLifecycle {
     private let authentication: LogseqAuthenticationStore
     private let syncCoordinator: GraphSyncCoordinator
     private let databasePath: String
+    private let openCreatedGraph: (@MainActor (String) async -> LGChatEffectResolution)?
 
     init(
         store: LogseqChatStore,
         authentication: LogseqAuthenticationStore,
         syncCoordinator: GraphSyncCoordinator,
-        databasePath: String
+        databasePath: String,
+        openCreatedGraph: (@MainActor (String) async -> LGChatEffectResolution)? = nil
     ) {
         self.store = store
         self.authentication = authentication
         self.syncCoordinator = syncCoordinator
         self.databasePath = databasePath
+        self.openCreatedGraph = openCreatedGraph
     }
 
     func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
@@ -82,8 +85,14 @@ final class LGChatGraphLifecycle {
             ), let graphID = store.snapshot.selectedGraphId, !graphID.isEmpty else {
                 return resolution(succeeded: false)
             }
+            let openResolution = if let openCreatedGraph {
+                await openCreatedGraph(graphID)
+            } else {
+                await openGraph(graphID, persistSelection: false)
+            }
+            guard openResolution.succeeded else { return openResolution }
             UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
-            return resolution(succeeded: true)
+            return openResolution
         case "delete-local-graph":
             return await deleteLocalGraph(effect.text)
         default:
@@ -127,8 +136,10 @@ final class LGChatGraphLifecycle {
         return true
     }
 
-    private func openGraph(_ graphID: String) async -> LGChatEffectResolution {
-        UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
+    private func openGraph(
+        _ graphID: String,
+        persistSelection: Bool = true
+    ) async -> LGChatEffectResolution {
         guard await store.selectGraphAndWait(graphID) else {
             return resolution(succeeded: false)
         }
@@ -147,6 +158,9 @@ final class LGChatGraphLifecycle {
         )
         guard opened else { return resolution(succeeded: false) }
 
+        if persistSelection {
+            UserDefaults.standard.set(graphID, forKey: "logseq.selectedGraphId")
+        }
         publishLocalGraphIDs()
         if !accessToken.isEmpty,
            !isEncrypted || store.snapshot.isGraphUnlocked == true {

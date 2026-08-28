@@ -656,7 +656,13 @@ let decode_response encoded =
            | Some (`List values) -> List.filter_map search_hit values
            | _ -> []
          in
-         let base_outliner_rows = outliner_rows_member "outlinerRows" result_fields in
+         let is_outliner_patch = bool_member "isOutlinerPatch" result_fields in
+         let projected_outliner_rows = outliner_rows_member "outlinerRows" result_fields in
+         let base_outliner_rows =
+           if is_outliner_patch && projected_outliner_rows = []
+           then related_rows_member "blocks" result_fields
+           else projected_outliner_rows
+         in
          let outliner_row_splices =
            match member "outlinerRowSplices" result_fields with
            | Some (`List values) -> List.filter_map outliner_row_splice values
@@ -733,7 +739,7 @@ let decode_response encoded =
            ; outliner_autocomplete_candidates
            ; outliner_selected_block_ids
            ; has_older_journals = bool_member "hasOlderJournals" result_fields
-           ; is_outliner_patch = bool_member "isOutlinerPatch" result_fields
+           ; is_outliner_patch
            ; sync_connected = bool_member "syncConnected" result_fields
            ; applied_server_t = int_member "appliedServerT" result_fields
            ; has_pending_semantic_operations =

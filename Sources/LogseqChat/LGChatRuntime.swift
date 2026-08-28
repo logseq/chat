@@ -476,6 +476,8 @@ private struct LGPlatformCommandResponse: Decodable {
         let outlinerCommandRevision: Int?
         let outlinerCommands: [LogseqOutlinerCommand]?
         let outlinerState: OutlinerState?
+        let hasPendingSemanticOperations: Bool?
+        let pendingSyncRequest: PendingSyncRequest?
     }
 
     struct OutlinerState: Decodable {
@@ -483,6 +485,8 @@ private struct LGPlatformCommandResponse: Decodable {
     }
 
     struct Autocomplete: Decodable {}
+
+    struct PendingSyncRequest: Decodable {}
 }
 
 @MainActor
@@ -494,39 +498,9 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
     public init(
         callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
             await LogseqChatCore.callAsync(request)
-        }
-    ) {
-        self.deleteLocalGraph = nil
-        self.platformEffect = nil
-        self.callCore = callCore
-    }
-
-    public init(
-        deleteLocalGraph: @escaping @MainActor (String) async -> String,
-        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String
-    ) {
-        self.deleteLocalGraph = deleteLocalGraph
-        self.platformEffect = nil
-        self.callCore = callCore
-    }
-
-    public init(
-        platformEffect: @escaping @MainActor (LGChatEffect) async -> LGChatEffectResolution,
-        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
-            await LogseqChatCore.callAsync(request)
-        }
-    ) {
-        self.deleteLocalGraph = nil
-        self.platformEffect = platformEffect
-        self.callCore = callCore
-    }
-
-    public init(
-        deleteLocalGraph: @escaping @MainActor (String) async -> String,
-        platformEffect: @escaping @MainActor (LGChatEffect) async -> LGChatEffectResolution,
-        callCore: @escaping @MainActor (LogseqChatRPCRequest) async -> String = { request in
-            await LogseqChatCore.callAsync(request)
-        }
+        },
+        deleteLocalGraph: (@MainActor (String) async -> String)? = nil,
+        platformEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil
     ) {
         self.deleteLocalGraph = deleteLocalGraph
         self.platformEffect = platformEffect
@@ -753,7 +727,8 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 )
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
-        case "sign-in", "save-settings", "refresh-runtime-log", "copy-runtime-log", "sign-out",
+        case "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
+             "copy-runtime-log", "sign-out",
              "present-attachment", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
                 return LGChatEffectResolution(
@@ -1135,6 +1110,9 @@ public final class LGChatRuntime {
             try apply(native.dispose())
         } catch {
             lastError = String(describing: error)
+            #if DEBUG
+            print("LogseqChat renderer event failed: \(lastError ?? "unknown error")")
+            #endif
         }
         isStarted = false
     }
@@ -1190,10 +1168,12 @@ public final class LGChatRuntime {
                 return
             }
             let text = Self.extensionString(values, name: "title")
+                ?? Self.extensionString(values, name: "query")
                 ?? Self.extensionString(values, name: "uuid")
                 ?? ""
             let value = Self.extensionInt(values, name: "caret-utf16-offset")
                 ?? Self.extensionInt(values, name: "selection-length")
+                ?? Self.extensionInt(values, name: "count")
                 ?? Self.extensionPlacement(values)
                 ?? 0
             patch = native.extensionEvent(
@@ -1210,6 +1190,9 @@ public final class LGChatRuntime {
             scheduleEffectDrain()
         } catch {
             lastError = String(describing: error)
+            #if DEBUG
+            print("LogseqChat renderer event failed: \(lastError ?? "unknown error")")
+            #endif
         }
     }
 
@@ -1296,6 +1279,13 @@ public final class LGChatRuntime {
                             after: effect,
                             response: resolution.message
                         )
+                        let syncResolution = await startSyncIfNeeded(
+                            after: resolution.message
+                        )
+                        if !syncResolution.succeeded {
+                            lastError = syncResolution.message
+                            return
+                        }
                     case let .hostUpdate(kind):
                         try apply(native.applyHostUpdate(
                             kind: kind,
@@ -1381,6 +1371,25 @@ public final class LGChatRuntime {
         return envelope.result?.outlinerState?.autocomplete != nil
     }
 
+    private func startSyncIfNeeded(
+        after response: String
+    ) async -> LGChatEffectResolution {
+        guard let envelope = try? JSONDecoder().decode(
+            LGPlatformCommandResponse.self,
+            from: Data(response.utf8)
+        ), let result = envelope.result,
+           result.hasPendingSemanticOperations == true || result.pendingSyncRequest != nil else {
+            return LGChatEffectResolution(
+                succeeded: true,
+                message: "",
+                output: .discard
+            )
+        }
+        return await effectExecutor.execute(
+            LGChatEffect(id: 0, kind: "sync-now", text: "")
+        )
+    }
+
     private func executeOutlinerAutosave() async {
         let effect = LGChatEffect(id: 0, kind: "save-outliner-editing", text: "")
         let resolution = await effectExecutor.execute(effect)
@@ -1391,9 +1400,16 @@ public final class LGChatRuntime {
         do {
             try apply(native.applySnapshot(resolution.message))
             deliverPlatformCommands(from: resolution.message)
-            lastError = nil
         } catch {
             lastError = String(describing: error)
+            return
+        }
+
+        let syncResolution = await startSyncIfNeeded(after: resolution.message)
+        if syncResolution.succeeded {
+            lastError = nil
+        } else {
+            lastError = syncResolution.message
         }
     }
 

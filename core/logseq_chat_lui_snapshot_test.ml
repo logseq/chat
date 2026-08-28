@@ -249,5 +249,13 @@ let () =
                   && row.page_id = "journal-a"
                   && row.journal_day = Some 20260827 -> ()
            | _ -> failwith "outliner splice rows were not projected")
-        | _ -> failwith "outliner row splices were not projected"))
+        | _ -> failwith "outliner row splices were not projected"));
+    let replacement_response =
+      {|{"apiVersion":1,"ok":true,"result":{"blocks":[{"uuid":"outline-a","title":"Nested note","pageId":"journal-a","syncStatus":"pending","status":{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo"}}],"outlinerRows":[],"outlinerRowSplices":[],"outlinerState":{"editing":null},"isOutlinerPatch":true,"syncConnected":false}}|}
+    in
+    (match decode_response replacement_response with
+     | Ok { outliner_rows = [ { uuid = "outline-a"; status = Some status; _ } ]; _ }
+       when status.title = "Todo" -> ()
+     | Ok _ -> failwith "bounded block replacements were not projected as outliner rows"
+     | Error message -> failwith message)
 ;;

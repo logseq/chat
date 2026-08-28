@@ -317,7 +317,8 @@ let autocomplete_candidates context request =
   let matches =
     raw
     |> Seq.filter (fun candidate ->
-      includes_normalized_query candidate.label normalized_query
+      not (String.equal (String.trim candidate.label) "")
+      && includes_normalized_query candidate.label normalized_query
       && if Hashtbl.mem seen candidate.value then false else (Hashtbl.add seen candidate.value (); true))
     |> Seq.take 12
     |> List.of_seq
@@ -481,6 +482,13 @@ let compare_blocks (left : Model.block) (right : Model.block) =
     if created <> 0 then created else String.compare left.uuid right.uuid
 ;;
 
+let compare_root_blocks (left : Model.block) (right : Model.block) =
+  match left.journal, right.journal with
+  | Some (_, left_day), Some (_, right_day) when left_day <> right_day ->
+    compare right_day left_day
+  | _ -> compare_blocks left right
+;;
+
 let sorted_siblings context parent_id =
   context.blocks
   |> List.filter (fun (block : Model.block) -> block.parent_id = parent_id)
@@ -519,7 +527,7 @@ let visible_rows context state =
       match block.parent_id with
       | Some parent -> not (String_set.mem parent block_ids)
       | None -> true)
-    |> List.sort compare_blocks
+    |> List.sort compare_root_blocks
   in
   let visited = ref String_set.empty in
   let rec hide_descendants uuid =

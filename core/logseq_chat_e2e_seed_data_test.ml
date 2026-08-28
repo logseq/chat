@@ -24,6 +24,7 @@ let schema =
   ; "block/journal-day", one ~value_type:NumberType ~indexed:true ()
   ; "block/created-at", one ~value_type:NumberType ()
   ; "block/updated-at", one ~value_type:NumberType ()
+  ; "logseq.property/built-in?", one ()
   ; "db/ident", one ~unique:Identity ~value_type:KeywordType ~indexed:true ()
   ]
 ;;
@@ -88,4 +89,126 @@ let () =
            && List.map (fun child -> child.Logseq_chat_model.title) card.children
               = [ "Paris is the answer" ] -> ()
     | _ -> failwith "the E2E fixture must expose a due Logseq Card with its answer"
+;;
+
+let () =
+  let conn = create_conn ~schema () in
+  (match Seed.seed_outliner conn ~now:1_787_893_600_000 with
+   | Error message -> failwith message
+   | Ok () -> ());
+  (match Seed.seed_outliner conn ~now:1_787_893_600_000 with
+   | Error message -> failwith message
+   | Ok () -> ());
+  let db = conn_db conn in
+  if Logseq_chat_graph_read.journal_page_count db <> 1
+  then failwith "the resettable outliner fixture must keep only today's journal";
+  if Datascript.entid db "block/uuid" (Uuid Seed.outliner_block_uuid) = None
+  then failwith "the resettable outliner fixture must expose today's writable block";
+  let visible_block_count = List.length (Logseq_chat_graph_read.blocks db) in
+  if visible_block_count <> 1
+  then
+    failwith
+      (Printf.sprintf
+         "the resettable outliner fixture must remain idempotent (got %d visible blocks)"
+         visible_block_count)
+;;
+
+let () =
+  let conn = create_conn ~schema () in
+  (match Seed.seed_fixture conn with
+   | Error message -> failwith message
+   | Ok () -> ());
+  (match Seed.seed_fixture conn with
+   | Error message -> failwith message
+   | Ok () -> ());
+  let db = conn_db conn in
+  if Logseq_chat_graph_read.journal_page_count db <> 8
+  then failwith "the resettable standard fixture must keep eight journals";
+  if List.length (Logseq_chat_graph_read.blocks db) <> 18
+  then failwith "the resettable standard fixture must remain idempotent"
+;;
+
+let () =
+  let conn = create_conn ~schema () in
+  (match Seed.seed_header_navigation conn with
+   | Error message -> failwith message
+   | Ok () -> ());
+  let db = conn_db conn in
+  if Logseq_chat_graph_read.journal_page_count db <> 1
+  then failwith "the header fixture must create exactly one journal";
+  match Logseq_chat_graph_read.blocks db with
+  | [ block ]
+    when block.journal = Some ("Aug 24th, 2026", 20260824)
+         && String.equal block.title "E2E Header Navigation" -> ()
+  | _ -> failwith "the header fixture must expose the Aug 24 navigation target"
+;;
+
+let () =
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "built-in-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "00000002-0000-4000-8000-000000000001")
+               ; "block/title", One_value (String "Built in")
+               ; "logseq.property/built-in?", One_value (Bool true)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "00000004-0000-4000-8000-000000000001")
+               ; "block/title", One_value (String "Built-in child")
+               ; "block/page", One_value (Ref_to (Temp_id "built-in-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "built-in-page"))
+               ; "block/order", One_value (String "a0")
+               ; "logseq.property/built-in?", One_value (Bool true)
+               ]
+           }
+       ; Entity
+           { db_id = Some (Temp_id "stale-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "e2e-stale-page")
+               ; "block/name", One_value (String "stale journal")
+               ; "block/title", One_value (String "Stale Journal")
+               ; "block/journal-day", One_value (Int 20260827)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "e2e-stale-block")
+               ; "block/title", One_value (String "Stale composer traffic")
+               ; "block/page", One_value (Ref_to (Temp_id "stale-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "stale-page"))
+               ; "block/order", One_value (String "a0")
+               ]
+           }
+       ]);
+  (match Seed.seed_composer conn ~now:1_787_893_600_000 with
+   | Error message -> failwith message
+   | Ok () -> ());
+  (match Seed.seed_composer conn ~now:1_787_893_600_000 with
+   | Error message -> failwith message
+   | Ok () -> ());
+  let db = conn_db conn in
+  if
+    Datascript.entid db "block/uuid" (Uuid "00000002-0000-4000-8000-000000000001")
+    = None
+  then failwith "composer reset must preserve built-in graph entities";
+  if
+    Datascript.entid db "block/uuid" (Uuid "00000004-0000-4000-8000-000000000001")
+    = None
+  then failwith "composer reset must preserve built-in child entities";
+  if Datascript.entid db "block/uuid" (Uuid "e2e-stale-page") <> None
+  then failwith "composer reset must remove stale user pages";
+  if Datascript.entid db "block/uuid" (Uuid "e2e-stale-block") <> None
+  then failwith "composer reset must remove stale user blocks";
+  if Logseq_chat_graph_read.journal_page_count db <> 1
+  then failwith "composer reset must leave exactly one current journal";
+  match Logseq_chat_graph_read.blocks db with
+  | [ block ] when String.equal block.title "E2E Composer Fixture" -> ()
+  | _ -> failwith "composer reset must be idempotent and expose one fixture block"
 ;;

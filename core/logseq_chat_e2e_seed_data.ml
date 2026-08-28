@@ -7,6 +7,84 @@ let trailing_tag_uuid = "e2e00000-0000-4000-8000-000000000004"
 let child_tag_uuid = "e2e00000-0000-4000-8000-000000000005"
 let flashcard_uuid = "e2e00000-0000-4000-8000-000000000020"
 let flashcard_answer_uuid = "e2e00000-0000-4000-8000-000000000021"
+let header_navigation_page_uuid = "e2e00000-0000-4000-8000-000000000030"
+let header_navigation_block_uuid = "e2e00000-0000-4000-8000-000000000031"
+let composer_page_uuid = "e2e30000-0000-4000-8000-000000000001"
+let composer_block_uuid = "e2e30000-0000-4000-8000-000000000002"
+let outliner_page_uuid = "e2e30000-0000-4000-8000-000000000003"
+let outliner_block_uuid = "e2e30000-0000-4000-8000-000000000004"
+
+let entity_has_attr db eid attr =
+  Datascript.datoms db Eavt ~e:eid ~a:attr () |> Seq.uncons |> Option.is_some
+;;
+
+let entity_is_built_in db eid =
+  Datascript.datoms db Eavt ~e:eid ~a:"logseq.property/built-in?" ()
+  |> Seq.exists (fun datom -> datom.v = Bool true)
+;;
+
+let reset_user_page_entities conn =
+  let db = conn_db conn in
+  let operations =
+    Datascript.datoms db Aevt ~a:"block/uuid" ()
+    |> Seq.filter_map (fun datom ->
+      let is_composer_content =
+        entity_has_attr db datom.e "block/journal-day"
+        || entity_has_attr db datom.e "block/page"
+      in
+      if is_composer_content && not (entity_is_built_in db datom.e)
+      then Some (RetractEntity (Entity_id datom.e))
+      else None)
+    |> List.of_seq
+  in
+  if not (List.is_empty operations) then ignore (transact_conn conn operations)
+;;
+
+let seed_current_journal conn ~now ~page_uuid ~block_uuid ~block_title =
+  let journal_day = Logseq_chat_model.journal_day_for_ms now in
+  let journal_title = Logseq_chat_graph_runtime.journal_day_title journal_day in
+  ignore
+    (transact_conn
+       conn
+       [ Entity
+           { db_id = Some (Temp_id "e2e-current-page")
+           ; attrs =
+               [ "block/uuid", One_value (Uuid page_uuid)
+               ; "block/name", One_value (String (String.lowercase_ascii journal_title))
+               ; "block/title", One_value (String journal_title)
+               ; "block/journal-day", One_value (Int journal_day)
+               ; "block/created-at", One_value (Int now)
+               ; "block/updated-at", One_value (Int now)
+               ]
+           }
+       ; Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid block_uuid)
+               ; "block/title", One_value (String block_title)
+               ; "block/page", One_value (Ref_to (Temp_id "e2e-current-page"))
+               ; "block/parent", One_value (Ref_to (Temp_id "e2e-current-page"))
+               ; "block/order", One_value (String "a0")
+               ; "block/created-at", One_value (Int now)
+               ; "block/updated-at", One_value (Int now)
+               ]
+           }
+       ])
+;;
+
+let seed_composer conn ~now =
+  try
+    reset_user_page_entities conn;
+    seed_current_journal
+      conn
+      ~now
+      ~page_uuid:composer_page_uuid
+      ~block_uuid:composer_block_uuid
+      ~block_title:"E2E Composer Fixture";
+    Ok ()
+  with
+  | error -> Error ("Seed iOS composer graph: " ^ Printexc.to_string error)
+;;
 
 let page_uuid index =
   Printf.sprintf "e2e10000-0000-4000-8000-%012d" index
@@ -14,6 +92,40 @@ let page_uuid index =
 
 let block_uuid index =
   Printf.sprintf "e2e20000-0000-4000-8000-%012d" index
+;;
+
+let seed_header_navigation conn =
+  try
+    ignore
+      (transact_conn
+         conn
+         [ Entity
+             { db_id = Some (Temp_id "e2e-header-navigation-page")
+             ; attrs =
+                 [ "block/uuid", One_value (Uuid header_navigation_page_uuid)
+                 ; "block/name", One_value (String "aug 24th, 2026")
+                 ; "block/title", One_value (String "Aug 24th, 2026")
+                 ; "block/journal-day", One_value (Int 20260824)
+                 ; "block/created-at", One_value (Int 50_000)
+                 ; "block/updated-at", One_value (Int 50_000)
+                 ]
+             }
+         ; Entity
+             { db_id = None
+             ; attrs =
+                 [ "block/uuid", One_value (Uuid header_navigation_block_uuid)
+                 ; "block/title", One_value (String "E2E Header Navigation")
+                 ; "block/page", One_value (Ref_to (Temp_id "e2e-header-navigation-page"))
+                 ; "block/parent", One_value (Ref_to (Temp_id "e2e-header-navigation-page"))
+                 ; "block/order", One_value (String "a0")
+                 ; "block/created-at", One_value (Int 50_001)
+                 ; "block/updated-at", One_value (Int 50_001)
+                 ]
+             }
+         ]);
+    Ok ()
+  with
+  | error -> Error ("Seed iOS header-navigation graph: " ^ Printexc.to_string error)
 ;;
 
 let journal_entities =
@@ -246,4 +358,23 @@ let seed conn =
     Ok ()
   with
   | error -> Error ("Seed iOS E2E graph: " ^ Printexc.to_string error)
+;;
+
+let seed_outliner conn ~now =
+  try
+    reset_user_page_entities conn;
+    seed_current_journal
+      conn
+      ~now
+      ~page_uuid:outliner_page_uuid
+      ~block_uuid:outliner_block_uuid
+      ~block_title:"E2E Outliner Fixture";
+    Ok ()
+  with
+  | error -> Error ("Seed iOS outliner graph: " ^ Printexc.to_string error)
+;;
+
+let seed_fixture conn =
+  reset_user_page_entities conn;
+  seed conn
 ;;

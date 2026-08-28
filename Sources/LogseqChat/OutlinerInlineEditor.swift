@@ -178,6 +178,8 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             context.coordinator.localText = nil
             context.coordinator.isAwaitingBlockHandoff = false
         case .applyModel:
+            context.coordinator.isApplyingModel = true
+            defer { context.coordinator.isApplyingModel = false }
             let wasAwaitingHandoff = context.coordinator.isAwaitingBlockHandoff
             let bufferedTyping = wasAwaitingHandoff
                 ? context.coordinator.pendingHandoffTyping : ""
@@ -236,9 +238,6 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
 
     static func dismantleUIView(_ textView: UITextView, coordinator: Coordinator) {
         textView.delegate = nil
-        if textView.isFirstResponder {
-            textView.resignFirstResponder()
-        }
     }
 
     private func applyTextLayout(to textView: UITextView) {
@@ -279,6 +278,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         var isAwaitingBlockHandoff = false
         var pendingHandoffTyping = ""
         var activeBlockID: String
+        var isApplyingModel = false
 
         init(parent: NativeOutlinerTextView) {
             self.parent = parent
@@ -291,7 +291,10 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
-            if textView.text == parent.text {
+            if InlineEditorCaretEmissionPolicy.shouldEmit(
+                textMatchesModel: textView.text == parent.text,
+                isApplyingModel: isApplyingModel
+            ) {
                 parent.onCaretChange(textView.selectedRange.location)
             }
         }

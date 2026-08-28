@@ -1,12 +1,11 @@
 (ns logseq-chat.view)
 
-(type-record journal-view-section
-  (section-id :string)
-  (page-id :string)
-  (title :string)
-  (has-divider :bool)
-  (has-heading :bool)
-  (rows :vector<outline-row>))
+(type-record retained-outline-row
+  (render-key :string)
+  (value :outline-row)
+  (is-editing :bool)
+  (editing-title :string)
+  (editing-caret :int))
 
 (signature logseq-chat.view/outliner-editor-schema
  :fn<extension-component-schema>)
@@ -17,6 +16,8 @@
 (signature logseq-chat.view/native-search-presentation-schema
  :fn<extension-component-schema>)
 (signature logseq-chat.view/native-overflow-menu-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/liquid-glass-schema
  :fn<extension-component-schema>)
 (signature logseq-chat.view/extension-registry :fn<extension-registry>)
 (signature logseq-chat.view/string-wire-value :fn<string;wire-value>)
@@ -50,6 +51,8 @@
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-status-title
  :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-editor-task-label
+ :fn<chat-model;string>)
 (signature logseq-chat.view/outliner-row-has-tags?
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-sync-failed?
@@ -69,6 +72,7 @@
 
 (signature logseq-chat.view/graph-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-indicator-label :fn<chat-model;string>)
 (signature logseq-chat.view/sync-accessibility-identifier
  :fn<chat-model;string>)
 (signature logseq-chat.view/sync-indicator-foreground
@@ -112,6 +116,7 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-collapsed? :fn<chat-model;bool>)
 (signature logseq-chat.view/composer-send-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/composer-send-background :fn<chat-model;string>)
 (signature logseq-chat.view/task-status-identifier :fn<task-status;string>)
 (signature logseq-chat.view/task-status-title :fn<task-status;string>)
 (signature logseq-chat.view/task-status-selected? :fn<chat-model;bool>)
@@ -129,11 +134,24 @@
 (signature logseq-chat.view/search-result-row
  :fn<ui-context;signal<search-hit>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
+(signature logseq-chat.view/retained-outliner-rows
+ :fn<chat-model;vector<retained-outline-row>>)
+(signature logseq-chat.view/make-retained-outline-row
+ :fn<chat-model;outline-row;retained-outline-row>)
+(signature logseq-chat.view/retained-row-value
+ :fn<retained-outline-row;outline-row>)
+(signature logseq-chat.view/retained-row-editing?
+ :fn<retained-outline-row;bool>)
+(signature logseq-chat.view/retained-row-editing-title
+ :fn<retained-outline-row;string>)
+(signature logseq-chat.view/retained-row-editing-caret
+ :fn<retained-outline-row;int>)
 (signature logseq-chat.view/outliner-row-title :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-uuid :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-indent :fn<outline-row;int>)
 (signature logseq-chat.view/outliner-row-has-children :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-zoom-label :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-action-label :fn<chat-model;outline-row;string>)
 (signature logseq-chat.view/outliner-row-collapse-label :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-collapse-glyph :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-indent-view
@@ -163,16 +181,16 @@
  :fn<vector<journal-section-marker>;string;option<journal-section-marker>>)
 (signature logseq-chat.view/outliner-journal-marker
  :fn<chat-model;outline-row;option<journal-section-marker>>)
-(signature logseq-chat.view/append-journal-section-row
- :fn<vector<journal-view-section>;outline-row;vector<journal-view-section>>)
-(signature logseq-chat.view/journal-sections-loop
- :fn<chat-model;vector<outline-row>;vector<journal-view-section>;vector<journal-view-section>>)
-(signature logseq-chat.view/journal-sections
- :fn<chat-model;vector<journal-view-section>>)
-(signature logseq-chat.view/journal-section-identifier
- :fn<journal-view-section;string>)
-(signature logseq-chat.view/journal-section-heading-identifier
- :fn<journal-view-section;string>)
+(signature logseq-chat.view/outliner-journal-heading-visible?
+ :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-journal-divider-visible?
+ :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-journal-title
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-journal-page-id
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-journal-button-identifier
+ :fn<chat-model;outline-row;string>)
 (signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/primary-sidebar-button-visible?
  :fn<chat-model;bool>)
@@ -237,9 +255,9 @@
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
 (signature logseq-chat.view/outliner-row
- :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/journal-section
- :fn<ui-context;signal<chat-model>;signal<journal-view-section>;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-entry
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-selection-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-autocomplete-row
@@ -247,7 +265,7 @@
 (signature logseq-chat.view/outliner-autocomplete-bar
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-editor-toolbar
- :fn<ui-context;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/node-related-row
  :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/node-related-section
@@ -263,8 +281,6 @@
 (signature logseq-chat.view/composer-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/attachment-picker-dialog
- :fn<ui-context;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/composer-dismissal-surface
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/task-status-row
  :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
@@ -308,6 +324,7 @@
 (signature logseq-chat.view/graph-delete-active?
  :fn<chat-model;graph;bool>)
 (signature logseq-chat.view/graph-row-local? :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/graph-icon-name :fn<bool;graph;string>)
 (signature logseq-chat.view/local-graphs :fn<chat-model;vector<graph>>)
 (signature logseq-chat.view/remote-graphs :fn<chat-model;vector<graph>>)
 (signature logseq-chat.view/local-graphs-empty? :fn<chat-model;bool>)
@@ -326,7 +343,7 @@
 (signature logseq-chat.view/graph-unlock-error-message :fn<chat-model;string>)
 (signature logseq-chat.view/global-effect-error-present? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-row
- :fn<ui-context;signal<chat-model>;signal<graph>;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;signal<graph>;bool;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-create-sheet
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-delete-dialog
@@ -352,6 +369,7 @@
 (signature logseq-chat.view/settings-version :fn<chat-model;string>)
 (signature logseq-chat.view/settings-revision :fn<chat-model;string>)
 (signature logseq-chat.view/settings-language-title :fn<chat-model;string>)
+(signature logseq-chat.view/settings-appearance-title :fn<chat-model;string>)
 (signature logseq-chat.view/settings-language-choice-title
  :fn<settings-language-choice;string>)
 (signature logseq-chat.view/settings-language-choice-identifier
@@ -418,6 +436,13 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/chat-main-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/selected-page-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-absent? :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-content-title-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-title :fn<chat-model;string>)
+(signature logseq-chat.view/root-outliner-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/main-bottom-chrome
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/main-header-leading
@@ -425,6 +450,8 @@
 (signature logseq-chat.view/main-header-title
  :fn<ui-context;signal<chat-model>;int>)
 (signature logseq-chat.view/main-header-sync
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/active-overflow-menu
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/main-header-connection
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)

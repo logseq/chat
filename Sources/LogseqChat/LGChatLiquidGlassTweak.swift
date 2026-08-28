@@ -1,0 +1,94 @@
+import LUIAppleBackend
+import SwiftUI
+
+@MainActor
+enum LGChatLiquidGlassTweak {
+    static let identifier = "liquid-glass"
+    static let fingerprint =
+        "lui-tweak-v1|12:liquid-glass|profiles:ios/swiftui|properties:13:leading-inset:int:required:none,5:shape:string:required:none"
+
+    static func register(in registry: LUIAppleExtensionRegistry) throws {
+        try registry.registerTweak(
+            LUIAppleTweak(
+                identifier: identifier,
+                fingerprint: fingerprint,
+                properties: [
+                    .init(name: "shape", kind: .string, isRequired: true),
+                    .init(name: "leading-inset", kind: .int, isRequired: true),
+                ]
+            ) { content, context in
+                let shapeName: String
+                if case let .string(value) = context.property("shape") {
+                    shapeName = value
+                } else {
+                    shapeName = ""
+                }
+                let shape: LGChatLiquidGlassSurface.Shape
+                switch shapeName {
+                case "circle":
+                    shape = .circle
+                case "rounded-rectangle":
+                    shape = .roundedRectangle
+                default:
+                    shape = .capsule
+                }
+                let leadingInset: Int
+                if case let .int(value) = context.property("leading-inset") {
+                    leadingInset = value
+                } else {
+                    leadingInset = 0
+                }
+                if shape == .capsule {
+                    return AnyView(
+                        content
+                            .padding(.leading, CGFloat(leadingInset))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .modifier(LGChatLiquidGlassSurface(shape: shape))
+                    )
+                }
+                return AnyView(content.modifier(LGChatLiquidGlassSurface(shape: shape)))
+            }
+        )
+    }
+}
+
+struct LGChatLiquidGlassSurface: ViewModifier {
+    enum Shape {
+        case capsule
+        case circle
+        case roundedRectangle
+    }
+
+    let shape: Shape
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if SKIP
+        content
+        #else
+        if #available(iOS 26.0, macOS 26.0, *) {
+            if shape == .circle {
+                content.glassEffect(.regular.interactive(), in: .circle)
+            } else if shape == .roundedRectangle {
+                content.glassEffect(
+                    .regular.interactive(),
+                    in: .rect(cornerRadius: 10)
+                )
+            } else {
+                content.glassEffect(.regular.interactive(), in: .capsule)
+            }
+        } else {
+            if shape == .circle {
+                content.background(.ultraThinMaterial, in: Circle())
+            } else if shape == .roundedRectangle {
+                content.background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+            } else {
+                content.background(.ultraThinMaterial, in: Capsule())
+            }
+        }
+        #endif
+    }
+}

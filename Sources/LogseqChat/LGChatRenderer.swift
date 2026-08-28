@@ -75,11 +75,34 @@ public final class LGChatRenderer {
                     "document": .assetName("document"),
                     "flashcards": .assetName("flashcards"),
                     "folder": .assetName("folder"),
+                    "graph-local": .systemName("cylinder.split.1x2"),
+                    "graph-locked": .systemName("lock"),
+                    "graph-remote": .systemName("icloud"),
                     "history": .assetName("history"),
                     "more-horiz": .assetName("more_horiz"),
                     "sidebar-toggle": .assetName("sidebar_toggle"),
                     "star": .assetName("star"),
                     "status-dot": .assetName("status_dot"),
+                    "task-backlog": .assetName("task_backlog"),
+                    "task-canceled": .assetName("task_canceled"),
+                    "task-doing": .assetName("task_doing"),
+                    "task-done": .assetName("task_done"),
+                    "task-review": .assetName("task_review"),
+                    "task-todo": .systemName("circle"),
+                    "toolbar-attachment": .systemName("paperclip"),
+                    "toolbar-audio": .systemName("mic"),
+                    "toolbar-camera": .systemName("camera"),
+                    "composer-photo": .systemName("photo.on.rectangle.angled"),
+                    "toolbar-copy": .systemName("doc.on.doc"),
+                    "toolbar-copy-reference": .systemName("r.square"),
+                    "toolbar-copy-url": .systemName("link"),
+                    "toolbar-delete": .systemName("trash"),
+                    "toolbar-hide-keyboard": .systemName("keyboard.chevron.compact.down"),
+                    "toolbar-indent": .systemName("arrow.right"),
+                    "toolbar-outdent": .systemName("arrow.left"),
+                    "toolbar-tag": .systemName("number"),
+                    "toolbar-task": .systemName("checkmark.square"),
+                    "toolbar-unselect": .systemName("xmark"),
                 ],
                 appIconBundle: .module,
                 extensionRegistry: LGChatExtensionRegistry.makeRegistry()
@@ -92,8 +115,24 @@ public final class LGChatRenderer {
     }
 
     public func apply(patchJSON: String) throws {
+        #if DEBUG
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        #endif
         try backend.apply(json: patchJSON)
         rootID = backend.rootIDs.first
+        #if DEBUG
+        let elapsedMilliseconds =
+            (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+        let operationCount = patchJSON.components(separatedBy: "\"op\":").count - 1
+        print(
+            String(
+                format: "JOURNAL_SCROLL patch bytes=%d ops=%d apply_ms=%.3f",
+                patchJSON.utf8.count,
+                operationCount,
+                elapsedMilliseconds
+            )
+        )
+        #endif
     }
 
     func receiveForTesting(_ event: LGChatRendererEvent) {

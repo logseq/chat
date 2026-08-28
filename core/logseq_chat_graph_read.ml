@@ -528,6 +528,15 @@ let compare_blocks left right =
   | None, None -> compare left.created_at right.created_at
 ;;
 
+let compare_journal_blocks left right =
+  let journal_day block =
+    match block.Model.journal with Some (_, day) -> day | None -> 0
+  in
+  match compare (journal_day right) (journal_day left) with
+  | 0 -> compare_blocks left right
+  | order -> order
+;;
+
 (* Match Logseq's related-content visibility rules: hidden or recycled nodes,
    nodes below them, and view definition nodes are implementation details and
    must not leak into linked references or class objects. *)
@@ -645,7 +654,7 @@ let blocks ?(decrypt_title = fun value -> Ok value) ?(journal_limit = 7) db =
   |> Int_set.to_seq
   |> Seq.filter_map (block decrypt_title db)
   |> List.of_seq
-  |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
+  |> List.sort compare_journal_blocks
 ;;
 
 type projection =
@@ -678,7 +687,7 @@ let create_projection ?(decrypt_title = fun value -> Ok value) db =
 let projection_blocks projection =
   Hashtbl.to_seq_values projection.blocks_by_uuid
   |> List.of_seq
-  |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
+  |> List.sort compare_journal_blocks
 ;;
 
 let identity = function

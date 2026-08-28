@@ -1,5 +1,23 @@
 appId: com.logseq.chat
 ---
+- runFlow:
+    when:
+      visible: "Back"
+    commands:
+      - tapOn: "Back"
+      - extendedWaitUntil:
+          visible:
+            id: "button.sidebar"
+          timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- assertNotVisible: "Back"
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
@@ -9,29 +27,42 @@ appId: com.logseq.chat
 - inputText: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
+- assertNotVisible: "Back"
 - inputText: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
-- assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertNotVisible: "Back"
 - assertVisible:
     id: "surface.composer.dismiss"
 - tapOn:
     point: "50%,30%"
+- assertNotVisible: "Back"
 - assertVisible:
     id: "button.composer.expand"
 - assertVisible:
     id: "list.outliner"
 - scrollUntilVisible:
     element:
-      text: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+      text: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
     direction: DOWN
     timeout: 60000
     speed: 50
     visibilityPercentage: 100
     centerElement: true
+- assertNotVisible: "Back"
+- scrollUntilVisible:
+    element:
+      text: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+    direction: UP
+    timeout: 60000
+    speed: 50
+    visibilityPercentage: 100
+    centerElement: true
+- assertNotVisible: "Back"
 - swipe:
-    start: 50%, 25%
-    end: 50%, 35%
+    start: 50%, 70%
+    end: 50%, 30%
     duration: 1000
+- assertNotVisible: "Back"
 - assertVisible: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"

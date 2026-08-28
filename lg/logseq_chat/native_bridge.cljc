@@ -318,6 +318,10 @@
            "selection-length" (proto/IntValue value)}
           (= name "caret-change")
           {"caret-utf16-offset" (proto/IntValue value)}
+          (= name "query-changed")
+          {"query" (proto/StringValue text)}
+          (= name "back")
+          {"count" (proto/IntValue value)}
           :else {})]
     (flush-event!
      (proto/ExtensionEvent node identifier name values))))

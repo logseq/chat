@@ -2636,6 +2636,74 @@ let () =
 
 let () =
   let staged = ref [] in
+  let stage operation =
+    staged :=
+      List.filter
+        (fun pending ->
+          not
+            (String.equal
+               pending.Logseq_chat_pending_ops.operation_id
+               operation.Logseq_chat_pending_ops.operation_id))
+        !staged
+      @ [ operation ];
+    Ok ()
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ remote_block "remote" "Old" ])
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations:(fun () ->
+        List.filter
+          (fun operation ->
+            match operation.Logseq_chat_pending_ops.state with
+            | Queued | Retryable | Submitted -> true
+            | Accepted _ | Applied | Conflicted _ -> false)
+          !staged)
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote\",\"operationId\":\"first-after-response\",\"expectedTitle\":\"Old\",\"title\":\"First\",\"status\":null}"}}|});
+  let first_request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  let completion =
+    match
+      Logseq_chat_rpc.call session
+        (Printf.sprintf
+           {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":43}\",\"error\":null}"}}|}
+           (required_int "id" first_request))
+      |> from_string
+    with
+    | `Assoc fields -> required_assoc "result" fields
+    | _ -> failwith "pending sync completion must be an object"
+  in
+  assert_int_equal
+    "a successful batch response projects its accepted cursor before SSE"
+    43
+    (required_int "appliedServerT" completion);
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote\",\"operationId\":\"second-after-response\",\"expectedTitle\":\"First\",\"title\":\"Second\",\"status\":null}"}}|});
+  let second_request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  assert_int_equal
+    "a successful batch response advances the next pump before its SSE echo"
+    43
+    (required_assoc "bodyObject" second_request |> required_int "t-before")
+;;
+
+let () =
+  let staged = ref [] in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
@@ -3417,6 +3485,24 @@ let () =
   let second_empty = split first_empty in
   if String.equal first_empty second_empty
   then failwith "consecutive node-route Enter must create distinct blocks"
+;;
+
+let () =
+  let source = remote_block "optimistic-task" "Task" in
+  let projected =
+    Logseq_chat_rpc.project_outliner_intent
+      [ source ]
+      (Logseq_chat_pending_ops.Set_property
+         { uuid = source.uuid
+         ; attr = "logseq.property/status"
+         ; expected = None
+         ; value = Some (Ref_ident "logseq.property/status.todo")
+         })
+  in
+  match projected with
+  | [ { Logseq_chat_model.status = Some status; sync_status = "pending"; _ } ]
+    when status.ident = Some "logseq.property/status.todo" && status.title = "Todo" -> ()
+  | _ -> failwith "task status operations must update the optimistic outliner row"
 ;;
 
 let () =

@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none|events:4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -15,11 +15,13 @@ enum LGChatNavigationExtension {
                 properties: [
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
+                    .init(name: "composer-dismissal-enabled", kind: .bool, isRequired: true),
                 ],
                 events: [
                     .init(name: "back", fields: [
                         .init(name: "count", kind: .int, isRequired: true),
                     ]),
+                    .init(name: "dismiss-composer", fields: []),
                 ]
             ) { context in
                 AnyView(LGChatNavigationStack(context: context))
@@ -41,7 +43,9 @@ private struct LGChatNavigationStack: View {
             synchronizationName: "navigation",
             toolbarStartIndex: 1,
             bottomChromeIndex: 5,
-            bottomOccupiesLayoutSpace: bottomOccupiesLayoutSpace
+            bottomOccupiesLayoutSpace: bottomOccupiesLayoutSpace,
+            composerDismissalEnabled: composerDismissalEnabled,
+            rootTransform: nil
         )
     }
 
@@ -57,12 +61,19 @@ private struct LGChatNavigationStack: View {
         return value
     }
 
+    private var composerDismissalEnabled: Bool {
+        guard case let .bool(value) = context.property("composer-dismissal-enabled") else {
+            return false
+        }
+        return value
+    }
+
 }
 
 @MainActor
 enum LGChatSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,9:presented:bool:required:none|events:4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -73,12 +84,16 @@ enum LGChatSearchPresentationExtension {
                 properties: [
                     .init(name: "presented", kind: .bool, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
+                    .init(name: "query", kind: .string, isRequired: true),
                 ],
                 events: [
                     .init(name: "back", fields: [
                         .init(name: "count", kind: .int, isRequired: true),
                     ]),
                     .init(name: "dismiss", fields: []),
+                    .init(name: "query-changed", fields: [
+                        .init(name: "query", kind: .string, isRequired: true),
+                    ]),
                 ]
             ) { context in
                 AnyView(LGChatSearchPresentation(context: context))
@@ -90,6 +105,10 @@ enum LGChatSearchPresentationExtension {
 @MainActor
 private struct LGChatSearchPresentation: View {
     let context: LUIAppleExtensionViewContext
+    #if !SKIP && os(iOS)
+    @State private var nativeSearchPresented = true
+    @FocusState private var searchFocused: Bool
+    #endif
 
     var body: some View {
         baseContent
@@ -120,9 +139,106 @@ private struct LGChatSearchPresentation: View {
             synchronizationName: "search navigation",
             toolbarStartIndex: nil,
             bottomChromeIndex: nil,
-            bottomOccupiesLayoutSpace: false
+            bottomOccupiesLayoutSpace: false,
+            composerDismissalEnabled: false,
+            rootTransform: searchRootTransform
         )
     }
+
+    private func searchRootTransform(_ content: AnyView) -> AnyView {
+        #if !SKIP && os(iOS)
+        if #available(iOS 26.0, *) {
+            return AnyView(nativeBottomSearch(content))
+        }
+        return AnyView(nativeLegacySearch(content))
+        #else
+        return AnyView(nativeAutomaticSearch(content))
+        #endif
+    }
+
+    private func nativeAutomaticSearch(_ content: AnyView) -> some View {
+        content
+            .searchable(
+                text: queryBinding,
+                placement: .automatic,
+                prompt: "Search pages and blocks"
+            )
+    }
+
+    #if !SKIP && os(iOS)
+    private func nativeLegacySearch(_ content: AnyView) -> some View {
+        content
+            .searchable(
+                text: queryBinding,
+                isPresented: nativeSearchPresentedBinding,
+                placement: .automatic,
+                prompt: "Search pages and blocks"
+            )
+            .onAppear {
+                nativeSearchPresented = true
+            }
+    }
+
+    @available(iOS 26.0, *)
+    private func nativeBottomSearch(_ content: AnyView) -> some View {
+        content
+            .searchable(
+                text: queryBinding,
+                isPresented: nativeSearchPresentedBinding,
+                placement: .toolbar,
+                prompt: "Search pages and blocks"
+            )
+            .searchFocused($searchFocused)
+            .searchPresentationToolbarBehavior(.avoidHidingContent)
+            .toolbarVisibility(.hidden, for: .navigationBar)
+            .toolbar {
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+                ToolbarSpacer(.fixed, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    Button(action: exitSearch) {
+                        Image("close", bundle: .module)
+                            .frame(width: 20, height: 20)
+                            .frame(width: 44, height: 44)
+                            .accessibilityIdentifier("button.search.close")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Close search")
+                    .accessibilityIdentifier("button.search.close")
+                }
+            }
+            .onAppear {
+                nativeSearchPresented = true
+                DispatchQueue.main.async {
+                    searchFocused = true
+                }
+            }
+            .onScrollPhaseChange { _, newPhase in
+                if newPhase == .tracking || newPhase == .interacting {
+                    searchFocused = false
+                }
+            }
+    }
+
+    private func exitSearch() {
+        searchFocused = false
+        nativeSearchPresentedBinding.wrappedValue = false
+    }
+
+    private var nativeSearchPresentedBinding: Binding<Bool> {
+        Binding(
+            get: { nativeSearchPresented },
+            set: { isPresented in
+                nativeSearchPresented = isPresented
+                if !isPresented {
+                    DispatchQueue.main.async {
+                        emitDismiss()
+                    }
+                }
+            }
+        )
+    }
+    #endif
 
     private var presented: Bool {
         guard case let .bool(value) = context.property("presented") else { return false }
@@ -132,6 +248,20 @@ private struct LGChatSearchPresentation: View {
     private var depth: Int {
         guard case let .int(value) = context.property("depth") else { return 0 }
         return value
+    }
+
+    private var query: String {
+        guard case let .string(value) = context.property("query") else { return "" }
+        return value
+    }
+
+    private var queryBinding: Binding<String> {
+        Binding(
+            get: { query },
+            set: { newValue in
+                emitQueryChanged(newValue)
+            }
+        )
     }
 
     private var presentedBinding: Binding<Bool> {
@@ -152,6 +282,14 @@ private struct LGChatSearchPresentation: View {
             logger.error("Could not dismiss native search: \(String(describing: error))")
         }
     }
+
+    private func emitQueryChanged(_ query: String) {
+        do {
+            try context.emit(name: "query-changed", values: ["query": .string(query)])
+        } catch {
+            logger.error("Could not update native search query: \(String(describing: error))")
+        }
+    }
 }
 
 @MainActor
@@ -164,6 +302,8 @@ private struct LGChatNavigationContent: View {
     let toolbarStartIndex: Int?
     let bottomChromeIndex: Int?
     let bottomOccupiesLayoutSpace: Bool
+    let composerDismissalEnabled: Bool
+    let rootTransform: ((AnyView) -> AnyView)?
     @State private var path: [Int] = []
 
     @ViewBuilder
@@ -172,24 +312,24 @@ private struct LGChatNavigationContent: View {
         if bottomOccupiesLayoutSpace {
             VStack(spacing: 0) {
                 navigationStack
-                bottomChrome
+                sizedBottomChrome
             }
         } else {
             navigationStack
                 .overlay(alignment: .bottom) {
-                    bottomChrome
+                    sizedBottomChrome
                 }
         }
         #else
         navigationStack
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if bottomOccupiesLayoutSpace {
-                    bottomChrome
+                    sizedBottomChrome
                 }
             }
             .overlay(alignment: .bottom) {
                 if !bottomOccupiesLayoutSpace {
-                    bottomChrome
+                    sizedBottomChrome
                 }
             }
         #endif
@@ -197,12 +337,30 @@ private struct LGChatNavigationContent: View {
 
     private var navigationStack: some View {
         NavigationStack(path: pathBinding) {
-            rootContent
+            transformedRootContent
                 .frame(
                     maxWidth: .infinity,
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
+                .overlay {
+                    if composerDismissalEnabled {
+                        #if SKIP
+                        Color.clear
+                            .onTapGesture {
+                                emitDismissComposer()
+                            }
+                            .accessibilityLabel("Dismiss composer")
+                            .accessibilityIdentifier("surface.composer.dismiss")
+                        #else
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform: emitDismissComposer)
+                            .accessibilityLabel("Dismiss composer")
+                            .accessibilityIdentifier("surface.composer.dismiss")
+                        #endif
+                    }
+                }
                 .navigationDestination(for: Int.self) { childID in
                     context.content(for: childID)
                 }
@@ -214,10 +372,12 @@ private struct LGChatNavigationContent: View {
                             context.content(for: context.childIDs[toolbarStartIndex + 1])
                         }
                         #else
-                        ToolbarItem(placement: .navigation) {
-                            context.content(for: context.childIDs[toolbarStartIndex])
-                        }
                         if #available(iOS 26.0, macOS 26.0, *) {
+                            ToolbarItem(placement: .navigation) {
+                                context.content(for: context.childIDs[toolbarStartIndex])
+                                    .modifier(LGChatLiquidGlassSurface(shape: .circle))
+                            }
+                            .sharedBackgroundVisibility(.hidden)
                             ToolbarItem(placement: .navigation) {
                                 context.content(for: context.childIDs[toolbarStartIndex + 1])
                                     .fixedSize(horizontal: true, vertical: false)
@@ -225,15 +385,37 @@ private struct LGChatNavigationContent: View {
                             .sharedBackgroundVisibility(.hidden)
                         } else {
                             ToolbarItem(placement: .navigation) {
+                                context.content(for: context.childIDs[toolbarStartIndex])
+                            }
+                            ToolbarItem(placement: .navigation) {
                                 context.content(for: context.childIDs[toolbarStartIndex + 1])
                                     .fixedSize(horizontal: true, vertical: false)
                             }
                         }
                         #endif
+                        #if SKIP
                         ToolbarItemGroup(placement: .primaryAction) {
                             context.content(for: context.childIDs[toolbarStartIndex + 2])
                             context.content(for: context.childIDs[toolbarStartIndex + 3])
                         }
+                        #else
+                        if #available(iOS 26.0, macOS 26.0, *) {
+                            ToolbarItem(placement: .primaryAction) {
+                                HStack(spacing: 0) {
+                                    context.content(for: context.childIDs[toolbarStartIndex + 2])
+                                    context.content(for: context.childIDs[toolbarStartIndex + 3])
+                                }
+                                .padding(.horizontal, 12)
+                                .modifier(LGChatLiquidGlassSurface(shape: .capsule))
+                            }
+                            .sharedBackgroundVisibility(.hidden)
+                        } else {
+                            ToolbarItemGroup(placement: .primaryAction) {
+                                context.content(for: context.childIDs[toolbarStartIndex + 2])
+                                context.content(for: context.childIDs[toolbarStartIndex + 3])
+                            }
+                        }
+                        #endif
                     }
                 }
         }
@@ -259,11 +441,32 @@ private struct LGChatNavigationContent: View {
         return context.content(for: context.childIDs[rootIndex])
     }
 
+    private var transformedRootContent: AnyView {
+        rootTransform?(rootContent) ?? rootContent
+    }
+
     private var bottomChrome: AnyView {
         guard let bottomChromeIndex,
               context.childIDs.count > bottomChromeIndex
         else { return AnyView(EmptyView()) }
         return context.content(for: context.childIDs[bottomChromeIndex])
+    }
+
+    @ViewBuilder
+    private var sizedBottomChrome: some View {
+        if bottomOccupiesLayoutSpace {
+            bottomChrome
+                .fixedSize(horizontal: false, vertical: true)
+                .modifier(LGChatBottomChromeSurface())
+                .modifier(LGChatBottomChromeHitTarget(isRounded: true))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 21)
+        } else {
+            bottomChrome
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+                .modifier(LGChatBottomChromeHitTarget(isRounded: false))
+        }
     }
 
     private var desiredPath: [Int] {
@@ -298,5 +501,54 @@ private struct LGChatNavigationContent: View {
                 "Could not synchronize native \(synchronizationName): \(String(describing: error))"
             )
         }
+    }
+
+    private func emitDismissComposer() {
+        do {
+            try context.emit(name: "dismiss-composer", values: [:])
+        } catch {
+            logger.error("Could not dismiss composer: \(String(describing: error))")
+        }
+    }
+}
+
+private struct LGChatBottomChromeSurface: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if SKIP
+        content
+            .background(Color.white.opacity(0.9))
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        #else
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
+        } else {
+            content.background(
+                .ultraThinMaterial,
+                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            )
+        }
+        #endif
+    }
+}
+
+private struct LGChatBottomChromeHitTarget: ViewModifier {
+    let isRounded: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if SKIP
+        content.onTapGesture {}
+        #else
+        if isRounded {
+            content
+                .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .onTapGesture {}
+        } else {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture {}
+        }
+        #endif
     }
 }

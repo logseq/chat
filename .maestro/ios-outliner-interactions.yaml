@@ -61,8 +61,10 @@ appId: com.logseq.chat
     text: "Zoom into E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible: "Back"
 - tapOn: "Back"
-- assertVisible:
-    id: "button.sidebar"
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
 - stopApp
 - launchApp
 - extendedWaitUntil:

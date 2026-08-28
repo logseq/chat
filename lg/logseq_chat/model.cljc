@@ -113,6 +113,7 @@
           (settings-tabs-open false)
           (runtime-log-open false)
           (appearance "system")
+          (settings-appearance-menu-open false)
           (language "system")
           (language-choices (settings-language-choices))
           (settings-language-menu-open false)
@@ -188,6 +189,9 @@
             id (:next-effect-id popped)]
         (recur (dec remaining)
                (enqueue-effect popped (CloseAppNodeEffect id uuid)))))))
+
+(defn return-to-app-root [current]
+  (back-app-navigation current (count (:app-navigation-path current))))
 
 (defn back-search-navigation [current requested]
   (loop [remaining (min (max requested 0)
@@ -309,6 +313,34 @@
 (defn sign-in-active? [current]
   (or (contains-sign-in-effect? (:pending-effects current))
       (contains-sign-in-effect? (:in-flight-effects current))))
+
+(defn change-outliner-text-effect-for? [effect uuid]
+  (match effect
+    (ChangeOutlinerTextEffect _id effect-uuid _title _caret)
+    (= effect-uuid uuid)
+    _ false))
+
+(defn contains-change-outliner-text-effect? [effects uuid]
+  (loop [index 0]
+    (if (= index (count effects))
+      false
+      (if (change-outliner-text-effect-for? (nth effects index) uuid)
+        true
+        (recur (inc index))))))
+
+(defn change-outliner-text-active? [current uuid]
+  (or (contains-change-outliner-text-effect?
+       (:pending-effects current) uuid)
+      (contains-change-outliner-text-effect?
+       (:in-flight-effects current) uuid)))
+
+(defn snapshot-outliner-editing [current projection]
+  (match (:outliner-editing current)
+    (Some editing)
+    (if (change-outliner-text-active? current (:uuid editing))
+      (Some editing)
+      (:outliner-editing projection))
+    None (:outliner-editing projection)))
 
 (defn first-flashcard-id [flashcards]
   (if (empty? flashcards)
@@ -500,6 +532,20 @@
       (= kind "camera")
       (= kind "photos")
       (= kind "audio")))
+
+(defn indexed-outliner-autocomplete-candidates [candidates]
+  (loop [index 0
+         result []]
+    (if (= index (count candidates))
+      result
+      (let [candidate (nth candidates index)]
+        (recur
+         (inc index)
+         (conj result
+               (record outliner-autocomplete-candidate
+                 (index index)
+                 (label (:label candidate))
+                 (value (:value candidate)))))))))
 
 (defn valid-authentication-state? [state]
   (or (= state "restoring")
@@ -840,14 +886,34 @@
              (:has-pending-semantic-operations projection)
              :has-pending-sync-request
              (:has-pending-sync-request projection))
-      (let [projected-rows
-          (if (:is-outliner-patch projection)
-            (if (empty? (:outliner-row-splices projection))
-              (merge-row-replacements
-               (:outliner-rows current) (:outliner-rows projection))
-              (apply-row-splices (:outliner-rows current)
-                                 (:outliner-row-splices projection)))
-            (:outliner-rows projection))
+      (if (:is-outliner-patch projection)
+        (let [projected-rows
+              (if (empty? (:outliner-row-splices projection))
+                (merge-row-replacements
+                 (:outliner-rows current) (:outliner-rows projection))
+                (apply-row-splices (:outliner-rows current)
+                                   (:outliner-row-splices projection)))
+              journal-rows
+              (if (empty? (:node-routes current))
+                projected-rows
+                (:journal-outliner-rows current))]
+          (assoc current
+                 :has-pending-semantic-operations
+                 (:has-pending-semantic-operations projection)
+                 :has-pending-sync-request
+                 (:has-pending-sync-request projection)
+                 :journal-outliner-rows journal-rows
+                 :outliner-editing (snapshot-outliner-editing current projection)
+                 :outliner-autocomplete (:outliner-autocomplete projection)
+                 :outliner-autocomplete-candidates
+                 (indexed-outliner-autocomplete-candidates
+                  (:outliner-autocomplete-candidates projection))
+                 :outliner-selected-block-ids
+                 (:outliner-selected-block-ids projection)
+                 :outliner-section-markers
+                 (journal-section-markers projected-rows)
+                 :outliner-rows projected-rows))
+        (let [projected-rows (:outliner-rows projection)
           journal-rows
           (if (empty? (:node-routes projection))
             projected-rows
@@ -875,7 +941,12 @@
                  :is-graph-encrypted (:is-graph-encrypted projection)
                  :is-graph-unlocked (:is-graph-unlocked projection)
                  :sync-state
-                 (if (:sync-connected projection) SyncedState OfflineState)
+                 (if (:sync-connected projection)
+                   (if (or (:has-pending-semantic-operations projection)
+                           (:has-pending-sync-request projection))
+                     SyncingState
+                     SyncedState)
+                   OfflineState)
                  :applied-server-t (:applied-server-t projection)
                  :has-pending-semantic-operations
                  (:has-pending-semantic-operations projection)
@@ -897,10 +968,11 @@
                  (if card-changed false (:flashcard-answer-revealed current))
                  :node-routes (:node-routes projection)
                  :journal-outliner-rows journal-rows
-                 :outliner-editing (:outliner-editing projection)
+                 :outliner-editing (snapshot-outliner-editing current projection)
                  :outliner-autocomplete (:outliner-autocomplete projection)
                  :outliner-autocomplete-candidates
-                 (:outliner-autocomplete-candidates projection)
+                 (indexed-outliner-autocomplete-candidates
+                  (:outliner-autocomplete-candidates projection))
                  :outliner-selected-block-ids
                  (:outliner-selected-block-ids projection)
                  :has-older-journals (:has-older-journals projection)
@@ -925,14 +997,15 @@
                    :graph-password-open true
                    :graph-password ""
                    :effect-error None)
-            searched)))))
+            searched))))))
 
     (BeginOutlinerEdit uuid)
     (let [id (:next-effect-id current)]
       (enqueue-effect current (TapOutlinerBlockEffect id uuid)))
 
     (ChangeOutlinerText uuid title caret)
-    (let [updated (update-editing current uuid title caret)
+    (let [updated (assoc (update-editing current uuid title caret)
+                         :sync-state SyncingState)
           id (:next-effect-id updated)]
       (enqueue-effect updated
                       (ChangeOutlinerTextEffect id uuid title caret)))
@@ -979,8 +1052,19 @@
        (DropOutlinerBlocksEffect id target-uuid placement)))
 
     (PerformOutlinerToolbarAction action)
-    (let [id (:next-effect-id current)]
-      (enqueue-effect current (OutlinerToolbarEffect id action)))
+    (let [updated (cond
+                    (= action "task")
+                    (assoc current :sync-state SyncingState)
+
+                    (= action "hideKeyboard")
+                    (assoc current
+                           :outliner-editing None
+                           :outliner-autocomplete None
+                           :outliner-autocomplete-candidates [])
+
+                    :else current)
+          id (:next-effect-id updated)]
+      (enqueue-effect updated (OutlinerToolbarEffect id action)))
 
     (ChooseOutlinerAutocomplete value)
     (let [id (:next-effect-id current)]
@@ -1189,7 +1273,7 @@
       (Some graph)
       (if (:is-ready graph)
         (let [updated
-              (assoc (cancel-outliner-editing current)
+              (assoc (cancel-outliner-editing (return-to-app-root current))
                      :sidebar-open false
                      :graph-menu-open false)
               selected
@@ -1204,7 +1288,7 @@
       None current)
 
     (SelectSidebarPage uuid)
-    (let [updated (assoc (cancel-outliner-editing current)
+    (let [updated (assoc (cancel-outliner-editing (return-to-app-root current))
                          :sidebar-open false
                          :graph-menu-open false
                          :destination JournalsDestination)
@@ -1212,7 +1296,7 @@
       (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
 
     ShowJournals
-    (let [updated (assoc (cancel-outliner-editing current)
+    (let [updated (assoc (cancel-outliner-editing (return-to-app-root current))
                          :sidebar-open false
                          :graph-menu-open false
                          :destination JournalsDestination)
@@ -1220,7 +1304,7 @@
       (enqueue-effect updated (ClearSelectedPageEffect id)))
 
     ShowFlashcards
-    (let [updated (assoc (cancel-outliner-editing current)
+    (let [updated (assoc (cancel-outliner-editing (return-to-app-root current))
                          :sidebar-open false
                          :graph-menu-open false
                          :destination FlashcardsDestination)
@@ -1231,7 +1315,7 @@
       (enqueue-effect cleared (LoadFlashcardsEffect load-id)))
 
     ShowGraphs
-    (assoc (cancel-outliner-editing current)
+    (assoc (cancel-outliner-editing (return-to-app-root current))
            :sidebar-open false
            :graph-menu-open false
            :destination GraphsDestination)
@@ -1369,7 +1453,9 @@
       (Some block-id)
       (match (task-status-by-id (:task-statuses current) status-id)
         (Some status)
-        (let [updated (assoc current :outliner-task-status-block-id None)
+        (let [updated (assoc current
+                             :outliner-task-status-block-id None
+                             :sync-state SyncingState)
               id (:next-effect-id updated)]
           (enqueue-effect
            updated (SetOutlinerTaskStatusEffect id block-id status)))
@@ -1435,6 +1521,7 @@
            :connection-menu-open false
            :settings-open true
            :settings-tabs-open false
+           :settings-appearance-menu-open false
            :settings-language-menu-open false
            :runtime-log-open false)
 
@@ -1442,6 +1529,7 @@
     (assoc current
            :settings-open false
            :settings-tabs-open false
+           :settings-appearance-menu-open false
            :settings-language-menu-open false
            :runtime-log-open false)
 
@@ -1451,10 +1539,18 @@
     BackSettings
     (assoc current :settings-tabs-open false :runtime-log-open false)
 
+    OpenSettingsAppearanceMenu
+    (assoc current :settings-appearance-menu-open true)
+
+    CloseSettingsAppearanceMenu
+    (assoc current :settings-appearance-menu-open false)
+
     (ChangeAppearance appearance)
     (persist-settings-change
      current
-     (assoc current :appearance appearance))
+     (assoc current
+            :appearance appearance
+            :settings-appearance-menu-open false))
 
     OpenSettingsLanguageMenu
     (assoc current :settings-language-menu-open true)

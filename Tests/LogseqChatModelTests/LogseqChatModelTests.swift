@@ -1166,7 +1166,7 @@ private let testEmptySnapshotJSON = """
         {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"pendingSyncRequest":{"id":1,"method":"POST","url":"https://api.example/capture","body":"{}","token":"access-token","filePath":null,"contentType":"application/json"},"hasPendingSemanticOperations":true,"isPendingSyncPatch":true},"error":null}
         """
         let completePatch = """
-        {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"pendingSyncRequest":null,"hasPendingSemanticOperations":false,"isPendingSyncPatch":true},"error":null}
+        {"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"appliedServerT":43,"pendingSyncRequest":null,"hasPendingSemanticOperations":false,"isPendingSyncPatch":true},"error":null}
         """
         let store = LogseqChatStore(
             call: { call in
@@ -1190,6 +1190,7 @@ private let testEmptySnapshotJSON = """
             recorder.all.contains { $0.contains("\"action\":\"completePendingSync\"") }
         }
         #expect(store.snapshot.blocks.first?.title == "Offline capture")
+        #expect(store.snapshot.appliedServerT == 43)
     }
 
     @Test @MainActor func sendDoesNotBlockTheMainActorWhenCoreIsSlow() async throws {

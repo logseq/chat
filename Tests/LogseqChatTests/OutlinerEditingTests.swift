@@ -775,6 +775,21 @@ import Testing
         ) == .applyModel)
     }
 
+    @Test func inlineEditorDoesNotEchoProgrammaticCaretChanges() {
+        #expect(!InlineEditorCaretEmissionPolicy.shouldEmit(
+            textMatchesModel: true,
+            isApplyingModel: true
+        ))
+        #expect(InlineEditorCaretEmissionPolicy.shouldEmit(
+            textMatchesModel: true,
+            isApplyingModel: false
+        ))
+        #expect(!InlineEditorCaretEmissionPolicy.shouldEmit(
+            textMatchesModel: false,
+            isApplyingModel: false
+        ))
+    }
+
     @Test func unchangedRowsKeepTheSameRenderIdentityAcrossUnrelatedSnapshots() throws {
         let block = try JSONDecoder().decode(
             LogseqBlock.self,

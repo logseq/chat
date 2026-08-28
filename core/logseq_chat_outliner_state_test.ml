@@ -4,7 +4,14 @@ module Model = Logseq_chat_model
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
 
-let block ?(page_id = "page") ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
+let block
+      ?(page_id = "page")
+      ?(parent_id = Some "page")
+      ?(order = Some "a0")
+      ?(journal = None)
+      uuid
+      title
+  =
   Model.
     { uuid
     ; title
@@ -23,8 +30,49 @@ let block ?(page_id = "page") ?(parent_id = Some "page") ?(order = Some "a0") uu
     ; asset_size = None
     ; asset_checksum = None
     ; local_path = None
-    ; journal = None
+    ; journal
     }
+;;
+
+let () =
+  let blocks =
+    [ block
+        ~page_id:"older-page"
+        ~parent_id:(Some "older-page")
+        ~order:(Some "a0")
+        ~journal:(Some ("Older", 20260827))
+        "older-first"
+        "Older first"
+    ; block
+        ~page_id:"newer-page"
+        ~parent_id:(Some "newer-page")
+        ~order:(Some "a1")
+        ~journal:(Some ("Newer", 20260828))
+        "newer-second"
+        "Newer second"
+    ; block
+        ~page_id:"older-page"
+        ~parent_id:(Some "older-page")
+        ~order:(Some "a1")
+        ~journal:(Some ("Older", 20260827))
+        "older-second"
+        "Older second"
+    ; block
+        ~page_id:"newer-page"
+        ~parent_id:(Some "newer-page")
+        ~order:(Some "a0")
+        ~journal:(Some ("Newer", 20260828))
+        "newer-first"
+        "Newer first"
+    ]
+  in
+  let uuids =
+    State.visible_rows State.{ blocks; pages = []; tags = [] } State.empty
+    |> List.map (fun row -> row.State.block.uuid)
+  in
+  assert_bool
+    "journal roots stay grouped newest-first in outliner order"
+    (uuids = [ "newer-first"; "newer-second"; "older-first"; "older-second" ])
 ;;
 
 let context = State.{ blocks = [ block "a" "Alpha"; block ~order:(Some "a1") "b" "Beta" ]; pages = []; tags = [] }
@@ -681,6 +729,12 @@ let () =
   assert_bool "autocomplete candidates deduplicate by value"
     (State.autocomplete_candidates candidates_context State.{ kind = Node; query = "project" }
      = [ State.{ label = "Project"; value = "project" } ]);
+  let context_with_blank_block =
+    State.{ candidates_context with blocks = block "blank" "" :: candidates_context.blocks }
+  in
+  assert_bool "node autocomplete excludes blank blocks"
+    (State.autocomplete_candidates context_with_blank_block State.{ kind = Node; query = "" }
+     |> List.for_all (fun candidate -> not (String.equal candidate.State.label "")));
   assert_bool "tag candidates reuse page entities"
     (List.length
        (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "project" })

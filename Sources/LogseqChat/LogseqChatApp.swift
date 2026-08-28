@@ -50,7 +50,9 @@ private final class LGChatCoreResponseRelay {
     var apply: ((String) -> Void)?
 
     func send(_ response: String) {
-        apply?(response)
+        if let apply {
+            apply(response)
+        }
     }
 }
 
@@ -215,7 +217,7 @@ public struct LogseqChatRootView : View {
                 UserDefaults.standard.set(draft, forKey: "logseq.composerDraft")
             },
             runtimeLog: .shared,
-            copyText: Self.copyText,
+            copyText: { text in Self.copyText(text) },
             signIn: {
                 await authentication.signIn()
                 let message = authentication.state == .signedIn
@@ -300,8 +302,8 @@ public struct LogseqChatRootView : View {
             syncNow: { store.syncPending() }
         )
         let platformCommandRouter = LGChatPlatformCommandRouter(
-            setClipboardText: Self.copyText,
-            performHaptic: Self.performHaptic,
+            setClipboardText: { text in Self.copyText(text) },
+            performHaptic: { style in Self.performHaptic(style) },
             present: { presentation in
                 switch presentation {
                 case .confirmDelete(let blockIDs):
@@ -375,14 +377,9 @@ public struct LogseqChatRootView : View {
     public func startLGRenderer() {
         do {
             try lgRuntime.start(platformCode: Self.lgPlatformCode)
-            let storedGraphID = UserDefaults.standard.string(
-                forKey: "logseq.selectedGraphId"
-            ) ?? ""
             try lgRuntime.applyHostUpdate(
                 kind: "graph-loading",
-                payload: !storedGraphID.isEmpty && !didApplyLocalLaunchResult
-                    ? "true"
-                    : "false"
+                payload: !didApplyLocalLaunchResult ? "true" : "false"
             )
             try lgRuntime.applyHostUpdate(
                 kind: "settings",
@@ -395,12 +392,10 @@ public struct LogseqChatRootView : View {
             let persistedDraft = UserDefaults.standard.string(
                 forKey: "logseq.composerDraft"
             ) ?? ""
+            let persistedDraftData = try JSONEncoder().encode(persistedDraft)
             try lgRuntime.applyHostUpdate(
                 kind: "composer-draft",
-                payload: String(
-                    decoding: try JSONEncoder().encode(persistedDraft),
-                    as: UTF8.self
-                )
+                payload: String(data: persistedDraftData, encoding: .utf8) ?? "\"\""
             )
         } catch {
             logger.error("Could not start LG renderer: \(String(describing: error))")
@@ -423,7 +418,16 @@ public struct LogseqChatRootView : View {
         guard isLGApplicationReady else { return }
         processSharedCaptures()
         guard authentication.state == .signedIn else { return }
-        if !(await graphLifecycle.connectStoredGraph()) {
+        let connected = await graphLifecycle.connectStoredGraph()
+        do {
+            try lgRuntime.applyHostUpdate(kind: "graph-loading", payload: "false")
+        } catch {
+            logger.error(
+                "Could not finish LG graph catalog loading: "
+                    + String(describing: error)
+            )
+        }
+        if !connected {
             logger.error("Could not restore the stored graph connection")
         }
     }
@@ -451,7 +455,7 @@ public struct LogseqChatRootView : View {
             state: authentication.state.rawValue,
             errorMessage: authentication.errorMessage
         )
-        return String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+        return String(data: try JSONEncoder().encode(payload), encoding: .utf8) ?? "{}"
     }
 
     private static func settingsHostPayload() throws -> String {
@@ -467,13 +471,13 @@ public struct LogseqChatRootView : View {
                 ?? true,
             sidebarTabs: rawTabs.isEmpty
                 ? []
-                : rawTabs.split(separator: ",").map(String.init),
+                : rawTabs.split(separator: ",").map { value in String(value) },
             baseURL: defaults.string(forKey: "logseq.baseURL")
                 ?? "http://127.0.0.1:8787",
             version: LogseqSettingsPolicy.version,
             revision: LogseqSettingsPolicy.revision
         )
-        return String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+        return String(data: try JSONEncoder().encode(payload), encoding: .utf8) ?? "{}"
     }
 
     private static func copyText(_ text: String) {
@@ -619,7 +623,7 @@ public struct LogseqChatRootView : View {
             )
             LogseqChatAppDelegate.shared.reportLaunchStage("store_opened")
         }
-        if lgRuntime.isStarted {
+        if lgRuntime.isStarted, result.graphResponse != nil {
             do {
                 try lgRuntime.applyHostUpdate(kind: "graph-loading", payload: "false")
             } catch {

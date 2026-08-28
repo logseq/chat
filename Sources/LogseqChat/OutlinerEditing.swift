@@ -201,6 +201,15 @@ enum InlineEditorTextReconciliationPolicy {
     }
 }
 
+enum InlineEditorCaretEmissionPolicy {
+    static func shouldEmit(
+        textMatchesModel: Bool,
+        isApplyingModel: Bool
+    ) -> Bool {
+        textMatchesModel && !isApplyingModel
+    }
+}
+
 enum InlineEditorHandoffMerge {
     /// Keystrokes swallowed while a Return handoff was pending are inserted
     /// at the caret the core requested for the new block.

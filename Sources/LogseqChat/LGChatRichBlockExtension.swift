@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 enum LGChatExtensionRegistry {
     static func makeRegistry() throws -> LUIAppleExtensionRegistry {
         let registry = LUIAppleExtensionRegistry()
+        try LGChatLiquidGlassTweak.register(in: registry)
         try LGChatNavigationExtension.register(in: registry)
         try LGChatSearchPresentationExtension.register(in: registry)
         try LGChatOverflowMenuExtension.register(in: registry)
@@ -54,6 +55,53 @@ private struct OutlinerRowDropDelegate: DropDelegate {
         ))
     }
 }
+
+#if DEBUG
+@MainActor
+private enum JournalScrollDiagnostics {
+    private static var decodeCount = 0
+    private static var decodeMilliseconds = 0.0
+    private static var appearCount = 0
+    private static var heightChangeCount = 0
+    private static var intervalStartedAt = ProcessInfo.processInfo.systemUptime
+
+    static func recordDecode(milliseconds: Double) {
+        decodeCount += 1
+        decodeMilliseconds += milliseconds
+        reportIfNeeded()
+    }
+
+    static func recordAppear() {
+        appearCount += 1
+        reportIfNeeded()
+    }
+
+    static func recordHeightChange() {
+        heightChangeCount += 1
+        reportIfNeeded()
+    }
+
+    private static func reportIfNeeded() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - intervalStartedAt >= 0.5 else { return }
+        print(
+            String(
+                format: "JOURNAL_SCROLL interval_ms=%.1f appears=%d decodes=%d decode_ms=%.3f height_changes=%d",
+                (now - intervalStartedAt) * 1_000,
+                appearCount,
+                decodeCount,
+                decodeMilliseconds,
+                heightChangeCount
+            )
+        )
+        decodeCount = 0
+        decodeMilliseconds = 0
+        appearCount = 0
+        heightChangeCount = 0
+        intervalStartedAt = now
+    }
+}
+#endif
 #endif
 
 @MainActor
@@ -115,7 +163,17 @@ private struct LGChatRichBlock: View {
                     )
                 }
             }
-            .onPreferenceChange(OutlinerRowHeightPreferenceKey.self) { measuredHeight = $0 }
+            .onPreferenceChange(OutlinerRowHeightPreferenceKey.self) {
+                measuredHeight = $0
+                #if DEBUG
+                JournalScrollDiagnostics.recordHeightChange()
+                #endif
+            }
+            .onAppear {
+                #if DEBUG
+                JournalScrollDiagnostics.recordAppear()
+                #endif
+            }
             .onDrag {
                 emitDragStart()
                 return NSItemProvider(object: blockID as NSString)
@@ -173,6 +231,14 @@ private struct LGChatRichBlock: View {
     }
 
     private var markupNodes: [LogseqMarkupNode] {
+        #if DEBUG
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        defer {
+            JournalScrollDiagnostics.recordDecode(
+                milliseconds: (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+            )
+        }
+        #endif
         let data = Data(stringProperty("markup-json").utf8)
         return (try? JSONDecoder().decode([LogseqMarkupNode].self, from: data)) ?? []
     }

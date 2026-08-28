@@ -1,0 +1,35 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 60000
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.graphs"
+- tapOn:
+    id: "button.graphs.refresh"
+- extendedWaitUntil:
+    visible: "Remote graphs:"
+    timeout: 15000
+- runFlow:
+    when:
+      notVisible: "chat-local-e2e-fixture"
+    commands:
+      - tapOn:
+          id: "button.graph-add"
+      - extendedWaitUntil:
+          visible: "Add sync graph"
+          timeout: 10000
+      - tapOn:
+          id: "field.graph-name"
+      - inputText: "chat-local-e2e-fixture"
+      - tapOn:
+          id: "button.graph-add.confirm"
+      - extendedWaitUntil:
+          visible:
+            id: "journals.graph-loaded"
+          timeout: 60000
+- stopApp
