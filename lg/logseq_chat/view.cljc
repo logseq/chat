@@ -482,6 +482,7 @@
     {:accessibility-identifier "sidebar.navigation"
      :gap 4
      :padding 12}
+   [:box {:height 52}]
    [:stack
     [:list-item
      {:text (reactive graph-label model-source)

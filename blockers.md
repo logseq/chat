@@ -36,15 +36,6 @@ Entries stay concise so work can continue on the highest-signal path.
   states against latest `main` and the LG/LUI build on the same iOS 26 simulator,
   then turn each confirmed mismatch into a focused failing test before fixing it.
 
-- 2026-08-28 16:52 CST — The first paired journal capture confirms a structural
-  bottom-chrome mismatch: the footer-to-safe-area spacing is too small, the
-  bottom safe area receives an opaque secondary background, the collapsed
-  composer is visibly boxed by that background, and the search control is
-  shifted left relative to `main`. Header button glyphs are also visibly smaller
-  than `main` even where the outer glass hit targets are close. Current action:
-  encode the main geometry, transparent safe-area ownership, and icon metrics as
-  failing layout-policy tests, then correct the LG/LUI/native layout source.
-
 - 2026-08-28 16:56 CST — The LG/LUI Graphs screen renders Refresh, Add sync
   graph, and Delete local graph as oversized tinted capsule buttons and flattens
   local/remote graph content into unstructured text. This diverges from main's
@@ -63,6 +54,18 @@ Entries stay concise so work can continue on the highest-signal path.
   the existing wrong control types.
 
 ## Resolved
+
+- 2026-08-29 01:08 CST — The drawer was laid out inside the container safe area,
+  so its rounded main panel could not reach the screen edges and the navigation
+  footer lost the system bottom inset after the shell became full-screen. The
+  LUI drawer now spans the container safe area, restores the main content's
+  dynamic top and bottom insets, and supplies the same active ultra-thin material
+  surface as `main`; the LG sidebar reserves the matching 64-point top region.
+  Paired light-mode Journal and open-Sidebar captures now show a full-height main
+  panel and the footer at the system inset plus the existing 21-point control
+  inset. Closed drawers retain their previous transparent host semantics. LUI's
+  100 Apple/Android parity tests and all 108 LG tests pass without changing an
+  existing iOS E2E flow.
 
 - 2026-08-28 16:50 CST — The apparently blank LG/LUI launch was an immediate
   screenshot race, not a crash or renderer failure. The same running process

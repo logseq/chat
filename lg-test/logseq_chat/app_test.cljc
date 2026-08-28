@@ -1600,6 +1600,10 @@
       (is (property-bool renderer root proto/Selected)
           "opening the sidebar patches the controlled drawer")
       (let [sidebar-view (descendant-with-identifier renderer root "sidebar.navigation")
+            sidebar-children (apple/children renderer sidebar-view)
+            top-safe-area (if (empty? sidebar-children)
+                            -1
+                            (nth sidebar-children 0))
             dismiss
             (child-with-identifier renderer sidebar-view "button.sidebar.dismiss")
             graph-switch
@@ -1619,12 +1623,20 @@
             (child-with-identifier renderer favorites "link.sidebar.page.page-a")]
         (assert-equal 12 (property-int renderer sidebar-view proto/PaddingValue)
                       "sidebar keeps the main branch content inset")
+        (assert-equal (Some apple/AppleBox)
+                      (if (= top-safe-area -1)
+                        None
+                        (apple/node renderer top-safe-area))
+                      "the full-height drawer reserves sidebar status-bar space in LG")
+        (assert-equal 52
+                      (property-int renderer top-safe-area proto/HeightValue)
+                      "the sidebar spacer plus outer inset matches main's 64-point top padding")
         (assert-equal graph-switch
                       (descendant-with-identifier
                        renderer
-                       (nth (apple/children renderer sidebar-view) 0)
+                       (nth sidebar-children 1)
                        "button.graph-switch")
-                      "the graph switch follows the native safe area directly")
+                      "the graph switch follows the explicit full-screen safe-area spacer")
         (assert-equal 4 (property-int renderer sidebar-view proto/Gap)
                       "sidebar keeps the main branch row spacing")
         (assert-equal -1 dismiss
