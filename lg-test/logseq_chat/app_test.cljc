@@ -77,6 +77,20 @@
             (descendant-count-with-node-kind
              renderer (nth children index) kind)))))))
 
+(defn descendant-count-with-property-string
+  [renderer parent property expected]
+  (let [children (apple/children renderer parent)
+        own (if (= expected (property-string renderer parent property)) 1 0)]
+    (loop [index 0
+           total own]
+      (if (= index (count children))
+        total
+        (recur
+         (inc index)
+         (+ total
+            (descendant-count-with-property-string
+             renderer (nth children index) property expected)))))))
+
 (defn descendant-with-extension
   [renderer application parent identifier]
   (let [extensions
@@ -747,10 +761,20 @@
     (driver/send! application model/OpenConnectionMenu)
     (driver/send! application model/OpenSettings)
     (driver/flush! application)
-    (let [root (main-root renderer application)]
-      (is (not (= -1 (descendant-with-identifier renderer root
-                                                  "screen.settings")))
+    (let [root (main-root renderer application)
+          settings-screen (descendant-with-identifier renderer root
+                                                      "screen.settings")]
+      (is (not (= -1 settings-screen))
           "settings retain their baseline screen identifier")
+      (assert-equal
+       "background"
+       (property-string renderer settings-screen proto/BackgroundValue)
+       "settings paint the app background inside the native sheet")
+      (assert-equal
+       7
+       (descendant-count-with-property-string
+        renderer settings-screen proto/BackgroundValue "surface")
+       "settings cards use the same themed surface as main")
       (is (not (= -1 (descendant-with-identifier renderer root
                                                   "link.settings.tabs")))
           "settings expose tabs navigation")

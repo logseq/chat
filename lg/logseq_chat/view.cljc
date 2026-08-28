@@ -2449,7 +2449,8 @@
        "↓"]]])))
 
 (defui settings-tabs-screen [model-source send]
-  [:column {:accessibility-identifier "screen.settings.tabs"}
+  [:column {:accessibility-identifier "screen.settings.tabs"
+            :background "background"}
    [:row
     [:button {:on-press (fn [_event] (send model/BackSettings))} "Settings"]
     [:heading {:level 1} "Tabs"]]
@@ -2469,7 +2470,8 @@
     [settings-tab-row model-source "flashcards" "Flashcards" send]]])
 
 (defui runtime-log-screen [model-source send]
-  [:column {:accessibility-identifier "screen.runtime-log"}
+  [:column {:accessibility-identifier "screen.runtime-log"
+            :background "background"}
    [:row
     [:button {:on-press (fn [_event] (send model/DismissRuntimeLog))} "Done"]
     [:heading {:level 1} "Log"]
@@ -2507,6 +2509,7 @@
   [:column
    {:gap 18
     :padding 20
+    :background "background"
     :accessibility-identifier "screen.settings"}
    [:column {:gap 8}
     [:text
@@ -2515,7 +2518,7 @@
       :accessibility-identifier "label.settings.general"}
      "General"]
     [:column
-     {:gap 12 :padding 16 :background "secondary" :corner-radius 14}
+     {:gap 12 :padding 16 :background "surface" :corner-radius 14}
      [:row {:cross "center"}
       [:text "Theme"]
       [:spacer]
@@ -2574,7 +2577,7 @@
       :accessibility-identifier "label.settings.editor"}
      "Editor"]
     [:column
-     {:gap 12 :padding 16 :background "secondary" :corner-radius 14}
+     {:gap 12 :padding 16 :background "surface" :corner-radius 14}
      [:toggle
       {:checked (reactive settings-spell-check model-source)
        :on-toggle
@@ -2601,7 +2604,7 @@
       :accessibility-identifier "label.settings.sync-server"}
      "Sync server"]
     [:column
-     {:gap 8 :padding 16 :background "secondary" :corner-radius 14}
+     {:gap 8 :padding 16 :background "surface" :corner-radius 14}
      [:text-field
       {:text (reactive settings-base-url model-source)
        :placeholder "Server URL"
@@ -2623,7 +2626,7 @@
        :accessibility-identifier "label.settings.advanced"}
       "Advanced"]
      [:column
-      {:padding 16 :background "secondary" :corner-radius 14}
+      {:padding 16 :background "surface" :corner-radius 14}
       [:list-item
        {:accessibility-identifier "button.export-graph-database"
         :on-press (fn [_event] (send model/ExportGraphDatabase))}
@@ -2635,7 +2638,7 @@
       :accessibility-identifier "label.settings.about"}
      "About"]
     [:column
-     {:gap 12 :padding 16 :background "secondary" :corner-radius 14}
+     {:gap 12 :padding 16 :background "surface" :corner-radius 14}
      [:row
       [:text "Version"]
       [:spacer]
@@ -2657,14 +2660,14 @@
       :accessibility-identifier "label.settings.community"}
      "Community"]
     [:column
-     {:background "secondary" :corner-radius 14 :padding 16}
+     {:background "surface" :corner-radius 14 :padding 16}
      [:keyed
       {:source (reactive :community-links model-source)
        :key :id
        :compare compare
        :as link-source}
       [settings-community-link-row link-source send]]]]
-   [:column {:padding 16 :background "secondary" :corner-radius 14}
+   [:column {:padding 16 :background "surface" :corner-radius 14}
     [:list-item
      {:accessibility-identifier "button.sign-out"
       :on-press (fn [_event] (send model/SignOut))}

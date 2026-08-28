@@ -455,6 +455,13 @@ Entries stay concise so work can continue on the highest-signal path.
   App theme tokens are injected once through a generic semantic-color
   environment map, so exact `surface` and `muted-foreground` colors no longer
   require app-specific wire or Swift protocol fields.
+- 2026-08-29 00:44 CST — Dark-mode root content already matched main's
+  `#002D38`, but navigation-style LUI sheets fell back to the system black
+  presentation background and their settings cards used the generic system
+  secondary fill. LUI modal navigation surfaces now consume the existing
+  semantic `background` environment color, and the app marks settings cards as
+  semantic `surface` nodes. This keeps the fix generic, avoids new wire fields,
+  and covers the sheet safe areas as well as its scroll content.
 
 ## Decisions
 

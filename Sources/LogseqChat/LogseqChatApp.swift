@@ -75,6 +75,7 @@ public struct LogseqChatRootView : View {
         )
         .environment(\.locale, preferredLocale)
         .luiSemanticColors([
+            "background": themePalette.background,
             "surface": themePalette.surface,
             "muted-foreground": themePalette.secondaryText,
         ])
