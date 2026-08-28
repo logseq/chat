@@ -1,6 +1,12 @@
 import LUIAppleBackend
 import SwiftUI
 
+enum LGChatNavigationSurfacePolicy {
+    static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
+        contentPreference
+    }
+}
+
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
@@ -305,11 +311,25 @@ private struct LGChatNavigationContent: View {
     let composerDismissalEnabled: Bool
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var path: [Int] = []
+    @State private var usesSystemGroupedBackground = false
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder
     var body: some View {
+        #if SKIP
+        navigationLayout
+        #else
+        navigationLayout
+            .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
+                usesSystemGroupedBackground = usesSystemBackground
+                LGChatRootSurfaceState.shared.usesSystemGroupedBackground = usesSystemBackground
+            }
+        #endif
+    }
+
+    @ViewBuilder
+    private var navigationLayout: some View {
         #if SKIP
         if bottomOccupiesLayoutSpace {
             VStack(spacing: 0) {
@@ -334,6 +354,7 @@ private struct LGChatNavigationContent: View {
                     sizedBottomChrome
                 }
             }
+            .background(routeBackground.ignoresSafeArea())
         #endif
     }
 
@@ -345,7 +366,7 @@ private struct LGChatNavigationContent: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
-                .background(themePalette.background)
+                .background(routeBackground)
                 .overlay {
                     if composerDismissalEnabled {
                         #if SKIP
@@ -371,7 +392,7 @@ private struct LGChatNavigationContent: View {
                             maxHeight: .infinity,
                             alignment: .topLeading
                         )
-                        .background(themePalette.background)
+                        .background(routeBackground)
                 }
                 .toolbar {
                     if let toolbarStartIndex {
@@ -433,6 +454,11 @@ private struct LGChatNavigationContent: View {
             maxHeight: .infinity,
             alignment: .topLeading
         )
+        .background(routeBackground.ignoresSafeArea())
+        #if !SKIP && os(iOS)
+        .toolbarBackground(routeBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        #endif
         .onAppear {
             path = desiredPath
         }
@@ -459,6 +485,17 @@ private struct LGChatNavigationContent: View {
             mode: LogseqThemeMode(rawValue: appearance) ?? .system,
             systemIsDark: colorScheme == .dark
         )
+    }
+
+    private var routeBackground: Color {
+        #if !SKIP && os(iOS)
+        if LGChatNavigationSurfacePolicy.usesSystemGroupedBackground(
+            contentPreference: usesSystemGroupedBackground
+        ) {
+            return Color(uiColor: .systemGroupedBackground)
+        }
+        #endif
+        return themePalette.background
     }
 
     private var bottomChrome: AnyView {

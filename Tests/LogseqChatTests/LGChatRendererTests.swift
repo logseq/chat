@@ -7,6 +7,16 @@ import LUIAppleBackend
 @MainActor
 @Suite("LG chat renderer")
 struct LGChatRendererTests {
+    @Test("native List routes use the platform grouped page surface")
+    func nativeListRoutesUseSystemSurface() {
+        #expect(LGChatNavigationSurfacePolicy.usesSystemGroupedBackground(
+            contentPreference: true
+        ))
+        #expect(!LGChatNavigationSurfacePolicy.usesSystemGroupedBackground(
+            contentPreference: false
+        ))
+    }
+
     @Test("audio assets use the inline player when a local file is available")
     func audioAssetPreviewPolicy() {
         #expect(LGChatAssetPreviewPolicy.usesInlineAudioPlayer(

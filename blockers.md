@@ -477,6 +477,15 @@ Entries stay concise so work can continue on the highest-signal path.
   semantic `background` environment color, and the app marks settings cards as
   semantic `surface` nodes. This keeps the fix generic, avoids new wire fields,
   and covers the sheet safe areas as well as its scroll content.
+- 2026-08-29 02:13 CST — Native Graphs lists were hiding the platform scroll
+  background, while the app root always painted the Logseq theme behind the
+  status-bar and home-indicator safe areas. LUI now preserves the native
+  grouped-list background and reports that surface through a SwiftUI
+  preference. Navigation uses the preference for its route and toolbar, and a
+  small app-root surface state keeps the otherwise-transparent safe areas in
+  sync. Simulator comparison against main confirms system black for Graphs and
+  unchanged `#002D38` for Journals and Sidebar. This does not add wire fields or
+  page-specific properties.
 
 ## Decisions
 
