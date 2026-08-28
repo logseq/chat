@@ -432,10 +432,10 @@ Entries stay concise so work can continue on the highest-signal path.
   through 3.23. Running the LG suite through the repository-required OCaml 5.5
   switch selected Dune 3.24.0 and completed the RED run. Use
   `opam exec --switch 5.5.0 -- dune ...` for subsequent Dune gates.
-- 2026-08-28 23:35 CST — Updating the comparison worktree from `origin/main`
-  is blocked by a GitHub HTTPS 403 for `https://github.com/logseq/chat.git`.
-  Dark-mode parity was compared against the existing local main commit
-  `2bd514d`; restore repository credentials before treating it as remote-latest.
+- 2026-08-28 23:35 CST — Updating the comparison worktree through its HTTPS
+  `origin` returned a GitHub 403. Fetching the same upstream through the
+  existing SSH credentials resolved the comparison blocker; dark-mode parity
+  was rechecked against remote main commit `0a39d33`.
 - 2026-08-28 23:36 CST — The main comparison worktree initially lacked its
   pinned `Vendor/mldoc` submodule and a complete Apple toolchain. Initializing
   that submodule and reusing the primary worktree's generated iOS toolchain
