@@ -305,6 +305,8 @@ private struct LGChatNavigationContent: View {
     let composerDismissalEnabled: Bool
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var path: [Int] = []
+    @AppStorage("logseq.appearance") private var appearance = "system"
+    @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder
     var body: some View {
@@ -343,6 +345,7 @@ private struct LGChatNavigationContent: View {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
+                .background(themePalette.background)
                 .overlay {
                     if composerDismissalEnabled {
                         #if SKIP
@@ -363,6 +366,12 @@ private struct LGChatNavigationContent: View {
                 }
                 .navigationDestination(for: Int.self) { childID in
                     context.content(for: childID)
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .topLeading
+                        )
+                        .background(themePalette.background)
                 }
                 .toolbar {
                     if let toolbarStartIndex {
@@ -443,6 +452,13 @@ private struct LGChatNavigationContent: View {
 
     private var transformedRootContent: AnyView {
         rootTransform?(rootContent) ?? rootContent
+    }
+
+    private var themePalette: LogseqThemePalette {
+        LogseqThemePolicy.palette(
+            mode: LogseqThemeMode(rawValue: appearance) ?? .system,
+            systemIsDark: colorScheme == .dark
+        )
     }
 
     private var bottomChrome: AnyView {

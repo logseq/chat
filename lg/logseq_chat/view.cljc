@@ -3136,12 +3136,17 @@
 (defui authentication-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.authentication"
+    :grow 1.0
+    :container-relative-frame "vertical"
+    :main "center"
+    :cross "center"
     :gap 20
     :padding 32}
    [:heading {:level 1} "Logseq"]
    [:text "Sign in to connect your sync graphs."]
    [:button
     {:accessibility-identifier "button.hosted-sign-in"
+     :variant "primary"
      :disabled (reactive authentication-signing-in? model-source)
      :on-press (fn [_event] (send model/SignIn))}
     "Sign in"]

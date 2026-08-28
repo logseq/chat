@@ -432,6 +432,20 @@ Entries stay concise so work can continue on the highest-signal path.
   through 3.23. Running the LG suite through the repository-required OCaml 5.5
   switch selected Dune 3.24.0 and completed the RED run. Use
   `opam exec --switch 5.5.0 -- dune ...` for subsequent Dune gates.
+- 2026-08-28 23:35 CST — Updating the comparison worktree from `origin/main`
+  is blocked by a GitHub HTTPS 403 for `https://github.com/logseq/chat.git`.
+  Dark-mode parity was compared against the existing local main commit
+  `2bd514d`; restore repository credentials before treating it as remote-latest.
+- 2026-08-28 23:36 CST — The main comparison worktree initially lacked its
+  pinned `Vendor/mldoc` submodule and a complete Apple toolchain. Initializing
+  that submodule and reusing the primary worktree's generated iOS toolchain
+  made the simulator build reproducible without changing application code.
+- 2026-08-28 23:46 CST — The focused Swift test build is blocked by the
+  existing DEBUG-only call to `JournalScrollDiagnostics` in
+  `LGChatRichBlockExtension.swift`; that symbol is not available to the test
+  target. The production iOS simulator build succeeds. Keep this separate from
+  the dark-mode background fix and repair the diagnostics target boundary when
+  resuming journal scroll root-cause instrumentation.
 
 ## Decisions
 

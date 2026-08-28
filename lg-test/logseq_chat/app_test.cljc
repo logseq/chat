@@ -999,11 +999,30 @@
                   (model/ApplyAuthentication "signedOut" None))
     (driver/flush! application)
     (let [root (driver/root-node application)
+          screen (descendant-with-identifier
+                  renderer root "screen.authentication")
           sign-in (descendant-with-identifier
                    renderer root "button.hosted-sign-in")]
-      (is (not (= -1 (descendant-with-identifier
-                      renderer root "screen.authentication")))
+      (is (not (= -1 screen))
           "signed-out authentication renders the LG entry screen")
+      (assert-equal 1.0 (property-float renderer screen proto/GrowValue)
+                    "authentication fills the available root height")
+      (assert-equal "vertical"
+                    (property-string
+                     renderer screen proto/ContainerRelativeFrameValue)
+                    "authentication owns the full vertical container")
+      (assert-equal "center"
+                    (property-string renderer screen proto/MainAlignment)
+                    "authentication content is vertically centered")
+      (assert-equal "center"
+                    (property-string renderer screen proto/CrossAlignment)
+                    "authentication content is horizontally centered")
+      (assert-equal "<missing>"
+                    (property-string renderer screen proto/BackgroundValue)
+                    "authentication inherits the app theme background")
+      (assert-equal "primary"
+                    (property-string renderer sign-in proto/VariantValue)
+                    "authentication uses main's prominent sign-in action")
       (assert-equal (Some true)
                     (descendant-enabled
                      renderer root "button.hosted-sign-in")
