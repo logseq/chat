@@ -344,6 +344,8 @@
 (signature logseq-chat.view/global-effect-error-present? :fn<chat-model;bool>)
 (signature logseq-chat.view/graph-row
  :fn<ui-context;signal<chat-model>;signal<graph>;bool;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-list-row
+ :fn<ui-context;signal<chat-model>;signal<graph>;bool;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-create-sheet
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-delete-dialog

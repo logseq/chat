@@ -2014,6 +2014,38 @@
            :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
           "Delete local graph"]]]])))
 
+(defn graph-list-row [ui-context model-source graph-source local? send]
+  (let [graph (signal/sample graph-source)
+        graph-id (:id graph)]
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:icon (reactive (fn [current-graph]
+                         (graph-icon-name local? current-graph))
+                       graph-source)
+       :accessibility-identifier (graph-identifier graph)
+       :disabled (reactive graph-row-disabled? model-source graph-source)
+       :on-press
+       (event [current-graph graph-source]
+         (send (model/RequestOpenGraph (:id current-graph))))}
+      [:column {:gap 4 :grow 1.0}
+       [:text {:value (reactive graph-title graph-source)}]
+       [:if {:test (reactive graph-not-ready? graph-source)}
+        [:text
+         {:class "caption"
+          :foreground "muted-foreground"
+          :accessibility-identifier (graph-status-identifier graph)}
+         "Preparing"]]]
+      [:context-menu
+       [:if {:test (reactive graph-row-local? model-source graph-source)}
+        [:menu-item
+         {:icon "trash"
+          :variant "destructive"
+          :accessibility-identifier (graph-delete-identifier graph)
+          :disabled (reactive graph-delete-active? model-source graph-source)
+          :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
+         "Delete local graph"]]]])))
+
 (defui graph-create-sheet [model-source send]
   [:sheet
    {:text "Add sync graph"
@@ -2165,7 +2197,7 @@
 
 (defui graphs-screen [model-source send]
   [:list {:accessibility-identifier "screen.graphs"}
-   [:button
+   [:list-item
     {:icon "refresh-cw"
      :accessibility-identifier "button.graphs.refresh"
      :disabled (reactive model/graph-refresh-active? model-source)
@@ -2173,7 +2205,7 @@
     "Refresh"]
    [:if {:test (reactive model/graph-refresh-active? model-source)}
     [:spinner {:accessibility-identifier "graphs.loading"}]]
-   [:button
+   [:list-item
     {:accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
     "Add sync graph"]
@@ -2185,7 +2217,7 @@
      :key :id
      :compare compare
      :as graph-source}
-    [graph-row model-source graph-source true send]]
+    [graph-list-row model-source graph-source true send]]
    [:if {:test (reactive remote-graphs-present? model-source)}
     [:heading {:level 5} "Remote graphs:"]]
    [:keyed
@@ -2193,7 +2225,7 @@
      :key :id
      :compare compare
      :as graph-source}
-    [graph-row model-source graph-source false send]]
+    [graph-list-row model-source graph-source false send]]
    [:if {:test (reactive :create-graph-open model-source)}
     [graph-create-sheet model-source send]]
    [:if {:test (reactive graph-deletion-pending? model-source)}

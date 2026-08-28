@@ -5,6 +5,15 @@ Entries stay concise so work can continue on the highest-signal path.
 
 ## Active
 
+- 2026-08-29 01:27 CST — Grouping journal rows into nested viewport-sized
+  sections made the first section visually match main's rhythm, but it also
+  removed later sections from the native virtual list's scrollable extent. The
+  experiment was fully reverted before commit. The next implementation must
+  preserve the existing flat lazy item hierarchy and express section spacing as
+  metadata/layout on boundary rows; nested keyed collections are not acceptable.
+  No divider will be added because the requested product behavior intentionally
+  differs from current `main` on that point.
+
 - 2026-08-28 18:51 CST — Journal scrolling is measurably dominated by
   main-thread SwiftUI graph and layout work when rich rows enter the
   `LazyVStack`, not by renderer patches or markup decoding. During active
@@ -28,21 +37,14 @@ Entries stay concise so work can continue on the highest-signal path.
   label mismatch during compilation; that compiler failure is fixed before the
   next simulator build rather than bypassed.
 
-- 2026-08-28 16:49 CST — Simulator parity still needs paired evidence for five
-  user-identified surfaces: tag presentation, Linked References presentation,
-  graph-list presentation and interaction, button semantics/appearance,
-  sidebar scrolling while the drawer is open, and the menu presented by the
-  expanded composer's action button. Current action: replay identical
+- 2026-08-28 16:49 CST — Simulator parity still needs paired evidence for the
+  remaining user-identified surfaces: tag presentation, Linked References
+  presentation, button semantics/appearance, sidebar scrolling while the drawer
+  is open, and the menu presented by the expanded composer's action button.
+  Graph-list presentation and native swipe interaction are now verified.
+  Current action: replay identical
   states against latest `main` and the LG/LUI build on the same iOS 26 simulator,
   then turn each confirmed mismatch into a focused failing test before fixing it.
-
-- 2026-08-28 16:56 CST — The LG/LUI Graphs screen renders Refresh, Add sync
-  graph, and Delete local graph as oversized tinted capsule buttons and flattens
-  local/remote graph content into unstructured text. This diverges from main's
-  section/row hierarchy and icon-sized actions, and makes the remote graph rows'
-  interaction unclear. Current action: preserve real actions as controls while
-  expressing labels and graph content as semantic section/list rows; do not add
-  styling-only protocol properties to compensate for using the wrong element.
 
 - 2026-08-28 16:59 CST — Paired Linked References capture confirms that the
   LG/LUI node screen omits the large in-content page title, renders the section
@@ -54,6 +56,16 @@ Entries stay concise so work can continue on the highest-signal path.
   the existing wrong control types.
 
 ## Resolved
+
+- 2026-08-29 01:40 CST — The Graphs catalog now uses the same native inset
+  grouped List structure as `main`: Refresh/Add are plain system rows, graph
+  rows use local/lock/cloud icons, ready encrypted graphs omit the extra status
+  subtitle, and the local row keeps both its ellipsis menu and native trailing
+  swipe action. LUI now lets direct native List rows inherit system insets and
+  primary icon treatment instead of applying its standalone ListItem padding.
+  The paired light-mode capture aligns section geometry and row spacing; the
+  focused swipe flow exposes `Delete local graph`, 108 LG tests pass, and the
+  Apple/Android backend suite passes without changing an existing iOS E2E flow.
 
 - 2026-08-29 01:08 CST — The drawer was laid out inside the container safe area,
   so its rounded main panel could not reach the screen edges and the navigation

@@ -2072,6 +2072,22 @@
         (assert-equal (Some apple/AppleListItem)
                       (apple/node renderer remote-row)
                       "remote graphs use native list rows")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer refresh)
+                      "Refresh is a native List row rather than a styled button")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer add)
+                      "Add sync graph is a native List row rather than a styled button")
+        (assert-equal "app:graph-local"
+                      (property-string renderer local-row proto/InlineIconName)
+                      "local graph rows use main's database icon")
+        (assert-equal -1 (property-int renderer local-row proto/PaddingValue)
+                      "native graph rows do not add card padding")
+        (assert-equal -1 (property-int renderer local-row proto/CornerRadius)
+                      "native graph rows do not add a custom card radius")
+        (assert-equal "<missing>"
+                      (property-string renderer local-row proto/BackgroundValue)
+                      "native graph rows do not add a custom surface")
         (is (not (= -1 refresh)) "graphs keeps its refresh identifier")
         (is (not (= -1 local-row)) "local graphs remain addressable")
         (is (not (= -1 remote-row)) "remote graphs remain addressable")
@@ -2137,13 +2153,10 @@
                     (descendant-enabled renderer screen "button.graphs.refresh")
                     "an in-flight refresh cannot be requested twice")
       (is (not (= -1 loading)) "refresh renders native progress feedback")
-      (assert-equal "Encrypted"
-                    (property-string
-                     renderer
-                     (descendant-with-identifier
-                      renderer screen "graph.status.remote")
-                     proto/TextValue)
-                    "encrypted remote graphs keep main's visible status")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer screen "graph.status.remote")
+                    "ready encrypted graphs rely on main's lock icon without extra status text")
       (driver/dispatch-event! application (proto/Press refresh))
       (driver/flush! application)
       (assert-equal [] (:pending-effects (chat/model application))
