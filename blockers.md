@@ -497,6 +497,10 @@ Entries stay concise so work can continue on the highest-signal path.
   both horizontal bands without app-specific protocol fields. Dark simulator
   comparison now shows a continuous black Graphs surface while closed and a
   full-height teal sidebar beside a full-height rounded main panel while open.
+- 2026-08-29 02:43 CST — The verified device build installed successfully on
+  the paired iPhone as `com.logseq.chat`, but CoreDevice could not launch it
+  because the phone was locked. Unlocking the phone is sufficient to open the
+  already-installed build; no rebuild or reinstall is required.
 
 ## Decisions
 
