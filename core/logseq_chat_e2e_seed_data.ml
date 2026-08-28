@@ -378,3 +378,72 @@ let seed_fixture conn =
   reset_user_page_entities conn;
   seed conn
 ;;
+
+let performance_page_uuid index =
+  Printf.sprintf "e2f10000-0000-4000-8000-%012x" (index + 1)
+;;
+
+let performance_block_uuid page_index block_index =
+  Printf.sprintf
+    "e2f20000-0000-4000-8000-%012x"
+    (((page_index + 1) * 100) + block_index + 1)
+;;
+
+let performance_block_title page_index block_index =
+  let row = Printf.sprintf "%03d-%02d" (page_index + 1) (block_index + 1) in
+  match block_index mod 4 with
+  | 0 -> Printf.sprintf "Performance row %s with **bold text** and `inline code`" row
+  | 1 -> Printf.sprintf "> Performance quote %s with enough text to exercise wrapping" row
+  | 2 -> Printf.sprintf "$$x_%d + y_%d = z_%d$$" page_index block_index (page_index + block_index)
+  | _ -> Printf.sprintf "```swift\nlet performanceRow = \"%s\"\n```" row
+;;
+
+let seed_performance conn ~now =
+  try
+    reset_user_page_entities conn;
+    let entities =
+      List.init 100 (fun page_index ->
+        let page_temp_id = "performance-page-" ^ string_of_int page_index in
+        let page_time = now - (page_index * 86_400_000) in
+        let journal_day = Logseq_chat_model.journal_day_for_ms page_time in
+        let journal_title = Logseq_chat_graph_runtime.journal_day_title journal_day in
+        let page =
+          Entity
+            { db_id = Some (Temp_id page_temp_id)
+            ; attrs =
+                [ "block/uuid", One_value (Uuid (performance_page_uuid page_index))
+                ; "block/name", One_value (String (String.lowercase_ascii journal_title))
+                ; "block/title", One_value (String journal_title)
+                ; "block/journal-day", One_value (Int journal_day)
+                ; "block/created-at", One_value (Int page_time)
+                ; "block/updated-at", One_value (Int page_time)
+                ]
+            }
+        in
+        let blocks =
+          List.init 8 (fun block_index ->
+            Entity
+              { db_id = None
+              ; attrs =
+                  [ ( "block/uuid"
+                    , One_value
+                        (Uuid (performance_block_uuid page_index block_index)) )
+                  ; ( "block/title"
+                    , One_value
+                        (String (performance_block_title page_index block_index)) )
+                  ; "block/page", One_value (Ref_to (Temp_id page_temp_id))
+                  ; "block/parent", One_value (Ref_to (Temp_id page_temp_id))
+                  ; "block/order", One_value (String (Printf.sprintf "a%02d" block_index))
+                  ; "block/created-at", One_value (Int (page_time + block_index + 1))
+                  ; "block/updated-at", One_value (Int (page_time + block_index + 1))
+                  ]
+              })
+        in
+        page :: blocks)
+      |> List.concat
+    in
+    ignore (transact_conn conn entities);
+    Ok ()
+  with
+  | error -> Error ("Seed iOS performance graph: " ^ Printexc.to_string error)
+;;

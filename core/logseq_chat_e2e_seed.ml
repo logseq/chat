@@ -2,7 +2,7 @@ let () =
   if Array.length Sys.argv < 2 || Array.length Sys.argv > 3
   then (
     prerr_endline
-      "usage: logseq_chat_e2e_seed <graph.sqlite> [--header-navigation|--composer|--outliner|--fixture]";
+      "usage: logseq_chat_e2e_seed <graph.sqlite> [--header-navigation|--composer|--outliner|--fixture|--performance]";
     exit 2);
   let path = Sys.argv.(1) in
   let seed =
@@ -21,6 +21,11 @@ let () =
             conn
             ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
       | "--fixture" -> Logseq_chat_e2e_seed_data.seed_fixture
+      | "--performance" ->
+        (fun conn ->
+          Logseq_chat_e2e_seed_data.seed_performance
+            conn
+            ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
       | mode ->
         prerr_endline ("unknown seed mode: " ^ mode);
         exit 2

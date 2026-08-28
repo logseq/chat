@@ -489,6 +489,24 @@ private struct LGPlatformCommandResponse: Decodable {
     struct PendingSyncRequest: Decodable {}
 }
 
+private struct LGCoreSnapshotMetadata: Decodable {
+    let result: Result?
+
+    struct Result: Decodable {
+        let isPendingSyncPatch: Bool?
+        let isOutlinerPatch: Bool?
+        let hasPendingSemanticOperations: Bool?
+        let pendingSyncRequest: PendingSyncRequest?
+    }
+
+    struct PendingSyncRequest: Decodable {}
+}
+
+private struct LGCoreSyncProjection: Equatable {
+    let hasPendingSemanticOperations: Bool
+    let hasPendingSyncRequest: Bool
+}
+
 @MainActor
 public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
     private let callCore: @MainActor (LogseqChatRPCRequest) async -> String
@@ -1056,6 +1074,15 @@ public final class LGChatRuntime {
     private var lastPlatformCommandRevision = 0
 
     @ObservationIgnored
+    private var lastAuthoritativeCoreResponse: String?
+
+    @ObservationIgnored
+    private var lastCoreSyncProjection: LGCoreSyncProjection?
+
+    @ObservationIgnored
+    private var authoritativeCoreResponseInvalidated = false
+
+    @ObservationIgnored
     private var outlinerAutosaveTask: Task<Void, Never>?
 
     @ObservationIgnored
@@ -1085,6 +1112,9 @@ public final class LGChatRuntime {
 
     public func start(platformCode: Int, hostCode: Int = 1) throws {
         guard !isStarted else { return }
+        lastAuthoritativeCoreResponse = nil
+        lastCoreSyncProjection = nil
+        authoritativeCoreResponseInvalidated = false
         let initialPatch = native.initialize(platformCode: platformCode, hostCode: hostCode)
         guard !initialPatch.isEmpty else {
             throw LGChatRuntimeError.emptyInitializationPatch
@@ -1093,8 +1123,7 @@ public final class LGChatRuntime {
         isStarted = true
         while !pendingCoreResponses.isEmpty {
             let response = pendingCoreResponses.removeFirst()
-            try apply(native.applySnapshot(response))
-            deliverPlatformCommands(from: response)
+            try applyCoreResponse(response)
         }
         while !pendingHostUpdates.isEmpty {
             let update = pendingHostUpdates.removeFirst()
@@ -1122,8 +1151,58 @@ public final class LGChatRuntime {
             pendingCoreResponses.append(response)
             return
         }
+        guard shouldApplyCoreResponse(response) else {
+            deliverPlatformCommands(from: response)
+            return
+        }
         try apply(native.applySnapshot(response))
+        recordAppliedCoreResponse(response)
         deliverPlatformCommands(from: response)
+    }
+
+    private func shouldApplyCoreResponse(_ response: String) -> Bool {
+        guard let result = coreSnapshotMetadata(response)?.result else { return true }
+        if result.isPendingSyncPatch == true {
+            return syncProjection(result) != lastCoreSyncProjection
+        }
+        if result.isOutlinerPatch == true {
+            return true
+        }
+        return response != lastAuthoritativeCoreResponse
+            || authoritativeCoreResponseInvalidated
+    }
+
+    private func recordAppliedCoreResponse(_ response: String) {
+        guard let result = coreSnapshotMetadata(response)?.result else {
+            authoritativeCoreResponseInvalidated = true
+            return
+        }
+        if result.isPendingSyncPatch == true {
+            lastCoreSyncProjection = syncProjection(result)
+            authoritativeCoreResponseInvalidated = true
+        } else if result.isOutlinerPatch == true {
+            authoritativeCoreResponseInvalidated = true
+        } else {
+            lastAuthoritativeCoreResponse = response
+            lastCoreSyncProjection = syncProjection(result)
+            authoritativeCoreResponseInvalidated = false
+        }
+    }
+
+    private func coreSnapshotMetadata(_ response: String) -> LGCoreSnapshotMetadata? {
+        try? JSONDecoder().decode(
+            LGCoreSnapshotMetadata.self,
+            from: Data(response.utf8)
+        )
+    }
+
+    private func syncProjection(
+        _ result: LGCoreSnapshotMetadata.Result
+    ) -> LGCoreSyncProjection {
+        LGCoreSyncProjection(
+            hasPendingSemanticOperations: result.hasPendingSemanticOperations == true,
+            hasPendingSyncRequest: result.pendingSyncRequest != nil
+        )
     }
 
     public func applyHostUpdate(kind: String, payload: String) throws {

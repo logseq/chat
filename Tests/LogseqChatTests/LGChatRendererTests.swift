@@ -1380,6 +1380,44 @@ struct LGChatRendererTests {
         #expect(platformCommands.batches[0].commands.map(\.type) == ["setClipboardText"])
     }
 
+    @Test("skips unchanged core snapshots without hiding later sync changes")
+    func skipsUnchangedCoreSnapshots() throws {
+        let native = LGChatNativeRuntimeProbe()
+        let runtime = LGChatRuntime(native: native)
+        try runtime.start(platformCode: 2)
+        let authoritative = """
+        {"apiVersion":1,"ok":true,"result":{
+          "revision":1,"blocks":[],"hasPendingSemanticOperations":false,
+          "pendingSyncRequest":null
+        }}
+        """
+        let unchangedPendingSync = """
+        {"apiVersion":1,"ok":true,"result":{
+          "isPendingSyncPatch":true,"hasPendingSemanticOperations":false,
+          "pendingSyncRequest":null
+        }}
+        """
+        let changedPendingSync = """
+        {"apiVersion":1,"ok":true,"result":{
+          "isPendingSyncPatch":true,"hasPendingSemanticOperations":true,
+          "pendingSyncRequest":{}
+        }}
+        """
+
+        try runtime.applyCoreResponse(authoritative)
+        try runtime.applyCoreResponse(authoritative)
+        try runtime.applyCoreResponse(unchangedPendingSync)
+        try runtime.applyCoreResponse(changedPendingSync)
+        try runtime.applyCoreResponse(changedPendingSync)
+        try runtime.applyCoreResponse(authoritative)
+
+        #expect(native.appliedSnapshots == [
+            authoritative,
+            changedPendingSync,
+            authoritative,
+        ])
+    }
+
     @Test("routes core commands into platform services and presentation intents")
     func routesPlatformCommands() {
         var clipboardValues: [String] = []
@@ -1508,7 +1546,10 @@ private final class LGChatPlatformCommandHandlerProbe: LGChatPlatformCommandHand
 private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var initialPatch = """
     {"generation":1,"ops":[
-      {"op":"create-node","id":1,"kind":"root"}
+      {"op":"create-node","id":1,"kind":"root"},
+      {"op":"create-node","id":2,"kind":"text"},
+      {"op":"set-prop","id":2,"property":"text","value":"Ready"},
+      {"op":"insert-child","parent":1,"child":2,"index":0}
     ]}
     """
     var startedPlatforms: [Int] = []

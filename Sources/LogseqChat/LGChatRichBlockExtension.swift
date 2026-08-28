@@ -231,7 +231,7 @@ private struct LGChatRichBlock: View {
     }
 
     private var markupNodes: [LogseqMarkupNode] {
-        #if DEBUG
+        #if DEBUG && os(iOS)
         let startedAt = ProcessInfo.processInfo.systemUptime
         defer {
             JournalScrollDiagnostics.recordDecode(

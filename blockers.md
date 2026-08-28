@@ -512,6 +512,24 @@ Entries stay concise so work can continue on the highest-signal path.
   rich-block and drag flows pass, but a repeatable 100+ rich-row fixture and
   frame-time comparison are still missing, so the long-list performance claim
   is not yet considered verified.
+- 2026-08-29 04:01 CST — A separate `--performance` seed now creates 100
+  journals with eight mixed rich-text rows each without changing any checked-in
+  E2E flow. Time Profiler showed that idle `feedSSE` and `beginPendingSync`
+  responses repeatedly rebuilt the retained UI, while the drawer animated an
+  expensive continuously changing clip over the long list. Runtime snapshot
+  deduplication, a discrete drawer corner radius, and disabling both drawer
+  panes during motion reduced the identical transition trace from one 560 ms
+  hang to zero hangs; AttributeGraph dirty work fell from 485 ms to 140 ms.
+  A swipe beginning on the Graphs row now closes the drawer without activating
+  the row.
+- 2026-08-29 04:01 CST — Running `dune clean` also removed the generated iOS
+  OCaml host and simulator toolchains, forcing a multi-minute bootstrap before
+  the next simulator build. Avoid repository-wide Dune cleanup during UI
+  iteration; use focused targets and preserve `_build/apple-toolchains`.
+- 2026-08-29 04:01 CST — Maestro still cannot attach to the paired physical
+  iPhone even when CoreDevice and Instruments can see it. Gesture arbitration
+  is therefore automated on the iOS simulator; physical-device verification
+  remains install-and-manual until the Maestro device bridge is available.
 
 ## Decisions
 

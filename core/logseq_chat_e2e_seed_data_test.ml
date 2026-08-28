@@ -130,6 +130,21 @@ let () =
 
 let () =
   let conn = create_conn ~schema () in
+  (match Seed.seed_performance conn ~now:1_788_000_000_000 with
+   | Error message -> failwith message
+   | Ok () -> ());
+  (match Seed.seed_performance conn ~now:1_788_000_000_000 with
+   | Error message -> failwith message
+   | Ok () -> ());
+  let db = conn_db conn in
+  if Logseq_chat_graph_read.journal_page_count db <> 100
+  then failwith "the performance fixture must keep one hundred journals";
+  if List.length (Logseq_chat_graph_read.blocks db) <> 56
+  then failwith "the performance fixture must expose eight rows for seven journals"
+;;
+
+let () =
+  let conn = create_conn ~schema () in
   (match Seed.seed_header_navigation conn with
    | Error message -> failwith message
    | Ok () -> ());
