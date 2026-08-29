@@ -152,6 +152,7 @@
           (last-core-response None)
           (attachment-picker-open false)
           (task-status-picker-open false)
+          (app-navigation-previews [])
           (app-navigation-path [])
           (search-navigation-path [])))
 
@@ -175,6 +176,9 @@
     path
     (subvec path 0 (dec (count path)))))
 
+(defn remove-node-projection [routes uuid]
+  (filterv (fn [route] (not (= (:uuid route) uuid))) routes))
+
 (defn back-app-navigation [current requested]
   (loop [remaining (min (max requested 0)
                         (count (:app-navigation-path current)))
@@ -185,7 +189,10 @@
             uuid (navigation-route-uuid (nth path (dec (count path))))
             popped
             (assoc (cancel-outliner-editing updated)
-                   :app-navigation-path (pop-route path))
+                   :app-navigation-path (pop-route path)
+                   :app-navigation-previews
+                   (remove-node-projection
+                    (:app-navigation-previews updated) uuid))
             id (:next-effect-id popped)]
         (recur (dec remaining)
                (enqueue-effect popped (CloseAppNodeEffect id uuid)))))))
@@ -410,6 +417,109 @@
                next-start-index
                next-result)))))
 
+(defn node-route-by-uuid [routes uuid]
+  (loop [index 0]
+    (if (= index (count routes))
+      None
+      (let [route (nth routes index)]
+        (if (= (:uuid route) uuid)
+          (Some route)
+          (recur (inc index)))))))
+
+(defn journal-preview-route [current uuid]
+  (let [rows (:journal-outliner-rows current)
+        markers (journal-section-markers rows)]
+    (loop [index 0]
+      (if (= index (count markers))
+        None
+        (let [section (nth markers index)]
+          (if (= (:page-id section) uuid)
+            (Some
+             (record node-projection
+               (uuid uuid)
+               (page-uuid uuid)
+               (title (:title section))
+               (is-tag false)
+               (is-property false)
+               (outliner-rows
+                (subvec rows (:start-index section) (:end-index section)))
+               (related-rows [])
+               (linked-reference-rows [])
+               (outliner-editing None)
+               (outliner-autocomplete None)
+               (outliner-autocomplete-candidates [])
+               (outliner-selected-block-ids [])))
+            (recur (inc index))))))))
+
+(defn publish-navigation-preview [current uuid]
+  (match (node-route-by-uuid (:node-routes current) uuid)
+    (Some _route) current
+    None
+    (match (node-route-by-uuid (:app-navigation-previews current) uuid)
+      (Some _preview) current
+      None
+      (match (journal-preview-route current uuid)
+        (Some preview)
+        (assoc current :app-navigation-previews
+               (conj (:app-navigation-previews current) preview))
+        None current))))
+
+(defn app-node-routes-from [current path index]
+  (if (= index (count path))
+    []
+    (let [uuid (navigation-route-uuid (nth path index))
+          route
+          (match (node-route-by-uuid (:node-routes current) uuid)
+            (Some resolved) (Some resolved)
+            None
+            (node-route-by-uuid (:app-navigation-previews current) uuid))]
+      (match route
+        (Some resolved)
+        (into [resolved] (app-node-routes-from current path (inc index)))
+        None []))))
+
+(defn app-node-routes [current]
+  (app-node-routes-from current (:app-navigation-path current) 0))
+
+(defn sidebar-page-in [pages uuid]
+  (loop [index 0]
+    (if (= index (count pages))
+      None
+      (let [page (nth pages index)]
+        (if (= (:uuid page) uuid)
+          (Some page)
+          (recur (inc index)))))))
+
+(defn sidebar-page-by-uuid [current uuid]
+  (match (sidebar-page-in (:favorites current) uuid)
+    (Some page) (Some page)
+    None (sidebar-page-in (:recent-pages current) uuid)))
+
+(defn journal-rows-for-page [current uuid]
+  (let [rows (:journal-outliner-rows current)
+        markers (journal-section-markers rows)]
+    (loop [index 0]
+      (if (= index (count markers))
+        []
+        (let [marker (nth markers index)]
+          (if (= (:page-id marker) uuid)
+            (subvec rows (:start-index marker) (:end-index marker))
+            (recur (inc index))))))))
+
+(defn preview-sidebar-page [current uuid]
+  (match (sidebar-page-by-uuid current uuid)
+    (Some page)
+    (let [rows (journal-rows-for-page current uuid)]
+      (assoc current
+             :selected-page (Some page)
+             :selected-page-is-tag false
+             :selected-page-is-property false
+             :related-rows []
+             :linked-reference-rows []
+             :outliner-rows rows
+             :outliner-section-markers (journal-section-markers rows)))
+    None current))
+
 (defn graph-by-id [graphs target]
   (loop [index 0]
     (if (= index (count graphs))
@@ -627,9 +737,12 @@
 (defn rollback-navigation-effect [current effect]
   (match effect
     (OpenAppNodeEffect _id uuid)
-    (assoc current :app-navigation-path
+    (assoc current
+           :app-navigation-path
            (resolve-route (:app-navigation-path current)
-                          (NodeRoute uuid) false))
+                          (NodeRoute uuid) false)
+           :app-navigation-previews
+           (remove-node-projection (:app-navigation-previews current) uuid))
     (OpenSearchNodeEffect _id uuid)
     (assoc current :search-navigation-path
            (resolve-route (:search-navigation-path current)
@@ -908,7 +1021,11 @@
                 (apply-row-splices (:outliner-rows current)
                                    (:outliner-row-splices projection)))
               journal-rows
-              (if (empty? (:node-routes current))
+              (if (and
+                   (empty? (:node-routes current))
+                   (match (:selected-page current)
+                     None true
+                     (Some _page) false))
                 projected-rows
                 (:journal-outliner-rows current))]
           (assoc current
@@ -929,9 +1046,19 @@
                  :outliner-rows projected-rows))
         (let [projected-rows (:outliner-rows projection)
           journal-rows
-          (if (empty? (:node-routes projection))
+          (if (and
+               (empty? (:node-routes projection))
+               (match (:selected-page (:sidebar projection))
+                 None true
+                 (Some _page) false))
             projected-rows
-            (:journal-outliner-rows projection))
+            (if (and
+                 (empty? (:journal-outliner-rows current))
+                 (match (:selected-page (:sidebar projection))
+                   None true
+                   (Some _page) false))
+              (:journal-outliner-rows projection)
+              (:journal-outliner-rows current)))
           card-changed
           (not (= (first-flashcard-id (:flashcards current))
                   (first-flashcard-id (:flashcards projection))))
@@ -1226,17 +1353,25 @@
       (if (= path requested)
         current
         (let [updated
-              (assoc (cancel-outliner-editing current)
+              (assoc (publish-navigation-preview
+                      (cancel-outliner-editing current) uuid)
                      :app-navigation-path requested)
               id (:next-effect-id updated)]
           (enqueue-effect updated (OpenAppNodeEffect id uuid)))))
 
     (ResolveAppNode uuid resolved)
-    (assoc current
-           :app-navigation-path
-           (resolve-route (:app-navigation-path current)
-                          (NodeRoute uuid)
-                          resolved))
+    (let [updated
+          (assoc current
+                 :app-navigation-path
+                 (resolve-route (:app-navigation-path current)
+                                (NodeRoute uuid)
+                                resolved))]
+      (if resolved
+        updated
+        (assoc updated
+               :app-navigation-previews
+               (remove-node-projection
+                (:app-navigation-previews updated) uuid))))
 
     (BackAppNavigation count)
     (back-app-navigation current count)
@@ -1302,10 +1437,13 @@
       None current)
 
     (SelectSidebarPage uuid)
-    (let [updated (assoc (cancel-outliner-editing (return-to-app-root current))
-                         :sidebar-open false
-                         :graph-menu-open false
-                         :destination JournalsDestination)
+    (let [updated
+          (preview-sidebar-page
+           (assoc (cancel-outliner-editing (return-to-app-root current))
+                  :sidebar-open false
+                  :graph-menu-open false
+                  :destination JournalsDestination)
+           uuid)
           id (:next-effect-id updated)]
       (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
 

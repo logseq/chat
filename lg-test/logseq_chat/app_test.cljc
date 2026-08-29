@@ -795,7 +795,11 @@
         (assert-equal
          "Journals · Flashcards · Graphs"
          (property-string renderer tabs-selection proto/TextValue)
-         "tabs show the same selected-items summary as main"))
+         "tabs show the same selected-items summary as main")
+        (assert-equal
+         "single-line"
+         (property-string renderer tabs-selection proto/StyleClass)
+         "tabs keep the selected-items summary on one line like main"))
       (is (not (= -1 (descendant-with-identifier
                       renderer root "toolbar.settings.actions")))
           "settings use the native navigation-form toolbar contract")
@@ -1588,6 +1592,9 @@
 (deftest sidebar-state-and-page-selection-are-owned-by-lg
   (let [favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
         recent (record model/sidebar-page (uuid "page-b") (title "Recent"))
+        journal-row
+        (journal-outline-row
+         "page-a-root" "page-a" "Loaded journal content" "Favorite" 20260829 0)
         opened (model/update (model/initial) model/OpenSidebar)
         projected
         (model/update
@@ -1602,14 +1609,41 @@
             (selected-page-is-property false)
             (related-rows [])
             (linked-reference-rows []))
-          [] false "" [] [] None None [] [] [] false []))
+          [] false "" [] [] None None [] [] [journal-row] false []))
         selected (model/update projected (model/SelectSidebarPage "page-a"))
+        selected-row
+        (journal-outline-row
+         "selected-page-row" "page-a" "Authoritative content" "Favorite" 20260829 0)
+        selected-sidebar
+        (record model/sidebar-projection
+          (favorites [favorite])
+          (recent-pages [recent])
+          (selected-page (Some favorite))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))
+        reconciled
+        (model/update
+         selected
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "test-graph")
+                 :sidebar selected-sidebar
+                 :journal-outliner-rows [selected-row]
+                 :outliner-rows [selected-row])))
         journals (model/update selected model/ShowJournals)]
     (is (:sidebar-open opened) "sidebar presentation is LG-owned")
     (assert-equal [favorite] (:favorites projected)
                   "favorites come from the core projection")
     (assert-equal [recent] (:recent-pages projected)
                   "recent pages come from the core projection")
+    (assert-equal (Some favorite) (:selected-page selected)
+                  "loaded sidebar pages expose their title immediately")
+    (assert-equal [journal-row] (:outliner-rows selected)
+                  "loaded journals expose their retained rows immediately")
+    (assert-equal [journal-row] (:journal-outliner-rows reconciled)
+                  "selected page snapshots preserve the loaded journal cache")
     (is (not (:sidebar-open selected))
         "selecting a page dismisses the sidebar")
     (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
@@ -3354,6 +3388,28 @@
       (assert-equal [] (:app-navigation-path (chat/model application))
                     "a native multi-pop is safely clamped to the LG path"))))
 
+(deftest journal-navigation-exposes-an-immediate-preview-route
+  (let [row
+        (journal-outline-row "journal-block" "journal-page" "Journal row"
+                             "Aug 27th, 2026" 20260827 0)
+        current
+        (assoc (model/initial)
+               :journal-outliner-rows [row]
+               :outliner-section-markers (model/journal-section-markers [row]))
+        requested (model/update current (model/RequestAppNode "journal-page"))
+        routes (model/app-node-routes requested)
+        returned (model/update requested (model/BackAppNavigation 1))]
+    (assert-equal 1 (count routes)
+                  "the model publishes a route before core resolution")
+    (assert-equal "journal-page" (:uuid (first routes))
+                  "the preview route keeps the requested page identity")
+    (assert-equal "Aug 27th, 2026" (:title (first routes))
+                  "the preview route uses the visible journal title")
+    (assert-equal [row] (:outliner-rows (first routes))
+                  "the preview route reuses the already projected journal rows")
+    (assert-equal [] (:app-navigation-previews returned)
+                  "leaving the route releases its optimistic preview")))
+
 (deftest app-and-search-routes-are-retained-by-distinct-native-stacks
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -4617,21 +4673,59 @@
 
 (deftest journal-list-remains-retained-across-sidebar-destinations
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend renderer))
+        first-page (record model/sidebar-page (uuid "page-a") (title "First"))
+        second-page (record model/sidebar-page (uuid "page-b") (title "Second"))
+        sidebar
+        (record model/sidebar-projection
+          (favorites [first-page])
+          (recent-pages [second-page])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))
+        rows
+        [(journal-outline-row "row-a" "page-a" "A" "First" 20260829 0)
+         (journal-outline-row "row-b" "page-b" "B" "Second" 20260828 0)]]
     (driver/start! application)
     (driver/send!
      application
-     (apply-core-snapshot (Some "Work") (empty-sidebar-projection) []
-                          false "" [] [] None None [] [] [] false []))
+     (apply-core-snapshot (Some "Work") sidebar []
+                          false "" [] [] None None [] [] rows false []))
     (driver/flush! application)
-    (let [initial-list
+    (let [journal-pane
           (descendant-with-identifier
-           renderer (driver/root-node application) "list.outliner")]
+           renderer (driver/root-node application) "pane.journals")
+          initial-list
+          (descendant-with-identifier
+           renderer journal-pane "list.outliner")]
       (is (not (= -1 initial-list)) "journals render the retained virtual list")
       (driver/send! application model/ShowGraphs)
       (driver/flush! application)
       (assert-equal
        initial-list
        (descendant-with-identifier
-        renderer (driver/root-node application) "list.outliner")
-       "switching destinations keeps the expensive journal tree mounted"))))
+        renderer journal-pane "list.outliner")
+       "switching destinations keeps the expensive journal tree mounted")
+      (driver/send! application (model/SelectSidebarPage "page-a"))
+      (driver/flush! application)
+      (let [first-selected-pane
+            (descendant-with-identifier
+             renderer (driver/root-node application) "pane.selected-page")
+            first-selected-list
+            (descendant-with-identifier renderer first-selected-pane "list.outliner")]
+        (assert-equal
+         initial-list
+         (descendant-with-identifier renderer journal-pane "list.outliner")
+         "selecting a page does not rebuild the long journal list")
+        (driver/send! application model/OpenSidebar)
+        (driver/send! application (model/SelectSidebarPage "page-b"))
+        (driver/flush! application)
+        (let [second-selected-pane
+              (descendant-with-identifier
+               renderer (driver/root-node application) "pane.selected-page")
+              second-selected-list
+              (descendant-with-identifier renderer second-selected-pane "list.outliner")]
+          (is (not (= first-selected-list second-selected-list))
+              "switching pages creates a fresh top-aligned scroll surface"))))))

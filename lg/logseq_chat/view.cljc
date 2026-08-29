@@ -794,6 +794,20 @@
 (defn journal-root-visible? [current]
   (and (journal-route-active? current) (not (:search-open current))))
 
+(defn journal-home-visible? [current]
+  (and (journal-root-visible? current) (selected-page-absent? current)))
+
+(defn selected-page-visible? [current]
+  (and (journal-root-visible? current) (selected-page-present? current)))
+
+(defn selected-page-models [current]
+  (if (selected-page-visible? current) [current] []))
+
+(defn selected-page-model-key [current]
+  (match (:selected-page current)
+    (Some page) (:uuid page)
+    None ""))
+
 (defn journal-tree-retained? [current]
   (and (graph-selected? current)
        (or (not (:graph-loading current))
@@ -2820,6 +2834,7 @@
        [:spacer]
        [:text
         {:value (reactive settings-tabs-summary model-source)
+         :class "single-line"
          :foreground "secondary"
          :accessibility-identifier "text.settings.tabs.selection"}]]]]]
    [:column {:gap 8}
@@ -3242,10 +3257,23 @@
 (defui chat-main-view [model-source send]
   [:stack {:grow 1.0}
    [:if {:test (reactive journal-tree-retained? model-source)}
-    [root-outliner-view
-     (reactive journal-navigation-model model-source)
-     (reactive journal-root-visible? model-source)
-     send]]
+    ;; Keep the journal home mounted while the drawer replaces the detail pane.
+    [:stack {:grow 1.0}
+     [:keyed
+      {:source (reactive selected-page-models model-source)
+       :key selected-page-model-key
+       :compare compare
+       :as selected-model-source}
+      [:box {:grow 1.0 :accessibility-identifier "pane.selected-page"}
+       [root-outliner-view
+        selected-model-source
+        (reactive selected-page-visible? selected-model-source)
+        send]]]
+     [:box {:grow 1.0 :accessibility-identifier "pane.journals"}
+      [root-outliner-view
+       (reactive journal-navigation-model model-source)
+       (reactive journal-home-visible? model-source)
+       send]]]]
    [:if {:test (reactive flashcards-destination? model-source)}
     [flashcard-screen model-source send]]
    [:if {:test (reactive graphs-destination? model-source)}
@@ -3330,6 +3358,11 @@
         root
         (assoc current
                :destination model/JournalsDestination
+               :selected-page None
+               :selected-page-is-tag false
+               :selected-page-is-property false
+               :related-rows []
+               :linked-reference-rows []
                :node-routes []
                :app-navigation-path []
                :search-open false
@@ -3360,16 +3393,6 @@
 
 (defn search-navigation-depth [current]
   (navigation-path-depth (:search-navigation-path current)))
-
-(defn app-node-routes [current]
-  (let [limit (min (app-navigation-depth current)
-                   (count (:node-routes current)))]
-    (loop [index 0
-           routes []]
-      (if (= index limit)
-        routes
-        (recur (inc index)
-               (conj routes (nth (:node-routes current) index)))))))
 
 (defn search-node-routes [current]
   (let [routes (:node-routes current)
@@ -3460,7 +3483,7 @@
     (elements/element
      ui-context node
      [:keyed
-      {:source (reactive app-node-routes model-source)
+      {:source (reactive model/app-node-routes model-source)
        :key :uuid
        :compare compare
        :as route-source}

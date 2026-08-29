@@ -406,59 +406,78 @@ private struct LGChatNavigationContent: View {
                         }
                 }
                 .toolbar {
-                    if depth == 0, let toolbarStartIndex {
+                    if let toolbarStartIndex {
                         #if SKIP
                         ToolbarItemGroup(placement: .navigation) {
-                            context.content(for: context.childIDs[toolbarStartIndex])
-                            context.content(for: context.childIDs[toolbarStartIndex + 1])
+                            if rootToolbarVisible {
+                                context.content(for: context.childIDs[toolbarStartIndex])
+                                context.content(for: context.childIDs[toolbarStartIndex + 1])
+                            }
                         }
                         #else
                         if #available(iOS 26.0, macOS 26.0, *) {
                             ToolbarItem(placement: .navigation) {
-                                context.content(for: context.childIDs[toolbarStartIndex])
-                                    .modifier(LGChatLiquidGlassSurface(shape: .circle))
+                                if rootToolbarVisible {
+                                    context.content(for: context.childIDs[toolbarStartIndex])
+                                        .modifier(LGChatLiquidGlassSurface(shape: .circle))
+                                }
                             }
                             .sharedBackgroundVisibility(.hidden)
                             ToolbarItem(placement: .navigation) {
-                                context.content(for: context.childIDs[toolbarStartIndex + 1])
-                                    .fixedSize(horizontal: true, vertical: false)
+                                if rootToolbarVisible {
+                                    context.content(for: context.childIDs[toolbarStartIndex + 1])
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
                             }
                             .sharedBackgroundVisibility(.hidden)
                         } else {
                             ToolbarItem(placement: .navigation) {
-                                context.content(for: context.childIDs[toolbarStartIndex])
+                                if rootToolbarVisible {
+                                    context.content(for: context.childIDs[toolbarStartIndex])
+                                }
                             }
                             ToolbarItem(placement: .navigation) {
-                                context.content(for: context.childIDs[toolbarStartIndex + 1])
-                                    .fixedSize(horizontal: true, vertical: false)
+                                if rootToolbarVisible {
+                                    context.content(for: context.childIDs[toolbarStartIndex + 1])
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
                             }
                         }
                         #endif
                         #if SKIP
                         ToolbarItemGroup(placement: .primaryAction) {
-                            context.content(for: context.childIDs[toolbarStartIndex + 2])
-                            context.content(for: context.childIDs[toolbarStartIndex + 3])
+                            if rootToolbarVisible {
+                                context.content(for: context.childIDs[toolbarStartIndex + 2])
+                                context.content(for: context.childIDs[toolbarStartIndex + 3])
+                            }
                         }
                         #else
                         if #available(iOS 26.0, macOS 26.0, *) {
                             ToolbarItem(placement: .primaryAction) {
-                                HStack(spacing: 0) {
-                                    context.content(for: context.childIDs[toolbarStartIndex + 2])
-                                    context.content(for: context.childIDs[toolbarStartIndex + 3])
+                                if rootToolbarVisible {
+                                    HStack(spacing: 0) {
+                                        context.content(for: context.childIDs[toolbarStartIndex + 2])
+                                        context.content(for: context.childIDs[toolbarStartIndex + 3])
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .modifier(LGChatLiquidGlassSurface(shape: .capsule))
                                 }
-                                .padding(.horizontal, 12)
-                                .modifier(LGChatLiquidGlassSurface(shape: .capsule))
                             }
                             .sharedBackgroundVisibility(.hidden)
                         } else {
                             ToolbarItemGroup(placement: .primaryAction) {
-                                context.content(for: context.childIDs[toolbarStartIndex + 2])
-                                context.content(for: context.childIDs[toolbarStartIndex + 3])
+                                if rootToolbarVisible {
+                                    context.content(for: context.childIDs[toolbarStartIndex + 2])
+                                    context.content(for: context.childIDs[toolbarStartIndex + 3])
+                                }
                             }
                         }
                         #endif
                     }
                 }
+                #if !SKIP && os(iOS)
+                .toolbar(.visible, for: .navigationBar)
+                #endif
         }
         .frame(
             maxWidth: .infinity,
@@ -467,6 +486,7 @@ private struct LGChatNavigationContent: View {
         )
         .background(routeBackground.ignoresSafeArea())
         #if !SKIP && os(iOS)
+        .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(routeBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         #endif
@@ -582,6 +602,10 @@ private struct LGChatNavigationContent: View {
         return result
     }
 
+    private var rootToolbarVisible: Bool {
+        path.isEmpty
+    }
+
     private var pathBinding: Binding<[Int]> {
         Binding(
             get: { path },
@@ -589,7 +613,10 @@ private struct LGChatNavigationContent: View {
                 let removedCount = max(0, path.count - newPath.count)
                 path = newPath
                 if removedCount > 0 {
-                    emitBack(count: removedCount)
+                    Task { @MainActor in
+                        await Task.yield()
+                        emitBack(count: removedCount)
+                    }
                 }
             }
         )

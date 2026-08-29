@@ -606,8 +606,19 @@ Entries stay concise so work can continue on the highest-signal path.
   animation completion callback to own the interaction lock: `logicallyComplete`
   releases before visible spring settling, while `removed` can be cancelled when
   a sidebar selection rebuilds the destination and leave interaction locked
-  forever. Both Apple and Skip now use one generation-guarded 500 ms transition
-  lifecycle, which covers the spring settling window and always releases.
+  forever. Both Apple and Skip use one generation-guarded transition lifecycle,
+  which covers the spring settling window and always releases.
+- 2026-08-29 14:48 CST — A 500 ms drawer lock visibly outlived main's 0.28 s
+  spring and made consecutive sidebar interaction feel delayed. Main's Skip
+  fallback is 350 ms, so the shared generation-guarded lock now uses the same
+  350 ms lifecycle while retaining the uninterrupted gesture-to-animation
+  interaction shield.
+- 2026-08-29 14:35 CST — Deriving the drawer interaction lock only from its
+  nonzero visual drag offset left a boundary case: an already-recognized
+  horizontal gesture can be clamped to zero while its underlying row remains
+  interactive. The drawer now retains an explicit horizontal-gesture phase
+  from recognition through the handoff to the transition lock, so the full
+  toggle lifecycle has one uninterrupted interaction shield.
 - 2026-08-29 10:07 CST — The repository-wide `swift test` target is not a
   reliable integration gate in its current form. Native suites run concurrently
   against shared UserDefaults/core fixtures and produced ordering-dependent
@@ -641,6 +652,38 @@ Entries stay concise so work can continue on the highest-signal path.
   cross-worktree main/current A/B after a manually installed main bundle. For
   comparison captures, install the intended bundle explicitly and invoke
   Maestro directly; keep the wrapper for same-worktree runs.
+- 2026-08-29 16:20 CST — A journal node request previously updated only the
+  navigation path, forcing `view.cljc` to reconstruct a temporary route by
+  searching cached journal rows. The incomplete reducer state was the root
+  cause of the growing view condition tree. Optimistic app-navigation previews
+  now live beside authoritative core routes in the model, survive unrelated
+  snapshots, and are released on back or failure; the view only projects the
+  model's resolved route sequence into the native NavigationStack.
+- 2026-08-29 16:20 CST — A selected-page core snapshot aliases its short
+  `outliner-rows` into `journal-outliner-rows`. Accepting that alias discarded
+  the long journal cache and generated a roughly 410 KB / 10,528-operation UI
+  patch on navigation. Preserve the root cache outside the journal-home
+  projection and retain the journal/detail scroll surfaces separately; the
+  measured optimistic detail patch is about 38 KB / 487 operations and begins
+  the drawer transition roughly 132 ms after the press.
+- 2026-08-29 16:20 CST — The core heartbeat still serializes and returns a full
+  long-journal snapshot on the shared executor (about 654 KB and 0.9–1.0 s for
+  512 rows). Native navigation no longer waits for it, but incremental snapshot
+  delivery or executor isolation remains necessary to remove the underlying
+  background CPU and latency cost.
+- 2026-08-29 16:34 CST — The aggregate native Swift test command again produced
+  ordering-dependent failures in autosave, shared recorder, UserDefaults, and
+  extension-registry tests when suites ran concurrently. The exact navigation
+  registration test passes in isolation, as do all 110 LG tests and the focused
+  LUI drawer tests. Do not weaken those tests; serialize shared-state suites or
+  isolate their fixtures before using the aggregate run as a gate.
+- 2026-08-29 16:52 CST — Interactive native pop updates NavigationStack's local
+  path before the deferred LG back patch updates model depth. Conditionally
+  removing root ToolbarItems during that window caused SwiftUI to hide the
+  navigation bar and lose toolbar ownership after returning. Keep the root
+  ToolbarItem structure stable, switch its content from the local path, and
+  declare navigation-bar visibility on the root destination itself. The same
+  push/interactive-pop simulator flow now restores the complete root toolbar.
 
 ## Decisions
 
