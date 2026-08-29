@@ -1851,7 +1851,9 @@
           content
           (descendant-with-identifier renderer outliner "outliner.block.content")
           page-title
-          (descendant-with-identifier renderer outliner "title.selected-page")]
+          (descendant-with-identifier renderer outliner "title.selected-page")
+          page-title-layout
+          (descendant-with-identifier renderer outliner "layout.selected-page.title")]
       (assert-equal "Project" (property-string renderer title proto/TextValue)
                     "selected pages own the main header title")
       (is (not (= related -1))
@@ -1860,6 +1862,12 @@
           "selected pages render their own projected outliner rows")
       (is (not (= page-title -1))
           "selected non-tag pages repeat their title in the content surface")
+      (assert-equal 3
+                    (property-int renderer page-title proto/HeadingLevel)
+                    "selected page titles use main's title2 typography")
+      (assert-equal 8
+                    (property-int renderer page-title-layout proto/PaddingHorizontal)
+                    "selected page titles add main's inner horizontal inset")
       (is (= add-first -1)
           "non-empty selected pages hide the add-first-block action"))))
 
@@ -3107,30 +3115,32 @@
 (deftest active-node-route-renders-a-core-backed-navigation-screen
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
-        route
-        (node-projection
-         "node-a" "page-a" "Project"
-         [(record model/outline-row
-            (uuid "reference")
-            (title "Linked from journal")
-            (markup-json "[]")
-            (youtube-target-url None)
-            (breadcrumb "Journal")
-            (breadcrumbs
-             [(record model/sidebar-page
-                (uuid "journal") (title "Journal"))])
-            (opens-as-page false)
-            (depth 0)
-            (has-children false)
-            (is-collapsed false)
-            (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
-         [])
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
               (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 1)
               (has-children false) (is-collapsed false)
-              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        route
+        (assoc
+         (node-projection
+          "node-a" "page-a" "Project"
+          [(record model/outline-row
+             (uuid "reference")
+             (title "Linked from journal")
+             (markup-json "[]")
+             (youtube-target-url None)
+             (breadcrumb "Journal")
+             (breadcrumbs
+              [(record model/sidebar-page
+                 (uuid "journal") (title "Journal"))])
+             (opens-as-page false)
+             (depth 0)
+             (has-children false)
+             (is-collapsed false)
+             (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+          [])
+         :outliner-rows [row])]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "node-a"))
     (driver/send!
@@ -3141,8 +3151,11 @@
     (let [navigation (extension-node application "native-navigation-stack")
           screen (descendant-with-identifier renderer navigation "screen.node")
           title (descendant-with-identifier renderer screen "title.node")
+          title-layout
+          (descendant-with-identifier renderer screen "layout.node.title")
           outliner (descendant-with-identifier renderer screen "scroll.outliner")
           content (nth (apple/children renderer outliner) 0)
+          top-inset (nth (apple/children renderer content) 0)
           related
           (descendant-with-identifier
            renderer outliner "section.node.linked-references")
@@ -3156,6 +3169,18 @@
       (assert-equal 8
                     (property-int renderer content proto/PaddingHorizontal)
                     "node content uses the same outer inset as main")
+      (assert-equal 0
+                    (property-int renderer content proto/Gap)
+                    "node content uses explicit main spacing instead of a global gap")
+      (assert-equal 16
+                    (property-int renderer top-inset proto/HeightValue)
+                    "node content starts at main's native-navigation inset")
+      (assert-equal 3
+                    (property-int renderer title proto/HeadingLevel)
+                    "node section titles use main's title2 typography")
+      (assert-equal 8
+                    (property-int renderer title-layout proto/PaddingHorizontal)
+                    "node section titles add main's inner horizontal inset")
       (is (not (= related -1))
           "node routes render their linked references section")
       (is (not (= breadcrumb -1))
@@ -3509,6 +3534,9 @@
     (let [root (main-root renderer application)
           outliner
           (descendant-with-identifier renderer root "list.outliner")
+          horizontal-inset
+          (descendant-with-identifier
+           renderer root "layout.outliner.horizontal-inset")
           first-heading
           (descendant-with-identifier renderer root "button.journal.page-a")
           second-heading
@@ -3533,8 +3561,12 @@
             -1
             (nth heading-surface-children 1))]
       (assert-equal 8
-                    (property-int renderer outliner proto/PaddingValue)
+                    (property-int renderer horizontal-inset
+                                  proto/PaddingHorizontal)
                     "journal content keeps main's outer horizontal inset")
+      (assert-equal -1
+                    (property-int renderer outliner proto/PaddingValue)
+                    "the native virtual list does not add vertical padding")
       (is (not (= first-heading -1))
           "the first journal heading is visible and navigable")
       (is (not (= second-heading -1))
@@ -3884,12 +3916,21 @@
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
     (let [root (driver/root-node application)
-          list-node (descendant-with-identifier renderer root "list.outliner")]
+          list-node (descendant-with-identifier renderer root "list.outliner")
+          horizontal-inset
+          (descendant-with-identifier
+           renderer root "layout.outliner.horizontal-inset")]
       (assert-equal (Some apple/AppleVirtualList)
                     (apple/node renderer list-node)
                     "journal blocks use one native lazy scrolling collection")
       (assert-equal 1.0 (property-float renderer list-node proto/GrowValue)
                     "the journal collection owns the remaining viewport")
+      (assert-equal 8
+                    (property-int renderer horizontal-inset proto/PaddingHorizontal)
+                    "the journal collection keeps main's horizontal inset")
+      (assert-equal -1
+                    (property-int renderer list-node proto/PaddingVertical)
+                    "the journal collection does not add a vertical inset")
       (assert-equal 16
                     (property-int renderer (nth (apple/children renderer list-node) 0)
                                   proto/HeightValue)
@@ -4157,7 +4198,12 @@
       (let [status-button (descendant-with-identifier
                            renderer rendered-row "button.block-task-status")
             tag-button (descendant-with-identifier
-                        renderer rendered-row "button.block-tag.tag-a")]
+                        renderer rendered-row "button.block-tag.tag-a")
+            row-column (nth (apple/children renderer rendered-row) 0)
+            content-row (nth (apple/children renderer row-column) 0)]
+        (assert-equal 0
+                      (property-int renderer content-row proto/Gap)
+                      "depth zero does not add spacing before main's bullet")
         (is (not (= -1 status-button))
             "task blocks expose their status control")
         (is (not (= -1 tag-button)) "trailing tags remain interactive")
@@ -4180,7 +4226,13 @@
         (driver/flush! application)
         (assert-equal [(model/NodeRoute "tag-a")]
                       (:app-navigation-path (chat/model application))
-                      "tag presses use LG-owned node navigation"))
+                      "tag presses use LG-owned node navigation")
+        (is (not (= -1 (descendant-with-identifier
+                         renderer content-row "button.block-tag.tag-a")))
+            "trailing tags share the block content row so their leading edge aligns")
+        (is (not (= -1 (descendant-with-identifier
+                         renderer content-row "outliner.sync-failed.block-a")))
+            "sync failures share the block content row so their leading edge aligns"))
       (is (not (= -1 (descendant-with-identifier
                        renderer rendered-row "outliner.sync-failed.block-a")))
           "failed block sync remains visible"))))
@@ -4397,7 +4449,9 @@
           content-children (apple/children renderer content)
           indent (nth content-children 0)
           zoom (nth content-children 1)
-          collapse (nth content-children 3)]
+          collapse
+          (descendant-with-identifier renderer content
+                                      "button.outliner.collapse.parent")]
       (assert-equal 44 (property-int renderer indent proto/WidthValue)
                     "depth uses main's 22-point indentation")
       (assert-equal "button.outliner.zoom.parent"

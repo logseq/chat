@@ -109,7 +109,7 @@ let () =
      | Error message -> failwith message);
     let asset =
       decode_response
-        {|{"apiVersion":1,"ok":true,"result":{"outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"asset-a","title":"Photo.jpg","isAsset":true,"assetType":"image/jpeg","localPath":"Assets/Photo.jpg","syncStatus":"failed","tags":[{"uuid":"tag-a","title":"Project"}],"status":{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo","icon":{"type":"tabler-icon","id":"Todo"}}},"depth":0,"hasChildren":false,"isCollapsed":false}],"syncConnected":true}}|}
+        {|{"apiVersion":1,"ok":true,"result":{"outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"asset-a","title":"Photo.jpg","markup":[{"type":"emphasis","style":"bold","children":[{"type":"tagReference","uuid":"tag-a","title":"Project"}]}],"isAsset":true,"assetType":"image/jpeg","localPath":"Assets/Photo.jpg","syncStatus":"failed","tags":[{"uuid":"tag-a","title":"Project"},{"uuid":"tag-b","title":"Trailing"},{"uuid":"tag-b","title":"Trailing"}],"status":{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo","icon":{"type":"tabler-icon","id":"Todo"}}},"depth":0,"hasChildren":false,"isCollapsed":false}],"syncConnected":true}}|}
     in
     (match asset with
      | Ok { outliner_rows = [ row ]; _ } ->
@@ -127,8 +127,8 @@ let () =
          (Option.value ~default:"" row.sync_status)
          "outliner sync status";
        (match row.tags with
-        | [ { uuid = "tag-a"; title = "Project" } ] -> ()
-        | _ -> failwith "outliner tags were not projected");
+        | [ { uuid = "tag-b"; title = "Trailing" } ] -> ()
+        | _ -> failwith "inline and duplicate tags were not removed from trailing tags");
        (match row.status with
         | Some { uuid = "todo"; _ } -> ()
         | _ -> failwith "outliner task status was not projected")

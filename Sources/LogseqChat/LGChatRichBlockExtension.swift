@@ -216,6 +216,7 @@ private struct LGChatRichBlock: View {
                 )
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .strikethrough(boolProperty("is-completed"))
         .foregroundStyle(boolProperty("is-completed") ? .secondary : .primary)

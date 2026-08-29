@@ -243,6 +243,10 @@
  :fn<chat-model;bool>)
 (signature logseq-chat.view/node-can-add-first-block?
  :fn<chat-model;bool>)
+(signature logseq-chat.view/node-outliner-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-title-visible?
+ :fn<chat-model;bool>)
 (signature logseq-chat.view/main-can-add-first-block?
  :fn<chat-model;bool>)
 (signature logseq-chat.view/main-related-section-visible?

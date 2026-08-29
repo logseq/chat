@@ -601,6 +601,12 @@ Entries stay concise so work can continue on the highest-signal path.
   accessibility hierarchy already exposed the page actions. Screenshot flows
   for native lists should wait for a page-specific section marker before
   capturing; the settled Graphs screenshot matches main.
+- 2026-08-29 10:30 CST — SwiftUI's drawer transition used the
+  `logicallyComplete` animation callback to release its interaction shield.
+  A spring can be logically complete while it still has visible settling, so
+  controls could become interactive before the toggle motion fully ended. The
+  native drawer now holds the shield until the animation is removed, and the
+  Skip fallback covers the full 500 ms settling window.
 - 2026-08-29 10:07 CST — The repository-wide `swift test` target is not a
   reliable integration gate in its current form. Native suites run concurrently
   against shared UserDefaults/core fixtures and produced ordering-dependent
@@ -612,6 +618,15 @@ Entries stay concise so work can continue on the highest-signal path.
   simulator/device builds pass. Split or serialize shared-state native suites
   and repair the pre-existing Skip test sources before treating the aggregate
   app command as a release gate.
+- 2026-08-29 11:12 CST — Running core tests with the system `dune` fails before
+  compilation because the repository requires Dune language 3.24 while PATH
+  currently resolves Dune 3.23.1. Use `opam exec -- dune` (3.24.0) for focused
+  core tests; do not clean or rebuild the shared Apple toolchains to compensate.
+- 2026-08-29 11:53 CST — The shared iOS E2E setup flow remained on the
+  `Add sync graph` sheet after submitting `sync 2`, so the subsequent sidebar
+  assertion could not run. This is a fixture/setup failure rather than a drawer
+  regression; use an existing local graph for the focused drawer audit and
+  investigate the sync-server setup separately without weakening the E2E test.
 
 ## Decisions
 

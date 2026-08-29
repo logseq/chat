@@ -62,6 +62,8 @@ type outline_row =
   ; journal_day : int option
   }
 
+module String_set = Set.Make (String)
+
 type outliner_editing =
   { uuid : string
   ; title : string
@@ -272,6 +274,41 @@ let rec markup_has_cloze = function
   | _ -> false
 ;;
 
+let rec collect_inline_tag_ids ids = function
+  | `Assoc fields ->
+    let ids =
+      match string_member "type" fields, string_member "uuid" fields with
+      | Some "tagReference", Some uuid -> String_set.add uuid ids
+      | _ -> ids
+    in
+    List.fold_left collect_inline_tag_ids ids (markup_children fields)
+  | _ -> ids
+;;
+
+let trailing_tags block_fields =
+  let inline_ids =
+    match member "markup" block_fields with
+    | Some (`List values) ->
+      List.fold_left collect_inline_tag_ids String_set.empty values
+    | _ -> String_set.empty
+  in
+  let tags =
+    match member "tags" block_fields with
+    | Some (`List values) -> List.filter_map sidebar_page values
+    | _ -> []
+  in
+  let _, reversed =
+    List.fold_left
+      (fun (seen, result) (tag : sidebar_page) ->
+         if String_set.mem tag.uuid inline_ids || String_set.mem tag.uuid seen
+         then seen, result
+         else String_set.add tag.uuid seen, tag :: result)
+      (String_set.empty, [])
+      tags
+  in
+  List.rev reversed
+;;
+
 let find_substring value pattern start =
   let value_length = String.length value in
   let pattern_length = String.length pattern in
@@ -395,10 +432,7 @@ let outline_row_from_block
       ; asset_type = string_member "assetType" block_fields
       ; local_path = string_member "localPath" block_fields
       ; status = Option.bind (member "status" block_fields) task_status
-      ; tags =
-          (match member "tags" block_fields with
-           | Some (`List values) -> List.filter_map sidebar_page values
-           | _ -> [])
+      ; tags = trailing_tags block_fields
       ; sync_status = string_member "syncStatus" block_fields
       ; page_id = Option.value ~default:"" (string_member "pageId" block_fields)
       ; journal_title = string_member "journalTitle" block_fields
