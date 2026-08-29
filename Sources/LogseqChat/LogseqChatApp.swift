@@ -74,6 +74,7 @@ public struct LogseqChatRootView : View {
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
         .environment(\.locale, preferredLocale)
+        .tint(LogseqThemePolicy.accent)
         .luiSemanticColors([
             "background": themePalette.background,
             "surface": themePalette.surface,
