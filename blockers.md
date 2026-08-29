@@ -627,6 +627,13 @@ Entries stay concise so work can continue on the highest-signal path.
   assertion could not run. This is a fixture/setup failure rather than a drawer
   regression; use an existing local graph for the focused drawer audit and
   investigate the sync-server setup separately without weakening the E2E test.
+- 2026-08-29 12:02 CST — `install-mobile-ios-device.sh` always rebuilds and has
+  no way to install an already-built app bundle, so it discarded the local
+  `LUI_PACKAGE_PATH` context and tried to resolve an unpublished LUI commit from
+  GitHub. Direct CoreDevice installation of `.build/LogseqChat-device.app`
+  succeeded; the helper should eventually accept a prebuilt bundle or forward
+  the local package override. Launch then timed out over the phone's network
+  tunnel, so no rebuild or source workaround is warranted.
 
 ## Decisions
 
