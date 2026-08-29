@@ -539,6 +539,79 @@ Entries stay concise so work can continue on the highest-signal path.
   state hides it from hit testing and accessibility on other pages. On the same
   64-journal fixture, Graphs → Journals produced no renderer patch batch and no
   hidden journal buttons were exposed in the Graphs accessibility hierarchy.
+- 2026-08-29 05:04 CST — After building latest main, the device dependency
+  cache no longer contained the unpushed LUI revision `3e6531c`. The branch's
+  default remote SwiftPM resolution therefore could not reinstall on iPhone.
+  Use the repository's existing `LUI_PACKAGE_PATH` local-package override for
+  branch device builds; do not push an intermediate LUI commit or change the
+  checked-in dependency solely to repair a local cache.
+- 2026-08-29 05:09 CST — The isolated latest-main worktree's first simulator
+  build found an incomplete freshly bootstrapped OCaml simulator source tree
+  (`utils/config.common.ml.in` was absent). For the controlled main/LUI A/B,
+  point `LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT` at the already verified shared
+  compiler toolchain while keeping each worktree's core and Swift build
+  outputs separate. This avoids a destructive toolchain cleanup and does not
+  mix application artifacts between branches.
+- 2026-08-29 05:20 CST — `LUI_PACKAGE_PATH` only overrides the Swift package;
+  the app's OCaml wire runtime is compiled from the `lui` files installed in
+  the host `5.5.0` opam switch. A normal incremental simulator build therefore
+  reused the old runtime and reproduced the same 17 KB / 189-op batches after
+  the source fix. Install the local LUI package into that switch before
+  rebuilding the focused mobile core target; do not interpret a Swift-only
+  rebuild as a runtime performance result.
+- 2026-08-29 06:21 CST — A controlled-state mismatch cannot be used as a drawer
+  interaction lock in the generic renderer. A local `@State` redraw can retain
+  the previous wire model value after the transition, making
+  `model.isSelected != presented` remain true and permanently disabling the
+  sidebar. Lock the transition using local animation state instead; native iOS
+  unlocks from SwiftUI's logical animation completion, while Skip uses main's
+  350 ms fallback. A transition generation prevents an older completion from
+  releasing a newer transition.
+- 2026-08-29 06:25 CST — The current device build and signing completed, but
+  two direct CoreDevice install attempts were interrupted by the paired iPhone
+  during package transfer (`IXRemoteErrorDomain` connection interruption).
+  The device remains listed as available and the installable app is preserved
+  at `.build/LogseqChat-device.app`; retry after keeping the phone unlocked and
+  connected rather than rebuilding.
+- 2026-08-29 08:04 CST — Dune does not invalidate the generated app LG test
+  module when only an installed LUI source changes, because the opam source
+  tree appears inside the rule action rather than its dependency set. A small
+  app test edit forced the correct regeneration without deleting the shared
+  Apple toolchain. The build rule should eventually declare the installed LUI
+  source tree as an explicit dependency so framework-only protocol changes do
+  not reuse stale generated OCaml.
+- 2026-08-29 08:04 CST — Reusing the same retained header children in both the
+  root and pushed-destination SwiftUI toolbars caused nondeterministic toolbar
+  ownership after navigation. The navigation host now gives the root toolbar
+  sole ownership at depth zero and the destination toolbar sole ownership at
+  positive depth; duplicating retained views across toolbar locations is not a
+  supported composition pattern.
+- 2026-08-29 08:17 CST — The current branch installed successfully on the
+  paired iPhone, but CoreDevice could not launch it while the phone was locked.
+  The installed build is valid; unlock the phone and launch it manually (or
+  retry only the launch command) instead of rebuilding the app.
+- 2026-08-29 09:22 CST — Skip 1.9.5 does not transpile SwiftUI `contentShape`
+  in the shared drawer implementation. The interaction shield is already a
+  full-frame `Color`, so keep its explicit hit testing and avoid a redundant
+  platform-specific modifier.
+- 2026-08-29 09:56 CST — Maestro's `waitForAnimationToEnd` can return after a
+  drawer destination transition but before a newly mounted native grouped
+  `List` has committed its stable section layout. A screenshot taken in that
+  window temporarily omitted grouped backgrounds and headers even though the
+  accessibility hierarchy already exposed the page actions. Screenshot flows
+  for native lists should wait for a page-specific section marker before
+  capturing; the settled Graphs screenshot matches main.
+- 2026-08-29 10:07 CST — The repository-wide `swift test` target is not a
+  reliable integration gate in its current form. Native suites run concurrently
+  against shared UserDefaults/core fixtures and produced ordering-dependent
+  failures, while the generated Skip unit-test targets fail to compile older
+  model/outliner tests that use unsupported `Data` initializers, optional
+  `flatMap`, integer geometry literals, and untranslated enum cases. The current
+  navigation source's Skip compile error was fixed independently; LUI's full
+  Apple+Skip suite (107 tests), the LG suite (109 tests), focused app tests, and
+  simulator/device builds pass. Split or serialize shared-state native suites
+  and repair the pre-existing Skip test sources before treating the aggregate
+  app command as a release gate.
 
 ## Decisions
 

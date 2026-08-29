@@ -69,7 +69,8 @@
    true []
    [(ext/property "depth" ext/IntScalar true None)
     (ext/property "bottom-occupies-layout-space" ext/BoolScalar true None)
-    (ext/property "composer-dismissal-enabled" ext/BoolScalar true None)]
+    (ext/property "composer-dismissal-enabled" ext/BoolScalar true None)
+    (ext/property "title" ext/StringScalar true None)]
    [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])
     (ext/event "dismiss-composer" [])]))
 
@@ -482,7 +483,7 @@
     {:accessibility-identifier "sidebar.navigation"
      :gap 4
      :padding 12}
-   [:box {:height 52}]
+   [:box {:height 48}]
    [:stack
     [:list-item
      {:text (reactive graph-label model-source)
@@ -505,7 +506,7 @@
         :compare compare
         :as graph-source}
        [sidebar-graph-menu-item model-source graph-source send]]]]]
-   [:box {:height 16}]
+   [:box {:height 12}]
    [:list-item
     {:label "Journals"
      :role "navigation"
@@ -846,12 +847,13 @@
     "outliner-selection"
     (if (outliner-editor-active? current)
       "outliner-editor"
-      (if (empty? (:app-navigation-path current))
-        (if (journal-root-visible? current)
-          (if (:composer-expanded current)
-            "expanded-composer"
-            "capture-and-search")
-          "hidden")
+      (if (and (journals-destination? current)
+               (not (:search-open current))
+               (not (graph-loading-visible? current))
+               (not (graph-picker-visible? current)))
+        (if (:composer-expanded current)
+          "expanded-composer"
+          "capture-and-search")
         "hidden"))))
 
 (defn bottom-chrome-selection? [current]
@@ -1091,6 +1093,48 @@
    (fn [row] (make-retained-outline-row current row))
    (:outliner-rows current)))
 
+(defn journal-section-layout-visible? [current]
+  (and
+   (and (journal-root-visible? current)
+        (> (count (:outliner-section-markers current)) 0))
+   (match (:selected-page current)
+     None true
+     (Some _page) false)))
+
+(defn journal-render-sections [current]
+  (if (journal-section-layout-visible? current)
+    (:outliner-section-markers current)
+    []))
+
+(defn journal-render-section-key [section]
+  (:page-id section))
+
+(defn flat-retained-outliner-rows [current]
+  (if (not (journal-section-layout-visible? current))
+    (retained-outliner-rows current)
+    []))
+
+(defn journal-section-marker-for-page [markers page-id]
+  (loop [index 0]
+    (if (= index (count markers))
+      None
+      (let [marker (nth markers index)]
+        (if (= (:page-id marker) page-id)
+          (Some marker)
+          (recur (inc index)))))))
+
+(defn retained-section-rows [current page-id]
+  (match
+   (journal-section-marker-for-page
+    (:outliner-section-markers current) page-id)
+    (Some section)
+    (mapv
+     (fn [row] (make-retained-outline-row current row))
+     (subvec (:outliner-rows current)
+             (:start-index section)
+             (:end-index section)))
+    None []))
+
 (defn retained-row-value [retained] (:value retained))
 (defn retained-row-editing? [retained] (:is-editing retained))
 (defn retained-row-editing-title [retained] (:editing-title retained))
@@ -1233,7 +1277,7 @@
         (reactive outliner-journal-page-id model-source row-source)]
     (elements/element
      ui-context nil
-     [:column {:padding-horizontal 8}
+     [:column
       [:if {:test
             (reactive outliner-journal-heading-visible?
                       model-source row-source)}
@@ -1255,6 +1299,27 @@
             :value (reactive outliner-journal-title
                              model-source row-source)}]]]]]
       [outliner-row model-source retained-row-source row-source send]])))
+
+(defn outliner-journal-section
+  [ui-context model-source section-source send]
+  (let [section (signal/sample section-source)
+        section-page-id (journal-render-section-key section)]
+    (elements/element
+     ui-context nil
+     [:column
+      {:container-relative-frame "min-vertical"
+       :container-relative-frame-inset 136
+       :accessibility-identifier
+      (str "journal.section." (journal-render-section-key section))}
+      [:keyed
+       {:source (reactive (fn [current]
+                            (retained-section-rows current section-page-id))
+                          model-source)
+        :key :render-key
+        :compare compare
+        :as retained-row-source}
+       [outliner-entry model-source retained-row-source
+        (reactive retained-row-value retained-row-source) send]]])))
 
 (defui outliner-selection-toolbar [send]
   [:toolbar
@@ -1523,7 +1588,8 @@
   [:column
    {:accessibility-identifier "screen.node"}
    [:scroll {:grow 1.0 :accessibility-identifier "scroll.outliner"}
-    [:column {:gap 24 :padding-horizontal 16}
+    [:column {:gap 24 :padding-horizontal 8}
+     [:box {:height 16}]
      [:if {:test (reactive (fn [current]
                              (not (current-content-is-tag? current)))
                            model-source)}
@@ -1828,9 +1894,18 @@
     :padding-top 18
     :padding-bottom 24}
    [:if {:test (reactive flashcards-empty? model-source)}
-    [:column {:accessibility-identifier "flashcards.empty" :gap 10 :padding 32}
-     [:heading "No cards due"]
-     [:text "Tag a block with #Card to add it to Flashcards."]]]
+    [:column
+     {:accessibility-identifier "flashcards.empty"
+      :grow 1.0
+      :main "center"
+      :cross "center"
+      :gap 10
+      :padding 32}
+     [:heading {:level 3} "No cards due"]
+     [:text
+      {:text-alignment "center"
+       :foreground "muted-foreground"}
+      "Tag a block with #Card to add it to Flashcards."]]]
    [:if {:test (reactive flashcards-present? model-source)}
     [:text "Due now"]]
    [:if {:test (reactive flashcards-present? model-source)}
@@ -2206,6 +2281,7 @@
   [:list {:accessibility-identifier "screen.graphs"}
    [:list-item
     {:icon "refresh-cw"
+     :min-height 44
      :accessibility-identifier "button.graphs.refresh"
      :disabled (reactive model/graph-refresh-active? model-source)
      :on-press (fn [_event] (send model/RefreshGraphs))}
@@ -2213,7 +2289,8 @@
    [:if {:test (reactive model/graph-refresh-active? model-source)}
     [:spinner {:accessibility-identifier "graphs.loading"}]]
    [:list-item
-    {:accessibility-identifier "button.graph-add"
+    {:min-height 44
+     :accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
     "Add sync graph"]
    [:heading {:level 5} "Local graphs:"]
@@ -2347,8 +2424,9 @@
     (elements/element
      ui-context nil
      [:column
-      [:list-item
-       {:text (reactive settings-community-link-title link-source)
+     [:list-item
+      {:text (reactive settings-community-link-title link-source)
+        :padding 0
         :accessibility-identifier
         (settings-community-link-identifier link)
         :on-press
@@ -2358,6 +2436,15 @@
 
 (defn settings-tabs-visible? [current]
   (:settings-tabs-open current))
+
+(defn settings-tab-title [tab]
+  (cond
+    (= tab "journals") "Journals"
+    (= tab "flashcards") "Flashcards"
+    :else "Graphs"))
+
+(defn settings-tabs-summary [current]
+  (string/join " · " (map settings-tab-title (:sidebar-tabs current))))
 
 (defn runtime-log-visible? [current]
   (:runtime-log-open current))
@@ -2372,6 +2459,15 @@
           (= tab "flashcards") "Flashcards"
           :else "Graphs")]
     (str title (if (tab-enabled? current tab) ", on" ", off"))))
+
+(defn tab-selection-glyph [current tab]
+  (if (tab-enabled? current tab) "✓" "○"))
+
+(defn tab-selection-foreground [current tab]
+  (if (tab-enabled? current tab) "accent" "secondary"))
+
+(defn tab-disabled? [current tab]
+  (not (tab-enabled? current tab)))
 
 (defn tab-index [current tab]
   (let [tabs (:sidebar-tabs current)]
@@ -2425,6 +2521,9 @@
 (defn runtime-log-message [record]
   (:message record))
 
+(defn runtime-log-error? [record]
+  (= (:level record) "ERROR"))
+
 (defn runtime-log-empty? [current]
   (empty? (:runtime-log-records current)))
 
@@ -2443,11 +2542,22 @@
 (defn runtime-log-row [ui-context record-source]
   (elements/element
    ui-context nil
-   [:column
-    [:row
-     [:text {:value (reactive runtime-log-level record-source)}]
-     [:text {:value (reactive runtime-log-timestamp record-source)}]]
-    [:text {:value (reactive runtime-log-message record-source)}]
+   [:column {:gap 3}
+    [:row {:gap 6}
+     [:if {:test (reactive runtime-log-error? record-source)}
+      [:text {:value (reactive runtime-log-level record-source)
+              :class "caption semibold"
+              :foreground "red"}]]
+     [:if {:test (reactive (fn [record] (not (runtime-log-error? record)))
+                           record-source)}
+      [:text {:value (reactive runtime-log-level record-source)
+              :class "caption semibold"
+              :foreground "secondary"}]]
+     [:text {:value (reactive runtime-log-timestamp record-source)
+             :class "caption"
+             :foreground "secondary"}]]
+    [:text {:value (reactive runtime-log-message record-source)
+            :class "caption"}]
     [:separator]]))
 
 (defui settings-tab-row [model-source tab title send]
@@ -2460,90 +2570,108 @@
         up-disabled-source
         (reactive (fn [current] (tab-move-up-disabled? current tab)) model-source)
         down-disabled-source
-        (reactive (fn [current] (tab-move-down-disabled? current tab)) model-source)]
+        (reactive (fn [current] (tab-move-down-disabled? current tab)) model-source)
+        selection-glyph-source
+        (reactive (fn [current] (tab-selection-glyph current tab)) model-source)]
     (elements/element
      ui-context nil
-     [:row
+     [:list-item
       {:accessibility-identifier (str "row.settings.tab." tab)}
-     [:button
-      {:label label-source
-       :disabled toggle-disabled-source
-       :accessibility-identifier (tab-toggle-identifier tab)
-       :on-press (fn [_event] (send (model/ToggleSidebarTab tab)))}
-      title]
-     [:if {:test movement-visible-source}
-      [:button
-       {:disabled up-disabled-source
-        :accessibility-label (str "Move " title " up")
-        :accessibility-identifier (tab-up-identifier tab)
-        :on-press
-        (fn [_event] (send (model/MoveSidebarTab tab -1)))}
-       "↑"]]
-     [:if {:test movement-visible-source}
-      [:button
-       {:disabled down-disabled-source
-        :accessibility-label (str "Move " title " down")
-        :accessibility-identifier (tab-down-identifier tab)
-        :on-press
-        (fn [_event] (send (model/MoveSidebarTab tab 1)))}
-       "↓"]]])))
+      [:row {:grow 1.0 :cross "center" :gap 8}
+       [:button
+        {:label label-source
+         :grow 1.0
+         :variant "ghost"
+         :disabled toggle-disabled-source
+         :accessibility-identifier (tab-toggle-identifier tab)
+         :on-press (fn [_event] (send (model/ToggleSidebarTab tab)))}
+        title]
+       [:text {:value selection-glyph-source :foreground "accent"}]
+       [:if {:test movement-visible-source}
+        [:button
+         {:disabled up-disabled-source
+          :variant "ghost"
+          :accessibility-label (str "Move " title " up")
+          :accessibility-identifier (tab-up-identifier tab)
+          :on-press
+          (fn [_event] (send (model/MoveSidebarTab tab -1)))}
+         "↑"]]
+       [:if {:test movement-visible-source}
+        [:button
+         {:disabled down-disabled-source
+          :variant "ghost"
+          :accessibility-label (str "Move " title " down")
+          :accessibility-identifier (tab-down-identifier tab)
+          :on-press
+          (fn [_event] (send (model/MoveSidebarTab tab 1)))}
+         "↓"]]]])))
 
 (defui settings-tabs-screen [model-source send]
-  [:column {:accessibility-identifier "screen.settings.tabs"
-            :background "background"}
-   [:row
-    [:button {:on-press (fn [_event] (send model/BackSettings))} "Settings"]
-    [:heading {:level 1} "Tabs"]]
-   [:text "Visible tabs"]
+  [:list {:accessibility-identifier "screen.settings.tabs"}
+   [:heading "Visible tabs"]
    [settings-tab-row model-source "journals" "Journals" send]
    [:if {:test (reactive settings-flashcards-before-graphs? model-source)}
     [settings-tab-row model-source "flashcards" "Flashcards" send]]
    [settings-tab-row model-source "graphs" "Graphs" send]
    [:if {:test (reactive settings-flashcards-after-graphs? model-source)}
     [settings-tab-row model-source "flashcards" "Flashcards" send]]
-   [:text "Journals and Graphs are always available. Use the arrows to reorder tabs."]
+   [:text
+    {:class "footnote" :foreground "muted-foreground"}
+    "Journals and Graphs are always available. Use the arrows to reorder tabs."]
    [:if {:test (reactive settings-available-tabs-present? model-source)}
-    [:text
+    [:heading
      {:accessibility-identifier "text.settings.tabs.available"}
      "Available tabs"]]
    [:if {:test (reactive settings-available-tabs-present? model-source)}
     [settings-tab-row model-source "flashcards" "Flashcards" send]]])
 
 (defui runtime-log-screen [model-source send]
-  [:column {:accessibility-identifier "screen.runtime-log"
+  [:column {:gap 12
+            :padding 16
+            :grow 1.0
+            :accessibility-identifier "screen.runtime-log"
             :background "background"}
-   [:row
-    [:button {:on-press (fn [_event] (send model/DismissRuntimeLog))} "Done"]
-    [:heading {:level 1} "Log"]
-    [:button
-     {:accessibility-identifier "button.log-refresh"
-      :on-press (fn [_event] (send model/RefreshRuntimeLog))}
-     "Refresh"]]
-   [:row
+   [:toolbar
+    {:orientation "horizontal"
+     :class "scroll"
+     :gap 8
+     :label "Log filters"}
     [:button
      {:text (reactive runtime-log-errors-label model-source)
+      :label "Toggle error filtering"
+      :variant "secondary"
       :accessibility-identifier "button.log-errors"
-      :on-press (fn [_event] (send model/ToggleRuntimeLogErrors))}]
+      :on-press (fn [_event] (send model/ToggleRuntimeLogErrors))}
+     "Errors only"]
     [:button
      {:text (reactive runtime-log-order-label model-source)
+      :label "Toggle log ordering"
+      :variant "secondary"
       :accessibility-identifier "button.log-order"
-      :on-press (fn [_event] (send model/ToggleRuntimeLogOrder))}]
+      :on-press (fn [_event] (send model/ToggleRuntimeLogOrder))}
+     "Newest first"]
     [:button
      {:text (reactive runtime-log-source-label model-source)
+      :label "Toggle log source"
+      :variant "secondary"
       :accessibility-identifier "button.log-source"
-      :on-press (fn [_event] (send model/ToggleRuntimeLogSource))}]
+      :on-press (fn [_event] (send model/ToggleRuntimeLogSource))}
+     "Core log"]
     [:button
-     {:accessibility-identifier "button.log-copy"
+     {:variant "secondary"
+      :accessibility-identifier "button.log-copy"
       :on-press (fn [_event] (send model/CopyRuntimeLog))}
      "Copy"]]
-   [:if {:test (reactive runtime-log-empty? model-source)}
-    [:text "No log entries"]]
-   [:keyed
-    {:source (reactive runtime-log-records model-source)
-     :key :id
-     :compare compare
-     :as record-source}
-    [runtime-log-row record-source]]])
+   [:scroll {:grow 1.0}
+    [:column {:gap 10}
+     [:if {:test (reactive runtime-log-empty? model-source)}
+      [:text {:foreground "secondary"} "No log entries"]]
+     [:keyed
+      {:source (reactive runtime-log-records model-source)
+       :key :id
+       :compare compare
+       :as record-source}
+      [runtime-log-row record-source]]]]])
 
 (defui settings-screen [model-source send]
   [:column
@@ -2607,9 +2735,16 @@
           [settings-language-choice-row choice-source send]]]]]]
      [:separator]
      [:list-item
-      {:accessibility-identifier "link.settings.tabs"
+      {:padding 0
+       :accessibility-identifier "link.settings.tabs"
        :on-press (fn [_event] (send model/OpenSettingsTabs))}
-      "Tabs"]]]
+      [:row {:grow 1.0 :cross "center"}
+       [:text "Tabs"]
+       [:spacer]
+       [:text
+        {:value (reactive settings-tabs-summary model-source)
+         :foreground "secondary"
+         :accessibility-identifier "text.settings.tabs.selection"}]]]]]
    [:column {:gap 8}
     [:text
      {:class "headline"
@@ -2668,7 +2803,8 @@
      [:column
       {:padding 16 :background "surface" :corner-radius 14}
       [:list-item
-       {:accessibility-identifier "button.export-graph-database"
+       {:padding 0
+        :accessibility-identifier "button.export-graph-database"
         :on-press (fn [_event] (send model/ExportGraphDatabase))}
        "Export Graph SQLite DB"]]]]
    [:column {:gap 8}
@@ -2691,7 +2827,8 @@
       [:text {:value (reactive settings-revision model-source)
               :foreground "secondary"}]]
      [:separator]
-     [:list-item {:on-press (fn [_event] (send model/OpenRuntimeLog))}
+     [:list-item {:padding 0
+                  :on-press (fn [_event] (send model/OpenRuntimeLog))}
       "Check log"]]]
    [:column {:gap 8}
     [:text
@@ -2708,22 +2845,19 @@
        :as link-source}
       [settings-community-link-row link-source send]]]]
    [:column {:padding 16 :background "surface" :corner-radius 14}
-    [:list-item
-     {:accessibility-identifier "button.sign-out"
+   [:list-item
+     {:padding 0
+      :accessibility-identifier "button.sign-out"
       :on-press (fn [_event] (send model/SignOut))}
      "Sign Out"]]])
 
-(defui settings-sheet [model-source send]
+(defui settings-main-sheet [model-source send]
   [:sheet
    {:text "Settings"
     :class "navigation-scroll"
+    :accessibility-identifier "sheet.settings"
     :on-dismiss (fn [_event] (send model/DismissSettings))}
-   [:if {:test (reactive settings-main-visible? model-source)}
-    [settings-screen model-source send]]
-   [:if {:test (reactive settings-tabs-visible? model-source)}
-    [settings-tabs-screen model-source send]]
-   [:if {:test (reactive runtime-log-visible? model-source)}
-    [runtime-log-screen model-source send]]
+   [settings-screen model-source send]
    [:toolbar
     {:orientation "horizontal"
      :label "Settings actions"
@@ -2740,6 +2874,56 @@
       :disabled (reactive settings-apply-disabled? model-source)
       :on-press (fn [_event] (send model/ApplySettings))}
      "Apply"]]])
+
+(defui settings-tabs-sheet [model-source send]
+  [:sheet
+   {:text "Tabs"
+    :class "navigation-list"
+    :accessibility-identifier "sheet.settings"
+    :on-dismiss (fn [_event] (send model/DismissSettings))}
+   [settings-tabs-screen model-source send]
+   [:toolbar
+    {:orientation "horizontal"
+     :label "Tabs actions"
+     :class "navigation-actions"
+     :accessibility-identifier "toolbar.settings.actions"}
+    [:button
+     {:class "cancellation-action navigation-back-action"
+      :accessibility-identifier "button.connection.cancel"
+      :on-press (fn [_event] (send model/BackSettings))}
+     "Settings"]]])
+
+(defui runtime-log-sheet [model-source send]
+  [:sheet
+   {:text "Log"
+    :class "navigation-content"
+    :accessibility-identifier "sheet.settings"
+    :on-dismiss (fn [_event] (send model/DismissRuntimeLog))}
+   [runtime-log-screen model-source send]
+   [:toolbar
+    {:orientation "horizontal"
+     :label "Log actions"
+     :class "navigation-actions"
+     :accessibility-identifier "toolbar.settings.actions"}
+    [:button
+     {:class "cancellation-action"
+      :accessibility-identifier "button.log-refresh"
+      :on-press (fn [_event] (send model/RefreshRuntimeLog))}
+     "Refresh"]
+    [:button
+     {:class "confirmation-action"
+      :accessibility-identifier "button.connection.apply"
+      :on-press (fn [_event] (send model/DismissRuntimeLog))}
+     "Done"]]])
+
+(defui settings-sheet [model-source send]
+  [:stack
+   [:if {:test (reactive settings-main-visible? model-source)}
+    [settings-main-sheet model-source send]]
+   [:if {:test (reactive settings-tabs-visible? model-source)}
+    [settings-tabs-sheet model-source send]]
+   [:if {:test (reactive runtime-log-visible? model-source)}
+    [runtime-log-sheet model-source send]]])
 
 (defui page-delete-dialog [send]
   [:dialog
@@ -2842,18 +3026,28 @@
       [outliner-autocomplete-bar model-source send]]
      [outliner-editor-toolbar model-source send]]]
    [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
-    [:column {:gap 0 :padding-horizontal 16}
+    [:column
+     {:container-relative-frame "horizontal"
+      :gap 0
+      :padding-horizontal 16}
      [:box {:height 6}]
      [:row
-      {:cross "center"
+      {:grow 1.0
+       :cross "center"
        :accessibility-identifier "row.composer.placement"}
       [composer-view model-source send]]
      [:box {:height 21}]]]
    [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
-    [:column {:gap 0 :padding-horizontal 16}
+    [:column
+     {:container-relative-frame "horizontal"
+      :gap 0
+      :padding-horizontal 16}
      [:box {:height 8}]
      [:row
-      {:gap 10 :cross "center"}
+      {:grow 1.0
+       :gap 10
+       :cross "center"
+       :accessibility-identifier "row.bottom.capture"}
       [composer-view model-source send]
       [:button
        {:icon "search"
@@ -2887,18 +3081,24 @@
 (defui root-outliner-view [model-source visible-source send]
   [:virtual-list
    {:grow 1.0
-    :padding 16
+    :padding 8
     :class "retained-pane"
     :selected visible-source
     :accessibility-identifier "list.outliner"}
-   [:box {:height 24}]
+   [:box {:height 16}]
    [:if {:test (reactive selected-page-content-title-visible? model-source)}
     [:heading
      {:level 2
       :value (reactive selected-page-title model-source)
       :accessibility-identifier "title.selected-page"}]]
      [:keyed
-     {:source (reactive retained-outliner-rows model-source)
+      {:source (reactive journal-render-sections model-source)
+       :key journal-render-section-key
+       :compare compare
+       :as section-source}
+      [outliner-journal-section model-source section-source send]]
+     [:keyed
+      {:source (reactive flat-retained-outliner-rows model-source)
        :key :render-key
        :compare compare
        :as retained-row-source}
@@ -3121,13 +3321,17 @@
         composer-dismissal-source
         (reactive bottom-chrome-expanded-composer? model-source)
         composer-dismissal-value-source
-        (reactive bool-wire-value composer-dismissal-source)]
+        (reactive bool-wire-value composer-dismissal-source)
+        title-source (reactive main-title model-source)
+        title-value-source (reactive string-wire-value title-source)]
     (ui/extension-property-signal!
      ui-context node "depth" depth-value-source)
     (ui/extension-property-signal!
      ui-context node "bottom-occupies-layout-space" bottom-occupies-value-source)
     (ui/extension-property-signal!
      ui-context node "composer-dismissal-enabled" composer-dismissal-value-source)
+    (ui/extension-property-signal!
+     ui-context node "title" title-value-source)
     (ui/on-event!
      ui-context node
      (fn [input-event]

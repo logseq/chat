@@ -10,7 +10,7 @@ enum LGChatNavigationSurfacePolicy {
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -22,6 +22,7 @@ enum LGChatNavigationExtension {
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
                     .init(name: "composer-dismissal-enabled", kind: .bool, isRequired: true),
+                    .init(name: "title", kind: .string, isRequired: true),
                 ],
                 events: [
                     .init(name: "back", fields: [
@@ -392,9 +393,16 @@ private struct LGChatNavigationContent: View {
                             alignment: .topLeading
                         )
                         .background(routeBackground)
+                        .navigationTitle(navigationTitle)
+                        #if !SKIP && os(iOS)
+                        .navigationBarTitleDisplayMode(.inline)
+                        #endif
+                        .toolbar {
+                            destinationTrailingToolbar
+                        }
                 }
                 .toolbar {
-                    if let toolbarStartIndex {
+                    if depth == 0, let toolbarStartIndex {
                         #if SKIP
                         ToolbarItemGroup(placement: .navigation) {
                             context.content(for: context.childIDs[toolbarStartIndex])
@@ -495,6 +503,42 @@ private struct LGChatNavigationContent: View {
         }
         #endif
         return themePalette.background
+    }
+
+    private var navigationTitle: String {
+        guard case let .string(value) = context.property("title") else { return "" }
+        return value
+    }
+
+    @ToolbarContentBuilder
+    private var destinationTrailingToolbar: some ToolbarContent {
+        #if SKIP
+        ToolbarItemGroup(placement: .primaryAction) {
+            if let toolbarStartIndex {
+                context.content(for: context.childIDs[toolbarStartIndex + 2])
+                context.content(for: context.childIDs[toolbarStartIndex + 3])
+            }
+        }
+        #else
+        if let toolbarStartIndex {
+            if #available(iOS 26.0, macOS 26.0, *) {
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 0) {
+                        context.content(for: context.childIDs[toolbarStartIndex + 2])
+                        context.content(for: context.childIDs[toolbarStartIndex + 3])
+                    }
+                    .padding(.horizontal, 12)
+                    .modifier(LGChatLiquidGlassSurface(shape: .capsule))
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    context.content(for: context.childIDs[toolbarStartIndex + 2])
+                    context.content(for: context.childIDs[toolbarStartIndex + 3])
+                }
+            }
+        }
+        #endif
     }
 
     private var bottomChrome: AnyView {

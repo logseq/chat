@@ -7,6 +7,17 @@ import LUIAppleBackend
 @MainActor
 @Suite("LG chat renderer")
 struct LGChatRendererTests {
+    @Test("sidebar icons use the same native symbols as main on Apple platforms")
+    func sidebarIconsMatchMain() {
+        #if !SKIP
+        #expect(LGChatIconPolicy.icons["calendar"] == .systemName("calendar"))
+        #expect(LGChatIconPolicy.icons["document"] == .systemName("doc.text"))
+        #expect(LGChatIconPolicy.icons["folder"] == .systemName("folder"))
+        #expect(LGChatIconPolicy.icons["history"] == .systemName("clock"))
+        #expect(LGChatIconPolicy.icons["star"] == .systemName("star"))
+        #endif
+    }
+
     @Test("native List routes use the platform grouped page surface")
     func nativeListRoutesUseSystemSurface() {
         #expect(LGChatNavigationSurfacePolicy.usesSystemGroupedBackground(
@@ -90,6 +101,8 @@ struct LGChatRendererTests {
           {"op":"create-extension","id":2,"identifier":"native-navigation-stack","fingerprint":"\(LGChatNavigationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":2,"property":"depth","value":0},
           {"op":"set-extension-prop","id":2,"property":"bottom-occupies-layout-space","value":false},
+          {"op":"set-extension-prop","id":2,"property":"composer-dismissal-enabled","value":false},
+          {"op":"set-extension-prop","id":2,"property":"title","value":"Journal"},
           {"op":"create-node","id":3,"kind":"column"},
           {"op":"insert-child","parent":2,"child":3,"index":0},
           {"op":"insert-child","parent":1,"child":2,"index":0}
@@ -982,6 +995,7 @@ struct LGChatRendererTests {
             from: Data(refresh.message.utf8)
         )
         #expect(records.map(\.message) == ["第一行\nsecond line"])
+        #expect(records.first?.timestamp != "1000")
         #expect(copied.contains("第一行\nsecond line"))
         #expect(copy.succeeded)
         #expect(signedOut)

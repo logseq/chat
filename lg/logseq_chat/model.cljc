@@ -367,33 +367,47 @@
       (Some day) (str day)
       None "")))
 
+(defn finish-journal-section [result start start-index end-index]
+  (match start
+    (Some row)
+    (conj
+     result
+     (record journal-section-marker
+       (block-id (:uuid row))
+       (page-id (:page-id row))
+       (title (journal-section-title row))
+       (has-divider (not (empty? result)))
+       (start-index start-index)
+       (end-index end-index)))
+    None result))
+
 (defn journal-section-markers [rows]
   (loop [index 0
-         previous-key None
-         has-section false
+         section-key None
+         section-start None
+         section-start-index 0
          result []]
     (if (= index (count rows))
-      result
+      (finish-journal-section result section-start section-start-index index)
       (let [row (nth rows index)
-            key (journal-section-key row)
+            row-key (journal-section-key row)
             starts-section
-            (match key
-              (Some _current-key) (not (= key previous-key))
+            (match row-key
+              (Some _key) (not (= row-key section-key))
               None false)
-            next-key (if starts-section key previous-key)
             next-result
             (if starts-section
-              (conj
-               result
-               (record journal-section-marker
-                 (block-id (:uuid row))
-                 (page-id (:page-id row))
-                 (title (journal-section-title row))
-                 (has-divider has-section)))
-              result)]
+              (finish-journal-section
+               result section-start section-start-index index)
+              result)
+            next-start
+            (if starts-section (Some row) section-start)
+            next-start-index
+            (if starts-section index section-start-index)]
         (recur (inc index)
-               next-key
-               (or has-section starts-section)
+               (if starts-section row-key section-key)
+               next-start
+               next-start-index
                next-result)))))
 
 (defn graph-by-id [graphs target]
@@ -1614,7 +1628,13 @@
       (enqueue-effect current (OpenExternalURLEffect id url)))
 
     OpenRuntimeLog
-    (assoc current :runtime-log-open true)
+    (let [updated (assoc current :runtime-log-open true)
+          id (:next-effect-id updated)]
+      (enqueue-effect
+       updated
+       (RefreshRuntimeLogEffect
+        id (:runtime-log-source updated) (:runtime-log-errors-only updated)
+        (:runtime-log-newest-first updated))))
 
     DismissRuntimeLog
     (assoc current :runtime-log-open false)

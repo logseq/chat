@@ -399,9 +399,10 @@
     (is (:runtime-log-errors-only filtered) "log filtering is model-owned")
     (assert-equal
      [(model/SaveSettingsEffect 1 (model/current-settings hidden))
-      (model/RefreshRuntimeLogEffect 2 "ui" true false)]
+      (model/RefreshRuntimeLogEffect 2 "ui" false false)
+      (model/RefreshRuntimeLogEffect 3 "ui" true false)]
      (:pending-effects refreshed)
-     "tabs persist immediately before diagnostics refresh")))
+     "opening diagnostics loads records before later filter changes")))
 
 (deftest settings-preferences-persist-without-dismissing-the-sheet
   (let [opened
@@ -762,8 +763,15 @@
     (driver/send! application model/OpenSettings)
     (driver/flush! application)
     (let [root (main-root renderer application)
+          settings-sheet (descendant-with-identifier renderer root "sheet.settings")
           settings-screen (descendant-with-identifier renderer root
                                                       "screen.settings")]
+      (assert-equal "Settings"
+                    (property-string renderer settings-sheet proto/TextValue)
+                    "the settings root owns the native sheet title")
+      (assert-equal "navigation-scroll"
+                    (property-string renderer settings-sheet proto/StyleClass)
+                    "the settings root keeps its custom scrolling cards")
       (is (not (= -1 settings-screen))
           "settings retain their baseline screen identifier")
       (assert-equal
@@ -775,9 +783,19 @@
        (descendant-count-with-property-string
         renderer settings-screen proto/BackgroundValue "surface")
        "settings cards use the same themed surface as main")
-      (is (not (= -1 (descendant-with-identifier renderer root
-                                                  "link.settings.tabs")))
-          "settings expose tabs navigation")
+      (let [tabs-link
+            (descendant-with-identifier renderer root "link.settings.tabs")
+            tabs-selection
+            (descendant-with-identifier
+             renderer tabs-link "text.settings.tabs.selection")]
+        (is (not (= -1 tabs-link)) "settings expose tabs navigation")
+        (assert-equal 0
+                      (property-int renderer tabs-link proto/PaddingValue)
+                      "settings card rows do not duplicate card padding")
+        (assert-equal
+         "Journals · Flashcards · Graphs"
+         (property-string renderer tabs-selection proto/TextValue)
+         "tabs show the same selected-items summary as main"))
       (is (not (= -1 (descendant-with-identifier
                       renderer root "toolbar.settings.actions")))
           "settings use the native navigation-form toolbar contract")
@@ -802,6 +820,9 @@
              renderer root "button.export-graph-database")]
         (is (not (= -1 export))
             "settings expose database export for a downloaded graph")
+        (assert-equal 0
+                      (property-int renderer export proto/PaddingValue)
+                      "settings actions align with ordinary card rows")
         (driver/dispatch-event! application (proto/Press export))
         (driver/flush! application)
         (assert-equal [(model/ExportGraphDatabaseEffect 1)]
@@ -809,9 +830,33 @@
                       "database export stays on the typed platform boundary"))
       (driver/send! application model/OpenSettingsTabs)
       (driver/flush! application)
-      (is (not (= -1 (descendant-with-identifier renderer root
-                                                  "screen.settings.tabs")))
-          "tabs retain their baseline screen identifier")
+      (let [tabs-sheet
+            (descendant-with-identifier renderer root "sheet.settings")
+            tabs-screen
+            (descendant-with-identifier renderer root "screen.settings.tabs")
+            flashcards-row
+            (descendant-with-identifier renderer root
+                                        "row.settings.tab.flashcards")
+            back
+            (descendant-with-identifier renderer root "button.connection.cancel")
+            confirmation
+            (descendant-with-identifier renderer root "button.connection.apply")]
+        (is (not (= -1 tabs-screen))
+            "tabs retain their baseline screen identifier")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer flashcards-row)
+                      "tab controls render as full-width native list rows")
+        (assert-equal "Tabs"
+                      (property-string renderer tabs-sheet proto/TextValue)
+                      "tabs replace the sheet navigation title")
+        (assert-equal "navigation-list"
+                      (property-string renderer tabs-sheet proto/StyleClass)
+                      "tabs use the native list surface")
+        (assert-equal "Settings"
+                      (property-string renderer back proto/TextValue)
+                      "tabs expose a settings back action")
+        (assert-equal -1 confirmation
+                      "tabs do not retain the root Apply action"))
       (is (not (= -1 (descendant-with-identifier
                       renderer root "toggle.settings.tab.flashcards")))
           "configurable tabs retain their stable identifiers")
@@ -1142,7 +1187,7 @@
           None None)]
     (assert-equal
      (Some
-      "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
+      "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
      fingerprint
      (str "native navigation must share one pinned LG and Swift wire contract: "
           fingerprint))))
@@ -1628,9 +1673,9 @@
                         None
                         (apple/node renderer top-safe-area))
                       "the full-height drawer reserves sidebar status-bar space in LG")
-        (assert-equal 52
+        (assert-equal 48
                       (property-int renderer top-safe-area proto/HeightValue)
-                      "the sidebar spacer plus outer inset matches main's 64-point top padding")
+                      "the sidebar spacer plus the following 4-point gap matches main")
         (assert-equal graph-switch
                       (descendant-with-identifier
                        renderer
@@ -1941,9 +1986,34 @@
     (driver/send! application model/ShowFlashcards)
     (driver/flush! application)
     (let [main (main-root renderer application)
-          screen (child-with-identifier renderer main "screen.flashcards")]
-      (is (not (= -1 (child-with-identifier renderer screen "flashcards.empty")))
-          "an empty due queue preserves the existing empty state"))
+          screen (child-with-identifier renderer main "screen.flashcards")
+          empty-state
+          (child-with-identifier renderer screen "flashcards.empty")
+          empty-children (apple/children renderer empty-state)
+          empty-title (nth empty-children 0)
+          empty-description (nth empty-children 1)]
+      (is (not (= -1 empty-state))
+          "an empty due queue preserves the existing empty state")
+      (assert-equal 1.0
+                    (property-float renderer empty-state proto/GrowValue)
+                    "the empty state fills the page before centering")
+      (assert-equal "center"
+                    (property-string renderer empty-state proto/MainAlignment)
+                    "the empty state is vertically centered like main")
+      (assert-equal "center"
+                    (property-string renderer empty-state proto/CrossAlignment)
+                    "the empty state is horizontally centered like main")
+      (assert-equal 3
+                    (property-int renderer empty-title proto/HeadingLevel)
+                    "the empty title uses main's title2 typography")
+      (assert-equal "center"
+                    (property-string renderer empty-description
+                                     proto/TextAlignment)
+                    "the empty description is centered")
+      (assert-equal "muted-foreground"
+                    (property-string renderer empty-description
+                                     proto/ForegroundValue)
+                    "the empty description uses secondary foreground"))
     (driver/send!
      application
      (apply-core-snapshot
@@ -2316,11 +2386,11 @@
                           :outliner-editing (Some editing)
                           :outliner-selected-block-ids ["block-a"]))
                   "selection has highest priority")
-    (assert-equal "hidden"
+    (assert-equal "capture-and-search"
                   (view/bottom-chrome-presentation
                    (assoc journal
                           :app-navigation-path [(model/NodeRoute "node-a")]))
-                  "node pages do not duplicate Capture")))
+                  "node pages keep Capture visible like main")))
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -2332,6 +2402,8 @@
           chrome (native-bottom-chrome renderer application)
           composer
           (descendant-with-identifier renderer chrome "surface.composer.root")
+          placement
+          (descendant-with-identifier renderer chrome "row.bottom.capture")
           search (descendant-with-identifier renderer chrome "button.search")
           collapsed (nth (apple/children renderer composer) 0)]
       (assert-equal (Some apple/AppleBox)
@@ -2341,6 +2413,8 @@
                     (extension-property application navigation
                                         "bottom-occupies-layout-space")
                     "Capture floats above the Outliner like main")
+      (assert-equal 1.0 (property-float renderer placement proto/GrowValue)
+                    "the collapsed bottom row fills the viewport for symmetric edge insets")
       (assert-equal "search"
                     (property-string renderer search proto/InlineIconName)
                     "collapsed search uses the main branch icon control")
@@ -2388,6 +2462,9 @@
                       (property-string renderer expanded-row
                                        proto/CrossAlignment)
                       "expanded Capture keeps intrinsic bottom-overlay height")
+        (assert-equal 1.0
+                      (property-float renderer expanded-row proto/GrowValue)
+                      "expanded Capture fills the viewport before applying equal edge insets")
         (assert-equal "field.composer"
                       (property-string renderer field
                                        proto/AccessibilityIdentifier)
@@ -2795,10 +2872,10 @@
           "the bridge emits escaped capture JSON for the host executor")
       (is (and
            (string/includes? persist-dispatch
-                             "\"patch\":\"{\\\"generation\\\":")
+                             "\"patch\":")
            (string/includes? capture-dispatch
-                             "\"patch\":\"{\\\"generation\\\":"))
-          "each dispatch carries the dequeue patch needed for contiguous generations"))
+                             "\"patch\":"))
+          "each dispatch explicitly carries its possibly empty dequeue patch"))
     (assert-equal "" (bridge/take-effect)
                   "an effect is never dispatched to the host twice")
     (assert-equal [(model/PersistComposerDraftEffect 2 "")
@@ -3065,6 +3142,7 @@
           screen (descendant-with-identifier renderer navigation "screen.node")
           title (descendant-with-identifier renderer screen "title.node")
           outliner (descendant-with-identifier renderer screen "scroll.outliner")
+          content (nth (apple/children renderer outliner) 0)
           related
           (descendant-with-identifier
            renderer outliner "section.node.linked-references")
@@ -3075,6 +3153,9 @@
       (assert-equal "Project"
                     (property-string renderer title proto/TextValue)
                     "the route title comes from the core projection")
+      (assert-equal 8
+                    (property-int renderer content proto/PaddingHorizontal)
+                    "node content uses the same outer inset as main")
       (is (not (= related -1))
           "node routes render their linked references section")
       (is (not (= breadcrumb -1))
@@ -3117,10 +3198,10 @@
                     (descendant-with-identifier renderer screen
                                                 "surface.composer.root")
                     "node content does not contain a duplicate composer")
-      (assert-equal -1
-                    (descendant-with-identifier renderer chrome
-                                                "surface.composer.root")
-                    "the global bottom slot hides Capture on node pages")
+      (is (not (= -1
+                  (descendant-with-identifier renderer chrome
+                                              "surface.composer.root")))
+          "the global bottom slot keeps Capture on node pages like main")
       (driver/dispatch-event!
        application
        (proto/ExtensionEvent navigation "native-navigation-stack" "back"
@@ -3410,7 +3491,7 @@
     (is (:has-older-journals updated)
         "outliner patches preserve journal pagination state")))
 
-(deftest journal-home-renders-navigable-section-headings-and-dividers
+(deftest journal-home-renders-viewport-sized-navigable-sections
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         day-a
@@ -3432,6 +3513,10 @@
           (descendant-with-identifier renderer root "button.journal.page-a")
           second-heading
           (descendant-with-identifier renderer root "button.journal.page-b")
+          first-section
+          (descendant-with-identifier renderer outliner "journal.section.page-a")
+          second-section
+          (descendant-with-identifier renderer outliner "journal.section.page-b")
           heading-children (apple/children renderer first-heading)
           heading-surface
           (if (empty? heading-children) -1 (nth heading-children 0))
@@ -3447,7 +3532,7 @@
           (if (< (count heading-surface-children) 2)
             -1
             (nth heading-surface-children 1))]
-      (assert-equal 16
+      (assert-equal 8
                     (property-int renderer outliner proto/PaddingValue)
                     "journal content keeps main's outer horizontal inset")
       (is (not (= first-heading -1))
@@ -3464,10 +3549,32 @@
       (is (not (= -1 (descendant-with-identifier
                       renderer outliner "outliner.block.day-b")))
           "the second day's row stays inside the virtualized collection")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer first-section)
+                    "each journal day owns one layout section")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer second-section)
+                    "later journal days keep independent layout sections")
+      (assert-equal "min-vertical"
+                    (property-string renderer first-section
+                                     proto/ContainerRelativeFrameValue)
+                    "journal sections reserve at least the visible viewport without compressing long content")
+      (assert-equal 136
+                    (property-int renderer first-section
+                                  proto/ContainerRelativeFrameInset)
+                    "journal sections leave main's header and composer clearance outside the minimum viewport")
+      (assert-equal 136
+                    (property-int renderer second-section
+                                  proto/ContainerRelativeFrameInset)
+                    "every journal section uses the same visible viewport clearance")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer first-section "outliner.block.day-a")))
+          "the first journal row belongs to the first section")
       (assert-equal -1
                     (descendant-with-identifier
-                     renderer outliner "journal.section.page-a")
-                    "journal entries do not create nested section lists")
+                     renderer first-section "outliner.block.day-b")
+                    "the next journal row does not leak into the first section")
       (assert-equal (Some apple/AppleListItem)
                     (apple/node renderer first-heading)
                     "journal headings use a plain interactive content row")
@@ -3783,6 +3890,10 @@
                     "journal blocks use one native lazy scrolling collection")
       (assert-equal 1.0 (property-float renderer list-node proto/GrowValue)
                     "the journal collection owns the remaining viewport")
+      (assert-equal 16
+                    (property-int renderer (nth (apple/children renderer list-node) 0)
+                                  proto/HeightValue)
+                    "journal content starts at main's native outliner inset")
       (assert-equal -1
                     (descendant-with-identifier renderer root "scroll.outliner")
                     "the virtual list does not retain a redundant scroll wrapper"))))

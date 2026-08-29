@@ -126,7 +126,9 @@
   (block-id :string)
   (page-id :string)
   (title :string)
-  (has-divider :bool))
+  (has-divider :bool)
+  (start-index :int)
+  (end-index :int))
 
 (type-record outliner-editing
   (uuid :string)
@@ -445,6 +447,8 @@
  :fn<outline-row;string>)
 (signature logseq-chat.model/journal-section-markers
  :fn<vector<outline-row>;vector<journal-section-marker>>)
+(signature logseq-chat.model/finish-journal-section
+ :fn<vector<journal-section-marker>;option<outline-row>;int;int;vector<journal-section-marker>>)
 (signature logseq-chat.model/request-route
  :fn<vector<navigation-route>;navigation-route;vector<navigation-route>>)
 (signature logseq-chat.model/resolve-route

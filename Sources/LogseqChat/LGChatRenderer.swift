@@ -47,6 +47,54 @@ public struct LGChatRendererEvent: Equatable, Sendable {
     }
 }
 
+enum LGChatIconPolicy {
+    static var icons: [String: LUIAppleIconSource] {
+        var result: [String: LUIAppleIconSource] = [
+            "calendar": .assetName("calendar"),
+            "chevron-down": .assetName("chevron_down"),
+            "document": .assetName("document"),
+            "flashcards": .assetName("flashcards"),
+            "folder": .assetName("folder"),
+            "graph-local": .systemName("cylinder.split.1x2"),
+            "graph-locked": .systemName("lock"),
+            "graph-remote": .systemName("icloud"),
+            "history": .assetName("history"),
+            "more-horiz": .assetName("more_horiz"),
+            "sidebar-toggle": .assetName("sidebar_toggle"),
+            "star": .assetName("star"),
+            "status-dot": .assetName("status_dot"),
+            "task-backlog": .assetName("task_backlog"),
+            "task-canceled": .assetName("task_canceled"),
+            "task-doing": .assetName("task_doing"),
+            "task-done": .assetName("task_done"),
+            "task-review": .assetName("task_review"),
+            "task-todo": .systemName("circle"),
+            "toolbar-attachment": .systemName("paperclip"),
+            "toolbar-audio": .systemName("mic"),
+            "toolbar-camera": .systemName("camera"),
+            "composer-photo": .systemName("photo.on.rectangle.angled"),
+            "toolbar-copy": .systemName("doc.on.doc"),
+            "toolbar-copy-reference": .systemName("r.square"),
+            "toolbar-copy-url": .systemName("link"),
+            "toolbar-delete": .systemName("trash"),
+            "toolbar-hide-keyboard": .systemName("keyboard.chevron.compact.down"),
+            "toolbar-indent": .systemName("arrow.right"),
+            "toolbar-outdent": .systemName("arrow.left"),
+            "toolbar-tag": .systemName("number"),
+            "toolbar-task": .systemName("checkmark.square"),
+            "toolbar-unselect": .systemName("xmark"),
+        ]
+        #if !SKIP
+        result["calendar"] = .systemName("calendar")
+        result["document"] = .systemName("doc.text")
+        result["folder"] = .systemName("folder")
+        result["history"] = .systemName("clock")
+        result["star"] = .systemName("star")
+        #endif
+        return result
+    }
+}
+
 @MainActor
 @Observable
 public final class LGChatRenderer {
@@ -69,41 +117,7 @@ public final class LGChatRenderer {
     private static func makeBackend() -> LUIAppleBackend {
         do {
             return try LUIAppleBackend(
-                appIcons: [
-                    "calendar": .assetName("calendar"),
-                    "chevron-down": .assetName("chevron_down"),
-                    "document": .assetName("document"),
-                    "flashcards": .assetName("flashcards"),
-                    "folder": .assetName("folder"),
-                    "graph-local": .systemName("cylinder.split.1x2"),
-                    "graph-locked": .systemName("lock"),
-                    "graph-remote": .systemName("icloud"),
-                    "history": .assetName("history"),
-                    "more-horiz": .assetName("more_horiz"),
-                    "sidebar-toggle": .assetName("sidebar_toggle"),
-                    "star": .assetName("star"),
-                    "status-dot": .assetName("status_dot"),
-                    "task-backlog": .assetName("task_backlog"),
-                    "task-canceled": .assetName("task_canceled"),
-                    "task-doing": .assetName("task_doing"),
-                    "task-done": .assetName("task_done"),
-                    "task-review": .assetName("task_review"),
-                    "task-todo": .systemName("circle"),
-                    "toolbar-attachment": .systemName("paperclip"),
-                    "toolbar-audio": .systemName("mic"),
-                    "toolbar-camera": .systemName("camera"),
-                    "composer-photo": .systemName("photo.on.rectangle.angled"),
-                    "toolbar-copy": .systemName("doc.on.doc"),
-                    "toolbar-copy-reference": .systemName("r.square"),
-                    "toolbar-copy-url": .systemName("link"),
-                    "toolbar-delete": .systemName("trash"),
-                    "toolbar-hide-keyboard": .systemName("keyboard.chevron.compact.down"),
-                    "toolbar-indent": .systemName("arrow.right"),
-                    "toolbar-outdent": .systemName("arrow.left"),
-                    "toolbar-tag": .systemName("number"),
-                    "toolbar-task": .systemName("checkmark.square"),
-                    "toolbar-unselect": .systemName("xmark"),
-                ],
+                appIcons: LGChatIconPolicy.icons,
                 appIconBundle: .module,
                 extensionRegistry: LGChatExtensionRegistry.makeRegistry()
             )

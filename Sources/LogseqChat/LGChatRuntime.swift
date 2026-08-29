@@ -197,6 +197,9 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                     )
                 }
                 let flags = effect.value ?? 0
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateStyle = .none
+                timeFormatter.timeStyle = .short
                 let records = runtimeLog.records(
                     source: source,
                     errorsOnly: flags & 1 != 0,
@@ -206,7 +209,10 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                         id: String(record.id),
                         level: record.level.rawValue.uppercased(),
                         source: record.source.rawValue,
-                        timestamp: String(record.timestampMilliseconds),
+                        timestamp: timeFormatter.string(from: Date(
+                            timeIntervalSince1970:
+                                Double(record.timestampMilliseconds) / 1_000
+                        )),
                         message: record.message
                     )
                 }
