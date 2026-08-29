@@ -575,6 +575,42 @@
 (defn task-status-title [status]
   (:title status))
 
+(defn task-status-style [status]
+  (let [value
+        (string/lower-case
+         (match (:ident status)
+           (Some ident) ident
+           None
+           (match (:icon-id status)
+             (Some icon-id) icon-id
+             None (:title status))))]
+    (cond
+      (string/includes? value "backlog") "backlog"
+      (or (string/includes? value "in-review")
+          (string/includes? value "inreview")) "in-review"
+      (or (string/includes? value "doing")
+          (string/includes? value "inprogress")
+          (string/includes? value "progress")) "doing"
+      (or (string/includes? value "done")
+          (string/includes? value "circle-check")) "done"
+      (or (string/includes? value "cancel")
+          (string/includes? value "circle-x")) "canceled"
+      :else "todo")))
+
+(defn task-status-icon-name [status]
+  (case (task-status-style status)
+    "backlog" "app:task-backlog"
+    "doing" "app:task-doing"
+    "in-review" "app:task-review"
+    "done" "app:task-done"
+    "canceled" "app:task-canceled"
+    "app:task-todo"))
+
+(defn task-status-foreground [status]
+  (match (:icon-color status)
+    (Some color) color
+    None (str "task-" (task-status-style status))))
+
 (defn task-status-selected? [current]
   (match (:selected-task-status current)
     (Some _status) true
@@ -1785,6 +1821,8 @@
      ui-context nil
      [:menu-item
       {:text (reactive task-status-title status-source)
+       :icon (reactive task-status-icon-name status-source)
+       :foreground-signal (reactive task-status-foreground status-source)
        :accessibility-identifier (task-status-identifier status)
        :on-press
        (event [current-status status-source]
@@ -2981,36 +3019,67 @@
 (defui sync-status-sheet [model-source send]
   [:sheet
    {:text "Sync status"
+    :class "navigation-list"
+    :accessibility-identifier "sheet.sync-status"
     :on-dismiss (fn [_event] (send model/CloseSyncDetails))}
-   [:column
-    [:heading "Sync status"]
-    [:row [:text "Status"] [:text {:value (reactive sync-label model-source)}]]
-    [:row [:text "Graph"] [:text {:value (reactive graph-label model-source)}]]
-    [:row
-     [:text "Connection"]
-     [:text {:value (reactive sync-connection-label model-source)}]]
-    [:row
-     [:text "Local changes"]
-     [:text
-      {:value (reactive sync-pending-label model-source)
-       :accessibility-identifier "sync.pending"}]]
-    [:row
-     [:text "Server cursor"]
-     [:text
-      {:value (reactive sync-cursor-label model-source)
-       :accessibility-identifier "sync.cursor"}]]
+   [:list
+    {:accessibility-identifier "list.sync-status"}
+    [:list-item {:accessibility-identifier "row.sync.status"}
+     [:row {:grow 1.0 :cross "center"}
+      [:text "Status"]
+      [:spacer {:grow 1.0}]
+      [:text {:value (reactive sync-label model-source)
+              :foreground "secondary"}]]]
+    [:list-item {:accessibility-identifier "row.sync.graph"}
+     [:row {:grow 1.0 :cross "center"}
+      [:text "Graph"]
+      [:spacer {:grow 1.0}]
+      [:text {:value (reactive graph-label model-source)
+              :foreground "secondary"}]]]
+    [:list-item {:accessibility-identifier "row.sync.connection"}
+     [:row {:grow 1.0 :cross "center"}
+      [:text "Connection"]
+      [:spacer {:grow 1.0}]
+      [:text {:value (reactive sync-connection-label model-source)
+              :foreground "secondary"}]]]
+    [:list-item {:accessibility-identifier "row.sync.pending"}
+     [:row {:grow 1.0 :cross "center"}
+      [:text "Local changes"]
+      [:spacer {:grow 1.0}]
+      [:text
+       {:value (reactive sync-pending-label model-source)
+        :foreground "secondary"
+        :accessibility-identifier "sync.pending"}]]]
+    [:list-item {:accessibility-identifier "row.sync.cursor"}
+     [:row {:grow 1.0 :cross "center"}
+      [:text "Server cursor"]
+      [:spacer {:grow 1.0}]
+      [:text
+       {:value (reactive sync-cursor-label model-source)
+        :foreground "secondary"
+        :accessibility-identifier "sync.cursor"}]]]
     [:if {:test (reactive sync-error-present? model-source)}
-     [:column
-      [:text "Last error"]
+     [:heading {:level 5} "Last error"]]
+    [:if {:test (reactive sync-error-present? model-source)}
+     [:list-item
       [:text
        {:value (reactive sync-error-message model-source)
+        :foreground "red"
         :accessibility-identifier "sync.error"}]]]
-    [:button
+    [:heading {:level 5} ""]
+    [:list-item
      {:accessibility-identifier "button.sync-now"
       :on-press (fn [_event] (send model/SyncNow))}
-     "Sync now"]
+     "Sync now"]]
+   [:toolbar
+    {:orientation "horizontal"
+     :label "Sync status actions"
+     :class "navigation-actions"
+     :accessibility-identifier "toolbar.sync.actions"}
     [:button
-     {:on-press (fn [_event] (send model/CloseSyncDetails))}
+     {:class "confirmation-action"
+      :accessibility-identifier "button.sync.done"
+      :on-press (fn [_event] (send model/CloseSyncDetails))}
      "Done"]]])
 
 (defui search-screen [model-source send]

@@ -1513,8 +1513,28 @@
                     renderer application-root "sync.cursor")
             pending (descendant-with-identifier
                      renderer application-root "sync.pending")
+            sheet (descendant-with-identifier
+                   renderer application-root "sheet.sync-status")
+            list-node (descendant-with-identifier
+                       renderer application-root "list.sync-status")
+            status-row (descendant-with-identifier
+                        renderer application-root "row.sync.status")
+            done (descendant-with-identifier
+                  renderer application-root "button.sync.done")
             sync-now (descendant-with-identifier
                       renderer application-root "button.sync-now")]
+        (assert-equal "navigation-list"
+                      (property-string renderer sheet proto/StyleClass)
+                      "sync details use main's native navigation Form sheet")
+        (assert-equal (Some apple/AppleList)
+                      (apple/node renderer list-node)
+                      "sync details use a native grouped list")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer status-row)
+                      "sync values use native Form rows")
+        (assert-equal "confirmation-action"
+                      (property-string renderer done proto/StyleClass)
+                      "Done stays in the native confirmation toolbar placement")
         (assert-equal "42" (property-string renderer cursor proto/TextValue)
                       "the authoritative server cursor is visible")
         (assert-equal "Waiting to save"
@@ -2830,7 +2850,13 @@
       (is (not (= -1 option)) "the task status menu renders Todo")
       (assert-equal "Todo"
                     (property-string renderer option proto/TextValue)
-                    "the native task status action preserves its label"))))
+                    "the native task status action preserves its label")
+      (assert-equal "app:task-todo"
+                    (property-string renderer option proto/InlineIconName)
+                    "the task status menu preserves main's semantic icon")
+      (assert-equal "task-todo"
+                    (property-string renderer option proto/ForegroundValue)
+                    "the task status menu preserves main's semantic color"))))
 
 (deftest task-capture-has-a-stable-native-effect-payload
   (let [todo

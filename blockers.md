@@ -634,6 +634,12 @@ Entries stay concise so work can continue on the highest-signal path.
   succeeded; the helper should eventually accept a prebuilt bundle or forward
   the local package override. Launch then timed out over the phone's network
   tunnel, so no rebuild or source workaround is warranted.
+- 2026-08-29 12:36 CST — `test-ios-e2e.sh` unconditionally uninstalls and
+  reinstalls the app bundle from its own repository even when
+  `LOGSEQ_CHAT_IOS_SKIP_BUILD=1`. It therefore cannot run a trustworthy
+  cross-worktree main/current A/B after a manually installed main bundle. For
+  comparison captures, install the intended bundle explicitly and invoke
+  Maestro directly; keep the wrapper for same-worktree runs.
 
 ## Decisions
 
