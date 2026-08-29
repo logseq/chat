@@ -5,6 +5,10 @@ enum LGChatNavigationSurfacePolicy {
     static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
         contentPreference
     }
+
+    static func bottomPadding(occupiesLayoutSpace: Bool) -> CGFloat {
+        occupiesLayoutSpace ? 7 : 0
+    }
 }
 
 @MainActor
@@ -556,7 +560,9 @@ private struct LGChatNavigationContent: View {
                 .modifier(LGChatBottomChromeSurface())
                 .modifier(LGChatBottomChromeHitTarget(isRounded: true))
                 .padding(.horizontal, 16)
-                .padding(.bottom, 21)
+                .padding(.bottom, LGChatNavigationSurfacePolicy.bottomPadding(
+                    occupiesLayoutSpace: true
+                ))
         } else {
             bottomChrome
                 .frame(maxWidth: .infinity)

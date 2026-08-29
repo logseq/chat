@@ -4299,9 +4299,9 @@
                     (property-string renderer toolbar
                                      proto/AccessibilityIdentifier)
                     "selection exposes main's stable toolbar identifier")
-      (assert-equal "scroll-leading"
+      (assert-equal "scroll-leading leading-inset-12"
                     (property-string renderer toolbar proto/StyleClass)
-                    "selection keeps its trailing action visible on narrow screens")
+                    "selection keeps its trailing action and main inset on narrow screens")
       (assert-equal "button.outliner.selection.copy"
                     (property-string renderer copy-button
                                      proto/AccessibilityIdentifier)
@@ -4322,7 +4322,10 @@
                           "selection actions retain main's iconography")
             (assert-equal caption
                           (property-string renderer button proto/TextValue)
-                          "selection actions retain main's captions"))))
+                          "selection actions retain main's captions")
+            (assert-equal (if (= index 6) 70 58)
+                          (property-int renderer button proto/WidthValue)
+                          "selection actions retain main's fixed widths"))))
       (assert-equal -1
                     (descendant-with-identifier renderer chrome
                                                 "surface.composer.root")
@@ -4394,9 +4397,9 @@
                     (property-string renderer autocomplete-bar
                                      proto/OrientationValue)
                     "autocomplete candidates retain their vertical layout")
-      (assert-equal "scroll-leading"
+      (assert-equal "scroll-leading leading-inset-8"
                     (property-string renderer editor-toolbar proto/StyleClass)
-                    "the editor keeps hide-keyboard visible on narrow screens")
+                    "the editor keeps hide-keyboard visible with main's inset")
       (assert-equal "button.outliner.editor.task"
                     (property-string renderer task-button
                                      proto/AccessibilityIdentifier)
@@ -4422,7 +4425,10 @@
                           "editor actions retain main's iconography")
             (assert-equal "<missing>"
                           (property-string renderer button proto/TextValue)
-                          "editor icon buttons do not render text labels"))))
+                          "editor icon buttons do not render text labels")
+            (assert-equal (if (= index 8) 54 42)
+                          (property-int renderer button proto/WidthValue)
+                          "editor actions retain main's fixed widths"))))
       (let [page-reference-button (nth editor-buttons 7)]
         (assert-equal "[[]]"
                       (property-string renderer page-reference-button
@@ -4431,7 +4437,10 @@
         (assert-equal "<missing>"
                       (property-string renderer page-reference-button
                                        proto/InlineIconName)
-                      "page reference does not replace its main-branch symbol"))
+                      "page reference does not replace its main-branch symbol")
+        (assert-equal 42
+                      (property-int renderer page-reference-button proto/WidthValue)
+                      "page reference retains main's toolbar item width"))
       (assert-equal -1
                     (descendant-with-identifier renderer chrome
                                                 "surface.composer.root")

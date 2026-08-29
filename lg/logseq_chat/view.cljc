@@ -1373,7 +1373,7 @@
     :ios [[:liquid-glass {:shape "capsule" :leading-inset 0}]]
     :label "Outliner selection"
     :accessibility-identifier "toolbar.outliner.selection"
-    :class "scroll-leading"
+    :class "scroll-leading leading-inset-12"
     :height 54
     :gap 6}
    [:button
@@ -1446,7 +1446,7 @@
    [:button
     {:icon "app:toolbar-unselect"
      :variant "ghost"
-     :width 58
+     :width 70
      :height 46
      :icon-placement "top"
      :label "Unselect"
@@ -1488,13 +1488,14 @@
    {:orientation "horizontal"
     :label "Outliner editor"
     :accessibility-identifier "toolbar.outliner.editor"
-    :class "scroll-leading"
+    :class "scroll-leading leading-inset-8"
     :height 50
     :gap 4}
    [:button
     {:icon "app:toolbar-task"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label (reactive outliner-editor-task-label model-source)
      :accessibility-identifier "button.outliner.editor.task"
      :on-press
@@ -1502,7 +1503,8 @@
    [:button
     {:icon "app:toolbar-outdent"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label "Outdent"
      :accessibility-identifier "button.outliner.editor.outdent"
      :on-press
@@ -1510,7 +1512,8 @@
    [:button
     {:icon "app:toolbar-indent"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label "Indent"
      :accessibility-identifier "button.outliner.editor.indent"
      :on-press
@@ -1518,7 +1521,8 @@
    [:button
     {:icon "app:toolbar-tag"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label "Tag"
      :accessibility-identifier "button.outliner.editor.tag"
      :on-press
@@ -1526,7 +1530,8 @@
    [:button
     {:icon "app:toolbar-camera"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label "Photo"
      :accessibility-identifier "button.outliner.editor.camera"
      :on-press
@@ -1534,7 +1539,8 @@
    [:button
     {:icon "app:toolbar-audio"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label "Record audio"
      :accessibility-identifier "button.outliner.editor.audio"
      :on-press
@@ -1542,13 +1548,17 @@
    [:button
     {:icon "app:toolbar-attachment"
      :variant "ghost"
-     :size "icon"
+     :width 42
+     :height 42
      :label "Upload asset"
      :accessibility-identifier "button.outliner.editor.attachment"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
    [:button
-    {:label "Page reference"
+    {:variant "ghost"
+     :width 42
+     :height 42
+     :label "Page reference"
      :accessibility-identifier "button.outliner.editor.pageReference"
      :on-press
      (fn [_event]
@@ -1557,7 +1567,8 @@
    [:button
     {:icon "app:toolbar-hide-keyboard"
      :variant "ghost"
-     :size "icon"
+     :width 54
+     :height 42
      :label "Hide keyboard"
      :accessibility-identifier "button.outliner.editor.hideKeyboard"
      :on-press

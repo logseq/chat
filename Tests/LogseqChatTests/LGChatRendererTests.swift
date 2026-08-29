@@ -26,6 +26,9 @@ struct LGChatRendererTests {
         #expect(!LGChatNavigationSurfacePolicy.usesSystemGroupedBackground(
             contentPreference: false
         ))
+        #expect(LGChatNavigationSurfacePolicy.bottomPadding(
+            occupiesLayoutSpace: true
+        ) == 7)
     }
 
     @Test("audio assets use the inline player when a local file is available")

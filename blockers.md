@@ -591,9 +591,10 @@ Entries stay concise so work can continue on the highest-signal path.
   The installed build is valid; unlock the phone and launch it manually (or
   retry only the launch command) instead of rebuilding the app.
 - 2026-08-29 09:22 CST — Skip 1.9.5 does not transpile SwiftUI `contentShape`
-  in the shared drawer implementation. The interaction shield is already a
-  full-frame `Color`, so keep its explicit hit testing and avoid a redundant
-  platform-specific modifier.
+  in the shared drawer implementation. Keep the interaction shield shared and
+  full-frame, but isolate the native `contentShape` and safe-area coverage in
+  the existing Apple-only view modifier; Android continues to use the full-frame
+  `Color` with explicit hit testing without expanding the wire protocol.
 - 2026-08-29 09:56 CST — Maestro's `waitForAnimationToEnd` can return after a
   drawer destination transition but before a newly mounted native grouped
   `List` has committed its stable section layout. A screenshot taken in that
@@ -601,12 +602,12 @@ Entries stay concise so work can continue on the highest-signal path.
   accessibility hierarchy already exposed the page actions. Screenshot flows
   for native lists should wait for a page-specific section marker before
   capturing; the settled Graphs screenshot matches main.
-- 2026-08-29 10:30 CST — SwiftUI's drawer transition used the
-  `logicallyComplete` animation callback to release its interaction shield.
-  A spring can be logically complete while it still has visible settling, so
-  controls could become interactive before the toggle motion fully ended. The
-  native drawer now holds the shield until the animation is removed, and the
-  Skip fallback covers the full 500 ms settling window.
+- 2026-08-29 10:30 CST — SwiftUI's drawer transition cannot safely use either
+  animation completion callback to own the interaction lock: `logicallyComplete`
+  releases before visible spring settling, while `removed` can be cancelled when
+  a sidebar selection rebuilds the destination and leave interaction locked
+  forever. Both Apple and Skip now use one generation-guarded 500 ms transition
+  lifecycle, which covers the spring settling window and always releases.
 - 2026-08-29 10:07 CST — The repository-wide `swift test` target is not a
   reliable integration gate in its current form. Native suites run concurrently
   against shared UserDefaults/core fixtures and produced ordering-dependent
