@@ -2153,11 +2153,11 @@
            :foreground "muted-foreground"
            :accessibility-identifier (graph-status-identifier graph)}]]]
       [:context-menu
+       {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:menu-item
          {:icon "trash"
           :variant "destructive"
-          :accessibility-identifier (graph-delete-identifier graph)
           :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
@@ -2185,11 +2185,11 @@
           :accessibility-identifier (graph-status-identifier graph)}
          "Preparing"]]]
       [:context-menu
+       {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:menu-item
          {:icon "trash"
           :variant "destructive"
-          :accessibility-identifier (graph-delete-identifier graph)
           :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
@@ -3019,44 +3019,45 @@
 (defui sync-status-sheet [model-source send]
   [:sheet
    {:text "Sync status"
-    :class "navigation-list"
+    :class "navigation-form"
     :accessibility-identifier "sheet.sync-status"
     :on-dismiss (fn [_event] (send model/CloseSyncDetails))}
-   [:list
-    {:accessibility-identifier "list.sync-status"}
+   [:column
+    {:class "form"
+     :accessibility-identifier "form.sync-status"}
     [:list-item {:accessibility-identifier "row.sync.status"}
-     [:row {:grow 1.0 :cross "center"}
+     [:row {:grow 1.0 :cross "center" :main "space_between"}
       [:text "Status"]
-      [:spacer {:grow 1.0}]
       [:text {:value (reactive sync-label model-source)
-              :foreground "secondary"}]]]
+              :foreground "secondary"
+              :text-alignment "end"}]]]
     [:list-item {:accessibility-identifier "row.sync.graph"}
-     [:row {:grow 1.0 :cross "center"}
+     [:row {:grow 1.0 :cross "center" :main "space_between"}
       [:text "Graph"]
-      [:spacer {:grow 1.0}]
       [:text {:value (reactive graph-label model-source)
-              :foreground "secondary"}]]]
+              :foreground "secondary"
+              :text-alignment "end"}]]]
     [:list-item {:accessibility-identifier "row.sync.connection"}
-     [:row {:grow 1.0 :cross "center"}
+     [:row {:grow 1.0 :cross "center" :main "space_between"}
       [:text "Connection"]
-      [:spacer {:grow 1.0}]
       [:text {:value (reactive sync-connection-label model-source)
-              :foreground "secondary"}]]]
+              :foreground "secondary"
+              :text-alignment "end"}]]]
     [:list-item {:accessibility-identifier "row.sync.pending"}
-     [:row {:grow 1.0 :cross "center"}
+     [:row {:grow 1.0 :cross "center" :main "space_between"}
       [:text "Local changes"]
-      [:spacer {:grow 1.0}]
       [:text
        {:value (reactive sync-pending-label model-source)
         :foreground "secondary"
+        :text-alignment "end"
         :accessibility-identifier "sync.pending"}]]]
     [:list-item {:accessibility-identifier "row.sync.cursor"}
-     [:row {:grow 1.0 :cross "center"}
+     [:row {:grow 1.0 :cross "center" :main "space_between"}
       [:text "Server cursor"]
-      [:spacer {:grow 1.0}]
       [:text
        {:value (reactive sync-cursor-label model-source)
         :foreground "secondary"
+        :text-alignment "end"
         :accessibility-identifier "sync.cursor"}]]]
     [:if {:test (reactive sync-error-present? model-source)}
      [:heading {:level 5} "Last error"]]
@@ -3067,7 +3068,7 @@
         :foreground "red"
         :accessibility-identifier "sync.error"}]]]
     [:heading {:level 5} ""]
-    [:list-item
+    [:button
      {:accessibility-identifier "button.sync-now"
       :on-press (fn [_event] (send model/SyncNow))}
      "Sync now"]]

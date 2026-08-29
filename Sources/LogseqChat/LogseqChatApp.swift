@@ -85,8 +85,6 @@ public struct LogseqChatRootView : View {
             "task-done": Color(red: 0.09, green: 0.64, blue: 0.29),
             "task-canceled": Color(red: 0.86, green: 0.15, blue: 0.15),
         ])
-        .tint(LogseqThemePolicy.accent)
-        .foregroundStyle(themePalette.primaryText)
         .background(themePalette.background.ignoresSafeArea())
     }
 

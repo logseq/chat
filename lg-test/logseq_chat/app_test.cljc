@@ -1515,26 +1515,29 @@
                      renderer application-root "sync.pending")
             sheet (descendant-with-identifier
                    renderer application-root "sheet.sync-status")
-            list-node (descendant-with-identifier
-                       renderer application-root "list.sync-status")
+            form-node (descendant-with-identifier
+                       renderer application-root "form.sync-status")
             status-row (descendant-with-identifier
                         renderer application-root "row.sync.status")
             done (descendant-with-identifier
                   renderer application-root "button.sync.done")
             sync-now (descendant-with-identifier
                       renderer application-root "button.sync-now")]
-        (assert-equal "navigation-list"
+        (assert-equal "navigation-form"
                       (property-string renderer sheet proto/StyleClass)
                       "sync details use main's native navigation Form sheet")
-        (assert-equal (Some apple/AppleList)
-                      (apple/node renderer list-node)
-                      "sync details use a native grouped list")
+        (assert-equal (Some apple/AppleColumn)
+                      (apple/node renderer form-node)
+                      "sync details expose native Form rows")
         (assert-equal (Some apple/AppleListItem)
                       (apple/node renderer status-row)
                       "sync values use native Form rows")
         (assert-equal "confirmation-action"
                       (property-string renderer done proto/StyleClass)
                       "Done stays in the native confirmation toolbar placement")
+        (assert-equal (Some apple/AppleButton)
+                      (apple/node renderer sync-now)
+                      "Sync now uses the native Form button interaction")
         (assert-equal "42" (property-string renderer cursor proto/TextValue)
                       "the authoritative server cursor is visible")
         (assert-equal "Waiting to save"
@@ -2190,6 +2193,9 @@
         (is (not (= -1 local-row)) "local graphs remain addressable")
         (is (not (= -1 remote-row)) "remote graphs remain addressable")
         (is (not (= -1 delete)) "local graphs expose deletion")
+        (assert-equal (Some apple/AppleContextMenu)
+                      (apple/node renderer delete)
+                      "the visible native Menu owns main's deletion identifier")
         (driver/dispatch-event! application (proto/Press add))
         (driver/flush! application)
         (let [form
@@ -2266,8 +2272,8 @@
     (assert-equal
      (Some false)
      (descendant-enabled
-      renderer (main-root renderer application) "button.graph.delete.local")
-     "a graph cannot be deleted again while deletion is in flight")))
+      renderer (main-root renderer application) "graph.local")
+     "the local graph row disables every action while deletion is in flight")))
 
 (deftest empty-graph-picker-replaces-refresh-with-progress-while-loading
   (let [renderer (apple/create-with-extensions (view/extension-registry))
