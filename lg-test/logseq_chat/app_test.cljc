@@ -1961,6 +1961,26 @@
      (:pending-effects reviewed)
      "ratings use the current projected card identity")))
 
+(deftest load-older-journals-coalesces-while-pending
+  (let [requested (model/update (model/initial) model/LoadOlderJournals)
+        duplicate-pending (model/update requested model/LoadOlderJournals)
+        in-flight (model/update requested (model/DequeueEffect 1))
+        duplicate-in-flight (model/update in-flight model/LoadOlderJournals)
+        resolved (model/update in-flight (model/ResolveEffect 1 true ""))
+        requested-again (model/update resolved model/LoadOlderJournals)]
+    (assert-equal
+     [(model/LoadOlderJournalsEffect 1)]
+     (:pending-effects duplicate-pending)
+     "a pending journal pagination request should absorb duplicate appears")
+    (assert-equal
+     []
+     (:pending-effects duplicate-in-flight)
+     "an in-flight journal pagination request should absorb duplicate appears")
+    (assert-equal
+     [(model/LoadOlderJournalsEffect 2)]
+     (:pending-effects requested-again)
+     "pagination should become available again after the request resolves")))
+
 (deftest flashcard-reveal-state-resets-only-when-the-current-card-changes
   (let [first-card (flashcard "card-a" "First […]" "First answer" [] true)
         same-card (flashcard "card-a" "Updated […]" "Updated answer" [] true)

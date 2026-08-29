@@ -487,6 +487,10 @@
  :fn<vector<chat-effect>;int;option<chat-effect>>)
 (signature logseq-chat.model/contains-sign-in-effect?
  :fn<vector<chat-effect>;bool>)
+(signature logseq-chat.model/contains-load-older-journals-effect?
+ :fn<vector<chat-effect>;bool>)
+(signature logseq-chat.model/load-older-journals-active?
+ :fn<chat-model;bool>)
 (signature logseq-chat.model/graph-effect-key
  :fn<chat-effect;string>)
 (signature logseq-chat.model/contains-graph-effect?

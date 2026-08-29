@@ -285,6 +285,21 @@
               _ false)]
         (if found true (recur (inc index)))))))
 
+(defn contains-load-older-journals-effect? [effects]
+  (loop [index 0]
+    (if (= index (count effects))
+      false
+      (let [found
+            (match (nth effects index)
+              (LoadOlderJournalsEffect _id) true
+              _ false)]
+        (if found true (recur (inc index)))))))
+
+(defn load-older-journals-active? [current]
+  (or
+   (contains-load-older-journals-effect? (:pending-effects current))
+   (contains-load-older-journals-effect? (:in-flight-effects current))))
+
 (defn graph-effect-key [effect]
   (match effect
     (RefreshGraphsEffect _id) "refresh"
@@ -1402,8 +1417,10 @@
       (enqueue-effect current (AddRootBlockEffect id uuid)))
 
     LoadOlderJournals
-    (let [id (:next-effect-id current)]
-      (enqueue-effect current (LoadOlderJournalsEffect id)))
+    (if (load-older-journals-active? current)
+      current
+      (let [id (:next-effect-id current)]
+        (enqueue-effect current (LoadOlderJournalsEffect id))))
 
     OpenSidebar
     (assoc current :sidebar-open true)
