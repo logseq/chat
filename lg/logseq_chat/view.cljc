@@ -1806,7 +1806,7 @@
    [:if {:test (reactive composer-collapsed? model-source)}
     [:button
      {:variant "ghost"
-      :ios [[:liquid-glass {:shape "capsule" :leading-inset 16}]]
+      :ios [[:liquid-glass {:shape "capsule" :leading-inset 30}]]
       :grow 1.0
       :height 58
       :accessibility-identifier "button.composer.expand"

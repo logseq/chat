@@ -693,3 +693,10 @@ Entries stay concise so work can continue on the highest-signal path.
   outliner toolbars, editor actions are icon controls (with `[[]]` retained as
   the page-reference symbol), while selection actions retain both icons and
   captions.
+# 2026-08-29: Physical iPhone temporarily unavailable after navigation build
+
+- The signed device app built successfully with the local LUI package, but
+  CoreDevice reported the target iPhone as `unavailable` during installation.
+- The ready-to-install artifact is `.build/LogseqChat-device.app`; retry the
+  direct install after the phone is unlocked and connected. Rebuilding is not
+  required.

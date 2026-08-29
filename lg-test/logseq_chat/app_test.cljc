@@ -2632,6 +2632,32 @@
         (is (not (:composer-expanded (chat/model application)))
             "the native outside-tap layer dismisses through LG state")))))
 
+(deftest ios-capture-and-search-match-main-native-metrics
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [chrome (native-bottom-chrome renderer application)
+          row (descendant-with-identifier renderer chrome "row.bottom.capture")
+          search (descendant-with-identifier renderer chrome "button.search")
+          capture-glass
+          (descendant-with-extension
+           renderer application chrome "liquid-glass")]
+      (assert-equal 10 (property-int renderer row proto/Gap)
+                    "Capture and Search keep main's ten-point separation")
+      (assert-equal 58 (property-int renderer search proto/WidthValue)
+                    "Search keeps main's native 58-point hit target")
+      (assert-equal 58 (property-int renderer search proto/HeightValue)
+                    "Search keeps main's native 58-point hit target")
+      (assert-equal "icon" (property-string renderer search proto/SizeValue)
+                    "Search uses the native 24-point icon size policy")
+      (assert-equal
+       (Some (proto/IntValue 30))
+       (extension-property application capture-glass "leading-inset")
+       "Capture matches main's native horizontal text inset"))))
+
 (deftest composer-dismissal-preserves-an-unsent-draft
   (let [expanded (model/update (model/initial) model/ExpandComposer)
         drafted (model/update expanded (model/ChangeComposerDraft "Later"))
