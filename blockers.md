@@ -700,3 +700,18 @@ Entries stay concise so work can continue on the highest-signal path.
 - The ready-to-install artifact is `.build/LogseqChat-device.app`; retry the
   direct install after the phone is unlocked and connected. Rebuilding is not
   required.
+
+# 2026-08-29: iOS 26 modal large-title state blocks a single-sheet refactor
+
+- A retained Settings sheet with dynamic ScrollView/List content consistently
+  left the large navigation title at zero opacity, including after exposing the
+  native List directly and rebuilding the modal NavigationStack.
+- LUI structural properties such as class, background, and list labels are
+  intentionally static, so making them reactive would expand the protocol for
+  one screen. Keep the proven separate native Settings, Tabs, and Log sheets
+  until LUI has a general navigation-destination primitive.
+- Main keeps Settings and Tabs in one `NavigationStack` and opens Tabs with a
+  `NavigationLink`. Replacing one presented sheet with another reuses the iOS 26
+  presentation host and can leave the next large title at zero opacity. Explicit
+  title modes, view identities, and serialized sheet dismissal did not make that
+  behavior reliable, so none of those workarounds are retained.
