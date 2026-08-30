@@ -126,9 +126,11 @@ struct LGChatRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"native-search-presentation","fingerprint":"lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,9:presented:bool:required:none|events:4:back[5:count:int:required],7:dismiss[]"},
+          {"op":"create-extension","id":2,"identifier":"native-search-presentation","fingerprint":"\(LGChatSearchPresentationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":2,"property":"presented","value":false},
           {"op":"set-extension-prop","id":2,"property":"depth","value":0},
+          {"op":"set-extension-prop","id":2,"property":"query","value":""},
+          {"op":"set-extension-prop","id":2,"property":"title","value":"Search"},
           {"op":"create-node","id":3,"kind":"column"},
           {"op":"create-node","id":4,"kind":"column"},
           {"op":"insert-child","parent":2,"child":3,"index":0},

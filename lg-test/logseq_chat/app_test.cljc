@@ -1210,14 +1210,17 @@
 
 (deftest native-search-presentation-extension-contract-is-pinned
   (let [schema (ext/schema (view/extension-registry)
-                           "native-search-presentation")]
+                           "native-search-presentation")
+        fingerprint
+        (match schema
+          (Some current) (Some (ext/fingerprint current))
+          None None)]
     (assert-equal
      (Some
-      "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
-     (match schema
-       (Some current) (Some (ext/fingerprint current))
-       None None)
-     "search must use a distinct native full-screen navigation contract")))
+      "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+     fingerprint
+     (str "search must use a distinct native full-screen navigation contract: "
+          fingerprint))))
 
 (deftest liquid-glass-remains-an-ios-local-tweak
   (let [registry (view/extension-registry)
@@ -1480,7 +1483,7 @@
       (assert-equal (Some (apple/AppleExtension "native-overflow-menu"))
                     (apple/node renderer connection-control)
                     "the trailing action uses the platform-native menu")
-      (assert-equal "Journal"
+      (assert-equal "Journals"
                     (property-string renderer title proto/TextValue)
                     "the journal root keeps the main navigation title")
       (assert-equal "Syncing"
@@ -3252,7 +3255,7 @@
         routed (assoc initial
                       :node-routes [route]
                       :app-navigation-path [(model/NodeRoute "node-a")])]
-    (assert-equal "Journal" (view/main-title initial)
+    (assert-equal "Journals" (view/main-title initial)
                   "journals use the root application title")
     (assert-equal "Project"
                   (view/main-title (assoc initial :selected-page (Some page)))
@@ -3264,7 +3267,7 @@
                   (view/main-title
                    (assoc initial :destination model/FlashcardsDestination))
                   "flashcards use their destination title")
-    (assert-equal "Journal"
+    (assert-equal "Journals"
                   (view/main-title
                    (assoc initial :destination model/GraphsDestination))
                   "graphs preserve main's root header title")))
@@ -3290,7 +3293,7 @@
                   "one native pop immediately restores the preceding route title")
     (assert-equal true (view/active-page-actions-visible? returned-a)
                   "one native pop keeps the preceding destination actions")
-    (assert-equal "Journal" (view/main-title returned-root)
+    (assert-equal "Journals" (view/main-title returned-root)
                   "returning to root does not wait for close-node projections")
     (assert-equal false (view/active-page-actions-visible? returned-root)
                   "returning to root immediately restores settings actions")))
@@ -3339,6 +3342,9 @@
     (driver/flush! application)
     (let [navigation
           (extension-node application "native-search-presentation")]
+      (assert-equal (Some (proto/StringValue "Search"))
+                    (extension-property application navigation "title")
+                    "native search owns a stable navigation title")
       (driver/dispatch-event!
        application
        (proto/ExtensionEvent navigation "native-search-presentation" "back"
@@ -4267,6 +4273,10 @@
       (driver/send! application
                     (model/ApplySearchResults "project" [block page]))
       (driver/flush! application)
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "screen.search.results")))
+          "search results use a native list surface for safe-area and scrolling behavior")
       (is (not (= -1
                   (descendant-with-identifier
                    renderer panel "search.section.pages")))

@@ -83,7 +83,8 @@
    true []
    [(ext/property "presented" ext/BoolScalar true None)
     (ext/property "depth" ext/IntScalar true None)
-    (ext/property "query" ext/StringScalar true None)]
+    (ext/property "query" ext/StringScalar true None)
+    (ext/property "title" ext/StringScalar true None)]
    [(ext/event "back" [(ext/event-field "count" ext/IntScalar true)])
     (ext/event "dismiss" [])
     (ext/event
@@ -646,6 +647,9 @@
 (defn search-empty-state-present? [current]
   (empty? (:search-results current)))
 
+(defn search-results-present? [current]
+  (not (search-empty-state-present? current)))
+
 (defn search-empty-message [current]
   (if (string/blank? (:search-query current))
     "Search your graph"
@@ -942,10 +946,10 @@
   (if (= (:destination current) model/FlashcardsDestination)
     "Flashcards"
     (if (= (:destination current) model/GraphsDestination)
-      "Journal"
+      "Journals"
       (match (model/active-page current)
         (Some page) (:title page)
-        None "Journal"))))
+        None "Journals"))))
 
 (defn current-content-active? [current]
   (match (active-node-projection current)
@@ -3141,24 +3145,28 @@
       [:text
        {:value (reactive search-empty-message model-source)
         :accessibility-identifier "search.empty"}]]]]
-   [:if {:test (reactive page-search-results-present? model-source)}
-    [:text {:accessibility-identifier "search.section.pages"} "Pages"]]
-   [:column
-    [:keyed
-     {:source (reactive page-search-results model-source)
-      :key :uuid
-      :compare compare
-      :as hit-source}
-     [search-result-row hit-source send]]]
-   [:if {:test (reactive block-search-results-present? model-source)}
-    [:text {:accessibility-identifier "search.section.blocks"} "Blocks"]]
-   [:column
-    [:keyed
-     {:source (reactive block-search-results model-source)
-      :key :uuid
-      :compare compare
-      :as hit-source}
-     [search-result-row hit-source send]]]])
+   [:if {:test (reactive search-results-present? model-source)}
+    [:list {:accessibility-identifier "screen.search.results"}
+     [:if {:test (reactive page-search-results-present? model-source)}
+      [:heading {:level 5
+                 :accessibility-identifier "search.section.pages"}
+       "Pages"]]
+     [:keyed
+      {:source (reactive page-search-results model-source)
+       :key :uuid
+       :compare compare
+       :as hit-source}
+      [search-result-row hit-source send]]
+     [:if {:test (reactive block-search-results-present? model-source)}
+      [:heading {:level 5
+                 :accessibility-identifier "search.section.blocks"}
+       "Blocks"]]
+     [:keyed
+      {:source (reactive block-search-results model-source)
+       :key :uuid
+       :compare compare
+       :as hit-source}
+      [search-result-row hit-source send]]]]])
 
 (defui main-bottom-chrome [model-source send]
   [:stack
@@ -3442,6 +3450,8 @@
      ui-context node "depth" depth-value-source)
     (ui/extension-property-signal!
      ui-context node "query" query-value-source)
+    (ui/extension-property!
+     ui-context node "title" (proto/StringValue "Search"))
     (ui/on-event!
      ui-context node
      (fn [input-event]

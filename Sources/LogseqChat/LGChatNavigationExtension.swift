@@ -91,7 +91,7 @@ private struct LGChatNavigationStack: View {
 @MainActor
 enum LGChatSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -103,6 +103,7 @@ enum LGChatSearchPresentationExtension {
                     .init(name: "presented", kind: .bool, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "query", kind: .string, isRequired: true),
+                    .init(name: "title", kind: .string, isRequired: true),
                 ],
                 events: [
                     .init(name: "back", fields: [
@@ -186,6 +187,8 @@ private struct LGChatSearchPresentation: View {
     #if !SKIP && os(iOS)
     private func nativeLegacySearch(_ content: AnyView) -> some View {
         content
+            .navigationTitle(searchTitle)
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(
                 text: queryBinding,
                 isPresented: nativeSearchPresentedBinding,
@@ -200,6 +203,8 @@ private struct LGChatSearchPresentation: View {
     @available(iOS 26.0, *)
     private func nativeBottomSearch(_ content: AnyView) -> some View {
         content
+            .navigationTitle(searchTitle)
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(
                 text: queryBinding,
                 isPresented: nativeSearchPresentedBinding,
@@ -208,11 +213,9 @@ private struct LGChatSearchPresentation: View {
             )
             .searchFocused($searchFocused)
             .searchPresentationToolbarBehavior(.avoidHidingContent)
-            .toolbarVisibility(.hidden, for: .navigationBar)
             .toolbar {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
-                ToolbarSpacer(.fixed, placement: .bottomBar)
-                ToolbarItem(placement: .bottomBar) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button(action: exitSearch) {
                         Image("close", bundle: .module)
                             .frame(width: 20, height: 20)
@@ -270,6 +273,11 @@ private struct LGChatSearchPresentation: View {
 
     private var query: String {
         guard case let .string(value) = context.property("query") else { return "" }
+        return value
+    }
+
+    private var searchTitle: String {
+        guard case let .string(value) = context.property("title") else { return "Search" }
         return value
     }
 
@@ -422,17 +430,16 @@ private struct LGChatNavigationContent: View {
                         #else
                         if #available(iOS 26.0, macOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: context.childIDs[toolbarStartIndex])
-                                    .modifier(LGChatLiquidGlassSurface(shape: .circle))
-                                    .frame(width: LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
-                                        iconWidth: 24,
-                                        minimumHitTarget: 44
-                                    ))
-                            }
-                            .sharedBackgroundVisibility(.hidden)
-                            ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: context.childIDs[toolbarStartIndex + 1])
-                                    .fixedSize(horizontal: true, vertical: false)
+                                HStack(spacing: 14) {
+                                    context.content(for: context.childIDs[toolbarStartIndex])
+                                        .modifier(LGChatLiquidGlassSurface(shape: .circle))
+                                        .frame(width: LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
+                                            iconWidth: 24,
+                                            minimumHitTarget: 44
+                                        ))
+                                    context.content(for: context.childIDs[toolbarStartIndex + 1])
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
                             }
                             .sharedBackgroundVisibility(.hidden)
                         } else {
