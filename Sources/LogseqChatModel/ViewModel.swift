@@ -48,15 +48,27 @@ public final class LogseqChatCore {
     private init() {
     }
 
+    #if !SKIP
+    private func invokeCore(_ operation: @escaping @Sendable () -> String) -> String {
+        LogseqChatCoreExecutor.shared.callSync(
+            { _ in operation() },
+            requestJSON: "",
+            priority: .interaction
+        )
+    }
+    #endif
+
     public func initialize() {
         #if LOGSEQ_CHAT_CORE
-        LogseqChatCoreABI.logseq_chat_initialize()
+        _ = invokeCore { "" }
         #endif
     }
 
     /* SKIP EXTERN */ public func logseq_chat_call(_ request: String) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_call(request))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_call(request))
+        }
         #else
         return
             """
@@ -94,10 +106,12 @@ public final class LogseqChatCore {
         _ hostCode: Int
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_initialize(
-            Int32(platformCode),
-            Int32(hostCode)
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_initialize(
+                Int32(platformCode),
+                Int32(hostCode)
+            ))
+        }
         #else
         return ""
         #endif
@@ -105,7 +119,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_press(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_press(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -113,7 +129,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_appear(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_appear(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_appear(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -121,7 +139,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_long_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_long_press(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_long_press(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -132,10 +152,12 @@ public final class LogseqChatCore {
         _ text: String
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_text_changed(
-            Int64(node),
-            text
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_text_changed(
+                Int64(node),
+                text
+            ))
+        }
         #else
         return ""
         #endif
@@ -143,7 +165,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_submit(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_submit(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_submit(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -154,10 +178,12 @@ public final class LogseqChatCore {
         _ checked: Bool
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_toggle_changed(
-            Int64(node),
-            checked ? 1 : 0
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_toggle_changed(
+                Int64(node),
+                checked ? 1 : 0
+            ))
+        }
         #else
         return ""
         #endif
@@ -165,7 +191,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_change(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_change(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_change(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -176,10 +204,12 @@ public final class LogseqChatCore {
         _ value: Double
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_value_changed(
-            Int64(node),
-            value
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_value_changed(
+                Int64(node),
+                value
+            ))
+        }
         #else
         return ""
         #endif
@@ -187,7 +217,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_dismiss(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_dismiss(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_dismiss(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -195,7 +227,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_double_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_double_press(Int64(node)))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_double_press(Int64(node)))
+        }
         #else
         return ""
         #endif
@@ -209,13 +243,15 @@ public final class LogseqChatCore {
         _ value: Int
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_extension_event(
-            Int64(node),
-            identifier,
-            name,
-            text,
-            Int64(value)
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_extension_event(
+                Int64(node),
+                identifier,
+                name,
+                text,
+                Int64(value)
+            ))
+        }
         #else
         return ""
         #endif
@@ -223,7 +259,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_dispose() -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_dispose())
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_dispose())
+        }
         #else
         return ""
         #endif
@@ -231,7 +269,9 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_take_effect() -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_take_effect())
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_take_effect())
+        }
         #else
         return ""
         #endif
@@ -243,11 +283,13 @@ public final class LogseqChatCore {
         _ message: String
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_resolve_effect(
-            Int64(effectID),
-            succeeded ? 1 : 0,
-            message
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_resolve_effect(
+                Int64(effectID),
+                succeeded ? 1 : 0,
+                message
+            ))
+        }
         #else
         return ""
         #endif
@@ -257,9 +299,11 @@ public final class LogseqChatCore {
         _ responseJSON: String
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_snapshot(
-            responseJSON
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_snapshot(
+                responseJSON
+            ))
+        }
         #else
         return ""
         #endif
@@ -270,10 +314,12 @@ public final class LogseqChatCore {
         _ payloadJSON: String
     ) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_host_update(
-            kind,
-            payloadJSON
-        ))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_host_update(
+                kind,
+                payloadJSON
+            ))
+        }
         #else
         return ""
         #endif

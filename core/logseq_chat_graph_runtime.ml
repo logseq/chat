@@ -629,7 +629,7 @@ let has_older_journals runtime =
 ;;
 
 let load_older_journals runtime =
-  runtime.journal_limit <- runtime.journal_limit + 7
+  runtime.journal_limit <- runtime.journal_limit + 2
 ;;
 
 let blocks_for_page runtime page_uuid =

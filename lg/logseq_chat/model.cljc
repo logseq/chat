@@ -70,6 +70,9 @@
           (Some choice)
           (recur (inc index)))))))
 
+(defn settings-language-choice-selected? [current choice]
+  (= (:language current) (:id choice)))
+
 (defn initial []
   (record chat-model
           (selected-graph None)
@@ -139,7 +142,6 @@
           (outliner-editing None)
           (outliner-autocomplete None)
           (outliner-autocomplete-candidates [])
-          (outliner-task-status-block-id None)
           (outliner-section-markers [])
           (has-older-journals false)
           (composer-expanded false)
@@ -299,6 +301,23 @@
   (or
    (contains-load-older-journals-effect? (:pending-effects current))
    (contains-load-older-journals-effect? (:in-flight-effects current))))
+
+(defn contains-journal-refresh-effect? [effects]
+  (loop [index 0]
+    (if (= index (count effects))
+      false
+      (let [found
+            (match (nth effects index)
+              (LoadOlderJournalsEffect _id) true
+              (SendCaptureEffect _id _text) true
+              (SendTaskEffect _id _text _status) true
+              _ false)]
+        (if found true (recur (inc index)))))))
+
+(defn journal-refresh-active? [current]
+  (or
+   (contains-journal-refresh-effect? (:pending-effects current))
+   (contains-journal-refresh-effect? (:in-flight-effects current))))
 
 (defn graph-effect-key [effect]
   (match effect
@@ -707,13 +726,14 @@
 (defn active-page [current]
   (if (not (= (:destination current) JournalsDestination))
     None
-    (if (empty? (:node-routes current))
-      (:selected-page current)
-      (let [route (last (:node-routes current))]
+    (let [routes (app-node-routes current)]
+      (if (empty? routes)
+        (:selected-page current)
+        (let [route (last routes)]
         (Some
          (record sidebar-page
            (uuid (:page-uuid route))
-           (title (:title route))))))))
+           (title (:title route)))))))))
 
 (defn page-is-favorite? [current uuid]
   (loop [index 0]
@@ -1059,21 +1079,43 @@
                  :outliner-section-markers
                  (journal-section-markers projected-rows)
                  :outliner-rows projected-rows))
-        (let [projected-rows (:outliner-rows projection)
+        (let [sidebar (:sidebar projection)
+          selected-graph-changed
+          (not (= (:selected-graph-id current)
+                  (:selected-graph-id projection)))
+          projection-is-journal-home
+          (and
+           (empty? (:node-routes projection))
+           (match (:selected-page sidebar)
+             None true
+             (Some _page) false))
+          preserve-journal-window
+          (and
+           projection-is-journal-home
+           (not (empty? (:journal-outliner-rows current)))
+           (not selected-graph-changed)
+           (not (journal-refresh-active? current))
+           (match (:outliner-editing current)
+             None true
+             (Some _editing) false))
+          projected-rows
+          (if preserve-journal-window
+            (:journal-outliner-rows current)
+            (:outliner-rows projection))
           journal-rows
-          (if (and
-               (empty? (:node-routes projection))
-               (match (:selected-page (:sidebar projection))
-                 None true
-                 (Some _page) false))
+          (if projection-is-journal-home
             projected-rows
             (if (and
                  (empty? (:journal-outliner-rows current))
-                 (match (:selected-page (:sidebar projection))
+                 (match (:selected-page sidebar)
                    None true
                    (Some _page) false))
               (:journal-outliner-rows projection)
               (:journal-outliner-rows current)))
+          has-older-journals
+          (if preserve-journal-window
+            (:has-older-journals current)
+            (:has-older-journals projection))
           card-changed
           (not (= (first-flashcard-id (:flashcards current))
                   (first-flashcard-id (:flashcards projection))))
@@ -1084,10 +1126,6 @@
               (:local-graph-ids current)
               (conj (:local-graph-ids current) graph-id))
             None (:local-graph-ids current))
-          sidebar (:sidebar projection)
-          selected-graph-changed
-          (not (= (:selected-graph-id current)
-                  (:selected-graph-id projection)))
           updated
           (assoc current
                  :selected-graph (:graph-name projection)
@@ -1131,7 +1169,7 @@
                   (:outliner-autocomplete-candidates projection))
                  :outliner-selected-block-ids
                  (:outliner-selected-block-ids projection)
-                 :has-older-journals (:has-older-journals projection)
+                 :has-older-journals has-older-journals
                  :outliner-section-markers
                  (journal-section-markers projected-rows)
                  :outliner-rows projected-rows)
@@ -1611,24 +1649,13 @@
     (let [id (:next-effect-id current)]
       (enqueue-effect current (SyncNowEffect id)))
 
-    (OpenOutlinerTaskStatusPicker block-id)
-    (assoc current :outliner-task-status-block-id (Some block-id))
-
-    CloseOutlinerTaskStatusPicker
-    (assoc current :outliner-task-status-block-id None)
-
-    (ChooseOutlinerTaskStatus status-id)
-    (match (:outliner-task-status-block-id current)
-      (Some block-id)
-      (match (task-status-by-id (:task-statuses current) status-id)
-        (Some status)
-        (let [updated (assoc current
-                             :outliner-task-status-block-id None
-                             :sync-state SyncingState)
-              id (:next-effect-id updated)]
-          (enqueue-effect
-           updated (SetOutlinerTaskStatusEffect id block-id status)))
-        None current)
+    (SetOutlinerTaskStatus block-id status-id)
+    (match (task-status-by-id (:task-statuses current) status-id)
+      (Some status)
+      (let [updated (assoc current :sync-state SyncingState)
+            id (:next-effect-id updated)]
+        (enqueue-effect
+         updated (SetOutlinerTaskStatusEffect id block-id status)))
       None current)
 
     ToggleActivePageFavorite

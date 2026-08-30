@@ -298,7 +298,6 @@
   (outliner-editing :option<outliner-editing>)
   (outliner-autocomplete :option<outliner-autocomplete>)
   (outliner-autocomplete-candidates :vector<outliner-autocomplete-candidate>)
-  (outliner-task-status-block-id :option<string>)
   (outliner-section-markers :vector<journal-section-marker>)
   (has-older-journals :bool)
   (composer-expanded :bool)
@@ -397,9 +396,7 @@
   (OpenSyncDetails)
   (CloseSyncDetails)
   (SyncNow)
-  (OpenOutlinerTaskStatusPicker :string)
-  (CloseOutlinerTaskStatusPicker)
-  (ChooseOutlinerTaskStatus :string)
+  (SetOutlinerTaskStatus :string :string)
   (OpenSettings)
   (DismissSettings)
   (OpenSettingsTabs)
@@ -441,6 +438,8 @@
  :fn<vector<settings-community-link>>)
 (signature logseq-chat.model/settings-language-by-id
  :fn<vector<settings-language-choice>;string;option<settings-language-choice>>)
+(signature logseq-chat.model/settings-language-choice-selected?
+ :fn<chat-model;settings-language-choice;bool>)
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/journal-section-key
  :fn<outline-row;option<string>>)

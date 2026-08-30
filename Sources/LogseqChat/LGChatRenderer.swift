@@ -129,24 +129,8 @@ public final class LGChatRenderer {
     }
 
     public func apply(patchJSON: String) throws {
-        #if DEBUG
-        let startedAt = ProcessInfo.processInfo.systemUptime
-        #endif
         try backend.apply(json: patchJSON)
         rootID = backend.rootIDs.first
-        #if DEBUG
-        let elapsedMilliseconds =
-            (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
-        let operationCount = patchJSON.components(separatedBy: "\"op\":").count - 1
-        print(
-            String(
-                format: "JOURNAL_SCROLL patch bytes=%d ops=%d apply_ms=%.3f",
-                patchJSON.utf8.count,
-                operationCount,
-                elapsedMilliseconds
-            )
-        )
-        #endif
     }
 
     func receiveForTesting(_ event: LGChatRendererEvent) {

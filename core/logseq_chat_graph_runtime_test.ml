@@ -428,8 +428,11 @@ let () =
       assert_bool "journal launch projection contains only today's journal"
         (List.length (Runtime.blocks runtime) = 1 && Runtime.has_older_journals runtime);
       Runtime.load_older_journals runtime;
-      assert_bool "journal projection expands only when requested"
-        (List.length (Runtime.blocks runtime) = 8 && not (Runtime.has_older_journals runtime)))
+      assert_bool "journal pagination appends two pages per request"
+        (List.length (Runtime.blocks runtime) = 3 && Runtime.has_older_journals runtime);
+      Runtime.load_older_journals runtime;
+      assert_bool "each subsequent request appends two more pages"
+        (List.length (Runtime.blocks runtime) = 5 && Runtime.has_older_journals runtime))
 ;;
 
 let () =

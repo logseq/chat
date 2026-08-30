@@ -630,6 +630,11 @@ Entries stay concise so work can continue on the highest-signal path.
   simulator/device builds pass. Split or serialize shared-state native suites
   and repair the pre-existing Skip test sources before treating the aggregate
   app command as a release gate.
+- 2026-08-30 09:44 CST — Even a filtered `swift test --filter
+  LGChatRendererTests` currently fails at link time because the macOS test
+  product does not provide `_logseq_chat_initialize`. This happens before the
+  selected test executes. Use the LG suite, LUI suite, and iOS app build/E2E
+  gates for this path until the core ABI is linked into the macOS test product.
 - 2026-08-29 11:12 CST — Running core tests with the system `dune` fails before
   compilation because the repository requires Dune language 3.24 while PATH
   currently resolves Dune 3.23.1. Use `opam exec -- dune` (3.24.0) for focused
@@ -715,3 +720,404 @@ Entries stay concise so work can continue on the highest-signal path.
   presentation host and can leave the next large title at zero opacity. Explicit
   title modes, view identities, and serialized sheet dismissal did not make that
   behavior reliable, so none of those workarounds are retained.
+
+# 2026-08-29: Light-theme tag and linked-reference fixture data is unavailable
+
+- The `chat-local-e2e-fixtures` graph currently loads journal shells with blank
+  rows, and native search returns no result for `E2E Page Target`.
+- A fresh simulator comparison for tags and linked references is therefore not
+  reliable. Do not tune those views from the older current-branch screenshot;
+  restore or resync the fixture graph first, then capture both branches again.
+
+# 2026-08-29: Launch and foreground resume raced graph configuration
+
+- `runLGApplication()` marked the application ready and called
+  `resumeLGApplication()` at the same time that the initial iOS `onResume`
+  callback started another resume. A stored signed-in graph consequently ran
+  two identical connection restores in addition to the local launch load.
+- Authentication restoration also emits the normal signed-in observation.
+  Treating that initial `.restoring` transition like an interactive sign-in
+  scheduled a second restore immediately after the first one finished, outside
+  the overlap guard. Initial restore is owned by `runLGApplication`; only later
+  signed-in transitions request another resume.
+- iOS can deliver the initial application-resume callback after the renderer's
+  startup task has already restored the connection. The runtime now records a
+  successful restore for the current foreground activation and clears that
+  state on pause, so lifecycle callbacks remain idempotent without suppressing
+  a real background-to-foreground reconnect.
+- The duplicate work produced repeated full graph snapshots and an observed
+  roughly 90 KB / 1,196-operation renderer patch before interaction. Resume is
+  now coalesced while one restore is active. The remaining full long-journal
+  snapshot cost is the separate incremental-delivery issue recorded above.
+- `applyLocalLaunchResultWhenReady()` also checked its one-shot flag before
+  awaiting the shared launch task, allowing both waiters to apply the same
+  `openGraph` response. Rechecking on the main actor after the await removes the
+  duplicate roughly 29 KB / 422-operation renderer patch.
+- Swift package schemes do not expose a test action. Focused native executor
+  tests therefore cannot run through `xcodebuild`; the normal simulator build
+  compiles them only indirectly, while behavior is verified with launch metrics
+  and untouched module E2E flows.
+
+# 2026-08-29: Journal viewport sizing defeated SwiftUI virtualization
+
+- The journal wire tree already used `ScrollView + LazyVStack`, and runtime
+  diagnostics showed only the visible rich rows being decoded. The remaining
+  navigation hang came from LUI's `min-vertical` viewport modifier adding
+  `fixedSize(vertical: true)` to every journal section. During a drawer
+  destination update, SwiftUI consequently measured the complete retained
+  journal hierarchy instead of keeping the lazy stack viewport-bounded. A live
+  sample captured the main thread continuously inside AttributeGraph and nested
+  `sizeThatFits` calls, while XCTest reported the main run loop busy for more
+  than 30 seconds.
+- Main uses only `frame(minHeight:)` for the same section layout. Removing the
+  extra ideal-size constraint preserves tall content and restores lazy layout.
+  On the same 100-journal, eight-rich-row fixture, scrolling to journal 15 took
+  52.7 seconds in the LUI branch and 54.5 seconds in latest main under the same
+  fixed-speed Maestro command. The deep-scroll Graphs → Journals round trip now
+  completes without a hang and preserves the LUI scroll position; latest main
+  completes its navigation but resets that scroll position to the top.
+- The one-point pagination sentinel can emit duplicate appearances while a
+  renderer update is pending. Coalescing `LoadOlderJournals` while the previous
+  effect is pending or in flight prevents redundant core snapshots without
+  changing checked-in E2E behavior. The pagination window now grows by two
+  journals per request, and only the first journal reserves a minimum viewport;
+  older sections use intrinsic height and do not retain redundant viewport
+  layout state.
+- A same-device 45-second Time Profiler A/B exposed two remaining costs that a
+  fixed-speed scroll benchmark hid: latest main kept the main thread busy for
+  4.2 seconds, while LG/LUI used 11.9 seconds. Each retained journal section
+  independently measured the same scroll viewport, and unrelated lifecycle
+  responses such as `stopSSE` replaced the paginated eight-journal window with
+  all 64 cached journals, producing 252 KB / 3,248-operation and 255 KB renderer
+  patches during scrolling. `virtual-list` now measures its viewport once and
+  shares that size with descendants; minimum-height sections retain a local
+  measurement fallback outside virtual lists. The LG reducer now expands the
+  retained journal window only for an in-flight `LoadOlderJournals` response,
+  a graph change, or an active editor handoff. Unrelated snapshots preserve the
+  visible rows, retained cache, and continuation flag.
+- Sharing viewport size from either an outer `GeometryReader` or an observer on
+  the `ScrollView` created a layout feedback loop and stopped journal scrolling.
+  Since only the first journal needs to reserve the visible height, the shared
+  viewport architecture was removed. The first section now uses LUI's existing
+  native container-relative measurement, while every later section remains
+  intrinsic-height. This keeps one measurement instead of one per journal and
+  avoids new environment state in the virtual list.
+- The pagination response was applied after `resolveEffect` removed
+  `LoadOlderJournals` from the in-flight set. The reducer consequently treated
+  the real `+2` response as an unrelated lifecycle snapshot and preserved the
+  old one-journal window. The runtime now applies only this effect's snapshot
+  before resolving it. Simulator pagination successfully reached journal 15 in
+  batches of two without changing checked-in E2E flows.
+- After reaching journal 15, selecting Graphs from the drawer did not expose
+  `screen.graphs` within two minutes. This is a separate deep-navigation hang;
+  keep it open for the navigation performance investigation rather than adding
+  pagination-specific view conditions.
+
+# 2026-08-30: Retained SwiftUI invalidation made drawer motion traverse journals
+
+- Renderer diagnostics rule out the wire patcher and rich-text decoder as the
+  primary cost. Adding two journals produced a 924-operation patch that applied
+  in 4-11 ms, while visible rich-row decoding stayed around 0.2-2 ms.
+- LUI observed every retained node revision from the generic node shell. A
+  drawer state update could therefore invalidate nested journal containers that
+  had not changed. Only direct resource-backed leaves require that observation;
+  normal nodes are invalidated by their own retained observable models.
+- Main also keeps an equatable boundary around each outliner row. LUI now uses
+  its existing node-id/revision snapshot boundary for nested Row, Column, Box,
+  Card, and Panel children, so parent drawer animation and scroll layout do not
+  re-evaluate unchanged descendants.
+- LUI additionally injected SwiftUI's `disabled` environment into both complete
+  drawer subtrees while animating. Main locks scrolling and hit testing without
+  that environment mutation. Removing the redundant modifier preserves the
+  full-screen interaction shield while avoiding a long-journal environment
+  update on every toggle.
+- Same-flow Time Profiler captures recorded 2,396 main-thread samples before
+  revision scoping, 1,914 after scoping, and 2,141 with the final equatable
+  boundaries. Latest main recorded 2,206 samples. Maestro accessibility work is
+  present in every capture, so these are comparative samples rather than an
+  absolute frame-time benchmark.
+
+# 2026-08-30: Journal rows carried redundant retained layout nodes
+
+- A preloaded 30-second upward scroll kept the LG/LUI main thread busy for
+  2,829 samples versus 1,193 in latest main. The renderer patcher and rich-text
+  decoder remained below 11 ms and 2 ms respectively; Time Profiler instead
+  showed 761 SwiftUI view-graph renders versus 243 in main.
+- Every block rebuilt a journal-heading condition and retained an entry Column,
+  a custom-content Column, and two single-child Box wrappers. Journal headings
+  are now emitted once per section, while list-item content starts directly at
+  its Row and editor/rich-content extensions use the parent Column's native
+  stretch behavior. The same scroll dropped to 1,680 main-thread samples and
+  367 view-graph renders without changing the visible layout.
+- Making generic unstyled surfaces conditional produced the same screenshot but
+  made accessibility traversal and Maestro snapshots substantially slower, so
+  that dynamic view-identity optimization was rejected.
+- A nested LazyVStack for section rows reduced the scroll capture to 1,497
+  samples, but the complete LUI suite caught an invalid layout result: content
+  taller than a 100-point minimum viewport was compressed from 160 to 100
+  points. A SwiftUI Section inside the outer LazyVStack retained lazy children,
+  but applying the required container-relative frame caused iOS 26 to omit the
+  section content. Both experiments were reverted rather than trading layout
+  correctness for benchmark results.
+- The remaining gap for a single journal with a very large number of blocks is
+  a virtual-section primitive: it must let the outer lazy collection own row
+  realization while applying one minimum-height layout boundary to the group.
+  Implementing that correctly across SwiftUI and Compose needs an explicit LUI
+  design instead of another app-specific renderer condition.
+- Flattening every journal heading and block into the outer `LazyVStack` was
+  tested as the simplest possible virtualization boundary. It rendered
+  correctly but increased the same 30-second upward-scroll capture from 1,680
+  to 2,430 main-thread samples because rich rows entered and left the SwiftUI
+  view graph independently. The experiment was removed.
+- The smaller and faster boundary is the existing journal section itself. LUI
+  now renders a `Column` as a nested `LazyVStack` only when that node is a direct
+  `virtual-list` item. Ordinary columns remain eager, and the app needs no
+  class, wire property, Swift protocol extension, or platform-specific branch.
+  The earlier 1,497-sample capture validates this structure. The macOS parity
+  host retains intrinsic sizing for lazy sections, so a 160-point section in a
+  100-point viewport no longer compresses; the full 112-test LUI suite and all
+  113 LG module tests pass.
+- Skip/Compose still uses its existing eager `Column` implementation for a
+  direct virtual-list item. The declarative semantics are unchanged, but
+  Android needs a separate native lazy-container performance comparison before
+  adopting the same optimization because vertically nested Compose lazy lists
+  have different measurement constraints.
+
+# 2026-08-30: Nested lazy journal sections caused pathological iOS layout
+
+- The earlier 30-second steady-state sample made a nested `LazyVStack` for each
+  direct virtual-list Column look modestly faster, but it did not cover loading
+  many journals while each journal also contained several rich blocks.
+- On the preserved performance graph, the same 14-swipe deep-scroll flow took
+  about 54 seconds on latest main. The nested-lazy LUI build remained blocked
+  for more than two minutes. A 20-second capture during the stall contained
+  20,347 main-thread samples, dominated by `LazyHVStack.measureEstimates`,
+  `sizeThatFits`, padding/frame layout, and explicit-alignment traversal.
+- SwiftUI's nested lazy estimation is therefore the root cause of this
+  regression, not wire patching, rich-text decoding, or journal pagination.
+  Direct virtual-list Columns are eager again while the outer journal list
+  remains lazy. This also removes the virtual-item context plumbing that existed
+  solely for the rejected optimization.
+- With the nested lazy section removed, the identical 14-swipe flow completed
+  in about 49 seconds and no longer froze. A subsequent 30-second upward-scroll
+  capture recorded 2,896 samples versus 1,388 for main. The remaining gap is
+  generic LUI view/layout overhead; do not reintroduce nested lazy containers to
+  address it. Any further optimization needs a flat native section primitive or
+  a measured reduction in generic modifier layers that preserves semantics on
+  both SwiftUI and Compose.
+- The corrected device build installed successfully on the paired iPhone. The
+  automatic launch was denied because the phone was locked; no rebuild or
+  reinstall is needed after unlocking it.
+
+# 2026-08-30: Block-heavy journals still crossed eager section boundaries
+
+- A new bidirectional scroll capture covered the reported combined case: 100
+  journals with eight rich blocks per journal. The eager-section LUI build had
+  two main-thread microhangs of 307 ms and 400 ms. Latest main had no hangs in
+  the identical 30-second flow. AttributeGraph dirty/update work was 238/222
+  samples in LUI versus 86/64 in main.
+- Reintroducing nested lazy journal sections was rejected again with stronger
+  evidence: the same flow produced a 9.7-second severe hang, 12,002 total
+  samples, and 100% main-thread CPU coverage dominated by AttributeGraph and
+  unary layout measurement.
+- Journal headings now remain attached only to the first block, while every
+  block is an independent direct item in the outer native virtual list. This
+  removes the eager journal-sized realization boundary without adding a wire
+  property, Swift protocol customization, or platform branch. The same capture
+  completed with zero hangs. Total sampled work remains above main (4,374
+  versus 2,979), so generic LUI graph overhead is still measurable, but the
+  frame-blocking failure from block-heavy journals is removed.
+- The previous flat-row experiment was judged only by total samples during a
+  one-direction capture. The newer hang lane shows why that metric alone was
+  insufficient: flat rows do slightly more distributed work, but avoid the
+  300–400 ms contiguous main-thread stalls users perceive as scroll freezing.
+
+# 2026-08-30: Device installation transport interrupted
+
+- The optimized device app built successfully, but two installation attempts
+  were interrupted by the paired iPhone's remote installation service after
+  roughly 30 seconds. CoreDevice reports that the phone is connected over the
+  local network rather than USB and cannot retrieve complete device details.
+- The build artifact is ready at `.build/LogseqChat-device.app`. Reconnect the
+  phone over USB or restore a stable unlocked device connection before retrying
+  installation; rebuilding is unnecessary.
+
+# 2026-08-30: Remaining journal-home scroll cost came from pagination and diagnostics
+
+- A clean bidirectional Time Profiler comparison separated steady-state row
+  scrolling from journal pagination. One selected journal with eight rich blocks
+  recorded 1,698 main-thread samples in LG/LUI and 1,668 in latest main. Core,
+  markup decoding, and retained patch application were absent from both traces,
+  so block-heavy steady-state virtualization is working.
+- Journal home still creates about 136 retained nodes when the invisible sentinel
+  loads two more eight-block journals. The same flow repeatedly reached that
+  sentinel and applied roughly 66 KB / 818-operation patches, which explains why
+  the combined long-journal case feels worse than an already-loaded page.
+- Earlier DEBUG diagnostics were still scanning every patch string six times and
+  printing row appearance, decode, and height-change counters from the main actor.
+  Those measurements had served their purpose and made the debug build unlike
+  main. They are removed after preserving the trace evidence here.
+- Making the complete generic surface decoration conditional was re-tested and
+  rejected again: layout samples fell modestly, but render work did not close the
+  gap and the existing accessibility traversal regression remains. The retained
+  surface identity stays unchanged. Only zero-width border content is skipped
+  inside the existing overlay, which preserves layout and accessibility identity.
+
+# 2026-08-30: Journal pagination started after the bottom scroll inset
+
+- A same-simulator A/B on the 13-journal, 136-block `sync 2` graph reproduced a
+  261 ms microhang in LG/LUI while latest main recorded no hangs with the same
+  gesture sequence. Patch decoding and retained-tree application occupied only
+  the beginning of the stall; the remaining samples were SwiftUI AttributeGraph
+  and stack/frame/padding layout after the pagination response inserted rows.
+- LG placed its one-point pagination sentinel after the 120-point bottom inset.
+  The user therefore had to reach the absolute scroll edge before loading began,
+  and the incoming rows changed the content extent while SwiftUI was still
+  correcting the edge position. Main places the sentinel before bottom padding.
+  Matching that order starts the existing two-journal request earlier without
+  changing pagination size, wire structure, or checked-in E2E flows.
+- A 70-second verification with 16 downward and eight upward gestures covered
+  pagination and reverse scrolling with no microhangs. The 114 LG module tests
+  also assert that bottom padding remains after the sentinel.
+- Conditionally omitting zero-valued generic padding and frame modifiers was
+  evaluated and rejected. It preserved screenshots but introduced three new
+  microhangs of 380 ms, 396 ms, and 269 ms because the conditional SwiftUI view
+  branches cost more than the no-op layout layers. The experiment and its test
+  were fully removed.
+
+# 2026-08-30: Flattening every journal row removed the first-day viewport
+
+- A light-theme screenshot A/B on the same `sync 2` graph showed the second
+  journal beginning in the middle of the first screen in LG/LUI. Main reserves
+  the first journal through the usable viewport, so the next title begins below
+  the bottom chrome. Removing every journal section to fix eager realization had
+  also removed that visible navigation boundary.
+- Only the first journal now owns the existing `min-vertical` section. Its rows
+  stay independently keyed, while every later journal block remains a direct
+  outer virtual-list item. This restores the first-screen layout without
+  returning to one nested container per loaded journal or adding a wire schema
+  property. The later product decision restored main's native divider between
+  journal sections without changing that virtualization structure.
+- The current cold run recorded one 287 ms microhang; latest main recorded one
+  250 ms microhang at the same point in the identical 16-down/8-up flow. A second
+  126-second warm current run recorded zero hangs. Treat the shared cold runtime
+  metadata event separately from the earlier repeatable journal layout stalls.
+
+# 2026-08-30: One unsupported button property froze the retained renderer
+
+- The seeded core correctly returned one due Flashcard, but its generation-8
+  snapshot was rejected as `button text-alignment=center`. Generation 9 then
+  reached a renderer still waiting for generation 8, which also explained the
+  apparently unrelated frozen drawer and stale navigation symptoms.
+- LUI already rendered aligned button labels, but its wire validation table
+  omitted Button and ToggleButton for `text-alignment`. The protocol now accepts
+  those two existing renderer capabilities and has a regression test.
+- The checked-in Flashcards flow now completes reveal, answer, rating, and empty
+  state against the seeded simulator graph. Temporary cross-layer logs and the
+  incorrect assumption that every no-op dequeue advances generation were removed.
+- The standard setup can independently collide with an existing graph named
+  `sync 2`; unique graph names avoid that fixture collision during diagnosis.
+
+# 2026-08-30: Native navigation and header used different route clocks
+
+- DEBUG timing on the same journal route showed the native path pushing
+  immediately while the header remained `Journal` until `open-node` completed
+  305–380 ms later. During pop, the path returned first and the old destination
+  title remained for another 121–271 ms while `close-node` settled.
+- The path already used optimistic `app-navigation-path`, including model-owned
+  preview routes, but `active-page` and the header still read authoritative
+  `node-routes`. The header title and overflow actions now derive from the same
+  path-resolved route projection as the native stack. Push title changes occur
+  in the same patch as path insertion, and pop restores the preceding/root
+  header before the core close response completes.
+- The underlying `open-node` core response still took 322–611 ms in later debug
+  samples. Navigation no longer waits for it, but the serialized full response
+  remains part of the previously recorded core snapshot/executor performance
+  blocker and should be optimized at that boundary rather than hidden with UI
+  delays or duplicated route state.
+
+# 2026-08-30: Deferring native back until `onDisappear` exposed an empty root
+
+- A 30-fps simulator recording showed the outgoing page sliding away over an
+  empty navigation root for roughly 0.4 seconds; only the bottom chrome remained.
+  The Journal content and toolbar returned after `onDisappear` finally emitted
+  the LG back event.
+- The root content is model-selected, so delaying model synchronization until the
+  transition ends necessarily leaves it inactive while SwiftUI reveals it. This
+  was a lifecycle mismatch, not a missing placeholder or rendering delay.
+- Back synchronization again matches main: commit the native path change, yield
+  one main-actor turn, then close the matching core projection. This activates the
+  root during the system transition without a timer or duplicate route state.
+
+# 2026-08-30: Capture snapshots were mistaken for unrelated journal refreshes
+
+- `send-capture` persisted successfully, but the runtime resolved the effect
+  before applying its core snapshot. The journal-window guard therefore saw no
+  active capture and preserved the old retained rows, so the new block appeared
+  only after an app restart reloaded the database.
+- Core snapshots now apply while their originating effect is still in flight.
+  The reducer treats capture, task capture, and pagination as authoritative
+  journal refreshes while continuing to ignore unrelated lifecycle snapshots.
+- A focused simulator capture appeared in today's journal immediately without
+  relaunching. The same run also visually confirmed the restored native divider
+  between journal sections.
+
+# 2026-08-30: Generic LUI layout defaults overrode native SwiftUI geometry
+
+- Same-device light-theme comparisons against latest main isolated four generic
+  backend constraints: native List rows were forced to 44 points, Toggle was
+  forced to 44 points, a growing Column injected a vertical Spacer, and textarea
+  minimum-height frames centered their content instead of aligning it to the top.
+- These were backend semantics rather than app-specific spacing problems. Native
+  List and Form controls now own their intrinsic sizes, parent-axis Column growth
+  no longer creates child-axis space, and multiline text controls use top-leading
+  frame alignment. The fixes restore Tabs, Settings, empty journal rows, and the
+  expanded composer without per-screen offsets.
+- A manually padded trailing toolbar group also shifted inline navigation titles.
+  Replacing it with SwiftUI's native `ToolbarItemGroup` restores the same centered
+  title and Liquid Glass grouping as main.
+- Simulator verification must build with the local LUI checkout because the app's
+  pinned LUI revision is not currently available from its remote. Keep using
+  `LUI_PACKAGE_PATH=/Users/tiensonqin/Code/projects/lui` until that revision is
+  published; this is a dependency-resolution blocker, not a UI workaround.
+
+# 2026-08-30: Target iPhone unavailable during post-fix installation
+
+- The device build completed, but CoreDevice reports iPhone
+  `ACC1F5DA-71E4-560F-9818-FC6B1517D6A0` as unavailable, so installation cannot
+  proceed until that phone reconnects. Another paired phone is online, but it was
+  deliberately left untouched because it is not the requested target.
+
+# 2026-08-30: Clean simulator graph setup cannot complete
+
+- The checked-in native-header setup flow and a separate uniquely named graph
+  both remained on the Add sync graph sheet after the native Add action, even
+  though the local server in `logseq-1` was listening on port 8787. This prevents
+  a clean seeded simulator recording until graph creation is diagnosed; it does
+  not block the reducer/renderer regression tests for navigation state.
+
+# 2026-08-30: LUI hot-reload performance gate is slightly flaky
+
+- The complete LUI functional suite passed 198 tests and 1,877 assertions,
+  including dynamic keyed native menu items. In the same run, the independent
+  warm-reload benchmark reported p95 513 ms against a 500 ms threshold. Treat
+  this as a performance-test blocker to investigate separately, not as a menu
+  correctness failure.
+
+# 2026-08-30: LUI cross-platform Swift test has a pre-existing Android compile failure
+
+- The native SwiftUI suite passed all 124 tests after the navigation and menu
+  changes, but the aggregate `swift test` command still exits nonzero when its
+  generated Android parity target compiles `LUISkipUIRoot.kt`.
+- That generated target cannot resolve `LUIRadioGroupVisualPolicy`, referenced
+  by the existing radio-group implementation. This is separate from the header
+  visibility fix and keyed context-menu change; it needs its own Skip export
+  boundary correction rather than weakening or skipping the aggregate test.
+
+# 2026-08-30: Targeted iOS e2e driver became unreachable
+
+- The focused outliner continuous-editing run stopped during its unchanged setup
+  flow because Maestro lost its local XCUITest driver connection on port 52205.
+  The log reports `Device became unreachable during viewHierarchy`; it does not
+  contain an app assertion or outliner failure. Keep the checked-in flow intact
+  and rerun after the simulator driver is healthy.

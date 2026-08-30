@@ -74,6 +74,8 @@ public struct LogseqChatRootView : View {
             appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
         )
         .environment(\.locale, preferredLocale)
+        .tint(LogseqThemePolicy.accent)
+        .foregroundStyle(themePalette.primaryText)
         .luiSemanticColors([
             "background": themePalette.background,
             "surface": themePalette.surface,
@@ -84,6 +86,10 @@ public struct LogseqChatRootView : View {
             "task-in-review": Color(red: 0.11, green: 0.31, blue: 0.85),
             "task-done": Color(red: 0.09, green: 0.64, blue: 0.29),
             "task-canceled": Color(red: 0.86, green: 0.15, blue: 0.15),
+            "flashcard-again-background": Color.red.opacity(0.12),
+            "flashcard-hard-background": Color.orange.opacity(0.12),
+            "flashcard-good-background": Color.blue.opacity(0.12),
+            "flashcard-easy-background": Color.green.opacity(0.12),
         ])
         .background(themePalette.background.ignoresSafeArea())
     }
@@ -106,9 +112,9 @@ public struct LogseqChatRootView : View {
                 }
             }
             #endif
-            .onChange(of: runtime.authentication.state) { _, state in
+            .onChange(of: runtime.authentication.state) { previousState, state in
                 runtime.publishAuthenticationState()
-                guard state == .signedIn else { return }
+                guard state == .signedIn, previousState != .restoring else { return }
                 Task { await runtime.resumeLGApplication() }
             }
             .onOpenURL { url in
@@ -154,6 +160,8 @@ public struct LogseqChatRootView : View {
     private var sharedCaptureTask: Task<Void, Never>?
     private var didStartLGApplication = false
     private var isLGApplicationReady = false
+    private var isResumingLGApplication = false
+    private var didResumeCurrentActivation = false
     private let graphLifecycle: LGChatGraphLifecycle
     private let platformCommandRouter: LGChatPlatformCommandRouter
 
@@ -362,6 +370,9 @@ public struct LogseqChatRootView : View {
                     "Could not relay a platform core response into LG: "
                         + String(describing: error)
                 )
+                #if DEBUG
+                print("LOGSEQ_LG_PATCH_ERROR source=core-response error=\(error)")
+                #endif
             }
         }
         graphLifecycle.localGraphIDsChanged = { [weak lgRuntime] graphIDs in
@@ -375,6 +386,9 @@ public struct LogseqChatRootView : View {
                     "Could not relay local graph identifiers into LG: "
                         + String(describing: error)
                 )
+                #if DEBUG
+                print("LOGSEQ_LG_PATCH_ERROR source=local-graph-ids error=\(error)")
+                #endif
             }
         }
     }
@@ -410,6 +424,9 @@ public struct LogseqChatRootView : View {
             )
         } catch {
             logger.error("Could not start LG renderer: \(String(describing: error))")
+            #if DEBUG
+            print("LOGSEQ_LG_PATCH_ERROR source=start error=\(error)")
+            #endif
         }
     }
 
@@ -426,9 +443,12 @@ public struct LogseqChatRootView : View {
     }
 
     public func resumeLGApplication() async {
-        guard isLGApplicationReady else { return }
+        guard isLGApplicationReady, !isResumingLGApplication else { return }
         processSharedCaptures()
         guard authentication.state == .signedIn else { return }
+        guard !didResumeCurrentActivation else { return }
+        isResumingLGApplication = true
+        defer { isResumingLGApplication = false }
         let connected = await graphLifecycle.connectStoredGraph()
         do {
             try lgRuntime.applyHostUpdate(kind: "graph-loading", payload: "false")
@@ -440,7 +460,13 @@ public struct LogseqChatRootView : View {
         }
         if !connected {
             logger.error("Could not restore the stored graph connection")
+        } else {
+            didResumeCurrentActivation = true
         }
+    }
+
+    public func pauseLGApplication() {
+        didResumeCurrentActivation = false
     }
 
     public func setNetworkAvailable(_ available: Bool) async {
@@ -612,7 +638,8 @@ public struct LogseqChatRootView : View {
     }
 
     private func applyLocalLaunchResultWhenReady() async {
-        guard !didApplyLocalLaunchResult, let result = await localLaunchTask?.value else { return }
+        guard let result = await localLaunchTask?.value else { return }
+        guard !didApplyLocalLaunchResult else { return }
         didApplyLocalLaunchResult = true
         applyLocalGraphIDsToLG(from: result.catalogResponse)
         if let isEncrypted = result.isEncrypted {
@@ -978,6 +1005,7 @@ public final class LogseqChatAppDelegate : Sendable {
     }
 
     public func onPause() {
+        Task { @MainActor in LogseqChatRuntime.shared.pauseLGApplication() }
         logger.debug("onPause")
     }
 

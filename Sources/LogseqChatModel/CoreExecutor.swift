@@ -1,4 +1,5 @@
 import Foundation
+import LogseqChatCoreABI
 
 #if !SKIP
 enum LogseqChatCorePriority: Int, Sendable {
@@ -10,11 +11,31 @@ enum LogseqChatCorePriority: Int, Sendable {
 final class LogseqChatCoreExecutor: @unchecked Sendable {
     static let shared = LogseqChatCoreExecutor()
 
-    private struct Job: Sendable {
+    private struct Job: @unchecked Sendable {
         let callCore: @Sendable (String) -> String
         let requestJSON: String
         let priority: LogseqChatCorePriority
-        let continuation: CheckedContinuation<String, Never>
+        let complete: @Sendable (String) -> Void
+    }
+
+    private final class SynchronousResult: @unchecked Sendable {
+        private let lock = NSLock()
+        private let semaphore = DispatchSemaphore(value: 0)
+        private var value = ""
+
+        func finish(with value: String) {
+            lock.lock()
+            self.value = value
+            lock.unlock()
+            semaphore.signal()
+        }
+
+        func wait() -> String {
+            semaphore.wait()
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
     }
 
     private final class State: @unchecked Sendable {
@@ -51,10 +72,10 @@ final class LogseqChatCoreExecutor: @unchecked Sendable {
         self.state = state
         self.thread = Thread {
             Thread.current.name = "LogseqChatCore"
-            LogseqChatCore.shared.initialize()
+            LogseqChatCoreABI.logseq_chat_initialize()
             while true {
                 let job = state.next()
-                job.continuation.resume(returning: job.callCore(job.requestJSON))
+                job.complete(job.callCore(job.requestJSON))
             }
         }
         thread.name = "LogseqChatCore"
@@ -71,9 +92,28 @@ final class LogseqChatCoreExecutor: @unchecked Sendable {
                 callCore: callCore,
                 requestJSON: requestJSON,
                 priority: priority,
-                continuation: continuation
+                complete: { continuation.resume(returning: $0) }
             ))
         }
+    }
+
+    func callSync(
+        _ callCore: @escaping @Sendable (String) -> String,
+        requestJSON: String,
+        priority: LogseqChatCorePriority = .interaction
+    ) -> String {
+        if Thread.current === thread {
+            return callCore(requestJSON)
+        }
+
+        let result = SynchronousResult()
+        state.enqueue(Job(
+            callCore: callCore,
+            requestJSON: requestJSON,
+            priority: priority,
+            complete: { result.finish(with: $0) }
+        ))
+        return result.wait()
     }
 }
 #endif

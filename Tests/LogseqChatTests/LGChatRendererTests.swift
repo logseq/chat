@@ -29,6 +29,10 @@ struct LGChatRendererTests {
         #expect(LGChatNavigationSurfacePolicy.bottomPadding(
             occupiesLayoutSpace: true
         ) == 7)
+        #expect(LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
+            iconWidth: 24,
+            minimumHitTarget: 44
+        ) == 24)
     }
 
     @Test("audio assets use the inline player when a local file is available")
@@ -317,8 +321,23 @@ struct LGChatRendererTests {
             LGChatEffectResolutionProbe(id: 7, succeeded: true, message: "core response")
         ])
         #expect(native.appliedSnapshots == ["core response"])
+        #expect(native.effectApplicationCalls == ["snapshot", "resolution"])
         #expect(native.effects.isEmpty)
         #expect(runtime.lastError == nil)
+    }
+
+    @Test("applies core snapshots before completing their originating effect")
+    func appliesCoreSnapshotsBeforeCompletingEffect() async {
+        let native = LGChatNativeRuntimeProbe()
+        native.effects = [
+            "{\"id\":9,\"kind\":\"load-older-journals\",\"text\":\"\"}"
+        ]
+        let executor = LGChatEffectExecutorProbe()
+        let runtime = LGChatRuntime(native: native, effectExecutor: executor)
+
+        await runtime.drainEffectsForTesting()
+
+        #expect(native.effectApplicationCalls == ["snapshot", "resolution"])
     }
 
     @Test("applies the dequeue patch before the effect resolution patch")
@@ -1575,6 +1594,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var resolutions: [LGChatEffectResolutionProbe] = []
     var resolutionPatch = ""
     var appliedSnapshots: [String] = []
+    var effectApplicationCalls: [String] = []
     var extensionEvents: [LGChatExtensionEventProbe] = []
     var hostUpdates: [LGChatHostUpdateProbe] = []
 
@@ -1625,6 +1645,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
         effects.isEmpty ? "" : effects.removeFirst()
     }
     func resolveEffect(id: Int, succeeded: Bool, message: String) -> String {
+        effectApplicationCalls.append("resolution")
         resolutions.append(LGChatEffectResolutionProbe(
             id: id,
             succeeded: succeeded,
@@ -1633,6 +1654,7 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
         return resolutionPatch
     }
     func applySnapshot(_ response: String) -> String {
+        effectApplicationCalls.append("snapshot")
         appliedSnapshots.append(response)
         return ""
     }

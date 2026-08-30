@@ -2703,6 +2703,68 @@ let () =
 ;;
 
 let () =
+  (* A batch acceptance can advance the transport cursor before SSE advances
+     the authoritative graph. New edits must still stage against the graph
+     runtime cursor while their request chains from the accepted cursor. *)
+  let source = remote_block "accepted-before-sse" "First" in
+  let staged = ref [] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    (match operation.state with
+     | Queued when operation.base_t <> 42 ->
+       Error "operation was created against a stale server cursor"
+     | _ ->
+       staged :=
+         List.filter
+           (fun (pending : Logseq_chat_pending_ops.t) ->
+             not (String.equal pending.operation_id operation.operation_id))
+           !staged
+         @ [ operation ];
+       Ok ())
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ source ])
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations:(fun () ->
+        List.filter
+          (fun operation ->
+            match operation.Logseq_chat_pending_ops.state with
+            | Queued | Retryable | Submitted -> true
+            | Accepted _ | Applied | Conflicted _ -> false)
+          !staged)
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"accepted-before-sse\",\"operationId\":\"accepted-first\",\"expectedTitle\":\"First\",\"title\":\"Updated\",\"status\":null}"}}|});
+  let request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  ignore
+    (Logseq_chat_rpc.call session
+       (Printf.sprintf
+          {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":43}\",\"error\":null}"}}|}
+          (required_int "id" request)));
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "returnPressed"; "uuid", `String source.uuid ]));
+  match List.rev !staged with
+  | { Logseq_chat_pending_ops.state = Queued; base_t = 42; _ } :: _ -> ()
+  | _ -> failwith "post-acceptance outliner edits must use the authoritative cursor"
+;;
+
+let () =
   let staged = ref [] in
   let session =
     Logseq_chat_rpc.create

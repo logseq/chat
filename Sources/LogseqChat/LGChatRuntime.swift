@@ -60,6 +60,10 @@ private struct LGChatEffectDispatch: Decodable {
     let patch: String
 }
 
+private struct LGChatPatchMetadata: Decodable {
+    let generation: Int
+}
+
 public enum LGChatEffectOutput: Equatable, Sendable {
     case coreResponse
     case hostUpdate(String)
@@ -1337,9 +1341,19 @@ public final class LGChatRuntime {
                     LGChatEffectDispatch.self,
                     from: data
                 ) {
+                    #if DEBUG
+                    print(
+                        "LOGSEQ_LG_EFFECT dispatch patch_generation="
+                            + String(Self.patchGeneration(dispatch.patch) ?? -1)
+                            + " kind=\(dispatch.effect.kind)"
+                    )
+                    #endif
                     try apply(dispatch.patch)
                     effect = dispatch.effect
                 } else {
+                    #if DEBUG
+                    print("LOGSEQ_LG_EFFECT legacy-without-patch payload=\(encoded)")
+                    #endif
                     effect = try JSONDecoder().decode(LGChatEffect.self, from: data)
                 }
             } catch {
@@ -1349,7 +1363,19 @@ public final class LGChatRuntime {
 
             cancelOutlinerAutosaveBeforeExecuting(effect)
             let resolution = await effectExecutor.execute(effect)
+            #if DEBUG
+            if !resolution.succeeded {
+                print(
+                    "LOGSEQ_LG_EFFECT failed id=\(effect.id)"
+                        + " kind=\(effect.kind) message=\(resolution.message)"
+                )
+            }
+            #endif
             do {
+                if resolution.succeeded,
+                   case .coreResponse = resolution.output {
+                    try apply(native.applySnapshot(resolution.message))
+                }
                 try apply(native.resolveEffect(
                     id: effect.id,
                     succeeded: resolution.succeeded,
@@ -1358,7 +1384,6 @@ public final class LGChatRuntime {
                 if resolution.succeeded {
                     switch resolution.output {
                     case .coreResponse:
-                        try apply(native.applySnapshot(resolution.message))
                         deliverPlatformCommands(from: resolution.message)
                         scheduleOutlinerAutosaveIfNeeded(
                             after: effect,
@@ -1500,7 +1525,20 @@ public final class LGChatRuntime {
 
     private func apply(_ patch: String) throws {
         guard !patch.isEmpty else { return }
+        #if DEBUG
+        print(
+            "LOGSEQ_LG_PATCH apply generation="
+                + String(Self.patchGeneration(patch) ?? -1)
+        )
+        #endif
         try renderer.apply(patchJSON: patch)
         lastError = nil
+    }
+
+    private static func patchGeneration(_ patch: String) -> Int? {
+        try? JSONDecoder().decode(
+            LGChatPatchMetadata.self,
+            from: Data(patch.utf8)
+        ).generation
     }
 }

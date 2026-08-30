@@ -141,6 +141,10 @@ let current_server_t session =
   | None, None -> None
 ;;
 
+let projection_server_t session =
+  Option.bind session.sync_cursor (fun cursor -> cursor ())
+;;
+
 let record_accepted_server_t session accepted_t =
   session.accepted_server_t <-
     Some (Option.fold ~none:accepted_t ~some:(max accepted_t) session.accepted_server_t)
@@ -1075,6 +1079,7 @@ let has_pending_operations session =
 ;;
 
 let snapshot session ~context_blocks blocks =
+  if session.flashcards <> [] then debug "flashcards snapshot start blocks=%d" (List.length blocks);
   let sidebar_pages =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
     |> Option.value ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
@@ -1083,6 +1088,7 @@ let snapshot session ~context_blocks blocks =
   let base_context =
     base_outliner_context_with_blocks ~sidebar_pages session context_blocks
   in
+  if session.flashcards <> [] then debug "flashcards snapshot context ready";
   let serialized_blocks = Hashtbl.create (List.length blocks) in
   let serialize_block (block : Model.block) =
     match Hashtbl.find_opt serialized_blocks block.uuid with
@@ -1092,7 +1098,7 @@ let snapshot session ~context_blocks blocks =
       Hashtbl.add serialized_blocks block.uuid json;
       json
   in
-  success
+  let response = success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List (List.map serialize_block blocks)
@@ -1148,6 +1154,9 @@ let snapshot session ~context_blocks blocks =
         `Bool (Option.fold ~none:false ~some:(fun read -> read ()) session.has_older_journals)
       ; "isOutlinerPatch", `Bool false
       ])
+  in
+  if session.flashcards <> [] then debug "flashcards snapshot encoded bytes=%d" (String.length response);
+  response
 ;;
 
 let outliner_patch_result
@@ -1308,6 +1317,7 @@ let structural_outliner_patch
 ;;
 
 let snapshot_visible session =
+  if session.flashcards <> [] then debug "flashcards visible snapshot start";
   let blocks =
     match session.selected_sidebar_page, session.graph_page_blocks with
     | Some page, Some graph_page_blocks ->
@@ -1331,12 +1341,14 @@ let snapshot_visible session =
        | None -> [])
     | None -> Model.visible_blocks session.model
   in
+  if session.flashcards <> [] then debug "flashcards visible blocks loaded count=%d" (List.length blocks);
   let context_blocks = blocks in
   let blocks =
     if Option.is_some session.graph_blocks || Option.is_some session.selected_sidebar_page
     then blocks
     else Model.visible_from session.model blocks
   in
+  if session.flashcards <> [] then debug "flashcards visible blocks selected count=%d" (List.length blocks);
   snapshot session ~context_blocks blocks
 ;;
 
@@ -2600,7 +2612,7 @@ let dispatch_outliner_event session payload =
     in
     let previous_state = session.outliner_state in
     let next_state, commands = Outliner_state.update context previous_state message in
-    let base_t = current_server_t session |> Option.value ~default:(-1) in
+    let base_t = projection_server_t session |> Option.value ~default:(-1) in
     (match
        Result.map
          (fun (interpreted : Outliner_effects.result) ->
@@ -2955,6 +2967,7 @@ let dispatch session action payload =
         ~none:[]
         ~some:(fun load -> load ~now)
         session.graph_due_flashcards;
+    debug "loadFlashcards count=%d now=%d" (List.length session.flashcards) now;
     snapshot_visible session
   | "reviewFlashcard" ->
     (match payload, session.graph_review_flashcard with

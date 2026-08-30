@@ -139,18 +139,6 @@
 (signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
 (signature logseq-chat.view/retained-outliner-rows
  :fn<chat-model;vector<retained-outline-row>>)
-(signature logseq-chat.view/journal-render-sections
- :fn<chat-model;vector<journal-section-marker>>)
-(signature logseq-chat.view/journal-section-layout-visible?
- :fn<chat-model;bool>)
-(signature logseq-chat.view/journal-render-section-key
- :fn<journal-section-marker;string>)
-(signature logseq-chat.view/flat-retained-outliner-rows
- :fn<chat-model;vector<retained-outline-row>>)
-(signature logseq-chat.view/retained-section-rows
- :fn<chat-model;string;vector<retained-outline-row>>)
-(signature logseq-chat.view/journal-section-marker-for-page
- :fn<vector<journal-section-marker>;string;option<journal-section-marker>>)
 (signature logseq-chat.view/make-retained-outline-row
  :fn<chat-model;outline-row;retained-outline-row>)
 (signature logseq-chat.view/retained-row-value
@@ -283,8 +271,6 @@
  :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-entry
  :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/outliner-journal-section
- :fn<ui-context;signal<chat-model>;signal<journal-section-marker>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-selection-toolbar
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-autocomplete-row
@@ -313,14 +299,10 @@
  :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/task-status-picker-dialog
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/outliner-task-status-picker-open?
- :fn<chat-model;bool>)
 (signature logseq-chat.view/outliner-task-status-option-identifier
  :fn<task-status;string>)
 (signature logseq-chat.view/outliner-task-status-row
- :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
-(signature logseq-chat.view/outliner-task-status-dialog
- :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+ :fn<ui-context;string;signal<task-status>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/first-flashcard
  :fn<chat-model;option<flashcard>>)
 (signature logseq-chat.view/flashcards-empty? :fn<chat-model;bool>)
@@ -411,8 +393,10 @@
  :fn<settings-community-link;string>)
 (signature logseq-chat.view/settings-community-link-identifier
  :fn<settings-community-link;string>)
+(signature logseq-chat.view/settings-community-link-needs-separator?
+ :fn<chat-model;settings-community-link;bool>)
 (signature logseq-chat.view/settings-community-link-row
- :fn<ui-context;signal<settings-community-link>;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<chat-model>;signal<settings-community-link>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/settings-tabs-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/runtime-log-visible? :fn<chat-model;bool>)
 (signature logseq-chat.view/tab-enabled? :fn<chat-model;string;bool>)

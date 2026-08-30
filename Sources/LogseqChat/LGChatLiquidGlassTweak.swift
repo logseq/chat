@@ -5,7 +5,7 @@ import SwiftUI
 enum LGChatLiquidGlassTweak {
     static let identifier = "liquid-glass"
     static let fingerprint =
-        "lui-tweak-v1|12:liquid-glass|profiles:ios/swiftui|properties:13:leading-inset:int:required:none,5:shape:string:required:none"
+        "lui-tweak-v1|12:liquid-glass|profiles:ios/swiftui|properties:5:shape:string:required:none"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.registerTweak(
@@ -14,7 +14,6 @@ enum LGChatLiquidGlassTweak {
                 fingerprint: fingerprint,
                 properties: [
                     .init(name: "shape", kind: .string, isRequired: true),
-                    .init(name: "leading-inset", kind: .int, isRequired: true),
                 ]
             ) { content, context in
                 let shapeName: String
@@ -32,16 +31,9 @@ enum LGChatLiquidGlassTweak {
                 default:
                     shape = .capsule
                 }
-                let leadingInset: Int
-                if case let .int(value) = context.property("leading-inset") {
-                    leadingInset = value
-                } else {
-                    leadingInset = 0
-                }
                 if shape == .capsule {
                     return AnyView(
                         content
-                            .padding(.leading, CGFloat(leadingInset))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .modifier(LGChatLiquidGlassSurface(shape: shape))
                     )

@@ -3226,3 +3226,41 @@ struct TestData : Codable, Hashable {
         #expect(log.exportText().contains("ERROR core second"))
     }
 }
+
+#if !SKIP
+@Suite(.serialized) struct LogseqChatCoreExecutorTests {
+    @Test func synchronousAndAsynchronousCallsUseTheSameSerialThread() async {
+        let firstStarted = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let secondStarted = DispatchSemaphore(value: 0)
+
+        let first = Task {
+            await LogseqChatCoreExecutor.shared.call(
+                { _ in
+                    firstStarted.signal()
+                    releaseFirst.wait()
+                    return "first"
+                },
+                requestJSON: "first"
+            )
+        }
+        #expect(firstStarted.wait(timeout: .now() + 1) == .success)
+
+        let second = Task.detached {
+            LogseqChatCoreExecutor.shared.callSync(
+                { _ in
+                    secondStarted.signal()
+                    return "second"
+                },
+                requestJSON: "second"
+            )
+        }
+        #expect(secondStarted.wait(timeout: .now() + 0.05) == .timedOut)
+
+        releaseFirst.signal()
+        #expect(await first.value == "first")
+        #expect(await second.value == "second")
+        #expect(secondStarted.wait(timeout: .now() + 1) == .success)
+    }
+}
+#endif

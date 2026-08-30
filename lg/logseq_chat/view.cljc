@@ -109,8 +109,7 @@
   (ext/tweak
    "liquid-glass"
    [(proto/profile proto/IOS proto/SwiftUIHost)]
-   [(ext/property "shape" ext/StringScalar true None)
-    (ext/property "leading-inset" ext/IntScalar true None)]))
+   [(ext/property "shape" ext/StringScalar true None)]))
 
 (defn extension-registry []
   (let [registry (ext/registry)]
@@ -473,9 +472,20 @@
               (send (model/SelectSidebarGraph (:id current-graph))))}])))
 
 (defui sidebar-section-heading [title icon]
-  [:row {:gap 6 :cross "center" :padding-horizontal 12}
-   [:icon {:name icon :size "sm" :foreground "muted-foreground"}]
-   [:text {:class "footnote" :foreground "muted-foreground"} title]])
+  [:column {:gap 0}
+   [:box {:height 16}]
+   [:row {:gap 6
+          :cross "center"
+          :padding-horizontal 12}
+    [:icon {:name icon :width 14 :height 14 :foreground "muted-foreground"}]
+    [:text {:class "caption semibold" :foreground "muted-foreground"} title]]
+   [:box {:height 6}]])
+
+(defui sidebar-empty-section-label [title]
+  [:column {:gap 0}
+   [:row {:padding-horizontal 12}
+    [:text {:class "caption" :foreground "muted-foreground"} title]]
+   [:box {:height 6}]])
 
 (defui sidebar-view [model-source send]
   [:scroll
@@ -532,14 +542,11 @@
       :selected (reactive graphs-sidebar-selected? model-source)
       :accessibility-identifier "link.sidebar.graphs"
       :on-press (fn [_event] (send model/ShowGraphs))}
-     "Graphs"]]
+   "Graphs"]]
    [:column {:accessibility-identifier "section.sidebar.favorites" :gap 2}
-    [:box {:height 12}]
     [sidebar-section-heading "Favorites" "app:star"]
     [:if {:test (reactive favorites-empty? model-source)}
-     [:row {:padding-horizontal 12}
-      [:text {:class "footnote" :foreground "muted-foreground"}
-       "No favorites yet"]]]
+     [sidebar-empty-section-label "No favorites yet"]]
     [:keyed
      {:source (reactive :favorites model-source)
       :key :uuid
@@ -547,17 +554,14 @@
       :as page-source}
      [sidebar-page-row model-source page-source send]]]
    [:column {:accessibility-identifier "section.sidebar.recent" :gap 2}
-    [:box {:height 12}]
     [sidebar-section-heading "Recent" "app:history"]
     [:if {:test (reactive recent-pages-empty? model-source)}
-     [:row {:padding-horizontal 12}
-      [:text {:class "footnote" :foreground "muted-foreground"}
-       "No recent pages"]]]
+     [sidebar-empty-section-label "No recent pages"]]
     [:keyed
      {:source (reactive :recent-pages model-source)
       :key :uuid
-     :compare compare
-     :as page-source}
+      :compare compare
+      :as page-source}
      [sidebar-page-row model-source page-source send]]]]])
 
 (defn composer-collapsed? [current]
@@ -567,7 +571,7 @@
   (string/blank? (:composer-draft current)))
 
 (defn composer-send-background [current]
-  (if (composer-send-disabled? current) "border" "black"))
+  "black")
 
 (defn task-status-identifier [status]
   (str "button.task-status.option." (:uuid status)))
@@ -743,10 +747,10 @@
   (:label candidate))
 
 (defn node-navigation-active? [current]
-  (not (empty? (:node-routes current))))
+  (not (empty? (:app-navigation-path current))))
 
 (defn node-navigation-inactive? [current]
-  (empty? (:node-routes current)))
+  (empty? (:app-navigation-path current)))
 
 (defn journals-destination? [current]
   (= (:destination current) model/JournalsDestination))
@@ -939,12 +943,9 @@
     "Flashcards"
     (if (= (:destination current) model/GraphsDestination)
       "Journal"
-      (match (active-node-projection current)
-        (Some route) (:title route)
-        None
-        (match (:selected-page current)
-          (Some page) (:title page)
-          None "Journal")))))
+      (match (model/active-page current)
+        (Some page) (:title page)
+        None "Journal"))))
 
 (defn current-content-active? [current]
   (match (active-node-projection current)
@@ -1053,6 +1054,7 @@
      [:button
       {:text (reactive breadcrumb-title breadcrumb-source)
        :variant "ghost"
+       :class "caption"
        :foreground "muted-foreground"
        :accessibility-identifier (breadcrumb-identifier breadcrumb)
        :on-press
@@ -1150,47 +1152,38 @@
    (fn [row] (make-retained-outline-row current row))
    (:outliner-rows current)))
 
-(defn journal-section-layout-visible? [current]
+(defn first-journal-section-visible? [current]
   (and
-   (and (journal-root-visible? current)
-        (> (count (:outliner-section-markers current)) 0))
+   (journal-root-visible? current)
    (match (:selected-page current)
      None true
-     (Some _page) false)))
+     (Some _page) false)
+   (not (empty? (:outliner-section-markers current)))
+   (= 0 (:start-index (nth (:outliner-section-markers current) 0)))))
 
-(defn journal-render-sections [current]
-  (if (journal-section-layout-visible? current)
-    (:outliner-section-markers current)
+(defn first-journal-section-identifier [current]
+  (if (first-journal-section-visible? current)
+    (str "journal.section."
+         (:page-id (nth (:outliner-section-markers current) 0)))
+    "journal.section"))
+
+(defn first-journal-retained-rows [current]
+  (if (first-journal-section-visible? current)
+    (let [section (nth (:outliner-section-markers current) 0)]
+      (mapv
+       (fn [row] (make-retained-outline-row current row))
+       (subvec (:outliner-rows current)
+               (:start-index section)
+               (:end-index section))))
     []))
 
-(defn journal-render-section-key [section]
-  (:page-id section))
-
-(defn flat-retained-outliner-rows [current]
-  (if (not (journal-section-layout-visible? current))
-    (retained-outliner-rows current)
-    []))
-
-(defn journal-section-marker-for-page [markers page-id]
-  (loop [index 0]
-    (if (= index (count markers))
-      None
-      (let [marker (nth markers index)]
-        (if (= (:page-id marker) page-id)
-          (Some marker)
-          (recur (inc index)))))))
-
-(defn retained-section-rows [current page-id]
-  (match
-   (journal-section-marker-for-page
-    (:outliner-section-markers current) page-id)
-   (Some section)
-    (mapv
-     (fn [row] (make-retained-outline-row current row))
-     (subvec (:outliner-rows current)
-             (:start-index section)
-             (:end-index section)))
-    None []))
+(defn remaining-retained-outliner-rows [current]
+  (if (first-journal-section-visible? current)
+    (let [section (nth (:outliner-section-markers current) 0)]
+      (mapv
+       (fn [row] (make-retained-outline-row current row))
+       (subvec (:outliner-rows current) (:end-index section))))
+    (retained-outliner-rows current)))
 
 (defn retained-row-value [retained] (:value retained))
 (defn retained-row-editing? [retained] (:is-editing retained))
@@ -1210,8 +1203,9 @@
      [:button
       {:text (reactive outliner-tag-title tag-source)
        :label (reactive outliner-tag-title tag-source)
+       :class "caption"
        :variant "ghost"
-       :foreground "primary"
+       :foreground "accent"
        :accessibility-identifier (outliner-tag-identifier tag)
        :on-press
        (event [current-tag tag-source]
@@ -1263,73 +1257,73 @@
        :on-long-press
        (event [current-row row-source]
               (send (model/LongPressOutlinerBlock (:uuid current-row))))}
-      [:column {:grow 1.0}
-       [:row {:gap 0 :cross "start" :padding-vertical 5}
-        [outliner-indent-view indent-source]
-        [:button
-         {:label (reactive outliner-row-zoom-label row-source)
-          :icon "app:status-dot"
-          :variant "ghost"
-          :foreground "border"
-          :width 24
-          :height 24
-          :accessibility-identifier
-          (str "button.outliner.zoom." (:uuid row))
-          :on-press
-          (event [current-row row-source]
-                 (if search-open
-                   (send (model/RequestSearchNode (:uuid current-row)))
-                   (send (model/RequestAppNode (:uuid current-row)))))}]
-        [:box {:width 2}]
-        [:row {:gap 7 :cross "start" :grow 1.0}
-         [:if {:test has-status-source}
-          [:button
-           {:icon status-icon-source
-            :label status-title-source
-            :variant "ghost"
-            :size "icon"
-            :width 24
-            :height 24
-            :accessibility-identifier "button.block-task-status"
-            :on-press
-            (event [current-row row-source]
-                   (send
-                    (model/OpenOutlinerTaskStatusPicker (:uuid current-row))))}]]
-         [:column {:grow 1.0}
-          [:if {:test editing-source}
-           [:box {:grow 1.0}
-            [outliner-editor-view block-id-source
-             editing-title-source editing-caret-source send]]]
-          [:if {:test not-editing-source}
-           [:box {:grow 1.0}
-            [outliner-rich-block-view
-             model-source title-source markup-source youtube-target-source
-             is-asset-source row-source asset-type-source local-path-source send]]]
-          [:if {:test has-tags-source}
-           [:row {:gap 8}
-            [:keyed
-             {:source (reactive :tags row-source)
-              :key :uuid
-              :compare compare
-              :as tag-source}
-             [outliner-tag tag-source send]]]]
-          [:if {:test sync-failed-source}
-           [:text
-            {:accessibility-identifier
-             (str "outliner.sync-failed." (:uuid row))}
-            "Sync failed"]]]
-         [:if {:test has-children-source}
-          [:button
-           {:text (reactive outliner-row-collapse-glyph row-source)
-            :label (reactive outliner-row-collapse-label row-source)
-            :variant "ghost"
-            :width 28
-            :height 28
-            :accessibility-identifier
-            (str "button.outliner.collapse." (:uuid row))
-            :on-press
-            (event [current-row row-source]
-                   (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]]]])))
+      [:row {:gap 0 :cross "start" :padding-vertical 5}
+       [outliner-indent-view indent-source]
+       [:button
+        {:label (reactive outliner-row-zoom-label row-source)
+         :icon "app:status-dot"
+         :variant "ghost"
+         :foreground "border"
+         :width 24
+         :height 24
+         :accessibility-identifier
+         (str "button.outliner.zoom." (:uuid row))
+         :on-press
+         (event [current-row row-source]
+                (if search-open
+                  (send (model/RequestSearchNode (:uuid current-row)))
+                  (send (model/RequestAppNode (:uuid current-row)))))}]
+       [:box {:width 2}]
+       [:row {:gap 7 :cross "start" :grow 1.0}
+        [:if {:test has-status-source}
+         [:button
+          {:icon status-icon-source
+           :label status-title-source
+           :variant "ghost"
+           :size "icon"
+           :width 24
+           :height 24
+           :accessibility-identifier "button.block-task-status"}
+          [:context-menu
+           [:keyed
+            {:source (reactive :task-statuses model-source)
+             :key :uuid
+             :compare compare
+             :as status-source}
+            [outliner-task-status-row (:uuid row) status-source send]]]]]
+        [:column {:grow 1.0}
+         [:if {:test editing-source}
+          [outliner-editor-view block-id-source
+           editing-title-source editing-caret-source send]]
+         [:if {:test not-editing-source}
+          [outliner-rich-block-view
+           model-source title-source markup-source youtube-target-source
+           is-asset-source row-source asset-type-source local-path-source send]]
+         [:if {:test has-tags-source}
+          [:row {:gap 6}
+           [:keyed
+            {:source (reactive :tags row-source)
+             :key :uuid
+             :compare compare
+             :as tag-source}
+            [outliner-tag tag-source send]]]]
+         [:if {:test sync-failed-source}
+          [:text
+           {:accessibility-identifier
+            (str "outliner.sync-failed." (:uuid row))}
+           "Sync failed"]]]
+        [:if {:test has-children-source}
+         [:button
+          {:text (reactive outliner-row-collapse-glyph row-source)
+           :label (reactive outliner-row-collapse-label row-source)
+           :variant "ghost"
+           :width 28
+           :height 28
+           :accessibility-identifier
+           (str "button.outliner.collapse." (:uuid row))
+           :on-press
+           (event [current-row row-source]
+                  (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]]])))
 
 (defn outliner-entry
   [ui-context model-source retained-row-source row-source send]
@@ -1339,52 +1333,50 @@
      ui-context nil
      [:column
       [:if {:test
+            (reactive outliner-journal-divider-visible?
+                      model-source row-source)}
+       [:separator {:accessibility-identifier "journal.divider"}]]
+      [:if {:test
             (reactive outliner-journal-heading-visible?
                       model-source row-source)}
-       [:column
-        [:list-item
-         {:label (reactive outliner-journal-accessibility-label
-                           model-source row-source)
-          :padding 0
-          :accessibility-identifier-signal
-          (reactive outliner-journal-button-identifier
-                    model-source row-source)
-          :on-press
-          (event [page-id journal-page-id-source]
-                 (send (model/RequestAppNode page-id)))}
-         [:box {:padding-horizontal 8 :padding-vertical 12}
-          [:box {:height 14}]
-          [:heading
-           {:level 3
-            :value (reactive outliner-journal-title
-                             model-source row-source)}]]]]]
+       [:list-item
+        {:label (reactive outliner-journal-accessibility-label
+                          model-source row-source)
+         :padding 0
+         :accessibility-identifier-signal
+         (reactive outliner-journal-button-identifier
+                   model-source row-source)
+         :on-press
+         (event [page-id journal-page-id-source]
+                (send (model/RequestAppNode page-id)))}
+        [:box {:padding-horizontal 8 :padding-vertical 12}
+         [:box {:height 14}]
+         [:heading
+          {:level 3
+           :value (reactive outliner-journal-title
+                            model-source row-source)}]]]]
       [outliner-row model-source retained-row-source row-source send]])))
 
-(defn outliner-journal-section
-  [ui-context model-source section-source send]
-  (let [section (signal/sample section-source)
-        section-page-id (journal-render-section-key section)]
-    (elements/element
-     ui-context nil
-     [:column
-      {:container-relative-frame "min-vertical"
-       :container-relative-frame-inset 136
-       :accessibility-identifier
-       (str "journal.section." (journal-render-section-key section))}
-      [:keyed
-       {:source (reactive (fn [current]
-                            (retained-section-rows current section-page-id))
-                          model-source)
-        :key :render-key
-        :compare compare
-        :as retained-row-source}
-       [outliner-entry model-source retained-row-source
-        (reactive retained-row-value retained-row-source) send]]])))
+(defn outliner-first-journal-section [ui-context model-source send]
+  (elements/element
+   ui-context nil
+   [:column
+    {:container-relative-frame "min-vertical"
+     :container-relative-frame-inset 136
+     :accessibility-identifier
+     (first-journal-section-identifier (signal/sample model-source))}
+    [:keyed
+     {:source (reactive first-journal-retained-rows model-source)
+      :key :render-key
+      :compare compare
+      :as retained-row-source}
+     [outliner-entry model-source retained-row-source
+      (reactive retained-row-value retained-row-source) send]]]))
 
 (defui outliner-selection-toolbar [send]
   [:toolbar
    {:orientation "horizontal"
-    :ios [[:liquid-glass {:shape "capsule" :leading-inset 0}]]
+    :ios [[:liquid-glass {:shape "capsule"}]]
     :label "Outliner selection"
     :accessibility-identifier "toolbar.outliner.selection"
     :class "scroll-leading leading-inset-12"
@@ -1599,14 +1591,17 @@
     (elements/element
      ui-context nil
      [:column
+      {:gap 0}
       [:if {:test structured-breadcrumb-source}
        [:box {:padding-horizontal 8}
         [:box {:height 10}]
         [related-row-breadcrumbs row-source send]]]
       [:if {:test fallback-breadcrumb-source}
        [:box {:padding-horizontal 8}
-        [:box {:height 10}]
-        [:text {:value (reactive outliner-row-breadcrumb row-source)}]]]
+       [:box {:height 10}]
+        [:text {:value (reactive outliner-row-breadcrumb row-source)
+                :class "caption"
+                :foreground "muted-foreground"}]]]
       [outliner-row model-source retained-row-source row-source send]])))
 
 (defui node-related-section [model-source send]
@@ -1704,7 +1699,7 @@
       [node-linked-reference-section model-source send]]
      [:box {:height 120}]]]])
 
-(declare attachment-picker-dialog task-status-picker-dialog)
+(declare task-status-picker-dialog)
 
 (defui composer-view [model-source send]
   [:box
@@ -1713,7 +1708,7 @@
     :min-height 58}
    [:if {:test (reactive :composer-expanded model-source)}
     [:column
-     {:ios [[:liquid-glass {:shape "rounded-rectangle" :leading-inset 0}]]
+     {:ios [[:liquid-glass {:shape "rounded-rectangle"}]]
       :grow 1.0
       :gap 0
       :padding-horizontal 16
@@ -1806,39 +1801,14 @@
    [:if {:test (reactive composer-collapsed? model-source)}
     [:button
      {:variant "ghost"
-      :ios [[:liquid-glass {:shape "capsule" :leading-inset 30}]]
+     :ios [[:liquid-glass {:shape "capsule"}]]
       :grow 1.0
       :height 58
+      :padding-horizontal 30
+      :foreground "muted-foreground"
       :accessibility-identifier "button.composer.expand"
       :on-press (fn [_event] (send model/ExpandComposer))}
      "Capture"]]])
-
-(defui attachment-picker-dialog [send]
-  [:dropdown-menu
-   {:anchor "above"
-    :anchor-alignment "start"
-    :min-width 240
-    :on-dismiss (fn [_event] (send model/CloseAttachmentPicker))}
-   [:menu-item
-    {:icon "app:toolbar-attachment"
-     :accessibility-identifier "button.attachment.files"
-     :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
-    "File"]
-   [:menu-item
-    {:icon "app:toolbar-camera"
-     :accessibility-identifier "button.attachment.camera"
-     :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
-    "Camera"]
-   [:menu-item
-    {:icon "app:composer-photo"
-     :accessibility-identifier "button.attachment.photos"
-     :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
-    "Photo"]
-   [:menu-item
-    {:icon "app:toolbar-audio"
-     :accessibility-identifier "button.attachment.audio"
-     :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
-    "Audio recording"]])
 
 (defn task-status-row [ui-context status-source send]
   (let [status (signal/sample status-source)]
@@ -1871,11 +1841,6 @@
       :on-press (fn [_event] (send model/ClearTaskStatus))}
      "Clear task status"]]])
 
-(defn outliner-task-status-picker-open? [current]
-  (match (:outliner-task-status-block-id current)
-    (Some _block-id) true
-    None false))
-
 (defn outliner-task-status-option-identifier [status]
   (str
    "button.block-task-status-option."
@@ -1883,35 +1848,21 @@
      (Some ident) ident
      None (:uuid status))))
 
-(defn outliner-task-status-row [ui-context status-source send]
+(defn outliner-task-status-row [ui-context block-id status-source send]
   (let [status (signal/sample status-source)]
     (elements/element
      ui-context nil
-     [:button
+     [:menu-item
       {:text (reactive task-status-title status-source)
-       :label (reactive task-status-title status-source)
+       :icon (reactive task-status-icon-name status-source)
+       :foreground-signal (reactive task-status-foreground status-source)
        :accessibility-identifier
        (outliner-task-status-option-identifier status)
        :on-press
        (event [current-status status-source]
-              (send (model/ChooseOutlinerTaskStatus (:uuid current-status))))}])))
-
-(defui outliner-task-status-dialog [model-source send]
-  [:dialog
-   {:text "Task status"
-    :on-dismiss
-    (fn [_event] (send model/CloseOutlinerTaskStatusPicker))}
-   [:column
-    [:keyed
-     {:source (reactive :task-statuses model-source)
-      :key :uuid
-      :compare compare
-      :as status-source}
-     [outliner-task-status-row status-source send]]
-    [:button
-     {:on-press
-      (fn [_event] (send model/CloseOutlinerTaskStatusPicker))}
-     "Cancel"]]])
+              (send
+               (model/SetOutlinerTaskStatus block-id
+                                            (:uuid current-status))))}])))
 
 (defn first-flashcard [current]
   (if (empty? (:flashcards current))
@@ -1961,6 +1912,9 @@
       None [])
     []))
 
+(defn flashcard-answer-rows-visible? [current]
+  (not (empty? (visible-flashcard-answer-rows current))))
+
 (defn flashcard-answer-identifier [answer]
   (str "flashcard.answer." (:index answer)))
 
@@ -1975,72 +1929,138 @@
       {:value (reactive flashcard-answer-text answer-source)
        :accessibility-identifier (flashcard-answer-identifier answer)}])))
 
+;; Flashcard controls use shared button typography and alignment semantics.
+(defui flashcard-rating-button
+  [rating title foreground background send]
+  [:button
+   {:variant "ghost"
+    :class "semibold"
+    :grow 1.0
+    :min-height 50
+    :text-alignment "center"
+    :foreground foreground
+    :background background
+    :corner-radius 14
+    :accessibility-identifier (str "button.flashcard.rating." rating)
+    :on-press (fn [_event] (send (model/ReviewFlashcard rating)))}
+   title])
+
+(defui flashcard-review-content [model-source send]
+  [:column
+   {:accessibility-identifier "layout.flashcards.review"
+    :grow 1.0
+    :gap 0
+    :padding-horizontal 20}
+   [:box
+    {:height 18
+     :accessibility-identifier "spacer.flashcards.top"}]
+   [:column
+    {:accessibility-identifier "layout.flashcards.review-content"
+     :grow 1.0
+     :gap 18}
+    [:row
+    {:accessibility-identifier "row.flashcards.status"}
+    [:text {:class "footnote" :foreground "muted-foreground"} "Due now"]
+    [:spacer {:grow 1.0}]
+    [:text
+     {:class "footnote"
+      :foreground "muted-foreground"
+      :value (reactive flashcard-remaining-label model-source)}]]
+   [:scroll
+    {:grow 1.0}
+    [:column
+     {:accessibility-identifier "card.flashcard.question"
+      :gap 18
+      :padding 22
+      :background "surface"
+      :corner-radius 18}
+     [:text
+     {:class "title2 semibold"
+       :value (reactive flashcard-question model-source)
+       :accessibility-identifier "flashcard.question"}]
+     [:if {:test (reactive flashcard-answer-rows-visible? model-source)}
+      [:column
+       {:gap 18}
+       [:separator {:accessibility-identifier "flashcard.answer-divider"}]
+       [:column
+        {:gap 12}
+        [:keyed
+         {:source (reactive visible-flashcard-answer-rows model-source)
+          :key :uuid
+          :compare compare
+          :as answer-source}
+         [flashcard-answer-row answer-source]]]]]]]
+    [:if {:test (reactive flashcard-show-cloze? model-source)}
+    [:row
+     [:button
+      {:variant "ghost"
+       :class "semibold"
+       :grow 1.0
+       :min-height 50
+       :text-alignment "center"
+       :foreground "white"
+       :background "primary"
+       :corner-radius 14
+       :accessibility-identifier "button.flashcard.show-cloze"
+       :on-press (fn [_event] (send model/RevealFlashcardCloze))}
+      "Show cloze"]]]
+    [:if {:test (reactive flashcard-show-answer? model-source)}
+    [:row
+     [:button
+      {:variant "ghost"
+       :class "semibold"
+       :grow 1.0
+       :min-height 50
+       :text-alignment "center"
+       :foreground "white"
+       :background "primary"
+       :corner-radius 14
+       :accessibility-identifier "button.flashcard.show-answer"
+       :on-press (fn [_event] (send model/RevealFlashcardAnswer))}
+      "Show answer"]]]
+    [:if {:test (reactive flashcard-show-ratings? model-source)}
+     [:column
+      {:gap 10}
+      [:row
+       {:gap 10}
+       [flashcard-rating-button
+        "again" "Again" "red" "flashcard-again-background" send]
+       [flashcard-rating-button
+        "hard" "Hard" "warning-foreground" "flashcard-hard-background" send]]
+      [:row
+       {:gap 10}
+       [flashcard-rating-button
+        "good" "Good" "blue" "flashcard-good-background" send]
+       [flashcard-rating-button
+        "easy" "Easy" "green" "flashcard-easy-background" send]]]]]
+   [:box
+    {:height 24
+     :accessibility-identifier "spacer.flashcards.bottom"}]])
+
 (defui flashcard-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.flashcards"
     :grow 1.0
-    :background "background"
-    :gap 18
-    :padding-horizontal 20
-    :padding-top 18
-    :padding-bottom 24}
+    :gap 0
+    :background "background"}
    [:if {:test (reactive flashcards-empty? model-source)}
     [:column
-     {:accessibility-identifier "flashcards.empty"
+     {:accessibility-identifier "layout.flashcards.empty"
       :grow 1.0
       :main "center"
       :cross "center"
       :gap 10
       :padding 32}
-     [:heading {:level 3} "No cards due"]
+     [:heading
+      {:level 3
+       :accessibility-identifier "flashcards.empty"}
+      "No cards due"]
      [:text
       {:text-alignment "center"
        :foreground "muted-foreground"}
       "Tag a block with #Card to add it to Flashcards."]]]
    [:if {:test (reactive flashcards-present? model-source)}
-    [:text "Due now"]]
-   [:if {:test (reactive flashcards-present? model-source)}
-    [:text {:value (reactive flashcard-remaining-label model-source)}]]
-   [:if {:test (reactive flashcards-present? model-source)}
-    [:text
-     {:value (reactive flashcard-question model-source)
-      :accessibility-identifier "flashcard.question"}]]
-   [:keyed
-    {:source (reactive visible-flashcard-answer-rows model-source)
-     :key :uuid
-     :compare compare
-     :as answer-source}
-    [flashcard-answer-row answer-source]]
-   [:if {:test (reactive flashcard-show-cloze? model-source)}
-    [:button
-     {:accessibility-identifier "button.flashcard.show-cloze"
-      :on-press (fn [_event] (send model/RevealFlashcardCloze))}
-     "Show cloze"]]
-   [:if {:test (reactive flashcard-show-answer? model-source)}
-    [:button
-     {:accessibility-identifier "button.flashcard.show-answer"
-      :on-press (fn [_event] (send model/RevealFlashcardAnswer))}
-     "Show answer"]]
-   [:if {:test (reactive flashcard-show-ratings? model-source)}
-    [:button
-     {:accessibility-identifier "button.flashcard.rating.again"
-      :on-press (fn [_event] (send (model/ReviewFlashcard "again")))}
-     "Again"]]
-   [:if {:test (reactive flashcard-show-ratings? model-source)}
-    [:button
-     {:accessibility-identifier "button.flashcard.rating.hard"
-      :on-press (fn [_event] (send (model/ReviewFlashcard "hard")))}
-     "Hard"]]
-   [:if {:test (reactive flashcard-show-ratings? model-source)}
-    [:button
-     {:accessibility-identifier "button.flashcard.rating.good"
-      :on-press (fn [_event] (send (model/ReviewFlashcard "good")))}
-     "Good"]]
-   [:if {:test (reactive flashcard-show-ratings? model-source)}
-    [:button
-     {:accessibility-identifier "button.flashcard.rating.easy"
-      :on-press (fn [_event] (send (model/ReviewFlashcard "easy")))}
-     "Easy"]]])
+    [flashcard-review-content model-source send]]])
 
 (defn graph-identifier [graph]
   (str "graph." (:id graph)))
@@ -2172,11 +2192,11 @@
         {:class "semibold"
          :value (reactive graph-title graph-source)}]
        [:if {:test (reactive graph-status-visible? graph-source)}
-         [:text
-          {:value (reactive graph-status-title graph-source)
-           :class "caption"
-           :foreground "muted-foreground"
-           :accessibility-identifier (graph-status-identifier graph)}]]]
+        [:text
+         {:value (reactive graph-status-title graph-source)
+          :class "caption"
+          :foreground "muted-foreground"
+          :accessibility-identifier (graph-status-identifier graph)}]]]
       [:context-menu
        {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
@@ -2197,11 +2217,13 @@
                          (graph-icon-name local? current-graph))
                        graph-source)
        :accessibility-identifier (graph-identifier graph)
-       :disabled (reactive graph-row-disabled? model-source graph-source)
+       :disabled (if local?
+                   (reactive graph-delete-active? model-source graph-source)
+                   (reactive graph-row-disabled? model-source graph-source))
        :on-press
        (event [current-graph graph-source]
               (send (model/RequestOpenGraph (:id current-graph))))}
-      [:column {:gap 4 :grow 1.0}
+      [:column {:gap 4}
        [:text {:value (reactive graph-title graph-source)}]
        [:if {:test (reactive graph-not-ready? graph-source)}
         [:text
@@ -2213,8 +2235,7 @@
        {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:menu-item
-         {:icon "trash"
-          :variant "destructive"
+         {:variant "destructive"
           :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
@@ -2492,17 +2513,18 @@
 (defn settings-language-choice-identifier [choice]
   (str "button.settings.language." (:id choice)))
 
-(defn settings-language-choice-row [ui-context choice-source send]
+(defn settings-language-choice-radio
+  [ui-context model-source choice-source send]
   (let [choice (signal/sample choice-source)]
     (elements/element
      ui-context nil
-     [:menu-item
-      {:text (reactive settings-language-choice-title choice-source)
-       :accessibility-identifier
-       (settings-language-choice-identifier choice)
-       :on-press
-       (event [current-choice choice-source]
-              (send (model/ChooseSettingsLanguage (:id current-choice))))}])))
+     [:radio
+      {:checked (reactive model/settings-language-choice-selected?
+                          model-source choice-source)
+       :accessibility-identifier (settings-language-choice-identifier choice)
+       :on-change
+       (fn [_event] (send (model/ChooseSettingsLanguage (:id choice))))}
+      (settings-language-choice-title choice)])))
 
 (defn settings-community-link-title [link]
   (:title link))
@@ -2510,11 +2532,16 @@
 (defn settings-community-link-identifier [link]
   (str "link.settings.community." (:id link)))
 
-(defn settings-community-link-row [ui-context link-source send]
+(defn settings-community-link-needs-separator? [current link]
+  (match (last (:community-links current))
+    (Some final-link) (not (= (:id link) (:id final-link)))
+    None false))
+
+(defn settings-community-link-row [ui-context model-source link-source send]
   (let [link (signal/sample link-source)]
     (elements/element
      ui-context nil
-     [:column
+     [:column {:gap 12}
       [:list-item
        {:text (reactive settings-community-link-title link-source)
         :padding 0
@@ -2523,7 +2550,11 @@
         :on-press
         (event [current-link link-source]
                (send (model/OpenExternalURL (:url current-link))))}]
-      [:separator]])))
+      [:if
+       {:test
+        (reactive settings-community-link-needs-separator?
+                  model-source link-source)}
+       [:separator]]])))
 
 (defn settings-tabs-visible? [current]
   (:settings-tabs-open current))
@@ -2803,27 +2834,18 @@
           "Dark"]]]]]
      [:separator]
      [:row {:cross "center"}
-      [:text "Language"]
-      [:spacer]
-      [:stack
-       [:select
-        {:text (reactive settings-language-title model-source)
-         :label "Language"
-         :accessibility-identifier "picker.settings.language"
-         :on-press (fn [_event] (send model/OpenSettingsLanguageMenu))}]
-       [:if {:test (reactive :settings-language-menu-open model-source)}
-        [:dropdown-menu
-         {:anchor "below"
-          :anchor-alignment "end"
-          :min-width 220
-          :accessibility-identifier "menu.settings.language"
-          :on-dismiss (fn [_event] (send model/CloseSettingsLanguageMenu))}
-         [:keyed
-          {:source (reactive :language-choices model-source)
-           :key :id
-           :compare compare
-           :as choice-source}
-          [settings-language-choice-row choice-source send]]]]]]
+     [:text "Language"]
+     [:spacer]
+      [:radio-group
+       {:label "Language"
+        :class "menu"
+        :accessibility-identifier "picker.settings.language"}
+       [:keyed
+        {:source (reactive :language-choices model-source)
+         :key :id
+         :compare compare
+         :as choice-source}
+        [settings-language-choice-radio model-source choice-source send]]]]
      [:separator]
      [:list-item
       {:padding 0
@@ -2927,15 +2949,15 @@
      {:class "headline"
       :foreground "muted-foreground"
       :accessibility-identifier "label.settings.community"}
-     "Community"]
+    "Community"]
     [:column
-     {:background "surface" :corner-radius 14 :padding 16}
+     {:gap 12 :background "surface" :corner-radius 14 :padding 16}
      [:keyed
       {:source (reactive :community-links model-source)
        :key :id
        :compare compare
        :as link-source}
-      [settings-community-link-row link-source send]]]]
+      [settings-community-link-row model-source link-source send]]]]
    [:column {:padding 16 :background "surface" :corner-radius 14}
     [:list-item
      {:padding 0
@@ -3176,7 +3198,7 @@
       [:button
        {:icon "search"
         :variant "ghost"
-        :ios [[:liquid-glass {:shape "circle" :leading-inset 0}]]
+        :ios [[:liquid-glass {:shape "circle"}]]
         :size "icon"
         :width 58
         :height 58
@@ -3225,19 +3247,21 @@
          :value (reactive selected-page-title model-source)
          :accessibility-identifier "title.selected-page"}]]
       [:box {:height 12}]]]
+     [:if {:test (reactive first-journal-section-visible? model-source)}
+      [outliner-first-journal-section model-source send]]
      [:keyed
-      {:source (reactive journal-render-sections model-source)
-       :key journal-render-section-key
-       :compare compare
-       :as section-source}
-      [outliner-journal-section model-source section-source send]]
-     [:keyed
-      {:source (reactive flat-retained-outliner-rows model-source)
+      {:source (reactive remaining-retained-outliner-rows model-source)
        :key :render-key
        :compare compare
        :as retained-row-source}
-      [outliner-entry model-source retained-row-source
+     [outliner-entry model-source retained-row-source
        (reactive retained-row-value retained-row-source) send]]
+     [:if {:test (reactive older-journals-visible? model-source)}
+      [:box
+       {:height 1
+        :accessibility-identifier "outliner.load-older-sentinel"
+        :on-appear
+        (fn [_event] (send model/LoadOlderJournals))}]]
      [:if {:test (reactive main-can-add-first-block? model-source)}
       [add-first-block-button model-source send]]
      [:if {:test (reactive main-related-section-visible? model-source)}
@@ -3246,13 +3270,7 @@
       [node-tagged-section model-source send]]
      [:if {:test (reactive main-linked-reference-section-visible? model-source)}
       [node-linked-reference-section model-source send]]
-     [:box {:height 120}]
-     [:if {:test (reactive older-journals-visible? model-source)}
-      [:box
-       {:height 1
-        :accessibility-identifier "outliner.load-older-sentinel"
-        :on-appear
-        (fn [_event] (send model/LoadOlderJournals))}]]]])
+     [:box {:height 120}]]])
 
 (defui chat-main-view [model-source send]
   [:stack {:grow 1.0}
@@ -3565,8 +3583,6 @@
      [settings-sheet model-source send]]
     [:if {:test (reactive :graph-password-open model-source)}
      [graph-password-sheet model-source send]]
-    [:if {:test (reactive outliner-task-status-picker-open? model-source)}
-     [outliner-task-status-dialog model-source send]]
     [:if {:test (reactive page-deletion-pending? model-source)}
      [page-delete-dialog send]]
     [:if {:test (reactive :sync-details-open model-source)}

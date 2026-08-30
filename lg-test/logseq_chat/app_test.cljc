@@ -1005,27 +1005,29 @@
           picker
           (descendant-with-identifier
            renderer root "picker.settings.language")]
-      (assert-equal "System"
-                    (property-string renderer picker proto/TextValue)
-                    "the language picker renders the selected language")
-      (driver/dispatch-event! application (proto/Press picker))
-      (driver/flush! application)
-      (let [menu
+      (assert-equal (Some apple/AppleRadioGroup)
+                    (apple/node renderer picker)
+                    "language choices use the native Picker contract")
+      (assert-equal "menu"
+                    (property-string renderer picker proto/StyleClass)
+                    "the native Picker keeps main's adaptive menu presentation")
+      (let [simplified-chinese
             (descendant-with-identifier
-             renderer root "menu.settings.language")
-            simplified-chinese
+             renderer picker "button.settings.language.zh-CN")
+            system
             (descendant-with-identifier
-             renderer menu "button.settings.language.zh-CN")
+             renderer picker "button.settings.language.system")
             arabic
             (descendant-with-identifier
-             renderer menu "button.settings.language.ar")]
-        (is (not (= -1 menu)) "the language picker opens a controlled menu")
+             renderer picker "button.settings.language.ar")]
         (is (not (= -1 simplified-chinese))
             "the picker retains the Simplified Chinese choice")
+        (is (property-bool renderer system proto/Checked)
+            "the native picker renders the selected language")
         (is (not (= -1 arabic))
             "the picker retains the final main-branch language choice")
         (driver/dispatch-event!
-         application (proto/Press simplified-chinese))
+         application (proto/Change simplified-chinese))
         (driver/flush! application)
         (assert-equal "zh-CN" (:language (chat/model application))
                       "selecting a language updates LG settings state")
@@ -1049,11 +1051,21 @@
           report-bug
           (descendant-with-identifier
            renderer root "link.settings.community.report-bug")
+          report-row
+          (parent-with-child-identifier
+           renderer root "link.settings.community.report-bug")
           github
           (descendant-with-identifier
+           renderer root "link.settings.community.github")
+          github-row
+          (parent-with-child-identifier
            renderer root "link.settings.community.github")]
       (is (not (= -1 report-bug)) "settings retain the issue tracker link")
       (is (not (= -1 github)) "settings retain the GitHub community link")
+      (assert-equal 12 (property-int renderer report-row proto/Gap)
+                    "community links preserve main's spacing before dividers")
+      (assert-equal 1 (count (apple/children renderer github-row))
+                    "the final community link has no trailing divider")
       (driver/dispatch-event! application (proto/Press github))
       (driver/flush! application)
       (assert-equal
@@ -1214,7 +1226,7 @@
         "app-specific appearance does not expand the standard LUI protocol")
     (assert-equal
      (Some
-      "lui-tweak-v1|12:liquid-glass|profiles:ios/swiftui|properties:13:leading-inset:int:required:none,5:shape:string:required:none")
+      "lui-tweak-v1|12:liquid-glass|profiles:ios/swiftui|properties:5:shape:string:required:none")
      (match schema
        (Some current) (Some (ext/tweak-fingerprint current))
        None None)
@@ -1719,6 +1731,13 @@
             (child-with-identifier renderer sidebar-view "link.sidebar.graphs")
             favorites
             (child-with-identifier renderer sidebar-view "section.sidebar.favorites")
+            favorites-heading (nth (apple/children renderer favorites) 0)
+            favorites-heading-children (apple/children renderer favorites-heading)
+            favorites-heading-top (nth favorites-heading-children 0)
+            favorites-heading-content (nth favorites-heading-children 1)
+            favorites-heading-bottom (nth favorites-heading-children 2)
+            favorites-heading-icon
+            (nth (apple/children renderer favorites-heading-content) 0)
             recent
             (child-with-identifier renderer sidebar-view "section.sidebar.recent")
             favorite-link
@@ -1774,6 +1793,15 @@
         (assert-equal "app:document"
                       (property-string renderer favorite-link proto/InlineIconName)
                       "sidebar pages keep their document icon")
+        (assert-equal 14
+                      (property-int renderer favorites-heading-icon proto/WidthValue)
+                      "sidebar section glyphs match main's caption2 metrics")
+        (assert-equal 16
+                      (property-int renderer favorites-heading-top proto/HeightValue)
+                      "sidebar section headings keep main's top spacing")
+        (assert-equal 6
+                      (property-int renderer favorites-heading-bottom proto/HeightValue)
+                      "sidebar section headings keep main's bottom spacing")
         (driver/dispatch-event! application (proto/Press favorite-link))
         (driver/flush! application)
         (is (not (property-bool renderer root proto/Selected))
@@ -1902,6 +1930,9 @@
           related
           (descendant-with-identifier
            renderer outliner "section.node.linked-references")
+          related-list
+          (descendant-with-identifier renderer outliner "list.node.related")
+          related-group (nth (apple/children renderer related-list) 0)
           add-first
           (descendant-with-identifier
            renderer outliner "button.outliner.add-first-block")
@@ -1915,6 +1946,9 @@
                     "selected pages own the main header title")
       (is (not (= related -1))
           "selected pages render their core-projected linked references")
+      (assert-equal 0
+                    (property-int renderer related-group proto/Gap)
+                    "related breadcrumbs and rows use main's zero-spacing stack")
       (is (not (= content -1))
           "selected pages render their own projected outliner rows")
       (is (not (= page-title -1))
@@ -1981,6 +2015,73 @@
      (:pending-effects requested-again)
      "pagination should become available again after the request resolves")))
 
+(deftest unrelated-snapshots-preserve-the-journal-pagination-window
+  (let [first-day
+        (journal-outline-row
+         "day-a-root" "page-a" "First" "August 29th" 20260829 0)
+        older-day
+        (journal-outline-row
+         "day-b-root" "page-b" "Older" "August 28th" 20260828 0)
+        initial
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals true
+                 :outliner-rows [first-day])))
+        unrelated
+        (model/update
+         initial
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals false
+                 :outliner-rows [first-day older-day])))
+        loading
+        (model/update
+         (model/update initial model/LoadOlderJournals)
+         (model/DequeueEffect 1))
+        captured-row
+        (journal-outline-row
+         "captured-block" "page-a" "Captured now" "August 29th" 20260829 0)
+        capturing
+        (assoc initial
+               :in-flight-effects
+               [(model/SendCaptureEffect 7 "Captured now")])
+        captured
+        (model/update
+         capturing
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals true
+                 :outliner-rows [first-day captured-row])))
+        paginated
+        (model/update
+         loading
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals false
+                 :outliner-rows [first-day older-day])))]
+    (assert-equal [first-day] (:outliner-rows unrelated)
+                  "unrelated snapshots keep the visible journal window")
+    (assert-equal [first-day] (:journal-outliner-rows unrelated)
+                  "unrelated snapshots keep the retained journal cache")
+    (is (:has-older-journals unrelated)
+        "unrelated snapshots keep pagination available")
+    (assert-equal [first-day captured-row] (:outliner-rows captured)
+                  "a capture response refreshes today's visible journal")
+    (assert-equal [first-day captured-row] (:journal-outliner-rows captured)
+                  "a capture response refreshes the retained journal cache")
+    (assert-equal [first-day older-day] (:outliner-rows paginated)
+                  "a journal pagination response expands the visible window")
+    (assert-equal [first-day older-day] (:journal-outliner-rows paginated)
+                  "a journal pagination response expands the retained cache")
+    (is (not (:has-older-journals paginated))
+        "pagination accepts the authoritative continuation state")))
+
 (deftest flashcard-reveal-state-resets-only-when-the-current-card-changes
   (let [first-card (flashcard "card-a" "First […]" "First answer" [] true)
         same-card (flashcard "card-a" "Updated […]" "Updated answer" [] true)
@@ -2033,9 +2134,58 @@
     (driver/flush! application)
     (let [main (main-root renderer application)
           screen (child-with-identifier renderer main "screen.flashcards")
-          question (child-with-identifier renderer screen "flashcard.question")
+          review
+          (descendant-with-identifier renderer screen "layout.flashcards.review")
+          review-content
+          (descendant-with-identifier renderer screen "layout.flashcards.review-content")
+          top-spacer
+          (descendant-with-identifier renderer screen "spacer.flashcards.top")
+          bottom-spacer
+          (descendant-with-identifier renderer screen "spacer.flashcards.bottom")
+          status
+          (descendant-with-identifier renderer screen "row.flashcards.status")
+          question-card
+          (descendant-with-identifier renderer screen "card.flashcard.question")
+          question (descendant-with-identifier renderer screen "flashcard.question")
           show-cloze
-          (child-with-identifier renderer screen "button.flashcard.show-cloze")]
+          (descendant-with-identifier renderer screen "button.flashcard.show-cloze")
+          show-cloze-row
+          (parent-with-child-identifier
+           renderer screen "button.flashcard.show-cloze")]
+      (assert-equal 18 (property-int renderer review-content proto/Gap)
+                    "review content keeps main's section spacing")
+      (assert-equal 20 (property-int renderer review proto/PaddingHorizontal)
+                    "review content keeps main's edge inset")
+      (assert-equal 18 (property-int renderer top-spacer proto/HeightValue)
+                    "review content keeps main's top inset")
+      (assert-equal 24 (property-int renderer bottom-spacer proto/HeightValue)
+                    "review content keeps main's bottom inset")
+      (assert-equal (Some apple/AppleRow) (apple/node renderer status)
+                    "due count is one native status row")
+      (assert-equal "surface"
+                    (property-string renderer question-card proto/BackgroundValue)
+                    "the question uses the themed card surface")
+      (assert-equal 18
+                    (property-int renderer question-card proto/CornerRadius)
+                    "the question card matches main's corner radius")
+      (assert-equal 22
+                    (property-int renderer question-card proto/PaddingValue)
+                    "the question card matches main's content inset")
+      (assert-equal 50
+                    (property-int renderer show-cloze proto/MinHeight)
+                    "the reveal action keeps main's minimum height")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer show-cloze-row)
+                    "the reveal action grows across a row without consuming vertical space")
+      (assert-equal "primary"
+                    (property-string renderer show-cloze proto/BackgroundValue)
+                    "the reveal action uses the accent fill")
+      (assert-equal "center"
+                    (property-string renderer show-cloze proto/TextAlignment)
+                    "the reveal action centers its native button label")
+      (assert-equal "semibold"
+                    (property-string renderer show-cloze proto/StyleClass)
+                    "the reveal action matches main's emphasized label")
       (assert-equal "Remember […]"
                     (property-string renderer question proto/TextValue)
                     "clozes start hidden")
@@ -2045,16 +2195,27 @@
                     (property-string renderer question proto/TextValue)
                     "cloze reveal patches the retained question")
       (let [show-answer
-            (child-with-identifier renderer screen "button.flashcard.show-answer")]
+            (descendant-with-identifier renderer screen "button.flashcard.show-answer")]
         (driver/dispatch-event! application (proto/Press show-answer))
         (driver/flush! application)
         (let [answer-row
-              (child-with-identifier renderer screen "flashcard.answer.0")
+              (descendant-with-identifier renderer screen "flashcard.answer.0")
+              answer-divider
+              (descendant-with-identifier renderer screen "flashcard.answer-divider")
               good
-              (child-with-identifier renderer screen "button.flashcard.rating.good")]
+              (descendant-with-identifier renderer screen "button.flashcard.rating.good")]
+          (assert-equal (Some apple/AppleDivider)
+                        (apple/node renderer answer-divider)
+                        "revealed answers use main's full-width semantic divider")
           (assert-equal "Child answer"
                         (property-string renderer answer-row proto/TextValue)
                         "answer children appear after reveal")
+          (assert-equal "center"
+                        (property-string renderer good proto/TextAlignment)
+                        "rating actions center their native button labels")
+          (assert-equal "semibold"
+                        (property-string renderer good proto/StyleClass)
+                        "rating actions match main's emphasized labels")
           (driver/dispatch-event! application (proto/Press good))
           (driver/flush! application)
           (assert-equal
@@ -2073,12 +2234,21 @@
     (let [main (main-root renderer application)
           screen (child-with-identifier renderer main "screen.flashcards")
           empty-state
-          (child-with-identifier renderer screen "flashcards.empty")
+          (descendant-with-identifier renderer screen "layout.flashcards.empty")
           empty-children (apple/children renderer empty-state)
           empty-title (nth empty-children 0)
           empty-description (nth empty-children 1)]
       (is (not (= -1 empty-state))
           "an empty due queue preserves the existing empty state")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer screen)
+                    "empty and review layouts share a gap-free root container")
+      (assert-equal 0
+                    (property-int renderer screen proto/Gap)
+                    "hidden review content cannot shift the empty-state center")
+      (assert-equal 1
+                    (count (apple/children renderer screen))
+                    "hidden review content does not leave a layout sibling")
       (assert-equal 1.0
                     (property-float renderer empty-state proto/GrowValue)
                     "the empty state fills the page before centering")
@@ -2109,12 +2279,12 @@
     (let [main (main-root renderer application)
           screen (child-with-identifier renderer main "screen.flashcards")]
       (is (= -1
-             (child-with-identifier renderer screen
-                                    "button.flashcard.show-cloze"))
+             (descendant-with-identifier renderer screen
+                                         "button.flashcard.show-cloze"))
           "cards without a cloze skip the cloze control")
       (is (not (= -1
-                  (child-with-identifier renderer screen
-                                         "button.flashcard.show-answer")))
+                  (descendant-with-identifier renderer screen
+                                              "button.flashcard.show-answer")))
           "cards without a cloze can reveal their answer immediately"))))
 
 (deftest sidebar-flashcards-link-selects-the-flashcard-destination
@@ -2194,7 +2364,7 @@
 (deftest graphs-render-the-existing-catalog-and-modal-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
-        local (graph "local" "Local graph" false true)
+        local (graph "local" "Local graph" false false)
         remote (graph "remote" "Remote graph" true true)
         projection
         (assoc (empty-core-projection)
@@ -2217,7 +2387,11 @@
             local-row (child-with-identifier renderer screen "graph.local")
             remote-row (child-with-identifier renderer screen "graph.remote")
             delete
-            (descendant-with-identifier renderer screen "button.graph.delete.local")]
+            (descendant-with-identifier renderer screen "button.graph.delete.local")
+            local-title-stack
+            (descendant-with-node-kind renderer local-row apple/AppleColumn)
+            delete-action
+            (descendant-with-node-kind renderer delete apple/AppleMenuItem)]
         (assert-equal (Some apple/AppleList)
                       (apple/node renderer screen)
                       "graphs use the platform-native List container")
@@ -2245,11 +2419,20 @@
                       "native graph rows do not add a custom surface")
         (is (not (= -1 refresh)) "graphs keeps its refresh identifier")
         (is (not (= -1 local-row)) "local graphs remain addressable")
+        (assert-equal (Some true)
+                      (descendant-enabled renderer screen "graph.local")
+                      "preparing local graphs stay interactive like main")
         (is (not (= -1 remote-row)) "remote graphs remain addressable")
         (is (not (= -1 delete)) "local graphs expose deletion")
         (assert-equal (Some apple/AppleContextMenu)
                       (apple/node renderer delete)
                       "the visible native Menu owns main's deletion identifier")
+        (assert-equal -1.0
+                      (property-float renderer local-title-stack proto/GrowValue)
+                      "local graph titles keep main's native HStack compression")
+        (assert-equal "<missing>"
+                      (property-string renderer delete-action proto/InlineIconName)
+                      "graph deletion does not add an icon absent from main")
         (driver/dispatch-event! application (proto/Press add))
         (driver/flush! application)
         (let [form
@@ -2516,6 +2699,9 @@
       (assert-equal "ghost"
                     (property-string renderer collapsed proto/VariantValue)
                     "collapsed capture keeps semantic ghost styling")
+      (assert-equal "muted-foreground"
+                    (property-string renderer collapsed proto/ForegroundValue)
+                    "collapsed capture uses main's secondary label color")
       (driver/dispatch-event! application (proto/Press collapsed))
       (driver/flush! application)
       (is (:composer-expanded (chat/model application))
@@ -2603,9 +2789,9 @@
         (assert-equal "arrow-up"
                       (property-string renderer send-button proto/InlineIconName)
                       "send uses main's upward arrow")
-        (assert-equal "border"
+        (assert-equal "black"
                       (property-string renderer send-button proto/BackgroundValue)
-                      "an empty draft uses main's disabled gray fill")
+                      "an empty draft lets native disabled styling dim main's black fill")
         (assert-equal "white"
                       (property-string renderer send-button proto/ForegroundValue)
                       "send arrow contrasts with the filled surface")
@@ -2662,6 +2848,8 @@
     (let [chrome (native-bottom-chrome renderer application)
           row (descendant-with-identifier renderer chrome "row.bottom.capture")
           search (descendant-with-identifier renderer chrome "button.search")
+          capture (descendant-with-identifier
+                   renderer chrome "button.composer.expand")
           capture-glass
           (descendant-with-extension
            renderer application chrome "liquid-glass")]
@@ -2673,10 +2861,11 @@
                     "Search keeps main's native 58-point hit target")
       (assert-equal "icon" (property-string renderer search proto/SizeValue)
                     "Search uses the native 24-point icon size policy")
-      (assert-equal
-       (Some (proto/IntValue 30))
-       (extension-property application capture-glass "leading-inset")
-       "Capture matches main's native horizontal text inset"))))
+      (assert-equal 30 (property-int renderer capture proto/PaddingHorizontal)
+                    "Capture insets its label without moving its glass surface.")
+      (assert-equal None
+                    (extension-property application capture-glass "leading-inset")
+                    "Liquid Glass remains independent from app content spacing"))))
 
 (deftest composer-dismissal-preserves-an-unsent-draft
   (let [expanded (model/update (model/initial) model/ExpandComposer)
@@ -2995,7 +3184,7 @@
                              "\"patch\":")
            (string/includes? capture-dispatch
                              "\"patch\":"))
-          "each dispatch explicitly carries its possibly empty dequeue patch"))
+          "each dispatch explicitly carries its dequeue patch"))
     (assert-equal "" (bridge/take-effect)
                   "an effect is never dispatched to the host twice")
     (assert-equal [(model/PersistComposerDraftEffect 2 "")
@@ -3059,14 +3248,17 @@
 (deftest native-header-title-follows-the-active-destination
   (let [initial (model/initial)
         page (record model/sidebar-page (uuid "page-a") (title "Project"))
-        route (node-projection "node-a" "page-a" "Nested" [] [])]
+        route (node-projection "node-a" "page-a" "Nested" [] [])
+        routed (assoc initial
+                      :node-routes [route]
+                      :app-navigation-path [(model/NodeRoute "node-a")])]
     (assert-equal "Journal" (view/main-title initial)
                   "journals use the root application title")
     (assert-equal "Project"
                   (view/main-title (assoc initial :selected-page (Some page)))
                   "selected pages use their projected title")
     (assert-equal "Nested"
-                  (view/main-title (assoc initial :node-routes [route]))
+                  (view/main-title routed)
                   "native routes use their projected title")
     (assert-equal "Flashcards"
                   (view/main-title
@@ -3076,6 +3268,32 @@
                   (view/main-title
                    (assoc initial :destination model/GraphsDestination))
                   "graphs preserve main's root header title")))
+
+(deftest native-header-title-follows-the-optimistic-navigation-path
+  (let [initial (model/initial)
+        route-a (node-projection "node-a" "page-a" "Project" [] [])
+        route-b (node-projection "node-b" "page-b" "Nested" [] [])
+        prepared (assoc initial :app-navigation-previews [route-a route-b])
+        requested-a (model/update prepared (model/RequestAppNode "node-a"))
+        opened-a (assoc requested-a :node-routes [route-a])
+        requested-b (model/update opened-a (model/RequestAppNode "node-b"))
+        opened-b (assoc requested-b :node-routes [route-a route-b])
+        returned-a (model/update opened-b (model/BackAppNavigation 1))
+        returned-root (model/update returned-a (model/BackAppNavigation 1))]
+    (assert-equal "Project" (view/main-title requested-a)
+                  "push uses the preview title before open-node resolves")
+    (assert-equal true (view/active-page-actions-visible? requested-a)
+                  "push exposes destination actions with the optimistic route")
+    (assert-equal "Nested" (view/main-title requested-b)
+                  "a nested push immediately uses its requested route title")
+    (assert-equal "Project" (view/main-title returned-a)
+                  "one native pop immediately restores the preceding route title")
+    (assert-equal true (view/active-page-actions-visible? returned-a)
+                  "one native pop keeps the preceding destination actions")
+    (assert-equal "Journal" (view/main-title returned-root)
+                  "returning to root does not wait for close-node projections")
+    (assert-equal false (view/active-page-actions-visible? returned-root)
+                  "returning to root immediately restores settings actions")))
 
 (deftest native-back-count-is-reduced-as-one-navigation-transition
   (let [requested-a
@@ -3456,6 +3674,22 @@
     (assert-equal [] (:app-navigation-previews returned)
                   "leaving the route releases its optimistic preview")))
 
+(deftest popped-native-path-restores-root-before-core-route-cleanup
+  (let [route (node-projection "node-a" "page-a" "Project" [] [])
+        current
+        (assoc (model/initial)
+               :destination model/JournalsDestination
+               :selected-graph-id (Some "test-graph")
+               :graph-loading false
+               :node-routes [route]
+               :app-navigation-path [])]
+    (is (view/node-navigation-inactive? current)
+        "the visible navigation layer follows the already-popped native path")
+    (is (view/journal-root-visible? current)
+        "the journal root is restored during the native pop transition")
+    (is (view/primary-sidebar-button-visible? current)
+        "the root header returns before delayed core route cleanup")))
+
 (deftest app-and-search-routes-are-retained-by-distinct-native-stacks
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -3541,7 +3775,9 @@
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
           sentinel (descendant-with-identifier
-                    renderer root "outliner.load-older-sentinel")]
+                    renderer root "outliner.load-older-sentinel")
+          outliner-children (apple/children renderer outliner)
+          bottom-spacer (nth outliner-children (dec (count outliner-children)))]
       (assert-equal -1
                     (descendant-with-identifier
                      renderer root "button.outliner.load-older-journals")
@@ -3554,6 +3790,10 @@
                     "the sentinel remains inside the virtualized Outliner")
       (assert-equal 1 (property-int renderer sentinel proto/HeightValue)
                     "the sentinel matches main's one-point marker")
+      (assert-equal 120 (property-int renderer bottom-spacer proto/HeightValue)
+                    "main keeps bottom padding after the pagination marker")
+      (is (not (= sentinel bottom-spacer))
+          "pagination begins before the user reaches the absolute scroll edge")
       (assert-equal [] (:pending-effects (chat/model application))
                     "retained rendering alone does not eagerly load journals")
       (driver/send!
@@ -3578,7 +3818,8 @@
         nested (assoc available
                       :node-routes
                       [(node-projection
-                        "node-a" "page-a" "Node" [] [])])]
+                        "node-a" "page-a" "Node" [] [])]
+                      :app-navigation-path [(model/NodeRoute "node-a")])]
     (is (view/older-journals-visible? available))
     (is (not (view/older-journals-visible? selected-page)))
     (is (not (view/older-journals-visible? nested)))))
@@ -3650,7 +3891,7 @@
     (is (:has-older-journals updated)
         "outliner patches preserve journal pagination state")))
 
-(deftest journal-home-renders-viewport-sized-navigable-sections
+(deftest journal-home-keeps-first-day-viewport-and-later-block-items-flat
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
         day-a
@@ -3677,8 +3918,13 @@
           (descendant-with-identifier renderer root "button.journal.page-b")
           first-section
           (descendant-with-identifier renderer outliner "journal.section.page-a")
-          second-section
-          (descendant-with-identifier renderer outliner "journal.section.page-b")
+          first-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-a")
+          second-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-b")
+          first-entry-children (apple/children renderer first-entry)
+          first-block
+          (descendant-with-identifier renderer first-entry "outliner.block.day-a")
           heading-children (apple/children renderer first-heading)
           heading-surface
           (if (empty? heading-children) -1 (nth heading-children 0))
@@ -3717,29 +3963,37 @@
           "the second day's row stays inside the virtualized collection")
       (assert-equal (Some apple/AppleColumn)
                     (apple/node renderer first-section)
-                    "each journal day owns one layout section")
+                    "the first journal owns one viewport-preserving section")
       (assert-equal (Some apple/AppleColumn)
-                    (apple/node renderer second-section)
-                    "later journal days keep independent layout sections")
+                    (apple/node renderer second-entry)
+                    "later journal blocks keep independent lazy entries")
+      (assert-equal first-heading (nth first-entry-children 0)
+                    "the first block entry owns the journal heading")
+      (assert-equal first-block (nth first-entry-children 1)
+                    "the journal block follows its heading in one lazy item")
       (assert-equal "min-vertical"
                     (property-string renderer first-section
                                      proto/ContainerRelativeFrameValue)
-                    "journal sections reserve at least the visible viewport without compressing long content")
+                    "the first journal reserves the visible viewport")
       (assert-equal 136
                     (property-int renderer first-section
                                   proto/ContainerRelativeFrameInset)
-                    "journal sections leave main's header and composer clearance outside the minimum viewport")
-      (assert-equal 136
-                    (property-int renderer second-section
-                                  proto/ContainerRelativeFrameInset)
-                    "every journal section uses the same visible viewport clearance")
+                    "the first journal leaves room for native chrome")
+      (assert-equal "<missing>"
+                    (property-string renderer second-entry
+                                     proto/ContainerRelativeFrameValue)
+                    "later journal blocks use their intrinsic height")
       (is (not (= -1
-                  (descendant-with-identifier
-                   renderer first-section "outliner.block.day-a")))
+                  (if (= first-section -1)
+                    -1
+                    (descendant-with-identifier
+                     renderer first-section "outliner.block.day-a"))))
           "the first journal row belongs to the first section")
       (assert-equal -1
-                    (descendant-with-identifier
-                     renderer first-section "outliner.block.day-b")
+                    (if (= first-section -1)
+                      -1
+                      (descendant-with-identifier
+                       renderer first-section "outliner.block.day-b"))
                     "the next journal row does not leak into the first section")
       (assert-equal (Some apple/AppleListItem)
                     (apple/node renderer first-heading)
@@ -3780,15 +4034,79 @@
                   (descendant-with-identifier
                    renderer root "journals.graph-loaded")))
           "the loaded journal graph keeps main's readiness contract")
-      (assert-equal 0
+      (assert-equal 1
                     (descendant-count-with-identifier
                      renderer root "journal.divider")
-                    "journal sections do not render divider lines")
+                    "later journal sections render main's native divider")
       (driver/dispatch-event! application (proto/Press second-heading))
       (driver/flush! application)
       (assert-equal [(model/OpenAppNodeEffect 1 "page-b")]
                     (:pending-effects (chat/model application))
                     "journal headings use the existing page navigation effect"))))
+
+(deftest only-the-first-journal-groups-blocks-for-viewport-retention
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        day-a-root
+        (journal-outline-row "day-a-root" "page-a" "A" "August 27th" 20260827 0)
+        day-a-child
+        (journal-outline-row "day-a-child" "page-a" "Child" "August 27th" 20260827 1)
+        day-b
+        (journal-outline-row "day-b" "page-b" "B" "August 28th" 20260828 0)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "test-graph")
+             :outliner-rows [day-a-root day-a-child day-b])))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          first-section
+          (descendant-with-identifier renderer outliner "journal.section.page-a")
+          first-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-a-root")
+          child-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-a-child")
+          next-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-b")]
+      (is (not (= first-entry child-entry))
+          "blocks from one large journal remain independent lazy items")
+      (is (not (= child-entry next-entry))
+          "journal boundaries do not change block-level virtualization")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer first-entry)
+                    "the first block entry owns its journal heading")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer child-entry)
+                    "first-journal blocks keep independent entry wrappers")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer child-entry "button.journal.page-a")
+                    "only the first block repeats the journal heading")
+      (is (not (= -1 first-section))
+          "the first journal owns the single viewport-preserving section")
+      (is (not (= -1
+                  (if (= first-section -1)
+                    -1
+                    (descendant-with-identifier
+                     renderer first-section "outliner.block.day-a-child"))))
+          "all first-journal rows remain inside that section")
+      (assert-equal -1
+                    (if (= first-section -1)
+                      -1
+                      (descendant-with-identifier
+                       renderer first-section "outliner.block.day-b"))
+                    "later journals stay outside the viewport section")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer outliner "journal.section.page-b")
+                    "later journals do not create nested section containers")
+      (assert-equal "<missing>"
+                    (property-string renderer next-entry
+                                     proto/ContainerRelativeFrameValue)
+                    "later journal blocks remain intrinsic lazy entries"))))
 
 (deftest selected-pages-do-not-render-journal-home-headings
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -4023,6 +4341,10 @@
                     (property-string renderer rendered-row
                                      proto/AccessibilityLabel)
                     "the LG row keeps main's edit accessibility action")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer
+                                (nth (apple/children renderer rendered-row) 0))
+                    "custom list-item content starts with its native row without a redundant column")
       (let [editor
             (descendant-with-extension
              renderer application rendered-row "outliner-editor")]
@@ -4296,15 +4618,11 @@
   (let [todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
         done (model/task-status "done" "logseq.property/status.done" "Done" "Done")
         current (assoc (model/initial) :task-statuses [todo done])
-        opened (model/update current (model/OpenOutlinerTaskStatusPicker "block-a"))
-        chosen (model/update opened (model/ChooseOutlinerTaskStatus "done"))]
-    (assert-equal (Some "block-a") (:outliner-task-status-block-id opened)
-                  "the task-status picker keeps its target block")
+        chosen
+        (model/update current (model/SetOutlinerTaskStatus "block-a" "done"))]
     (assert-equal [(model/SetOutlinerTaskStatusEffect 1 "block-a" done)]
                   (:pending-effects chosen)
-                  "status changes reuse the typed outliner core boundary")
-    (assert-equal None (:outliner-task-status-block-id chosen)
-                  "choosing a status dismisses the picker")))
+                  "status changes use one direct typed outliner core boundary")))
 
 (deftest outliner-rows-render-status-tags-and-sync-failures
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -4333,8 +4651,9 @@
                            renderer rendered-row "button.block-task-status")
             tag-button (descendant-with-identifier
                         renderer rendered-row "button.block-tag.tag-a")
-            row-column (nth (apple/children renderer rendered-row) 0)
-            content-row (nth (apple/children renderer row-column) 0)]
+            tag-row (parent-with-child-identifier
+                     renderer rendered-row "button.block-tag.tag-a")
+            content-row (nth (apple/children renderer rendered-row) 0)]
         (assert-equal 0
                       (property-int renderer content-row proto/Gap)
                       "depth zero does not add spacing before main's bullet")
@@ -4353,9 +4672,48 @@
         (assert-equal "Todo"
                       (property-string renderer status-button proto/AccessibilityLabel)
                       "the icon still announces the task status")
+        (let [runtime-root (driver/root-node application)
+              status-menu (descendant-with-node-kind
+                           renderer status-button apple/AppleContextMenu)
+              status-option
+              (descendant-with-identifier
+               renderer status-button
+               "button.block-task-status-option.logseq.property/status.todo")]
+          (is (not (= -1 status-menu))
+              "block task status is backed by main's native button menu")
+          (assert-equal (Some apple/AppleMenuItem)
+                        (apple/node renderer status-option)
+                        "block task status choices are native menu items")
+          (assert-equal "app:task-todo"
+                        (property-string renderer status-option
+                                         proto/InlineIconName)
+                        "block task status choices preserve their semantic icons")
+          (assert-equal "task-todo"
+                        (property-string renderer status-option
+                                         proto/ForegroundValue)
+                        "block task status choices preserve their semantic colors")
+          (assert-equal 0
+                        (descendant-count-with-node-kind
+                         renderer runtime-root apple/AppleDialog)
+                        "block task status does not contain a custom dialog")
+          (driver/dispatch-event! application (proto/Press status-option))
+          (driver/flush! application)
+          (assert-equal
+           [(model/SetOutlinerTaskStatusEffect 1 "block-a" todo)]
+           (:pending-effects (chat/model application))
+           "the native menu choice targets its owning block directly"))
         (assert-equal "ghost"
                       (property-string renderer tag-button proto/VariantValue)
                       "block tags use a plain inline-control style")
+        (assert-equal "caption"
+                      (property-string renderer tag-button proto/StyleClass)
+                      "trailing tags match main's caption typography")
+        (assert-equal "accent"
+                      (property-string renderer tag-button proto/ForegroundValue)
+                      "trailing tags use the platform accent color")
+        (assert-equal 6
+                      (property-int renderer tag-row proto/Gap)
+                      "multiple trailing tags use main's compact spacing")
         (driver/dispatch-event! application (proto/Press tag-button))
         (driver/flush! application)
         (assert-equal [(model/NodeRoute "tag-a")]
@@ -4587,8 +4945,7 @@
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row
           (descendant-with-identifier renderer outliner "outliner.block.parent")
-          column (nth (apple/children renderer rendered-row) 0)
-          content (nth (apple/children renderer column) 0)
+          content (nth (apple/children renderer rendered-row) 0)
           content-children (apple/children renderer content)
           indent (nth content-children 0)
           zoom (nth content-children 1)
