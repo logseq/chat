@@ -1130,3 +1130,11 @@ Entries stay concise so work can continue on the highest-signal path.
   existing foreground metadata and a focused backend test prevents the two
   sides from drifting again. Composer text, status menus, and cold launch all
   pass on the simulator after rebuilding with the corrected backend.
+
+# 2026-08-30: GitHub push credentials lack repository write access
+
+- Commit `3c77ead` contains the verified Journals header, stable navigation-pop
+  toolbar geometry, and native Search list changes. Pushing the branch over its
+  configured HTTPS remote fails with HTTP 403 because the current GitHub
+  credentials do not have write access to `logseq/chat`. The local commit is
+  complete; publishing requires repository access or an authorized remote.
