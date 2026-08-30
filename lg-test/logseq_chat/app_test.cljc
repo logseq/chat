@@ -145,6 +145,28 @@
                 (recur (inc index))
                 found))))))))
 
+(defn descendant-extension-containing-identifier
+  [renderer application parent extension-identifier descendant-identifier]
+  (let [extensions
+        (deref (:runtime-extension-nodes (driver/runtime application)))
+        is-matching-extension
+        (= (clojure.core/get extensions parent) (Some extension-identifier))]
+    (if (and is-matching-extension
+             (not (= -1 (descendant-with-identifier
+                         renderer parent descendant-identifier))))
+      parent
+      (let [children (apple/children renderer parent)]
+        (loop [index 0]
+          (if (= index (count children))
+            -1
+            (let [found
+                  (descendant-extension-containing-identifier
+                   renderer application (nth children index)
+                   extension-identifier descendant-identifier)]
+              (if (= found -1)
+                (recur (inc index))
+                found))))))))
+
 (defn parent-with-child-identifier [renderer parent identifier]
   (if (not (= -1 (child-with-identifier renderer parent identifier)))
     parent
@@ -1158,6 +1180,10 @@
                    renderer root "button.hosted-sign-in")]
       (is (not (= -1 screen))
           "signed-out authentication renders the LG entry screen")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "screen.graph-picker")
+                    "authentication replaces the graph picker instead of sharing the root")
       (assert-equal 1.0 (property-float renderer screen proto/GrowValue)
                     "authentication fills the available root height")
       (assert-equal "vertical"
@@ -4721,10 +4747,10 @@
                         (property-string renderer status-option
                                          proto/InlineIconName)
                         "block task status choices preserve their semantic icons")
-          (assert-equal "task-todo"
+          (assert-equal "accent"
                         (property-string renderer status-option
                                          proto/ForegroundValue)
-                        "block task status choices preserve their semantic colors")
+                        "native block task status choices use the platform accent tint")
           (assert-equal 0
                         (descendant-count-with-node-kind
                          renderer runtime-root apple/AppleDialog)
@@ -4838,7 +4864,9 @@
 
 (deftest outliner-editor-toolbar-and-autocomplete-use-core-owned-state
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
               (uuid "block-a") (title "Project [[Pro")
               (markup-json "[]") (youtube-target-url None)
@@ -4871,6 +4899,10 @@
           autocomplete-bar
           (descendant-with-identifier renderer chrome
                                       "toolbar.outliner.autocomplete")
+          editor-glass
+          (descendant-extension-containing-identifier
+           renderer application chrome "liquid-glass"
+           "toolbar.outliner.editor")
           candidate-button (nth (apple/children renderer autocomplete-bar) 0)
           editor-toolbar
           (descendant-with-identifier renderer chrome "toolbar.outliner.editor")
@@ -4882,6 +4914,9 @@
                     (extension-property application navigation
                                         "bottom-occupies-layout-space")
                     "the editor reserves safe-area layout space like main")
+      (assert-equal (Some (proto/StringValue "container"))
+                    (extension-property application editor-glass "shape")
+                    "the editor and autocomplete share main's glass container")
       (assert-equal "button.outliner.autocomplete.0"
                     (property-string renderer candidate-button
                                      proto/AccessibilityIdentifier)

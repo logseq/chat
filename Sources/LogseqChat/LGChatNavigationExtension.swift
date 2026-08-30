@@ -1,5 +1,8 @@
 import LUIAppleBackend
 import SwiftUI
+#if !SKIP && os(iOS)
+import UIKit
+#endif
 
 enum LGChatNavigationSurfacePolicy {
     static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
@@ -125,7 +128,7 @@ enum LGChatSearchPresentationExtension {
 private struct LGChatSearchPresentation: View {
     let context: LUIAppleExtensionViewContext
     #if !SKIP && os(iOS)
-    @State private var nativeSearchPresented = true
+    @State private var nativeSearchPresented = false
     @FocusState private var searchFocused: Bool
     #endif
 
@@ -228,11 +231,14 @@ private struct LGChatSearchPresentation: View {
                     .accessibilityIdentifier("button.search.close")
                 }
             }
-            .onAppear {
-                nativeSearchPresented = true
-                DispatchQueue.main.async {
-                    searchFocused = true
-                }
+            .overlay(alignment: .topLeading) {
+                LGChatNativeSearchActivator(
+                    focusRequested: nativeSearchPresented,
+                    presentationAction: { nativeSearchPresented = true },
+                    focusAction: { searchFocused = true }
+                )
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
             }
             .onScrollPhaseChange { _, newPhase in
                 if newPhase == .tracking || newPhase == .interacting {
@@ -317,6 +323,110 @@ private struct LGChatSearchPresentation: View {
         }
     }
 }
+
+#if !SKIP && os(iOS)
+@MainActor
+private struct LGChatNativeSearchActivator: UIViewRepresentable {
+    let focusRequested: Bool
+    let presentationAction: () -> Void
+    let focusAction: () -> Void
+
+    func makeUIView(context: Context) -> ObserverView {
+        ObserverView(
+            focusRequested: focusRequested,
+            presentationAction: presentationAction,
+            focusAction: focusAction
+        )
+    }
+
+    func updateUIView(_ view: ObserverView, context: Context) {
+        view.focusRequested = focusRequested
+        view.presentationAction = presentationAction
+        view.focusAction = focusAction
+        view.focusSearchFieldIfNeeded()
+    }
+
+    final class ObserverView: UIView {
+        var focusRequested: Bool
+        var presentationAction: () -> Void
+        var focusAction: () -> Void
+        private var hasCompletedPresentation = false
+
+        init(
+            focusRequested: Bool,
+            presentationAction: @escaping () -> Void,
+            focusAction: @escaping () -> Void
+        ) {
+            self.focusRequested = focusRequested
+            self.presentationAction = presentationAction
+            self.focusAction = focusAction
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil, !hasCompletedPresentation else { return }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !hasCompletedPresentation else { return }
+                if let coordinator = presentationTransitionCoordinator {
+                    coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                        self?.completePresentation()
+                    }
+                } else {
+                    completePresentation()
+                }
+            }
+        }
+
+        private var presentationTransitionCoordinator: UIViewControllerTransitionCoordinator? {
+            guard let root = window?.rootViewController else { return nil }
+            var presented = root
+            while let next = presented.presentedViewController {
+                presented = next
+            }
+            return presented.transitionCoordinator
+        }
+
+        private func completePresentation() {
+            guard !hasCompletedPresentation else { return }
+            hasCompletedPresentation = true
+            presentationAction()
+        }
+
+        func focusSearchFieldIfNeeded() {
+            guard focusRequested else { return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, focusRequested,
+                      let searchField = window?.firstDescendant(of: UISearchTextField.self),
+                      searchField.becomeFirstResponder()
+                else { return }
+                focusAction()
+            }
+        }
+    }
+}
+
+private extension UIView {
+    func firstDescendant<ViewType: UIView>(of type: ViewType.Type) -> ViewType? {
+        if let match = self as? ViewType {
+            return match
+        }
+        for child in subviews {
+            if let match = child.firstDescendant(of: type) {
+                return match
+            }
+        }
+        return nil
+    }
+}
+#endif
 
 @MainActor
 private struct LGChatNavigationContent: View {
@@ -430,7 +540,9 @@ private struct LGChatNavigationContent: View {
                         #else
                         if #available(iOS 26.0, macOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: context.childIDs[toolbarStartIndex])
+                                let childID = context.childIDs[toolbarStartIndex]
+                                context.content(for: childID)
+                                    .id(context.contentRevision(for: childID))
                                     .modifier(LGChatLiquidGlassSurface(shape: .circle))
                                     .frame(width: LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
                                         iconWidth: 24,

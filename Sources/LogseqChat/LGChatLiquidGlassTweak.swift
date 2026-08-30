@@ -26,6 +26,8 @@ enum LGChatLiquidGlassTweak {
                 switch shapeName {
                 case "circle":
                     shape = .circle
+                case "container":
+                    shape = .container
                 case "rounded-rectangle":
                     shape = .roundedRectangle
                 default:
@@ -48,6 +50,7 @@ struct LGChatLiquidGlassSurface: ViewModifier {
     enum Shape {
         case capsule
         case circle
+        case container
         case roundedRectangle
     }
 
@@ -63,8 +66,13 @@ struct LGChatLiquidGlassSurface: ViewModifier {
                 content.glassEffect(.regular.interactive(), in: .circle)
             } else if shape == .roundedRectangle {
                 content.glassEffect(
-                    .regular.interactive(),
+                    .regular,
                     in: .rect(cornerRadius: 10)
+                )
+            } else if shape == .container {
+                content.glassEffect(
+                    .regular,
+                    in: .rect(cornerRadius: 28)
                 )
             } else {
                 content.glassEffect(.regular.interactive(), in: .capsule)
@@ -76,6 +84,11 @@ struct LGChatLiquidGlassSurface: ViewModifier {
                 content.background(
                     .ultraThinMaterial,
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+            } else if shape == .container {
+                content.background(
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: 28, style: .continuous)
                 )
             } else {
                 content.background(.ultraThinMaterial, in: Capsule())

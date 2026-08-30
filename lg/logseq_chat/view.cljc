@@ -1864,7 +1864,7 @@
      [:menu-item
       {:text (reactive task-status-title status-source)
        :icon (reactive task-status-icon-name status-source)
-       :foreground-signal (reactive task-status-foreground status-source)
+       :foreground "accent"
        :accessibility-identifier
        (outliner-task-status-option-identifier status)
        :on-press
@@ -3180,7 +3180,7 @@
      [outliner-selection-toolbar send]
      [:box {:height 21}]]]
    [:if {:test (reactive bottom-chrome-editor? model-source)}
-    [:box
+    [:box {:ios [[:liquid-glass {:shape "container"}]]}
      [:if {:test (reactive outliner-autocomplete-active? model-source)}
       [outliner-autocomplete-bar model-source send]]
      [outliner-editor-toolbar model-source send]]]
@@ -3527,6 +3527,10 @@
   (or (= (:authentication-state current) "signedOut")
       (= (:authentication-state current) "signingIn")))
 
+(defn graph-picker-screen-visible? [current]
+  (and (graph-picker-visible? current)
+       (not (authentication-screen-visible? current))))
+
 (defn authentication-signing-in? [current]
   (= (:authentication-state current) "signingIn"))
 
@@ -3590,7 +3594,7 @@
    [:stack
     [:if {:test (reactive graph-picker-hidden? model-source)}
      [native-navigation-view model-source send]]
-    [:if {:test (reactive graph-picker-visible? model-source)}
+    [:if {:test (reactive graph-picker-screen-visible? model-source)}
      [graph-picker-screen model-source send]]
     [:if {:test (reactive authentication-screen-visible? model-source)}
      [authentication-screen model-source send]]

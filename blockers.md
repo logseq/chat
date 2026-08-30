@@ -1149,3 +1149,68 @@ Entries stay concise so work can continue on the highest-signal path.
   grouped-toolbar displacement. Eliminating the remaining system transition
   entirely would require custom navigation chrome or suppressing native pop,
   which would conflict with the native interaction and simplicity requirements.
+
+# 2026-08-30: Search focus must follow full-screen presentation
+
+- iOS 26 drops `searchFocused = true` while the full-screen search cover is
+  still animating in; initializing `isPresented` as false and yielding one or
+  two main-actor turns did not make the keyboard appear.
+- Main's 120 ms delay only works because Search is a NavigationStack page. It
+  still failed inside the LG full-screen cover. The native `.searchable` screen
+  now waits for the system presentation transition coordinator, then focuses the
+  `UISearchTextField` after SwiftUI installs it. This follows actual UI lifecycle
+  state and does not depend on a guessed animation duration.
+
+# 2026-08-30: LUI dialogs lost their native List presentation anchor
+
+- Graph deletion used the same `confirmationDialog` content as main, but LUI
+  presented every dialog from the app root. On iOS 26 that produced an
+  unanchored dialog in the middle of the page instead of main's row-anchored
+  popover.
+- The Apple backend now retains the nearest List ancestor as presentation
+  metadata and installs the dialog modifier on that List. This is a general
+  backend fix and requires no graph-specific Swift protocol or view branch.
+
+# 2026-08-30: First graph open can temporarily lose the sidebar identifier
+
+- During a clean e2e setup, the first graph finished loading and rendered the
+  sidebar icon, but `button.sidebar` was absent from the accessibility tree for
+  at least 30 seconds. Relaunching the same installed app restored the identifier.
+- Root cause: SwiftUI retained the toolbar host while its LUI child changed, so
+  the visible content refreshed but the host's accessibility metadata did not.
+  LUI now exposes the retained revision of a direct extension child, and the
+  iOS 26 leading toolbar uses that revision as its view identity.
+- The clean graph-picker-to-navigation flow now passes twice without relaunching;
+  the visible sidebar control is immediately present as `button.sidebar`.
+
+# 2026-08-30: LUI Android parity harness has an unrelated shared-policy failure
+
+- The Apple backend's 128 native tests pass, including the new dialog-anchor
+  coverage. The aggregate `swift test --package-path platform/apple` still fails
+  when compiling generated Kotlin because `LUISkipUIRoot.swift` references
+  `LUIRadioGroupVisualPolicy`, which is declared only in the non-Skip SwiftUI
+  source file.
+- This predates the dialog-anchor patch. The shared pure policy should move to a
+  Skip-visible source file before treating the aggregate Apple-package command
+  as a cross-platform green gate.
+
+# 2026-08-30: Native context-menu labels overrode explicit icon tint
+
+- The outliner task-status menu exposed the same semantic foreground metadata
+  as the composer menu, but every icon rendered black while main used the
+  system accent tint.
+- Root cause: the Apple backend applied the menu text's primary foreground to
+  the entire native `Label`, overriding the icon foreground. Context-menu text
+  and icons are now styled independently, so text remains primary while icons
+  honor their explicit foreground. The simulator status-menu screenshot now
+  matches main, and the composer menu keeps its separate semantic colors.
+
+# 2026-08-30: Signed-out root rendered authentication over the graph picker
+
+- A clean light-theme simulator exposed both “Choose a graph” and the centered
+  sign-in screen at once, while main renders authentication as the only root
+  content.
+- The LG root used independent visibility branches for the graph picker and
+  authentication. The graph-picker screen predicate now excludes active
+  authentication, with a renderer regression test proving the two screens are
+  mutually exclusive. A fresh simulator screenshot matches main after rebuild.
