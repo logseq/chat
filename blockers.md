@@ -1138,3 +1138,14 @@ Entries stay concise so work can continue on the highest-signal path.
   configured HTTPS remote fails with HTTP 403 because the current GitHub
   credentials do not have write access to `logseq/chat`. The local commit is
   complete; publishing requires repository access or an authorized remote.
+
+# 2026-08-30: Native pop animates custom leading toolbar items
+
+- A same-data 10-fps recording confirms that iOS 26 moves the root title from
+  the right while popping a destination in both main and the LG branch. Main
+  uses two independent `.topBarLeading` items; combining them into one `HStack`
+  increased the displacement and changed the settled geometry.
+- The LG branch now follows main's native item structure and removes the extra
+  grouped-toolbar displacement. Eliminating the remaining system transition
+  entirely would require custom navigation chrome or suppressing native pop,
+  which would conflict with the native interaction and simplicity requirements.

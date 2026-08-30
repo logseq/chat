@@ -430,16 +430,17 @@ private struct LGChatNavigationContent: View {
                         #else
                         if #available(iOS 26.0, macOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                HStack(spacing: 14) {
-                                    context.content(for: context.childIDs[toolbarStartIndex])
-                                        .modifier(LGChatLiquidGlassSurface(shape: .circle))
-                                        .frame(width: LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
-                                            iconWidth: 24,
-                                            minimumHitTarget: 44
-                                        ))
-                                    context.content(for: context.childIDs[toolbarStartIndex + 1])
-                                        .fixedSize(horizontal: true, vertical: false)
-                                }
+                                context.content(for: context.childIDs[toolbarStartIndex])
+                                    .modifier(LGChatLiquidGlassSurface(shape: .circle))
+                                    .frame(width: LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
+                                        iconWidth: 24,
+                                        minimumHitTarget: 44
+                                    ))
+                            }
+                            .sharedBackgroundVisibility(.hidden)
+                            ToolbarItem(placement: rootLeadingToolbarPlacement) {
+                                context.content(for: context.childIDs[toolbarStartIndex + 1])
+                                    .fixedSize(horizontal: true, vertical: false)
                             }
                             .sharedBackgroundVisibility(.hidden)
                         } else {

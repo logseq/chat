@@ -330,14 +330,16 @@
       (FailedState reason) (str "Sync failed: " reason))))
 
 (defn sync-indicator-label [current]
-  (if (or (:has-pending-semantic-operations current)
-          (:has-pending-sync-request current))
-    "Syncing"
-    (match (:sync-state current)
-      SyncedState "Synced"
-      SyncingState "Syncing"
-      OfflineState "Not connected"
-      (FailedState _reason) "Sync failed")))
+  (match (:sync-state current)
+    OfflineState "Not connected"
+    (FailedState _reason) "Sync failed"
+    _ (if (or (:has-pending-semantic-operations current)
+              (:has-pending-sync-request current))
+        "Syncing"
+        (match (:sync-state current)
+          SyncedState "Synced"
+          SyncingState "Syncing"
+          _ "Not connected"))))
 
 (defn sync-accessibility-identifier [current]
   (match (:sync-state current)
@@ -346,13 +348,16 @@
     _ "sync.connected"))
 
 (defn sync-indicator-foreground [current]
-  (if (or (:has-pending-semantic-operations current)
-          (:has-pending-sync-request current))
-    "warning"
-    (match (:sync-state current)
-      SyncedState "success-foreground"
-      SyncingState "warning-foreground"
-      _ "error-foreground")))
+  (match (:sync-state current)
+    OfflineState "error-foreground"
+    (FailedState _reason) "error-foreground"
+    _ (if (or (:has-pending-semantic-operations current)
+              (:has-pending-sync-request current))
+        "warning-foreground"
+        (match (:sync-state current)
+          SyncedState "success-foreground"
+          SyncingState "warning-foreground"
+          _ "error-foreground"))))
 
 (defn sync-connection-label [current]
   (match (:sync-state current)

@@ -376,6 +376,29 @@
     (assert-equal "Up to date" (view/sync-label current)
                   "the detailed status sheet keeps its descriptive summary")))
 
+(deftest sync-indicator-prioritizes-connectivity-before-pending-work
+  (let [offline-pending
+        (assoc (model/initial)
+               :sync-state model/OfflineState
+               :has-pending-semantic-operations true)
+        connected-pending
+        (assoc (model/initial)
+               :sync-state model/SyncingState
+               :has-pending-semantic-operations true)]
+    (assert-equal "Not connected" (view/sync-indicator-label offline-pending)
+                  "pending work does not hide an offline connection")
+    (assert-equal "error-foreground"
+                  (view/sync-indicator-foreground offline-pending)
+                  "offline status uses main's opaque red indicator")
+    (assert-equal "sync.disconnected"
+                  (view/sync-accessibility-identifier offline-pending)
+                  "offline pending work remains addressable as disconnected")
+    (assert-equal "Syncing" (view/sync-indicator-label connected-pending)
+                  "connected pending work keeps the syncing state")
+    (assert-equal "warning-foreground"
+                  (view/sync-indicator-foreground connected-pending)
+                  "connected pending work uses an opaque warning foreground")))
+
 (deftest settings-navigation-tabs-and-diagnostics-are-lg-owned
   (let [initial (model/update (model/initial)
                               (model/ApplySettingsSnapshot
