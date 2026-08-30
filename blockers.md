@@ -1138,6 +1138,8 @@ Entries stay concise so work can continue on the highest-signal path.
   configured HTTPS remote fails with HTTP 403 because the current GitHub
   credentials do not have write access to `logseq/chat`. The local commit is
   complete; publishing requires repository access or an authorized remote.
+- The same 403 still blocks commit `aa81a7e`, which contains the completed light
+  theme interaction parity audit and fixes.
 
 # 2026-08-30: Native pop animates custom leading toolbar items
 
