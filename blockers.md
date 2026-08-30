@@ -1121,3 +1121,12 @@ Entries stay concise so work can continue on the highest-signal path.
   The log reports `Device became unreachable during viewHierarchy`; it does not
   contain an app assertion or outliner failure. Keep the checked-in flow intact
   and rerun after the simulator driver is healthy.
+- 2026-08-30 16:08 CST — A cold launch loaded the selected graph in 157 ms but
+  remained on “Choose a graph” because the first LUI batch rejected the task
+  status context-menu foreground property. The Apple renderer already consumes
+  that semantic foreground, while retained-tree validation omitted it from the
+  context-menu item contract; the rejected generation also made every later
+  patch appear out of sequence. The LUI contract now accepts the renderer's
+  existing foreground metadata and a focused backend test prevents the two
+  sides from drifting again. Composer text, status menus, and cold launch all
+  pass on the simulator after rebuilding with the corrected backend.
