@@ -11,7 +11,7 @@ die() {
 }
 
 list_output=$($runner --list) || die "Android E2E runner could not list modules"
-grep -Fq "Modules: all signed-out connect capture autocomplete navigation graphs" <<<"$list_output" \
+grep -Fq "Modules: all signed-out connect capture autocomplete navigation graphs settings flashcards search" <<<"$list_output" \
   || die "Android E2E runner did not list every module"
 grep -Fq ".maestro/android-staging-connect.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the connection flow"
@@ -25,6 +25,12 @@ grep -Fq ".maestro/android-material-navigation.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the Material navigation flow"
 grep -Fq ".maestro/android-graphs.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the graph presentation flow"
+grep -Fq ".maestro/android-settings.yaml" <<<"$list_output" \
+  || die "Android E2E runner did not list the settings parity flow"
+grep -Fq ".maestro/android-flashcards-regression.yaml" <<<"$list_output" \
+  || die "Android E2E runner did not list the flashcards parity flow"
+grep -Fq ".maestro/android-search-navigation.yaml" <<<"$list_output" \
+  || die "Android E2E runner did not list the search and node parity flow"
 
 invalid_output=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-e2e-invalid.XXXXXX")
 missing_output=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-e2e-missing.XXXXXX")
@@ -127,5 +133,43 @@ expected_graphs_args=$(printf '%s\n' \
   "$repo_root/.maestro/android-graphs.yaml")
 [[ $(<"$maestro_args") == "$expected_graphs_args" ]] \
   || die "Android E2E runner did not preserve the graph presentation flow"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  "$runner" settings >/dev/null
+expected_settings_args=$(printf '%s\n' \
+  --device test-device test \
+  "$repo_root/.maestro/android-settings.yaml")
+[[ $(<"$maestro_args") == "$expected_settings_args" ]] \
+  || die "Android E2E runner did not preserve the settings parity flow"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  "$runner" flashcards >/dev/null
+expected_flashcards_args=$(printf '%s\n' \
+  --device test-device test \
+  "$repo_root/.maestro/android-flashcards-regression.yaml")
+[[ $(<"$maestro_args") == "$expected_flashcards_args" ]] \
+  || die "Android E2E runner did not preserve the flashcards parity flow"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  "$runner" search >/dev/null
+expected_search_args=$(printf '%s\n' \
+  --device test-device test \
+  "$repo_root/.maestro/android-search-navigation.yaml")
+[[ $(<"$maestro_args") == "$expected_search_args" ]] \
+  || die "Android E2E runner did not preserve the search and node parity flow"
 
 echo "Android E2E runner tests passed"

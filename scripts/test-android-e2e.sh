@@ -10,6 +10,9 @@ capture_flow=.maestro/android-capture-search.yaml
 autocomplete_flow=.maestro/android-outliner-autocomplete-completion.yaml
 navigation_flow=.maestro/android-material-navigation.yaml
 graphs_flow=.maestro/android-graphs.yaml
+settings_flow=.maestro/android-settings.yaml
+flashcards_flow=.maestro/android-flashcards-regression.yaml
+search_flow=.maestro/android-search-navigation.yaml
 
 die() {
   echo "error: $*" >&2
@@ -26,6 +29,9 @@ case $selector in
       "$autocomplete_flow"
       "$navigation_flow"
       "$graphs_flow"
+      "$settings_flow"
+      "$flashcards_flow"
+      "$search_flow"
     )
     needs_connection=1
     needs_clear_state=1
@@ -67,15 +73,36 @@ case $selector in
     needs_clear_state=0
     needs_primary_button=0
     ;;
+  settings)
+    flows=("$settings_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  flashcards)
+    flows=("$flashcards_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  search)
+    flows=("$search_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
   --list)
-    echo "Modules: all signed-out connect capture autocomplete navigation graphs"
+    echo "Modules: all signed-out connect capture autocomplete navigation graphs settings flashcards search"
     printf '%s\n' \
       "$signed_out_flow" \
       "$connect_flow" \
       "$capture_flow" \
       "$autocomplete_flow" \
       "$navigation_flow" \
-      "$graphs_flow"
+      "$graphs_flow" \
+      "$settings_flow" \
+      "$flashcards_flow" \
+      "$search_flow"
     exit 0
     ;;
   *.yaml)
@@ -163,8 +190,9 @@ if (( needs_connection )); then
   adb -s "$device" shell rm -f "$remote_preferences"
 fi
 
-seed_android_outliner_fixture() {
-  command -v opam >/dev/null 2>&1 || die "opam is required to seed the Android outliner fixture"
+seed_android_fixture() {
+  local seed_mode=${1:-}
+  command -v opam >/dev/null 2>&1 || die "opam is required to seed the Android fixture"
   local graph_database=""
   local checkpoint=""
   for _ in {1..120}; do
@@ -185,8 +213,13 @@ seed_android_outliner_fixture() {
   local_database=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-graph.XXXXXX")
   temporary_files+=("$local_database")
   adb -s "$device" exec-out run-as "$app_id" cat "$graph_database" >"$local_database"
-  opam exec --switch=5.5.0 -- \
-    dune exec core/logseq_chat_e2e_seed.exe -- "$local_database" --outliner
+  if [[ -n $seed_mode ]]; then
+    opam exec --switch=5.5.0 -- \
+      dune exec core/logseq_chat_e2e_seed.exe -- "$local_database" "$seed_mode"
+  else
+    opam exec --switch=5.5.0 -- \
+      dune exec core/logseq_chat_e2e_seed.exe -- "$local_database"
+  fi
 
   local remote_database="/data/local/tmp/logseq-chat-android-graph-$$.sqlite"
   adb -s "$device" push "$local_database" "$remote_database" >/dev/null
@@ -203,8 +236,14 @@ for flow in "${flows[@]}"; do
   else
     flow_path="$repo_root/$flow"
   fi
-  if [[ $flow == "$autocomplete_flow" ]]; then
-    seed_android_outliner_fixture
+  if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED:-0} != 1 ]]; then
+    if [[ $flow == "$autocomplete_flow" ]]; then
+      seed_android_fixture --outliner
+    elif [[ $flow == "$flashcards_flow" ]]; then
+      seed_android_fixture --fixture
+    elif [[ $flow == "$search_flow" ]]; then
+      seed_android_fixture --fixture
+    fi
   fi
   maestro_args=(--device "$device" test)
   if [[ $flow == "$connect_flow" ]]; then

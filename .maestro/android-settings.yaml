@@ -1,0 +1,59 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.connection"
+    timeout: 30000
+- tapOn:
+    id: "button.connection"
+- tapOn: "Settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings"
+    timeout: 5000
+- assertVisible: "Theme"
+- assertVisible: "Language"
+- assertVisible: "Editor"
+- assertVisible: "Sync server"
+- assertVisible:
+    id: "link.settings.tabs"
+- tapOn:
+    id: "link.settings.tabs"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings.tabs"
+    timeout: 5000
+- assertVisible:
+    id: "toggle.settings.tab.journals"
+- assertVisible:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible:
+    id: "toggle.settings.tab.graphs"
+- tapOn: "Settings"
+- assertVisible:
+    id: "screen.settings"
+- scrollUntilVisible:
+    element:
+      text: "Check log"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Check log"
+- extendedWaitUntil:
+    visible:
+      id: "screen.runtime-log"
+    timeout: 5000
+- assertVisible:
+    id: "button.log-errors"
+- assertVisible:
+    id: "button.log-order"
+- assertVisible:
+    id: "button.log-source"
+- assertVisible:
+    id: "button.log-copy"
+- tapOn: "Done"
+- assertVisible:
+    id: "screen.settings"
+- tapOn: "Cancel"
+- assertVisible:
+    id: "button.connection"
