@@ -3743,44 +3743,88 @@
      {:value (reactive authentication-error-message model-source)
       :accessibility-identifier "text.authentication-error"}]]])
 
+(defui application-main-content [model-source send]
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (elements/element
+     ui-context nil
+     [:stack
+      {:grow 1.0
+       :container-relative-frame "vertical"}
+      [:if {:test (reactive main-screen-visible? model-source)}
+       [native-navigation-view model-source send]]
+      [:if {:test (reactive graph-picker-screen-visible? model-source)}
+       [graph-picker-screen model-source send]]
+      [:if {:test (reactive :settings-open model-source)}
+       [settings-sheet model-source send]]
+      [:if {:test (reactive :create-graph-open model-source)}
+       [graph-create-sheet model-source send]]
+      [:if {:test (reactive graph-deletion-pending? model-source)}
+       [graph-delete-dialog model-source send]]
+      [:if {:test (reactive :graph-password-open model-source)}
+       [graph-password-sheet model-source send]]
+      [:if {:test (reactive page-deletion-pending? model-source)}
+       [page-delete-dialog send]]
+      [:if {:test (reactive :sync-details-open model-source)}
+       [sync-status-sheet model-source send]]])
+    (elements/element
+     ui-context nil
+     [:stack
+      [:if {:test (reactive main-screen-visible? model-source)}
+       [native-navigation-view model-source send]]
+      [:if {:test (reactive graph-picker-screen-visible? model-source)}
+       [graph-picker-screen model-source send]]
+      [:if {:test (reactive authentication-screen-visible? model-source)}
+       [authentication-screen model-source send]]
+      [:if {:test (reactive :settings-open model-source)}
+       [settings-sheet model-source send]]
+      [:if {:test (reactive :create-graph-open model-source)}
+       [graph-create-sheet model-source send]]
+      [:if {:test (reactive graph-deletion-pending? model-source)}
+       [graph-delete-dialog model-source send]]
+      [:if {:test (reactive :graph-password-open model-source)}
+       [graph-password-sheet model-source send]]
+      [:if {:test (reactive page-deletion-pending? model-source)}
+       [page-delete-dialog send]]
+      [:if {:test (reactive :sync-details-open model-source)}
+       [sync-status-sheet model-source send]]])))
+
 (defui chat-view [model-source send]
-  [:stack
-   {:grow 1.0
-    :container-relative-frame "both"}
-   [:if {:test (reactive authentication-screen-visible? model-source)}
-    [authentication-screen model-source send]]
-   [:if {:test (reactive application-shell-visible? model-source)}
-   [:drawer
-   {:selected (reactive drawer-selected? model-source)
-    :disabled (reactive drawer-disabled? model-source)
-    :width 360
-    :label "Navigation"
-    :accessibility-identifier "application.shell"
-    :on-toggle
-    (fn [input-event]
-      (match input-event
-        (proto/ToggleChanged _node open)
-        (send (if open model/OpenSidebar model/CloseSidebar))
-        _ true))}
-   [:stack
-    {:grow 1.0
-     :container-relative-frame "vertical"}
-    [:if {:test (reactive main-screen-visible? model-source)}
-     [native-navigation-view model-source send]]
-    [:if {:test (reactive graph-picker-screen-visible? model-source)}
-     [graph-picker-screen model-source send]]
-    [:if {:test (reactive authentication-screen-visible? model-source)}
-     [authentication-screen model-source send]]
-    [:if {:test (reactive :settings-open model-source)}
-     [settings-sheet model-source send]]
-    [:if {:test (reactive :create-graph-open model-source)}
-     [graph-create-sheet model-source send]]
-    [:if {:test (reactive graph-deletion-pending? model-source)}
-     [graph-delete-dialog model-source send]]
-    [:if {:test (reactive :graph-password-open model-source)}
-     [graph-password-sheet model-source send]]
-    [:if {:test (reactive page-deletion-pending? model-source)}
-     [page-delete-dialog send]]
-    [:if {:test (reactive :sync-details-open model-source)}
-     [sync-status-sheet model-source send]]]
-   [sidebar-view model-source send]]]])
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (elements/element
+     ui-context nil
+     [:stack
+      {:grow 1.0
+       :container-relative-frame "both"}
+      [:if {:test (reactive authentication-screen-visible? model-source)}
+       [authentication-screen model-source send]]
+      [:if {:test (reactive application-shell-visible? model-source)}
+       [:drawer
+        {:selected (reactive drawer-selected? model-source)
+         :disabled (reactive drawer-disabled? model-source)
+         :width 360
+         :label "Navigation"
+         :accessibility-identifier "application.shell"
+         :on-toggle
+         (fn [input-event]
+           (match input-event
+             (proto/ToggleChanged _node open)
+             (send (if open model/OpenSidebar model/CloseSidebar))
+             _ true))}
+        [application-main-content model-source send]
+        [sidebar-view model-source send]]]])
+    (elements/element
+     ui-context nil
+     [:drawer
+      {:selected (reactive drawer-selected? model-source)
+       :disabled (reactive drawer-disabled? model-source)
+       :width 360
+       :label "Navigation"
+       :accessibility-identifier "application.shell"
+       :on-toggle
+       (fn [input-event]
+         (match input-event
+           (proto/ToggleChanged _node open)
+           (send (if open model/OpenSidebar model/CloseSidebar))
+           _ true))}
+      [application-main-content model-source send]
+      [sidebar-view model-source send]])))

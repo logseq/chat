@@ -441,8 +441,13 @@ public struct LogseqChatRootView : View {
     public func runLGApplication() async {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
+        #if SKIP
         await waitForAuthenticationRestore()
         startLGRenderer()
+        #else
+        startLGRenderer()
+        await waitForAuthenticationRestore()
+        #endif
         publishAuthenticationState()
         LogseqChatAppDelegate.shared.reportLaunchStage("authentication_published")
         await waitForLocalLaunchLoad()

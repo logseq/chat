@@ -212,6 +212,36 @@
                renderer runtime-root "application.shell")]
     (if (= shell -1) runtime-root shell)))
 
+(deftest android-root-sizing-does-not-change-ios-safe-area-coordinates
+  (doseq [platform [proto/IOS proto/AndroidOS]]
+    (let [renderer (apple/create-with-extensions (view/extension-registry))
+          application
+          (chat/create
+           (apple/backend-for renderer platform proto/SwiftUIHost))]
+      (driver/start! application)
+      (driver/flush! application)
+      (let [runtime-root (driver/root-node application)
+            shell (application-shell-root renderer application)
+            main-stack (nth (apple/children renderer shell) 0)
+            expected-root-kind
+            (if (= platform proto/AndroidOS) apple/AppleStack apple/AppleDrawer)
+            expected-root-frame
+            (if (= platform proto/AndroidOS) "both" "<missing>")
+            expected-main-frame
+            (if (= platform proto/AndroidOS) "vertical" "<missing>")]
+        (assert-equal
+         (Some expected-root-kind)
+         (apple/node renderer runtime-root)
+         "only Android wraps the drawer for launch-state transitions")
+        (assert-equal
+         expected-root-frame
+         (property-string renderer runtime-root proto/ContainerRelativeFrameValue)
+         "only Android forces the root to the Compose viewport")
+        (assert-equal
+         expected-main-frame
+         (property-string renderer main-stack proto/ContainerRelativeFrameValue)
+         "only Android forces the drawer content to the Compose viewport")))))
+
 (defn main-root [renderer application]
   (let [runtime-root (driver/root-node application)
         shell-root (application-shell-root renderer application)
