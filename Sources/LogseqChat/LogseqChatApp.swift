@@ -159,6 +159,8 @@ public struct LogseqChatRootView : View {
     private var localLaunchTask: Task<LocalLaunchResult, Never>?
     private var didApplyLocalLaunchResult = false
     private var sharedCaptureTask: Task<Void, Never>?
+    private var authenticationRestoreTask: Task<Void, Never>?
+    private var didStartLGRenderer = false
     private var didStartLGApplication = false
     private var isLGApplicationReady = false
     private var isResumingLGApplication = false
@@ -401,8 +403,10 @@ public struct LogseqChatRootView : View {
     }
 
     public func startLGRenderer() {
+        guard !didStartLGRenderer else { return }
         do {
             try lgRuntime.start(platformCode: Self.lgPlatformCode)
+            didStartLGRenderer = true
             try lgRuntime.applyHostUpdate(
                 kind: "graph-loading",
                 payload: !didApplyLocalLaunchResult ? "true" : "false"
@@ -435,12 +439,28 @@ public struct LogseqChatRootView : View {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
         startLGRenderer()
-        await waitForLocalLaunchLoad()
-        await authentication.restore()
+        await waitForAuthenticationRestore()
         publishAuthenticationState()
+        LogseqChatAppDelegate.shared.reportLaunchStage("authentication_published")
+        await waitForLocalLaunchLoad()
         isLGApplicationReady = true
         await resumeLGApplication()
         await store.runPendingSyncLoop()
+    }
+
+    public func startAuthenticationRestore() {
+        guard authenticationRestoreTask == nil else { return }
+        authenticationRestoreTask = Task { [weak self] in
+            guard let self else { return }
+            LogseqChatAppDelegate.shared.reportLaunchStage("authentication_restore_started")
+            await authentication.restore()
+            LogseqChatAppDelegate.shared.reportLaunchStage("authentication_restore_returned")
+        }
+    }
+
+    private func waitForAuthenticationRestore() async {
+        startAuthenticationRestore()
+        await authenticationRestoreTask?.value
     }
 
     public func resumeLGApplication() async {
@@ -968,7 +988,9 @@ public final class LogseqChatAppDelegate : Sendable {
         let now = Date().timeIntervalSince1970
         launchStartedAt = now
         print(String(format: "LOGSEQ_LAUNCH_METRIC start=%.6f", now))
-        LogseqChatRuntime.shared.startLocalLaunchLoad()
+        let runtime = LogseqChatRuntime.shared
+        runtime.startLocalLaunchLoad()
+        runtime.startAuthenticationRestore()
         logger.debug("onInit")
     }
 

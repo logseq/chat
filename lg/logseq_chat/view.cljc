@@ -3693,6 +3693,10 @@
 (defn graph-picker-hidden? [current]
   (not (graph-picker-visible? current)))
 
+(defn main-screen-visible? [current]
+  (and (graph-picker-hidden? current)
+       (not (authentication-screen-visible? current))))
+
 (defn drawer-selected? [current]
   (and (:sidebar-open current)
        (graph-picker-hidden? current)
@@ -3711,7 +3715,7 @@
     :main "center"
     :cross "center"
     :gap 20
-    :padding 32}
+   :padding 32}
    [:heading {:level 1} "Logseq"]
    [:text "Sign in to connect your sync graphs."]
    [:button
@@ -3738,7 +3742,7 @@
         (send (if open model/OpenSidebar model/CloseSidebar))
         _ true))}
    [:stack
-    [:if {:test (reactive graph-picker-hidden? model-source)}
+    [:if {:test (reactive main-screen-visible? model-source)}
      [native-navigation-view model-source send]]
     [:if {:test (reactive graph-picker-screen-visible? model-source)}
      [graph-picker-screen model-source send]]

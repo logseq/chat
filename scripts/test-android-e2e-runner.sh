@@ -11,7 +11,7 @@ die() {
 }
 
 list_output=$($runner --list) || die "Android E2E runner could not list modules"
-grep -Fq "Modules: all signed-out connect capture autocomplete" <<<"$list_output" \
+grep -Fq "Modules: all signed-out connect capture autocomplete navigation graphs" <<<"$list_output" \
   || die "Android E2E runner did not list every module"
 grep -Fq ".maestro/android-staging-connect.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the connection flow"
@@ -21,6 +21,10 @@ grep -Fq ".maestro/android-capture-search.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the capture flow"
 grep -Fq ".maestro/android-outliner-autocomplete-completion.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the autocomplete flow"
+grep -Fq ".maestro/android-material-navigation.yaml" <<<"$list_output" \
+  || die "Android E2E runner did not list the Material navigation flow"
+grep -Fq ".maestro/android-graphs.yaml" <<<"$list_output" \
+  || die "Android E2E runner did not list the graph presentation flow"
 
 invalid_output=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-e2e-invalid.XXXXXX")
 missing_output=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-e2e-missing.XXXXXX")
@@ -79,5 +83,29 @@ expected_connect_args=$(printf '%s\n' \
   "$repo_root/.maestro/android-staging-connect.yaml")
 [[ $(<"$maestro_args") == "$expected_connect_args" ]] \
   || die "Android E2E runner passed Maestro environment options outside the test command"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  "$runner" navigation >/dev/null
+expected_navigation_args=$(printf '%s\n' \
+  --device test-device test \
+  "$repo_root/.maestro/android-material-navigation.yaml")
+[[ $(<"$maestro_args") == "$expected_navigation_args" ]] \
+  || die "Android E2E runner did not preserve the Material navigation flow"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  "$runner" graphs >/dev/null
+expected_graphs_args=$(printf '%s\n' \
+  --device test-device test \
+  "$repo_root/.maestro/android-graphs.yaml")
+[[ $(<"$maestro_args") == "$expected_graphs_args" ]] \
+  || die "Android E2E runner did not preserve the graph presentation flow"
 
 echo "Android E2E runner tests passed"

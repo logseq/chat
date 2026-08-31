@@ -1,0 +1,37 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- extendedWaitUntil:
+    visible:
+      id: "link.sidebar.graphs"
+    timeout: 5000
+- tapOn:
+    id: "link.sidebar.graphs"
+- extendedWaitUntil:
+    visible:
+      id: "screen.graphs"
+    timeout: 5000
+- assertVisible: "Graphs"
+- tapOn:
+    id: "button.graph-add"
+- extendedWaitUntil:
+    visible:
+      id: "form.graph-create"
+    timeout: 5000
+- assertVisible:
+    id: "field.graph-name"
+- assertVisible:
+    id: "toggle.graph-encryption"
+- assertVisible:
+    id: "button.graph-add.confirm"
+    enabled: false
+- tapOn:
+    id: "button.graph-add.cancel"
+- assertVisible:
+    id: "screen.graphs"

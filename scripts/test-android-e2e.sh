@@ -8,6 +8,8 @@ signed_out_flow=.maestro/android-signed-out.yaml
 connect_flow=.maestro/android-staging-connect.yaml
 capture_flow=.maestro/android-capture-search.yaml
 autocomplete_flow=.maestro/android-outliner-autocomplete-completion.yaml
+navigation_flow=.maestro/android-material-navigation.yaml
+graphs_flow=.maestro/android-graphs.yaml
 
 die() {
   echo "error: $*" >&2
@@ -17,7 +19,14 @@ die() {
 selector=${1:-${LOGSEQ_CHAT_ANDROID_E2E_MODULE:-all}}
 case $selector in
   all)
-    flows=("$signed_out_flow" "$connect_flow" "$capture_flow" "$autocomplete_flow")
+    flows=(
+      "$signed_out_flow"
+      "$connect_flow"
+      "$capture_flow"
+      "$autocomplete_flow"
+      "$navigation_flow"
+      "$graphs_flow"
+    )
     needs_connection=1
     needs_clear_state=1
     needs_primary_button=1
@@ -46,9 +55,27 @@ case $selector in
     needs_clear_state=0
     needs_primary_button=0
     ;;
+  navigation)
+    flows=("$navigation_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  graphs)
+    flows=("$graphs_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
   --list)
-    echo "Modules: all signed-out connect capture autocomplete"
-    printf '%s\n' "$signed_out_flow" "$connect_flow" "$capture_flow" "$autocomplete_flow"
+    echo "Modules: all signed-out connect capture autocomplete navigation graphs"
+    printf '%s\n' \
+      "$signed_out_flow" \
+      "$connect_flow" \
+      "$capture_flow" \
+      "$autocomplete_flow" \
+      "$navigation_flow" \
+      "$graphs_flow"
     exit 0
     ;;
   *.yaml)
@@ -77,6 +104,14 @@ fi
 command -v adb >/dev/null 2>&1 || die "adb is not installed"
 command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
 command -v gradle >/dev/null 2>&1 || die "Gradle is not installed"
+
+temporary_files=()
+cleanup() {
+  if (( ${#temporary_files[@]} > 0 )); then
+    rm -f "${temporary_files[@]}"
+  fi
+}
+trap cleanup EXIT
 
 device=${ANDROID_SERIAL:-}
 if [[ -z $device ]]; then
@@ -109,8 +144,8 @@ if (( needs_connection )); then
   [[ $LOGSEQ_CHAT_E2E_BASE_URL != *['<>&"']* ]] \
     || die "LOGSEQ_CHAT_E2E_BASE_URL contains characters that are unsafe in Android preferences"
   preferences_file=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-defaults.xml.XXXXXX")
+  temporary_files+=("$preferences_file")
   remote_preferences="/data/local/tmp/logseq-chat-android-defaults-$$.xml"
-  trap 'rm -f "$preferences_file"' EXIT
   printf '%s\n' \
     "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
     '<map>' \
@@ -124,12 +159,48 @@ if (( needs_connection )); then
   adb -s "$device" shell rm -f "$remote_preferences"
 fi
 
+seed_android_outliner_fixture() {
+  command -v opam >/dev/null 2>&1 || die "opam is required to seed the Android outliner fixture"
+  local graph_database=""
+  local checkpoint=""
+  for _ in {1..120}; do
+    graph_database=$(adb -s "$device" shell run-as "$app_id" \
+      find files/graphs -name graph.sqlite -type f 2>/dev/null \
+      | tr -d '\r' | head -1)
+    checkpoint=${graph_database%/graph.sqlite}/sync.checkpoint
+    if [[ -n $graph_database ]] && adb -s "$device" shell run-as "$app_id" \
+      test -f "$checkpoint"; then
+      break
+    fi
+    sleep 0.5
+  done
+  [[ -n $graph_database ]] || die "timed out waiting for the Android graph database"
+
+  adb -s "$device" shell am force-stop "$app_id"
+  local local_database
+  local_database=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-graph.XXXXXX")
+  temporary_files+=("$local_database")
+  adb -s "$device" exec-out run-as "$app_id" cat "$graph_database" >"$local_database"
+  opam exec --switch=5.5.0 -- \
+    dune exec core/logseq_chat_e2e_seed.exe -- "$local_database" --outliner
+
+  local remote_database="/data/local/tmp/logseq-chat-android-graph-$$.sqlite"
+  adb -s "$device" push "$local_database" "$remote_database" >/dev/null
+  adb -s "$device" shell run-as "$app_id" \
+    rm -f "${graph_database}-wal" "${graph_database}-shm"
+  adb -s "$device" shell run-as "$app_id" cp "$remote_database" "$graph_database"
+  adb -s "$device" shell rm -f "$remote_database"
+}
+
 for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow = /* ]]; then
     flow_path=$flow
   else
     flow_path="$repo_root/$flow"
+  fi
+  if [[ $flow == "$autocomplete_flow" ]]; then
+    seed_android_outliner_fixture
   fi
   maestro_args=(--device "$device" test)
   if [[ $flow == "$connect_flow" ]]; then

@@ -14,7 +14,8 @@ appId: com.logseq.chat
       id: "toolbar.outliner.autocomplete"
     timeout: 10000
 - tapOn:
-    id: "button.outliner.autocomplete.0"
+    id: "button.outliner.autocomplete\\..*"
+    index: 0
 - assertNotVisible:
     id: "toolbar.outliner.autocomplete"
 - assertVisible:
@@ -30,7 +31,8 @@ appId: com.logseq.chat
       id: "toolbar.outliner.autocomplete"
     timeout: 10000
 - tapOn:
-    id: "button.outliner.autocomplete.0"
+    id: "button.outliner.autocomplete\\..*"
+    index: 0
 - assertNotVisible:
     id: "toolbar.outliner.autocomplete"
 - assertVisible:

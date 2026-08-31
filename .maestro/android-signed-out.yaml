@@ -9,3 +9,13 @@ appId: com.logseq.chat
     id: "sidebar.navigation"
 - assertNotVisible:
     id: "screen.graph-picker"
+- assertNotVisible:
+    id: "journals.graph-loaded"
+- assertNotVisible:
+    id: "journals.loading"
+- assertNotVisible:
+    id: "button.composer.expand"
+- assertNotVisible:
+    id: "button.search"
+- assertNotVisible:
+    id: "button.sidebar"

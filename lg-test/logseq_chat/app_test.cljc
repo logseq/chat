@@ -1184,6 +1184,24 @@
                     (descendant-with-identifier
                      renderer root "screen.graph-picker")
                     "authentication replaces the graph picker instead of sharing the root")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "journals.graph-loaded")
+                    "authentication replaces loaded journal content")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "journals.loading")
+                    "authentication replaces the journal loading surface")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.composer.expand")
+                    "authentication hides capture controls")
+      (assert-equal -1
+                    (descendant-with-identifier renderer root "button.search")
+                    "authentication hides search controls")
+      (assert-equal -1
+                    (descendant-with-identifier renderer root "button.sidebar")
+                    "authentication hides the signed-in navigation header")
       (assert-equal 1.0 (property-float renderer screen proto/GrowValue)
                     "authentication fills the available root height")
       (assert-equal "vertical"

@@ -30,21 +30,45 @@ appId: com.logseq.chat
 - tapOn: "submit"
 - extendedWaitUntil:
     visible:
-      id: "graph\\..*"
+      id: "screen.graph-picker"
     timeout: 60000
-- assertNotVisible:
-    id: "sidebar.navigation"
-- tapOn:
-    id: "graph\\..*"
-    index: 0
 - runFlow:
     when:
-      visible: "Unlock encrypted graphs"
+      notVisible:
+        id: "graph\\..*"
     commands:
-      - tapOn: "E2EE password"
-      - inputText: ${PASSWORD}
+      - tapOn:
+          id: "button.graph-add"
+      - extendedWaitUntil:
+          visible:
+            id: "form.graph-create"
+          timeout: 10000
+      - tapOn:
+          id: "field.graph-name"
+      - inputText: "android-e2e-graph"
       - hideKeyboard
-      - tapOn: "Unlock"
+      - tapOn:
+          id: "toggle.graph-encryption"
+      - tapOn:
+          id: "button.graph-add.confirm"
+- runFlow:
+    when:
+      visible:
+        id: "graph\\..*"
+    commands:
+      - assertNotVisible:
+          id: "sidebar.navigation"
+      - tapOn:
+          id: "graph\\..*"
+          index: 0
+      - runFlow:
+          when:
+            visible: "Unlock encrypted graphs"
+          commands:
+            - tapOn: "E2EE password"
+            - inputText: ${PASSWORD}
+            - hideKeyboard
+            - tapOn: "Unlock"
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"

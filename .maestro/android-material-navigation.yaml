@@ -1,7 +1,6 @@
 appId: com.logseq.chat
 ---
-- launchApp:
-    stopApp: false
+- launchApp
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"
