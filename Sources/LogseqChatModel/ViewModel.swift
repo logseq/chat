@@ -1045,89 +1045,88 @@ private struct DeletePagePayload: Encodable {
         graphID: String, baseURL: String, accessToken: String,
         stopAfterFirstFrame: Bool = false
     ) async -> Bool {
-        guard let cursor = snapshot.appliedServerT else {
+        let cursor: Int = snapshot.appliedServerT ?? -1
+        guard cursor >= 0 else {
             lastError = LogseqChatCoreError(code: "sync_cursor_missing", message: "Graph checkpoint is not open")
             return false
         }
-        #if SKIP
         do {
-            let stream = try await AndroidGraphSSETransport.open(
+            let request = try LogseqGraphSyncHTTP.webSocketRequest(
                 baseURL: baseURL,
                 graphID: graphID,
-                appliedServerT: cursor,
                 accessToken: accessToken
             )
-            defer { stream.close() }
-            await dispatchRawAndWait("startSSE")
+            let socket = URLSession.shared.webSocketTask(with: request)
+            socket.maximumMessageSize = 64 * 1024 * 1024
+            socket.resume()
+            defer { socket.cancel(with: .goingAway, reason: nil) }
+            await dispatchRawAndWait("startWebSocket")
             guard lastError == nil else { return false }
             syncError = nil
             isSnapshotRefreshDeferred = false
             syncPendingSoon()
-            while let frame = try await stream.nextFrame() {
-                await dispatchRawAndWait("feedSSE", payload: frame)
-                if lastError != nil { break }
-                syncPendingSoon()
-                if lastError != nil { break }
-                if stopAfterFirstFrame { break }
-            }
-            let streamError = lastError
-            if streamError?.code == "snapshot_required" {
-                lastError = nil
-            }
-            await dispatchRawAndWait("stopSSE")
-            if let streamError {
-                if streamError.code == "snapshot_required" {
-                    return true
-                }
-                lastError = nil
-                syncError = streamError
-            }
-        } catch {
-            await dispatchRawAndWait("stopSSE")
-            syncError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
-        }
-        return false
-        #else
-        do {
-            let request = try LogseqGraphSyncHTTP.eventsRequest(
-                baseURL: baseURL,
-                graphID: graphID,
-                appliedServerT: cursor,
-                accessToken: accessToken
-            )
-            let (bytes, response) = try await URLSession.shared.bytes(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw URLError(.badServerResponse)
-            }
-            await dispatchRawAndWait("startSSE")
-            guard lastError == nil else { return false }
-            syncError = nil
-            isSnapshotRefreshDeferred = false
-            syncPendingSoon()
-            var transportBuffer = LogseqGraphSSETransportBuffer()
-            var networkChunk = Data()
-            networkChunk.reserveCapacity(16 * 1024)
-            eventStream: for try await byte in bytes {
-                if Task.isCancelled { break }
-                networkChunk.append(byte)
-                if byte == 0x0a || networkChunk.count == 16 * 1024 {
-                    let frames = try transportBuffer.append(networkChunk)
-                    networkChunk.removeAll(keepingCapacity: true)
-                    for frame in frames {
-                        await dispatchRawAndWait("feedSSE", payload: frame)
-                        if lastError != nil { break }
-                        syncPendingSoon()
-                        if lastError != nil { break }
-                        if stopAfterFirstFrame { break eventStream }
+            try await socket.send(.string(
+                try LogseqGraphWebSocketProtocol.entityPullMessage(since: cursor)
+            ))
+            var pullInFlight = true
+            var latestNotifiedServerT = cursor
+            eventStream: while !Task.isCancelled {
+                let message = try await socket.receive()
+                let text: String
+                switch message {
+                case .string(let value): text = value
+                case .data(let data):
+                    guard let value = String(data: data, encoding: .utf8) else {
+                        throw URLError(.cannotDecodeContentData)
                     }
-                    if lastError != nil { break }
+                    text = value
+                @unknown default:
+                    throw URLError(.cannotParseResponse)
+                }
+                guard let data = text.data(using: .utf8),
+                      let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let type = envelope["type"] as? String else {
+                    throw URLError(.cannotParseResponse)
+                }
+                switch type {
+                case "graph-changes", "reset":
+                    await dispatchRawAndWait("applySyncEvent", payload: text)
+                    if lastError != nil { break eventStream }
+                    pullInFlight = false
+                    syncPendingSoon()
+                    if lastError != nil { break eventStream }
+                    if stopAfterFirstFrame { break eventStream }
+                    let currentCursor: Int = snapshot.appliedServerT ?? -1
+                    if currentCursor >= 0 && latestNotifiedServerT > currentCursor {
+                        try await socket.send(.string(
+                            try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                        ))
+                        pullInFlight = true
+                    }
+                case "changed":
+                    if let serverT = envelope["t"] as? Int {
+                        latestNotifiedServerT = max(latestNotifiedServerT, serverT)
+                    }
+                    guard !pullInFlight else { continue }
+                    let currentCursor: Int = snapshot.appliedServerT ?? -1
+                    guard currentCursor >= 0 else {
+                        throw URLError(.cannotParseResponse)
+                    }
+                    try await socket.send(.string(
+                        try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                    ))
+                    pullInFlight = true
+                case "error":
+                    throw URLError(.badServerResponse)
+                default:
+                    continue
                 }
             }
             let streamError = lastError
             if streamError?.code == "snapshot_required" {
                 lastError = nil
             }
-            await dispatchRawAndWait("stopSSE")
+            await dispatchRawAndWait("stopWebSocket")
             if let streamError {
                 if streamError.code == "snapshot_required" {
                     return true
@@ -1136,22 +1135,21 @@ private struct DeletePagePayload: Encodable {
                 syncError = streamError
             }
         } catch {
-            await dispatchRawAndWait("stopSSE")
-            if LogseqGraphSSEFailurePolicy.shouldReport(
+            await dispatchRawAndWait("stopWebSocket")
+            if LogseqGraphWebSocketFailurePolicy.shouldReport(
                 error,
                 taskIsCancelled: Task.isCancelled
             ) {
                 #if DEBUG
-                print("LogseqChat sync event stream failed: \(error)")
+                print("LogseqChat sync WebSocket failed: \(error)")
                 #endif
                 syncError = LogseqChatCoreError(
-                    code: "sse_connection_failed",
-                    message: LogseqGraphSSEFailurePolicy.userFacingMessage(error)
+                    code: "websocket_connection_failed",
+                    message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error)
                 )
             }
         }
         return false
-        #endif
     }
 
     public func deferSnapshotRefreshWhileEditing() {
@@ -1866,7 +1864,7 @@ private struct DeletePagePayload: Encodable {
              "addAsset", "addChildBlock", "updateBlock", "updateBlockStatus", "deleteBlock":
             return .interaction
         case "open", "configure", "refresh", "refreshGraphCatalog", "createSyncGraph", "openGraph",
-             "importSnapshot", "startSSE", "feedSSE", "stopSSE", "beginPendingSync",
+             "importSnapshot", "startWebSocket", "applySyncEvent", "stopWebSocket", "beginPendingSync",
              "completePendingSync", "cancelPendingSync":
             return .maintenance
         default:

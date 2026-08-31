@@ -841,7 +841,7 @@ public struct LogseqChatRootView : View {
             accessToken: token,
             stopAfterFirstFrame: true
         )
-        return store.lastError == nil
+        return store.lastError == nil && store.syncError == nil
     }
 
     public func runExclusiveBackgroundSync() async -> Bool {

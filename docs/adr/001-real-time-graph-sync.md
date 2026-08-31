@@ -2,7 +2,7 @@
 
 - Status: Accepted; implementation in progress
 - Date: 2026-08-14
-- Last updated: 2026-08-16
+- Last updated: 2026-08-31
 - Owners: Logseq Chat and db-sync teams
 
 ## Context
@@ -18,8 +18,8 @@ OCaml values with `Marshal` into a two-column `kvs(address, payload)` table. db-
 snapshots contain ClojureScript Transit values in Logseq's
 `kvs(addr, content, addresses)` layout. Those formats must not be treated as
 interchangeable. The earlier platform-to-core call and HTTP adapter also buffered one
-complete JSON response, so a long-lived SSE connection needs a new byte-stream
-adapter rather than extending the blocking request call.
+complete JSON response. Incremental delivery now reuses db-sync's existing authorized
+WebSocket and adds an entity-change pull message instead of another streaming endpoint.
 
 Logseq Chat needs a local, queryable copy of the selected graph and near-real-time
 updates from db-sync. The design must work for both encrypted and unencrypted
@@ -56,14 +56,14 @@ support:
 | Android authentication | Cognito Hosted UI authorization-code flow with PKCE through Custom Tabs; refresh tokens are encrypted with an Android Keystore key |
 | Graph discovery | Authenticated db-sync `GET /graphs`, including encrypted-graph metadata |
 | Graph catalog and offline open | The complete discovered graph catalog is persisted in the app metadata store; the last selected graph and its local mirror open before authentication or network restore |
-| Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client SSE, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
+| Unencrypted iOS sync | iOS Simulator E2E against local db-sync verifies first-open snapshot import, server-to-client WebSocket sync, semantic REST creation, authoritative self-echo, online restart recovery, offline restart with a durable pending block, and cursor advancement after reconnect |
 | Snapshot baseline | `snapshot/download` returns the pre-stream server `t`, schema version, row count, stream URL, and content encoding in one metadata response; OCaml commits that `t` only after atomic import |
-| Sync ownership | One coordinator owns the selected graph's foreground SSE or bounded background replay, never both. Native code owns HTTP task lifecycle; OCaml owns framing, Transit decoding, validation, cursor advancement, idempotency, and graph application. |
+| Sync ownership | One coordinator owns the selected graph's foreground WebSocket or bounded background replay, never both. Native code owns the socket lifecycle; OCaml owns Transit decoding, validation, cursor advancement, idempotency, and graph application. |
 | Local metadata | Graph catalog, selection, pending writes, and checkpoints use versioned Transit records. Legacy `Marshal` metadata is intentionally treated as a cache miss; no old-cache migration is required. |
 | Local journal reads | OCaml maintains an incremental recent-journal projection and re-queries only affected blocks, rebuilding only when journal-page membership changes. |
 | iOS background sync | Background entry starts an immediate, bounded sync under a UIKit background assertion; `BGAppRefresh` is also registered for later catch-up. Each execution opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without graph-catalog or semantic refresh |
-| Android sync transport | OCaml core, full-snapshot download/import, and native SSE entity-change streaming are connected; device E2E remains pending |
-| Encrypted graph sync | iOS Simulator E2E against local db-sync verifies encrypted first-open snapshot import, local key unlock and Keychain restore, semantic REST journal/block creation, authoritative SSE confirmation, ciphertext-only server storage, and kill/relaunch persistence |
+| Android sync transport | OCaml core, full-snapshot download/import, and SkipFoundation/OkHttp WebSocket entity-change streaming are connected; device E2E remains pending |
+| Encrypted graph sync | iOS Simulator E2E against local db-sync verifies encrypted first-open snapshot import, local key unlock and Keychain restore, semantic REST journal/block creation, authoritative WebSocket confirmation, ciphertext-only server storage, and kill/relaunch persistence |
 
 ## Decision
 
@@ -139,7 +139,7 @@ No local-only attributes such as sync status or cached JSON projections will be
 added to the graph database. This prevents the chat app from changing the meaning
 or type of any server property.
 
-Schema changes are a synchronization boundary. An SSE `reset` event with reason
+Schema changes are a synchronization boundary. A WebSocket `reset` message with reason
 `schema-changed` makes the client download a new snapshot into a new local database
 and atomically replace the old database after validation. The client must not try to
 infer or migrate a newer server schema.
@@ -148,7 +148,7 @@ infer or migrate a newer server schema.
 
 All cross-platform sync behavior will be implemented once in the existing native
 OCaml core. Swift and Kotlin must not contain independent implementations of the
-snapshot importer, SSE parser, cursor state machine, entity merge rules, schema
+snapshot importer, WebSocket event decoder, cursor state machine, entity merge rules, schema
 validation, E2EE value transformation, optimistic reconciliation, or write
 allowlist.
 
@@ -156,7 +156,7 @@ The OCaml core owns:
 
 - the db-sync request and response types;
 - Transit and EDN codecs;
-- SSE framing, event validation, replay, and server `t` state;
+- WebSocket event validation, replay, and server `t` state;
 - framed snapshot decoding, staging, schema-first import, and atomic activation;
 - the exact Logseq graph schema and typed DataScript values;
 - entity upsert and remote-deletion application;
@@ -165,13 +165,13 @@ The OCaml core owns:
 - validation that outgoing mutations are block creation or block-property updates;
 - local query projections consumed by the chat UI.
 
-Platform code is limited to Cognito UI and SDK calls, HTTP/SSE byte transport,
+Platform code is limited to Cognito UI and SDK calls, HTTP/WebSocket transport,
 secure key and token storage, file handles, OS cryptographic primitives, background
 lifecycle, and presentation. These adapters pass opaque byte chunks and explicit
 results to OCaml. They do not parse or rewrite graph values.
 
-The SSE adapter opens and owns the platform network task, then feeds bounded byte
-chunks and terminal results into short, serialized OCaml FFI calls. It must not hold
+The WebSocket adapter opens and owns the platform network task, then feeds complete,
+bounded messages and terminal results into short, serialized OCaml FFI calls. It must not hold
 an OCaml runtime lock for the lifetime of a connection. Blocking native REST
 transport releases the OCaml runtime while waiting, so an unreachable server cannot
 serialize unrelated local graph operations behind its timeout. Snapshot downloads
@@ -179,7 +179,7 @@ likewise stream to a file or bounded OCaml decoder;
 they are not materialized as one JSON RPC string.
 
 The existing JSON RPC across the Swift/Kotlin-to-OCaml FFI remains a small control
-and UI envelope. Graph snapshots, SSE entity values, and outgoing graph mutations
+and UI envelope. Graph snapshots, WebSocket entity values, and outgoing graph mutations
 do not pass through `Yojson.Basic`; keeping them as typed OCaml values avoids the
 property-type loss this ADR forbids.
 
@@ -238,7 +238,7 @@ it with the same version of `db-schema/schema`. Asset bytes remain in the existi
 asset API; asset entities and metadata are in the graph snapshot.
 
 The snapshot-download handler reads baseline `t` before the client consumes the
-separate snapshot stream. After import, SSE starts from that `t`, so every
+separate snapshot stream. After import, WebSocket replay starts from that `t`, so every
 transaction concurrent with snapshot streaming is considered again.
 Complete entity upserts are idempotent, making an entity already present in the
 snapshot safe to replay. db-sync must not garbage-collect tx-log entries newer than
@@ -268,7 +268,7 @@ entities, and produce change sets.
 The existing snapshot format and the new entity-change format each work for both
 encrypted and unencrypted graphs. For encrypted graphs, the local DataScript graph
 is an exact ciphertext mirror of the server graph. Protected datoms are not replaced
-with plaintext during snapshot import or SSE application. Local queries build a
+with plaintext during snapshot import or WebSocket event application. Local queries build a
 separate decrypted UI projection on demand. This avoids a second persisted graph
 shape and ensures restart, replay, and export preserve the same values the server
 stores. Existing Logseq encryption metadata, Transit value envelopes, and algorithms
@@ -280,30 +280,32 @@ If the key is missing, access was revoked, or decryption fails, the app stops im
 or event application and locks the graph. It does not store a partly decrypted graph
 or fall back to treating ciphertext as user content.
 
-### 6. Stream entity change sets over SSE
+### 6. Stream entity change sets over the existing WebSocket
 
-db-sync will expose one authorized SSE stream for a selected graph and schema
-version:
+db-sync exposes one authorized WebSocket for the selected graph:
 
 ```http
-GET /sync/:graph-id/events?since=<t>
-Accept: text/event-stream
+GET /sync/:graph-id
+Upgrade: websocket
 Authorization: Bearer <cognito-access-token>
-Last-Event-ID: 48192
 ```
 
-The query `since` is used when the platform cannot set `Last-Event-ID`; if both are
-present, `Last-Event-ID` wins. The server sends heartbeat comments and disables
-intermediary buffering. On token expiry, the client refreshes the token and resumes
-from its last committed cursor.
+After connecting, Logseq Chat requests entity changes from its last committed cursor:
 
-Normal events use the existing monotonically increasing, graph-branch-scoped server
-transaction number as the cursor:
+```json
+{"type":"entity/pull","since":48192}
+```
 
-```text
-id: 48193
-event: graph-changes
-data: {"format-version":1,"graph-id":"...","schema-version":"...","t-before":48192,"t":48193,"upserts":[...],"deleted":[...]}
+The server already broadcasts `changed` messages containing the latest server `t`.
+The client coalesces those notifications and sends another `entity/pull` only when no
+pull is in flight. On token expiry or disconnection, it obtains a current token and
+reconnects with bounded exponential backoff from its durable cursor.
+
+Normal responses use the existing monotonically increasing, graph-branch-scoped
+server transaction number as the cursor:
+
+```json
+{"type":"graph-changes","data":"<Transit payload>"}
 ```
 
 The actual `data` payload is Transit-encoded even when shown as JSON above. It has
@@ -335,7 +337,7 @@ transaction.
 The current normalizer does not retain a stable identity for every possible
 DataScript entity (for example, a file entity identified only by `:file/path`). The
 server must not emit a partial entity or numeric id in that case. Before enabling
-SSE for such entities, normalization is extended to retain every supported unique
+WebSocket entity replay for such entities, normalization is extended to retain every supported unique
 identity and the server capability's minimum cursor is advanced. A replay that
 encounters an older unidentifiable transaction returns `reset` and requires a fresh
 snapshot. This keeps legacy tx-log limitations explicit instead of silently losing
@@ -363,17 +365,16 @@ The client applies one event and advances its local `t` in one durable operation
 It must reject an event when its graph id or schema version differs, or when
 `t-before` does not equal the last committed `t`.
 
-If the requested cursor has expired, the schema changed, an event is too large for
-the stream, or the server cannot prove a contiguous range, the server sends:
+If the requested cursor has expired or is ahead of a reset server, the schema changed,
+a message is too large, or the server cannot prove a contiguous range, the server sends:
 
-```text
-event: reset
-data: {"reason":"cursor-expired","snapshot-required":true}
+```json
+{"type":"reset","data":"<Transit reset payload>"}
 ```
 
-The client then closes the stream and repeats the full-snapshot process. SSE is
-at-least-once delivery; the cursor and idempotent entity upserts make duplicates
-safe.
+Reset-style snapshot replacement closes existing sockets so they reconnect against
+the new graph generation. The client then closes the socket and repeats the full-snapshot process. Reconnect
+replay is at least once; the cursor and idempotent entity upserts make duplicates safe.
 
 ### 7. Restrict client writes to block creation and property modification
 
@@ -403,14 +404,14 @@ that page UUID. This avoids both raw tx submission and server-side plaintext
 generation.
 
 This restriction applies to mutations initiated by Logseq Chat. The local database
-is still a mirror, so it must apply deletions received over SSE when another
+is still a mirror, so it must apply deletions received over WebSocket sync when another
 authorized Logseq client or server process deletes an entity. A remote deletion is
 never converted into or replayed as a client-originated delete request.
 
 A successful create or property update is not considered synchronized merely
 because its HTTP request succeeded. The originating client receives the same
-authoritative entity upsert through SSE as other clients. Optimistic UI state may be
-shown separately, but only the SSE event advances the graph cursor and replaces the
+authoritative entity upsert through WebSocket sync as other clients. Optimistic UI state may be
+shown separately, but only the authoritative sync event advances the graph cursor and replaces the
 local graph value. Existing server conflict and permission rules remain
 authoritative.
 
@@ -421,12 +422,12 @@ leaves the operation retryable; it must not roll back the local edit, hide the g
 or block subsequent create, edit, search, and navigation operations. A remote read
 or refresh cannot overwrite an unsynchronized local value. On successful REST
 submission the operation enters a submitted state and remains overlaid on the graph
-mirror until the matching SSE upsert confirms the authoritative value.
+mirror until the matching WebSocket upsert confirms the authoritative value.
 
 ### 8. Use cursor replay during iOS background execution
 
 iOS does not guarantee a continuously running network connection after the app is
-backgrounded. The app therefore keeps the long-lived SSE task for foreground use,
+backgrounded. The app therefore keeps the long-lived WebSocket task for foreground use,
 starts an immediate bounded sync under a UIKit background assertion when the scene
 enters the background, and registers a `BGAppRefresh` task as an opportunistic later
 catch-up mechanism. The refresh task is registered and initially scheduled during app
@@ -441,9 +442,9 @@ During each execution window the app:
 3. restores the persisted graph catalog, selection, schema, and `appliedServerT`
    checkpoint without refreshing the graph catalog or downloading a new snapshot;
 4. submits durable pending writes through the semantic REST allowlist;
-5. opens the graph event endpoint from `appliedServerT`, consumes the first complete
-   replay frame, applies the available latest entity changes, commits the new cursor
-   atomically, and closes the stream rather than holding background execution open.
+5. opens the graph WebSocket and sends `entity/pull` from `appliedServerT`, consumes
+   the first complete response, applies the available latest entity changes, commits
+   the new cursor atomically, and closes the socket rather than holding background execution open.
 
 The background path never calls the semantic recent-block refresh API. If the graph
 has no valid local baseline, the task exits and leaves first-open snapshot download to
@@ -461,7 +462,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 5. If no valid local copy exists, call the existing `snapshot/download` API, retain
    its metadata `t` as the pre-stream baseline, and atomically import its framed
    `kvs` row stream.
-6. Open SSE from the baseline server transaction number `t`.
+6. Open the graph WebSocket and request changes from baseline server transaction number `t`.
 7. Apply ordered entity upserts and deletions transactionally and persist each
    cursor.
 8. On disconnect, refresh the Cognito session if necessary and resume from the
@@ -479,8 +480,8 @@ delivery would require a later APNs silent-push capability and is not part of th
   the only full-download path. Its metadata response includes the pre-stream `t`,
   schema version, row count, stream URL, and content encoding; bootstrap does not
   add a separate `/pull` request.
-- Add `GET /sync/:graph-id/events?since=<t>` to the existing per-graph Durable
-  Object, with replay, heartbeat, and explicit reset behavior.
+- Extend the existing `/sync/:graph-id` WebSocket with `entity/pull`,
+  `graph-changes`, and `reset` messages; do not add a parallel event endpoint.
 - Use `storage/fetch-tx-since` and `storage/get-t` to find affected stable entity
   identities, then pull their latest values from the current DataScript connection;
   do not introduce a second change database, cursor, or an `as-of` query.
@@ -500,7 +501,7 @@ delivery would require a later APNs silent-push capability and is not part of th
   OCaml build.
 - Promote and reuse `datascript-ocaml`'s tested Logseq KVS Transit reader; do not
   feed server snapshot rows to the historical `Marshal`-based SQLite adapter.
-- Implement protocol codecs, snapshot import, SSE state, entity application, E2EE
+- Implement protocol codecs, snapshot import, WebSocket sync state, entity application, E2EE
   orchestration, and mutation validation as OCaml modules behind narrow signatures.
 - Keep Swift and Kotlin adapters byte-oriented and free of graph-schema or sync-state
   logic.
@@ -510,14 +511,14 @@ delivery would require a later APNs silent-push capability and is not part of th
 - Store the applied server `t` and snapshot import state outside the graph database.
 - Persist the full graph discovery catalog and last selected graph in the app
   metadata store so an existing graph opens without authentication or network.
-- Add an SSE client with reconnect, replay, atomic event application, and reset
+- Use the platform WebSocket client with reconnect, replay, atomic event application, and reset
   handling.
 - Add byte-stream platform adapters and short serialized FFI entry points so the
   current blocking JSON RPC mutex is never held by a live stream.
 - Query the local full graph for chat views and expose only add-block and
   modify-block-properties mutations.
 - Persist every mutation before presentation, send queued writes only through the
-  semantic REST API, and retain optimistic values until authoritative SSE echo.
+  semantic REST API, and retain optimistic values until authoritative WebSocket echo.
 - Reuse Logseq's E2EE key and value codecs, persist the exact ciphertext mirror, and
   expose plaintext only through an in-memory decrypted query/UI projection.
 - Register and schedule iOS background refresh, restore the last selected local
@@ -534,8 +535,8 @@ delivery would require a later APNs silent-push capability and is not part of th
   snapshot or change-history subsystem.
 - One schema and typed transport prevent subtle cross-client property corruption.
 - Entity snapshots are simpler and safer to apply than raw transaction history.
-- SSE uses ordinary authenticated HTTP and is simpler than a bidirectional socket
-  for a server-to-client feed.
+- Reusing db-sync's existing authenticated WebSocket avoids a second long-lived
+  transport and its duplicate connection management.
 - The same protocol supports encrypted graphs without weakening E2EE.
 - One OCaml sync engine gives Apple and Android identical cursor, codec, schema,
   encryption, and mutation behavior.
@@ -575,7 +576,7 @@ db-sync already has `GET /sync/:graph-id/snapshot/download` and a streaming snap
 of its DataScript SQLite `kvs` rows. Creating another endpoint or entity snapshot
 format would duplicate its permission, snapshot, encryption, and import behavior.
 
-### Send DataScript tx-data over SSE
+### Send DataScript tx-data over WebSocket
 
 Raw tx-data exposes storage internals, is difficult to version, can contain
 intermediate values, and forces every client to reproduce server transaction
@@ -600,15 +601,15 @@ Separate platform implementations would duplicate the most correctness-sensitive
 state machine and make schema, encryption, and replay behavior diverge. Platform
 code provides capabilities to the OCaml core instead.
 
-### Use WebSockets for the new downstream feed
+### Add a separate downstream streaming endpoint
 
-The client only needs a resumable server-to-client stream. SSE supplies reconnect
-and event ids over HTTP with less client and infrastructure complexity. Existing
-WebSocket sync can continue serving existing clients during rollout.
+A second streaming or polling endpoint would duplicate authorization, connection lifecycle,
+and reconnect behavior. The existing graph WebSocket already provides authenticated
+change notifications, so entity replay belongs on that connection.
 
 ## Rollout and verification
 
-The snapshot and SSE payloads are versioned independently from the graph schema.
+The snapshot and WebSocket entity payloads are versioned independently from the graph schema.
 The new path will be enabled behind a server capability flag and rolled out first to
 test graphs, then unencrypted graphs, then encrypted graphs.
 
@@ -617,7 +618,7 @@ The implementation is complete when automated integration tests demonstrate:
 - built-in Cognito login, challenge handling, session refresh, logout, expired-token
   reconnect, and graph authorization;
 - exact schema and value-type parity after a full snapshot import;
-- native OCaml Transit fixtures decode snapshot rows and SSE entities produced by
+- native OCaml Transit fixtures decode snapshot rows and WebSocket entities produced by
   `logseq-1`, then encode values the server decodes without type changes;
 - native OCaml EDN fixtures preserve every schema/configuration value used by the
   app, including UUID and instant tags;

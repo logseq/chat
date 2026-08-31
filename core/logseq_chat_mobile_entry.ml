@@ -30,7 +30,6 @@ type graph_runtime =
 let graph_runtime : graph_runtime option ref = ref None
 let projection_session : Logseq_chat_sqlite.session option ref = ref None
 let sqlite_session : Logseq_chat_sqlite.session option ref = ref None
-let sse_parser = ref (Logseq_chat_sse.create ())
 
 let required_string fields name =
   match List.assoc_opt name fields with
@@ -164,15 +163,16 @@ let import_snapshot payload =
   | error -> Error (Printexc.to_string error)
 ;;
 
-let start_sse () = sse_parser := Logseq_chat_sse.create ()
-
-let feed_sse chunk =
+let apply_sync_event payload =
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
-  let rec apply_frames = function
-    | [] -> Ok ()
-    | (frame : Logseq_chat_sse.frame) :: rest ->
+  let ( let* ) = bind in
+  try
+    match Yojson.Basic.from_string payload with
+    | `Assoc fields ->
+      let* event_name = required_string fields "type" in
+      let* data = required_string fields "data" in
       bind
-        (Logseq_chat_sync_protocol.decode_event ~event_name:frame.event frame.data)
+        (Logseq_chat_sync_protocol.decode_event ~event_name data)
         (function
           | Logseq_chat_sync_protocol.Reset reset ->
             Error ("snapshot required: " ^ reset.reason)
@@ -201,9 +201,10 @@ let feed_sse chunk =
                      ~operation_ids:change.operation_ids
                      ~changed_uuids:
                        (Logseq_chat_sync_protocol.changed_block_uuids change);
-                   apply_frames rest)))
-  in
-  apply_frames (Logseq_chat_sse.feed !sse_parser chunk)
+                   Ok ())))
+    | _ -> Error "WebSocket sync event must be an object"
+  with
+  | Yojson.Json_error message -> Error message
 ;;
 
 let sync_cursor () =
@@ -455,8 +456,7 @@ let create_session ?storage ?catalog_session () =
     ~open_graph
     ~import_snapshot
     ~model_for_graph
-    ~start_sse
-    ~feed_sse
+    ~apply_sync_event
     ~sync_cursor
     ~graph_blocks
     ~graph_sidebar_pages

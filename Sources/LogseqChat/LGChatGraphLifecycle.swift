@@ -250,13 +250,28 @@ final class LGChatGraphLifecycle {
         Task {
             await syncCoordinator.startForeground(graphID: graphID) { [weak self] graphID in
                 guard let self else { return }
+                var reconnectAttempt = 0
                 while !Task.isCancelled && authentication.state == .signedIn {
                     guard let accessToken = try? await authentication.accessToken() else { return }
+                    let cursorBeforeConnection = store.snapshot.appliedServerT
                     let snapshotRequired = await store.runGraphEventsOnce(
                         graphID: graphID,
                         baseURL: baseURL,
                         accessToken: accessToken
                     )
+                    if store.snapshot.appliedServerT != cursorBeforeConnection {
+                        reconnectAttempt = 0
+                    }
+                    if LogseqGraphWebSocketReconnectPolicy.shouldReconnect(store.syncError) {
+                        let delay = LogseqGraphWebSocketReconnectPolicy.delaySeconds(
+                            attempt: reconnectAttempt
+                        )
+                        reconnectAttempt += 1
+                        if !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(delay))
+                        }
+                        continue
+                    }
                     guard store.syncError == nil else { return }
                     let shouldRefresh = LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
                         snapshotRequired: snapshotRequired,

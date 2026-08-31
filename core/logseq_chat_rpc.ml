@@ -76,8 +76,7 @@ type t =
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (graph_id:string -> Model.t) option
-  ; start_sse : (unit -> unit) option
-  ; feed_sse : (string -> (unit, string) result) option
+  ; apply_sync_event : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
   ; mutable accepted_server_t : int option
   ; graph_blocks : (unit -> Model.block list option) option
@@ -1411,8 +1410,7 @@ let create
       ?open_graph
       ?import_snapshot
       ?model_for_graph
-      ?start_sse
-      ?feed_sse
+      ?apply_sync_event
       ?sync_cursor
       ?graph_blocks
       ?graph_sidebar_pages
@@ -1467,8 +1465,7 @@ let create
   ; open_graph
   ; import_snapshot
   ; model_for_graph
-  ; start_sse
-  ; feed_sse
+  ; apply_sync_event
   ; sync_cursor
   ; accepted_server_t = None
   ; graph_blocks
@@ -3080,17 +3077,13 @@ let dispatch session action payload =
         | Error message -> failure ~code:"graph_open_failed" ~message)
      | None, _ -> failure ~code:"graph_open_unavailable" ~message:"Graph storage is unavailable"
      | _, None -> failure ~code:"invalid_params" ~message:"openGraph requires a JSON payload")
-  | "startSSE" ->
-    (match session.start_sse with
-     | Some start_sse ->
-       start_sse ();
-       session.sync_connected <- true;
-       snapshot_visible session
-     | None -> failure ~code:"sse_unavailable" ~message:"SSE sync is unavailable")
-  | "feedSSE" ->
-    (match session.feed_sse, payload with
-     | Some feed_sse, Some chunk ->
-       (match feed_sse chunk with
+  | "startWebSocket" ->
+    session.sync_connected <- true;
+    snapshot_visible session
+  | "applySyncEvent" ->
+    (match session.apply_sync_event, payload with
+     | Some apply_sync_event, Some event ->
+       (match apply_sync_event event with
         | Ok () ->
           reconcile_authoritative_blocks session;
           snapshot_visible session
@@ -3099,12 +3092,13 @@ let dispatch session action payload =
             if String.starts_with ~prefix:"snapshot required:" message
                || String.equal message "sync schema mismatch"
             then "snapshot_required"
-            else "sse_apply_failed"
+            else "websocket_apply_failed"
           in
           failure ~code ~message)
-     | None, _ -> failure ~code:"sse_unavailable" ~message:"SSE sync is unavailable"
-     | _, None -> failure ~code:"invalid_params" ~message:"feedSSE requires a raw chunk")
-  | "stopSSE" ->
+     | None, _ ->
+       failure ~code:"websocket_unavailable" ~message:"WebSocket sync is unavailable"
+     | _, None -> failure ~code:"invalid_params" ~message:"applySyncEvent requires a payload")
+  | "stopWebSocket" ->
     session.sync_connected <- false;
     snapshot_visible session
   | "searchNodes" ->

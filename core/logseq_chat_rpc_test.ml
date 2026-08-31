@@ -1538,10 +1538,51 @@ let () =
 ;;
 
 let () =
+  let applied = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~apply_sync_event:(fun payload ->
+        applied := payload :: !applied;
+        Ok ())
+      ()
+  in
+  let started =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"startWebSocket"}}|}
+    |> from_string
+  in
+  let applied_response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"wire-event"}}|}
+    |> from_string
+  in
+  let stopped =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"stopWebSocket"}}|}
+    |> from_string
+  in
+  let assert_ok label = function
+    | `Assoc fields ->
+      (match assoc "ok" fields with
+       | Some (`Bool true) -> ()
+       | _ -> failwith (label ^ " should succeed"))
+    | _ -> failwith (label ^ " should return an RPC response")
+  in
+  assert_ok "startWebSocket" started;
+  assert_ok "applySyncEvent" applied_response;
+  assert_ok "stopWebSocket" stopped;
+  if !applied <> [ "wire-event" ]
+  then failwith "applySyncEvent should apply exactly one WebSocket event"
+;;
+
+let () =
   let authoritative_blocks = ref [] in
   let session =
     Logseq_chat_rpc.create
-      ~feed_sse:(fun _chunk ->
+      ~apply_sync_event:(fun _event ->
         authoritative_blocks :=
           [ Logseq_chat_model.
               { uuid = "local-self-echo"
@@ -1577,9 +1618,9 @@ let () =
   ignore
     (Logseq_chat_rpc.call
        session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"self-echo"}}|});
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"self-echo"}}|});
   if Logseq_chat_model.pending_blocks session.model <> []
-  then failwith "authoritative SSE self-echo should clear local pending state"
+  then failwith "authoritative WebSocket self-echo should clear local pending state"
 ;;
 
 let () =
@@ -1685,12 +1726,12 @@ let remote_block uuid title =
 
 let () =
   let session =
-    Logseq_chat_rpc.create ~feed_sse:(fun _ -> Error "sync schema mismatch") ()
+    Logseq_chat_rpc.create ~apply_sync_event:(fun _ -> Error "sync schema mismatch") ()
   in
   let response =
     Logseq_chat_rpc.call
       session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"remote-change"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"remote-change"}}|}
     |> from_string
   in
   match response with
@@ -1710,7 +1751,7 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~graph_blocks:(fun () -> Some !authoritative)
-      ~feed_sse:(fun _ ->
+      ~apply_sync_event:(fun _ ->
         authoritative := [ remote_block "editing-sync" "Local draft"; remote_block "remote-sync" "After" ];
         Ok ())
       ()
@@ -1720,7 +1761,7 @@ let () =
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"outlinerEvent","payload":"{\"type\":\"tapBlock\",\"uuid\":\"editing-sync\"}"}}|});
   let synced =
     Logseq_chat_rpc.call session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"remote-change"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"remote-change"}}|}
     |> from_string
   in
   match synced with
@@ -1744,7 +1785,7 @@ let () =
       failwith
         ("sync received while editing must update the visible projection: "
          ^ Yojson.Basic.to_string synced)
-  | _ -> failwith "feedSSE while editing should return a snapshot"
+  | _ -> failwith "applySyncEvent while editing should return a snapshot"
 ;;
 
 let prepare_test_operation operation =
@@ -2685,7 +2726,7 @@ let () =
     | _ -> failwith "pending sync completion must be an object"
   in
   assert_int_equal
-    "a successful batch response projects its accepted cursor before SSE"
+    "a successful batch response projects its accepted cursor before WebSocket echo"
     43
     (required_int "appliedServerT" completion);
   ignore
@@ -2697,13 +2738,13 @@ let () =
     |> pending_request |> Option.get
   in
   assert_int_equal
-    "a successful batch response advances the next pump before its SSE echo"
+    "a successful batch response advances the next pump before its WebSocket echo"
     43
     (required_assoc "bodyObject" second_request |> required_int "t-before")
 ;;
 
 let () =
-  (* A batch acceptance can advance the transport cursor before SSE advances
+  (* A batch acceptance can advance the transport cursor before WebSocket sync advances
      the authoritative graph. New edits must still stage against the graph
      runtime cursor while their request chains from the accepted cursor. *)
   let source = remote_block "accepted-before-sse" "First" in

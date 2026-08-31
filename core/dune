@@ -35,7 +35,6 @@
   logseq_chat_rpc
   logseq_chat_search_index
   logseq_chat_snapshot
-  logseq_chat_sse
   logseq_chat_sync_checkpoint
   logseq_chat_sync_protocol
   logseq_chat_sync_tx
@@ -177,11 +176,6 @@
   logseq_chat_sqlite_test
   logseq_chat_sqlite)
  (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix))
-
-(test
- (name logseq_chat_sse_test)
- (modules logseq_chat_sse_test)
- (libraries logseq_chat_core))
 
 (test
  (name logseq_chat_sync_protocol_test)

@@ -33,7 +33,7 @@ Outliner modes.
 - Chat and Outliner modes use the same mutation commands and safety checks.
 - Ordinary block deletion is supported in both modes through Logseq's `delete-blocks` outliner
   operation. Recycle remains page-only and is not used for blocks.
-- Structural edits remain local-first, durable, idempotent, and compatible with SSE reconciliation.
+- Structural edits remain local-first, durable, idempotent, and compatible with WebSocket reconciliation.
 - The server remains authoritative for Logseq order generation and graph invariants.
 - Encrypted and unencrypted graphs use the same semantic operation envelope.
 - The implementation covers mobile editing needs only. Undo and redo are explicitly excluded.
@@ -196,7 +196,7 @@ transactions, and the platforms never calculate raw Logseq order keys.
 
 The existing serialized pending-sync pump remains the single transport path. The optimistic projection
 is derived from pending intent plus the local graph mirror and does not advance `appliedServerT`.
-Authoritative SSE changes reconcile the projection. This keeps the first implementation small: it does
+Authoritative WebSocket changes reconcile the projection. This keeps the first implementation small: it does
 not introduce a second server operation protocol where an existing semantic route already expresses
 the required operation.
 
@@ -213,7 +213,7 @@ authoritative DataScript db value + ordered pending ops
 ```
 
 The core keeps two distinct DataScript values. `authoritative-db` is restored from and persisted to the
-Logseq `kvs` table and is changed only by snapshot/SSE. `projected-db` is an immutable in-memory result
+Logseq `kvs` table and is changed only by snapshot/WebSocket sync. `projected-db` is an immutable in-memory result
 of applying pending projection transactions with `d/with`; it is never installed as the authoritative
 connection and is never persisted. Thus pending state is represented in one complete DataScript DB for
 reads without becoming server-confirmed graph state.
@@ -312,11 +312,11 @@ pending intent; it does not create an entity in `authoritative-db`.
 
 `read-snapshot` carries `(appliedServerT, opsRevision, projected-db, op-statuses)`. The pair
 `(appliedServerT, opsRevision)` is the cache identity; the projected DB's own basis value is never used
-as a server cursor. The OCaml core serializes snapshot/SSE application and op-log mutation, then
+as a server cursor. The OCaml core serializes snapshot/WebSocket application and op-log mutation, then
 publishes one new immutable read snapshot. Readers hold one snapshot for the duration of a request so
 linked refs, query results, and outline rows cannot observe different overlay revisions.
 
-On any authoritative SSE change, the core commits the new base, reconciles explicit operation IDs when
+On any authoritative WebSocket change, the core commits the new base, reconciles explicit operation IDs when
 available and otherwise checks submitted semantic intents against the new authoritative value, then
 discards the old `projected-db` and every previously compiled projection transaction. It
 validates and recompiles the remaining semantic intents in sequence against the new
@@ -352,7 +352,7 @@ more precise. It does not remove the need for semantic intents, dependencies, op
 state, delete guards, or recompilation on the latest base; DataScript history is not a semantic branch
 merge engine.
 
-Because server `t` and DataScript transaction IDs are different domains, each authoritative SSE apply
+Because server `t` and DataScript transaction IDs are different domains, each authoritative WebSocket apply
 must record their mapping (or store server `t` as transaction metadata). History retention must cover
 the oldest live operation's base. Snapshot replacement can truncate older authoritative history, so
 operation-specific expected values and delete guards remain the durable fallback even with history.
@@ -360,13 +360,13 @@ operation-specific expected values and delete guards remain the durable fallback
 The checked-in `datascript-ocaml` runtime cannot currently be relied upon for this: its compatibility
 `history` returns current facts and `is_history` is false, as documented in
 `datascript-ocaml/docs/upstream_differences.md`. Therefore the initial design stores operation-specific
-expected identities/attributes and guards in `logseq_chat_pending_ops` and uses SSE change identities for conflict
+expected identities/attributes and guards in `logseq_chat_pending_ops` and uses WebSocket change identities for conflict
 detection. A future real history implementation may replace some duplicated version evidence, but it
 must not change the projection or operation lifecycle contracts.
 
 An HTTP 2xx response means only that the server accepted the request. The pending overlay remains and
-DataScript is unchanged until the matching authoritative SSE event is applied. Reconciliation applies
-the SSE change to DataScript and removes the matching pending intent as one published model update, so
+DataScript is unchanged until the matching authoritative WebSocket event is applied. Reconciliation applies
+the WebSocket change to DataScript and removes the matching pending intent as one published model update, so
 the UI does not flicker between optimistic and authoritative values. Restart reconstructs the same
 projection from the authoritative mirror plus the durable pending log.
 
@@ -389,7 +389,7 @@ data: {"format-version":1,"t-before":48192,"t":48193,
 
 Guarded delete responses return `operationId`, `acceptedT`, and whether the request changed the graph.
 The delete remains projected until the local authoritative cursor reaches `acceptedT`. Submitted
-title/property writes without an accepted cursor remain projected until an SSE rebase shows their
+title/property writes without an accepted cursor remain projected until a WebSocket rebase shows their
 exact intended value. An HTTP response never directly mutates the authoritative local mirror.
 
 The operation log is an app-owned table in the selected graph's `graph.sqlite`, next to but outside
@@ -436,7 +436,7 @@ CREATE TABLE logseq_chat_sync_state (
 `payload` is a versioned Transit value for the closed operation type; it is not arbitrary tx-data.
 `sequence` gives deterministic overlay and send order. `base_server_t` records the authoritative
 baseline against which the intent was created and is the initial guarded-delete CAS value. `submitted` means
-a request is in flight, and `accepted` means HTTP succeeded but SSE has not confirmed the graph state.
+a request is in flight, and `accepted` means HTTP succeeded but WebSocket sync has not confirmed the graph state.
 `retryable` remains part of the projection; `conflicted` does not. Explicit dependencies cover edits
 to pending-created blocks and structural operations whose source or target is also pending. SQLite
 foreign keys are enabled for every graph connection, and `ops_revision` increments in the transaction
@@ -444,7 +444,7 @@ that mutates operation rows.
 
 Queued edits to the same still-local block may be coalesced in one SQLite transaction. Submitted or
 accepted rows are immutable; a later edit becomes a new ordered row. Enqueue, coalescing/canceling
-dependent unsent operations, and delete-overlay creation are transactional. SSE reconciliation first
+dependent unsent operations, and delete-overlay creation are transactional. WebSocket reconciliation first
 commits authoritative KVS changes and `applied_server_t`, then removes or advances matching operation
 rows before publishing one new projection. `retryable` and `conflicted` rows retain visible error
 details; explicit discard removes only the op row and reveals the unchanged authoritative mirror.
@@ -548,7 +548,7 @@ The UI hides a pending subtree in both modes. Before transport, the core compare
 mandatory because local preflight cannot close the race. A transport/server failure or 409 removes the
 optimistic overlay, restores the authoritative subtree, and reports the conflict. HTTP 404 is treated
 as idempotent success because the requested block is already absent. Remote deletes continue to arrive
-through SSE and affect both modes.
+through WebSocket sync and affect both modes.
 
 This ADR does not add undo, redo, or restore. Because ordinary blocks do not go to Recycle, the
 confirmation step must state that the block and its descendants will be deleted. This limitation is
@@ -585,7 +585,7 @@ operation set above.
 The server may accept the typed semantic `insert-block`, `split-block`, `merge-backward`, `move-block`,
 and guarded `delete-block-subtree` requests. It must continue to reject raw tx-data, page deletion, arbitrary
 property-schema mutation, and any operation kind not in
-the versioned allowlist. Existing local-first durability and authoritative SSE confirmation rules from
+the versioned allowlist. Existing local-first durability and authoritative WebSocket confirmation rules from
 ADR 001 remain unchanged.
 
 ## Explicitly out of scope
@@ -681,7 +681,7 @@ Implementation proceeds in this order:
 4. Add Outliner rendering and the header mode button on Apple and Android.
 5. Enable title/status/insert/split/merge/move operations.
 6. Enable the shared Chat/Outliner delete command only after server-`t` CAS, every conflict case above,
-   failure rollback, idempotent retry, and SSE-echo tests pass.
+   failure rollback, idempotent retry, and WebSocket-echo tests pass.
 
 The ADR is complete when automated tests demonstrate:
 
@@ -707,7 +707,7 @@ The ADR is complete when automated tests demonstrate:
 - offline delete survives restart, remains hidden as pending in both modes, and is submitted once;
 - retrying an operation ID is idempotent;
 - changed, aggregated, replayed, and idempotent-no-op responses preserve operation identity;
-- authoritative SSE confirmation clears the pending overlay and advances the cursor, while a no-op
+- authoritative WebSocket confirmation clears the pending overlay and advances the cursor, while a no-op
   remains projected until the client reaches and verifies `acceptedT`;
 - encrypted graph operations do not expose protected plaintext to the server;
 - raw transactions, page deletion, page recycle administration, cross-page move, and every

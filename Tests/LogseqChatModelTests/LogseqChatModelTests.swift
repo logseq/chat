@@ -456,16 +456,45 @@ private let testEmptySnapshotJSON = """
     #endif
 
     #if !SKIP
-    @Test func graphEventsRequestResumesFromAuthoritativeCursor() throws {
-        let request = try LogseqGraphSyncHTTP.eventsRequest(
+    @Test func graphWebSocketRequestUsesExistingSyncEndpoint() throws {
+        let request = try LogseqGraphSyncHTTP.webSocketRequest(
             baseURL: "http://127.0.0.1:8787",
             graphID: "plain-1",
-            appliedServerT: 48192,
             accessToken: "fresh-token"
         )
-        #expect(request.url?.absoluteString == "http://127.0.0.1:8787/sync/plain-1/events?since=48192")
+        #expect(request.url?.absoluteString == "ws://127.0.0.1:8787/sync/plain-1")
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fresh-token")
-        #expect(request.value(forHTTPHeaderField: "Accept") == "text/event-stream")
+    }
+
+    @Test func graphWebSocketRequestPreservesSecureTransportAndEscapesGraphID() throws {
+        let request = try LogseqGraphSyncHTTP.webSocketRequest(
+            baseURL: "https://sync.example/api",
+            graphID: "private graph",
+            accessToken: "token"
+        )
+        #expect(request.url?.absoluteString == "wss://sync.example/sync/private%20graph")
+    }
+
+    @Test func graphWebSocketEntityPullMessageCarriesAuthoritativeCursor() throws {
+        #expect(try LogseqGraphWebSocketProtocol.entityPullMessage(since: 48192)
+            == #"{"since":48192,"type":"entity/pull"}"#)
+    }
+
+    @Test func graphWebSocketReconnectUsesBoundedExponentialBackoff() {
+        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 0) == 1)
+        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 1) == 2)
+        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 5) == 30)
+        #expect(LogseqGraphWebSocketReconnectPolicy.delaySeconds(attempt: 20) == 30)
+    }
+
+    @Test func onlyWebSocketConnectionFailuresAutomaticallyReconnect() {
+        #expect(LogseqGraphWebSocketReconnectPolicy.shouldReconnect(
+            LogseqChatCoreError(code: "websocket_connection_failed", message: "offline")
+        ))
+        #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(
+            LogseqChatCoreError(code: "snapshot_required", message: "reset")
+        ))
+        #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(nil))
     }
     #endif
 
@@ -524,38 +553,29 @@ private let testEmptySnapshotJSON = """
     }
 
     #if !SKIP
-    @Test func sseTransportPreservesBlankLineFrameBoundary() throws {
-        var buffer = LogseqGraphSSETransportBuffer()
-        let first = try buffer.append(Data("id: 39\nevent: graph-changes\ndata: payload\n".utf8))
-        let second = try buffer.append(Data("\n".utf8))
-
-        #expect(first.isEmpty)
-        #expect(second == ["id: 39\nevent: graph-changes\ndata: payload\n\n"])
-    }
-
-    @Test func expectedSSECancellationDoesNotPublishAConnectionFailure() {
-        #expect(!LogseqGraphSSEFailurePolicy.shouldReport(
+    @Test func expectedWebSocketCancellationDoesNotPublishAConnectionFailure() {
+        #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
             CancellationError(),
             taskIsCancelled: true
         ))
-        #expect(!LogseqGraphSSEFailurePolicy.shouldReport(
+        #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
             URLError(.cancelled),
             taskIsCancelled: false
         ))
-        #expect(LogseqGraphSSEFailurePolicy.shouldReport(
+        #expect(LogseqGraphWebSocketFailurePolicy.shouldReport(
             URLError(.timedOut),
             taskIsCancelled: false
         ))
     }
 
-    @Test func sseConnectionFailuresHaveUsefulUserFacingMessages() {
-        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.timedOut))
+    @Test func webSocketConnectionFailuresHaveUsefulUserFacingMessages() {
+        #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.timedOut))
             == "The sync server timed out. Check that it is running and reachable, then try again.")
-        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.notConnectedToInternet))
+        #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.notConnectedToInternet))
             == "No network connection. Sync will resume automatically when the network is available.")
-        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.cannotConnectToHost))
+        #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.cannotConnectToHost))
             == "The sync server is unreachable. Check that it is running and reachable.")
-        #expect(LogseqGraphSSEFailurePolicy.userFacingMessage(URLError(.unsupportedURL))
+        #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.unsupportedURL))
             == "The sync server address is invalid.")
     }
     #endif
@@ -1307,7 +1327,7 @@ private let testEmptySnapshotJSON = """
         )
 
         #expect(store.lastError == nil)
-        #expect(store.syncError?.code == "sse_connection_failed")
+        #expect(store.syncError?.code == "websocket_connection_failed")
         #expect(store.syncError?.message == "The sync server address is invalid.")
         store.openNode("page-1")
         try await waitUntil {

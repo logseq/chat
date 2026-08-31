@@ -173,10 +173,10 @@ let () =
         "apply authoritative event"
         (Session.apply_change_set ~conn ~checkpoint_path state change);
       if Logseq_chat_sync_state.applied_server_t state <> 48193
-      then fail "event cursor" "successful SSE event did not advance state";
+      then fail "event cursor" "successful WebSocket event did not advance state";
       match expect_ok "event checkpoint" (Checkpoint.load checkpoint_path) with
       | Some checkpoint when checkpoint.applied_server_t = 48193 -> ()
-      | _ -> fail "event checkpoint" "successful SSE event did not persist cursor")
+      | _ -> fail "event checkpoint" "successful WebSocket event did not persist cursor")
 ;;
 
 let () =
