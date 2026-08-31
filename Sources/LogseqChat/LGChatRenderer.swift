@@ -51,15 +51,16 @@ enum LGChatIconPolicy {
     static var icons: [String: LUIAppleIconSource] {
         var result: [String: LUIAppleIconSource] = [
             "calendar": .assetName("calendar"),
+            "add": .assetName("plus"),
             "chevron-down": .assetName("chevron_down"),
             "document": .assetName("document"),
             "flashcards": .assetName("flashcards"),
             "folder": .assetName("folder"),
-            "graph-local": .systemName("cylinder.split.1x2"),
-            "graph-locked": .systemName("lock"),
-            "graph-remote": .systemName("icloud"),
+            "graph-local": .assetName("folder"),
+            "graph-remote": .assetName("upload"),
             "history": .assetName("history"),
             "more-horiz": .assetName("more_horiz"),
+            "search": .assetName("search"),
             "sidebar-toggle": .assetName("sidebar_toggle"),
             "star": .assetName("star"),
             "status-dot": .assetName("status_dot"),
@@ -69,27 +70,39 @@ enum LGChatIconPolicy {
             "task-done": .assetName("task_done"),
             "task-review": .assetName("task_review"),
             "task-todo": .systemName("circle"),
-            "toolbar-attachment": .systemName("paperclip"),
-            "toolbar-audio": .systemName("mic"),
-            "toolbar-camera": .systemName("camera"),
+            "toolbar-attachment": .assetName("paperclip"),
+            "toolbar-audio": .assetName("toolbar_audio"),
+            "toolbar-camera": .assetName("camera"),
             "composer-photo": .systemName("photo.on.rectangle.angled"),
             "toolbar-copy": .systemName("doc.on.doc"),
             "toolbar-copy-reference": .systemName("r.square"),
             "toolbar-copy-url": .systemName("link"),
             "toolbar-delete": .systemName("trash"),
-            "toolbar-hide-keyboard": .systemName("keyboard.chevron.compact.down"),
-            "toolbar-indent": .systemName("arrow.right"),
-            "toolbar-outdent": .systemName("arrow.left"),
-            "toolbar-tag": .systemName("number"),
-            "toolbar-task": .systemName("checkmark.square"),
+            "toolbar-hide-keyboard": .assetName("toolbar_hide_keyboard"),
+            "toolbar-indent": .assetName("toolbar_indent"),
+            "toolbar-outdent": .assetName("toolbar_outdent"),
+            "toolbar-tag": .assetName("toolbar_tag"),
+            "toolbar-task": .assetName("task_done"),
             "toolbar-unselect": .systemName("xmark"),
         ]
         #if !SKIP
         result["calendar"] = .systemName("calendar")
+        result["add"] = .systemName("plus")
         result["document"] = .systemName("doc.text")
         result["folder"] = .systemName("folder")
+        result["graph-local"] = .systemName("cylinder.split.1x2")
+        result["graph-remote"] = .systemName("icloud")
         result["history"] = .systemName("clock")
+        result["search"] = .systemName("magnifyingglass")
         result["star"] = .systemName("star")
+        result["toolbar-attachment"] = .systemName("paperclip")
+        result["toolbar-audio"] = .systemName("mic")
+        result["toolbar-camera"] = .systemName("camera")
+        result["toolbar-hide-keyboard"] = .systemName("keyboard.chevron.compact.down")
+        result["toolbar-indent"] = .systemName("arrow.right")
+        result["toolbar-outdent"] = .systemName("arrow.left")
+        result["toolbar-tag"] = .systemName("number")
+        result["toolbar-task"] = .systemName("checkmark.square")
         #endif
         return result
     }

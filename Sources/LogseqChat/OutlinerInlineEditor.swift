@@ -51,6 +51,33 @@ struct OutlinerInlineEditor: View {
         #else
         editor
         #endif
+        #elseif SKIP
+        TextField(
+            "Block",
+            text: Binding(
+                get: { text },
+                set: { onTextChange($0, $0.utf16.count) }
+            ),
+            selection: Binding(
+                get: {
+                    let offset = min(max(desiredCaretUTF16Offset ?? text.utf16.count, 0), text.utf16.count)
+                    return TextSelection(range: offset..<offset)
+                },
+                set: { selection in
+                    guard let selection else { return }
+                    switch selection.indices {
+                    case .selection(let range):
+                        onCaretChange(range.lowerBound)
+                    }
+                }
+            ),
+            axis: .vertical
+        )
+            .font(.body)
+            .textFieldStyle(.plain)
+            .fixedSize(horizontal: false, vertical: true)
+            .onSubmit { onReturn(text, text.utf16.count) }
+            .accessibilityIdentifier("field.outliner.block.\(blockID)")
         #else
         TextField(
             "Block",

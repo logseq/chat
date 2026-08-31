@@ -94,7 +94,6 @@ plutil -remove UIDeviceFamily "$contents_dir/Info.plist" 2>/dev/null || true
 plutil -remove UIBackgroundModes "$contents_dir/Info.plist" 2>/dev/null || true
 plutil -remove BGTaskSchedulerPermittedIdentifiers "$contents_dir/Info.plist" 2>/dev/null || true
 
-cp "$swift_build_dir/libLogseqChat.dylib" "$frameworks_dir/libLogseqChat.dylib"
 for bundle in "$swift_build_dir"/*.bundle; do
   [[ -d $bundle ]] || continue
   cp -R "$bundle" "$resources_dir/"
@@ -128,7 +127,6 @@ xcrun actool \
 [[ -f $bundle_resources/Assets.car ]] || die "failed to compile the macOS icon asset catalog"
 
 cp "$swift_build_dir/LogseqChatShell" "$contents_dir/MacOS/LogseqChat"
-codesign --force --sign - --timestamp=none "$frameworks_dir/libLogseqChat.dylib"
 codesign --force --sign - --timestamp=none "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 

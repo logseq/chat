@@ -39,7 +39,8 @@ appId: com.logseq.chat
 - assertVisible:
     text: "close"
 - assertNotVisible: "Cancel"
-- assertNotVisible: "Back"
+- assertNotVisible:
+    id: "BackButton"
 - tapOn: "Search pages and blocks"
 - waitForAnimationToEnd
 - inputText: "x"
@@ -48,7 +49,7 @@ appId: com.logseq.chat
 - tapOn: "Search"
 - extendedWaitUntil:
     visible:
-      id: "search.section.blocks"
+      id: "search.result.*"
     timeout: 10000
 - swipe:
     direction: UP
@@ -57,9 +58,11 @@ appId: com.logseq.chat
 - tapOn:
     id: "search.result.*"
 - extendedWaitUntil:
-    visible: "Back"
+    visible:
+      id: "BackButton"
     timeout: 10000
-- tapOn: "Back"
+- tapOn:
+    id: "BackButton"
 - extendedWaitUntil:
     visible:
       id: "screen.search"

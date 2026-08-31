@@ -1,0 +1,40 @@
+appId: com.logseq.chat
+---
+- runFlow:
+    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible: "Edit block E2E Outliner Fixture"
+    timeout: 30000
+- tapOn: "Edit block E2E Outliner Fixture"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- tapOn:
+    id: "button.outliner.editor.tag"
+- extendedWaitUntil:
+    visible:
+      id: "toolbar.outliner.autocomplete"
+    timeout: 10000
+- tapOn:
+    id: "button.outliner.autocomplete.0"
+- assertNotVisible:
+    id: "toolbar.outliner.autocomplete"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- swipe:
+    start: 80%, 59%
+    end: 15%, 59%
+    duration: 800
+- tapOn:
+    id: "button.outliner.editor.pageReference"
+- extendedWaitUntil:
+    visible:
+      id: "toolbar.outliner.autocomplete"
+    timeout: 10000
+- tapOn:
+    id: "button.outliner.autocomplete.0"
+- assertNotVisible:
+    id: "toolbar.outliner.autocomplete"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertNotVisible: "outliner_effect_failed"

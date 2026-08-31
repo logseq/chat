@@ -1,0 +1,26 @@
+appId: com.logseq.chat
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- extendedWaitUntil:
+    visible:
+      id: "button.graph-switch"
+    timeout: 5000
+- assertVisible:
+    id: "link.sidebar.flashcards"
+- assertVisible:
+    id: "link.sidebar.graphs"
+- tapOn:
+    id: "link.sidebar.graphs"
+- extendedWaitUntil:
+    visible:
+      id: "screen.graphs"
+    timeout: 5000
+- assertNotVisible:
+    id: "button.graph-switch"

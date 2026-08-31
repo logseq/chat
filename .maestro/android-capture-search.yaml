@@ -15,18 +15,26 @@ appId: com.logseq.chat
     id: "button.attachment"
 - assertVisible:
     id: "button.task-status"
+- tapOn:
+    id: "field.composer"
 - inputText: "Android E2E capture"
+- assertVisible:
+    id: "button.send"
+    enabled: true
 - tapOn:
     id: "button.send"
-- assertVisible:
-    id: "field.composer"
-- assertVisible: "Android E2E capture"
-- tapOn: "Android E2E capture"
+- hideKeyboard
+- tapOn:
+    id: "surface.composer.dismiss"
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
     id: "button.search"
-- assertVisible:
-    id: "field.search"
-- inputText: "And"
-- assertVisible: "And"
+- assertVisible: "Search pages and blocks"
+- tapOn:
+    text: "Search pages and blocks"
+- inputText: "Android E2E capture"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Android E2E capture"
+    timeout: 30000

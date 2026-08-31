@@ -14,6 +14,7 @@ all_flows=(
   .maestro/sidebar.yaml
   .maestro/ios-outliner-interactions.yaml
   .maestro/ios-outliner-editor-toolbar.yaml
+  .maestro/ios-outliner-autocomplete-completion.yaml
   .maestro/ios-outliner-continuous-editing.yaml
   .maestro/ios-outliner-empty-block-caret.yaml
   .maestro/ios-outliner-fixture-edit-baseline.yaml
@@ -61,6 +62,7 @@ case $selector in
       .maestro/ios-page-outliner-only.yaml
       .maestro/ios-outliner-interactions.yaml
       .maestro/ios-outliner-editor-toolbar.yaml
+      .maestro/ios-outliner-autocomplete-completion.yaml
       .maestro/ios-outliner-continuous-editing.yaml
       .maestro/ios-outliner-empty-block-caret.yaml
       .maestro/ios-outliner-fixture-edit-baseline.yaml

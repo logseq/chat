@@ -2,15 +2,15 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-control_source="$(rtk sed -n '/private var headerLeadingControl:/,/private var headerTitleText:/p' \
-  "${repo_root}/Sources/LogseqChat/ContentView.swift")"
-if printf '%s\n' "${control_source}" | rtk rg -q 'platformCircleButtonShape\(\)'; then
-  echo "headerLeadingControl overrides the native toolbar button shape" >&2
+control_source="$(rtk sed -n '/^(defui main-header-leading /,/^(defui main-header-title /p' \
+  "${repo_root}/lg/logseq_chat/view.cljc")"
+if printf '%s\n' "${control_source}" | rtk rg -q ':corner-radius'; then
+  echo "main-header-leading overrides the native toolbar button shape" >&2
   exit 1
 fi
 if printf '%s\n' "${control_source}" \
-  | rtk rg -q 'SidebarChromeMetrics\.minimumHitTarget'; then
-  echo "headerLeadingControl overrides the native toolbar control size" >&2
+  | rtk rg -q ':(width|height)[[:space:]]+[0-9]'; then
+  echo "main-header-leading overrides the native toolbar control size" >&2
   exit 1
 fi
 

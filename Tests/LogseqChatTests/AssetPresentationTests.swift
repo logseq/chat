@@ -8,6 +8,8 @@ import LogseqChatModel
         #expect(AssetPresentationPolicy.kind(assetType: "m4a", localPath: nil) == .audio)
         #expect(AssetPresentationPolicy.kind(assetType: nil, localPath: "Assets/voice.wav") == .audio)
         #expect(AssetPresentationPolicy.kind(assetType: "application/pdf", localPath: nil) == .file)
+        #expect(AssetPresentationPolicy.kind(assetType: nil, localPath: "") == .file)
+        #expect(AssetPresentationPolicy.kind(assetType: nil, localPath: "Assets/photo.webp") == .image)
     }
 
     @Test func nodeShareIncludesTextAndEveryUniqueLocalAsset() {

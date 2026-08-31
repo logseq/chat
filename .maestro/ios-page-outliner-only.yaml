@@ -14,7 +14,7 @@ appId: com.logseq.chat
     visible: "E2E Page Target"
     timeout: 10000
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.selected-page"
 - assertNotVisible:
     id: "button.content-mode"
 - assertVisible:

@@ -1216,3 +1216,40 @@ Entries stay concise so work can continue on the highest-signal path.
   authentication. The graph-picker screen predicate now excludes active
   authentication, with a renderer regression test proving the two screens are
   mutually exclusive. A fresh simulator screenshot matches main after rebuild.
+
+# 2026-08-30: Android LUI fixes are validated locally and await publication
+
+- The unpublished LUI revision recorded earlier is no longer the dependency
+  blocker. The app now pins the available remote revision
+  `a1e4ceb0b3784b721b632983497dcbb315cc4f79`, and SwiftPM resolves it without a
+  local-package override.
+- A clean temporary LUI checkout now contains the deliverable fixes: the radio
+  policy is Skip-visible, Android button variants use Material styles, button
+  content padding is honored, and button accessibility identifiers follow the
+  visible label bounds. Its Swift and generated Android builds pass locally.
+- The app builds and passes Android E2E with that local LUI checkout. Publishing
+  the LUI commit and updating this repository's remote revision still require
+  explicit authorization because they change a separate remote repository.
+
+# 2026-08-30: Android signed-out and connected E2E are green
+
+- The Android signed-out flow now proves that Sign in is visible and that the
+  internal authentication error, sidebar, and graph picker are absent. It passes
+  on the API 36 emulator with the rebuilt APK.
+- The reusable Android runner covers signed-out, staging connection, capture,
+  search verification, and custom Maestro flows. The full clean-state suite
+  passes against staging, including OAuth callback task restoration, graph
+  selection, settings, authoritative capture persistence, and search retrieval.
+
+# 2026-08-30: iOS Hosted UI setup and sidebar hit target are green
+
+- The shared iOS graph setup now drives the current Cognito Hosted UI while
+  retaining the legacy inline-login fallback. The complete capture/search,
+  settings, composer, attachment/task, send, and outliner flow passes against
+  staging on iPhone Air; the remaining standalone settings and sync flows reuse
+  the same setup instead of duplicating stale selectors.
+- The native navigation extension used `min(iconWidth, minimumHitTarget)`, which
+  narrowed the sidebar toolbar item to 24 points and produced a 36-by-44
+  accessibility frame. The policy now preserves at least the 44-point system
+  hit target and never shrinks larger content. The rebuilt simulator app exposes
+  an exact 44-by-44 `button.sidebar` frame.

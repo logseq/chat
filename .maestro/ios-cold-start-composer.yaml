@@ -5,8 +5,10 @@ appId: com.logseq.chat
 - stopApp
 - launchApp
 - assertNotVisible: "Choose a graph"
-- assertVisible:
-    id: "list.outliner"
+- extendedWaitUntil:
+    visible:
+      id: "pane.journals"
+    timeout: 30000
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"

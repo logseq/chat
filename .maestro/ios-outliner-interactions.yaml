@@ -59,8 +59,10 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - tapOn:
     text: "Zoom into E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "Back"
-- tapOn: "Back"
+- assertVisible:
+    id: "BackButton"
+- tapOn:
+    id: "BackButton"
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"
@@ -69,7 +71,7 @@ appId: com.logseq.chat
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "list.outliner"
+      id: "pane.journals"
     timeout: 30000
 - scrollUntilVisible:
     element:

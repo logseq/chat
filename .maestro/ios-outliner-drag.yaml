@@ -6,7 +6,7 @@ appId: com.logseq.chat
 - runFlow:
     file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.journals"
 - longPressOn: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible: "Copy"
 - swipe:

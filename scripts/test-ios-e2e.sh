@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 flow=${LOGSEQ_CHAT_IOS_E2E_FLOW:-.maestro/ios-capture-responsive.yaml}
 app_id=${LOGSEQ_CHAT_IOS_APP_ID:-com.logseq.chat}
+app_path=${LOGSEQ_CHAT_IOS_APP_PATH:-$repo_root/.build/LogseqChat.app}
 screenshots_dir="$repo_root/.maestro/screenshots"
 username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
 password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
@@ -24,6 +25,7 @@ case ${flow##*/} in
     ;;
   ios-outliner-mode.yaml|ios-outliner-interactions.yaml|\
   ios-outliner-editor-toolbar.yaml|ios-outliner-continuous-editing.yaml|\
+  ios-outliner-autocomplete-completion.yaml|ios-outliner-autocomplete-visual.yaml|\
   ios-outliner-selection-toolbar.yaml|ios-outliner-hierarchy-navigation.yaml|\
   ios-outliner-drag.yaml)
     graph_name=chat-local-e2e-outliner
@@ -72,7 +74,8 @@ xcrun simctl spawn "$device" defaults delete "$app_id" logseq.baseURL >/dev/null
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.selectedGraphId >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.composerDraft >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.contentMode >/dev/null 2>&1 || true
-xcrun simctl install "$device" "$repo_root/.build/LogseqChat.app"
+[[ -d $app_path ]] || die "iOS app bundle was not found: $app_path"
+xcrun simctl install "$device" "$app_path"
 xcrun simctl spawn "$device" defaults write "$app_id" logseq.baseURL "$base_url"
 
 mkdir -p "$screenshots_dir"

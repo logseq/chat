@@ -4,6 +4,22 @@ appId: com.logseq.chat
     clearState: true
 - runFlow:
     when:
+      visible:
+        id: "button.hosted-sign-in"
+    commands:
+      - tapOn:
+          id: "button.hosted-sign-in"
+      - extendedWaitUntil:
+          visible: "Sign in with your username and password"
+          timeout: 30000
+      - tapOn: "Username Username"
+      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - pressKey: Enter
+      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - hideKeyboard
+      - tapOn: "submit"
+- runFlow:
+    when:
       visible: "Enter your username"
     commands:
       - tapOn:

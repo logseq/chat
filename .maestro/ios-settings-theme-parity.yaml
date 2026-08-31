@@ -1,17 +1,6 @@
 appId: com.logseq.chat
 ---
-- launchApp
-- runFlow:
-    when:
-      visible: "Enter your username"
-    commands:
-      - tapOn: "Enter your username"
-      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
-      - tapOn: "Enter your password"
-      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
-      - tapOn:
-          text: "Sign In"
-          index: 1
+- runFlow: __LOGSEQ_CHAT_E2E_SETUP_FLOW__
 - extendedWaitUntil:
     visible:
       text: "More"

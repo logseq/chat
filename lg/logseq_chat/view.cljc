@@ -576,9 +576,6 @@
 (defn composer-send-disabled? [current]
   (string/blank? (:composer-draft current)))
 
-(defn composer-send-background [current]
-  "black")
-
 (defn task-status-identifier [status]
   (str "button.task-status.option." (:uuid status)))
 
@@ -659,6 +656,11 @@
   (if (string/blank? (:search-query current))
     "Search your graph"
     "No results"))
+
+(defn search-empty-supporting-message [query]
+  (if (string/blank? query)
+    "Find pages and blocks by title or content."
+    "Try a different keyword."))
 
 (defn search-result-row [ui-context hit-source send]
   (let [hit (signal/sample hit-source)]
@@ -951,7 +953,7 @@
   (if (= (:destination current) model/FlashcardsDestination)
     "Flashcards"
     (if (= (:destination current) model/GraphsDestination)
-      "Journals"
+      "Graphs"
       (match (model/active-page current)
         (Some page) (:title page)
         None "Journals"))))
@@ -1284,22 +1286,23 @@
                   (send (model/RequestAppNode (:uuid current-row)))))}]
        [:box {:width 2}]
        [:row {:gap 7 :cross "start" :grow 1.0}
-        [:if {:test has-status-source}
-         [:button
-          {:icon status-icon-source
-           :label status-title-source
-           :variant "ghost"
-           :size "icon"
-           :width 24
-           :height 24
-           :accessibility-identifier "button.block-task-status"}
-          [:context-menu
-           [:keyed
-            {:source (reactive :task-statuses model-source)
-             :key :uuid
-             :compare compare
-             :as status-source}
-            [outliner-task-status-row (:uuid row) status-source send]]]]]
+        [:column {:cross "start"}
+         [:if {:test has-status-source}
+          [:button
+           {:icon status-icon-source
+            :label status-title-source
+            :variant "ghost"
+            :size "icon"
+            :width 24
+            :height 24
+            :accessibility-identifier "button.block-task-status"}
+           [:context-menu
+            [:keyed
+             {:source (reactive :task-statuses model-source)
+              :key :uuid
+              :compare compare
+              :as status-source}
+             [outliner-task-status-row (:uuid row) status-source send]]]]]]
         [:column {:grow 1.0}
          [:if {:test editing-source}
           [outliner-editor-view block-id-source
@@ -1321,18 +1324,19 @@
            {:accessibility-identifier
             (str "outliner.sync-failed." (:uuid row))}
            "Sync failed"]]]
-        [:if {:test has-children-source}
-         [:button
-          {:text (reactive outliner-row-collapse-glyph row-source)
-           :label (reactive outliner-row-collapse-label row-source)
-           :variant "ghost"
-           :width 28
-           :height 28
-           :accessibility-identifier
-           (str "button.outliner.collapse." (:uuid row))
-           :on-press
-           (event [current-row row-source]
-                  (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]]])))
+        [:column {:cross "start"}
+         [:if {:test has-children-source}
+          [:button
+           {:text (reactive outliner-row-collapse-glyph row-source)
+            :label (reactive outliner-row-collapse-label row-source)
+            :variant "ghost"
+            :width 28
+            :height 28
+            :accessibility-identifier
+            (str "button.outliner.collapse." (:uuid row))
+            :on-press
+            (event [current-row row-source]
+                   (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]]]])))
 
 (defn outliner-entry
   [ui-context model-source retained-row-source row-source send]
@@ -1477,6 +1481,13 @@
      [:button
       {:text (reactive outliner-autocomplete-label candidate-source)
        :label (reactive outliner-autocomplete-label candidate-source)
+       :variant "ghost"
+       :grow 1.0
+       :height 44
+       :padding-horizontal 10
+       :background "autocomplete-row-background"
+       :corner-radius 8
+       :text-alignment "start"
        :accessibility-identifier
        (outliner-autocomplete-identifier candidate)
        :on-press
@@ -1486,17 +1497,18 @@
                 (:value current-candidate))))}])))
 
 (defui outliner-autocomplete-bar [model-source send]
-  [:toolbar
-   {:orientation "vertical"
-    :label "Outliner autocomplete"
+  [:scroll
+   {:max-height 220
     :accessibility-identifier "toolbar.outliner.autocomplete"
-    :gap 2}
-   [:keyed
-    {:source (reactive :outliner-autocomplete-candidates model-source)
-     :key :index
-     :compare compare
-     :as candidate-source}
-    [outliner-autocomplete-row candidate-source send]]])
+    :class "outliner-autocomplete"}
+   [:column
+    {:gap 2 :padding 8 :grow 1.0}
+    [:keyed
+     {:source (reactive :outliner-autocomplete-candidates model-source)
+      :key :index
+      :compare compare
+      :as candidate-source}
+     [outliner-autocomplete-row candidate-source send]]]])
 
 (defui outliner-editor-toolbar [model-source send]
   [:toolbar
@@ -1710,6 +1722,150 @@
 
 (declare task-status-picker-dialog)
 
+(defui composer-attachment-button [send]
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (elements/element
+     ui-context nil
+     [:button
+      {:icon "plus"
+       :variant "ghost"
+       :label "Add attachment"
+      :accessibility-identifier "button.attachment"
+       :on-press (fn [_event] (send model/OpenAttachmentPicker))}
+      "Attach"
+      [:context-menu
+       [:menu-item
+        {:icon "app:toolbar-attachment"
+         :accessibility-identifier "button.attachment.files"
+         :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
+        "File"]
+       [:menu-item
+        {:icon "app:toolbar-camera"
+         :accessibility-identifier "button.attachment.camera"
+         :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
+        "Camera"]
+       [:menu-item
+        {:icon "app:composer-photo"
+         :accessibility-identifier "button.attachment.photos"
+         :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
+        "Photo"]
+       [:menu-item
+        {:icon "app:toolbar-audio"
+         :accessibility-identifier "button.attachment.audio"
+         :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
+        "Audio recording"]]])
+    (elements/element
+     ui-context nil
+     [:button
+      {:icon "plus"
+       :variant "ghost"
+       :size "icon"
+       :width 32
+       :height 32
+       :label "Add attachment"
+       :accessibility-identifier "button.attachment"
+       :on-press (fn [_event] (send model/OpenAttachmentPicker))}
+      [:context-menu
+       [:menu-item
+        {:icon "app:toolbar-attachment"
+         :accessibility-identifier "button.attachment.files"
+         :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
+        "File"]
+       [:menu-item
+        {:icon "app:toolbar-camera"
+         :accessibility-identifier "button.attachment.camera"
+         :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
+        "Camera"]
+       [:menu-item
+        {:icon "app:composer-photo"
+         :accessibility-identifier "button.attachment.photos"
+         :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
+        "Photo"]
+       [:menu-item
+        {:icon "app:toolbar-audio"
+         :accessibility-identifier "button.attachment.audio"
+         :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
+        "Audio recording"]]])))
+
+(defui composer-task-status-button [send]
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (elements/element
+     ui-context nil
+     [:button
+      {:icon "app:task-todo"
+       :variant "ghost"
+       :foreground "border"
+       :label "Task status"
+       :accessibility-identifier "button.task-status"
+       :on-press (fn [_event] (send model/OpenTaskStatusPicker))}
+      "Task"])
+    (elements/element
+     ui-context nil
+     [:button
+      {:icon "app:task-todo"
+       :variant "ghost"
+       :size "icon"
+       :width 32
+       :height 32
+       :foreground "border"
+       :label "Task status"
+       :accessibility-identifier "button.task-status"
+       :on-press (fn [_event] (send model/OpenTaskStatusPicker))}])))
+
+(defui android-composer-send-button [disabled-source send]
+  [:button
+   {:icon "arrow-up"
+    :variant "primary"
+    :label "Send"
+    :accessibility-identifier "button.send"
+    :disabled disabled-source
+    :on-press (fn [_event] (send model/SendComposer))}
+   "Send"])
+
+(defui apple-composer-send-button [disabled-source send]
+  [:button
+   {:icon "arrow-up"
+    :variant "ghost"
+    :width 40
+    :height 40
+    :background "black"
+    :foreground "white"
+    :corner-radius 20
+    :label "Send"
+    :accessibility-identifier "button.send"
+    :disabled disabled-source
+    :on-press (fn [_event] (send model/SendComposer))}])
+
+(defui composer-send-button [disabled-source send]
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (android-composer-send-button ui-context disabled-source send)
+    (apple-composer-send-button ui-context disabled-source send)))
+
+(defui collapsed-composer-button [send]
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (elements/element
+     ui-context nil
+     [:button
+      {:variant "ghost"
+       :height 58
+       :padding-horizontal 30
+       :foreground "muted-foreground"
+       :accessibility-identifier "button.composer.expand"
+       :on-press (fn [_event] (send model/ExpandComposer))}
+      "Capture"])
+    (elements/element
+     ui-context nil
+     [:button
+      {:variant "ghost"
+       :ios [[:liquid-glass {:shape "capsule"}]]
+       :grow 1.0
+       :height 58
+       :padding-horizontal 30
+       :foreground "muted-foreground"
+       :accessibility-identifier "button.composer.expand"
+       :on-press (fn [_event] (send model/ExpandComposer))}
+      "Capture"])))
+
 (defui composer-view [model-source send]
   [:box
    {:accessibility-identifier "surface.composer.root"
@@ -1749,75 +1905,18 @@
       {:gap 8
        :cross-alignment "center"
        :accessibility-identifier "row.composer.controls"}
-      [:button
-       {:icon "plus"
-        :variant "ghost"
-        :size "icon"
-        :width 32
-        :height 32
-        :label "Add attachment"
-        :accessibility-identifier "button.attachment"
-        :on-press (fn [_event] (send model/OpenAttachmentPicker))}
-       [:context-menu
-        [:menu-item
-         {:icon "app:toolbar-attachment"
-          :accessibility-identifier "button.attachment.files"
-          :on-press (fn [_event] (send (model/ChooseAttachment "files")))}
-         "File"]
-        [:menu-item
-         {:icon "app:toolbar-camera"
-          :accessibility-identifier "button.attachment.camera"
-          :on-press (fn [_event] (send (model/ChooseAttachment "camera")))}
-         "Camera"]
-        [:menu-item
-         {:icon "app:composer-photo"
-          :accessibility-identifier "button.attachment.photos"
-          :on-press (fn [_event] (send (model/ChooseAttachment "photos")))}
-         "Photo"]
-        [:menu-item
-         {:icon "app:toolbar-audio"
-          :accessibility-identifier "button.attachment.audio"
-          :on-press (fn [_event] (send (model/ChooseAttachment "audio")))}
-         "Audio recording"]]]
+      [composer-attachment-button send]
       [:stack
-       [:button
-        {:icon "app:task-todo"
-         :variant "ghost"
-         :size "icon"
-         :width 32
-         :height 32
-         :foreground "border"
-         :label "Task status"
-         :accessibility-identifier "button.task-status"
-         :on-press (fn [_event] (send model/OpenTaskStatusPicker))}]
+       [composer-task-status-button send]
        [:if {:test (reactive :task-status-picker-open model-source)}
         [task-status-picker-dialog model-source send]]]
       [:spacer
        {:grow 1.0
         :accessibility-identifier "spacer.composer.controls"}]
-      [:button
-       {:icon "arrow-up"
-        :variant "ghost"
-        :width 40
-        :height 40
-        :background-signal (reactive composer-send-background model-source)
-        :foreground "white"
-        :corner-radius 20
-        :label "Send"
-        :accessibility-identifier "button.send"
-        :disabled (reactive composer-send-disabled? model-source)
-        :on-press (fn [_event] (send model/SendComposer))}]]]]
+      [composer-send-button
+       (reactive composer-send-disabled? model-source) send]]]]
    [:if {:test (reactive composer-collapsed? model-source)}
-    [:button
-     {:variant "ghost"
-     :ios [[:liquid-glass {:shape "capsule"}]]
-      :grow 1.0
-      :height 58
-      :padding-horizontal 30
-      :foreground "muted-foreground"
-      :accessibility-identifier "button.composer.expand"
-      :on-press (fn [_event] (send model/ExpandComposer))}
-     "Capture"]]])
+    [collapsed-composer-button send]]])
 
 (defn task-status-row [ui-context status-source send]
   (let [status (signal/sample status-source)]
@@ -2057,9 +2156,14 @@
      {:accessibility-identifier "layout.flashcards.empty"
       :grow 1.0
       :main "center"
-      :cross "center"
-      :gap 10
-      :padding 32}
+     :cross "center"
+     :gap 10
+     :padding 32}
+     [:icon
+      {:name "app:flashcards"
+       :width 48
+       :height 48
+       :foreground "muted-foreground"}]
      [:heading
       {:level 3
        :accessibility-identifier "flashcards.empty"}
@@ -2067,7 +2171,7 @@
      [:text
       {:text-alignment "center"
        :foreground "muted-foreground"}
-      "Tag a block with #Card to add it to Flashcards."]]]
+      "Tag any block with #Card to review it here."]]]
    [:if {:test (reactive flashcards-present? model-source)}
     [flashcard-review-content model-source send]]])
 
@@ -2102,7 +2206,7 @@
 (defn graph-icon-name [local? graph]
   (if local?
     "app:graph-local"
-    (if (:is-encrypted graph) "app:graph-locked" "app:graph-remote")))
+    "app:graph-remote"))
 
 (defn local-graphs [current]
   (filterv
@@ -2225,6 +2329,7 @@
       {:icon (reactive (fn [current-graph]
                          (graph-icon-name local? current-graph))
                        graph-source)
+       :min-height 56
        :accessibility-identifier (graph-identifier graph)
        :disabled (if local?
                    (reactive graph-delete-active? model-source graph-source)
@@ -2239,7 +2344,12 @@
          {:class "caption"
           :foreground "muted-foreground"
           :accessibility-identifier (graph-status-identifier graph)}
-         "Preparing"]]]
+         "Preparing"]]
+       [:if {:test (reactive :is-encrypted graph-source)}
+        [:text
+         {:class "caption"
+          :foreground "muted-foreground"}
+         "Encrypted"]]]
       [:context-menu
        {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
@@ -2399,10 +2509,10 @@
      "Unlock"]]])
 
 (defui graphs-screen [model-source send]
-  [:list {:accessibility-identifier "screen.graphs"}
+  [:list {:accessibility-identifier "screen.graphs"
+          :gap 4}
    [:list-item
-    {:icon "refresh-cw"
-     :min-height 44
+    {:min-height 56
      :accessibility-identifier "button.graphs.refresh"
      :disabled (reactive model/graph-refresh-active? model-source)
      :on-press (fn [_event] (send model/RefreshGraphs))}
@@ -2410,31 +2520,31 @@
    [:if {:test (reactive model/graph-refresh-active? model-source)}
     [:spinner {:accessibility-identifier "graphs.loading"}]]
    [:list-item
-    {:min-height 44
+    {:icon "app:add"
+     :min-height 56
      :accessibility-identifier "button.graph-add"
      :on-press (fn [_event] (send model/OpenCreateGraph))}
     "Add sync graph"]
-   [:heading {:level 5} "Local graphs:"]
+   [:box {:padding-horizontal 16}
+    [:heading {:level 5} "Local graphs"]]
    [:if {:test (reactive local-graphs-empty? model-source)}
-    [:text "No local graphs"]]
+    [:box {:padding-horizontal 16}
+     [:text "No local graphs"]]]
    [:keyed
     {:source (reactive local-graphs model-source)
      :key :id
      :compare compare
      :as graph-source}
-    [graph-list-row model-source graph-source true send]]
+   [graph-list-row model-source graph-source true send]]
    [:if {:test (reactive remote-graphs-present? model-source)}
-    [:heading {:level 5} "Remote graphs:"]]
+    [:box {:padding-horizontal 16}
+     [:heading {:level 5} "Remote graphs"]]]
    [:keyed
-    {:source (reactive remote-graphs model-source)
+   {:source (reactive remote-graphs model-source)
      :key :id
      :compare compare
      :as graph-source}
-    [graph-list-row model-source graph-source false send]]
-   [:if {:test (reactive :create-graph-open model-source)}
-    [graph-create-sheet model-source send]]
-   [:if {:test (reactive graph-deletion-pending? model-source)}
-    [graph-delete-dialog model-source send]]])
+    [graph-list-row model-source graph-source false send]]])
 
 (defui graph-picker-screen [model-source send]
   [:column
@@ -2474,9 +2584,7 @@
        :key :id
        :compare compare
        :as graph-source}
-      [graph-row model-source graph-source false send]]]]
-   [:if {:test (reactive :create-graph-open model-source)}
-    [graph-create-sheet model-source send]]])
+      [graph-row model-source graph-source false send]]]]])
 
 (defn settings-main-visible? [current]
   (and (not (:settings-tabs-open current))
@@ -3124,7 +3232,6 @@
        {:value (reactive sync-error-message model-source)
         :foreground "red"
         :accessibility-identifier "sync.error"}]]]
-    [:heading {:level 5} ""]
     [:button
      {:accessibility-identifier "button.sync-now"
       :on-press (fn [_event] (send model/SyncNow))}
@@ -3145,11 +3252,25 @@
    {:grow 1.0
     :accessibility-identifier "screen.search"}
    [:if {:test (reactive search-empty-state-present? model-source)}
-    [:column {:grow 1.0 :main "center"}
-     [:row {:main "center"}
-      [:text
-       {:value (reactive search-empty-message model-source)
-        :accessibility-identifier "search.empty"}]]]]
+    [:column {:grow 1.0
+              :main "center"
+              :cross "center"
+              :gap 10
+              :padding 32}
+     [:icon {:name "app:search"
+             :width 48
+             :height 48
+             :foreground "muted-foreground"
+             :accessibility-identifier "search.empty.icon"}]
+     [:text {:value (reactive search-empty-message model-source)
+             :class "headline"
+             :text-alignment "center"
+             :accessibility-identifier "search.empty"}]
+     [:text {:value (reactive search-empty-supporting-message
+                              (reactive :search-query model-source))
+             :foreground "muted-foreground"
+             :text-alignment "center"
+             :accessibility-identifier "search.empty.supporting"}]]]
    [:if {:test (reactive search-results-present? model-source)}
     [:list {:accessibility-identifier "screen.search.results"}
      [:if {:test (reactive page-search-results-present? model-source)}
@@ -3172,6 +3293,44 @@
        :compare compare
        :as hit-source}
       [search-result-row hit-source send]]]]])
+
+(defui capture-and-search-row [model-source send]
+  (if (= (ui/platform ui-context) proto/AndroidOS)
+    (elements/element
+     ui-context nil
+     [:row
+      {:grow 1.0
+       :gap 10
+       :cross "center"
+      :accessibility-identifier "row.bottom.capture"}
+      [composer-view model-source send]
+      [:button
+       {:icon "search"
+        :variant "secondary"
+        :size "icon"
+        :width 58
+        :height 58
+        :label "Search"
+        :accessibility-identifier "button.search"
+        :on-press (fn [_event] (send model/OpenSearch))}]])
+    (elements/element
+     ui-context nil
+     [:row
+      {:grow 1.0
+       :gap 10
+       :cross "center"
+       :accessibility-identifier "row.bottom.capture"}
+      [composer-view model-source send]
+      [:button
+       {:icon "search"
+        :variant "ghost"
+        :ios [[:liquid-glass {:shape "circle"}]]
+        :size "icon"
+        :width 58
+        :height 58
+        :label "Search"
+        :accessibility-identifier "button.search"
+        :on-press (fn [_event] (send model/OpenSearch))}]])))
 
 (defui main-bottom-chrome [model-source send]
   [:stack
@@ -3202,22 +3361,7 @@
       :gap 0
       :padding-horizontal 16}
      [:box {:height 8}]
-     [:row
-      {:grow 1.0
-       :gap 10
-       :cross "center"
-       :accessibility-identifier "row.bottom.capture"}
-      [composer-view model-source send]
-      [:button
-       {:icon "search"
-        :variant "ghost"
-        :ios [[:liquid-glass {:shape "circle"}]]
-        :size "icon"
-        :width 58
-        :height 58
-        :label "Search"
-        :accessibility-identifier "button.search"
-        :on-press (fn [_event] (send model/OpenSearch))}]]
+     [capture-and-search-row model-source send]
      [:box {:height 21}]]]])
 
 (defn selected-page-present? [current]
@@ -3248,7 +3392,9 @@
      :class "retained-pane"
      :selected visible-source
      :accessibility-identifier "list.outliner"}
-    [:box {:height 16}]
+    [:box
+     {:height 16
+      :accessibility-identifier "spacer.outliner.top"}]
     [:if {:test (reactive selected-page-content-title-visible? model-source)}
      [:column {:gap 0}
       [:box {:height 26}]
@@ -3600,6 +3746,10 @@
      [authentication-screen model-source send]]
     [:if {:test (reactive :settings-open model-source)}
      [settings-sheet model-source send]]
+    [:if {:test (reactive :create-graph-open model-source)}
+     [graph-create-sheet model-source send]]
+    [:if {:test (reactive graph-deletion-pending? model-source)}
+     [graph-delete-dialog model-source send]]
     [:if {:test (reactive :graph-password-open model-source)}
      [graph-password-sheet model-source send]]
     [:if {:test (reactive page-deletion-pending? model-source)}

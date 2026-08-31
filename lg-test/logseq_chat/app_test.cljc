@@ -2288,8 +2288,9 @@
           empty-state
           (descendant-with-identifier renderer screen "layout.flashcards.empty")
           empty-children (apple/children renderer empty-state)
-          empty-title (nth empty-children 0)
-          empty-description (nth empty-children 1)]
+          empty-icon (nth empty-children 0)
+          empty-title (nth empty-children 1)
+          empty-description (nth empty-children 2)]
       (is (not (= -1 empty-state))
           "an empty due queue preserves the existing empty state")
       (assert-equal (Some apple/AppleColumn)
@@ -2310,6 +2311,9 @@
       (assert-equal "center"
                     (property-string renderer empty-state proto/CrossAlignment)
                     "the empty state is horizontally centered like main")
+      (assert-equal "app:flashcards"
+                    (property-string renderer empty-icon proto/IconName)
+                    "the empty state uses the flashcards navigation icon")
       (assert-equal 3
                     (property-int renderer empty-title proto/HeadingLevel)
                     "the empty title uses main's title2 typography")
@@ -2487,10 +2491,11 @@
                       "graph deletion does not add an icon absent from main")
         (driver/dispatch-event! application (proto/Press add))
         (driver/flush! application)
-        (let [form
-              (descendant-with-identifier renderer screen "form.graph-create")
+        (let [application-root (driver/root-node application)
+              form
+              (descendant-with-identifier renderer application-root "form.graph-create")
               toolbar
-              (descendant-with-identifier renderer screen "toolbar.graph-create")]
+              (descendant-with-identifier renderer application-root "toolbar.graph-create")]
           (is (not (= -1 form)) "graph fields use one native form group")
           (is (not (= -1 toolbar)) "graph actions use the navigation toolbar")
           (when (and (not (= -1 form)) (not (= -1 toolbar)))
@@ -2902,6 +2907,9 @@
           search (descendant-with-identifier renderer chrome "button.search")
           capture (descendant-with-identifier
                    renderer chrome "button.composer.expand")
+          top-inset
+          (descendant-with-identifier
+           renderer (driver/root-node application) "spacer.outliner.top")
           capture-glass
           (descendant-with-extension
            renderer application chrome "liquid-glass")]
@@ -2913,11 +2921,66 @@
                     "Search keeps main's native 58-point hit target")
       (assert-equal "icon" (property-string renderer search proto/SizeValue)
                     "Search uses the native 24-point icon size policy")
+      (assert-equal 16 (property-int renderer top-inset proto/HeightValue)
+                    "iOS keeps main's compact native-navigation inset")
       (assert-equal 30 (property-int renderer capture proto/PaddingHorizontal)
                     "Capture insets its label without moving its glass surface.")
       (assert-equal None
                     (extension-property application capture-glass "leading-inset")
                     "Liquid Glass remains independent from app content spacing"))))
+
+(deftest android-capture-controls-use-material-layout
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/SwiftUIHost))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [chrome (native-bottom-chrome renderer application)
+          search (descendant-with-identifier renderer chrome "button.search")
+          capture
+          (descendant-with-identifier renderer chrome "button.composer.expand")
+          top-inset
+          (descendant-with-identifier
+           renderer (driver/root-node application) "spacer.outliner.top")]
+      (assert-equal "secondary"
+                    (property-string renderer search proto/VariantValue)
+                    "Android Search uses the filled-tonal Material action")
+      (assert-equal "icon"
+                    (property-string renderer search proto/SizeValue)
+                    "Android Search uses an icon-only action")
+      (assert-equal 58 (property-int renderer search proto/WidthValue)
+                    "Android Search keeps a fixed 58-point hit target")
+      (assert-equal 58 (property-int renderer search proto/HeightValue)
+                    "Android Search keeps a fixed 58-point hit target")
+      (assert-equal -1.0 (property-float renderer capture proto/GrowValue)
+                    "Android Capture does not force the iOS capsule width")
+      (assert-equal 16 (property-int renderer top-inset proto/HeightValue)
+                    "Android keeps the shared outliner content inset")
+      (driver/dispatch-event! application (proto/Press capture))
+      (driver/flush! application)
+      (let [controls
+            (descendant-with-identifier
+             renderer chrome "row.composer.controls")
+            attachment
+            (descendant-with-identifier renderer controls "button.attachment")
+            task-status
+            (descendant-with-identifier renderer controls "button.task-status")
+            send-button
+            (descendant-with-identifier renderer controls "button.send")]
+        (assert-equal "Attach"
+                      (property-string renderer attachment proto/TextValue)
+                      "Android attachment action includes a visible label")
+        (assert-equal "Task"
+                      (property-string renderer task-status proto/TextValue)
+                      "Android task action includes a visible label")
+        (assert-equal "primary"
+                      (property-string renderer send-button proto/VariantValue)
+                      "Android Send uses the primary Material action")
+        (assert-equal "Send"
+                      (property-string renderer send-button proto/TextValue)
+                      "Android Send includes a visible action label")))))
 
 (deftest composer-dismissal-preserves-an-unsent-draft
   (let [expanded (model/update (model/initial) model/ExpandComposer)
@@ -3316,10 +3379,10 @@
                   (view/main-title
                    (assoc initial :destination model/FlashcardsDestination))
                   "flashcards use their destination title")
-    (assert-equal "Journals"
+    (assert-equal "Graphs"
                   (view/main-title
                    (assoc initial :destination model/GraphsDestination))
-                  "graphs preserve main's root header title")))
+                  "graphs use their destination title")))
 
 (deftest native-header-title-follows-the-optimistic-navigation-path
   (let [initial (model/initial)
@@ -4302,12 +4365,22 @@
           (child-with-identifier
            renderer (main-root renderer application) "screen.search")
           empty-state
-          (descendant-with-identifier renderer panel "search.empty")]
+          (descendant-with-identifier renderer panel "search.empty")
+          empty-icon
+          (descendant-with-identifier renderer panel "search.empty.icon")
+          empty-supporting
+          (descendant-with-identifier renderer panel "search.empty.supporting")]
       (assert-equal 1.0 (property-float renderer panel proto/GrowValue)
                     "native search content fills the presentation viewport")
       (assert-equal "Search your graph"
                     (property-string renderer empty-state proto/TextValue)
                     "an empty query explains the search entry state")
+      (assert-equal (Some apple/AppleIcon)
+                    (apple/node renderer empty-icon)
+                    "search empty states use the shared search icon")
+      (assert-equal "Find pages and blocks by title or content."
+                    (property-string renderer empty-supporting proto/TextValue)
+                    "search empty states explain what can be found")
       (driver/send! application (model/ChangeSearchQuery "missing"))
       (driver/send! application (model/ApplySearchResults "missing" []))
       (driver/flush! application)
@@ -4903,7 +4976,10 @@
           (descendant-extension-containing-identifier
            renderer application chrome "liquid-glass"
            "toolbar.outliner.editor")
-          candidate-button (nth (apple/children renderer autocomplete-bar) 0)
+          autocomplete-column (nth (apple/children renderer autocomplete-bar) 0)
+          candidate-button
+          (descendant-with-identifier renderer autocomplete-column
+                                      "button.outliner.autocomplete.0")
           editor-toolbar
           (descendant-with-identifier renderer chrome "toolbar.outliner.editor")
           editor-buttons (apple/children renderer editor-toolbar)
@@ -4921,10 +4997,38 @@
                     (property-string renderer candidate-button
                                      proto/AccessibilityIdentifier)
                     "autocomplete numbers the first visible candidate from zero")
-      (assert-equal "vertical"
-                    (property-string renderer autocomplete-bar
-                                     proto/OrientationValue)
-                    "autocomplete candidates retain their vertical layout")
+      (assert-equal (Some apple/AppleScrollView)
+                    (apple/node renderer autocomplete-bar)
+                    "autocomplete uses main's vertically scrolling surface")
+      (assert-equal 220
+                    (property-int renderer autocomplete-bar proto/MaxHeight)
+                    "autocomplete keeps main's maximum height")
+      (assert-equal 8
+                    (property-int renderer autocomplete-column proto/PaddingValue)
+                    "autocomplete keeps main's outer padding")
+      (assert-equal 2
+                    (property-int renderer autocomplete-column proto/Gap)
+                    "autocomplete keeps main's row spacing")
+      (assert-equal 44
+                    (property-int renderer candidate-button proto/HeightValue)
+                    "autocomplete rows keep main's touch target height")
+      (assert-equal 1.0
+                    (property-float renderer candidate-button proto/GrowValue)
+                    "autocomplete rows fill the available width")
+      (assert-equal 10
+                    (property-int renderer candidate-button
+                                  proto/PaddingHorizontal)
+                    "autocomplete labels keep main's horizontal inset")
+      (assert-equal "autocomplete-row-background"
+                    (property-string renderer candidate-button
+                                     proto/BackgroundValue)
+                    "autocomplete rows use the shared main-matching background")
+      (assert-equal 8
+                    (property-int renderer candidate-button proto/CornerRadius)
+                    "autocomplete rows keep main's corner radius")
+      (assert-equal "start"
+                    (property-string renderer candidate-button proto/TextAlignment)
+                    "autocomplete labels align like main")
       (assert-equal "scroll-leading leading-inset-8"
                     (property-string renderer editor-toolbar proto/StyleClass)
                     "the editor keeps hide-keyboard visible with main's inset")

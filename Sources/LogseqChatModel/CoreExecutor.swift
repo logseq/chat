@@ -1,7 +1,7 @@
 import Foundation
+#if !SKIP
 import LogseqChatCoreABI
 
-#if !SKIP
 enum LogseqChatCorePriority: Int, Sendable {
     case maintenance
     case normal

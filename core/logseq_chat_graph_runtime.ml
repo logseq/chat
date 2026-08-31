@@ -172,6 +172,12 @@ let safe_to_rebase = function
   | Ops.Delete_blocks _ -> false
 ;;
 
+let inserted_result_exists db = function
+  | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ } ->
+    Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
+  | _ -> false
+;;
+
 let split_result_exists db = function
   | Ops.Split_block { new_uuid; _ } ->
     Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid new_uuid))
@@ -179,7 +185,9 @@ let split_result_exists db = function
 ;;
 
 let committed_despite_later_changes ~server_t authoritative (operation : Ops.t) =
-  match operation.state with
+  if inserted_result_exists authoritative operation.intent
+  then true
+  else match operation.state with
   | Ops.Accepted accepted_t ->
     accepted_t <= server_t && split_result_exists authoritative operation.intent
   | Ops.Submitted -> split_result_exists authoritative operation.intent

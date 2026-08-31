@@ -5,9 +5,9 @@ appId: com.logseq.chat
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "list.outliner"
+      id: "pane.journals"
     timeout: 30000
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.journals"
 - assertNotVisible:
     id: "button.content-mode"

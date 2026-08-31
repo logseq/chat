@@ -29,10 +29,15 @@ struct LGChatRendererTests {
         #expect(LGChatNavigationSurfacePolicy.bottomPadding(
             occupiesLayoutSpace: true
         ) == 7)
+        #expect(LGChatNavigationSurfacePolicy.androidContentTopPadding == 0)
         #expect(LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
             iconWidth: 24,
             minimumHitTarget: 44
-        ) == 24)
+        ) == 44)
+        #expect(LGChatNavigationSurfacePolicy.systemToolbarItemWidth(
+            iconWidth: 48,
+            minimumHitTarget: 44
+        ) == 48)
     }
 
     @Test("audio assets use the inline player when a local file is available")

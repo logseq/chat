@@ -14,8 +14,7 @@ enum AssetPresentationKind: Equatable {
 
 enum AssetPresentationPolicy {
     static func kind(assetType: String?, localPath: String?) -> AssetPresentationKind {
-        let pathExtension = localPath.map { URL(fileURLWithPath: $0).pathExtension }
-        let normalizedType = (assetType ?? pathExtension ?? "").lowercased()
+        let normalizedType = (assetType ?? pathExtension(localPath)).lowercased()
         if normalizedType.hasPrefix("image/")
             || ["jpg", "jpeg", "png", "gif", "heic", "webp"].contains(normalizedType) {
             return .image
@@ -25,6 +24,13 @@ enum AssetPresentationPolicy {
             return .audio
         }
         return .file
+    }
+
+    private static func pathExtension(_ path: String?) -> String {
+        guard let fileName = path?.split(separator: "/").last else { return "" }
+        let components = fileName.split(separator: ".", omittingEmptySubsequences: false)
+        guard components.count > 1 else { return "" }
+        return String(components.last ?? "")
     }
 }
 

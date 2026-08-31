@@ -5,19 +5,22 @@ import UIKit
 #endif
 
 enum LGChatNavigationSurfacePolicy {
+    static let androidContentTopPadding = CGFloat(0)
+    static let androidDestinationContentTopPadding = CGFloat(56)
+
     static func usesSystemGroupedBackground(contentPreference: Bool) -> Bool {
         contentPreference
     }
 
     static func bottomPadding(occupiesLayoutSpace: Bool) -> CGFloat {
-        occupiesLayoutSpace ? 7 : 0
+        occupiesLayoutSpace ? CGFloat(7) : CGFloat(0)
     }
 
     static func systemToolbarItemWidth(
         iconWidth: CGFloat,
         minimumHitTarget: CGFloat
     ) -> CGFloat {
-        min(iconWidth, minimumHitTarget)
+        max(iconWidth, minimumHitTarget)
     }
 }
 
@@ -489,7 +492,7 @@ private struct LGChatNavigationContent: View {
 
     private var navigationStack: some View {
         NavigationStack(path: pathBinding) {
-            transformedRootContent
+            rootNavigationSurface
                 .frame(
                     maxWidth: .infinity,
                     maxHeight: .infinity,
@@ -516,6 +519,7 @@ private struct LGChatNavigationContent: View {
                 }
                 .navigationDestination(for: Int.self) { childID in
                     context.content(for: childID)
+                        .padding(.top, destinationContentTopPadding)
                         .frame(
                             maxWidth: .infinity,
                             maxHeight: .infinity,
@@ -530,14 +534,9 @@ private struct LGChatNavigationContent: View {
                             destinationTrailingToolbar
                         }
                 }
+                #if !SKIP
                 .toolbar {
                     if let toolbarStartIndex {
-                        #if SKIP
-                        ToolbarItemGroup(placement: .navigation) {
-                            context.content(for: context.childIDs[toolbarStartIndex])
-                            context.content(for: context.childIDs[toolbarStartIndex + 1])
-                        }
-                        #else
                         if #available(iOS 26.0, macOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
                                 let childID = context.childIDs[toolbarStartIndex]
@@ -564,13 +563,6 @@ private struct LGChatNavigationContent: View {
                                     .fixedSize(horizontal: true, vertical: false)
                             }
                         }
-                        #endif
-                        #if SKIP
-                        ToolbarItemGroup(placement: .primaryAction) {
-                            context.content(for: context.childIDs[toolbarStartIndex + 2])
-                            context.content(for: context.childIDs[toolbarStartIndex + 3])
-                        }
-                        #else
                         #if os(iOS)
                         ToolbarItemGroup(placement: .topBarTrailing) {
                             context.content(for: context.childIDs[toolbarStartIndex + 2])
@@ -582,9 +574,9 @@ private struct LGChatNavigationContent: View {
                             context.content(for: context.childIDs[toolbarStartIndex + 3])
                         }
                         #endif
-                        #endif
                     }
                 }
+                #endif
                 #if !SKIP && os(iOS)
                 .toolbar(.visible, for: .navigationBar)
                 #endif
@@ -621,6 +613,52 @@ private struct LGChatNavigationContent: View {
         rootTransform?(rootContent) ?? rootContent
     }
 
+    @ViewBuilder
+    private var rootNavigationSurface: some View {
+        #if SKIP
+        VStack(spacing: 0) {
+            androidRootTopAppBar
+            transformedRootContent
+                .padding(.top, LGChatNavigationSurfacePolicy.androidContentTopPadding)
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
+        }
+        #else
+        transformedRootContent
+            .padding(.top, navigationContentTopPadding)
+        #endif
+    }
+
+    #if SKIP
+    private var androidRootTopAppBar: some View {
+        ZStack {
+            if let toolbarStartIndex {
+                HStack(spacing: 0) {
+                    context.content(for: context.childIDs[toolbarStartIndex])
+                        .frame(width: 48, height: 64)
+                    context.content(for: context.childIDs[toolbarStartIndex + 1])
+                        .padding(.leading, 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 0) {
+                    context.content(for: context.childIDs[toolbarStartIndex + 2])
+                        .frame(width: 48, height: 64)
+                    context.content(for: context.childIDs[toolbarStartIndex + 3])
+                        .frame(width: 48, height: 64)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64)
+        .background(routeBackground)
+    }
+    #endif
+
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
             mode: LogseqThemeMode(rawValue: appearance) ?? .system,
@@ -642,6 +680,22 @@ private struct LGChatNavigationContent: View {
     private var navigationTitle: String {
         guard case let .string(value) = context.property("title") else { return "" }
         return value
+    }
+
+    private var navigationContentTopPadding: CGFloat {
+        #if SKIP
+        LGChatNavigationSurfacePolicy.androidContentTopPadding
+        #else
+        0
+        #endif
+    }
+
+    private var destinationContentTopPadding: CGFloat {
+        #if SKIP
+        LGChatNavigationSurfacePolicy.androidDestinationContentTopPadding
+        #else
+        0
+        #endif
     }
 
     @ToolbarContentBuilder
@@ -708,7 +762,9 @@ private struct LGChatNavigationContent: View {
     }
 
     private var rootLeadingToolbarPlacement: ToolbarItemPlacement {
-        #if os(iOS)
+        #if SKIP
+        .topBarLeading
+        #elseif os(iOS)
         .topBarLeading
         #else
         .navigation

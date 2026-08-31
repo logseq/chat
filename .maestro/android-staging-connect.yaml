@@ -2,13 +2,53 @@ appId: com.logseq.chat
 ---
 - launchApp
 - tapOn:
-    id: "field.email"
+    id: "button.hosted-sign-in"
+- runFlow:
+    when:
+      visible: "Use without an account"
+    commands:
+      - tapOn: "Use without an account"
+- extendedWaitUntil:
+    visible:
+      id: "signInFormUsername"
+    timeout: 30000
+- tapOn:
+    id: "signInFormUsername"
 - inputText: ${USERNAME}
+- runFlow:
+    when:
+      visible: "Try out your stylus"
+    commands:
+      - tapOn: "Cancel"
 - tapOn:
-    id: "field.password"
+    id: "signInFormPassword"
 - inputText: ${PASSWORD}
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "submit"
+    timeout: 10000
+- tapOn: "submit"
+- extendedWaitUntil:
+    visible:
+      id: "graph\\..*"
+    timeout: 60000
+- assertNotVisible:
+    id: "sidebar.navigation"
 - tapOn:
-    id: "button.sign-in"
+    id: "graph\\..*"
+    index: 0
+- runFlow:
+    when:
+      visible: "Unlock encrypted graphs"
+    commands:
+      - tapOn: "E2EE password"
+      - inputText: ${PASSWORD}
+      - hideKeyboard
+      - tapOn: "Unlock"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 60000
 - extendedWaitUntil:
     visible:
       id: "button.connection"
@@ -16,11 +56,10 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.connection"
 - tapOn: "Settings"
-- assertVisible: "Connection"
-- tapOn:
-    id: "field.base-url"
-- eraseText
-- inputText: ${BASE_URL}
+- assertVisible:
+    id: "sheet.settings"
+- assertVisible:
+    id: "button.connection.apply"
 - tapOn:
     id: "button.connection.apply"
 - assertVisible:
