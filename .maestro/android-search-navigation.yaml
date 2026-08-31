@@ -12,8 +12,10 @@ appId: com.logseq.chat
 - tapOn: "Search pages and blocks"
 - inputText: "E2E Page Target"
 - extendedWaitUntil:
-    visible: "E2E Page Target"
+    visible:
+      id: "screen.search.results"
     timeout: 10000
+- assertVisible: "E2E Page Target"
 - tapOn:
     id: "search.result.e2e10000-0000-4000-8000-000000000007"
 - extendedWaitUntil:
