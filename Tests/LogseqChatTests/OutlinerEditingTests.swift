@@ -790,6 +790,42 @@ import Testing
         ))
     }
 
+    @Test func androidInlineEditorSeparatesLocalTypingFromStructuralInput() {
+        #expect(AndroidInlineEditorInputPolicy.transition(
+            previousText: "Hello",
+            updatedText: "Hello!",
+            updatedCaretUTF16Offset: 6
+        ) == .textChange(text: "Hello!", caretUTF16Offset: 6))
+
+        #expect(AndroidInlineEditorInputPolicy.transition(
+            previousText: "Hello",
+            updatedText: "Hel\nlo",
+            updatedCaretUTF16Offset: 4
+        ) == .returnKey(text: "Hello", caretUTF16Offset: 3))
+
+        #expect(AndroidInlineEditorInputPolicy.transition(
+            previousText: "你😀好",
+            updatedText: "你😀\n好",
+            updatedCaretUTF16Offset: 4
+        ) == .returnKey(text: "你😀好", caretUTF16Offset: 3))
+
+        #expect(AndroidInlineEditorInputPolicy.shouldMergeBackward(
+            text: "Block",
+            selectionStartUTF16Offset: 0,
+            selectionEndUTF16Offset: 0
+        ))
+        #expect(!AndroidInlineEditorInputPolicy.shouldMergeBackward(
+            text: "Block",
+            selectionStartUTF16Offset: 1,
+            selectionEndUTF16Offset: 1
+        ))
+        #expect(!AndroidInlineEditorInputPolicy.shouldMergeBackward(
+            text: "Block",
+            selectionStartUTF16Offset: 0,
+            selectionEndUTF16Offset: 2
+        ))
+    }
+
     @Test func unchangedRowsKeepTheSameRenderIdentityAcrossUnrelatedSnapshots() throws {
         let block = try JSONDecoder().decode(
             LogseqBlock.self,

@@ -8,6 +8,7 @@ signed_out_flow=.maestro/android-signed-out.yaml
 connect_flow=.maestro/android-staging-connect.yaml
 capture_flow=.maestro/android-capture-search.yaml
 autocomplete_flow=.maestro/android-outliner-autocomplete-completion.yaml
+outliner_flow=.maestro/android-outliner-interactions.yaml
 navigation_flow=.maestro/android-material-navigation.yaml
 graphs_flow=.maestro/android-graphs.yaml
 settings_flow=.maestro/android-settings.yaml
@@ -27,6 +28,7 @@ case $selector in
       "$connect_flow"
       "$capture_flow"
       "$autocomplete_flow"
+      "$outliner_flow"
       "$navigation_flow"
       "$graphs_flow"
       "$settings_flow"
@@ -57,6 +59,12 @@ case $selector in
     ;;
   autocomplete)
     flows=("$autocomplete_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  outliner)
+    flows=("$outliner_flow")
     needs_connection=0
     needs_clear_state=0
     needs_primary_button=0
@@ -92,12 +100,13 @@ case $selector in
     needs_primary_button=0
     ;;
   --list)
-    echo "Modules: all signed-out connect capture autocomplete navigation graphs settings flashcards search"
+    echo "Modules: all signed-out connect capture autocomplete outliner navigation graphs settings flashcards search"
     printf '%s\n' \
       "$signed_out_flow" \
       "$connect_flow" \
       "$capture_flow" \
       "$autocomplete_flow" \
+      "$outliner_flow" \
       "$navigation_flow" \
       "$graphs_flow" \
       "$settings_flow" \
@@ -238,6 +247,8 @@ for flow in "${flows[@]}"; do
   fi
   if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED:-0} != 1 ]]; then
     if [[ $flow == "$autocomplete_flow" ]]; then
+      seed_android_fixture --outliner
+    elif [[ $flow == "$outliner_flow" ]]; then
       seed_android_fixture --outliner
     elif [[ $flow == "$flashcards_flow" ]]; then
       seed_android_fixture --fixture

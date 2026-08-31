@@ -11,7 +11,7 @@ die() {
 }
 
 list_output=$($runner --list) || die "Android E2E runner could not list modules"
-grep -Fq "Modules: all signed-out connect capture autocomplete navigation graphs settings flashcards search" <<<"$list_output" \
+grep -Fq "Modules: all signed-out connect capture autocomplete outliner navigation graphs settings flashcards search" <<<"$list_output" \
   || die "Android E2E runner did not list every module"
 grep -Fq ".maestro/android-staging-connect.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the connection flow"
@@ -21,6 +21,8 @@ grep -Fq ".maestro/android-capture-search.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the capture flow"
 grep -Fq ".maestro/android-outliner-autocomplete-completion.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the autocomplete flow"
+grep -Fq ".maestro/android-outliner-interactions.yaml" <<<"$list_output" \
+  || die "Android E2E runner did not list the outliner interaction flow"
 grep -Fq ".maestro/android-material-navigation.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the Material navigation flow"
 grep -Fq ".maestro/android-graphs.yaml" <<<"$list_output" \
@@ -171,5 +173,18 @@ expected_search_args=$(printf '%s\n' \
   "$repo_root/.maestro/android-search-navigation.yaml")
 [[ $(<"$maestro_args") == "$expected_search_args" ]] \
   || die "Android E2E runner did not preserve the search and node parity flow"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  "$runner" outliner >/dev/null
+expected_outliner_args=$(printf '%s\n' \
+  --device test-device test \
+  "$repo_root/.maestro/android-outliner-interactions.yaml")
+[[ $(<"$maestro_args") == "$expected_outliner_args" ]] \
+  || die "Android E2E runner did not preserve the outliner interaction flow"
 
 echo "Android E2E runner tests passed"

@@ -210,6 +210,38 @@ enum InlineEditorCaretEmissionPolicy {
     }
 }
 
+enum AndroidInlineEditorInputAction: Equatable {
+    case textChange(text: String, caretUTF16Offset: Int)
+    case returnKey(text: String, caretUTF16Offset: Int)
+}
+
+enum AndroidInlineEditorInputPolicy {
+    static func transition(
+        previousText: String,
+        updatedText: String,
+        updatedCaretUTF16Offset: Int
+    ) -> AndroidInlineEditorInputAction {
+        if !previousText.contains("\n"), updatedText.contains("\n") {
+            return .returnKey(
+                text: updatedText.replacingOccurrences(of: "\n", with: ""),
+                caretUTF16Offset: max(updatedCaretUTF16Offset - 1, 0)
+            )
+        }
+        return .textChange(
+            text: updatedText,
+            caretUTF16Offset: max(updatedCaretUTF16Offset, 0)
+        )
+    }
+
+    static func shouldMergeBackward(
+        text: String,
+        selectionStartUTF16Offset: Int,
+        selectionEndUTF16Offset: Int
+    ) -> Bool {
+        selectionStartUTF16Offset == 0 && selectionEndUTF16Offset == 0
+    }
+}
+
 enum InlineEditorHandoffMerge {
     /// Keystrokes swallowed while a Return handoff was pending are inserted
     /// at the caret the core requested for the new block.
