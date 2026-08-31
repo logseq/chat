@@ -5,7 +5,11 @@ import LogseqChatModel
 
 @MainActor
 public protocol LGChatNativeCalling {
-    func initialize(platformCode: Int, hostCode: Int) -> String
+    func initialize(
+        platformCode: Int,
+        hostCode: Int,
+        authenticationCode: Int
+    ) -> String
     func appear(node: Int) -> String
     func press(node: Int) -> String
     func longPress(node: Int) -> String
@@ -1007,8 +1011,16 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
         self.core = core
     }
 
-    public func initialize(platformCode: Int, hostCode: Int) -> String {
-        core.logseq_chat_lui_initialize(platformCode, hostCode)
+    public func initialize(
+        platformCode: Int,
+        hostCode: Int,
+        authenticationCode: Int
+    ) -> String {
+        core.logseq_chat_lui_initialize(
+            platformCode,
+            hostCode,
+            authenticationCode
+        )
     }
 
     public func appear(node: Int) -> String { core.logseq_chat_lui_appear(node) }
@@ -1120,12 +1132,20 @@ public final class LGChatRuntime {
         }
     }
 
-    public func start(platformCode: Int, hostCode: Int = 1) throws {
+    public func start(
+        platformCode: Int,
+        hostCode: Int = 1,
+        authenticationCode: Int = 0
+    ) throws {
         guard !isStarted else { return }
         lastAuthoritativeCoreResponse = nil
         lastCoreSyncProjection = nil
         authoritativeCoreResponseInvalidated = false
-        let initialPatch = native.initialize(platformCode: platformCode, hostCode: hostCode)
+        let initialPatch = native.initialize(
+            platformCode: platformCode,
+            hostCode: hostCode,
+            authenticationCode: authenticationCode
+        )
         guard !initialPatch.isEmpty else {
             throw LGChatRuntimeError.emptyInitializationPatch
         }

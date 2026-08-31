@@ -1605,7 +1605,11 @@ private final class LGChatNativeRuntimeProbe: LGChatNativeCalling {
     var extensionEvents: [LGChatExtensionEventProbe] = []
     var hostUpdates: [LGChatHostUpdateProbe] = []
 
-    func initialize(platformCode: Int, hostCode: Int) -> String {
+    func initialize(
+        platformCode: Int,
+        hostCode: Int,
+        authenticationCode: Int
+    ) -> String {
         startedPlatforms.append(platformCode)
         return initialPatch
     }

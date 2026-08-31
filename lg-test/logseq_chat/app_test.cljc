@@ -206,11 +206,18 @@
         (Some (proto/BoolValue enabled)) (Some enabled)
         _ None))))
 
+(defn application-shell-root [renderer application]
+  (let [runtime-root (driver/root-node application)
+        shell (descendant-with-identifier
+               renderer runtime-root "application.shell")]
+    (if (= shell -1) runtime-root shell)))
+
 (defn main-root [renderer application]
   (let [runtime-root (driver/root-node application)
+        shell-root (application-shell-root renderer application)
         picker-parent
-        (parent-with-child-identifier renderer runtime-root "screen.graph-picker")
-        stack (nth (apple/children renderer runtime-root) 0)
+        (parent-with-child-identifier renderer shell-root "screen.graph-picker")
+        stack (nth (apple/children renderer shell-root) 0)
         children (apple/children renderer stack)
         container (nth children (dec (count children)))
         extensions
@@ -933,7 +940,7 @@
     (driver/send! application model/OpenSettings)
     (driver/send! application model/OpenSettingsTabs)
     (driver/flush! application)
-    (let [root (driver/root-node application)]
+    (let [root (application-shell-root renderer application)]
       (assert-equal 360 (property-int renderer root proto/WidthValue)
                     "the drawer leaves the same visible main edge as main")
       (assert-equal (Some false)
@@ -1473,12 +1480,12 @@
           banner (child-with-identifier renderer picker "error.banner")]
       (is (not (= -1 banner)) "the picker displays core failures")
       (assert-equal
-       "graph_discovery_failed"
+       "Couldn't load graphs"
        (property-string
         renderer
         (descendant-with-identifier renderer banner "error.banner.code")
         proto/TextValue)
-       "the failure code remains visible")
+       "the failure code is presented as a user-facing title")
       (assert-equal
        "Connection refused"
        (property-string
@@ -1763,7 +1770,7 @@
                     :graphs [current-graph remote-graph preparing-graph]
                     :sidebar sidebar)))
     (driver/flush! application)
-    (let [root (driver/root-node application)]
+    (let [root (application-shell-root renderer application)]
       (is (not (property-bool renderer root proto/Selected))
           "the native drawer starts from LG's closed state")
       (is (property-bool renderer root proto/Enabled)
@@ -1952,7 +1959,7 @@
                   (apply-core-snapshot None sidebar [] false "" [] []
                                        None None [] [] [] false []))
     (driver/flush! application)
-    (let [root (driver/root-node application)]
+    (let [root (application-shell-root renderer application)]
       (is (property-bool renderer root proto/Enabled)
           "the journal surface accepts horizontal sidebar gestures")
       (driver/send! application (model/RequestAppNode "node-a"))
@@ -2367,7 +2374,7 @@
     (driver/start! application)
     (driver/send! application model/OpenSidebar)
     (driver/flush! application)
-    (let [root (driver/root-node application)
+    (let [root (application-shell-root renderer application)
           sidebar (descendant-with-identifier renderer root "sidebar.navigation")
           link (child-with-identifier renderer sidebar "link.sidebar.flashcards")]
       (driver/dispatch-event! application (proto/Press link))
@@ -3295,8 +3302,17 @@
     (assert-equal 7 (count (:task-statuses projected))
                   "built-in fallbacks are appended after custom statuses")))
 
+(deftest native-bridge-renders-restored-authentication-in-the-first-patch
+  (let [patch (bridge/initialize 3 1 1)]
+    (is (string/includes? patch "screen.authentication")
+        "signed-out initialization renders authentication immediately")
+    (is (not (string/includes? patch "journals.graph-loaded"))
+        "signed-out initialization never constructs the journals tree")
+    (is (not (string/includes? patch "button.search"))
+        "signed-out initialization excludes main navigation controls")))
+
 (deftest native-bridge-drains-and-resolves-typed-effects-once
-  (bridge/initialize 2 1)
+  (bridge/initialize 2 1 0)
   (let [application (bridge/app)]
     (driver/send! application model/ExpandComposer)
     (driver/send! application (model/ChangeComposerDraft "Project \"alpha\"\nNext"))
@@ -5234,13 +5250,13 @@
                   "a bounded core splice preserves unaffected keyed rows")))
 
 (deftest native-bridge-returns-initial-and-disposal-patch-batches
-  (let [initial-patch (bridge/initialize 2 1)]
+  (let [initial-patch (bridge/initialize 2 1 0)]
     (is (not (= "" initial-patch)))
     (is (> (bridge/root-node) 0))
     (is (not (= "" (bridge/dispose))))))
 
 (deftest native-bridge-preserves-native-search-query-values
-  (bridge/initialize 2 1)
+  (bridge/initialize 2 1 0)
   (let [application (bridge/app)]
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
@@ -5253,7 +5269,7 @@
     (bridge/dispose)))
 
 (deftest native-bridge-preserves-native-navigation-back-counts
-  (bridge/initialize 2 1)
+  (bridge/initialize 2 1 0)
   (let [application (bridge/app)]
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application (model/RequestAppNode "page-a"))

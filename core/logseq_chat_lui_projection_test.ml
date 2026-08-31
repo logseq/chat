@@ -25,7 +25,7 @@ let () =
 ;;
 
 let () =
-  ignore (LG.logseq_chat_native_bridge_initialize 2 1);
+  ignore (LG.logseq_chat_native_bridge_initialize 2 1 0);
   let patch =
     Projection.apply_response
       {|{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Local graph","selectedGraphId":"local","graphs":[{"id":"local","name":"Local graph","schemaVersion":"65.33","isEncrypted":false,"isReady":true}]}}|}

@@ -405,7 +405,10 @@ public struct LogseqChatRootView : View {
     public func startLGRenderer() {
         guard !didStartLGRenderer else { return }
         do {
-            try lgRuntime.start(platformCode: Self.lgPlatformCode)
+            try lgRuntime.start(
+                platformCode: Self.lgPlatformCode,
+                authenticationCode: Self.authenticationCode(authentication.state)
+            )
             didStartLGRenderer = true
             try lgRuntime.applyHostUpdate(
                 kind: "graph-loading",
@@ -438,8 +441,8 @@ public struct LogseqChatRootView : View {
     public func runLGApplication() async {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
-        startLGRenderer()
         await waitForAuthenticationRestore()
+        startLGRenderer()
         publishAuthenticationState()
         LogseqChatAppDelegate.shared.reportLaunchStage("authentication_published")
         await waitForLocalLaunchLoad()
@@ -461,6 +464,16 @@ public struct LogseqChatRootView : View {
     private func waitForAuthenticationRestore() async {
         startAuthenticationRestore()
         await authenticationRestoreTask?.value
+    }
+
+    private static func authenticationCode(_ state: LogseqAuthenticationState) -> Int {
+        switch state {
+        case .restoring: 0
+        case .signedOut: 1
+        case .signingIn: 2
+        case .signedIn: 3
+        case .signingOut: 4
+        }
     }
 
     public func resumeLGApplication() async {

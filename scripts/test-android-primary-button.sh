@@ -40,6 +40,19 @@ button_node=$(rg -o 'resource-id="button.hosted-sign-in"[^>]*bounds="\[[^"]+' "$
 bounds=$(sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"$button_node")
 read -r left top right bottom <<<"$bounds"
 
+screen_node=$(rg -o 'resource-id="screen.authentication"[^>]*bounds="\[[^"]+' "$xml_file")
+[[ -n $screen_node ]] || die "authentication screen was not found in the Android UI tree"
+screen_bounds=$(sed -E 's/.*bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"$screen_node")
+read -r _ screen_top _ screen_bottom <<<"$screen_bounds"
+
+screen_height=$((screen_bottom - screen_top))
+button_center_y=$(((top + bottom) / 2))
+minimum_center_y=$((screen_top + screen_height * 35 / 100))
+maximum_center_y=$((screen_top + screen_height * 70 / 100))
+if (( button_center_y < minimum_center_y || button_center_y > maximum_center_y )); then
+  die "hosted sign-in button is outside the centered authentication region (button center $button_center_y, expected $minimum_center_y...$maximum_center_y)"
+fi
+
 swift -e '
 import AppKit
 import Foundation
@@ -86,3 +99,5 @@ guard changedRatio >= 0.30 else {
 }
 print(String(format: "ok - Android hosted sign-in button is materially filled (changed ratio %.3f)", changedRatio))
 ' "$png_file" "$left" "$top" "$right" "$bottom"
+
+echo "ok - Android authentication actions are vertically centered"

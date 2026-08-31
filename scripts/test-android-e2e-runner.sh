@@ -52,7 +52,19 @@ fi
 grep -Fq "LOGSEQ_CHAT_E2E_USERNAME is required" "$missing_output" \
   || die "Android E2E runner did not explain the missing connection parameter"
 
-printf '#!/usr/bin/env bash\nexit 0\n' >"$mock_bin/adb"
+cat >"$mock_bin/adb" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *"shell am start -W -S"*)
+    printf '%s\n' 'Status: ok' 'LaunchState: COLD' 'TotalTime: 842' 'Complete'
+    ;;
+  *"logcat -d -v brief"*)
+    printf '%s\n' \
+      'I/System.out: LOGSEQ_LAUNCH_METRIC authentication_published_ms=402.000' \
+      'I/System.out: LOGSEQ_LAUNCH_METRIC first_ui_rendered_ms=404.000'
+    ;;
+esac
+EOF
 printf '#!/usr/bin/env bash\nprintf \"%%s\\n\" \"$@\" >\"$LOGSEQ_CHAT_MAESTRO_ARGS\"\n' >"$mock_bin/maestro"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$mock_bin/gradle"
 chmod +x "$mock_bin/adb" "$mock_bin/maestro" "$mock_bin/gradle"
@@ -66,6 +78,14 @@ PATH="$mock_bin:$PATH" \
   "$runner" "$custom_flow" >/dev/null
 [[ $(tail -n 1 "$maestro_args") == "$custom_flow" ]] \
   || die "Android E2E runner changed an absolute custom flow path"
+
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
+  "$runner" signed-out >/dev/null
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \

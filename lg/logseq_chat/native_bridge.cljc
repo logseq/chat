@@ -259,16 +259,25 @@
 (defn resolve-effect [id succeeded message]
   (flush-action! (model/ResolveEffect id succeeded message)))
 
-(defn initialize [platform-code _host-code]
+(defn initial-authentication-state [authentication-code]
+  (match authentication-code
+    1 "signedOut"
+    2 "signingIn"
+    3 "signedIn"
+    4 "signingOut"
+    _ "restoring"))
+
+(defn initialize [platform-code _host-code authentication-code]
   (reset! latest-patch "")
   (let [renderer
         (apple/create-wire-with-extensions
          send-patch! (view/extension-registry))
         application
-        (chat/create
+        (chat/create-with-authentication
          (apple/backend-for renderer
                             (operating-system platform-code)
-                            proto/SwiftUIHost))]
+                            proto/SwiftUIHost)
+         (initial-authentication-state authentication-code))]
     (reset! current-app (Some application))
     (driver/start! application)
     (driver/flush! application)

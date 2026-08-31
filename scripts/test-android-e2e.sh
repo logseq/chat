@@ -133,6 +133,10 @@ if (( needs_clear_state )) && [[ ${LOGSEQ_CHAT_ANDROID_E2E_CLEAR_STATE:-1} == 1 
   adb -s "$device" shell pm clear "$app_id" >/dev/null
 fi
 
+if (( needs_primary_button )); then
+  ANDROID_SERIAL=$device "$repo_root/scripts/test-android-launch-performance.sh"
+fi
+
 if (( needs_connection )) && [[ ${LOGSEQ_CHAT_ANDROID_E2E_CLEAR_BROWSER_STATE:-1} == 1 ]]; then
   browser_package=${LOGSEQ_CHAT_ANDROID_E2E_BROWSER_PACKAGE:-com.android.chrome}
   if adb -s "$device" shell pm path "$browser_package" >/dev/null 2>&1; then
@@ -210,8 +214,11 @@ for flow in "${flows[@]}"; do
     )
   fi
   MAESTRO_CLI_NO_ANALYTICS=1 maestro "${maestro_args[@]}" "$flow_path"
-  if (( needs_primary_button )) && [[ $flow == "$signed_out_flow" ]]; then
+  if (( needs_primary_button )) \
+    && [[ $flow == "$signed_out_flow" ]] \
+    && [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES:-0} != 1 ]]; then
     ANDROID_SERIAL=$device "$repo_root/scripts/test-android-primary-button.sh"
+    ANDROID_SERIAL=$device "$repo_root/scripts/test-android-idle-rendering.sh"
   fi
 done
 

@@ -2455,6 +2455,17 @@
       (if (< separator 0) "sync_failed" (subs reason 0 separator)))
     _ ""))
 
+(defn graph-picker-error-title [current]
+  (match (graph-picker-error-code current)
+    "graph_discovery_failed" "Couldn't load graphs"
+    "graph_create_failed" "Couldn't create graph"
+    "graph_open_failed" "Couldn't open graph"
+    "graph_unlock_failed" "Couldn't unlock graph"
+    "graph_initial_upload_failed" "Couldn't upload graph"
+    "graph_key_provision_failed" "Couldn't prepare encryption"
+    "sync_failed" "Sync failed"
+    _ "Something went wrong"))
+
 (defn graph-picker-error-message [current]
   (match (:sync-state current)
     (FailedState reason)
@@ -2472,7 +2483,7 @@
    [:column {:gap 4}
     [:heading
      {:level 5
-      :value (reactive graph-picker-error-code model-source)
+      :value (reactive graph-picker-error-title model-source)
       :accessibility-identifier "error.banner.code"}]
     [:text
      {:value (reactive graph-picker-error-message model-source)
@@ -3697,6 +3708,9 @@
   (and (graph-picker-hidden? current)
        (not (authentication-screen-visible? current))))
 
+(defn application-shell-visible? [current]
+  (not (authentication-screen-visible? current)))
+
 (defn drawer-selected? [current]
   (and (:sidebar-open current)
        (graph-picker-hidden? current)
@@ -3730,11 +3744,18 @@
       :accessibility-identifier "text.authentication-error"}]]])
 
 (defui chat-view [model-source send]
-  [:drawer
+  [:stack
+   {:grow 1.0
+    :container-relative-frame "both"}
+   [:if {:test (reactive authentication-screen-visible? model-source)}
+    [authentication-screen model-source send]]
+   [:if {:test (reactive application-shell-visible? model-source)}
+   [:drawer
    {:selected (reactive drawer-selected? model-source)
     :disabled (reactive drawer-disabled? model-source)
     :width 360
     :label "Navigation"
+    :accessibility-identifier "application.shell"
     :on-toggle
     (fn [input-event]
       (match input-event
@@ -3742,6 +3763,8 @@
         (send (if open model/OpenSidebar model/CloseSidebar))
         _ true))}
    [:stack
+    {:grow 1.0
+     :container-relative-frame "vertical"}
     [:if {:test (reactive main-screen-visible? model-source)}
      [native-navigation-view model-source send]]
     [:if {:test (reactive graph-picker-screen-visible? model-source)}
@@ -3760,4 +3783,4 @@
      [page-delete-dialog send]]
     [:if {:test (reactive :sync-details-open model-source)}
      [sync-status-sheet model-source send]]]
-   [sidebar-view model-source send]])
+   [sidebar-view model-source send]]]])

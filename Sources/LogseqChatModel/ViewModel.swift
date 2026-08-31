@@ -103,13 +103,15 @@ public final class LogseqChatCore {
 
     /* SKIP EXTERN */ public func logseq_chat_lui_initialize(
         _ platformCode: Int,
-        _ hostCode: Int
+        _ hostCode: Int,
+        _ authenticationCode: Int
     ) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_initialize(
                 Int32(platformCode),
-                Int32(hostCode)
+                Int32(hostCode),
+                Int32(authenticationCode)
             ))
         }
         #else

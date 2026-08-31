@@ -148,7 +148,10 @@ static const char *call_lui_int(const char *name, int64_t number) {
   CAMLreturnT(const char *, response);
 }
 
-static const char *call_lui_initialize(int32_t platform_code, int32_t host_code) {
+static const char *call_lui_initialize(
+    int32_t platform_code,
+    int32_t host_code,
+    int32_t authentication_code) {
   const char *response;
   CAMLparam0();
   CAMLlocal1(result);
@@ -156,10 +159,12 @@ static const char *call_lui_initialize(int32_t platform_code, int32_t host_code)
   if (callback == NULL) {
     response = missing_lui_callback();
   } else {
-    result = caml_callback2_exn(
-      *callback,
+    value arguments[3] = {
       Val_long(platform_code),
-      Val_long(host_code));
+      Val_long(host_code),
+      Val_long(authentication_code)
+    };
+    result = caml_callbackN_exn(*callback, 3, arguments);
     response = Is_exception_result(result)
       ? missing_lui_callback()
       : replace_response(String_val(result));
@@ -309,8 +314,14 @@ static const char *call_lui_extension_event(
   release_ocaml_runtime(registration); \
   return response
 
-const char *logseq_chat_lui_initialize(int32_t platform_code, int32_t host_code) {
-  LUI_RUNTIME_CALL(call_lui_initialize(platform_code, host_code));
+const char *logseq_chat_lui_initialize(
+    int32_t platform_code,
+    int32_t host_code,
+    int32_t authentication_code) {
+  LUI_RUNTIME_CALL(call_lui_initialize(
+      platform_code,
+      host_code,
+      authentication_code));
 }
 
 const char *logseq_chat_lui_appear(int64_t node) {
