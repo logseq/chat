@@ -1658,56 +1658,70 @@
   (if (= (ui/host ui-context) proto/FlutterHost)
     (elements/element
      ui-context nil
-     [:toolbar
-      {:orientation "horizontal"
-       :label "Outliner selection"
-       :accessibility-identifier "toolbar.outliner.selection"
-       :class "scroll-leading leading-inset-12"
-       :height 56
-       :gap 4}
+     [:box
+      {:height 56
+       :padding-horizontal 8
+       :padding-vertical 4
+       :background "surface-container-high"
+       :corner-radius 20
+       :accessibility-identifier "surface.outliner.selection-toolbar"}
+      [:toolbar
+       {:orientation "horizontal"
+        :label "Outliner selection"
+        :accessibility-identifier "toolbar.outliner.selection"
+        :class "scroll-leading"
+        :gap 4}
       [:button
-       {:icon "app:toolbar-copy" :variant "ghost" :width 48 :height 48
+       {:icon "app:toolbar-copy" :variant "ghost" :size "icon"
+        :width 48 :height 48 :foreground "muted-foreground"
         :label "Copy"
         :accessibility-identifier "button.outliner.selection.copy"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "copy")))}]
       [:button
-       {:icon "app:toolbar-outdent" :variant "ghost" :width 48 :height 48
+       {:icon "app:toolbar-outdent" :variant "ghost" :size "icon"
+        :width 48 :height 48 :foreground "muted-foreground"
         :label "Outdent"
         :accessibility-identifier "button.outliner.selection.outdent"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}]
       [:button
-       {:icon "app:toolbar-indent" :variant "ghost" :width 48 :height 48
+       {:icon "app:toolbar-indent" :variant "ghost" :size "icon"
+        :width 48 :height 48 :foreground "muted-foreground"
         :label "Indent"
         :accessibility-identifier "button.outliner.selection.indent"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}]
       [:button
-       {:icon "app:toolbar-delete" :variant "ghost" :width 48 :height 48
+       {:icon "app:toolbar-delete" :variant "ghost" :size "icon"
+        :width 48 :height 48 :foreground "destructive"
         :label "Delete"
         :accessibility-identifier "button.outliner.selection.delete"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "delete")))}]
       [:button
        {:icon "app:toolbar-copy-reference" :variant "ghost"
-        :width 48 :height 48 :label "Copy reference"
+        :size "icon" :width 48 :height 48
+        :foreground "muted-foreground" :label "Copy reference"
         :accessibility-identifier "button.outliner.selection.copyReference"
         :on-press
         (fn [_event]
           (send (model/PerformOutlinerToolbarAction "copyReference")))}]
       [:button
-       {:icon "app:toolbar-copy-url" :variant "ghost" :width 48 :height 48
+       {:icon "app:toolbar-copy-url" :variant "ghost" :size "icon"
+        :width 48 :height 48 :foreground "muted-foreground"
         :label "Copy URL"
         :accessibility-identifier "button.outliner.selection.copyURL"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "copyURL")))}]
       [:button
-       {:icon "app:toolbar-unselect" :variant "ghost" :width 48 :height 48
+       {:icon "app:toolbar-unselect" :variant "ghost" :size "icon"
+        :width 48 :height 48 :foreground "muted-foreground"
         :label "Unselect"
         :accessibility-identifier "button.outliner.selection.unselect"
         :on-press
-        (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}]])
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "unselect")))}]]])
     (elements/element
      ui-context nil
      [:toolbar
@@ -1808,19 +1822,30 @@
       :as candidate-source}
      [outliner-autocomplete-row candidate-source send]]]])
 
-(defui outliner-editor-toolbar [model-source send]
-  [:toolbar
-   {:orientation "horizontal"
-    :label "Outliner editor"
-    :accessibility-identifier "toolbar.outliner.editor"
-    :class "scroll-leading leading-inset-8"
-    :height 50
-    :gap 4}
+(defn outliner-editor-toolbar [ui-context model-source send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:box
+      {:height 56
+       :padding-horizontal 8
+       :padding-vertical 4
+       :background "surface-container-low"
+       :corner-radius 20
+       :accessibility-identifier "surface.outliner.editor-toolbar"}
+      [:toolbar
+       {:orientation "horizontal"
+        :label "Outliner editor"
+        :accessibility-identifier "toolbar.outliner.editor"
+        :class "scroll-leading"
+        :gap 4}
    [:button
     {:icon "app:toolbar-task"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label (reactive outliner-editor-task-label model-source)
      :accessibility-identifier "button.outliner.editor.task"
      :on-press
@@ -1828,8 +1853,10 @@
    [:button
     {:icon "app:toolbar-outdent"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Outdent"
      :accessibility-identifier "button.outliner.editor.outdent"
      :on-press
@@ -1837,8 +1864,10 @@
    [:button
     {:icon "app:toolbar-indent"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Indent"
      :accessibility-identifier "button.outliner.editor.indent"
      :on-press
@@ -1846,8 +1875,10 @@
    [:button
     {:icon "app:toolbar-tag"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Tag"
      :accessibility-identifier "button.outliner.editor.tag"
      :on-press
@@ -1855,8 +1886,10 @@
    [:button
     {:icon "app:toolbar-camera"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Photo"
      :accessibility-identifier "button.outliner.editor.camera"
      :on-press
@@ -1864,8 +1897,10 @@
    [:button
     {:icon "app:toolbar-audio"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Record audio"
      :accessibility-identifier "button.outliner.editor.audio"
      :on-press
@@ -1873,32 +1908,130 @@
    [:button
     {:icon "app:toolbar-attachment"
      :variant "ghost"
-     :width 42
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Upload asset"
      :accessibility-identifier "button.outliner.editor.attachment"
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
    [:button
-    {:variant "ghost"
-     :width 42
-     :height 42
+    {:icon "app:toolbar-page-reference"
+     :variant "ghost"
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Page reference"
      :accessibility-identifier "button.outliner.editor.pageReference"
      :on-press
      (fn [_event]
-       (send (model/PerformOutlinerToolbarAction "pageReference")))}
-    "[[]]"]
+       (send (model/PerformOutlinerToolbarAction "pageReference")))}]
    [:button
     {:icon "app:toolbar-hide-keyboard"
      :variant "ghost"
-     :width 54
-     :height 42
+     :size "icon"
+     :width 48
+     :height 48
+     :foreground "muted-foreground"
      :label "Hide keyboard"
      :accessibility-identifier "button.outliner.editor.hideKeyboard"
      :on-press
      (fn [_event]
-       (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]])
+       (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]]])
+    (elements/element
+     ui-context nil
+     [:toolbar
+      {:orientation "horizontal"
+       :label "Outliner editor"
+       :accessibility-identifier "toolbar.outliner.editor"
+       :class "scroll-leading leading-inset-8"
+       :height 50
+       :gap 4}
+      [:button
+       {:icon "app:toolbar-task"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label (reactive outliner-editor-task-label model-source)
+        :accessibility-identifier "button.outliner.editor.task"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "task")))}]
+      [:button
+       {:icon "app:toolbar-outdent"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Outdent"
+        :accessibility-identifier "button.outliner.editor.outdent"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}]
+      [:button
+       {:icon "app:toolbar-indent"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Indent"
+        :accessibility-identifier "button.outliner.editor.indent"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}]
+      [:button
+       {:icon "app:toolbar-tag"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Tag"
+        :accessibility-identifier "button.outliner.editor.tag"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "tag")))}]
+      [:button
+       {:icon "app:toolbar-camera"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Photo"
+        :accessibility-identifier "button.outliner.editor.camera"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "camera")))}]
+      [:button
+       {:icon "app:toolbar-audio"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Record audio"
+        :accessibility-identifier "button.outliner.editor.audio"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "audio")))}]
+      [:button
+       {:icon "app:toolbar-attachment"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Upload asset"
+        :accessibility-identifier "button.outliner.editor.attachment"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
+      [:button
+       {:variant "ghost"
+        :width 42
+        :height 42
+        :label "Page reference"
+        :accessibility-identifier "button.outliner.editor.pageReference"
+        :on-press
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "pageReference")))}
+       "[[]]"]
+      [:button
+       {:icon "app:toolbar-hide-keyboard"
+        :variant "ghost"
+        :width 54
+        :height 42
+        :label "Hide keyboard"
+        :accessibility-identifier "button.outliner.editor.hideKeyboard"
+        :on-press
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]])))
 
 (defn node-related-row [ui-context model-source row-source send]
   (let [structured-breadcrumb-source
@@ -4417,7 +4550,10 @@
         [outliner-selection-toolbar send]
         [:box {:height 21}]]]
       [:if {:test (reactive bottom-chrome-editor? model-source)}
-       [:column {:gap 0 :cross "stretch"}
+       [:column
+        {:gap 0
+         :cross "stretch"
+         :accessibility-identifier "container.outliner.editor-chrome"}
         [:if {:test (reactive outliner-autocomplete-active? model-source)}
          [outliner-autocomplete-bar model-source send]]
         [outliner-editor-toolbar model-source send]]]

@@ -6190,6 +6190,8 @@
     (let [root (driver/root-node application)
           selected-row
           (descendant-with-identifier renderer root "outliner.block.parent")
+          surface (descendant-with-identifier
+                   renderer root "surface.outliner.selection-toolbar")
           toolbar (descendant-with-identifier
                    renderer root "toolbar.outliner.selection")
           buttons (apple/children renderer toolbar)]
@@ -6201,6 +6203,21 @@
       (assert-equal 4
                     (property-int renderer toolbar proto/Gap)
                     "Android uses compact Material action spacing")
+      (assert-equal 56
+                    (property-int renderer surface proto/HeightValue)
+                    "the contextual toolbar uses Material bottom-app-bar height")
+      (assert-equal 8
+                    (property-int renderer surface proto/PaddingHorizontal)
+                    "the contextual toolbar keeps balanced horizontal insets")
+      (assert-equal 4
+                    (property-int renderer surface proto/PaddingVertical)
+                    "the contextual toolbar centers 48dp actions")
+      (assert-equal 20
+                    (property-int renderer surface proto/CornerRadius)
+                    "the contextual toolbar has a deliberate Material surface")
+      (assert-equal "surface-container-high"
+                    (property-string renderer surface proto/BackgroundValue)
+                    "selection receives a stronger contextual surface")
       (assert-equal 7 (count buttons)
                     "all selection actions remain directly reachable")
       (doseq [button buttons]
@@ -6213,9 +6230,76 @@
         (assert-equal "<missing>"
                       (property-string renderer button proto/TextValue)
                       "Android uses icon-only actions instead of clipped captions")
+        (assert-equal "icon"
+                      (property-string renderer button proto/SizeValue)
+                      "Android selection actions render 24dp Material glyphs")
         (is (not (= "<missing>"
                     (property-string renderer button proto/AccessibilityLabel)))
-            "icon-only actions retain an accessible label")))))
+            "icon-only actions retain an accessible label"))
+      (assert-equal "destructive"
+                    (property-string renderer (nth buttons 3)
+                                     proto/ForegroundValue)
+                    "delete is visually distinct from reversible actions"))))
+
+(deftest flutter-outliner-editor-toolbar-uses-a-material-bottom-surface
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (record model/outline-row
+              (uuid "block-a") (title "Draft")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None)
+              (status None) (tags []) (sync-status None) (page-id "")
+              (journal-title None) (journal-day None))
+        editing (record model/outliner-editing
+                        (uuid "block-a") (title "Draft")
+                        (caret-utf16-offset 5))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                              (Some editing) None [] [] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          surface (descendant-with-identifier
+                   renderer root "surface.outliner.editor-toolbar")
+          toolbar (descendant-with-identifier
+                   renderer root "toolbar.outliner.editor")
+          buttons (apple/children renderer toolbar)]
+      (assert-equal 56 (property-int renderer surface proto/HeightValue)
+                    "the editor toolbar uses Material bottom-app-bar height")
+      (assert-equal 8
+                    (property-int renderer surface proto/PaddingHorizontal)
+                    "editor actions have balanced horizontal insets")
+      (assert-equal 4
+                    (property-int renderer surface proto/PaddingVertical)
+                    "editor actions are vertically centered")
+      (assert-equal 20
+                    (property-int renderer surface proto/CornerRadius)
+                    "the editor toolbar has a Material surface shape")
+      (assert-equal "surface-container-low"
+                    (property-string renderer surface proto/BackgroundValue)
+                    "the editor toolbar separates from content and keyboard")
+      (assert-equal 9 (count buttons)
+                    "all editor actions remain reachable by horizontal scroll")
+      (doseq [button buttons]
+        (assert-equal 48 (property-int renderer button proto/WidthValue)
+                      "every editor action has a 48dp target")
+        (assert-equal 48 (property-int renderer button proto/HeightValue)
+                      "every editor action fits the toolbar")
+        (assert-equal "icon" (property-string renderer button proto/SizeValue)
+                      "every editor action uses a 24dp Material glyph"))
+      (let [page-reference (nth buttons 7)]
+        (assert-equal "app:toolbar-page-reference"
+                      (property-string renderer page-reference
+                                       proto/InlineIconName)
+                      "page reference uses a native icon instead of raw brackets")
+        (assert-equal "<missing>"
+                      (property-string renderer page-reference proto/TextValue)
+                      "page reference no longer renders a rough text symbol")))))
 
 (deftest outliner-editor-toolbar-and-autocomplete-use-core-owned-state
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -6409,8 +6493,8 @@
     (let [navigation (extension-node application "native-navigation-stack")
           navigation-content (nth (apple/children renderer navigation) 0)
           editor-container
-          (parent-with-child-identifier renderer navigation-content
-                                        "toolbar.outliner.editor")
+          (descendant-with-identifier renderer navigation-content
+                                      "container.outliner.editor-chrome")
           autocomplete-bar
           (descendant-with-identifier renderer editor-container
                                       "toolbar.outliner.autocomplete")

@@ -1139,14 +1139,22 @@ final class _OutlinerEditorState extends State<_OutlinerEditor> {
           controller: _controller,
           autofocus: true,
           maxLines: null,
+          style: Theme.of(context).textTheme.bodyMedium,
           textInputAction: TextInputAction.newline,
           inputFormatters: [
             _StructuralBackspaceFormatter(_emitStructuralBackspace),
           ],
           decoration: const InputDecoration(
+            filled: false,
             border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            disabledBorder: InputBorder.none,
+            errorBorder: InputBorder.none,
+            focusedErrorBorder: InputBorder.none,
             isDense: true,
-            contentPadding: EdgeInsets.symmetric(vertical: 4),
+            isCollapsed: true,
+            contentPadding: EdgeInsets.zero,
           ),
           onChanged: _handleTextChanged,
           onSubmitted: (title) => extension.emit(

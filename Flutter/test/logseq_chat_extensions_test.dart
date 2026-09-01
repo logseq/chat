@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logseq_chat_flutter/logseq_chat_extensions.dart';
+import 'package:logseq_chat_flutter/logseq_chat_theme.dart';
 import 'package:lui_flutter_backend/lui_flutter_backend.dart';
 
 void main() {
@@ -294,6 +295,35 @@ void main() {
     );
   });
 
+  testWidgets(
+    'editor renders as inline outliner text instead of a form field',
+    (tester) async {
+      final backend = LUIFlutterBackend(
+        extensionRegistry: logseqChatExtensionRegistry(),
+      );
+      addTearDown(backend.dispose);
+      backend.applyJson(jsonEncode(_editorPatch));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LogseqChatTheme.light(),
+          home: Scaffold(body: backend.widget(node: 1)),
+        ),
+      );
+
+      final decorator = tester.widget<InputDecorator>(
+        find.byType(InputDecorator),
+      );
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(decorator.decoration.filled, isFalse);
+      expect(decorator.decoration.border, InputBorder.none);
+      expect(decorator.decoration.enabledBorder, InputBorder.none);
+      expect(decorator.decoration.focusedBorder, InputBorder.none);
+      expect(decorator.decoration.contentPadding, EdgeInsets.zero);
+      expect(decorator.decoration.isCollapsed, isTrue);
+      expect(field.style?.fontSize, 14);
+    },
+  );
+
   testWidgets('editor coalesces a rapid text burst before entering LG', (
     tester,
   ) async {
@@ -316,8 +346,7 @@ void main() {
     expect(
       events.where(
         (event) =>
-            event is LUIExtensionComponentEvent &&
-            event.name == 'text-change',
+            event is LUIExtensionComponentEvent && event.name == 'text-change',
       ),
       isEmpty,
     );
@@ -326,8 +355,7 @@ void main() {
     expect(
       events.where(
         (event) =>
-            event is LUIExtensionComponentEvent &&
-            event.name == 'text-change',
+            event is LUIExtensionComponentEvent && event.name == 'text-change',
       ),
       [
         const LUIEvent.extension(
