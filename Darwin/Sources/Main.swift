@@ -67,7 +67,7 @@ typealias AppType = NSApplication
         AppDelegate.shared.onLowMemory()
     }
 
-    // support for SkipNotify.fetchNotificationToken()
+    // Support notification token retrieval from the app runtime.
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         NotificationCenter.default.post(name: NSNotification.Name("didRegisterForRemoteNotificationsWithDeviceToken"), object: application, userInfo: ["deviceToken": deviceToken])

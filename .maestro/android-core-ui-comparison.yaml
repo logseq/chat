@@ -1,0 +1,38 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Journals"
+    timeout: 30000
+# See android-runtime-contention-regression.yaml for the Android 16 driver bug.
+- tapOn:
+    point: "7%,8%"
+- extendedWaitUntil:
+    visible:
+      id: "sidebar.navigation"
+    timeout: 30000
+- takeScreenshot: "docs/agent-guide/ui-comparison/android/sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- extendedWaitUntil:
+    visible:
+      id: "pane.journals"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: "journals.loading"
+    timeout: 30000
+- assertVisible: "Journals"
+- takeScreenshot: "docs/agent-guide/ui-comparison/android/journals"
+- scrollUntilVisible:
+    element:
+      id: "button.journal.e2e10000-0000-4000-8000-000000000001"
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- tapOn:
+    id: "button.journal.e2e10000-0000-4000-8000-000000000001"
+- assertVisible:
+    id: "button.navigation.back"
+- takeScreenshot: "docs/agent-guide/ui-comparison/android/node"

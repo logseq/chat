@@ -76,6 +76,8 @@
    %{libexec:lui:lg/lui/backend/retained.cljc}
    %{libexec:lui:lg/lui/backend/apple.lgi}
    %{libexec:lui:lg/lui/backend/apple.cljc}
+   %{libexec:lui:lg/lui/backend/flutter.lgi}
+   %{libexec:lui:lg/lui/backend/flutter.cljc}
    ../lg/logseq_chat
    -o %{target})))
 
@@ -99,6 +101,8 @@
  (foreign_stubs
   (language c)
   (names logseq_chat_core_ffi))
+ (link_deps
+  %{env:LOGSEQ_CHAT_SQLITE_LINK_FILE=./libsqlite3.a})
  (link_flags
   :standard
   -cclib

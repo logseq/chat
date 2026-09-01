@@ -9,13 +9,11 @@ import LUIAppleBackend
 struct LGChatRendererTests {
     @Test("sidebar icons use the same native symbols as main on Apple platforms")
     func sidebarIconsMatchMain() {
-        #if !SKIP
         #expect(LGChatIconPolicy.icons["calendar"] == .systemName("calendar"))
         #expect(LGChatIconPolicy.icons["document"] == .systemName("doc.text"))
         #expect(LGChatIconPolicy.icons["folder"] == .systemName("folder"))
         #expect(LGChatIconPolicy.icons["history"] == .systemName("clock"))
         #expect(LGChatIconPolicy.icons["star"] == .systemName("star"))
-        #endif
     }
 
     @Test("native List routes use the platform grouped page surface")
@@ -87,7 +85,7 @@ struct LGChatRendererTests {
         try renderer.apply(patchJSON: """
         {"generation":1,"ops":[
           {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],9:open-node[4:uuid:string:required]"},
+          {"op":"create-extension","id":2,"identifier":"outliner-block-content","fingerprint":"lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"},
           {"op":"set-extension-prop","id":2,"property":"block-id","value":"block-a"},
           {"op":"set-extension-prop","id":2,"property":"title","value":"Project"},
           {"op":"set-extension-prop","id":2,"property":"markup-json","value":"[]"},
@@ -260,6 +258,15 @@ struct LGChatRendererTests {
         runtime.renderer.receiveForTesting(
             LGChatRendererEvent(
                 kind: .extension,
+                nodeID: 22,
+                extensionIdentifier: "outliner-block-content",
+                extensionName: "edit",
+                extensionValues: ["uuid": LUIExtensionValue.string("block-a")]
+            )
+        )
+        runtime.renderer.receiveForTesting(
+            LGChatRendererEvent(
+                kind: .extension,
                 nodeID: 19,
                 extensionIdentifier: "outliner-block-content",
                 extensionName: "drop",
@@ -297,6 +304,13 @@ struct LGChatRendererTests {
                 identifier: "outliner-block-content",
                 name: "open-node",
                 text: "page-a",
+                value: 0
+            ),
+            LGChatExtensionEventProbe(
+                node: 22,
+                identifier: "outliner-block-content",
+                name: "edit",
+                text: "block-a",
                 value: 0
             ),
             LGChatExtensionEventProbe(

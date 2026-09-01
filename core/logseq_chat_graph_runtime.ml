@@ -24,7 +24,11 @@ let refresh_search runtime =
         Logseq_chat_search_index.refresh index runtime.snapshot.Projection.db;
         runtime.search_index_is_fresh <- true
       with
-      | Failure _ -> runtime.search_index_is_fresh <- false)
+      | error ->
+        Printf.eprintf
+          "LOGSEQ_SEARCH_INDEX_ERROR stage=refresh error=%s\n%!"
+          (Printexc.to_string error);
+        runtime.search_index_is_fresh <- false)
     runtime.search_index
 ;;
 
@@ -261,7 +265,11 @@ let create_base
   let search_index =
     Option.bind search_index_path (fun path ->
       try Some (Logseq_chat_search_index.create ~path) with
-      | Failure _ -> None)
+      | error ->
+        Printf.eprintf
+          "LOGSEQ_SEARCH_INDEX_ERROR stage=open error=%s\n%!"
+          (Printexc.to_string error);
+        None)
   in
   let runtime =
     { path
@@ -756,6 +764,19 @@ let search runtime query =
   | None -> []
   | Some index ->
     if not runtime.search_index_is_fresh then refresh_search runtime;
-    (try Logseq_chat_search_index.search_hits index runtime.snapshot.db query with
-     | Failure _ -> [])
+    (try
+       let hits = Logseq_chat_search_index.search_hits index runtime.snapshot.db query in
+       Printf.eprintf
+         "LOGSEQ_SEARCH_INDEX_QUERY query=%S fresh=%b hits=%d\n%!"
+         query
+         runtime.search_index_is_fresh
+         (List.length hits);
+       hits
+     with
+     | error ->
+       Printf.eprintf
+         "LOGSEQ_SEARCH_INDEX_ERROR stage=query query=%S error=%s\n%!"
+         query
+         (Printexc.to_string error);
+       [])
 ;;

@@ -1,7 +1,6 @@
 import SwiftUI
 import LogseqChatModel
 
-#if !SKIP
 import HighlightSwift
 import SwiftUIMath
 #if os(iOS)
@@ -9,18 +8,7 @@ import AVKit
 import UIKit
 import WebKit
 #endif
-#endif
 
-#if SKIP
-import android.net.Uri
-import android.webkit.WebView
-import android.widget.MediaController
-import android.widget.VideoView
-import androidx.compose.ui.viewinterop.AndroidView
-import com.agog.mathdisplay.MTMathView
-import dev.hossain.highlight.ui.HighlightThemeProvider
-import dev.hossain.highlight.ui.SyntaxHighlightedCode
-#endif
 
 struct OutlinerMixedRichMarkupContent: View {
     let nodes: [LogseqMarkupNode]
@@ -63,21 +51,104 @@ struct OutlinerMixedRichMarkupContent: View {
     }
 
     @ViewBuilder private func inlineContent(_ chunk: [LogseqMarkupNode]) -> some View {
-        #if !SKIP
         Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
             .environment(\.openURL, OpenURLAction { url in
                 guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
                 onOpenMarkupLink(link)
                 return .handled
             })
-        #else
-        let presentation = OutlinerMarkupPresentation.make(nodes: chunk, fallback: fallback)
-        Text(verbatim: presentation.plainText)
-        #endif
+    }
+
+}
+
+enum OutlinerMarkupMarkdown {
+    static func requiresAttributedText(_ nodes: [LogseqMarkupNode]) -> Bool {
+        nodes.contains { node in
+            switch node.type {
+            case .text, .codeBlock, .math, .cloze, .youtubeTimestamp, .video, .iframe:
+                return false
+            case .code, .emphasis, .quote, .link, .nodeReference, .tagReference:
+                return true
+            }
+        }
+    }
+
+    static func make(nodes: [LogseqMarkupNode], fallback: String) -> String {
+        guard !nodes.isEmpty else { return escape(fallback) }
+        return nodes.map(make).joined()
+    }
+
+    private static func make(_ node: LogseqMarkupNode) -> String {
+        switch node.type {
+        case .text:
+            return escape(node.text ?? "")
+        case .code:
+            return "`" + (node.text ?? "").replacingOccurrences(of: "`", with: "\\`") + "`"
+        case .codeBlock, .math, .cloze:
+            return escape(node.text ?? "")
+        case .youtubeTimestamp:
+            return escape("◷ " + (node.text ?? ""))
+        case .emphasis, .quote:
+            let children = node.children.map(make).joined()
+            switch node.style {
+            case "bold": return "**" + children + "**"
+            case "italic": return "_" + children + "_"
+            case "strikeThrough": return "~~" + children + "~~"
+            default: return children
+            }
+        case .link:
+            let label = node.children.isEmpty
+                ? escape(node.url ?? "")
+                : node.children.map(make).joined()
+            guard let url = node.url, !url.isEmpty else { return label }
+            return "[" + label + "](" + escapeDestination(url) + ")"
+        case .nodeReference:
+            return nodeLink(label: node.title ?? "", uuid: node.uuid)
+        case .tagReference:
+            return nodeLink(label: "#" + (node.title ?? ""), uuid: node.uuid)
+        case .video, .iframe:
+            return escape(node.url ?? "")
+        }
+    }
+
+    private static func nodeLink(label: String, uuid: String?) -> String {
+        guard let uuid, !uuid.isEmpty else { return escape(label) }
+        return "[" + escape(label) + "](logseq-node://" + escapeDestination(uuid) + ")"
+    }
+
+    private static func escape(_ value: String) -> String {
+        var result = value.replacingOccurrences(of: "\\", with: "\\\\")
+        for character in ["`", "*", "_", "{", "}", "[", "]", "<", ">", "#"] {
+            result = result.replacingOccurrences(of: character, with: "\\" + character)
+        }
+        return result
+    }
+
+    private static func escapeDestination(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "%5C")
+            .replacingOccurrences(of: "(", with: "%28")
+            .replacingOccurrences(of: ")", with: "%29")
+            .replacingOccurrences(of: " ", with: "%20")
     }
 }
 
-#if !SKIP
+enum OutlinerMarkupInteractionPolicy {
+    static func hasInteractiveContent(_ nodes: [LogseqMarkupNode]) -> Bool {
+        nodes.contains { node in
+            switch node.type {
+            case .link, .nodeReference, .tagReference, .video, .iframe,
+                 .youtubeTimestamp, .cloze:
+                return true
+            case .emphasis, .quote:
+                return hasInteractiveContent(node.children)
+            case .text, .code, .codeBlock, .math:
+                return false
+            }
+        }
+    }
+}
+
 enum OutlinerMarkupAttributedString {
     static func make(nodes: [LogseqMarkupNode], fallback: String) -> AttributedString {
         guard !nodes.isEmpty else { return AttributedString(fallback) }
@@ -133,7 +204,6 @@ enum OutlinerMarkupAttributedString {
         }
     }
 }
-#endif
 
 struct OutlinerRichBlockContent: View {
     let node: LogseqMarkupNode
@@ -201,20 +271,12 @@ struct OutlinerRichBlockContent: View {
     }
 
     @ViewBuilder private var quoteText: some View {
-        #if !SKIP
         Text(OutlinerMarkupAttributedString.make(nodes: node.children, fallback: ""))
             .environment(\.openURL, OpenURLAction { url in
                 guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
                 onOpenMarkupLink(link)
                 return .handled
             })
-        #else
-        let presentation = OutlinerMarkupPresentation.make(
-            nodes: node.children,
-            fallback: ""
-        )
-        Text(verbatim: presentation.plainText)
-        #endif
     }
 }
 
@@ -249,11 +311,7 @@ private struct YouTubeTimestamp: View {
 
 private extension View {
     @ViewBuilder func platformTimestampHitShape() -> some View {
-        #if !SKIP
         contentShape(Rectangle())
-        #else
-        self
-        #endif
     }
 }
 
@@ -286,17 +344,6 @@ private struct SyntaxHighlightedCodeBlock: View {
     }
 
     var body: some View {
-        #if SKIP
-        ComposeView { _ in
-            HighlightThemeProvider {
-                SyntaxHighlightedCode(
-                    code: code,
-                    language: language ?? "plaintext"
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: contentHeight)
-        #else
         VStack(alignment: .leading, spacing: 6) {
             if let language, !language.isEmpty {
                 Text(verbatim: language)
@@ -313,7 +360,6 @@ private struct SyntaxHighlightedCodeBlock: View {
         .padding(10)
         .background(Color.secondary.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        #endif
     }
 }
 
@@ -322,23 +368,9 @@ private struct NativeLatexView: View {
     let isDisplay: Bool
 
     var body: some View {
-        #if SKIP
-        ComposeView { _ in
-            AndroidView(
-                factory: { context in
-                    let view = MTMathView(context)
-                    view.latex = expression
-                    return view
-                },
-                update: { view in view.latex = expression }
-            )
-        }
-        .frame(maxWidth: .infinity, minHeight: isDisplay ? 56.0 : 30.0, alignment: .leading)
-        #else
         SwiftUIMath.Math(expression)
             .mathTypesettingStyle(isDisplay ? .display : .text)
             .frame(maxWidth: .infinity, minHeight: isDisplay ? 56 : 30, alignment: .leading)
-        #endif
     }
 }
 
@@ -354,31 +386,9 @@ private struct EmbeddedVideo: View {
            ) {
             EmbeddedWebContent(url: embedURL)
         } else if let url {
-            #if !SKIP && os(iOS)
+            #if os(iOS)
             NativeAppleVideo(url: url)
                 .frame(height: 220)
-            #elseif SKIP
-            ComposeView { _ in
-                AndroidView(
-                    factory: { context in
-                        let view = VideoView(context)
-                        let controls = MediaController(context)
-                        controls.setAnchorView(view)
-                        view.setMediaController(controls)
-                        view.setVideoURI(Uri.parse(url.absoluteString))
-                        view.seekTo(1)
-                        return view
-                    },
-                    update: { view in
-                        if view.tag as? String != url.absoluteString {
-                            view.tag = url.absoluteString
-                            view.setVideoURI(Uri.parse(url.absoluteString))
-                            view.seekTo(1)
-                        }
-                    }
-                )
-            }
-            .frame(height: 220)
             #else
             Link(url.absoluteString, destination: url)
             #endif
@@ -389,7 +399,7 @@ private struct EmbeddedVideo: View {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 private struct NativeAppleVideo: View {
     @State private var player: AVPlayer
 
@@ -407,38 +417,12 @@ private struct NativeAppleVideo: View {
 private struct EmbeddedWebContent: View {
     let url: URL?
 
+
     @ViewBuilder var body: some View {
         if let url {
-            #if !SKIP && os(iOS)
+            #if os(iOS)
             AppleWebView(url: url)
                 .frame(height: 240)
-            #elseif SKIP
-            ComposeView { _ in
-                AndroidView(
-                    factory: { context in
-                        let view = WebView(context)
-                        view.settings.javaScriptEnabled = true
-                        view.settings.domStorageEnabled = true
-                        view.settings.mediaPlaybackRequiresUserGesture = true
-                        AndroidEmbeddedWebView.load(
-                            view: view,
-                            url: url.absoluteString,
-                            referer: EmbeddedMediaPolicy.webReferer(for: url)
-                        )
-                        return view
-                    },
-                    update: { view in
-                        if view.url != url.absoluteString {
-                            AndroidEmbeddedWebView.load(
-                                view: view,
-                                url: url.absoluteString,
-                                referer: EmbeddedMediaPolicy.webReferer(for: url)
-                            )
-                        }
-                    }
-                )
-            }
-            .frame(height: 240)
             #else
             Link(url.absoluteString, destination: url)
             #endif
@@ -449,7 +433,7 @@ private struct EmbeddedWebContent: View {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 private struct AppleWebView: UIViewRepresentable {
     let url: URL
 

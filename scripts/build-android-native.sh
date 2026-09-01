@@ -28,7 +28,7 @@ esac
 target="${target_arch}-linux-android${api_level}"
 target_prefix="$repo_root/_build/android-toolchain/$target-$ocaml_version"
 build_dir="$repo_root/_build/android-core/$android_abi"
-jni_dir="$repo_root/Android/app/src/main/jniLibs/$android_abi"
+jni_dir="$repo_root/Flutter/android/app/src/main/jniLibs/$android_abi"
 library="$build_dir/liblogseq_chat_core.so"
 
 "$repo_root/scripts/bootstrap-android-ocaml.sh" >/dev/null
@@ -61,16 +61,19 @@ cd "$build_dir"
   -fPIC \
   -O2 \
   -D_FILE_OFFSET_BITS=64 \
+  -DSQLITE_ENABLE_FTS5 \
   -DSQLITE_OMIT_LOAD_EXTENSION \
   -DSQLITE_THREADSAFE=1 \
   -c "$sqlite_source_dir/sqlite3.c" \
   -o sqlite3.o
+"$ndk_bin/llvm-nm" sqlite3.o | grep "sqlite3Fts5Init" >/dev/null
 "$ndk_bin/llvm-ar" rcs libsqlite3.a sqlite3.o
 
 runtime_object=$(C_INCLUDE_PATH="$sqlite_source_dir${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}" \
   DATASCRIPT_SQLITE_LIB_DIR="$build_dir" \
   DUNE_PROFILE=android \
   LOGSEQ_CHAT_SQLITE_LIB_DIR="$build_dir" \
+  LOGSEQ_CHAT_SQLITE_LINK_FILE="$build_dir/libsqlite3.a" \
   "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" "$dune_context")
 
 for source in logseq_chat_crypto_android.c logseq_chat_https_android.c; do

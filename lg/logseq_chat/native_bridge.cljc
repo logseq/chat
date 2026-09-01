@@ -2,6 +2,7 @@
   (:require [clojure.string :as string]
             [lui.app :as driver]
             [lui.backend.apple :as apple]
+            [lui.backend.flutter :as flutter]
             [lui.protocol :as proto]
             [lui.wire :as wire]
             [logseq-chat.app :as chat]
@@ -22,6 +23,9 @@
     2 proto/IOS
     3 proto/AndroidOS
     _ proto/GenericOS))
+
+(defn host-kind [host-code]
+  (if (= host-code 3) proto/FlutterHost proto/SwiftUIHost))
 
 (defn app []
   (match (deref current-app)
@@ -267,21 +271,34 @@
     4 "signingOut"
     _ "restoring"))
 
-(defn initialize [platform-code _host-code authentication-code]
+(defn start-application! [application]
+  (reset! current-app (Some application))
+  (driver/start! application)
+  (driver/flush! application)
+  (deref latest-patch))
+
+(defn initialize [platform-code host-code authentication-code]
   (reset! latest-patch "")
-  (let [renderer
-        (apple/create-wire-with-extensions
-         send-patch! (view/extension-registry))
-        application
-        (chat/create-with-authentication
-         (apple/backend-for renderer
-                            (operating-system platform-code)
-                            proto/SwiftUIHost)
-         (initial-authentication-state authentication-code))]
-    (reset! current-app (Some application))
-    (driver/start! application)
-    (driver/flush! application)
-    (deref latest-patch)))
+  (let [registry (view/extension-registry)
+        authentication-state
+        (initial-authentication-state authentication-code)]
+    (if (= (host-kind host-code) proto/FlutterHost)
+      (let [renderer
+            (flutter/create-wire-with-extensions send-patch! registry)]
+        (start-application!
+         (chat/create-with-authentication
+          (flutter/backend-for-profile
+           renderer
+           (proto/profile (operating-system platform-code) proto/FlutterHost))
+          authentication-state)))
+      (let [renderer
+            (apple/create-wire-with-extensions send-patch! registry)]
+        (start-application!
+         (chat/create-with-authentication
+          (apple/backend-for renderer
+                             (operating-system platform-code)
+                             proto/SwiftUIHost)
+          authentication-state))))))
 
 (defn linked [] true)
 
@@ -315,6 +332,9 @@
             (cond (= value 0) "before"
                   (= value 1) "inside"
                   :else "after"))}
+
+          (and (= identifier "outliner-block-content") (= name "edit"))
+          {"uuid" (proto/StringValue text)}
 
           (= name "text-change")
           {"title" (proto/StringValue text)

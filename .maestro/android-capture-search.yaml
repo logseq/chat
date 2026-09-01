@@ -16,6 +16,12 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.task-status"
 - tapOn:
+    id: "button.task-status"
+- extendedWaitUntil:
+    visible: "Todo"
+    timeout: 5000
+- tapOn: "Todo"
+- tapOn:
     id: "field.composer"
 - inputText: "Android E2E capture"
 - assertVisible:
@@ -24,17 +30,45 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.send"
 - hideKeyboard
-- tapOn:
-    id: "surface.composer.dismiss"
+- pressKey: BACK
 - assertVisible:
     id: "button.composer.expand"
 - tapOn:
     id: "button.search"
-- assertVisible: "Search pages and blocks"
+- assertVisible:
+    id: "screen.search"
+- assertVisible:
+    id: "field.search"
 - tapOn:
-    text: "Search pages and blocks"
+    id: "field.search"
 - inputText: "Android E2E capture"
 - hideKeyboard
 - extendedWaitUntil:
     visible: "Android E2E capture"
     timeout: 30000
+- tapOn:
+    id: "search.result.*"
+- extendedWaitUntil:
+    visible:
+      id: "screen.node"
+    timeout: 10000
+- assertVisible: "Android E2E capture"
+- assertVisible:
+    id: "button.block-task-status"
+- pressKey: BACK
+- assertVisible:
+    id: "screen.search"
+- assertVisible: "Android E2E capture"
+- pressKey: BACK
+- assertVisible:
+    id: "button.composer.expand"
+- scrollUntilVisible:
+    element:
+      text: "Android E2E capture"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "button.block-task-status"

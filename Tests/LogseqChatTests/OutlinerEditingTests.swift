@@ -890,6 +890,48 @@ import Testing
         ])
     }
 
+    @Test func androidMarkupKeepsPlainTextOnTheNonInteractiveRenderPath() {
+        let plain = [LogseqMarkupNode(type: .text, text: "Plain block")]
+        let linked = [
+            LogseqMarkupNode(type: .text, text: "Open "),
+            LogseqMarkupNode(type: .nodeReference, uuid: "page-id", title: "Page"),
+        ]
+
+        #expect(!OutlinerMarkupMarkdown.requiresAttributedText(plain))
+        #expect(OutlinerMarkupMarkdown.requiresAttributedText(linked))
+        #expect(OutlinerMarkupMarkdown.make(nodes: plain, fallback: "") == "Plain block")
+        #expect(OutlinerMarkupMarkdown.make(nodes: linked, fallback: "") ==
+            "Open [Page](logseq-node://page-id)")
+    }
+
+    @Test func androidMarkupEscapesMarkdownLabelsWithoutBreakingNodeRoutes() {
+        let nodes = [
+            LogseqMarkupNode(type: .nodeReference, uuid: "page id", title: "Page [One]"),
+            LogseqMarkupNode(type: .text, text: " "),
+            LogseqMarkupNode(type: .tagReference, uuid: "tag-id", title: "Project"),
+        ]
+
+        #expect(OutlinerMarkupMarkdown.make(nodes: nodes, fallback: "") ==
+            "[Page \\[One\\]](logseq-node://page%20id) [\\#Project](logseq-node://tag-id)")
+    }
+
+    @Test func androidRichContentOnlyInterceptsTouchesForInteractiveNodes() {
+        #expect(!OutlinerMarkupInteractionPolicy.hasInteractiveContent([
+            LogseqMarkupNode(type: .text, text: "Plain"),
+            LogseqMarkupNode(type: .math, text: "x^2"),
+            LogseqMarkupNode(type: .codeBlock, text: "let x = 1"),
+        ]))
+        #expect(OutlinerMarkupInteractionPolicy.hasInteractiveContent([
+            LogseqMarkupNode(
+                type: .emphasis,
+                children: [LogseqMarkupNode(type: .nodeReference, uuid: "page", title: "Page")]
+            ),
+        ]))
+        #expect(OutlinerMarkupInteractionPolicy.hasInteractiveContent([
+            LogseqMarkupNode(type: .video, url: "https://example.com/video.mp4"),
+        ]))
+    }
+
     @Test func youtubeLinksNormalizeToPrivacyEnhancedInlineEmbeds() throws {
         let videoID = "dQw4w9WgXcQ"
         let sources = [

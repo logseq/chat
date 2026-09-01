@@ -24,7 +24,7 @@ enum NodeSharePolicy {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 import SwiftUI
 import UIKit
 

@@ -18,7 +18,7 @@ enum AudioRecordingPolicy {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 import AVFoundation
 import CryptoKit
 import Speech
@@ -239,70 +239,6 @@ struct AudioRecorderSheet: View {
             }
         }
         .animation(.linear(duration: 0.1), value: recorder.level)
-    }
-}
-#endif
-
-#if SKIP
-import SwiftUI
-
-struct AndroidAudioRecorderSheet: View {
-    let targetBlockID: String?
-    let onSave: (String, String, Int, String, String, String?) -> String
-    let onTranscript: (String, String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var isRecording = false
-    @State private var transcriptionEnabled = true
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 28) {
-                Text(isRecording ? "Recording…" : "Preparing microphone…")
-                    .font(.title2)
-                if let errorMessage {
-                    Text(errorMessage).foregroundStyle(.red)
-                }
-                if AndroidAudioTranscriber.isSupported() {
-                    Toggle("Transcribe recording", isOn: $transcriptionEnabled)
-                        .accessibilityIdentifier("toggle.audio.transcription")
-                }
-                Button("Stop recording") {
-                    AndroidAudioRecorder.stop { title, type, size, checksum, path in
-                        let assetUUID = onSave(title, type, size, checksum, path, targetBlockID)
-                        dismiss()
-                        if transcriptionEnabled && AndroidAudioTranscriber.isSupported() {
-                            AndroidAudioTranscriber.transcribe(path) { transcript in
-                                if !transcript.isEmpty {
-                                    onTranscript(assetUUID, transcript)
-                                }
-                            } onError: { _ in }
-                        }
-                    } onError: { message in
-                        errorMessage = message
-                    }
-                }
-                .disabled(!isRecording)
-                Spacer()
-            }
-            .padding(24)
-            .navigationTitle("Audio recording")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        AndroidAudioRecorder.cancel()
-                        dismiss()
-                    }
-                }
-            }
-        }
-        .task {
-            AndroidAudioRecorder.start {
-                isRecording = true
-            } onError: { message in
-                errorMessage = message
-            }
-        }
     }
 }
 #endif

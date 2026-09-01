@@ -1,12 +1,12 @@
 # Logseq Chat
 
-Logseq Chat is a Skip dual-platform (iOS/Android) client with an OCaml DataScript core. Canonical setup is in `README.md`.
+Logseq Chat uses native SwiftUI on Apple platforms and Flutter Material on Android, backed by an OCaml DataScript core. Canonical setup is in `README.md`.
 
 ## Testing
 
 - Do NOT run `swift test` (xctest). It hangs indefinitely in this
   environment (an async Swift Testing case blocks on an XCTWaiter that never
-  finishes), wasting many minutes per run. Skip it.
+  finishes), wasting many minutes per run. Do not run it.
 - Validate OCaml core changes with `dune build @core/runtest`.
 - If a Swift compile check is needed, use `swift build` (build only, no test
   run) with sandbox disabled; SwiftPM's own sandbox conflicts with the agent
@@ -24,7 +24,7 @@ Logseq Chat is a Skip dual-platform (iOS/Android) client with an OCaml DataScrip
 
 ## Cursor Cloud specific instructions
 
-Cloud Agent VMs are Linux. They cannot run Xcode, the iOS simulator, the macOS `.app`, `swift test`, or `skip test`. Do not try to start those from this environment.
+Cloud Agent VMs are Linux. They cannot run Xcode, the iOS simulator, the macOS `.app`, or `swift test`. Do not try to start those from this environment.
 
 The Linux-runnable surface is the OCaml core in `core/` (inbox capture, DataScript model, RPC, SQLite persistence). There is no in-repo HTTP server; the app’s default API (`http://127.0.0.1:8787`) lives in a separate Logseq product.
 

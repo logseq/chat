@@ -33,6 +33,10 @@ appId: com.logseq.chat
       id: "screen.graph-picker"
     timeout: 60000
 - runFlow:
+    file: "android-graph-picker-sheet.yaml"
+- runFlow:
+    file: "android-graph-picker-settings.yaml"
+- runFlow:
     when:
       notVisible:
         id: "graph\\..*"
@@ -56,19 +60,8 @@ appId: com.logseq.chat
       visible:
         id: "graph\\..*"
     commands:
-      - assertNotVisible:
-          id: "sidebar.navigation"
-      - tapOn:
-          id: "graph\\..*"
-          index: 0
       - runFlow:
-          when:
-            visible: "Unlock encrypted graphs"
-          commands:
-            - tapOn: "E2EE password"
-            - inputText: ${PASSWORD}
-            - hideKeyboard
-            - tapOn: "Unlock"
+          file: "android-graph-picker-open.yaml"
 - extendedWaitUntil:
     visible:
       id: "button.composer.expand"

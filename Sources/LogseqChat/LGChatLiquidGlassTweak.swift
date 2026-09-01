@@ -58,9 +58,6 @@ struct LGChatLiquidGlassSurface: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        #if SKIP
-        content
-        #else
         if #available(iOS 26.0, macOS 26.0, *) {
             if shape == .circle {
                 content.glassEffect(.regular.interactive(), in: .circle)
@@ -94,6 +91,5 @@ struct LGChatLiquidGlassSurface: ViewModifier {
                 content.background(.ultraThinMaterial, in: Capsule())
             }
         }
-        #endif
     }
 }

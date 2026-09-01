@@ -204,35 +204,6 @@
         }
       }
     },
-    "Hello [%@](https://skip.dev)!" : {
-      "comment" : "Welcome tab contents",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "¡Hola [%@](https://skip.dev)!"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bonjour [%@](https://skip.dev)!"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "こんにちは [%@](https://skip.dev)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你好 [%@](https://skip.dev)"
-          }
-        }
-      }
-    },
     "Home" : {
       "comment" : "Tab bar item title for the Home tab",
       "localizations" : {
@@ -345,35 +316,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "笔记"
-          }
-        }
-      }
-    },
-    "Powered by [Skip](https://skip.dev)" : {
-      "comment" : "Link markdown text for the Powered by… label",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Impulsado por [Skip](https://skip.dev)"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fonctionnalités offertes par [Skip](https://skip.dev)"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "[Skip](https://skip.dev) を使って動かしています"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "由[Skip](https://skip.dev)提供支持"
           }
         }
       }

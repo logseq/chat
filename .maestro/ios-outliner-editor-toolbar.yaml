@@ -9,6 +9,7 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "Task: None"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/editor-leading"
 - tapOn:
     id: "button.outliner.editor.task"
 - extendedWaitUntil:
@@ -42,6 +43,7 @@ appId: com.logseq.chat
     duration: 800
 - assertVisible:
     id: "toolbar.outliner.editor"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/editor-trailing"
 - tapOn:
     id: "button.outliner.editor.pageReference"
 - assertVisible:

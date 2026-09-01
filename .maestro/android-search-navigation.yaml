@@ -4,7 +4,7 @@ appId: com.logseq.chat
 - extendedWaitUntil:
     visible:
       id: "button.search"
-    timeout: 30000
+    timeout: 45000
 - tapOn:
     id: "button.search"
 - assertVisible:

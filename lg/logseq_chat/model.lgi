@@ -170,6 +170,7 @@
   (has-pending-semantic-operations :bool)
   (has-pending-sync-request :bool)
   (is-pending-sync-patch :bool)
+  (is-graph-catalog-patch :bool)
   (search-query :string)
   (search-results :vector<search-hit>)
   (node-routes :vector<node-projection>)

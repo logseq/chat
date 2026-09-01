@@ -3,7 +3,7 @@ import LogseqChatModel
 import LUIAppleBackend
 import Observation
 import SwiftUI
-#if !SKIP && os(iOS)
+#if os(iOS)
 import UIKit
 import UniformTypeIdentifiers
 #endif
@@ -31,7 +31,7 @@ private final class LGChatYouTubePlaybackState {
     var starts: [String: Int] = [:]
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 private struct OutlinerRowHeightPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 44
 
@@ -61,7 +61,7 @@ private struct OutlinerRowDropDelegate: DropDelegate {
 @MainActor
 private enum LGChatRichBlockExtension {
     static let identifier = "outliner-block-content"
-    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],9:open-node[4:uuid:string:required]"
+    static let fingerprint = "lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
     static func register(
         in registry: LUIAppleExtensionRegistry,
@@ -89,6 +89,9 @@ private enum LGChatRichBlockExtension {
                         .init(name: "uuid", kind: .string, isRequired: true),
                         .init(name: "placement", kind: .string, isRequired: true),
                     ]),
+                    .init(name: "edit", fields: [
+                        .init(name: "uuid", kind: .string, isRequired: true),
+                    ]),
                     .init(name: "open-node", fields: [
                         .init(name: "uuid", kind: .string, isRequired: true),
                     ]),
@@ -107,7 +110,7 @@ private struct LGChatRichBlock: View {
     @State private var measuredHeight: CGFloat = 44
 
     var body: some View {
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         content
             .background {
                 GeometryReader { geometry in
@@ -182,6 +185,11 @@ private struct LGChatRichBlock: View {
         return (try? JSONDecoder().decode([LogseqMarkupNode].self, from: data)) ?? []
     }
 
+    private var androidContentHandlesTouches: Bool {
+        boolProperty("is-asset")
+            || OutlinerMarkupInteractionPolicy.hasInteractiveContent(markupNodes)
+    }
+
     private var youtubeTargetURL: String? {
         let value = stringProperty("youtube-target-url")
         return value.isEmpty ? nil : value
@@ -195,6 +203,14 @@ private struct LGChatRichBlock: View {
     private func emitOpenNode(_ uuid: String) {
         do {
             try context.emit(name: "open-node", values: ["uuid": .string(uuid)])
+        } catch {
+            logger.error("Could not emit rich block event: \(String(describing: error))")
+        }
+    }
+
+    private func emitEdit() {
+        do {
+            try context.emit(name: "edit", values: ["uuid": .string(blockID)])
         } catch {
             logger.error("Could not emit rich block event: \(String(describing: error))")
         }
@@ -240,7 +256,7 @@ private struct LGChatAssetPreview: View {
     let localPath: String
 
     var body: some View {
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         if kind == .image,
            let url = LocalAssetPath.resolve(
                localPath,

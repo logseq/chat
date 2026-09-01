@@ -390,7 +390,6 @@ private let testEmptySnapshotJSON = """
         #expect(store.lastError?.code == "database_not_open")
     }
 
-    #if !SKIP
     @Test func snapshotMetadataRequestUsesSyncAPIAndOAuthBearerToken() throws {
         let request = try LogseqGraphSyncHTTP.snapshotMetadataRequest(
             baseURL: "http://127.0.0.1:8787/api",
@@ -431,9 +430,7 @@ private let testEmptySnapshotJSON = """
             )
         }
     }
-    #endif
 
-    #if !SKIP
     @Test func gzipSnapshotIsDecodedBeforeNativeImport() throws {
         let compressed = try #require(Data(base64Encoded: "H4sIAAAAAAAC/2NgYGB2dHIGAMqqG9MHAAAA"))
         let compressedURL = FileManager.default.temporaryDirectory
@@ -453,9 +450,7 @@ private let testEmptySnapshotJSON = """
 
         #expect(try Data(contentsOf: decodedURL) == Data([0, 0, 0, 3, 65, 66, 67]))
     }
-    #endif
 
-    #if !SKIP
     @Test func graphWebSocketRequestUsesExistingSyncEndpoint() throws {
         let request = try LogseqGraphSyncHTTP.webSocketRequest(
             baseURL: "http://127.0.0.1:8787",
@@ -496,7 +491,6 @@ private let testEmptySnapshotJSON = """
         ))
         #expect(!LogseqGraphWebSocketReconnectPolicy.shouldReconnect(nil))
     }
-    #endif
 
     @Test func graphSnapshotRefreshWaitsForOutlinerEditingToFinish() {
         #expect(!LogseqGraphSnapshotRefreshPolicy.shouldRefresh(
@@ -552,7 +546,6 @@ private let testEmptySnapshotJSON = """
         ))
     }
 
-    #if !SKIP
     @Test func expectedWebSocketCancellationDoesNotPublishAConnectionFailure() {
         #expect(!LogseqGraphWebSocketFailurePolicy.shouldReport(
             CancellationError(),
@@ -578,7 +571,6 @@ private let testEmptySnapshotJSON = """
         #expect(LogseqGraphWebSocketFailurePolicy.userFacingMessage(URLError(.unsupportedURL))
             == "The sync server address is invalid.")
     }
-    #endif
 
     @Test @MainActor func graphDiscoveryRunsWhenThereIsNoCachedSelection() async throws {
         let recorder = RequestRecorder()
@@ -1617,7 +1609,6 @@ private let testEmptySnapshotJSON = """
         #expect(refreshCount == 1)
     }
 
-    #if !SKIP
     @Test @MainActor func nativeCoreCallsAreSerializedAcrossAsyncAndImmediateActions() async throws {
         let probe = CoreCallConcurrencyProbe()
         let store = LogseqChatStore { request in
@@ -1750,9 +1741,7 @@ private let testEmptySnapshotJSON = """
             "finish searchNodes",
         ])
     }
-    #endif
 
-    #if !SKIP
     @Test @MainActor func nativeCoreCallsStayOnOneOperatingSystemThreadAcrossStores() async throws {
         let probe = CoreCallConcurrencyProbe()
         let firstStore = LogseqChatStore { request in
@@ -1773,7 +1762,6 @@ private let testEmptySnapshotJSON = """
         #expect(probe.operatingSystemThreadIDs.count == 1)
         #expect(probe.operatingSystemThreadNames == ["LogseqChatCore"])
     }
-    #endif
 
     @Test @MainActor func searchNodesKeepsDurableCaptureVisible() async throws {
         let recorder = RequestRecorder()
@@ -3116,10 +3104,8 @@ private final class CoreCallConcurrencyProbe: @unchecked Sendable {
         activeCalls += 1
         maximumActiveCalls = max(maximumActiveCalls, activeCalls)
         recordedEvents.append("start \(action)")
-        #if !SKIP
         recordedOperatingSystemThreadIDs.insert(UInt64(pthread_mach_thread_np(pthread_self())))
         recordedOperatingSystemThreadNames.insert(Thread.current.name ?? "")
-        #endif
         lock.unlock()
 
         if action == delayingAction {
@@ -3247,7 +3233,6 @@ struct TestData : Codable, Hashable {
     }
 }
 
-#if !SKIP
 @Suite(.serialized) struct LogseqChatCoreExecutorTests {
     @Test func synchronousAndAsynchronousCallsUseTheSameSerialThread() async {
         let firstStarted = DispatchSemaphore(value: 0)
@@ -3283,4 +3268,3 @@ struct TestData : Codable, Hashable {
         #expect(secondStarted.wait(timeout: .now() + 1) == .success)
     }
 }
-#endif

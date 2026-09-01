@@ -18,6 +18,26 @@ appId: com.logseq.chat
       id: "screen.graphs"
     timeout: 5000
 - assertVisible: "Graphs"
+- assertVisible:
+    id: "button.graphs.refresh"
+- tapOn:
+    id: "button.graphs.refresh"
+- waitForAnimationToEnd
+- longPressOn:
+    id: "graph\\.[^.]+$"
+- tapOn: "Delete local graph"
+- extendedWaitUntil:
+    visible:
+      id: "dialog.graph-delete"
+    timeout: 5000
+- assertVisible:
+    id: "button.graph-delete.cancel"
+- assertVisible:
+    id: "button.graph-delete.confirm"
+- tapOn:
+    id: "button.graph-delete.cancel"
+- assertNotVisible:
+    id: "dialog.graph-delete"
 - tapOn:
     id: "button.graph-add"
 - extendedWaitUntil:

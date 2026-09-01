@@ -1,0 +1,16 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Android E2E continuous first"
+    timeout: 90000
+- longPressOn: "Android E2E continuous first"
+- extendedWaitUntil:
+    visible:
+      id: "toolbar.outliner.selection"
+    timeout: 5000
+- assertVisible:
+    id: "button.outliner.selection.copy"
+- assertVisible:
+    id: "button.outliner.selection.unselect"
+- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-material

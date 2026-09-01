@@ -18,6 +18,7 @@
    %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
    %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
    %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
+   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/flutter
    ../lg/logseq_chat/model.lgi
    ../lg/logseq_chat/model.cljc
    ../lg/logseq_chat/view.lgi

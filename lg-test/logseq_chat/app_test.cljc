@@ -212,36 +212,6 @@
                renderer runtime-root "application.shell")]
     (if (= shell -1) runtime-root shell)))
 
-(deftest android-root-sizing-does-not-change-ios-safe-area-coordinates
-  (doseq [platform [proto/IOS proto/AndroidOS]]
-    (let [renderer (apple/create-with-extensions (view/extension-registry))
-          application
-          (chat/create
-           (apple/backend-for renderer platform proto/SwiftUIHost))]
-      (driver/start! application)
-      (driver/flush! application)
-      (let [runtime-root (driver/root-node application)
-            shell (application-shell-root renderer application)
-            main-stack (nth (apple/children renderer shell) 0)
-            expected-root-kind
-            (if (= platform proto/AndroidOS) apple/AppleStack apple/AppleDrawer)
-            expected-root-frame
-            (if (= platform proto/AndroidOS) "both" "<missing>")
-            expected-main-frame
-            (if (= platform proto/AndroidOS) "vertical" "<missing>")]
-        (assert-equal
-         (Some expected-root-kind)
-         (apple/node renderer runtime-root)
-         "only Android wraps the drawer for launch-state transitions")
-        (assert-equal
-         expected-root-frame
-         (property-string renderer runtime-root proto/ContainerRelativeFrameValue)
-         "only Android forces the root to the Compose viewport")
-        (assert-equal
-         expected-main-frame
-         (property-string renderer main-stack proto/ContainerRelativeFrameValue)
-         "only Android forces the drawer content to the Compose viewport")))))
-
 (defn main-root [renderer application]
   (let [runtime-root (driver/root-node application)
         shell-root (application-shell-root renderer application)
@@ -311,6 +281,7 @@
     (has-pending-semantic-operations false)
     (has-pending-sync-request false)
     (is-pending-sync-patch false)
+    (is-graph-catalog-patch false)
     (search-query "")
     (search-results [])
     (node-routes [])
@@ -959,6 +930,345 @@
                                                   "button.log-copy")))
           "runtime diagnostics retain their actions"))))
 
+(deftest flutter-settings-sheet-uses-one-bounded-scroll-layout
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenConnectionMenu)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          sheet (descendant-with-identifier renderer root "sheet.settings")
+          layout
+          (descendant-with-identifier renderer sheet "layout.settings.sheet")]
+      (assert-equal 640
+                    (property-int renderer sheet proto/HeightValue)
+                    "Flutter bounds the Material bottom sheet")
+      (assert-equal 1
+                    (count (apple/children renderer sheet))
+                    "Flutter gives the backend one composed sheet child")
+      (is (not (= -1 layout))
+          "Flutter owns one vertical settings layout")
+      (if (not (= -1 layout))
+        (do
+          (assert-equal 1
+                        (descendant-count-with-node-kind
+                         renderer layout apple/AppleScrollView)
+                        "long Settings content scrolls inside the sheet")
+          (is (not (= -1 (descendant-with-identifier
+                          renderer layout "toolbar.settings.actions")))
+              "Settings actions remain below the scrollable content"))))))
+
+(deftest flutter-settings-tabs-open-through-the-rendered-press-handler
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplySettingsSnapshot
+      (settings ["journals" "flashcards" "graphs"])))
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          tabs-link
+          (descendant-with-identifier renderer root "link.settings.tabs")]
+      (is (not (= -1 tabs-link))
+          "Flutter renders the Settings tabs navigation row")
+      (driver/dispatch-event! application (proto/Press tabs-link))
+      (driver/flush! application)
+      (let [updated-root (main-root renderer application)
+            sheet
+            (descendant-with-identifier renderer updated-root "sheet.settings")
+            layout
+            (descendant-with-identifier
+             renderer updated-root "layout.settings.tabs-sheet")
+            tabs-screen
+            (descendant-with-identifier
+             renderer updated-root "screen.settings.tabs")
+            actions
+            (descendant-with-identifier
+             renderer updated-root "toolbar.settings.actions")
+            back
+            (descendant-with-identifier
+             renderer updated-root "button.connection.cancel")
+            flashcards-toggle
+            (descendant-with-identifier
+             renderer updated-root "toggle.settings.tab.flashcards")]
+        (is (not (= -1 (descendant-with-identifier
+                        renderer updated-root "screen.settings.tabs")))
+            "pressing the rendered row opens the Tabs screen")
+        (assert-equal
+         -1
+         (descendant-with-identifier renderer updated-root "screen.settings")
+         "the Tabs screen replaces the Settings main screen")
+        (assert-equal 1
+                      (count (apple/children renderer sheet))
+                      "Flutter gives the Tabs sheet one bounded child")
+        (is (not (= -1 layout))
+            "Flutter owns one vertical Tabs layout")
+        (if (not (= -1 layout))
+          (do
+            (assert-equal (Some apple/AppleColumn)
+                          (apple/node renderer layout)
+                          "Tabs uses one vertical Material layout")
+            (assert-equal [tabs-screen actions]
+                          (apple/children renderer layout)
+                          "the tab list and back action occupy separate rows")))
+        (assert-equal 1.0
+                      (property-float renderer tabs-screen proto/GrowValue)
+                      "the tab list consumes only the space above the action")
+        (assert-equal (Some apple/AppleRow)
+                      (apple/node renderer actions)
+                      "the back action uses an anchored Material row")
+        (assert-equal 1.0
+                      (property-float renderer back proto/GrowValue)
+                      "the back action fills the available phone width")
+        (assert-equal -1.0
+                      (property-float renderer flashcards-toggle proto/GrowValue)
+                      "tab state stays leading while spare width separates reorder actions")))))
+
+(deftest flutter-runtime-log-actions-fit-phone-width
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenSettings)
+    (driver/send! application model/OpenRuntimeLog)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          sheet (descendant-with-identifier renderer root "sheet.settings")
+          layout
+          (descendant-with-identifier renderer root "layout.runtime-log.sheet")
+          screen
+          (descendant-with-identifier renderer root "screen.runtime-log")
+          actions
+          (descendant-with-identifier renderer root "toolbar.settings.actions")
+          refresh
+          (descendant-with-identifier renderer root "button.log-refresh")
+          done
+          (descendant-with-identifier renderer root "button.connection.apply")]
+      (assert-equal 1
+                    (count (apple/children renderer sheet))
+                    "Flutter gives the Runtime log sheet one bounded child")
+      (is (not (= -1 layout))
+          "Flutter owns one vertical Runtime log layout")
+      (if (not (= -1 layout))
+        (do
+          (assert-equal (Some apple/AppleColumn)
+                        (apple/node renderer layout)
+                        "Runtime log owns one vertical Material layout")
+          (assert-equal [screen actions]
+                        (apple/children renderer layout)
+                        "the log screen and its action bar occupy separate rows")))
+      (assert-equal 1.0
+                    (property-float renderer screen proto/GrowValue)
+                    "the log screen consumes only the space above the actions")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer actions)
+                    "Runtime log actions use an anchored Material row")
+      (assert-equal "secondary"
+                    (property-string renderer refresh proto/VariantValue)
+                    "Refresh is the secondary Runtime log action")
+      (assert-equal "primary"
+                    (property-string renderer done proto/VariantValue)
+                    "Done is the primary Runtime log action")
+      (assert-equal 1.0
+                    (property-float renderer refresh proto/GrowValue)
+                    "Refresh shares the phone width")
+      (assert-equal 1.0
+                    (property-float renderer done proto/GrowValue)
+                    "Done shares the phone width")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toolbar.log-filters.primary")))
+          "Flutter groups the first two log actions into a bounded row")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toolbar.log-filters.secondary")))
+          "Flutter groups the remaining log actions into a bounded row"))))
+
+(deftest flutter-settings-use-full-width-material-controls
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          picker
+          (descendant-with-identifier
+           renderer root "picker.settings.language")
+          appearance-control
+          (descendant-with-identifier
+           renderer root "layout.settings.appearance-control")
+          appearance-picker
+          (descendant-with-identifier
+           renderer root "picker.settings.appearance")
+          language-control
+          (descendant-with-identifier
+           renderer root "layout.settings.language-control")
+          general-card
+          (descendant-with-identifier
+           renderer root "layout.settings.general-card")
+          actions
+          (descendant-with-identifier
+           renderer root "toolbar.settings.actions")
+          cancel
+          (descendant-with-identifier
+           renderer root "button.connection.cancel")
+          apply
+          (descendant-with-identifier
+           renderer root "button.connection.apply")
+          tabs-copy
+          (descendant-with-identifier
+           renderer root "layout.settings.tabs-copy")
+          tabs-selection
+          (descendant-with-identifier
+           renderer root "text.settings.tabs.selection")
+          tabs-icon
+          (descendant-with-identifier
+           renderer root "icon.settings.tabs")
+          spell-check
+          (descendant-with-identifier
+           renderer root "switch.settings.spell-check")
+          auto-correction
+          (descendant-with-identifier
+           renderer root "switch.settings.auto-correction")
+          export
+          (descendant-with-identifier
+           renderer root "button.export-graph-database")
+          runtime-log
+          (descendant-with-identifier renderer root "button.runtime-log")
+          report-bug
+          (descendant-with-identifier
+           renderer root "link.settings.community.report-bug")
+          sign-out
+          (descendant-with-identifier renderer root "button.sign-out")]
+      (assert-equal (Some apple/AppleSelect)
+                    (apple/node renderer picker)
+                    "Flutter uses one bounded Material select control")
+      (assert-equal (Some apple/AppleSelect)
+                    (apple/node renderer appearance-picker)
+                    "Flutter exposes the Material Theme select directly")
+      (assert-equal -1
+                    (property-int renderer appearance-control proto/WidthValue)
+                    "the Theme select is not pinned to a phone-specific width")
+      (assert-equal -1
+                    (property-int renderer language-control proto/WidthValue)
+                    "the Language select is not pinned to a phone-specific width")
+      (assert-equal "stretch"
+                    (property-string renderer general-card proto/CrossAlignment)
+                    "Material settings controls fill the available card width")
+      (assert-equal "surface-container-low"
+                    (property-string renderer general-card proto/BackgroundValue)
+                    "Material settings use a tonal container instead of a white form rectangle")
+      (assert-equal 8
+                    (descendant-count-with-property-string
+                     renderer root proto/BackgroundValue "surface-container-low")
+                    "Material settings cards and the action bar share one tonal hierarchy")
+      (assert-equal "Theme"
+                    (property-string renderer appearance-picker
+                                     proto/AccessibilityLabel)
+                    "the appearance select keeps a persistent Material field label")
+      (assert-equal "Language"
+                    (property-string renderer picker proto/AccessibilityLabel)
+                    "the language select keeps a persistent Material field label")
+      (assert-equal 1.0
+                    (property-float renderer tabs-copy proto/GrowValue)
+                    "the tabs label and summary own the flexible row width")
+      (assert-equal "footnote"
+                    (property-string renderer tabs-selection proto/StyleClass)
+                    "the tabs summary is secondary supporting text")
+      (assert-equal "muted-foreground"
+                    (property-string renderer tabs-selection proto/ForegroundValue)
+                    "the tabs summary uses readable Material supporting text")
+      (assert-equal "app:chevron-right"
+                    (property-string renderer tabs-icon proto/IconName)
+                    "Tabs uses a Material navigation affordance")
+      (assert-equal (Some apple/AppleSwitch)
+                    (apple/node renderer spell-check)
+                    "spell check uses a native Material switch row")
+      (assert-equal (Some apple/AppleSwitch)
+                    (apple/node renderer auto-correction)
+                    "auto-correction uses a native Material switch row")
+      (assert-equal "app:download"
+                    (property-string renderer export proto/InlineIconName)
+                    "graph export uses a recognizable Material action icon")
+      (assert-equal "app:terminal"
+                    (property-string renderer runtime-log proto/InlineIconName)
+                    "runtime diagnostics use a recognizable Material icon")
+      (assert-equal "app:open-external"
+                    (property-string renderer report-bug proto/InlineIconName)
+                    "community links disclose that they leave the app")
+      (assert-equal "app:sign-out"
+                    (property-string renderer sign-out proto/InlineIconName)
+                    "sign out uses the Android logout icon")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer actions)
+                    "settings actions use an anchored Material action row")
+      (assert-equal 12 (property-int renderer actions proto/Gap)
+                    "settings actions keep Material button separation")
+      (assert-equal "secondary"
+                    (property-string renderer cancel proto/VariantValue)
+                    "Cancel is the quiet tonal action")
+      (assert-equal "primary"
+                    (property-string renderer apply proto/VariantValue)
+                    "Apply is the unmistakable primary action")
+      (assert-equal 1.0 (property-float renderer cancel proto/GrowValue)
+                    "Cancel and Apply share the available phone width")
+      (assert-equal 1.0 (property-float renderer apply proto/GrowValue)
+                    "Cancel and Apply share the available phone width")
+      (assert-equal 0
+                    (descendant-count-with-node-kind
+                     renderer picker apple/AppleRadioGroup)
+                    "Flutter does not lay every language out in one row"))
+    (driver/send! application model/OpenSettingsLanguageMenu)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          menu (descendant-with-node-kind renderer root apple/AppleDropdownMenu)
+          system
+          (descendant-with-identifier
+           renderer root "button.settings.language.system")]
+      (is (not (= -1 menu))
+          "opening the language selector presents a Material menu")
+      (is (= 1 (descendant-count-with-property-string
+                renderer menu proto/TextValue "简体中文"))
+          "the Material menu retains every shared language choice")
+      (is (not (= -1 system))
+          "each Material language choice exposes a stable automation target")
+      (if (not (= -1 system))
+        (do
+          (driver/dispatch-event! application (proto/Press system))
+          (driver/flush! application)
+          (assert-equal "system"
+                        (:language (chat/model application))
+                        "the System menu item selects its own language id"))))))
+
 (deftest settings-tabs-match-main-visibility-and-movement-boundaries
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
@@ -1030,6 +1340,21 @@
                       (descendant-enabled
                        renderer updated-root "button.settings.tab.graphs.down")
                       "a lone configurable position cannot move down")))))
+
+(deftest android-disclosure-and-selection-icons-use-material-semantics
+  (let [current (assoc (model/initial) :sidebar-tabs ["journals" "graphs"])]
+    (assert-equal "app:chevron-right"
+                  (view/outliner-collapse-icon-name true)
+                  "collapsed rows use a Material forward disclosure icon")
+    (assert-equal "app:chevron-down"
+                  (view/outliner-collapse-icon-name false)
+                  "expanded rows use a Material downward disclosure icon")
+    (assert-equal "app:selected"
+                  (view/tab-selection-icon-name current "journals")
+                  "visible settings tabs use the selected Material state")
+    (assert-equal "app:unselected"
+                  (view/tab-selection-icon-name current "flashcards")
+                  "hidden settings tabs use the unselected Material state")))
 
 (deftest settings-tabs-render-saved-order-and-separate-available-tabs
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -1277,7 +1602,7 @@
              renderer root "text.authentication-error")]
         (assert-equal "Authorization was cancelled"
                       (property-string renderer error proto/TextValue)
-                      "authentication errors render inside the LG screen"))
+                    "authentication errors render inside the LG screen"))
       (driver/send! application
                     (model/ApplyAuthentication "signedIn" None))
       (driver/flush! application)
@@ -1286,15 +1611,38 @@
                      renderer root "screen.authentication")
                     "signed-in authentication dismisses the LG entry screen"))))
 
+(deftest authentication-screen-uses-the-product-name-on-every-host
+  (doseq [backend [(fn [renderer] (apple/backend renderer))
+                   (fn [renderer]
+                     (apple/backend-for
+                      renderer proto/AndroidOS proto/FlutterHost))]]
+    (let [renderer (apple/create-with-extensions (view/extension-registry))
+          application (chat/create (backend renderer))]
+      (driver/start! application)
+      (driver/send! application
+                    (model/ApplyAuthentication "signedOut" None))
+      (driver/flush! application)
+      (let [root (driver/root-node application)]
+        (assert-equal
+         1
+         (descendant-count-with-property-string
+          renderer root proto/TextValue "Logseq Chat")
+         "the signed-out surface uses the installed product name")
+        (assert-equal
+         0
+         (descendant-count-with-property-string
+          renderer root proto/TextValue "Logseq")
+         "the old product name is not exposed by either host")))))
+
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|15:outliner-editor|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+   "lui-extension-v1|15:outliner-editor|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
    (ext/fingerprint (view/outliner-editor-schema))
    "the native editor registry must match the LG wire schema"))
 
 (deftest outliner-block-content-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|22:outliner-block-content|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],9:open-node[4:uuid:string:required]"
+   "lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
    (ext/fingerprint (view/outliner-block-content-schema))
    "the rich block renderer must match the LG wire schema"))
 
@@ -1307,7 +1655,7 @@
           None None)]
     (assert-equal
      (Some
-      "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
+      "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
      fingerprint
      (str "native navigation must share one pinned LG and Swift wire contract: "
           fingerprint))))
@@ -1321,7 +1669,7 @@
           None None)]
     (assert-equal
      (Some
-      "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+      "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
      fingerprint
      (str "search must use a distinct native full-screen navigation contract: "
           fingerprint))))
@@ -1524,6 +1872,39 @@
         proto/TextValue)
        "the failure message remains visible"))))
 
+(deftest flutter-graph-picker-uses-a-material-empty-state
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          picker (descendant-with-identifier renderer root "screen.graph-picker")
+          title (descendant-with-identifier renderer picker "title.graph-picker")
+          empty-state
+          (descendant-with-identifier renderer picker "empty.graph-picker")
+          add (descendant-with-identifier renderer picker "button.graph-add")
+          refresh
+          (descendant-with-identifier renderer picker "button.graphs.refresh")]
+      (assert-equal "stretch"
+                    (property-string renderer picker proto/CrossAlignment)
+                    "the Material picker fills the available screen width")
+      (assert-equal 3
+                    (property-int renderer title proto/HeadingLevel)
+                    "the Material title uses a compact app-bar scale")
+      (is (not (= -1 empty-state))
+          "an empty catalog renders a purposeful Material empty state")
+      (assert-equal "primary"
+                    (property-string renderer add proto/VariantValue)
+                    "Add graph is the empty state's primary action")
+      (assert-equal "app:add"
+                    (property-string renderer add proto/InlineIconName)
+                    "Add graph uses the Android Material add icon")
+      (assert-equal "app:sync-status"
+                    (property-string renderer refresh proto/InlineIconName)
+                    "Refresh uses the Android Material sync icon"))))
+
 (deftest persisted-graph-loading-hides-the-launch-picker
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))]
@@ -1565,6 +1946,51 @@
                    "cached" "journal" "Cached" "Today" 20260827 0)])]
       (is (view/journal-root-visible? cached)
           "cached journals remain visible during a background reload"))))
+
+(deftest flutter-loading-and-errors-use-material-feedback-surfaces
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        local (graph "local" "Local graph" false true)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyGraphLoading true))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          loading (descendant-with-identifier renderer root "journals.loading")
+          spinner
+          (descendant-with-identifier renderer loading "spinner.graph-loading")]
+      (assert-equal (Some apple/AppleSpinner)
+                    (apple/node renderer spinner)
+                    "Android graph restore uses Material progress feedback")
+      (assert-equal "center"
+                    (property-string renderer loading proto/MainAlignment)
+                    "Android graph restore stays centered in the viewport"))
+    (driver/send! application (model/ApplyGraphLoading false))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graphs [local]
+             :selected-graph-id None)))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/send! application model/ConfirmDeleteGraph)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application
+                  (model/ResolveEffect 1 false "Could not delete graph"))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          surface
+          (descendant-with-identifier renderer root "layout.error.banner")
+          message (descendant-with-identifier renderer surface "error.banner")]
+      (assert-equal (Some apple/AppleAlert)
+                    (apple/node renderer surface)
+                    "Android failures use a Material error surface")
+      (assert-equal "Could not delete graph"
+                    (property-string renderer message proto/TextValue)
+                    "the Material error surface preserves the failure reason"))))
 
 (deftest graph-and-sync-actions-update-retained-status-in-place
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -1707,6 +2133,32 @@
                   "pending transport patches preserve the server cursor")
     (is (not (:has-pending-semantic-operations updated))
         "pending transport patches update their owned sync flags")))
+
+(deftest graph-catalog-patches-preserve-the-active-editor-state
+  (let [current (assoc (model/initial)
+                       :composer-expanded true
+                       :composer-draft "Editing now"
+                       :journal-outliner-rows
+                       [(journal-outline-row
+                         "block-a" "page-a" "Existing" "Journal" 20260901 0)])
+        graph (record model/graph
+                (id "graph-a")
+                (name "Graph A")
+                (is-encrypted false)
+                (is-ready true))
+        patch (assoc (empty-core-projection)
+                     :is-graph-catalog-patch true
+                     :graph-name (Some "Graph A")
+                     :selected-graph-id (Some "graph-a")
+                     :graphs [graph])
+        updated (model/update current (model/ApplyCoreSnapshot patch))]
+    (assert-equal "Editing now" (:composer-draft updated)
+                  "catalog refreshes preserve the active composer")
+    (assert-equal (:journal-outliner-rows current)
+                  (:journal-outliner-rows updated)
+                  "catalog refreshes preserve journal rows")
+    (assert-equal [graph] (:graphs updated)
+                  "catalog refreshes update their owned graph list")))
 
 (deftest sidebar-state-and-page-selection-are-owned-by-lg
   (let [favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
@@ -2437,7 +2889,10 @@
         opened (model/update refreshed (model/RequestOpenGraph "remote"))
         create-open (model/update shown model/OpenCreateGraph)
         named (model/update create-open (model/ChangeNewGraphName " New graph "))
-        encrypted (model/update named (model/ToggleNewGraphEncrypted true))
+        encrypted (model/update named (model/ToggleNewGraphEncrypted false))
+        create-failed (assoc encrypted :effect-error
+                             (Some "graph_create_failed\nServer rejected it"))
+        create-dismissed (model/update create-failed model/DismissCreateGraph)
         submitted (model/update encrypted model/SubmitCreateGraph)
         remote-delete (model/update shown (model/RequestDeleteGraph "remote"))
         delete-requested (model/update shown (model/RequestDeleteGraph "local"))
@@ -2460,8 +2915,16 @@
     (is (:create-graph-open create-open) "the add sheet is LG-owned")
     (is (:new-graph-encrypted create-open)
         "new graphs preserve main's encrypted-by-default behavior")
+    (is (not (:create-graph-open create-dismissed))
+        "dismissing the add graph sheet closes it")
+    (assert-equal "" (:new-graph-name create-dismissed)
+                  "dismissing the add graph sheet clears stale input")
+    (is (:new-graph-encrypted create-dismissed)
+        "dismissing restores the encrypted-by-default form state")
+    (assert-equal None (:effect-error create-dismissed)
+                  "dismissing clears the sheet's stale error")
     (assert-equal
-     [(model/CreateGraphEffect 1 "New graph" true)]
+     [(model/CreateGraphEffect 1 "New graph" false)]
      (:pending-effects submitted)
      "graph creation trims its name and preserves encryption")
     (assert-equal (Some local) (:pending-graph-deletion delete-requested)
@@ -2471,6 +2934,27 @@
     (assert-equal [(model/DeleteLocalGraphEffect 1 "local")]
                   (:pending-effects delete-confirmed)
                   "confirming deletion publishes a platform effect")))
+
+(deftest graph-picker-surfaces-open-graph-effect-failures
+  (let [remote (graph "remote" "Remote graph" true true)
+        ready (assoc (model/initial) :graphs [remote])
+        requested (model/update ready (model/RequestOpenGraph "remote"))
+        in-flight (model/update requested (model/DequeueEffect 1))
+        failed
+        (model/update
+         in-flight
+         (model/ResolveEffect
+          1 false "graph_open_failed\nSnapshot download timed out"))]
+    (is (not (:graph-loading failed))
+        "a failed graph open releases the loading state")
+    (is (view/graph-picker-error-present? failed)
+        "the graph picker exposes graph lifecycle failures")
+    (assert-equal "graph_open_failed"
+                  (view/graph-picker-error-code failed)
+                  "the graph picker retains the structured error code")
+    (assert-equal "Snapshot download timed out"
+                  (view/graph-picker-error-message failed)
+                  "the graph picker shows the actionable failure message")))
 
 (deftest graphs-render-the-existing-catalog-and-modal-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -2582,6 +3066,133 @@
              (descendant-enabled renderer toolbar "button.graph-add.confirm")
              "Add remains disabled while the graph name is blank")))))))
 
+(deftest flutter-graphs-use-a-compact-material-action-group
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" false true)
+        projection
+        (assoc (empty-core-projection)
+               :selected-graph-id (Some "local")
+               :graph-name (Some "Local graph")
+               :graphs [local remote])]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/flush! application)
+    (let [screen
+          (descendant-with-identifier
+           renderer (main-root renderer application) "screen.graphs")
+          actions
+          (child-with-identifier renderer screen "row.graphs.actions")
+          local-row (child-with-identifier renderer screen "graph.local")]
+      (is (not (= -1 actions))
+          "Android groups catalog actions into one compact Material row")
+      (when (not (= -1 actions))
+        (let [refresh
+              (descendant-with-identifier
+               renderer actions "button.graphs.refresh")
+              add
+              (descendant-with-identifier renderer actions "button.graph-add")]
+          (assert-equal 12 (property-int renderer actions proto/Gap)
+                        "Material actions use the compact spacing scale")
+          (assert-equal 16 (property-int renderer actions proto/PaddingValue)
+                        "Material actions align with graph row content")
+          (assert-equal (Some apple/AppleButton)
+                        (apple/node renderer refresh)
+                        "Refresh is a Material button rather than a list row")
+          (assert-equal "secondary"
+                        (property-string renderer refresh proto/VariantValue)
+                        "Refresh has lower emphasis than graph creation")
+          (assert-equal "app:sync-status"
+                        (property-string renderer refresh proto/InlineIconName)
+                        "Refresh has an immediately recognizable sync icon")
+          (assert-equal 1.0 (property-float renderer refresh proto/GrowValue)
+                        "Refresh shares the available action width")
+          (assert-equal (Some apple/AppleButton)
+                        (apple/node renderer add)
+                        "Add graph is a Material button rather than a list row")
+          (assert-equal "primary"
+                        (property-string renderer add proto/VariantValue)
+                        "Add graph is the clear primary action")
+          (assert-equal "app:add"
+                        (property-string renderer add proto/InlineIconName)
+                        "Add graph uses the native Android add icon")
+          (assert-equal 1.0 (property-float renderer add proto/GrowValue)
+                        "Add graph shares the available action width")
+          (driver/dispatch-event! application (proto/Press refresh))
+          (driver/flush! application)
+          (assert-equal [(model/RefreshGraphsEffect 1)]
+                        (:pending-effects (chat/model application))
+                        "the Material Refresh button reaches the LG effect boundary")))
+      (assert-equal (Some apple/AppleListItem)
+                    (apple/node renderer local-row)
+                    "catalog entries remain native lazy list rows"))))
+
+(deftest flutter-add-graph-sheet-uses-one-material-form-layout
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send! application model/OpenCreateGraph)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          sheet
+          (descendant-with-identifier renderer root "sheet.graph-create")
+          layout
+          (descendant-with-identifier renderer sheet "layout.graph-create.sheet")]
+      (assert-equal 480
+                    (property-int renderer sheet proto/HeightValue)
+                    "Flutter bounds the Add graph Material sheet")
+      (assert-equal 1
+                    (count (apple/children renderer sheet))
+                    "Flutter gives the backend one composed Add graph child")
+      (is (not (= -1 layout))
+          "Flutter owns one vertical Add graph layout")
+      (when (not (= -1 layout))
+        (let [form
+              (descendant-with-identifier renderer layout "form.graph-create")
+              encryption
+              (descendant-with-identifier
+               renderer layout "toggle.graph-encryption")]
+          (is (not (= -1 form))
+              "the form remains inside the composed layout")
+          (assert-equal "stretch"
+                        (property-string renderer form proto/CrossAlignment)
+                        "the Material form fills the sheet width")
+          (assert-equal (Some apple/AppleSwitch)
+                        (apple/node renderer encryption)
+                        "encryption uses a native Material switch row"))
+        (is (not (= -1 (descendant-with-identifier
+                        renderer layout "toolbar.graph-create")))
+            "the actions remain inside the composed layout")))))
+
+(deftest flutter-add-graph-sheet-shows-creation-errors-inline
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send! application model/OpenCreateGraph)
+    (driver/send! application (model/ChangeNewGraphName "Broken graph"))
+    (driver/send! application model/SubmitCreateGraph)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application
+                  (model/ResolveEffect 1 false "Initial snapshot upload failed"))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          error
+          (descendant-with-identifier renderer root "text.graph-create.error")]
+      (is (not (= -1 error)) "the Add graph sheet keeps its error visible")
+      (assert-equal
+       "Initial snapshot upload failed"
+       (property-string renderer error proto/TextValue)
+       "the Add graph sheet explains why creation failed"))))
+
 (deftest graph-lifecycle-effects-disable-duplicate-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application (chat/create (apple/backend renderer))
@@ -2679,6 +3290,50 @@
         (assert-equal "Could not delete graph"
                       (property-string renderer error proto/TextValue)
                       "the visible error preserves the platform reason")))))
+
+(deftest flutter-graph-deletion-uses-a-material-destructive-dialog
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        local (graph "local" "Local graph" false true)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graphs [local]
+             :selected-graph-id None)))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          dialog
+          (descendant-with-identifier renderer root "dialog.graph-delete")
+          warning-icon
+          (descendant-with-identifier renderer dialog "icon.graph-delete-warning")
+          actions
+          (descendant-with-identifier renderer dialog "toolbar.graph-delete")
+          cancel
+          (descendant-with-identifier renderer actions "button.graph-delete.cancel")
+          confirm
+          (descendant-with-identifier renderer actions "button.graph-delete.confirm")]
+      (assert-equal 320
+                    (property-int renderer dialog proto/HeightValue)
+                    "the Material dialog has enough room without filling the screen")
+      (assert-equal "app:warning"
+                    (property-string renderer warning-icon proto/IconName)
+                    "the irreversible warning uses a Material icon")
+      (assert-equal "horizontal"
+                    (property-string renderer actions proto/OrientationValue)
+                    "dialog actions follow the Material horizontal action row")
+      (assert-equal "ghost"
+                    (property-string renderer cancel proto/VariantValue)
+                    "Cancel remains the quiet action")
+      (assert-equal "destructive"
+                    (property-string renderer confirm proto/VariantValue)
+                    "Delete is visually marked as destructive"))))
 
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -2798,7 +3453,7 @@
                     "Capture floats above the Outliner like main")
       (assert-equal 1.0 (property-float renderer placement proto/GrowValue)
                     "the collapsed bottom row fills the viewport for symmetric edge insets")
-      (assert-equal "search"
+      (assert-equal "app:search"
                     (property-string renderer search proto/InlineIconName)
                     "collapsed search uses the main branch icon control")
       (assert-equal "ghost"
@@ -2898,7 +3553,7 @@
                       (property-string renderer send-button
                                        proto/AccessibilityIdentifier)
                       "send keeps its automation identifier")
-        (assert-equal "arrow-up"
+        (assert-equal "app:arrow-up"
                       (property-string renderer send-button proto/InlineIconName)
                       "send uses main's upward arrow")
         (assert-equal "black"
@@ -2984,59 +3639,6 @@
                     (extension-property application capture-glass "leading-inset")
                     "Liquid Glass remains independent from app content spacing"))))
 
-(deftest android-capture-controls-use-material-layout
-  (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application
-        (chat/create
-         (apple/backend-for renderer proto/AndroidOS proto/SwiftUIHost))]
-    (driver/start! application)
-    (driver/send! application (model/SelectGraph "Work"))
-    (driver/flush! application)
-    (let [chrome (native-bottom-chrome renderer application)
-          search (descendant-with-identifier renderer chrome "button.search")
-          capture
-          (descendant-with-identifier renderer chrome "button.composer.expand")
-          top-inset
-          (descendant-with-identifier
-           renderer (driver/root-node application) "spacer.outliner.top")]
-      (assert-equal "secondary"
-                    (property-string renderer search proto/VariantValue)
-                    "Android Search uses the filled-tonal Material action")
-      (assert-equal "icon"
-                    (property-string renderer search proto/SizeValue)
-                    "Android Search uses an icon-only action")
-      (assert-equal 58 (property-int renderer search proto/WidthValue)
-                    "Android Search keeps a fixed 58-point hit target")
-      (assert-equal 58 (property-int renderer search proto/HeightValue)
-                    "Android Search keeps a fixed 58-point hit target")
-      (assert-equal -1.0 (property-float renderer capture proto/GrowValue)
-                    "Android Capture does not force the iOS capsule width")
-      (assert-equal 16 (property-int renderer top-inset proto/HeightValue)
-                    "Android keeps the shared outliner content inset")
-      (driver/dispatch-event! application (proto/Press capture))
-      (driver/flush! application)
-      (let [controls
-            (descendant-with-identifier
-             renderer chrome "row.composer.controls")
-            attachment
-            (descendant-with-identifier renderer controls "button.attachment")
-            task-status
-            (descendant-with-identifier renderer controls "button.task-status")
-            send-button
-            (descendant-with-identifier renderer controls "button.send")]
-        (assert-equal "Attach"
-                      (property-string renderer attachment proto/TextValue)
-                      "Android attachment action includes a visible label")
-        (assert-equal "Task"
-                      (property-string renderer task-status proto/TextValue)
-                      "Android task action includes a visible label")
-        (assert-equal "primary"
-                      (property-string renderer send-button proto/VariantValue)
-                      "Android Send uses the primary Material action")
-        (assert-equal "Send"
-                      (property-string renderer send-button proto/TextValue)
-                      "Android Send includes a visible action label")))))
-
 (deftest composer-dismissal-preserves-an-unsent-draft
   (let [expanded (model/update (model/initial) model/ExpandComposer)
         drafted (model/update expanded (model/ChangeComposerDraft "Later"))
@@ -3080,6 +3682,61 @@
                   "an older core response cannot overwrite queued typing")
     (assert-equal (Some stale) (:outliner-editing settled)
                   "the authoritative value applies after local typing settles")))
+
+(deftest outliner-typing-removes-stale-autocomplete-candidates
+  (let [editing
+        (record model/outliner-editing
+          (uuid "block-a") (title "Draft #") (caret-utf16-offset 7))
+        autocomplete
+        (record model/outliner-autocomplete
+          (kind model/TagAutocomplete) (query ""))
+        candidate
+        (record model/outliner-autocomplete-candidate
+          (index 0) (label "Card") (value "tag-card"))
+        current
+        (assoc (model/initial)
+               :outliner-editing (Some editing)
+               :outliner-autocomplete (Some autocomplete)
+               :outliner-autocomplete-candidates [candidate])
+        updated
+        (model/update current
+                      (model/ChangeOutlinerText "block-a" "Draft #Project" 14))]
+    (assert-equal [] (:outliner-autocomplete-candidates updated)
+                  "typing hides candidates produced for the previous query")
+    (assert-equal
+     [(model/ChangeOutlinerTextEffect 1 "block-a" "Draft #Project" 14)]
+     (:pending-effects updated)
+     "the authoritative core query still runs after stale candidates disappear")))
+
+(deftest autocomplete-selection-waits-for-pending-text-to-settle
+  (let [editing
+        (record model/outliner-editing
+          (uuid "block-a") (title "Draft #Project") (caret-utf16-offset 14))
+        change (model/ChangeOutlinerTextEffect 1 "block-a" "Draft #Project" 14)
+        base (assoc (model/initial) :outliner-editing (Some editing))
+        pending (assoc base :pending-effects [change] :next-effect-id 2)
+        in-flight (assoc base :in-flight-effects [change] :next-effect-id 2)
+        settled (assoc base :next-effect-id 2)]
+    (assert-equal
+     [change (model/ChooseOutlinerAutocompleteEffect 2 "tag-project")]
+                  (:pending-effects
+                   (model/update pending
+                                 (model/ChooseOutlinerAutocomplete "tag-project")))
+     "completion queues behind pending typing")
+    (let [updated
+          (model/update in-flight
+                        (model/ChooseOutlinerAutocomplete "tag-project"))]
+      (assert-equal [change] (:in-flight-effects updated)
+                    "in-flight typing retains ownership")
+      (assert-equal [(model/ChooseOutlinerAutocompleteEffect 2 "tag-project")]
+                    (:pending-effects updated)
+                    "completion waits behind in-flight typing"))
+    (assert-equal
+     [(model/ChooseOutlinerAutocompleteEffect 2 "tag-project")]
+     (:pending-effects
+      (model/update settled
+                    (model/ChooseOutlinerAutocomplete "tag-project")))
+     "the refreshed candidate remains selectable after typing settles")))
 
 (deftest hide-keyboard-optimistically-finishes-outliner-editing
   (let [editing
@@ -3182,8 +3839,82 @@
        (proto/ExtensionEvent navigation "native-navigation-stack"
                              "dismiss-composer" {}))
       (driver/flush! application)
-      (is (not (:composer-expanded (chat/model application)))
-          "the native outside tap collapses the composer"))))
+        (is (not (:composer-expanded (chat/model application)))
+            "the native outside tap collapses the composer"))))
+
+(deftest flutter-composer-uses-a-tonal-material-dock
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "work")
+             :graph-name (Some "Work"))))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (nth (apple/children renderer navigation) 0)
+          placement
+          (descendant-with-identifier renderer chrome "row.bottom.capture")
+          composer
+          (descendant-with-identifier renderer chrome "surface.composer.root")
+          collapsed (nth (apple/children renderer composer) 0)]
+      (assert-equal -1.0 (property-float renderer placement proto/GrowValue)
+                    "the Android bottom dock keeps intrinsic height inside an unbounded bottom slot")
+      (assert-equal "secondary"
+                    (property-string renderer collapsed proto/VariantValue)
+                    "collapsed Capture is a tonal Material affordance")
+      (assert-equal "app:add"
+                    (property-string renderer collapsed proto/InlineIconName)
+                    "collapsed Capture exposes its primary action")
+      (assert-equal 1.0 (property-float renderer collapsed proto/GrowValue)
+                    "collapsed Capture fills the available dock width")
+      (driver/dispatch-event! application (proto/Press collapsed))
+      (driver/flush! application)
+      (let [expanded-composer
+            (descendant-with-identifier
+             renderer chrome "surface.composer.root")
+            expanded (nth (apple/children renderer expanded-composer) 0)
+            send-button
+            (descendant-with-identifier renderer expanded "button.send")]
+        (assert-equal "surface-container-high"
+                      (property-string renderer expanded proto/BackgroundValue)
+                      "expanded Capture uses a distinct Material surface")
+        (assert-equal 24
+                      (property-int renderer expanded proto/CornerRadius)
+                      "expanded Capture uses the Android large shape")
+        (assert-equal 48
+                      (property-int renderer send-button proto/WidthValue)
+                      "Send keeps a 48-point Android touch target")
+        (assert-equal "icon"
+                      (property-string renderer send-button proto/SizeValue)
+                      "Send is a compact trailing icon action")))))
+
+(deftest flutter-sidebar-uses-compact-material-drawer-metrics
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "work")
+             :graph-name (Some "Work"))))
+    (driver/send! application model/OpenSidebar)
+    (driver/flush! application)
+    (let [drawer (application-shell-root renderer application)
+          sidebar
+          (descendant-with-identifier renderer drawer "sidebar.navigation")
+          top-spacer (nth (apple/children renderer sidebar) 0)]
+      (assert-equal 320 (property-int renderer drawer proto/WidthValue)
+                    "the Android drawer leaves meaningful content visible")
+      (assert-equal 8 (property-int renderer top-spacer proto/HeightValue)
+                    "SafeArea already owns Android system-bar spacing"))))
 
 (deftest composer-attachment-selection-is-owned-by-lg
   (let [opened (model/update (model/initial) model/OpenAttachmentPicker)
@@ -3340,6 +4071,102 @@
         "signed-out initialization never constructs the journals tree")
     (is (not (string/includes? patch "button.search"))
         "signed-out initialization excludes main navigation controls")))
+
+(deftest native-bridge-selects-the-flutter-host-profile
+  (is (= proto/FlutterHost (bridge/host-kind 3))
+      "Flutter Android uses the retained Flutter backend profile")
+  (is (= proto/SwiftUIHost (bridge/host-kind 2))
+      "Apple hosts keep the SwiftUI profile")
+  (let [patch (bridge/initialize 3 3 1)]
+    (is (string/includes? patch "screen.authentication")
+        "Flutter renders the shared authentication screen")
+    (is (not (string/includes? patch "container-relative-frame"))
+        "Flutter does not receive SwiftUI-only viewport properties"))
+  (let [patch (bridge/initialize 3 3 3)]
+    (is (string/includes? patch "native-overflow-menu")
+        "signed-in Flutter renders the Material graph picker controls")
+    (is (not (string/includes? patch "container-relative-frame"))
+        "signed-in Flutter excludes every SwiftUI-only viewport property")
+    (is (not (string/includes? patch "icon-placement"))
+        "signed-in Flutter excludes unsupported list-item icon placement")
+    (is (not (string/includes? patch "navigation-heading"))
+        "signed-in Flutter excludes unsupported list-item heading roles")
+    (is (not (string/includes? patch "\"navigation\""))
+        "signed-in Flutter excludes unsupported list-item navigation roles"))
+  (let [patch
+        (bridge/flush-action!
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :graph-name (Some "Work")
+                 :selected-graph-id (Some "graph-a")
+                 :graphs [(graph "graph-a" "Work" false true)])))]
+    (is (not (string/includes? patch "icon-placement"))
+        "graph restoration excludes unsupported list-item icon placement")
+    (is (not (string/includes? patch "navigation-heading"))
+        "graph restoration excludes unsupported list-item heading roles")
+    (is (not (string/includes? patch "\"navigation\""))
+        "graph restoration excludes unsupported list-item navigation roles"))
+  (bridge/dispose))
+
+(deftest flutter-search-presentation-owns-an-opaque-background
+  (bridge/initialize 3 3 3)
+  (bridge/flush-action!
+   (model/ApplyCoreSnapshot
+    (assoc (empty-core-projection)
+           :graph-name (Some "Work")
+           :selected-graph-id (Some "graph-a")
+           :graphs [(graph "graph-a" "Work" false true)])))
+  (let [patch (bridge/flush-action! model/OpenSearch)]
+    (is (string/includes? patch "screen.search")
+        "opening Flutter search mounts the search screen")
+    (is (string/includes? patch
+                          "\"property\":\"background\",\"value\":\"background\"")
+        "Flutter search covers the retained journal surface"))
+  (bridge/dispose)
+  (bridge/initialize 2 2 3)
+  (bridge/flush-action!
+   (model/ApplyCoreSnapshot
+    (assoc (empty-core-projection)
+           :graph-name (Some "Work")
+           :selected-graph-id (Some "graph-a")
+           :graphs [(graph "graph-a" "Work" false true)])))
+  (let [patch (bridge/flush-action! model/OpenSearch)]
+    (is (not (string/includes? patch
+                               "\"property\":\"background\",\"value\":\"background\""))
+        "the Flutter-only backdrop does not alter SwiftUI search"))
+  (bridge/dispose))
+
+(deftest flutter-node-route-owns-an-opaque-background
+  (let [route (node-projection "node-a" "page-a" "Project" [] [])]
+    (bridge/initialize 3 3 3)
+    (bridge/flush-action! (model/RequestAppNode "node-a"))
+    (let [patch
+          (bridge/flush-action!
+           (model/ApplyCoreSnapshot
+            (assoc (empty-core-projection)
+                   :graph-name (Some "Work")
+                   :selected-graph-id (Some "graph-a")
+                   :node-routes [route])))]
+      (is (string/includes? patch "screen.node")
+          "opening a Flutter node mounts the node screen")
+      (is (string/includes? patch
+                            "\"property\":\"background\",\"value\":\"background\"")
+          "Flutter node routes cover the retained journal surface"))
+    (bridge/dispose)
+    (bridge/initialize 2 2 3)
+    (bridge/flush-action! (model/RequestAppNode "node-a"))
+    (let [patch
+          (bridge/flush-action!
+           (model/ApplyCoreSnapshot
+            (assoc (empty-core-projection)
+                   :graph-name (Some "Work")
+                   :selected-graph-id (Some "graph-a")
+                   :node-routes [route])))]
+      (is (not (string/includes?
+                patch
+                "\"property\":\"background\",\"value\":\"background\""))
+          "the Flutter-only node backdrop does not alter SwiftUI navigation"))
+    (bridge/dispose)))
 
 (deftest native-bridge-drains-and-resolves-typed-effects-once
   (bridge/initialize 2 1 0)
@@ -3729,6 +4556,8 @@
     (let [navigation (extension-node application "native-navigation-stack")
           screen (descendant-with-identifier renderer navigation "screen.node")
           chrome (native-bottom-chrome renderer application)]
+      (assert-equal 0.0 (property-float renderer screen proto/GrowValue)
+                    "SwiftUI node navigation does not receive Flutter flex sizing")
       (assert-equal -1 (child-with-identifier renderer screen "BackButton")
                     "the retained node does not duplicate the system back button")
       (assert-equal -1
@@ -3746,6 +4575,193 @@
       (driver/flush! application)
       (assert-equal [] (:app-navigation-path (chat/model application))
                     "the native iOS back action pops the LG route"))))
+
+(deftest flutter-navigation-and-search-own-one-composed-standard-child
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "test-graph")
+             :graph-name (Some "Work"))))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          search (extension-node application "native-search-presentation")
+          navigation-children (apple/children renderer navigation)
+          search-children (apple/children renderer search)]
+      (assert-equal 1 (count navigation-children)
+                    "Flutter navigation receives one composed child")
+      (assert-equal 1 (count search-children)
+                    "Flutter search receives one composed child")
+      (let [navigation-content (nth navigation-children 0)
+            search-content (nth search-children 0)
+            capture-row
+            (descendant-with-identifier
+             renderer navigation-content "row.bottom.capture")]
+        (is (not (= -1 (descendant-with-identifier
+                        renderer navigation-content "title.main")))
+            "the composed Flutter child owns the Material header")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer navigation-content "button.search")))
+            "the composed Flutter child owns the bottom controls")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer search-content "list.outliner")))
+            "the closed Flutter search child retains journal content")
+        (assert-equal -1.0
+                      (property-float renderer capture-row proto/GrowValue)
+                      "Flutter capture keeps intrinsic height inside the bottom dock")
+        (driver/send! application model/ExpandComposer)
+        (driver/flush! application)
+        (let [expanded-row
+              (descendant-with-identifier
+               renderer navigation-content "row.composer.placement")]
+          (assert-equal
+           -1.0
+           (property-float renderer expanded-row proto/GrowValue)
+           "Flutter expanded Capture uses intrinsic height inside the bottom overlay"))))))
+
+(deftest flutter-navigation-renders-each-active-node-row-once
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (journal-outline-row "route-child" "route-page" "Route child"
+                                 "" 0 0)
+        route
+        (assoc (node-projection "node-a" "page-a" "Project" [] [])
+               :outliner-rows [row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :node-routes [route]
+             :outliner-rows [row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          back-button
+          (descendant-with-identifier renderer navigation
+                                      "button.navigation.back")]
+      (is (not (= -1 back-button))
+          "Flutter node destinations expose a Material top-app-bar back action")
+      (assert-equal
+       "Back"
+       (property-string renderer back-button proto/AccessibilityLabel)
+       "the Android back action remains available to TalkBack")
+      (assert-equal
+       1.0
+       (property-float renderer screen proto/GrowValue)
+       "Flutter node content receives a bounded flex height")
+      (assert-equal
+       1
+       (descendant-count-with-identifier
+       renderer navigation "outliner.block.route-child")
+       "Flutter keeps the journal as the stack root instead of duplicating the active node route")
+      (driver/dispatch-event! application (proto/Press back-button))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "the visible Android back action pops exactly one route"))))
+
+(deftest flutter-selected-pages-unmount-the-hidden-journal-pane
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        row (journal-outline-row "selected-row" "page-a" "Selected row"
+                                 "" 0 0)
+        journal-row
+        (journal-outline-row "journal-row" "journal-page" "Journal row"
+                             "Journal" 20260901 0)
+        sidebar
+        (record model/sidebar-projection
+          (favorites [page])
+          (recent-pages [])
+          (selected-page (Some page))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :sidebar sidebar
+             :outliner-rows [row]
+             :journal-outliner-rows [journal-row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (is (not (= -1 (descendant-with-identifier
+                      renderer navigation "pane.selected-page")))
+          "Flutter renders the selected page")
+      (assert-equal
+       -1
+       (descendant-with-identifier renderer navigation "pane.journals")
+       "Flutter removes the hidden journal so it cannot paint or receive input behind the selected page"))))
+
+(deftest flutter-selected-page-navigation-renders-the-opened-node
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        selected-row
+        (journal-outline-row "selected-row" "page-a" "Selected row" "" 0 0)
+        route-row
+        (journal-outline-row "route-row" "route-page" "Opened row" "" 0 0)
+        route
+        (assoc (node-projection "node-a" "route-page" "Opened page" [] [])
+               :outliner-rows [route-row])
+        sidebar
+        (record model/sidebar-projection
+          (favorites [page])
+          (recent-pages [])
+          (selected-page (Some page))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :sidebar sidebar
+             :outliner-rows [selected-row])))
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :sidebar sidebar
+             :node-routes [route]
+             :outliner-rows [route-row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (assert-equal
+       1
+       (descendant-count-with-identifier
+        renderer navigation "outliner.block.route-row")
+       "Flutter renders the opened route above an existing selected page")
+      (assert-equal
+       -1
+       (descendant-with-identifier renderer navigation "pane.selected-page")
+       "Flutter unmounts the selected-page root while a node route is active"))))
 
 (deftest native-navigation-retains-the-journal-and-every-node-route
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -3920,6 +4936,17 @@
                       renderer (nth search-children 2)
                       "outliner.block.search-child")))
           "the search route is retained only by the search stack"))))
+
+(deftest closed-search-does-not-render-core-node-routes
+  (let [route (node-projection "node-a" "page-a" "Node" [] [])
+        closed (assoc (model/initial)
+                      :node-routes [route]
+                      :search-open false)
+        opened (assoc closed :search-open true)]
+    (assert-equal [] (view/search-node-routes closed)
+                  "closed search never overlays core node routes on the app")
+    (assert-equal [route] (view/search-node-routes opened)
+                  "open search retains its unresolved route suffix")))
 
 (deftest empty-node-routes-add-the-first-block-through-the-core
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -4653,6 +5680,11 @@
        (proto/ExtensionEvent
         rich-content "outliner-block-content" "open-node"
         {"uuid" (proto/StringValue "page-a")}))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "edit"
+        {"uuid" (proto/StringValue "block-a")}))
       (driver/flush! application)
       (assert-equal [(model/NodeRoute "page-a")]
                     (:app-navigation-path (chat/model application))
@@ -4660,9 +5692,10 @@
       (assert-equal
        [(model/LongPressOutlinerBlockEffect 1 "block-a")
         (model/DropOutlinerBlocksEffect 2 "target-a" "before")
-        (model/OpenAppNodeEffect 3 "page-a")]
+        (model/OpenAppNodeEffect 3 "page-a")
+        (model/TapOutlinerBlockEffect 4 "block-a")]
        (:pending-effects (chat/model application))
-       "native drag events return to the typed LG reducer"))))
+       "native rich-content events return to the typed LG reducer"))))
 
 (deftest projected-assets-render-and-open-through-the-native-extension
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -4720,6 +5753,34 @@
     (assert-equal 2 (:next-effect-id editing)
                   "outliner effects share the monotonic effect sequence")))
 
+(deftest flutter-rich-rows-own-their-primary-tap
+  (let [row (record model/outline-row
+                    (uuid "block-a") (title "Linked block")
+                    (markup-json "[]") (youtube-target-url None)
+                    (breadcrumb "") (breadcrumbs []) (opens-as-page false)
+                    (depth 0) (has-children false) (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status None) (tags []) (sync-status None) (page-id "")
+                    (journal-title None) (journal-day None))]
+    (assert-equal
+     false
+     (view/outliner-row-list-item-press-enabled? proto/FlutterHost row)
+     "Flutter rich content avoids a competing whole-row primary tap")
+    (assert-equal
+     true
+     (view/outliner-row-list-item-press-enabled?
+      proto/FlutterHost (assoc row :is-asset true))
+     "Flutter asset rows retain their whole-row presentation action")
+    (assert-equal
+     true
+     (view/outliner-row-list-item-press-enabled?
+      proto/FlutterHost (assoc row :opens-as-page true))
+     "Flutter page rows retain their whole-row navigation action")
+    (assert-equal
+     true
+     (view/outliner-row-list-item-press-enabled? proto/SwiftUIHost row)
+     "SwiftUI row interaction remains unchanged")))
+
 (deftest active-page-actions-use-typed-core-and-platform-effects
   (let [page (record model/sidebar-page (uuid "page-a") (title "Project"))
         asset (record model/outline-row
@@ -4755,6 +5816,31 @@
       (model/ClearSelectedPageEffect 4)]
      (:pending-effects deleted)
      "confirmed deletion recycles the page and leaves its selected route")))
+
+(deftest page-delete-dialog-exposes-stable-material-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        sidebar (assoc (empty-sidebar-projection)
+                       :selected-page (Some page))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] true "" [] []
+                                       None None [] [] [] false []))
+    (driver/send! application model/RequestDeleteActivePage)
+    (driver/flush! application)
+    (let [root (main-root renderer application)]
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "dialog.page-delete")))
+          "the Material confirmation exposes its dialog root")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "button.page-delete.cancel")))
+          "the Material confirmation exposes an independent cancel action")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "button.page-delete.confirm")))
+          "the Material confirmation exposes an independent delete action"))))
 
 (deftest connection-menu-matches-active-page-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -4819,6 +5905,83 @@
     (assert-equal [(model/SetOutlinerTaskStatusEffect 1 "block-a" done)]
                   (:pending-effects chosen)
                   "status changes use one direct typed outliner core boundary")))
+
+(deftest flutter-outliner-markers-match-ios-visual-metrics
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+        done (model/task-status "done" "logseq.property/status.done" "Done" "Done")
+        row (record model/outline-row
+                    (uuid "block-a") (title "Ship it")
+                    (markup-json "[]") (youtube-target-url None)
+                    (breadcrumb "") (breadcrumbs []) (opens-as-page false)
+                    (depth 0) (has-children false) (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status (Some todo)) (tags []) (sync-status None)
+                    (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       true "" [] [] None None [] []
+                                       [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          rendered-row (descendant-with-identifier
+                        renderer root "outliner.block.block-a")
+          bullet (descendant-with-identifier
+                  renderer rendered-row "outliner.bullet-glyph.block-a")
+          zoom-button (descendant-with-identifier
+                       renderer rendered-row "button.outliner.zoom.block-a")
+          status-icon (descendant-with-identifier
+                       renderer rendered-row "outliner.task-status-icon.block-a")
+          status-button (descendant-with-identifier
+                         renderer rendered-row "button.block-task-status")]
+      (is (not (= -1 bullet))
+          "Flutter renders a dedicated visual bullet inside its hit target")
+      (assert-equal 7 (property-int renderer bullet proto/WidthValue)
+                    "Flutter uses iOS main's seven-point bullet diameter")
+      (assert-equal 7 (property-int renderer bullet proto/HeightValue)
+                    "the outliner bullet remains circular")
+      (assert-equal 24 (property-int renderer zoom-button proto/WidthValue)
+                    "the zoom control keeps iOS main's 24-point layout slot")
+      (assert-equal 24 (property-int renderer zoom-button proto/HeightValue)
+                    "the zoom control keeps a stable square interaction slot")
+      (is (not (= -1 status-icon))
+          "Flutter renders the task glyph independently from its menu target")
+      (assert-equal 22 (property-int renderer status-icon proto/WidthValue)
+                    "Flutter uses iOS main's 22-point task status glyph")
+      (assert-equal 22 (property-int renderer status-icon proto/HeightValue)
+                    "the task status glyph keeps iOS main's square frame")
+      (assert-equal "foreground"
+                    (property-string renderer status-icon proto/ForegroundValue)
+                    "Flutter matches iOS by using the row foreground for Todo")
+      (assert-equal "<missing>"
+                    (property-string renderer zoom-button proto/InlineIconName)
+                    "the transparent zoom target does not re-add a large Material circle")
+      (assert-equal "<missing>"
+                    (property-string renderer status-button proto/InlineIconName)
+                    "the transparent status target does not duplicate the visible glyph")
+      (driver/send! application
+                    (apply-core-snapshot None (empty-sidebar-projection) []
+                                         true "" [] [] None None [] []
+                                         [(assoc row :status (Some done))] true []))
+      (driver/flush! application)
+      (let [updated-root (main-root renderer application)
+            updated-row (descendant-with-identifier
+                         renderer updated-root "outliner.block.block-a")
+            updated-status-icon
+            (descendant-with-identifier
+             renderer updated-row "outliner.task-status-icon.block-a")]
+        (assert-equal "app:task-done"
+                      (property-string renderer updated-status-icon
+                                       proto/IconName)
+                      "a retained Flutter row replaces the task glyph when status changes")
+        (assert-equal "foreground"
+                      (property-string renderer updated-status-icon
+                                       proto/ForegroundValue)
+                      "retained status changes preserve iOS row foreground styling")))))
 
 (deftest outliner-rows-render-status-tags-and-sync-failures
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -4999,6 +6162,55 @@
        (:pending-effects (chat/model application))
        "selection gestures and toolbar actions cross one typed boundary"))))
 
+(deftest flutter-outliner-selection-toolbar-uses-compact-material-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (record model/outline-row
+              (uuid "parent") (title "Parent")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None)
+              (status None) (tags []) (sync-status None) (page-id "")
+              (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       false "" [] [] None None []
+                                       ["parent"] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          selected-row
+          (descendant-with-identifier renderer root "outliner.block.parent")
+          toolbar (descendant-with-identifier
+                   renderer root "toolbar.outliner.selection")
+          buttons (apple/children renderer toolbar)]
+      (assert-equal (Some apple/AppleBox)
+                    (apple/node renderer selected-row)
+                    "Flutter keeps the editor-compatible row surface")
+      (is (property-bool renderer selected-row proto/Selected)
+          "Flutter projects selection onto the row surface")
+      (assert-equal 4
+                    (property-int renderer toolbar proto/Gap)
+                    "Android uses compact Material action spacing")
+      (assert-equal 7 (count buttons)
+                    "all selection actions remain directly reachable")
+      (doseq [button buttons]
+        (assert-equal 48
+                      (property-int renderer button proto/WidthValue)
+                      "Android selection actions use compact 48dp targets")
+        (assert-equal 48
+                      (property-int renderer button proto/HeightValue)
+                      "Android selection actions fit without vertical overflow")
+        (assert-equal "<missing>"
+                      (property-string renderer button proto/TextValue)
+                      "Android uses icon-only actions instead of clipped captions")
+        (is (not (= "<missing>"
+                    (property-string renderer button proto/AccessibilityLabel)))
+            "icon-only actions retain an accessible label")))))
+
 (deftest outliner-editor-toolbar-and-autocomplete-use-core-owned-state
   (let [renderer (apple/create-with-extensions (view/extension-registry))
         application
@@ -5155,6 +6367,65 @@
        "autocomplete and editor actions cross the typed core boundary")
       (assert-equal model/SyncingState (:sync-state (chat/model application))
                     "a task mutation hides stale synced state immediately"))))
+
+(deftest flutter-outliner-autocomplete-stacks-above-the-editor-toolbar
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (record model/outline-row
+              (uuid "block-a") (title "Draft #")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None) (status None)
+              (tags []) (sync-status None) (page-id "")
+              (journal-title None) (journal-day None))
+        editing (record model/outliner-editing
+                        (uuid "block-a")
+                        (title "Draft #")
+                        (caret-utf16-offset 7))
+        autocomplete (record model/outliner-autocomplete
+                             (kind model/TagAutocomplete)
+                             (query ""))
+        candidate (record model/outliner-autocomplete-candidate
+                          (index 0)
+                          (label "Project")
+                          (value "tag-a"))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                              (Some editing) (Some autocomplete) [candidate]
+                              [] [row] false []))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          navigation-content (nth (apple/children renderer navigation) 0)
+          editor-container
+          (parent-with-child-identifier renderer navigation-content
+                                        "toolbar.outliner.editor")
+          autocomplete-bar
+          (descendant-with-identifier renderer editor-container
+                                      "toolbar.outliner.autocomplete")
+          autocomplete-column (nth (apple/children renderer autocomplete-bar) 0)
+          candidate-button
+          (descendant-with-identifier renderer autocomplete-column
+                                      "button.outliner.autocomplete.0")]
+      (assert-equal
+       (Some apple/AppleColumn)
+       (apple/node renderer editor-container)
+       "Flutter lays autocomplete above the editor toolbar instead of overlaying it")
+      (is (not (= -1
+                  (child-with-identifier renderer editor-container
+                                         "toolbar.outliner.autocomplete")))
+          "the autocomplete surface shares the visible vertical editor container")
+      (assert-equal "stretch"
+                    (property-string renderer autocomplete-column proto/CrossAlignment)
+                    "Flutter fills autocomplete width with cross-axis stretching")
+      (assert-equal 0.0
+                    (property-float renderer candidate-button proto/GrowValue)
+                    "Flutter does not flex rows along an unbounded scroll axis"))))
 
 (deftest outliner-rows-preserve-depth-zoom-and-collapse-controls
   (let [renderer (apple/create-with-extensions (view/extension-registry))

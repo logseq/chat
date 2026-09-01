@@ -1,0 +1,98 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 45000
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- assertVisible: "Linked references"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
+- tapOn:
+    id: "link.node.e2e20000-0000-4000-8000-000000000007"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- assertVisible: "Linked references"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
+- pressKey: BACK
+- tapOn:
+    id: "link.tag.e2e00000-0000-4000-8000-000000000001"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.tagged-nodes"
+    timeout: 30000
+- assertVisible: "Tagged nodes"
+- assertVisible:
+    id: "section.node.linked-references"
+- assertVisible: "E2E explicit tag page reference"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E Child Tag Object"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
+- pressKey: BACK
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Journal 08"
+- extendedWaitUntil:
+    visible:
+      id: "block.rich.iframe"
+    timeout: 30000
+- waitForAnimationToEnd
+- tapOn: "Edit block E2E Journal Block 08"
+- extendedWaitUntil:
+    visible:
+      id: "toolbar.outliner.editor"
+    timeout: 10000
+- inputText: "#"
+- assertVisible:
+    id: "toolbar.outliner.autocomplete"
+- assertVisible: "Card"
+- inputText: "E2E Pro"
+- extendedWaitUntil:
+    visible: "E2E Project"
+    timeout: 10000
+- tapOn: "E2E Project"
+- extendedWaitUntil:
+    notVisible:
+      id: "toolbar.outliner.autocomplete"
+    timeout: 10000
+- tapOn: "Hide keyboard"
+- extendedWaitUntil:
+    visible:
+      id: "button.block-tag.e2e00000-0000-4000-8000-000000000001"
+    timeout: 10000
+- assertVisible: "E2E Journal Block 08"
+- assertNotVisible: "E2E Journal Block 08 #[[e2e00000-0000-4000-8000-000000000001]]"
+- tapOn:
+    id: "button.block-tag.e2e00000-0000-4000-8000-000000000001"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.tagged-nodes"
+    timeout: 30000
+- assertVisible: "E2E Journal Block 08"
+- assertNotVisible: "e2e10000-0000-4000-8000-000000000007"
+- assertNotVisible: "e2e20000-0000-4000-8000-000000000007"
+- pressKey: BACK
+- tapOn:
+    id: "button.block-tag.e2e00000-0000-4000-8000-000000000004"
+- extendedWaitUntil:
+    visible:
+      id: "section.tag.tagged-nodes"
+    timeout: 30000
+- assertVisible: "Tagged nodes"
+- assertVisible: "E2E Journal 08"
+- assertVisible: "E2E links E2E Page Target E2E Block Target #E2E Project.*"
+- pressKey: BACK
+- assertVisible:
+    id: "button.sidebar"
+- assertNotVisible:
+    id: "section.tag.tagged-nodes"

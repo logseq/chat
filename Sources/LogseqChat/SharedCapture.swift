@@ -1,8 +1,6 @@
 import Foundation
 
-#if !SKIP
 import CryptoKit
-#endif
 
 public struct SharedCapturePayload: Sendable, Equatable {
     public let text: String?
@@ -140,35 +138,24 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
 }
 
 @MainActor public final class SharedCaptureInbox {
-    #if !SKIP
     public static let shared = SharedCaptureInbox(directory: SharedCaptureStorage.queueDirectory)
-    #else
-    public static let shared = SharedCaptureInbox()
-    #endif
 
     private let defaults: UserDefaults
     private let storageKey = "logseq.pendingSharedCaptureItems"
-    #if !SKIP
     private let directory: URL?
-    #endif
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        #if !SKIP
         self.directory = nil
-        #endif
     }
 
-    #if !SKIP
     public init(directory: URL) {
         self.defaults = .standard
         self.directory = directory
     }
-    #endif
 
     public func enqueue(_ item: SharedCaptureItem) {
         guard !pendingItems().contains(where: { $0.id == item.id }) else { return }
-        #if !SKIP
         if let directory {
             try? FileManager.default.createDirectory(
                 at: directory,
@@ -178,7 +165,6 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
             try? data.write(to: itemURL(id: item.id, in: directory), options: .atomic)
             return
         }
-        #endif
         var pending = pendingItems()
         pending.append(item)
         save(pending)
@@ -197,7 +183,6 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     }
 
     public func pendingItems() -> [SharedCaptureItem] {
-        #if !SKIP
         if let directory {
             let urls = (try? FileManager.default.contentsOfDirectory(
                 at: directory,
@@ -219,7 +204,6 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
                     return try? JSONDecoder().decode(SharedCaptureItem.self, from: data)
                 }
         }
-        #endif
         guard let value = defaults.string(forKey: storageKey),
               let data = value.data(using: .utf8),
               let pending = try? JSONDecoder().decode([SharedCaptureItem].self, from: data)
@@ -228,12 +212,10 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     }
 
     public func acknowledge(id: String) {
-        #if !SKIP
         if let directory {
             try? FileManager.default.removeItem(at: itemURL(id: id, in: directory))
             return
         }
-        #endif
         let remaining = pendingItems().filter { $0.id != id }
         if remaining.isEmpty {
             defaults.removeObject(forKey: storageKey)
@@ -249,14 +231,12 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
         defaults.set(value, forKey: storageKey)
     }
 
-    #if !SKIP
     private func itemURL(id: String, in directory: URL) -> URL {
         let name = SHA256.hash(data: Data(id.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
         return directory.appendingPathComponent("\(name).json", isDirectory: false)
     }
-    #endif
 }
 
 @MainActor public enum SharedCaptureProcessor {
@@ -284,7 +264,6 @@ public struct SharedCaptureItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-#if !SKIP
 public enum SharedCaptureStorage {
     public static let appGroupIdentifier = "group.com.logseq.chat"
 
@@ -388,7 +367,6 @@ public enum SharedCaptureAssetImporter {
         }
     }
 }
-#endif
 
 private extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }

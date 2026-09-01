@@ -4,7 +4,7 @@ import SwiftUI
 import LogseqChatModel
 import LUIAppleBackend
 
-#if os(iOS) && !SKIP
+#if os(iOS)
 @preconcurrency import BackgroundTasks
 import UIKit
 #elseif os(macOS)
@@ -12,35 +12,21 @@ import AppKit
 #endif
 
 struct LogseqAppLogger {
-    #if !SKIP
     private let systemLogger = os.Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
-    #endif
 
     func debug(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .debug, source: .ui, message: message)
-        #if SKIP
-        print(message)
-        #else
         systemLogger.debug("\(message, privacy: .public)")
-        #endif
     }
 
     func info(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .info, source: .ui, message: message)
-        #if SKIP
-        print(message)
-        #else
         systemLogger.info("\(message, privacy: .public)")
-        #endif
     }
 
     func error(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: message)
-        #if SKIP
-        print(message)
-        #else
         systemLogger.error("\(message, privacy: .public)")
-        #endif
     }
 }
 
@@ -104,15 +90,13 @@ public struct LogseqChatRootView : View {
             }
             .task {
                 await runtime.runLGApplication()
-                logger.info("Skip app logs are viewable in the Xcode console for iOS; Android logs can be viewed in Studio or using adb logcat")
+                logger.info("App logs are viewable in the Xcode console on Apple platforms")
             }
-            #if !SKIP
             .task {
                 for await available in NetworkAvailabilityStream.values() {
                     await runtime.setNetworkAvailable(available)
                 }
             }
-            #endif
             .onChange(of: runtime.authentication.state) { previousState, state in
                 runtime.publishAuthenticationState()
                 guard state == .signedIn, previousState != .restoring else { return }
@@ -121,12 +105,10 @@ public struct LogseqChatRootView : View {
             .onOpenURL { url in
                 runtime.acceptSharedCaptureURL(url)
             }
-            #if !SKIP
             .modifier(LGChatPlatformPresentationHost(
                 coordinator: runtime.presentationCoordinator,
                 store: runtime.store
             ))
-            #endif
     }
 
     private var preferredLocale: Locale {
@@ -260,9 +242,7 @@ public struct LogseqChatRootView : View {
                 )
             },
             openExternalURL: { url in
-                #if SKIP
-                return AndroidAssetImporter.openURL(url.absoluteString)
-                #elseif os(iOS)
+                #if os(iOS)
                 return await UIApplication.shared.open(url)
                 #elseif os(macOS)
                 return NSWorkspace.shared.open(url)
@@ -278,10 +258,7 @@ public struct LogseqChatRootView : View {
                     databasePath: databasePath,
                     graphID: graphID
                 ).appendingPathComponent("graph.sqlite")
-                #if SKIP
-                AndroidAssetImporter.share(text: "", paths: [databaseURL.path])
-                return true
-                #elseif os(iOS)
+                #if os(iOS)
                 return presentationCoordinator.presentFile(databaseURL)
                 #else
                 return false
@@ -292,29 +269,14 @@ public struct LogseqChatRootView : View {
                 presentationCoordinator.presentAttachment(kind)
             },
             presentAsset: { asset in
-                #if SKIP
-                guard !asset.localPath.isEmpty else { return false }
-                AndroidAssetImporter.openFile(
-                    path: asset.localPath,
-                    contentType: asset.assetType.isEmpty
-                        ? "application/octet-stream"
-                        : asset.assetType
-                )
-                return true
-                #elseif os(iOS)
+                #if os(iOS)
                 return presentationCoordinator.presentAsset(asset)
                 #else
                 return false
                 #endif
             },
             presentPageShare: { payload in
-                #if SKIP
-                AndroidAssetImporter.share(
-                    text: payload.text,
-                    paths: payload.localAssetPaths
-                )
-                return true
-                #elseif os(iOS)
+                #if os(iOS)
                 return presentationCoordinator.presentPageShare(payload)
                 #else
                 Self.copyText(payload.text)
@@ -441,13 +403,8 @@ public struct LogseqChatRootView : View {
     public func runLGApplication() async {
         guard !didStartLGApplication else { return }
         didStartLGApplication = true
-        #if SKIP
-        await waitForAuthenticationRestore()
-        startLGRenderer()
-        #else
         startLGRenderer()
         await waitForAuthenticationRestore()
-        #endif
         publishAuthenticationState()
         LogseqChatAppDelegate.shared.reportLaunchStage("authentication_published")
         await waitForLocalLaunchLoad()
@@ -557,9 +514,7 @@ public struct LogseqChatRootView : View {
     }
 
     private static func copyText(_ text: String) {
-        #if SKIP
-        AndroidAssetImporter.copyText(text: text)
-        #elseif os(iOS)
+        #if os(iOS)
         UIPasteboard.general.string = text
         #elseif os(macOS)
         NSPasteboard.general.clearContents()
@@ -568,7 +523,7 @@ public struct LogseqChatRootView : View {
     }
 
     private static func performHaptic(_ style: String?) {
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         if style == "selection" {
             UISelectionFeedbackGenerator().selectionChanged()
         } else {
@@ -578,9 +533,7 @@ public struct LogseqChatRootView : View {
     }
 
     private static var lgPlatformCode: Int {
-        #if SKIP
-        3
-        #elseif os(macOS)
+        #if os(macOS)
         1
         #else
         2
@@ -793,7 +746,6 @@ public struct LogseqChatRootView : View {
                     return await self.store.captureSharedText(text, id: item.id)
                 case .asset:
                     guard let asset = item.captureAsset else { return true }
-                    #if !SKIP
                     guard let imported = try? SharedCaptureAssetImporter.importAsset(
                         asset,
                         sharedDirectory: SharedCaptureStorage.sharedDirectory,
@@ -807,16 +759,6 @@ public struct LogseqChatRootView : View {
                         assetChecksum: imported.checksum,
                         localPath: imported.localPath
                     )
-                    #else
-                    return await self.store.captureSharedAsset(
-                        id: item.id,
-                        title: asset.title,
-                        assetType: asset.assetType,
-                        assetSize: asset.size,
-                        assetChecksum: asset.checksum,
-                        localPath: asset.stagedFileName
-                    )
-                    #endif
                 }
             }
             self.sharedCaptureTask = nil
@@ -906,7 +848,7 @@ public enum LogseqChatBackgroundRefresh {
     public static let identifier = "com.logseq.chat.refresh"
 
     @MainActor public static func syncNow() {
-        #if os(iOS) && !SKIP
+        #if os(iOS)
         BackgroundSyncExecution().start()
         #endif
     }
@@ -916,7 +858,7 @@ public enum LogseqChatBackgroundRefresh {
     }
 
     public static func register() {
-        #if os(iOS) && !SKIP
+        #if os(iOS)
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             handle(task)
         }
@@ -924,7 +866,7 @@ public enum LogseqChatBackgroundRefresh {
     }
 
     public static func schedule(after seconds: TimeInterval = 300) {
-        #if os(iOS) && !SKIP
+        #if os(iOS)
         let request = BGAppRefreshTaskRequest(identifier: identifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: seconds)
         do {
@@ -936,7 +878,7 @@ public enum LogseqChatBackgroundRefresh {
         #endif
     }
 
-    #if os(iOS) && !SKIP
+    #if os(iOS)
     private static func handle(_ task: BGTask) {
         schedule()
         let completion = BackgroundTaskCompletion()
@@ -959,7 +901,7 @@ public enum LogseqChatBackgroundRefresh {
     #endif
 }
 
-#if os(iOS) && !SKIP
+#if os(iOS)
 @MainActor private final class BackgroundSyncExecution {
     private var identifier: UIBackgroundTaskIdentifier = .invalid
     private var syncTask: Task<Void, Never>?

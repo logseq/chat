@@ -1,5 +1,4 @@
 import Foundation
-#if !SKIP
 import LogseqChatCoreABI
 
 enum LogseqChatCorePriority: Int, Sendable {
@@ -116,4 +115,3 @@ final class LogseqChatCoreExecutor: @unchecked Sendable {
         return result.wait()
     }
 }
-#endif

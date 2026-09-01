@@ -1,0 +1,28 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "screen.graph-picker"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: "graph\\..*"
+    timeout: 30000
+- tapOn:
+    id: "graph\\..*"
+    index: 0
+- runFlow:
+    when:
+      visible: "Unlock encrypted graphs"
+    commands:
+      - tapOn: "E2EE password"
+      - inputText: ${PASSWORD}
+      - hideKeyboard
+      - tapOn: "Unlock"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 60000
+- assertVisible:
+    id: "button.connection"

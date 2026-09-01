@@ -3,8 +3,9 @@ appId: com.logseq.chat
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "screen.authentication"
+      id: "button.hosted-sign-in"
     timeout: 5000
+- assertVisible: ".*Logseq Chat.*"
 - assertVisible: "Sign in"
 - assertNotVisible: ".*LogseqAuthenticationError.*"
 - assertNotVisible:

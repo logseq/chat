@@ -1484,10 +1484,28 @@ let () =
     Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
   in
   configure_plain_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     if not (required_bool "isOutlinerPatch" result)
+     then failwith "shared assets must insert into the visible journal incrementally";
+     (match required_list "outlinerRowSplices" result with
+      | [ `Assoc splice ] ->
+        (match required_list "rows" splice with
+         | [ `Assoc row ] ->
+           assert_equal
+             "shared asset row"
+             "shared-image"
+             (required_assoc "block" row |> required_string "uuid")
+         | _ -> failwith "shared asset patch must insert one visible row")
+      | _ -> failwith "shared asset patch must contain one bounded row splice")
+   | _ -> failwith "shared asset should return an RPC response");
   let asset = Option.get (Logseq_chat_model.read_block session.model "shared-image") in
   assert_equal "shared asset stores normalized type" "jpeg" (Option.get asset.asset_type);
   let request =

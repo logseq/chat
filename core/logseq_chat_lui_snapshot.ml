@@ -140,6 +140,7 @@ type t =
   ; has_pending_semantic_operations : bool
   ; has_pending_sync_request : bool
   ; is_pending_sync_patch : bool
+  ; is_graph_catalog_patch : bool
   }
 
 let member name fields = List.assoc_opt name fields
@@ -783,6 +784,7 @@ let decode_response encoded =
                 | Some `Null | None -> false
                 | Some _ -> true)
            ; is_pending_sync_patch = bool_member "isPendingSyncPatch" result_fields
+           ; is_graph_catalog_patch = bool_member "isGraphCatalogPatch" result_fields
            }
        | _ -> Error "Core response did not contain a snapshot")
     | `Assoc response_fields -> Error (error_message response_fields)

@@ -45,6 +45,7 @@ let () =
           exit 1
         | Ok db ->
           let blocks = Logseq_chat_graph_read.blocks db in
+          let tag_pages = Logseq_chat_graph_read.tag_pages db in
           let favorites = (Logseq_chat_graph_read.sidebar_pages db).favorites in
           let due_flashcards =
             Logseq_chat_flashcards.due_cards db ~now:(Int64.to_int (Int64.of_float (Unix.gettimeofday () *. 1000.)))
@@ -64,10 +65,11 @@ let () =
             else due_flashcards
           in
           Printf.printf
-            "Seeded iOS E2E graph: %s journals=%d visible-blocks=%d favorites=%d due-flashcards=%d projected-due-flashcards=%d\n"
+            "Seeded iOS E2E graph: %s journals=%d visible-blocks=%d tags=%d favorites=%d due-flashcards=%d projected-due-flashcards=%d\n"
             path
             (Logseq_chat_graph_read.journal_page_count db)
             (List.length blocks)
+            (List.length tag_pages)
             (List.length favorites)
             (List.length due_flashcards)
             (List.length projected_due_flashcards))

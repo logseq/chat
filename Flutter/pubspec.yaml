@@ -1,0 +1,28 @@
+name: logseq_chat_flutter
+description: Native Material Android host for the shared Logseq Chat LG runtime.
+publish_to: none
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.1
+
+dependencies:
+  ffi: ^2.1.4
+  flutter:
+    sdk: flutter
+  flutter_math_fork: ^0.7.4
+  highlighter: ^0.1.1
+  lui_flutter_backend:
+    git:
+      url: ssh://git@github.com/tiensonqin/lui.git
+      ref: 78ca591ab03087df82cc66a9db9d9e7be45e8dec
+      path: platform/flutter
+  webview_flutter: ^4.14.1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

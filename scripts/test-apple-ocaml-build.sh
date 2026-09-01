@@ -30,6 +30,15 @@ for script in build-mobile-ios-simulator.sh build-mobile-ios-device.sh; do
 done
 echo "ok - iOS scripts delegate OCaml builds to Dune"
 
+for script in build-mobile-ios-simulator.sh build-mobile-ios-device.sh build-macos-app.sh; do
+  grep -F 'LOGSEQ_CHAT_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd"' \
+    "$repo_root/scripts/$script" >/dev/null || {
+    echo "not ok - $script does not use the SDK SQLite text stub" >&2
+    exit 1
+  }
+done
+echo "ok - Apple builds use SDK SQLite text stubs"
+
 simulator_settings=$(LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
   "$repo_root/scripts/build-mobile-ios-simulator.sh")
 assert_contains "simulator uses OCaml 5.5" "$simulator_settings" "ocaml-version=5.5.0"

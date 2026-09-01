@@ -1,0 +1,31 @@
+# This file contains the fastlane.tools configuration for Flutter Android.
+# You can find the documentation at https://docs.fastlane.tools
+
+require('dotenv')
+Dotenv.load '../../../App.env'
+
+default_platform(:android)
+
+desc "Build Flutter Android App"
+lane :build do |options|
+  mode = options[:release] ? "--release" : "--debug"
+  sh("cd ../.. && flutter build apk #{mode}")
+end
+
+desc "Test Flutter Android App"
+lane :test do
+  sh("cd ../.. && flutter test")
+end
+
+desc "Assemble Flutter Android App Bundle"
+lane :assemble do
+  sh("cd ../.. && flutter build appbundle --release")
+end
+
+desc "Deploy Flutter Android App to Google Play"
+lane :release do
+  assemble
+  upload_to_play_store(
+    aab: '../build/app/outputs/bundle/release/app-release.aab'
+  )
+end

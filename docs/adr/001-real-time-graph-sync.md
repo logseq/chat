@@ -62,7 +62,7 @@ support:
 | Local metadata | Graph catalog, selection, pending writes, and checkpoints use versioned Transit records. Legacy `Marshal` metadata is intentionally treated as a cache miss; no old-cache migration is required. |
 | Local journal reads | OCaml maintains an incremental recent-journal projection and re-queries only affected blocks, rebuilding only when journal-page membership changes. |
 | iOS background sync | Background entry starts an immediate, bounded sync under a UIKit background assertion; `BGAppRefresh` is also registered for later catch-up. Each execution opens the persisted graph, submits pending semantic REST writes, and replays graph events from `appliedServerT` without graph-catalog or semantic refresh |
-| Android sync transport | OCaml core, full-snapshot download/import, and SkipFoundation/OkHttp WebSocket entity-change streaming are connected; device E2E remains pending |
+| Android sync transport | OCaml core, full-snapshot download/import, and the Flutter Android host's native WebSocket entity-change streaming are connected; device E2E remains pending |
 | Encrypted graph sync | iOS Simulator E2E against local db-sync verifies encrypted first-open snapshot import, local key unlock and Keychain restore, semantic REST journal/block creation, authoritative WebSocket confirmation, ciphertext-only server storage, and kill/relaunch persistence |
 
 ## Decision
@@ -74,10 +74,10 @@ account-recovery, and federated sign-in screens. Apple opens the authorization
 endpoint with `ASWebAuthenticationSession`; Android uses Custom Tabs. Both use the
 authorization-code flow with S256 PKCE and a public app client without a secret.
 
-Logseq Chat is a Skip application, so authentication is exposed to shared app code
-through a small platform service. OAuth state and tokens do not cross the OCaml
-graph boundary; the adapter supplies an access token only when the OCaml core
-requests an authenticated transport operation.
+Authentication is exposed to the shared application model through a small platform
+service implemented independently by SwiftUI and Flutter. OAuth state and tokens do
+not cross the OCaml graph boundary; the adapter supplies an access token only when
+the OCaml core requests an authenticated transport operation.
 
 The Cognito app client is a public native client with no client secret and allows
 authorization-code and refresh-token grants. Cognito Hosted UI owns sign-in and

@@ -79,6 +79,6 @@ MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$reconnect_fl
 cursor_after=$(jq -er '. as $checkpoint | $checkpoint[index("~:applied-server-t") + 1]' "$checkpoint") \
   || die "the reconnected graph checkpoint does not contain applied-server-t"
 (( cursor_after > cursor_before )) \
-  || die "the SSE cursor did not advance after the offline block was submitted"
+  || die "the WebSocket sync cursor did not advance after the offline block was submitted"
 
 echo "$offline_block cursor $cursor_before -> $cursor_after"

@@ -2,9 +2,11 @@ appId: com.logseq.chat
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: ".*E2E Outliner Fixture.*"
-    timeout: 30000
-- tapOn: "Edit block E2E Outliner Fixture.*"
+    visible:
+      id: "outliner.block.e2e30000-0000-4000-8000-000000000004"
+    timeout: 90000
+- tapOn:
+    id: "outliner.block.e2e30000-0000-4000-8000-000000000004"
 - assertVisible:
     id: "field.outliner.block.*"
 - assertVisible:
@@ -23,10 +25,9 @@ appId: com.logseq.chat
     id: "button.outliner.editor.audio"
 - assertVisible:
     id: "button.outliner.editor.attachment"
-- assertVisible:
-    id: "button.outliner.editor.pageReference"
 - assertVisible: "Hide keyboard"
 - assertVisible: "Task: None"
+- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/editor-leading
 - tapOn:
     id: "button.outliner.editor.task"
 - extendedWaitUntil:
@@ -47,6 +48,21 @@ appId: com.logseq.chat
 - extendedWaitUntil:
     visible: "Task: None"
     timeout: 2000
+- swipe:
+    start: 80%, 60%
+    end: 20%, 60%
+    duration: 800
+- assertVisible:
+    id: "button.outliner.editor.pageReference"
+- assertVisible:
+    id: "button.outliner.editor.hideKeyboard"
+- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/editor-trailing
+- swipe:
+    start: 20%, 60%
+    end: 80%, 60%
+    duration: 800
+- assertVisible:
+    id: "button.outliner.editor.task"
 - pressKey: ENTER
 - inputText: "Android E2E continuous first"
 - assertVisible: "Android E2E continuous first"
@@ -62,6 +78,14 @@ appId: com.logseq.chat
     id: "button.outliner.editor.indent"
 - assertVisible:
     id: "toolbar.outliner.editor"
+- tapOn: "Hide keyboard"
+- tapOn: "Collapse Android E2E continuous first"
+- assertNotVisible: "Android E2E continuous second"
+- tapOn: "Expand Android E2E continuous first"
+- assertVisible: "Android E2E continuous second"
+- tapOn: "Edit block Android E2E continuous second"
+- assertVisible:
+    id: "toolbar.outliner.editor"
 - tapOn:
     id: "button.outliner.editor.outdent"
 - assertVisible:
@@ -71,21 +95,62 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.composer.expand"
 - longPressOn: "Android E2E continuous first"
+- tapOn: "Android E2E continuous [Ss]econd"
 - assertVisible:
     id: "toolbar.outliner.selection"
 - assertVisible:
     id: "button.outliner.selection.copy"
 - assertVisible:
+    id: "button.outliner.selection.outdent"
+- assertVisible:
+    id: "button.outliner.selection.indent"
+- assertVisible:
     id: "button.outliner.selection.delete"
 - assertVisible:
     id: "button.outliner.selection.copyReference"
+- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-leading
+- swipe:
+    start: 70%, 92%
+    end: 15%, 92%
+    duration: 800
 - assertVisible:
     id: "button.outliner.selection.copyURL"
+- assertVisible:
+    id: "button.outliner.selection.unselect"
+- takeScreenshot: docs/agent-guide/ui-comparison/android/toolbars/selection-trailing
+- swipe:
+    start: 15%, 92%
+    end: 70%, 92%
+    duration: 800
+- tapOn:
+    id: "button.outliner.selection.indent"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.outdent"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- swipe:
+    start: 15%, 92%
+    end: 70%, 92%
+    duration: 800
+- assertVisible:
+    id: "button.outliner.selection.delete"
 - tapOn:
     id: "button.outliner.selection.delete"
 - assertVisible: "Delete blocks?"
 - tapOn: "Cancel"
 - assertNotVisible:
     id: "toolbar.outliner.selection"
+- assertVisible: "Android E2E continuous first"
+- longPressOn: "Android E2E continuous second"
+- assertVisible:
+    id: "toolbar.outliner.selection"
+- tapOn:
+    id: "button.outliner.selection.delete"
+- assertVisible: "Delete block?"
+- tapOn:
+    id: "button.outliner-delete.confirm"
+- assertNotVisible: "Android E2E continuous second"
 - assertVisible: "Android E2E continuous first"
 - assertNotVisible: "outliner_effect_failed"

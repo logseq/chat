@@ -252,12 +252,6 @@ enum InlineEditorHandoffMerge {
     ) -> (text: String, caretUTF16Offset: Int) {
         let caret = min(max(desiredCaretUTF16Offset ?? modelText.count, 0), modelText.count)
         guard !bufferedTyping.isEmpty else { return (modelText, caret) }
-        #if SKIP
-        let prefix = String(modelText.prefix(caret))
-        let suffix = String(modelText.dropFirst(caret))
-        let text = prefix + bufferedTyping + suffix
-        return (text, caret + bufferedTyping.count)
-        #else
         let value = modelText as NSString
         let nsCaret = min(max(desiredCaretUTF16Offset ?? value.length, 0), value.length)
         let text = value.replacingCharacters(
@@ -265,7 +259,6 @@ enum InlineEditorHandoffMerge {
             with: bufferedTyping
         )
         return (text, nsCaret + (bufferedTyping as NSString).length)
-        #endif
     }
 }
 
@@ -278,7 +271,6 @@ enum InlineEditorFocusPolicy {
     }
 }
 
-#if !SKIP
 enum InlineEditorPairDeletion {
     static func deletingEmptyNodeReference(
         from text: String,
@@ -300,7 +292,6 @@ enum InlineEditorPairDeletion {
         )
     }
 }
-#endif
 
 enum OutlinerAutocompleteLayoutPolicy {
     static let isVertical = true

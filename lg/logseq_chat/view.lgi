@@ -57,6 +57,8 @@
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-sync-failed?
  :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-list-item-press-enabled?
+ :fn<host-kind;outline-row;bool>)
 (signature logseq-chat.view/outliner-tag-identifier
  :fn<sidebar-page;string>)
 (signature logseq-chat.view/outliner-tag-title
@@ -156,6 +158,11 @@
 (signature logseq-chat.view/outliner-row-action-label :fn<chat-model;outline-row;string>)
 (signature logseq-chat.view/outliner-row-collapse-label :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-collapse-glyph :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-collapse-icon-name :fn<bool;string>)
+(signature logseq-chat.view/outliner-collapse-identifier
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-collapse-button
+ :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-indent-view
  :fn<ui-context;signal<int>;int>)
 (signature logseq-chat.view/row-editing? :fn<chat-model;outline-row;bool>)
@@ -266,6 +273,8 @@
  :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
+(signature logseq-chat.view/outliner-row-content
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;bool;int>)
 (signature logseq-chat.view/outliner-row
  :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-entry
@@ -361,6 +370,8 @@
 (signature logseq-chat.view/graph-picker-overflow-menu
  :fn<ui-context;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/graph-picker-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-picker-error-reason
+ :fn<chat-model;option<string>>)
 (signature logseq-chat.view/error-separator :fn<string;int>)
 (signature logseq-chat.view/graph-picker-error-code :fn<chat-model;string>)
 (signature logseq-chat.view/graph-picker-error-message :fn<chat-model;string>)
@@ -386,8 +397,14 @@
  :fn<settings-language-choice;string>)
 (signature logseq-chat.view/settings-language-choice-identifier
  :fn<settings-language-choice;string>)
-(signature logseq-chat.view/settings-language-choice-row
+(signature logseq-chat.view/settings-language-choice-radio
+ :fn<ui-context;signal<chat-model>;signal<settings-language-choice>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-language-choice-menu-item
  :fn<ui-context;signal<settings-language-choice>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-language-control
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-appearance-control
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/settings-community-link-title
  :fn<settings-community-link;string>)
 (signature logseq-chat.view/settings-community-link-identifier
@@ -401,6 +418,7 @@
 (signature logseq-chat.view/tab-enabled? :fn<chat-model;string;bool>)
 (signature logseq-chat.view/tab-toggle-label :fn<chat-model;string;string>)
 (signature logseq-chat.view/tab-selection-glyph :fn<chat-model;string;string>)
+(signature logseq-chat.view/tab-selection-icon-name :fn<chat-model;string;string>)
 (signature logseq-chat.view/tab-selection-foreground :fn<chat-model;string;string>)
 (signature logseq-chat.view/tab-disabled? :fn<chat-model;string;bool>)
 (signature logseq-chat.view/tab-index :fn<chat-model;string;int>)
@@ -431,6 +449,8 @@
 (signature logseq-chat.view/settings-tab-row
  :fn<ui-context;signal<chat-model>;string;string;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/settings-tabs-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/runtime-log-toolbar
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/runtime-log-screen
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
@@ -473,6 +493,10 @@
 (signature logseq-chat.view/selected-page-title :fn<chat-model;string>)
 (signature logseq-chat.view/root-outliner-view
  :fn<ui-context;signal<chat-model>;signal<bool>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/retained-journal-pane
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/journal-tree-panes
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/main-bottom-chrome
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/main-header-leading
@@ -495,6 +519,16 @@
 (signature logseq-chat.view/search-navigation-depth :fn<chat-model;int>)
 (signature logseq-chat.view/search-node-routes
  :fn<chat-model;vector<node-projection>>)
+(signature logseq-chat.view/active-route-only
+ :fn<vector<node-projection>;vector<node-projection>>)
+(signature logseq-chat.view/active-app-node-routes
+ :fn<chat-model;vector<node-projection>>)
+(signature logseq-chat.view/active-search-node-routes
+ :fn<chat-model;vector<node-projection>>)
+(signature logseq-chat.view/flutter-app-root-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/flutter-search-root-visible?
+ :fn<chat-model;bool>)
 (signature logseq-chat.view/native-node-screen
  :fn<ui-context;signal<chat-model>;signal<node-projection>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/native-search-view

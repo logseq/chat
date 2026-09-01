@@ -26,6 +26,7 @@ const char *logseq_chat_lui_double_press(int64_t node);
 const char *logseq_chat_lui_extension_event(
     int64_t node, const char *identifier, const char *name, const char *text,
     int64_t value);
+int64_t logseq_chat_lui_root_node(void);
 const char *logseq_chat_lui_dispose(void);
 const char *logseq_chat_lui_take_effect(void);
 const char *logseq_chat_lui_resolve_effect(int64_t effect_id, int32_t succeeded,

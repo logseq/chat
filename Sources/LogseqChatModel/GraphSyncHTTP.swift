@@ -1,7 +1,5 @@
 import Foundation
-#if !SKIP
 import LogseqChatCoreABI
-#endif
 
 public struct LogseqGraphSnapshotArtifact: Sendable {
     public let metadataBody: String
@@ -161,7 +159,6 @@ public enum LogseqGraphSyncHTTP {
         return request
     }
 
-    #if !SKIP
     public static func downloadSnapshot(
         baseURL: String, graphID: String, accessToken: String
     ) async throws -> LogseqGraphSnapshotArtifact {
@@ -297,5 +294,4 @@ public enum LogseqGraphSyncHTTP {
             }
         }
     }
-    #endif
 }

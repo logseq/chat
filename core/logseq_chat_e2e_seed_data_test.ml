@@ -104,6 +104,12 @@ let () =
   then failwith "the resettable outliner fixture must keep only today's journal";
   if Datascript.entid db "block/uuid" (Uuid Seed.outliner_block_uuid) = None
   then failwith "the resettable outliner fixture must expose today's writable block";
+  if
+    not
+      (List.exists
+         (fun page -> String.equal page.Logseq_chat_graph_read.uuid Seed.outliner_tag_uuid)
+         (Logseq_chat_graph_read.tag_pages db))
+  then failwith "the outliner fixture must expose a deterministic tag completion";
   let visible_block_count = List.length (Logseq_chat_graph_read.blocks db) in
   if visible_block_count <> 1
   then

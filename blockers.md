@@ -33,7 +33,7 @@ Entries stay concise so work can continue on the highest-signal path.
   removing the drawer's panel-wide drag recognizer. The next focused check is
   the generic ListItem interaction policy: text-only custom rows should remain
   native Buttons, while only rows containing nested controls should use the
-  composite gesture host. The first policy edit also exposed a Skip call-site
+  composite gesture host. The first policy edit also exposed a legacy Android call-site
   label mismatch during compilation; that compiler failure is fixed before the
   next simulator build rather than bypassed.
 
@@ -106,7 +106,7 @@ Entries stay concise so work can continue on the highest-signal path.
   typography, group-label color, and card spacing.
 
 - 2026-08-28 15:13 CST — The generated Android module now passes
-  `:LogseqChat:compileDebugKotlin`. Skip-incompatible enum associated-value
+  `:LogseqChat:compileDebugKotlin`. The legacy transpiler did not support enum associated-value
   patterns, optional invocation return inference, method references,
   `String(decoding:as:)`, and `map(String.init)` were replaced at their Swift
   sources with portable forms. Four closure-overloaded effect-executor
@@ -366,7 +366,7 @@ Entries stay concise so work can continue on the highest-signal path.
   `NavigationStack`. The generic navigation now accepts an app-local root
   transform, attaching the platform modifier to the stack's actual root
   content. The focused iOS E2E confirms native presentation and dismissal;
-  iOS below 26 and Skip/Android retain system `.searchable` placements.
+  iOS below 26 and the former Android client retain system `.searchable` placements.
 - 2026-08-28 05:35 CST — Swift 6.2 IRGen crashed while lowering an instance
   method reference used directly as a `Binding<String>` setter in the native
   search extension (`SmallVector unable to grow`). Expressing the same setter
@@ -412,11 +412,11 @@ Entries stay concise so work can continue on the highest-signal path.
   button identifiers; the LG regression suite covers this boundary.
 - 2026-08-28 03:42 CST — The graph Add action now dispatches on the first iOS
   tap and the standard Maestro setup proceeds into the outliner. The native
-  navigation-form action uses one high-priority tap boundary while the Skip
+  navigation-form action uses one high-priority tap boundary while the former Android
   branch keeps its normal button action.
 
-- 2026-08-28 03:36 CST — Skip rejects `highPriorityGesture`. The navigation
-  action keeps its original `Button` action under `#if SKIP`; only the native
+- 2026-08-28 03:36 CST — The former Android transpiler rejects `highPriorityGesture`.
+  The navigation action keeps its original `Button` action on Android; only the native
   Apple branch uses the gesture needed to prevent the keyboard from swallowing
   the first toolbar tap.
 - 2026-08-28 17:48 CST — The Graphs sidebar row dispatched the correct LG
@@ -564,7 +564,7 @@ Entries stay concise so work can continue on the highest-signal path.
   the previous wire model value after the transition, making
   `model.isSelected != presented` remain true and permanently disabling the
   sidebar. Lock the transition using local animation state instead; native iOS
-  unlocks from SwiftUI's logical animation completion, while Skip uses main's
+  unlocks from SwiftUI's logical animation completion, while the former Android client uses main's
   350 ms fallback. A transition generation prevents an older completion from
   releasing a newer transition.
 - 2026-08-29 06:25 CST — The current device build and signing completed, but
@@ -590,7 +590,7 @@ Entries stay concise so work can continue on the highest-signal path.
   paired iPhone, but CoreDevice could not launch it while the phone was locked.
   The installed build is valid; unlock the phone and launch it manually (or
   retry only the launch command) instead of rebuilding the app.
-- 2026-08-29 09:22 CST — Skip 1.9.5 does not transpile SwiftUI `contentShape`
+- 2026-08-29 09:22 CST — The former Android transpiler does not support SwiftUI `contentShape`
   in the shared drawer implementation. Keep the interaction shield shared and
   full-frame, but isolate the native `contentShape` and safe-area coverage in
   the existing Apple-only view modifier; Android continues to use the full-frame
@@ -606,10 +606,10 @@ Entries stay concise so work can continue on the highest-signal path.
   animation completion callback to own the interaction lock: `logicallyComplete`
   releases before visible spring settling, while `removed` can be cancelled when
   a sidebar selection rebuilds the destination and leave interaction locked
-  forever. Both Apple and Skip use one generation-guarded transition lifecycle,
+  forever. Both Apple and the former Android client use one generation-guarded transition lifecycle,
   which covers the spring settling window and always releases.
 - 2026-08-29 14:48 CST — A 500 ms drawer lock visibly outlived main's 0.28 s
-  spring and made consecutive sidebar interaction feel delayed. Main's Skip
+  spring and made consecutive sidebar interaction feel delayed. The former Android
   fallback is 350 ms, so the shared generation-guarded lock now uses the same
   350 ms lifecycle while retaining the uninterrupted gesture-to-animation
   interaction shield.
@@ -622,13 +622,13 @@ Entries stay concise so work can continue on the highest-signal path.
 - 2026-08-29 10:07 CST — The repository-wide `swift test` target is not a
   reliable integration gate in its current form. Native suites run concurrently
   against shared UserDefaults/core fixtures and produced ordering-dependent
-  failures, while the generated Skip unit-test targets fail to compile older
+  failures, while the generated Android unit-test targets fail to compile older
   model/outliner tests that use unsupported `Data` initializers, optional
   `flatMap`, integer geometry literals, and untranslated enum cases. The current
-  navigation source's Skip compile error was fixed independently; LUI's full
-  Apple+Skip suite (107 tests), the LG suite (109 tests), focused app tests, and
+  navigation source's Android compile error was fixed independently; LUI's full
+  Apple and Android suite (107 tests), the LG suite (109 tests), focused app tests, and
   simulator/device builds pass. Split or serialize shared-state native suites
-  and repair the pre-existing Skip test sources before treating the aggregate
+  and repair the pre-existing Android test sources before treating the aggregate
   app command as a release gate.
 - 2026-08-30 09:44 CST — Even a filtered `swift test --filter
   LGChatRendererTests` currently fails at link time because the macOS test
@@ -877,7 +877,7 @@ Entries stay concise so work can continue on the highest-signal path.
   host retains intrinsic sizing for lazy sections, so a 160-point section in a
   100-point viewport no longer compresses; the full 112-test LUI suite and all
   113 LG module tests pass.
-- Skip/Compose still uses its existing eager `Column` implementation for a
+- The former Compose client still uses its existing eager `Column` implementation for a
   direct virtual-list item. The declarative semantics are unchanged, but
   Android needs a separate native lazy-container performance comparison before
   adopting the same optimization because vertically nested Compose lazy lists
@@ -1108,10 +1108,10 @@ Entries stay concise so work can continue on the highest-signal path.
 
 - The native SwiftUI suite passed all 124 tests after the navigation and menu
   changes, but the aggregate `swift test` command still exits nonzero when its
-  generated Android parity target compiles `LUISkipUIRoot.kt`.
+  generated Android parity target compiles the legacy generated UI root.
 - That generated target cannot resolve `LUIRadioGroupVisualPolicy`, referenced
   by the existing radio-group implementation. This is separate from the header
-  visibility fix and keyed context-menu change; it needs its own Skip export
+  visibility fix and keyed context-menu change; it needs its own transpiler export
   boundary correction rather than weakening or skipping the aggregate test.
 
 # 2026-08-30: Targeted iOS e2e driver became unreachable
@@ -1189,11 +1189,11 @@ Entries stay concise so work can continue on the highest-signal path.
 
 - The Apple backend's 128 native tests pass, including the new dialog-anchor
   coverage. The aggregate `swift test --package-path platform/apple` still fails
-  when compiling generated Kotlin because `LUISkipUIRoot.swift` references
-  `LUIRadioGroupVisualPolicy`, which is declared only in the non-Skip SwiftUI
+  when compiling generated Kotlin because the generated UI root references
+  `LUIRadioGroupVisualPolicy`, which is declared only in the native SwiftUI
   source file.
 - This predates the dialog-anchor patch. The shared pure policy should move to a
-  Skip-visible source file before treating the aggregate Apple-package command
+  transpiler-visible source file before treating the aggregate Apple-package command
   as a cross-platform green gate.
 
 # 2026-08-30: Native context-menu labels overrode explicit icon tint
@@ -1224,7 +1224,7 @@ Entries stay concise so work can continue on the highest-signal path.
   `a1e4ceb0b3784b721b632983497dcbb315cc4f79`, and SwiftPM resolves it without a
   local-package override.
 - A clean temporary LUI checkout now contains the deliverable fixes: the radio
-  policy is Skip-visible, Android button variants use Material styles, button
+  policy is transpiler-visible, Android button variants use Material styles, button
   content padding is honored, and button accessibility identifiers follow the
   visible label bounds. Its Swift and generated Android builds pass locally.
 - The app builds and passes Android E2E with that local LUI checkout. Publishing

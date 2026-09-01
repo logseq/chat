@@ -1,6 +1,6 @@
 import LUIAppleBackend
 import SwiftUI
-#if !SKIP && os(iOS)
+#if os(iOS)
 import UIKit
 #endif
 
@@ -27,7 +27,7 @@ enum LGChatNavigationSurfacePolicy {
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -97,7 +97,7 @@ private struct LGChatNavigationStack: View {
 @MainActor
 enum LGChatSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/swiftui,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -130,7 +130,7 @@ enum LGChatSearchPresentationExtension {
 @MainActor
 private struct LGChatSearchPresentation: View {
     let context: LUIAppleExtensionViewContext
-    #if !SKIP && os(iOS)
+    #if os(iOS)
     @State private var nativeSearchPresented = false
     @FocusState private var searchFocused: Bool
     #endif
@@ -171,7 +171,7 @@ private struct LGChatSearchPresentation: View {
     }
 
     private func searchRootTransform(_ content: AnyView) -> AnyView {
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         if #available(iOS 26.0, *) {
             return AnyView(nativeBottomSearch(content))
         }
@@ -190,7 +190,7 @@ private struct LGChatSearchPresentation: View {
             )
     }
 
-    #if !SKIP && os(iOS)
+    #if os(iOS)
     private func nativeLegacySearch(_ content: AnyView) -> some View {
         content
             .navigationTitle(searchTitle)
@@ -327,7 +327,7 @@ private struct LGChatSearchPresentation: View {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 @MainActor
 private struct LGChatNativeSearchActivator: UIViewRepresentable {
     let focusRequested: Bool
@@ -450,31 +450,14 @@ private struct LGChatNavigationContent: View {
 
     @ViewBuilder
     var body: some View {
-        #if SKIP
-        navigationLayout
-        #else
         navigationLayout
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
             }
-        #endif
     }
 
     @ViewBuilder
     private var navigationLayout: some View {
-        #if SKIP
-        if bottomOccupiesLayoutSpace {
-            VStack(spacing: 0) {
-                navigationStack
-                sizedBottomChrome
-            }
-        } else {
-            navigationStack
-                .overlay(alignment: .bottom) {
-                    sizedBottomChrome
-                }
-        }
-        #else
         navigationStack
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if bottomOccupiesLayoutSpace {
@@ -487,7 +470,6 @@ private struct LGChatNavigationContent: View {
                 }
             }
             .background(routeBackground.ignoresSafeArea())
-        #endif
     }
 
     private var navigationStack: some View {
@@ -501,20 +483,11 @@ private struct LGChatNavigationContent: View {
                 .background(routeBackground)
                 .overlay {
                     if composerDismissalEnabled {
-                        #if SKIP
-                        Color.clear
-                            .onTapGesture {
-                                emitDismissComposer()
-                            }
-                            .accessibilityLabel("Dismiss composer")
-                            .accessibilityIdentifier("surface.composer.dismiss")
-                        #else
                         Color.clear
                             .contentShape(Rectangle())
                             .onTapGesture(perform: emitDismissComposer)
                             .accessibilityLabel("Dismiss composer")
                             .accessibilityIdentifier("surface.composer.dismiss")
-                        #endif
                     }
                 }
                 .navigationDestination(for: Int.self) { childID in
@@ -527,14 +500,13 @@ private struct LGChatNavigationContent: View {
                         )
                         .background(routeBackground)
                         .navigationTitle(navigationTitle)
-                        #if !SKIP && os(iOS)
+                        #if os(iOS)
                         .navigationBarTitleDisplayMode(.inline)
                         #endif
                         .toolbar {
                             destinationTrailingToolbar
                         }
                 }
-                #if !SKIP
                 .toolbar {
                     if let toolbarStartIndex {
                         if #available(iOS 26.0, macOS 26.0, *) {
@@ -576,8 +548,7 @@ private struct LGChatNavigationContent: View {
                         #endif
                     }
                 }
-                #endif
-                #if !SKIP && os(iOS)
+                #if os(iOS)
                 .toolbar(.visible, for: .navigationBar)
                 #endif
         }
@@ -587,7 +558,7 @@ private struct LGChatNavigationContent: View {
             alignment: .topLeading
         )
         .background(routeBackground.ignoresSafeArea())
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         .toolbar(.visible, for: .navigationBar)
         .toolbarBackground(routeBackground, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -615,49 +586,10 @@ private struct LGChatNavigationContent: View {
 
     @ViewBuilder
     private var rootNavigationSurface: some View {
-        #if SKIP
-        VStack(spacing: 0) {
-            androidRootTopAppBar
-            transformedRootContent
-                .padding(.top, LGChatNavigationSurfacePolicy.androidContentTopPadding)
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: .topLeading
-                )
-        }
-        #else
         transformedRootContent
             .padding(.top, navigationContentTopPadding)
-        #endif
     }
 
-    #if SKIP
-    private var androidRootTopAppBar: some View {
-        ZStack {
-            if let toolbarStartIndex {
-                HStack(spacing: 0) {
-                    context.content(for: context.childIDs[toolbarStartIndex])
-                        .frame(width: 48, height: 64)
-                    context.content(for: context.childIDs[toolbarStartIndex + 1])
-                        .padding(.leading, 8)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 0) {
-                    context.content(for: context.childIDs[toolbarStartIndex + 2])
-                        .frame(width: 48, height: 64)
-                    context.content(for: context.childIDs[toolbarStartIndex + 3])
-                        .frame(width: 48, height: 64)
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64)
-        .background(routeBackground)
-    }
-    #endif
 
     private var themePalette: LogseqThemePalette {
         LogseqThemePolicy.palette(
@@ -667,7 +599,7 @@ private struct LGChatNavigationContent: View {
     }
 
     private var routeBackground: Color {
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         if LGChatNavigationSurfacePolicy.usesSystemGroupedBackground(
             contentPreference: usesSystemGroupedBackground
         ) {
@@ -683,31 +615,15 @@ private struct LGChatNavigationContent: View {
     }
 
     private var navigationContentTopPadding: CGFloat {
-        #if SKIP
-        LGChatNavigationSurfacePolicy.androidContentTopPadding
-        #else
         0
-        #endif
     }
 
     private var destinationContentTopPadding: CGFloat {
-        #if SKIP
-        LGChatNavigationSurfacePolicy.androidDestinationContentTopPadding
-        #else
         0
-        #endif
     }
 
     @ToolbarContentBuilder
     private var destinationTrailingToolbar: some ToolbarContent {
-        #if SKIP
-        ToolbarItemGroup(placement: .primaryAction) {
-            if let toolbarStartIndex {
-                context.content(for: context.childIDs[toolbarStartIndex + 2])
-                context.content(for: context.childIDs[toolbarStartIndex + 3])
-            }
-        }
-        #else
         if let toolbarStartIndex {
             #if os(iOS)
             ToolbarItemGroup(placement: .topBarTrailing) {
@@ -721,7 +637,6 @@ private struct LGChatNavigationContent: View {
             }
             #endif
         }
-        #endif
     }
 
     private var bottomChrome: AnyView {
@@ -762,9 +677,7 @@ private struct LGChatNavigationContent: View {
     }
 
     private var rootLeadingToolbarPlacement: ToolbarItemPlacement {
-        #if SKIP
-        .topBarLeading
-        #elseif os(iOS)
+        #if os(iOS)
         .topBarLeading
         #else
         .navigation
@@ -809,11 +722,6 @@ private struct LGChatNavigationContent: View {
 private struct LGChatBottomChromeSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        #if SKIP
-        content
-            .background(Color.white.opacity(0.9))
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        #else
         if #available(iOS 26.0, macOS 26.0, *) {
             content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
         } else {
@@ -822,7 +730,6 @@ private struct LGChatBottomChromeSurface: ViewModifier {
                 in: RoundedRectangle(cornerRadius: 28, style: .continuous)
             )
         }
-        #endif
     }
 }
 
@@ -831,9 +738,6 @@ private struct LGChatBottomChromeHitTarget: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        #if SKIP
-        content.onTapGesture {}
-        #else
         if isRounded {
             content
                 .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
@@ -843,6 +747,5 @@ private struct LGChatBottomChromeHitTarget: ViewModifier {
                 .contentShape(Rectangle())
                 .onTapGesture {}
         }
-        #endif
     }
 }

@@ -13,6 +13,7 @@ appId: com.logseq.chat
     visible:
       id: "toolbar.outliner.autocomplete"
     timeout: 10000
+- assertVisible: "Card"
 - tapOn:
     id: "button.outliner.autocomplete\\..*"
     index: 0

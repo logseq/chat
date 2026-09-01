@@ -1,0 +1,32 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- tapOn:
+    id: "field.composer"
+- inputText: "{{youtube dQw4w9WgXcQ}}"
+- tapOn:
+    id: "button.send"
+- hideKeyboard
+- pressKey: BACK
+- scrollUntilVisible:
+    element:
+      id: "block.rich.video"
+    direction: UP
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: "Video preview"
+- assertVisible: "Tap to load"
+- tapOn: "Tap to load"
+- extendedWaitUntil:
+    visible:
+      id: "media.webview.loaded"
+    timeout: 15000
+- assertNotVisible: "Video unavailable"

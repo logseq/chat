@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 import AVKit
 import UIKit
 #endif
@@ -34,7 +34,7 @@ enum AssetPresentationPolicy {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 struct AssetAudioPlayer: View {
     @State private var player: AVPlayer
     @State private var isPlaying = false
@@ -128,7 +128,7 @@ struct IconImage: View {
     }
 
     private static let assetBundle: Bundle = {
-        #if os(macOS) && !SKIP
+        #if os(macOS)
         if let bundleURL = Bundle.main.resourceURL?
             .appendingPathComponent("logseq-chat_LogseqChat.bundle"),
            let bundle = Bundle(url: bundleURL) {

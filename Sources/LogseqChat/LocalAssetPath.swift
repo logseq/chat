@@ -1,4 +1,3 @@
-#if !SKIP
 import Foundation
 
 enum LocalAssetPath {
@@ -73,4 +72,3 @@ enum LocalAssetPath {
         return fileManager.fileExists(atPath: recoveredURL.path) ? recoveredURL : nil
     }
 }
-#endif

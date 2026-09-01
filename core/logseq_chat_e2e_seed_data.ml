@@ -13,6 +13,7 @@ let composer_page_uuid = "e2e30000-0000-4000-8000-000000000001"
 let composer_block_uuid = "e2e30000-0000-4000-8000-000000000002"
 let outliner_page_uuid = "e2e30000-0000-4000-8000-000000000003"
 let outliner_block_uuid = "e2e30000-0000-4000-8000-000000000004"
+let outliner_tag_uuid = "e2e30000-0000-4000-8000-000000000005"
 
 let entity_has_attr db eid attr =
   Datascript.datoms db Eavt ~e:eid ~a:attr () |> Seq.uncons |> Option.is_some
@@ -369,6 +370,24 @@ let seed_outliner conn ~now =
       ~page_uuid:outliner_page_uuid
       ~block_uuid:outliner_block_uuid
       ~block_title:"E2E Outliner Fixture";
+    ignore
+      (transact_conn
+         conn
+         [ Entity
+             { db_id = Some (Temp_id "e2e-outliner-tag-class")
+             ; attrs = [ "db/ident", One_value (Keyword "logseq.class/Tag") ]
+             }
+         ; Entity
+             { db_id = None
+             ; attrs =
+                 [ "block/uuid", One_value (Uuid outliner_tag_uuid)
+                 ; "block/name", One_value (String "e2e-outliner-tag")
+                 ; "block/title", One_value (String "E2E Outliner Tag")
+                 ; ( "block/tags"
+                   , Many_values [ Ref_to (Temp_id "e2e-outliner-tag-class") ] )
+                 ]
+             }
+         ]);
     Ok ()
   with
   | error -> Error ("Seed iOS outliner graph: " ^ Printexc.to_string error)

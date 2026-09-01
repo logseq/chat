@@ -1,0 +1,3 @@
+Logseq Chat brings fast capture, journals, search, graph navigation, and focused editing to Android.
+
+Use home-screen widgets and app shortcuts to open today’s journal or capture a thought immediately. Your Logseq graph remains the center of the experience, with a responsive Android interface designed around Material conventions.

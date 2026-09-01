@@ -3,14 +3,7 @@ import Observation
 #if !os(Android)
 import OSLog
 #endif
-#if SKIP
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-#endif
-import SkipFFI
-#if !SKIP
 import LogseqChatCoreABI
-#endif
 
 private struct LogseqModelLogger {
     #if !os(Android)
@@ -39,16 +32,11 @@ private struct LogseqModelLogger {
 private let logger = LogseqModelLogger()
 
 public final class LogseqChatCore {
-    nonisolated(unsafe) public static let shared = registerNatives(
-        LogseqChatCore(),
-        frameworkName: "LogseqChat",
-        libraryName: "logseq_chat_core"
-    )
+    nonisolated(unsafe) public static let shared = LogseqChatCore()
 
     private init() {
     }
 
-    #if !SKIP
     private func invokeCore(_ operation: @escaping @Sendable () -> String) -> String {
         LogseqChatCoreExecutor.shared.callSync(
             { _ in operation() },
@@ -56,7 +44,6 @@ public final class LogseqChatCore {
             priority: .interaction
         )
     }
-    #endif
 
     public func initialize() {
         #if LOGSEQ_CHAT_CORE
@@ -64,7 +51,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_call(_ request: String) -> String {
+    public func logseq_chat_call(_ request: String) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_call(request))
@@ -90,18 +77,14 @@ public final class LogseqChatCore {
               let requestJSON = String(data: data, encoding: .utf8) else {
             return ""
         }
-        #if !SKIP
         return await LogseqChatCoreExecutor.shared.call(
             { request in LogseqChatCore.shared.logseq_chat_call(request) },
             requestJSON: requestJSON,
             priority: .interaction
         )
-        #else
-        return LogseqChatCore.shared.logseq_chat_call(requestJSON)
-        #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_initialize(
+    public func logseq_chat_lui_initialize(
         _ platformCode: Int,
         _ hostCode: Int,
         _ authenticationCode: Int
@@ -119,7 +102,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_press(_ node: Int) -> String {
+    public func logseq_chat_lui_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_press(Int64(node)))
@@ -129,7 +112,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_appear(_ node: Int) -> String {
+    public func logseq_chat_lui_appear(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_appear(Int64(node)))
@@ -139,7 +122,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_long_press(_ node: Int) -> String {
+    public func logseq_chat_lui_long_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_long_press(Int64(node)))
@@ -149,7 +132,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_text_changed(
+    public func logseq_chat_lui_text_changed(
         _ node: Int,
         _ text: String
     ) -> String {
@@ -165,7 +148,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_submit(_ node: Int) -> String {
+    public func logseq_chat_lui_submit(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_submit(Int64(node)))
@@ -175,7 +158,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_toggle_changed(
+    public func logseq_chat_lui_toggle_changed(
         _ node: Int,
         _ checked: Bool
     ) -> String {
@@ -191,7 +174,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_change(_ node: Int) -> String {
+    public func logseq_chat_lui_change(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_change(Int64(node)))
@@ -201,7 +184,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_value_changed(
+    public func logseq_chat_lui_value_changed(
         _ node: Int,
         _ value: Double
     ) -> String {
@@ -217,7 +200,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_dismiss(_ node: Int) -> String {
+    public func logseq_chat_lui_dismiss(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_dismiss(Int64(node)))
@@ -227,7 +210,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_double_press(_ node: Int) -> String {
+    public func logseq_chat_lui_double_press(_ node: Int) -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_double_press(Int64(node)))
@@ -237,7 +220,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_extension_event(
+    public func logseq_chat_lui_extension_event(
         _ node: Int,
         _ identifier: String,
         _ name: String,
@@ -259,7 +242,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_dispose() -> String {
+    public func logseq_chat_lui_dispose() -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_dispose())
@@ -269,7 +252,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_take_effect() -> String {
+    public func logseq_chat_lui_take_effect() -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
             String(cString: LogseqChatCoreABI.logseq_chat_lui_take_effect())
@@ -279,7 +262,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_resolve_effect(
+    public func logseq_chat_lui_resolve_effect(
         _ effectID: Int,
         _ succeeded: Bool,
         _ message: String
@@ -297,7 +280,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_apply_snapshot(
+    public func logseq_chat_lui_apply_snapshot(
         _ responseJSON: String
     ) -> String {
         #if LOGSEQ_CHAT_CORE
@@ -311,7 +294,7 @@ public final class LogseqChatCore {
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_lui_apply_host_update(
+    public func logseq_chat_lui_apply_host_update(
         _ kind: String,
         _ payloadJSON: String
     ) -> String {
@@ -986,20 +969,11 @@ private struct DeletePagePayload: Encodable {
 
             guard allowSnapshotDownload else { return false }
 
-            #if SKIP
-            let artifact = try await AndroidGraphSnapshotTransport.downloadSnapshot(
-                baseURL: baseURL,
-                graphID: graphID,
-                accessToken: accessToken,
-                workingDirectory: graphDirectory.path
-            )
-            #else
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL,
                 graphID: graphID,
                 accessToken: accessToken
             )
-            #endif
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
             let isEditingOutlinerBlock = snapshot.outlinerState.editing != nil
                 || snapshot.nodeRoutes.last?.outlinerState.editing != nil
@@ -1582,14 +1556,9 @@ private struct DeletePagePayload: Encodable {
     private func opensAutocompleteImmediately(_ event: LogseqOutlinerEvent) -> Bool {
         guard event.type == "textChanged", let title = event.title,
               let caret = event.caretUTF16Offset else { return false }
-        #if SKIP
-        let location = min(max(caret, 0), title.count)
-        let prefix = title.substring(0, location)
-        #else
         let value = title as NSString
         let location = min(max(caret, 0), value.length)
         let prefix = value.substring(to: location)
-        #endif
         return prefix.hasSuffix("#") || prefix.hasSuffix("[[") || prefix.hasSuffix("::")
     }
 
@@ -1700,15 +1669,11 @@ private struct DeletePagePayload: Encodable {
         let coreStartedAt = Date()
         #endif
         logger.info("Core action started: \(actionName)")
-        #if !SKIP
         let responseJSON = await LogseqChatCoreExecutor.shared.call(
             callCore,
             requestJSON: requestJSON,
             priority: Self.corePriority(for: actionName)
         )
-        #else
-        let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
-        #endif
         #if DEBUG
         let coreMilliseconds = Date().timeIntervalSince(coreStartedAt) * 1_000
         let coreTiming =
@@ -1741,13 +1706,9 @@ private struct DeletePagePayload: Encodable {
         requestJSON: String,
         actionName: String
     ) async -> String {
-        #if !SKIP
         await Task.detached(priority: .utility) {
             callCore(requestJSON)
         }.value
-        #else
-        return await AndroidCoreExecutor.call(requestJSON: requestJSON, callCore: callCore)
-        #endif
     }
 
     private func encode(_ request: LogseqChatRPCRequest) -> String? {
@@ -1857,7 +1818,6 @@ private struct DeletePagePayload: Encodable {
         Int64(Date().timeIntervalSince1970 * 1000.0)
     }
 
-    #if !SKIP
     private static func corePriority(for action: String) -> LogseqChatCorePriority {
         switch action {
         case "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
@@ -1873,7 +1833,6 @@ private struct DeletePagePayload: Encodable {
             return .normal
         }
     }
-    #endif
 
     private func mergedSnapshot(_ result: LogseqChatSnapshot) -> LogseqChatSnapshot {
         if result.isPendingSyncPatch {

@@ -1,5 +1,4 @@
 // swift-tools-version: 6.1
-// This is a Skip (https://skip.dev) package.
 import PackageDescription
 import Foundation
 
@@ -7,15 +6,6 @@ let logseqChatNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_CHA
     .split(separator: ":")
     .map(String.init) ?? []
 let logseqChatSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS"]
-let luiPackageDependency: Package.Dependency
-if let localLUIPath = ProcessInfo.processInfo.environment["LUI_PACKAGE_PATH"] {
-    luiPackageDependency = .package(name: "lui", path: localLUIPath)
-} else {
-    luiPackageDependency = .package(
-        url: "ssh://git@github.com/tiensonqin/lui.git",
-        revision: "e40875424519253a548951a0fd3d5acf71af4a9e"
-    )
-}
 let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
     .unsafeFlags(logseqChatNativeLinkInputs, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
@@ -43,12 +33,6 @@ let package = Package(
         .library(name: "LogseqChatModel", type: .dynamic, targets: ["LogseqChatModel"]),
     ],
     dependencies: [
-        .package(url: "https://source.skip.tools/skip.git", from: "1.9.5"),
-        .package(url: "https://source.skip.tools/skip-ui.git", from: "1.0.0"),
-        .package(url: "https://source.skip.tools/skip-foundation.git", from: "1.0.0"),
-        .package(url: "https://source.skip.tools/skip-model.git", from: "1.0.0"),
-        .package(url: "https://source.skip.tools/skip-ffi.git", from: "1.0.0"),
-        luiPackageDependency,
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],
@@ -59,10 +43,14 @@ let package = Package(
             path: "Darwin/Sources",
             linkerSettings: logseqChatShellLinkerSettings
         ),
+        .target(
+            name: "LUIAppleBackend",
+            path: "Vendor/LUIAppleBackend",
+            exclude: ["UPSTREAM.md"]
+        ),
         .target(name: "LogseqChat", dependencies: [
             "LogseqChatModel",
-            .product(name: "LUIAppleBackendStatic", package: "lui"),
-            .product(name: "SkipUI", package: "skip-ui"),
+            "LUIAppleBackend",
             .product(
                 name: "SwiftUIMath",
                 package: "swiftui-math",
@@ -75,29 +63,26 @@ let package = Package(
             )
         ],
         resources: [.process("Resources")],
-        linkerSettings: logseqChatLinkerSettings,
-        plugins: [.plugin(name: "skipstone", package: "skip")]),
-        .testTarget(name: "LogseqChatTests", dependencies: [
-            "LogseqChat",
-            .product(name: "SkipTest", package: "skip")
-        ], resources: [.process("Resources")], plugins: [.plugin(name: "skipstone", package: "skip")]),
+        linkerSettings: logseqChatLinkerSettings),
+        .testTarget(
+            name: "LogseqChatTests",
+            dependencies: ["LogseqChat"],
+            resources: [.process("Resources")]
+        ),
         .target(name: "LogseqChatModel", dependencies: [
-            "LogseqChatCoreABI",
-            .product(name: "SkipFoundation", package: "skip-foundation"),
-            .product(name: "SkipModel", package: "skip-model"),
-            .product(name: "SkipFFI", package: "skip-ffi")
+            "LogseqChatCoreABI"
         ], resources: [.process("Resources")],
-        swiftSettings: logseqChatCoreSwiftSettings,
-        plugins: [.plugin(name: "skipstone", package: "skip")]),
+        swiftSettings: logseqChatCoreSwiftSettings),
         .target(
             name: "LogseqChatCoreABI",
             path: "Sources/LogseqChatCoreABI",
             publicHeadersPath: "include",
             linkerSettings: [.linkedLibrary("z")]
         ),
-        .testTarget(name: "LogseqChatModelTests", dependencies: [
-            "LogseqChatModel",
-            .product(name: "SkipTest", package: "skip")
-        ], resources: [.process("Resources")], plugins: [.plugin(name: "skipstone", package: "skip")]),
+        .testTarget(
+            name: "LogseqChatModelTests",
+            dependencies: ["LogseqChatModel"],
+            resources: [.process("Resources")]
+        ),
     ]
 )

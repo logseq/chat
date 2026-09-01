@@ -26,6 +26,12 @@ require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
 require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
   "LaunchedEffect(blockID, options.value.text)"
 require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
+  "FocusRequester"
+require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
+  "focusRequester.requestFocus()"
+require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
+  "keyboardController?.show()"
+require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
   "onPreviewKeyEvent"
 require_text "Sources/LogseqChat/OutlinerInlineEditor.swift" \
   "shouldMergeBackward"

@@ -89,7 +89,6 @@ for module in \
   logseq_chat_graph_store \
   logseq_chat_logseq_storage_codec \
   logseq_chat_snapshot \
-  logseq_chat_sse \
   logseq_chat_sync_checkpoint \
   logseq_chat_sync_protocol \
   logseq_chat_sync_session \

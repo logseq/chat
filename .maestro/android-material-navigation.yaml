@@ -5,6 +5,9 @@ appId: com.logseq.chat
     visible:
       id: "button.sidebar"
     timeout: 30000
+- assertVisible:
+    id: "pane.journals"
+- assertVisible: "Journals"
 - tapOn:
     id: "button.sidebar"
 - extendedWaitUntil:
@@ -12,9 +15,63 @@ appId: com.logseq.chat
       id: "button.graph-switch"
     timeout: 5000
 - assertVisible:
+    id: "section.sidebar.favorites"
+- assertVisible:
+    id: "section.sidebar.recent"
+- assertVisible:
     id: "link.sidebar.flashcards"
 - assertVisible:
     id: "link.sidebar.graphs"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "pane.selected-page"
+    timeout: 30000
+- assertVisible:
+    id: "section.node.linked-references"
+- assertVisible:
+    id: "button.composer.expand"
+- assertNotVisible:
+    id: "button.content-mode"
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "section.sidebar.favorites"
+- assertVisible:
+    id: "section.sidebar.recent"
+- tapOn:
+    id: "link.sidebar.journals"
+- extendedWaitUntil:
+    visible:
+      id: "pane.journals"
+    timeout: 30000
+- assertNotVisible:
+    id: "button.content-mode"
+- scrollUntilVisible:
+    element:
+      id: "button.journal.e2e10000-0000-4000-8000-000000000001"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "journal.divider"
+- tapOn:
+    id: "button.journal.e2e10000-0000-4000-8000-000000000001"
+- assertVisible:
+    id: "button.navigation.back"
+- assertVisible: "E2E Journal 01"
+- assertVisible: "E2E Earlier Journal Block"
+- assertNotVisible: "Node"
+- assertNotVisible: "In progress"
+- tapOn:
+    id: "button.navigation.back"
+- assertVisible: "Journals"
+- assertVisible:
+    id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar"
 - tapOn:
     id: "link.sidebar.graphs"
 - extendedWaitUntil:

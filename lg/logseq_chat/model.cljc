@@ -1042,7 +1042,14 @@
       current)
 
     (ApplyCoreSnapshot projection)
-    (if (:is-pending-sync-patch projection)
+    (if (:is-graph-catalog-patch projection)
+      (assoc current
+             :selected-graph (:graph-name projection)
+             :selected-graph-id (:selected-graph-id projection)
+             :graphs (:graphs projection)
+             :is-graph-encrypted (:is-graph-encrypted projection)
+             :is-graph-unlocked (:is-graph-unlocked projection))
+      (if (:is-pending-sync-patch projection)
       (assoc current
              :has-pending-semantic-operations
              (:has-pending-semantic-operations projection)
@@ -1191,7 +1198,7 @@
                    :graph-password-open true
                    :graph-password ""
                    :effect-error None)
-            searched))))))
+            searched)))))))
 
     (BeginOutlinerEdit uuid)
     (let [id (:next-effect-id current)]
@@ -1199,7 +1206,8 @@
 
     (ChangeOutlinerText uuid title caret)
     (let [updated (assoc (update-editing current uuid title caret)
-                         :sync-state SyncingState)
+                         :sync-state SyncingState
+                         :outliner-autocomplete-candidates [])
           id (:next-effect-id updated)]
       (enqueue-effect updated
                       (ChangeOutlinerTextEffect id uuid title caret)))
@@ -1261,9 +1269,12 @@
       (enqueue-effect updated (OutlinerToolbarEffect id action)))
 
     (ChooseOutlinerAutocomplete value)
-    (let [id (:next-effect-id current)]
-      (enqueue-effect current
-                      (ChooseOutlinerAutocompleteEffect id value)))
+    (match (:outliner-editing current)
+      (Some _editing)
+      (let [id (:next-effect-id current)]
+        (enqueue-effect current
+                        (ChooseOutlinerAutocompleteEffect id value)))
+      None current)
 
     (OpenOutlinerAsset uuid)
     (match (row-index (:outliner-rows current) uuid)
@@ -1568,7 +1579,11 @@
     (assoc current :create-graph-open true)
 
     DismissCreateGraph
-    (assoc current :create-graph-open false)
+    (assoc current
+           :create-graph-open false
+           :new-graph-name ""
+           :new-graph-encrypted true
+           :effect-error None)
 
     (ChangeNewGraphName name)
     (assoc current :new-graph-name name)

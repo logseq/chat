@@ -15,6 +15,7 @@ local.properties
 Android/app/keystore.jks
 Android/app/keystore.properties
 Android/app/src/main/jniLibs/
+Flutter/android/app/src/main/jniLibs/
 .maestro/screenshots/
 
 xcodebuild*.log

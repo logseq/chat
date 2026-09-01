@@ -2,7 +2,7 @@
   (:require [clojure.string :as string]
             [lui.elements :as elements]
             [lui.extension :as ext]
-            [lui.macros :refer [defui reactive event]]
+            [lui.macros :refer [defui reactive event host?]]
             [lui.protocol :as proto :refer [TextChanged]]
             [lui.ui :as ui]
             [logseq-chat.model :as model]
@@ -13,7 +13,7 @@
    "outliner-editor"
    [(proto/profile proto/MacOS proto/SwiftUIHost)
     (proto/profile proto/IOS proto/SwiftUIHost)
-    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+    (proto/profile proto/AndroidOS proto/FlutterHost)]
    false []
    [(ext/property "block-id" ext/StringScalar true None)
     (ext/property "title" ext/StringScalar true None)
@@ -39,7 +39,7 @@
    "outliner-block-content"
    [(proto/profile proto/MacOS proto/SwiftUIHost)
     (proto/profile proto/IOS proto/SwiftUIHost)
-    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+    (proto/profile proto/AndroidOS proto/FlutterHost)]
    false []
    [(ext/property "title" ext/StringScalar true None)
     (ext/property "block-id" ext/StringScalar true None)
@@ -57,6 +57,9 @@
      [(ext/event-field "uuid" ext/StringScalar true)
       (ext/event-field "placement" ext/StringScalar true)])
     (ext/event
+     "edit"
+     [(ext/event-field "uuid" ext/StringScalar true)])
+    (ext/event
      "open-node"
      [(ext/event-field "uuid" ext/StringScalar true)])]))
 
@@ -65,7 +68,7 @@
    "native-navigation-stack"
    [(proto/profile proto/MacOS proto/SwiftUIHost)
     (proto/profile proto/IOS proto/SwiftUIHost)
-    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+    (proto/profile proto/AndroidOS proto/FlutterHost)]
    true []
    [(ext/property "depth" ext/IntScalar true None)
     (ext/property "bottom-occupies-layout-space" ext/BoolScalar true None)
@@ -79,7 +82,7 @@
    "native-search-presentation"
    [(proto/profile proto/MacOS proto/SwiftUIHost)
     (proto/profile proto/IOS proto/SwiftUIHost)
-    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+    (proto/profile proto/AndroidOS proto/FlutterHost)]
    true []
    [(ext/property "presented" ext/BoolScalar true None)
     (ext/property "depth" ext/IntScalar true None)
@@ -96,7 +99,7 @@
    "native-overflow-menu"
    [(proto/profile proto/MacOS proto/SwiftUIHost)
     (proto/profile proto/IOS proto/SwiftUIHost)
-    (proto/profile proto/AndroidOS proto/SwiftUIHost)]
+    (proto/profile proto/AndroidOS proto/FlutterHost)]
    false []
    [(ext/property "page-actions-visible" ext/BoolScalar true None)
     (ext/property "favorite-label" ext/StringScalar true None)
@@ -283,6 +286,9 @@
         (extension-string values "uuid")
         (extension-string values "placement")))
 
+      (= name "edit")
+      (send (model/BeginOutlinerEdit (extension-string values "uuid")))
+
       :else true)
     _ true))
 
@@ -451,18 +457,30 @@
 
 (defn sidebar-page-row [ui-context model-source page-source send]
   (let [page (signal/sample page-source)]
-    (elements/element
-     ui-context nil
-     [:list-item
-      {:text (reactive sidebar-page-title page-source)
-       :label (reactive sidebar-page-title page-source)
-       :role "navigation"
-       :icon "app:document"
-       :selected (reactive sidebar-page-selected? model-source page-source)
-       :accessibility-identifier (sidebar-page-identifier page)
-       :on-press
-       (event [current-page page-source]
-              (send (model/SelectSidebarPage (:uuid current-page))))}])))
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:text (reactive sidebar-page-title page-source)
+         :label (reactive sidebar-page-title page-source)
+         :icon "app:document"
+         :selected (reactive sidebar-page-selected? model-source page-source)
+         :accessibility-identifier (sidebar-page-identifier page)
+         :on-press
+         (event [current-page page-source]
+                (send (model/SelectSidebarPage (:uuid current-page))))}])
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:text (reactive sidebar-page-title page-source)
+         :label (reactive sidebar-page-title page-source)
+         :role "navigation"
+         :icon "app:document"
+         :selected (reactive sidebar-page-selected? model-source page-source)
+         :accessibility-identifier (sidebar-page-identifier page)
+         :on-press
+         (event [current-page page-source]
+                (send (model/SelectSidebarPage (:uuid current-page))))}]))))
 
 (defn sidebar-graph-menu-item [ui-context model-source graph-source send]
   (let [graph (signal/sample graph-source)]
@@ -493,22 +511,113 @@
     [:text {:class "caption" :foreground "muted-foreground"} title]]
    [:box {:height 6}]])
 
+(defui sidebar-graph-switch-content [model-source]
+  [:row {:grow 1.0 :main "space_between" :cross "center"}
+   [:text {:value (reactive graph-label model-source)}]
+   [:icon {:name "app:chevron-down"
+           :width 18
+           :height 18
+           :foreground "muted-foreground"}]])
+
+(defn sidebar-graph-switch [ui-context model-source send]
+  (let [_label (graph-label (signal/sample model-source))]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Switch graph"
+         :accessibility-identifier "button.graph-switch"
+         :on-press (fn [_event] (send model/OpenGraphMenu))}
+        [sidebar-graph-switch-content model-source]])
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:text (reactive graph-label model-source)
+         :label "Switch graph"
+         :role "navigation-heading"
+         :icon "app:chevron-down"
+         :icon-placement "trailing"
+         :accessibility-identifier "button.graph-switch"
+         :on-press (fn [_event] (send model/OpenGraphMenu))}]))))
+
+(defn sidebar-journals-row [ui-context model-source send]
+  (let [_selected (journals-sidebar-selected? (signal/sample model-source))]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Journals"
+         :icon "app:calendar"
+         :selected (reactive journals-sidebar-selected? model-source)
+         :accessibility-identifier "link.sidebar.journals"
+         :on-press (fn [_event] (send model/ShowJournals))}
+        "Journals"])
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Journals"
+         :role "navigation"
+         :icon "app:calendar"
+         :selected (reactive journals-sidebar-selected? model-source)
+         :accessibility-identifier "link.sidebar.journals"
+         :on-press (fn [_event] (send model/ShowJournals))}
+        "Journals"]))))
+
+(defn sidebar-flashcards-row [ui-context model-source send]
+  (let [_selected (flashcards-sidebar-selected? (signal/sample model-source))]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Flashcards"
+         :icon "app:flashcards"
+         :selected (reactive flashcards-sidebar-selected? model-source)
+         :accessibility-identifier "link.sidebar.flashcards"
+         :on-press (fn [_event] (send model/ShowFlashcards))}
+        "Flashcards"])
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Flashcards"
+         :role "navigation"
+         :icon "app:flashcards"
+         :selected (reactive flashcards-sidebar-selected? model-source)
+         :accessibility-identifier "link.sidebar.flashcards"
+         :on-press (fn [_event] (send model/ShowFlashcards))}
+        "Flashcards"]))))
+
+(defn sidebar-graphs-row [ui-context model-source send]
+  (let [_selected (graphs-sidebar-selected? (signal/sample model-source))]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Graphs"
+         :icon "app:folder"
+         :selected (reactive graphs-sidebar-selected? model-source)
+         :accessibility-identifier "link.sidebar.graphs"
+         :on-press (fn [_event] (send model/ShowGraphs))}
+        "Graphs"])
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:label "Graphs"
+         :role "navigation"
+         :icon "app:folder"
+         :selected (reactive graphs-sidebar-selected? model-source)
+         :accessibility-identifier "link.sidebar.graphs"
+         :on-press (fn [_event] (send model/ShowGraphs))}
+        "Graphs"]))))
+
 (defui sidebar-view [model-source send]
   [:scroll
    [:column
     {:accessibility-identifier "sidebar.navigation"
      :gap 4
      :padding 12}
-   [:box {:height 48}]
+   [:box {:height (if (host? proto/FlutterHost) 8 48)}]
    [:stack
-    [:list-item
-     {:text (reactive graph-label model-source)
-      :label "Switch graph"
-      :role "navigation-heading"
-      :icon "app:chevron-down"
-      :icon-placement "trailing"
-      :accessibility-identifier "button.graph-switch"
-      :on-press (fn [_event] (send model/OpenGraphMenu))}]
+    [sidebar-graph-switch model-source send]
     [:if {:test (reactive :graph-menu-open model-source)}
      [:dropdown-menu
       {:anchor "below"
@@ -523,32 +632,11 @@
         :as graph-source}
        [sidebar-graph-menu-item model-source graph-source send]]]]]
    [:box {:height 12}]
-   [:list-item
-    {:label "Journals"
-     :role "navigation"
-     :icon "app:calendar"
-     :selected (reactive journals-sidebar-selected? model-source)
-     :accessibility-identifier "link.sidebar.journals"
-     :on-press (fn [_event] (send model/ShowJournals))}
-    "Journals"]
+   [sidebar-journals-row model-source send]
    [:if {:test (reactive flashcards-tab-visible? model-source)}
-    [:list-item
-     {:label "Flashcards"
-      :role "navigation"
-      :icon "app:flashcards"
-      :selected (reactive flashcards-sidebar-selected? model-source)
-      :accessibility-identifier "link.sidebar.flashcards"
-      :on-press (fn [_event] (send model/ShowFlashcards))}
-     "Flashcards"]]
+    [sidebar-flashcards-row model-source send]]
    [:if {:test (reactive graphs-tab-visible? model-source)}
-    [:list-item
-     {:label "Graphs"
-      :role "navigation"
-      :icon "app:folder"
-      :selected (reactive graphs-sidebar-selected? model-source)
-      :accessibility-identifier "link.sidebar.graphs"
-      :on-press (fn [_event] (send model/ShowGraphs))}
-   "Graphs"]]
+    [sidebar-graphs-row model-source send]]
    [:column {:accessibility-identifier "section.sidebar.favorites" :gap 2}
     [sidebar-section-heading "Favorites" "app:star"]
     [:if {:test (reactive favorites-empty? model-source)}
@@ -705,6 +793,46 @@
 
 (defn outliner-row-collapse-glyph [row]
   (if (:is-collapsed row) "›" "⌄"))
+
+(defn outliner-collapse-icon-name [collapsed?]
+  (if collapsed? "app:chevron-right" "app:chevron-down"))
+
+(defn outliner-collapse-identifier [row]
+  (str "button.outliner.collapse." (:uuid row)))
+
+(defn outliner-collapse-button [ui-context row-source send]
+  (let [row (signal/sample row-source)]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:button
+        {:icon
+         (reactive
+          (fn [current-row]
+            (outliner-collapse-icon-name (:is-collapsed current-row)))
+          row-source)
+         :label (reactive outliner-row-collapse-label row-source)
+         :variant "ghost"
+         :width 28
+         :height 28
+         :accessibility-identifier
+         (outliner-collapse-identifier row)
+         :on-press
+         (event [current-row row-source]
+                (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}])
+      (elements/element
+       ui-context nil
+       [:button
+        {:text (reactive outliner-row-collapse-glyph row-source)
+         :label (reactive outliner-row-collapse-label row-source)
+         :variant "ghost"
+         :width 28
+         :height 28
+         :accessibility-identifier
+         (outliner-collapse-identifier row)
+         :on-press
+         (event [current-row row-source]
+                (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]))))
 
 (defn outliner-indent-view [ui-context width-source]
   (let [node (ui/text! ui-context "")]
@@ -1114,6 +1242,29 @@
       "app:task-todo")
     None "app:task-todo"))
 
+(defn outliner-task-status-style-is? [row expected]
+  (match (:status row)
+    (Some status) (= (task-status-style status) expected)
+    None (= expected "todo")))
+
+(defn outliner-task-status-backlog? [row]
+  (outliner-task-status-style-is? row "backlog"))
+
+(defn outliner-task-status-todo? [row]
+  (outliner-task-status-style-is? row "todo"))
+
+(defn outliner-task-status-doing? [row]
+  (outliner-task-status-style-is? row "doing"))
+
+(defn outliner-task-status-review? [row]
+  (outliner-task-status-style-is? row "in-review"))
+
+(defn outliner-task-status-done? [row]
+  (outliner-task-status-style-is? row "done"))
+
+(defn outliner-task-status-canceled? [row]
+  (outliner-task-status-style-is? row "canceled"))
+
 (defn outliner-editor-task-label [current]
   (match (:outliner-editing current)
     (Some editing)
@@ -1133,6 +1284,11 @@
   (match (:sync-status row)
     (Some status) (= status "failed")
     None false))
+
+(defn outliner-row-list-item-press-enabled? [host row]
+  (or (not (= host proto/FlutterHost))
+      (= (:is-asset row) true)
+      (= (:opens-as-page row) true)))
 
 (defn make-retained-outline-row [current row]
   (match (:outliner-editing current)
@@ -1222,10 +1378,129 @@
        (event [current-tag tag-source]
               (send (model/RequestAppNode (:uuid current-tag))))}])))
 
-(defn outliner-row
-  [ui-context model-source retained-row-source row-source send]
+(defn outliner-zoom-control [ui-context row-source send search-open]
+  (let [row (signal/sample row-source)]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:stack {:width 24 :height 24}
+        [:row {:width 24 :height 24 :main "center" :cross "center"}
+         [:box
+          {:width 7
+           :height 7
+           :corner-radius 4
+           :background "border"
+           :accessibility-identifier
+           (str "outliner.bullet-glyph." (outliner-row-uuid row))}]]
+        [:button
+         {:label (reactive outliner-row-zoom-label row-source)
+          :variant "ghost"
+          :width 24
+          :height 24
+          :accessibility-identifier
+          (str "button.outliner.zoom." (outliner-row-uuid row))
+          :on-press
+          (event [current-row row-source]
+                 (if search-open
+                   (send (model/RequestSearchNode (:uuid current-row)))
+                   (send (model/RequestAppNode (:uuid current-row)))))}]])
+      (elements/element
+       ui-context nil
+       [:button
+        {:label (reactive outliner-row-zoom-label row-source)
+         :icon "app:status-dot"
+         :variant "ghost"
+         :foreground "border"
+         :width 24
+         :height 24
+         :accessibility-identifier
+         (str "button.outliner.zoom." (outliner-row-uuid row))
+         :on-press
+         (event [current-row row-source]
+                (if search-open
+                  (send (model/RequestSearchNode (:uuid current-row)))
+                  (send (model/RequestAppNode (:uuid current-row)))))}]))))
+
+(defn outliner-status-control
+  [ui-context model-source row-source send]
+  (let [row (signal/sample row-source)]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:stack {:width 24 :height 24}
+        [:row {:width 24 :height 24 :main "center" :cross "center"}
+         [:stack {:width 22 :height 22}
+          [:if {:test (reactive outliner-task-status-backlog? row-source)}
+           [:icon
+            {:name "app:task-backlog" :size "lg" :width 22 :height 22
+             :foreground "foreground"
+             :accessibility-identifier
+             (str "outliner.task-status-icon." (outliner-row-uuid row))}]]
+          [:if {:test (reactive outliner-task-status-todo? row-source)}
+           [:icon
+            {:name "app:task-todo" :size "lg" :width 22 :height 22
+             :foreground "foreground"
+             :accessibility-identifier
+             (str "outliner.task-status-icon." (outliner-row-uuid row))}]]
+          [:if {:test (reactive outliner-task-status-doing? row-source)}
+           [:icon
+            {:name "app:task-doing" :size "lg" :width 22 :height 22
+             :foreground "foreground"
+             :accessibility-identifier
+             (str "outliner.task-status-icon." (outliner-row-uuid row))}]]
+          [:if {:test (reactive outliner-task-status-review? row-source)}
+           [:icon
+            {:name "app:task-review" :size "lg" :width 22 :height 22
+             :foreground "foreground"
+             :accessibility-identifier
+             (str "outliner.task-status-icon." (outliner-row-uuid row))}]]
+          [:if {:test (reactive outliner-task-status-done? row-source)}
+           [:icon
+            {:name "app:task-done" :size "lg" :width 22 :height 22
+             :foreground "foreground"
+             :accessibility-identifier
+             (str "outliner.task-status-icon." (outliner-row-uuid row))}]]
+          [:if {:test (reactive outliner-task-status-canceled? row-source)}
+           [:icon
+            {:name "app:task-canceled" :size "lg" :width 22 :height 22
+             :foreground "foreground"
+             :accessibility-identifier
+             (str "outliner.task-status-icon." (outliner-row-uuid row))}]]]]
+        [:button
+         {:label (reactive outliner-row-status-title row-source)
+          :variant "ghost"
+          :size "icon"
+          :width 24
+          :height 24
+          :accessibility-identifier "button.block-task-status"}
+         [:context-menu
+          [:keyed
+           {:source (reactive :task-statuses model-source)
+            :key :uuid
+            :compare compare
+            :as status-source}
+           [outliner-task-status-row (outliner-row-uuid row) status-source send]]]]])
+      (elements/element
+       ui-context nil
+       [:button
+        {:icon (reactive outliner-task-status-icon row-source)
+         :label (reactive outliner-row-status-title row-source)
+         :variant "ghost"
+         :size "icon"
+         :width 24
+         :height 24
+         :accessibility-identifier "button.block-task-status"}
+        [:context-menu
+         [:keyed
+          {:source (reactive :task-statuses model-source)
+           :key :uuid
+           :compare compare
+           :as status-source}
+          [outliner-task-status-row (outliner-row-uuid row) status-source send]]]]))))
+
+(defn outliner-row-content
+  [ui-context model-source retained-row-source row-source send search-open]
   (let [row (signal/sample row-source)
-        search-open (:search-open (signal/sample model-source))
         block-id-source (reactive outliner-row-uuid row-source)
         title-source (reactive outliner-row-title row-source)
         markup-source (reactive :markup-json row-source)
@@ -1240,103 +1515,83 @@
         (reactive retained-row-editing-caret retained-row-source)
         indent-source (reactive outliner-row-indent row-source)
         editing-source (reactive retained-row-editing? retained-row-source)
-        selected-source (reactive row-selected? model-source row-source)
         not-editing-source
         (reactive row-not-editing? model-source row-source)
         has-children-source (reactive outliner-row-has-children row-source)
         has-status-source (reactive outliner-row-has-status? row-source)
-        status-title-source (reactive outliner-row-status-title row-source)
-        status-icon-source (reactive outliner-task-status-icon row-source)
         has-tags-source (reactive outliner-row-has-tags? row-source)
         sync-failed-source (reactive outliner-row-sync-failed? row-source)]
     (elements/element
      ui-context nil
-     [:list-item
-      {:accessibility-identifier (outliner-row-identifier row)
-       :label (reactive outliner-row-action-label model-source row-source)
-       :padding 0
-       :selected selected-source
-       :on-press
-       (event [current-row row-source]
-              (if (= (:is-asset current-row) true)
-                (send (model/OpenOutlinerAsset (:uuid current-row)))
-                (if (= (:opens-as-page current-row) true)
-                  (if search-open
-                    (send (model/RequestSearchNode (:uuid current-row)))
-                    (send (model/RequestAppNode (:uuid current-row))))
-                  (send (model/BeginOutlinerEdit (:uuid current-row))))))
-       :on-long-press
-       (event [current-row row-source]
-              (send (model/LongPressOutlinerBlock (:uuid current-row))))}
-      [:row {:gap 0 :cross "start" :padding-vertical 5}
-       [outliner-indent-view indent-source]
-       [:button
-        {:label (reactive outliner-row-zoom-label row-source)
-         :icon "app:status-dot"
-         :variant "ghost"
-         :foreground "border"
-         :width 24
-         :height 24
-         :accessibility-identifier
-         (str "button.outliner.zoom." (:uuid row))
+     [:row {:gap 0 :cross "start" :padding-vertical 5}
+      [outliner-indent-view indent-source]
+      [outliner-zoom-control row-source send search-open]
+      [:box {:width 2}]
+      [:row {:gap 7 :cross "start" :grow 1.0}
+       [:column {:cross "start"}
+        [:if {:test has-status-source}
+         [outliner-status-control model-source row-source send]]]
+       [:column {:grow 1.0}
+        [:if {:test editing-source}
+         [outliner-editor-view block-id-source
+          editing-title-source editing-caret-source send]]
+        [:if {:test not-editing-source}
+         [outliner-rich-block-view
+          model-source title-source markup-source youtube-target-source
+          is-asset-source row-source asset-type-source local-path-source send]]
+        [:if {:test has-tags-source}
+         [:row {:gap 6}
+          [:keyed
+           {:source (reactive :tags row-source)
+            :key :uuid
+            :compare compare
+            :as tag-source}
+           [outliner-tag tag-source send]]]]
+        [:if {:test sync-failed-source}
+         [:text
+          {:accessibility-identifier
+           (str "outliner.sync-failed." (outliner-row-uuid row))}
+          "Sync failed"]]]
+       [:column {:cross "start"}
+        [:if {:test has-children-source}
+         [outliner-collapse-button row-source send]]]]])))
+
+(defn outliner-row
+  [ui-context model-source retained-row-source row-source send]
+  (let [row (signal/sample row-source)
+        search-open (:search-open (signal/sample model-source))
+        selected-source (reactive row-selected? model-source row-source)]
+    (if (outliner-row-list-item-press-enabled? (ui/host ui-context) row)
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:accessibility-identifier (outliner-row-identifier row)
+         :label (reactive outliner-row-action-label model-source row-source)
+         :padding 0
+         :selected selected-source
          :on-press
          (event [current-row row-source]
-                (if search-open
-                  (send (model/RequestSearchNode (:uuid current-row)))
-                  (send (model/RequestAppNode (:uuid current-row)))))}]
-       [:box {:width 2}]
-       [:row {:gap 7 :cross "start" :grow 1.0}
-        [:column {:cross "start"}
-         [:if {:test has-status-source}
-          [:button
-           {:icon status-icon-source
-            :label status-title-source
-            :variant "ghost"
-            :size "icon"
-            :width 24
-            :height 24
-            :accessibility-identifier "button.block-task-status"}
-           [:context-menu
-            [:keyed
-             {:source (reactive :task-statuses model-source)
-              :key :uuid
-              :compare compare
-              :as status-source}
-             [outliner-task-status-row (:uuid row) status-source send]]]]]]
-        [:column {:grow 1.0}
-         [:if {:test editing-source}
-          [outliner-editor-view block-id-source
-           editing-title-source editing-caret-source send]]
-         [:if {:test not-editing-source}
-          [outliner-rich-block-view
-           model-source title-source markup-source youtube-target-source
-           is-asset-source row-source asset-type-source local-path-source send]]
-         [:if {:test has-tags-source}
-          [:row {:gap 6}
-           [:keyed
-            {:source (reactive :tags row-source)
-             :key :uuid
-             :compare compare
-             :as tag-source}
-            [outliner-tag tag-source send]]]]
-         [:if {:test sync-failed-source}
-          [:text
-           {:accessibility-identifier
-            (str "outliner.sync-failed." (:uuid row))}
-           "Sync failed"]]]
-        [:column {:cross "start"}
-         [:if {:test has-children-source}
-          [:button
-           {:text (reactive outliner-row-collapse-glyph row-source)
-            :label (reactive outliner-row-collapse-label row-source)
-            :variant "ghost"
-            :width 28
-            :height 28
-            :accessibility-identifier
-            (str "button.outliner.collapse." (:uuid row))
-            :on-press
-            (event [current-row row-source]
-                   (send (model/ToggleOutlinerCollapsed (:uuid current-row))))}]]]]]])))
+                (if (= (:is-asset current-row) true)
+                  (send (model/OpenOutlinerAsset (:uuid current-row)))
+                  (if (= (:opens-as-page current-row) true)
+                    (if search-open
+                      (send (model/RequestSearchNode (:uuid current-row)))
+                      (send (model/RequestAppNode (:uuid current-row))))
+                    (send (model/BeginOutlinerEdit (:uuid current-row))))))
+         :on-long-press
+         (event [current-row row-source]
+                (send (model/LongPressOutlinerBlock (:uuid current-row))))}
+        [outliner-row-content model-source retained-row-source row-source
+         send search-open]])
+      (elements/element
+       ui-context nil
+       [:box
+        {:accessibility-identifier (outliner-row-identifier row)
+         :padding 0
+         :corner-radius 10
+         :selected selected-source}
+        [outliner-row-content model-source retained-row-source row-source
+         send search-open]]))))
 
 (defn outliner-entry
   [ui-context model-source retained-row-source row-source send]
@@ -1371,108 +1626,148 @@
       [outliner-row model-source retained-row-source row-source send]])))
 
 (defn outliner-first-journal-section [ui-context model-source send]
-  (elements/element
-   ui-context nil
-   [:column
-    {:container-relative-frame "min-vertical"
-     :container-relative-frame-inset 136
-     :accessibility-identifier
-     (first-journal-section-identifier (signal/sample model-source))}
-    [:keyed
-     {:source (reactive first-journal-retained-rows model-source)
-      :key :render-key
-      :compare compare
-      :as retained-row-source}
-     [outliner-entry model-source retained-row-source
-      (reactive retained-row-value retained-row-source) send]]]))
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:column
+      {:accessibility-identifier
+       (first-journal-section-identifier (signal/sample model-source))}
+      [:keyed
+       {:source (reactive first-journal-retained-rows model-source)
+        :key :render-key
+        :compare compare
+        :as retained-row-source}
+       [outliner-entry model-source retained-row-source
+        (reactive retained-row-value retained-row-source) send]]])
+    (elements/element
+     ui-context nil
+     [:column
+      {:container-relative-frame "min-vertical"
+       :container-relative-frame-inset 136
+       :accessibility-identifier
+       (first-journal-section-identifier (signal/sample model-source))}
+      [:keyed
+       {:source (reactive first-journal-retained-rows model-source)
+        :key :render-key
+        :compare compare
+        :as retained-row-source}
+       [outliner-entry model-source retained-row-source
+        (reactive retained-row-value retained-row-source) send]]])))
 
-(defui outliner-selection-toolbar [send]
-  [:toolbar
-   {:orientation "horizontal"
-    :ios [[:liquid-glass {:shape "capsule"}]]
-    :label "Outliner selection"
-    :accessibility-identifier "toolbar.outliner.selection"
-    :class "scroll-leading leading-inset-12"
-    :height 54
-    :gap 6}
-   [:button
-    {:icon "app:toolbar-copy"
-     :variant "ghost"
-     :width 58
-     :height 46
-     :icon-placement "top"
-     :label "Copy"
-     :accessibility-identifier "button.outliner.selection.copy"
-     :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "copy")))}
-    "Copy"]
-   [:button
-    {:icon "app:toolbar-outdent"
-     :variant "ghost"
-     :width 58
-     :height 46
-     :icon-placement "top"
-     :label "Outdent"
-     :accessibility-identifier "button.outliner.selection.outdent"
-     :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}
-    "Outdent"]
-   [:button
-    {:icon "app:toolbar-indent"
-     :variant "ghost"
-     :width 58
-     :height 46
-     :icon-placement "top"
-     :label "Indent"
-     :accessibility-identifier "button.outliner.selection.indent"
-     :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}
-    "Indent"]
-   [:button
-    {:icon "app:toolbar-delete"
-     :variant "ghost"
-     :width 58
-     :height 46
-     :icon-placement "top"
-     :label "Delete"
-     :accessibility-identifier "button.outliner.selection.delete"
-     :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "delete")))}
-    "Delete"]
-   [:button
-    {:icon "app:toolbar-copy-reference"
-     :variant "ghost"
-     :width 58
-     :height 46
-     :icon-placement "top"
-     :label "Copy reference"
-     :accessibility-identifier "button.outliner.selection.copyReference"
-     :on-press
-     (fn [_event]
-       (send (model/PerformOutlinerToolbarAction "copyReference")))}
-    "Copy reference"]
-   [:button
-    {:icon "app:toolbar-copy-url"
-     :variant "ghost"
-     :width 58
-     :height 46
-     :icon-placement "top"
-     :label "Copy URL"
-     :accessibility-identifier "button.outliner.selection.copyURL"
-     :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "copyURL")))}
-    "Copy URL"]
-   [:button
-    {:icon "app:toolbar-unselect"
-     :variant "ghost"
-     :width 70
-     :height 46
-     :icon-placement "top"
-     :label "Unselect"
-     :accessibility-identifier "button.outliner.selection.unselect"
-     :on-press
-     (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}
-    "Unselect"]])
+(defn outliner-selection-toolbar [ui-context send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:toolbar
+      {:orientation "horizontal"
+       :label "Outliner selection"
+       :accessibility-identifier "toolbar.outliner.selection"
+       :class "scroll-leading leading-inset-12"
+       :height 56
+       :gap 4}
+      [:button
+       {:icon "app:toolbar-copy" :variant "ghost" :width 48 :height 48
+        :label "Copy"
+        :accessibility-identifier "button.outliner.selection.copy"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "copy")))}]
+      [:button
+       {:icon "app:toolbar-outdent" :variant "ghost" :width 48 :height 48
+        :label "Outdent"
+        :accessibility-identifier "button.outliner.selection.outdent"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}]
+      [:button
+       {:icon "app:toolbar-indent" :variant "ghost" :width 48 :height 48
+        :label "Indent"
+        :accessibility-identifier "button.outliner.selection.indent"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}]
+      [:button
+       {:icon "app:toolbar-delete" :variant "ghost" :width 48 :height 48
+        :label "Delete"
+        :accessibility-identifier "button.outliner.selection.delete"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "delete")))}]
+      [:button
+       {:icon "app:toolbar-copy-reference" :variant "ghost"
+        :width 48 :height 48 :label "Copy reference"
+        :accessibility-identifier "button.outliner.selection.copyReference"
+        :on-press
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "copyReference")))}]
+      [:button
+       {:icon "app:toolbar-copy-url" :variant "ghost" :width 48 :height 48
+        :label "Copy URL"
+        :accessibility-identifier "button.outliner.selection.copyURL"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "copyURL")))}]
+      [:button
+       {:icon "app:toolbar-unselect" :variant "ghost" :width 48 :height 48
+        :label "Unselect"
+        :accessibility-identifier "button.outliner.selection.unselect"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}]])
+    (elements/element
+     ui-context nil
+     [:toolbar
+      {:orientation "horizontal"
+       :ios [[:liquid-glass {:shape "capsule"}]]
+       :label "Outliner selection"
+       :accessibility-identifier "toolbar.outliner.selection"
+       :class "scroll-leading leading-inset-12"
+       :height 54
+       :gap 6}
+      [:button
+       {:icon "app:toolbar-copy" :variant "ghost" :width 58 :height 46
+        :icon-placement "top" :label "Copy"
+        :accessibility-identifier "button.outliner.selection.copy"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "copy")))}
+       "Copy"]
+      [:button
+       {:icon "app:toolbar-outdent" :variant "ghost" :width 58 :height 46
+        :icon-placement "top" :label "Outdent"
+        :accessibility-identifier "button.outliner.selection.outdent"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "outdent")))}
+       "Outdent"]
+      [:button
+       {:icon "app:toolbar-indent" :variant "ghost" :width 58 :height 46
+        :icon-placement "top" :label "Indent"
+        :accessibility-identifier "button.outliner.selection.indent"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}
+       "Indent"]
+      [:button
+       {:icon "app:toolbar-delete" :variant "ghost" :width 58 :height 46
+        :icon-placement "top" :label "Delete"
+        :accessibility-identifier "button.outliner.selection.delete"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "delete")))}
+       "Delete"]
+      [:button
+       {:icon "app:toolbar-copy-reference" :variant "ghost"
+        :width 58 :height 46 :icon-placement "top" :label "Copy reference"
+        :accessibility-identifier "button.outliner.selection.copyReference"
+        :on-press
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "copyReference")))}
+       "Copy reference"]
+      [:button
+       {:icon "app:toolbar-copy-url" :variant "ghost" :width 58 :height 46
+        :icon-placement "top" :label "Copy URL"
+        :accessibility-identifier "button.outliner.selection.copyURL"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "copyURL")))}
+       "Copy URL"]
+      [:button
+       {:icon "app:toolbar-unselect" :variant "ghost" :width 70 :height 46
+        :icon-placement "top" :label "Unselect"
+        :accessibility-identifier "button.outliner.selection.unselect"
+        :on-press
+        (fn [_event] (send (model/PerformOutlinerToolbarAction "unselect")))}
+       "Unselect"]])))
 
 (defn outliner-autocomplete-row [ui-context candidate-source send]
   (let [candidate (signal/sample candidate-source)]
@@ -1482,7 +1777,7 @@
       {:text (reactive outliner-autocomplete-label candidate-source)
        :label (reactive outliner-autocomplete-label candidate-source)
        :variant "ghost"
-       :grow 1.0
+       :grow (if (host? proto/FlutterHost) 0.0 1.0)
        :height 44
        :padding-horizontal 10
        :background "autocomplete-row-background"
@@ -1502,7 +1797,10 @@
     :accessibility-identifier "toolbar.outliner.autocomplete"
     :class "outliner-autocomplete"}
    [:column
-    {:gap 2 :padding 8 :grow 1.0}
+    {:gap 2
+     :padding 8
+     :cross (if (host? proto/FlutterHost) "stretch" "center")
+     :grow (if (host? proto/FlutterHost) 0.0 1.0)}
     [:keyed
      {:source (reactive :outliner-autocomplete-candidates model-source)
       :key :index
@@ -1619,7 +1917,7 @@
         [related-row-breadcrumbs row-source send]]]
       [:if {:test fallback-breadcrumb-source}
        [:box {:padding-horizontal 8}
-       [:box {:height 10}]
+        [:box {:height 10}]
         [:text {:value (reactive outliner-row-breadcrumb row-source)
                 :class "caption"
                 :foreground "muted-foreground"}]]]
@@ -1686,7 +1984,8 @@
 
 (defui node-screen [model-source send]
   [:column
-   {:accessibility-identifier "screen.node"}
+   {:accessibility-identifier "screen.node"
+    :grow (if (host? proto/FlutterHost) 1.0 0.0)}
    [:scroll {:grow 1.0 :accessibility-identifier "scroll.outliner"}
     [:column {:gap 0 :padding-horizontal 8}
      [:box {:height 16}]
@@ -1727,10 +2026,10 @@
     (elements/element
      ui-context nil
      [:button
-      {:icon "plus"
+      {:icon "app:add"
        :variant "ghost"
        :label "Add attachment"
-      :accessibility-identifier "button.attachment"
+       :accessibility-identifier "button.attachment"
        :on-press (fn [_event] (send model/OpenAttachmentPicker))}
       "Attach"
       [:context-menu
@@ -1757,7 +2056,7 @@
     (elements/element
      ui-context nil
      [:button
-      {:icon "plus"
+      {:icon "app:add"
        :variant "ghost"
        :size "icon"
        :width 32
@@ -1813,18 +2112,33 @@
        :on-press (fn [_event] (send model/OpenTaskStatusPicker))}])))
 
 (defui android-composer-send-button [disabled-source send]
-  [:button
-   {:icon "arrow-up"
-    :variant "primary"
-    :label "Send"
-    :accessibility-identifier "button.send"
-    :disabled disabled-source
-    :on-press (fn [_event] (send model/SendComposer))}
-   "Send"])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:button
+      {:icon "app:send"
+       :variant "primary"
+       :size "icon"
+       :width 48
+       :height 48
+       :label "Send"
+       :accessibility-identifier "button.send"
+       :disabled disabled-source
+       :on-press (fn [_event] (send model/SendComposer))}])
+    (elements/element
+     ui-context nil
+     [:button
+      {:icon "app:send"
+       :variant "primary"
+       :label "Send"
+       :accessibility-identifier "button.send"
+       :disabled disabled-source
+       :on-press (fn [_event] (send model/SendComposer))}
+      "Send"])))
 
 (defui apple-composer-send-button [disabled-source send]
   [:button
-   {:icon "arrow-up"
+   {:icon "app:arrow-up"
     :variant "ghost"
     :width 40
     :height 40
@@ -1843,16 +2157,29 @@
 
 (defui collapsed-composer-button [send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
-    (elements/element
-     ui-context nil
-     [:button
-      {:variant "ghost"
-       :height 58
-       :padding-horizontal 30
-       :foreground "muted-foreground"
-       :accessibility-identifier "button.composer.expand"
-       :on-press (fn [_event] (send model/ExpandComposer))}
-      "Capture"])
+    (if (host? proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:button
+        {:icon "app:add"
+         :variant "secondary"
+         :grow 1.0
+         :height 58
+         :padding-horizontal 20
+         :label "Capture a thought"
+         :accessibility-identifier "button.composer.expand"
+         :on-press (fn [_event] (send model/ExpandComposer))}
+        "Capture a thought"])
+      (elements/element
+       ui-context nil
+       [:button
+        {:variant "ghost"
+         :height 58
+         :padding-horizontal 30
+         :foreground "muted-foreground"
+         :accessibility-identifier "button.composer.expand"
+         :on-press (fn [_event] (send model/ExpandComposer))}
+        "Capture"]))
     (elements/element
      ui-context nil
      [:button
@@ -1876,10 +2203,12 @@
      {:ios [[:liquid-glass {:shape "rounded-rectangle"}]]
       :grow 1.0
       :gap 0
-      :padding-horizontal 16
-      :padding-vertical 8
-      :background "glass-fallback"
-      :corner-radius 10
+      :padding-horizontal (if (host? proto/FlutterHost) 12 16)
+      :padding-vertical (if (host? proto/FlutterHost) 12 8)
+      :background (if (host? proto/FlutterHost)
+                    "surface-container-high"
+                    "glass-fallback")
+      :corner-radius (if (host? proto/FlutterHost) 24 10)
       :on-press (fn [_event] (send model/FocusComposer))}
      [:box
       {:height 6
@@ -2067,13 +2396,13 @@
      :grow 1.0
      :gap 18}
     [:row
-    {:accessibility-identifier "row.flashcards.status"}
-    [:text {:class "footnote" :foreground "muted-foreground"} "Due now"]
-    [:spacer {:grow 1.0}]
-    [:text
-     {:class "footnote"
-      :foreground "muted-foreground"
-      :value (reactive flashcard-remaining-label model-source)}]]
+     {:accessibility-identifier "row.flashcards.status"}
+     [:text {:class "footnote" :foreground "muted-foreground"} "Due now"]
+     [:spacer {:grow 1.0}]
+     [:text
+      {:class "footnote"
+       :foreground "muted-foreground"
+       :value (reactive flashcard-remaining-label model-source)}]]
    [:scroll
     {:grow 1.0}
     [:column
@@ -2083,7 +2412,7 @@
       :background "surface"
       :corner-radius 18}
      [:text
-     {:class "title2 semibold"
+      {:class "title2 semibold"
        :value (reactive flashcard-question model-source)
        :accessibility-identifier "flashcard.question"}]
      [:if {:test (reactive flashcard-answer-rows-visible? model-source)}
@@ -2156,9 +2485,9 @@
      {:accessibility-identifier "layout.flashcards.empty"
       :grow 1.0
       :main "center"
-     :cross "center"
-     :gap 10
-     :padding 32}
+      :cross "center"
+      :gap 10
+      :padding 32}
      [:icon
       {:name "app:flashcards"
        :width 48
@@ -2224,6 +2553,9 @@
 (defn graphs-empty? [current]
   (let [_destination (:destination current)]
     (empty? (:graphs current))))
+
+(defn graphs-present? [current]
+  (not (graphs-empty? current)))
 
 (defn remote-graphs-present? [current]
   (not (empty? (remote-graphs current))))
@@ -2295,7 +2627,9 @@
       {:accessibility-identifier (graph-identifier graph)
        :padding 16
        :corner-radius 16
-       :background "surface"
+       :background (if (= (ui/host ui-context) proto/FlutterHost)
+                     "surface-container-low"
+                     "surface")
        :disabled (reactive graph-row-disabled? model-source graph-source)
        :on-press
        (event [current-graph graph-source]
@@ -2314,7 +2648,7 @@
        {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:menu-item
-         {:icon "trash"
+         {:icon "app:trash"
           :variant "destructive"
           :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
@@ -2360,71 +2694,189 @@
          "Delete local graph"]]]])))
 
 (defui graph-create-sheet [model-source send]
-  [:sheet
-   {:text "Add sync graph"
-    :class "navigation-form"
-    :accessibility-identifier "sheet.graph-create"
-    :on-dismiss (fn [_event] (send model/DismissCreateGraph))}
-   [:column
-    {:class "form"
-     :accessibility-identifier "form.graph-create"}
-    [:text-field
-     {:text (reactive :new-graph-name model-source)
-      :placeholder "Graph name"
-      :label "Graph name"
-      :accessibility-identifier "field.graph-name"
-      :on-input
-      (fn [input-event]
-        (match input-event
-          (TextChanged _node text) (send (model/ChangeNewGraphName text))
-          _ true))}]
-    [:toggle
-     {:checked (reactive :new-graph-encrypted model-source)
-      :label "End-to-end encryption"
-      :accessibility-identifier "toggle.graph-encryption"
-      :on-toggle
-      (fn [input-event]
-        (match input-event
-          (proto/ToggleChanged _node enabled)
-          (send (model/ToggleNewGraphEncrypted enabled))
-          _ true))}
-     "End-to-end encryption"]
-    [:text
-     {:class "footnote"
-      :foreground "muted-foreground"}
-     "Encryption cannot be changed after the sync graph is created."]]
-   [:toolbar
-    {:orientation "horizontal"
-     :label "Graph creation actions"
-     :class "navigation-actions"
-     :accessibility-identifier "toolbar.graph-create"}
-    [:button
-     {:class "cancellation-action"
-      :accessibility-identifier "button.graph-add.cancel"
-      :on-press (fn [_event] (send model/DismissCreateGraph))}
-     "Cancel"]
-    [:button
-     {:class "confirmation-action"
-      :accessibility-identifier "button.graph-add.confirm"
-      :disabled (reactive graph-create-disabled? model-source)
-      :on-press (fn [_event] (send model/SubmitCreateGraph))}
-     "Add"]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Add sync graph"
+       :height 480
+       :accessibility-identifier "sheet.graph-create"
+       :on-dismiss (fn [_event] (send model/DismissCreateGraph))}
+      [:column
+       {:grow 1.0
+        :gap 24
+        :accessibility-identifier "layout.graph-create.sheet"}
+       [:column
+        {:gap 20
+         :cross "stretch"
+         :class "form"
+         :accessibility-identifier "form.graph-create"}
+        [:text-field
+         {:text (reactive :new-graph-name model-source)
+          :placeholder "Graph name"
+          :label "Graph name"
+          :accessibility-identifier "field.graph-name"
+          :on-input
+          (fn [input-event]
+            (match input-event
+              (TextChanged _node text) (send (model/ChangeNewGraphName text))
+              _ true))}]
+        [:switch
+         {:checked (reactive :new-graph-encrypted model-source)
+          :label "End-to-end encryption"
+          :accessibility-identifier "toggle.graph-encryption"
+          :on-toggle
+          (fn [input-event]
+            (match input-event
+              (proto/ToggleChanged _node enabled)
+              (send (model/ToggleNewGraphEncrypted enabled))
+              _ true))}
+         "End-to-end encryption"]
+        [:text
+         {:class "footnote"
+          :foreground "muted-foreground"}
+         "Encryption cannot be changed after the sync graph is created."]
+        [:if {:test (reactive effect-error-present? model-source)}
+         [:text
+          {:value (reactive effect-error-message model-source)
+           :class "footnote"
+           :foreground "destructive"
+           :accessibility-identifier "text.graph-create.error"}]]]
+       [:spacer {:grow 1.0}]
+       [:row
+        {:main "end" :cross "center"}
+        [:toolbar
+         {:orientation "horizontal"
+          :gap 12
+          :label "Graph creation actions"
+          :accessibility-identifier "toolbar.graph-create"}
+         [:button
+          {:variant "ghost"
+           :accessibility-identifier "button.graph-add.cancel"
+           :on-press (fn [_event] (send model/DismissCreateGraph))}
+          "Cancel"]
+         [:button
+          {:variant "primary"
+           :accessibility-identifier "button.graph-add.confirm"
+           :disabled (reactive graph-create-disabled? model-source)
+           :on-press (fn [_event] (send model/SubmitCreateGraph))}
+          "Add"]]]]])
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Add sync graph"
+       :class "navigation-form"
+       :accessibility-identifier "sheet.graph-create"
+       :on-dismiss (fn [_event] (send model/DismissCreateGraph))}
+      [:column
+       {:class "form"
+        :accessibility-identifier "form.graph-create"}
+       [:text-field
+        {:text (reactive :new-graph-name model-source)
+         :placeholder "Graph name"
+         :label "Graph name"
+         :accessibility-identifier "field.graph-name"
+         :on-input
+         (fn [input-event]
+           (match input-event
+             (TextChanged _node text) (send (model/ChangeNewGraphName text))
+             _ true))}]
+       [:toggle
+        {:checked (reactive :new-graph-encrypted model-source)
+         :label "End-to-end encryption"
+         :accessibility-identifier "toggle.graph-encryption"
+         :on-toggle
+         (fn [input-event]
+           (match input-event
+             (proto/ToggleChanged _node enabled)
+             (send (model/ToggleNewGraphEncrypted enabled))
+             _ true))}
+        "End-to-end encryption"]
+       [:text
+        {:class "footnote"
+         :foreground "muted-foreground"}
+        "Encryption cannot be changed after the sync graph is created."]
+       [:if {:test (reactive effect-error-present? model-source)}
+        [:text
+         {:value (reactive effect-error-message model-source)
+          :class "footnote"
+          :foreground "destructive"
+          :accessibility-identifier "text.graph-create.error"}]]]
+      [:toolbar
+       {:orientation "horizontal"
+        :label "Graph creation actions"
+        :class "navigation-actions"
+        :accessibility-identifier "toolbar.graph-create"}
+       [:button
+        {:class "cancellation-action"
+         :accessibility-identifier "button.graph-add.cancel"
+         :on-press (fn [_event] (send model/DismissCreateGraph))}
+        "Cancel"]
+       [:button
+        {:class "confirmation-action"
+         :accessibility-identifier "button.graph-add.confirm"
+         :disabled (reactive graph-create-disabled? model-source)
+         :on-press (fn [_event] (send model/SubmitCreateGraph))}
+        "Add"]]])))
 
 (defui graph-delete-dialog [model-source send]
-  [:dialog
-   {:text "Delete local graph"
-    :on-dismiss (fn [_event] (send model/CancelDeleteGraph))}
-   [:column
-    [:text
-     {:value (reactive graph-deletion-message model-source)
-      :accessibility-identifier "text.graph-delete-warning"}]
-    [:text "⚠️ Notice that we can't recover this graph after being deleted. Make sure you have backups before deleting it."]
-    [:button
-     {:on-press (fn [_event] (send model/CancelDeleteGraph))}
-     "Cancel"]
-    [:button
-     {:on-press (fn [_event] (send model/ConfirmDeleteGraph))}
-     "Confirm"]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:dialog
+      {:text "Delete local graph"
+       :height 320
+       :accessibility-identifier "dialog.graph-delete"
+       :on-dismiss (fn [_event] (send model/CancelDeleteGraph))}
+      [:column {:gap 16 :cross "stretch"}
+       [:row {:gap 12 :cross "center"}
+        [:icon
+         {:name "app:warning"
+          :width 28
+          :height 28
+          :foreground "destructive"
+          :accessibility-identifier "icon.graph-delete-warning"
+          :accessibility-label "Warning"}]
+        [:text
+         {:value (reactive graph-deletion-message model-source)
+          :grow 1.0
+          :accessibility-identifier "text.graph-delete-warning"}]]
+       [:text
+        {:foreground "muted-foreground"}
+        "This graph cannot be recovered after deletion. Make sure you have a backup."]
+       [:spacer {:grow 1.0}]
+       [:row {:main "end"}
+        [:toolbar
+         {:orientation "horizontal"
+          :gap 12
+          :label "Graph deletion actions"
+          :accessibility-identifier "toolbar.graph-delete"}
+         [:button
+          {:variant "ghost"
+           :accessibility-identifier "button.graph-delete.cancel"
+           :on-press (fn [_event] (send model/CancelDeleteGraph))}
+          "Cancel"]
+         [:button
+          {:variant "destructive"
+           :accessibility-identifier "button.graph-delete.confirm"
+           :on-press (fn [_event] (send model/ConfirmDeleteGraph))}
+          "Delete"]]]]])
+    (elements/element
+     ui-context nil
+     [:dialog
+      {:text "Delete local graph"
+       :on-dismiss (fn [_event] (send model/CancelDeleteGraph))}
+      [:column
+       [:text
+        {:value (reactive graph-deletion-message model-source)
+         :accessibility-identifier "text.graph-delete-warning"}]
+       [:text "⚠️ Notice that we can't recover this graph after being deleted. Make sure you have backups before deleting it."]
+       [:button
+        {:on-press (fn [_event] (send model/CancelDeleteGraph))}
+        "Cancel"]
+       [:button
+        {:on-press (fn [_event] (send model/ConfirmDeleteGraph))}
+        "Confirm"]]])))
 
 (defui graph-picker-overflow-menu [send]
   (let [node (ui/extension! ui-context "native-overflow-menu")]
@@ -2440,20 +2892,28 @@
        (handle-native-overflow-menu-event input-event send)))
     node))
 
+(defn graph-picker-error-reason [current]
+  (match (:effect-error current)
+    (Some reason) (Some reason)
+    None
+    (match (:sync-state current)
+      (FailedState reason) (Some reason)
+      _ None)))
+
 (defn graph-picker-error-present? [current]
-  (match (:sync-state current)
-    (FailedState _reason) true
-    _ false))
+  (match (graph-picker-error-reason current)
+    (Some _reason) true
+    None false))
 
 (defn error-separator [reason]
   (string/index-of reason "\n"))
 
 (defn graph-picker-error-code [current]
-  (match (:sync-state current)
-    (FailedState reason)
+  (match (graph-picker-error-reason current)
+    (Some reason)
     (let [separator (error-separator reason)]
       (if (< separator 0) "sync_failed" (subs reason 0 separator)))
-    _ ""))
+    None ""))
 
 (defn graph-picker-error-title [current]
   (match (graph-picker-error-code current)
@@ -2467,11 +2927,11 @@
     _ "Something went wrong"))
 
 (defn graph-picker-error-message [current]
-  (match (:sync-state current)
-    (FailedState reason)
+  (match (graph-picker-error-reason current)
+    (Some reason)
     (let [separator (error-separator reason)]
       (if (< separator 0) reason (subs reason (inc separator))))
-    _ ""))
+    None ""))
 
 (defui graph-picker-error-banner [model-source]
   [:alert
@@ -2520,74 +2980,147 @@
      "Unlock"]]])
 
 (defui graphs-screen [model-source send]
-  [:list {:accessibility-identifier "screen.graphs"
-          :gap 4}
-   [:list-item
-    {:min-height 56
-     :accessibility-identifier "button.graphs.refresh"
-     :disabled (reactive model/graph-refresh-active? model-source)
-     :on-press (fn [_event] (send model/RefreshGraphs))}
-    "Refresh"]
-   [:if {:test (reactive model/graph-refresh-active? model-source)}
-    [:spinner {:accessibility-identifier "graphs.loading"}]]
-   [:list-item
-    {:icon "app:add"
-     :min-height 56
-     :accessibility-identifier "button.graph-add"
-     :on-press (fn [_event] (send model/OpenCreateGraph))}
-    "Add sync graph"]
-   [:box {:padding-horizontal 16}
-    [:heading {:level 5} "Local graphs"]]
-   [:if {:test (reactive local-graphs-empty? model-source)}
-    [:box {:padding-horizontal 16}
-     [:text "No local graphs"]]]
-   [:keyed
-    {:source (reactive local-graphs model-source)
-     :key :id
-     :compare compare
-     :as graph-source}
-   [graph-list-row model-source graph-source true send]]
-   [:if {:test (reactive remote-graphs-present? model-source)}
-    [:box {:padding-horizontal 16}
-     [:heading {:level 5} "Remote graphs"]]]
-   [:keyed
-   {:source (reactive remote-graphs model-source)
-     :key :id
-     :compare compare
-     :as graph-source}
-    [graph-list-row model-source graph-source false send]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:list {:accessibility-identifier "screen.graphs"
+             :gap 0}
+      [:row
+       {:gap 12
+        :padding 16
+        :accessibility-identifier "row.graphs.actions"}
+       [:button
+        {:icon "app:sync-status"
+         :variant "secondary"
+         :grow 1.0
+         :accessibility-identifier "button.graphs.refresh"
+         :disabled (reactive model/graph-refresh-active? model-source)
+         :on-press (fn [_event] (send model/RefreshGraphs))}
+        "Refresh"]
+       [:button
+        {:icon "app:add"
+         :variant "primary"
+         :grow 1.0
+         :accessibility-identifier "button.graph-add"
+         :on-press (fn [_event] (send model/OpenCreateGraph))}
+        "Add graph"]]
+      [:if {:test (reactive model/graph-refresh-active? model-source)}
+       [:box {:padding 16}
+        [:spinner {:accessibility-identifier "graphs.loading"}]]]
+      [:box {:padding 16}
+       [:heading {:level 5} "Local graphs"]]
+      [:if {:test (reactive local-graphs-empty? model-source)}
+       [:box {:padding 16}
+        [:text {:foreground "muted-foreground"} "No local graphs"]]]
+      [:keyed
+       {:source (reactive local-graphs model-source)
+        :key :id
+        :compare compare
+        :as graph-source}
+       [graph-list-row model-source graph-source true send]]
+      [:if {:test (reactive remote-graphs-present? model-source)}
+       [:box {:padding 16}
+        [:heading {:level 5} "Remote graphs"]]]
+      [:keyed
+       {:source (reactive remote-graphs model-source)
+        :key :id
+        :compare compare
+        :as graph-source}
+       [graph-list-row model-source graph-source false send]]])
+    (elements/element
+     ui-context nil
+     [:list {:accessibility-identifier "screen.graphs"
+             :gap 4}
+      [:list-item
+       {:min-height 56
+        :accessibility-identifier "button.graphs.refresh"
+        :disabled (reactive model/graph-refresh-active? model-source)
+        :on-press (fn [_event] (send model/RefreshGraphs))}
+       "Refresh"]
+      [:if {:test (reactive model/graph-refresh-active? model-source)}
+       [:spinner {:accessibility-identifier "graphs.loading"}]]
+      [:list-item
+       {:icon "app:add"
+        :min-height 56
+        :accessibility-identifier "button.graph-add"
+        :on-press (fn [_event] (send model/OpenCreateGraph))}
+       "Add sync graph"]
+      [:box {:padding-horizontal 16}
+       [:heading {:level 5} "Local graphs"]]
+      [:if {:test (reactive local-graphs-empty? model-source)}
+       [:box {:padding-horizontal 16}
+        [:text "No local graphs"]]]
+      [:keyed
+       {:source (reactive local-graphs model-source)
+        :key :id
+        :compare compare
+        :as graph-source}
+       [graph-list-row model-source graph-source true send]]
+      [:if {:test (reactive remote-graphs-present? model-source)}
+       [:box {:padding-horizontal 16}
+        [:heading {:level 5} "Remote graphs"]]]
+      [:keyed
+       {:source (reactive remote-graphs model-source)
+        :key :id
+        :compare compare
+        :as graph-source}
+       [graph-list-row model-source graph-source false send]]])))
 
-(defui graph-picker-screen [model-source send]
+(defui flutter-graph-picker-loading-state []
   [:column
-   {:accessibility-identifier "screen.graph-picker"
-    :main "start"
-    :grow 1.0
-    :container-relative-frame "vertical"
-    :gap 20
-    :padding 24}
-   [:row {:main "space_between" :cross "center"}
-    [:heading "Choose a graph"]
-    [graph-picker-overflow-menu send]]
+   {:grow 1.0
+    :main "center"
+    :cross "center"
+    :gap 12
+    :accessibility-identifier "loading.graph-picker"}
+   [:spinner {:accessibility-identifier "graphs.loading"}]
    [:text
     {:foreground "muted-foreground"}
-    "Select a Logseq graph to download and sync on this device."]
-   [:button
-    {:variant "ghost"
-     :foreground "foreground"
-     :accessibility-identifier "button.graph-add"
-     :on-press (fn [_event] (send model/OpenCreateGraph))}
-    "Add sync graph"]
-   [:if {:test (reactive graph-picker-error-present? model-source)}
-    [graph-picker-error-banner model-source]]
-   [:if {:test (reactive empty-graphs-loading? model-source)}
-    [:spinner {:accessibility-identifier "graphs.loading"}]]
-   [:if {:test (reactive empty-graphs-refreshable? model-source)}
+    "Loading sync graphs…"]])
+
+(defui flutter-graph-picker-empty-state [send]
+  [:column
+   {:grow 1.0
+    :main "center"
+    :cross "stretch"}
+   [:column
+    {:cross "center"
+     :gap 16
+     :accessibility-identifier "empty.graph-picker"}
+    [:icon
+     {:name "app:graph-remote"
+      :width 48
+      :height 48
+      :foreground "primary"}]
+    [:heading {:level 3} "No sync graphs yet"]
+    [:text
+     {:foreground "muted-foreground"
+      :text-alignment "center"}
+     "Create a graph to start capturing and syncing notes on this device."]
     [:button
-     {:variant "ghost"
+     {:icon "app:add"
+      :variant "primary"
+      :accessibility-identifier "button.graph-add"
+      :on-press (fn [_event] (send model/OpenCreateGraph))}
+     "Add sync graph"]
+    [:button
+     {:icon "app:sync-status"
+      :variant "ghost"
       :foreground "foreground"
       :accessibility-identifier "button.graphs.refresh"
       :on-press (fn [_event] (send model/RefreshGraphs))}
-     "Refresh graphs"]]
+     "Refresh"]]])
+
+(defui flutter-graph-picker-catalog [model-source send]
+  [:column
+   {:grow 1.0
+    :gap 16}
+   [:button
+    {:icon "app:add"
+     :variant "primary"
+     :accessibility-identifier "button.graph-add"
+     :on-press (fn [_event] (send model/OpenCreateGraph))}
+    "Add sync graph"]
    [:scroll {:grow 1.0}
     [:column {:gap 12}
      [:keyed
@@ -2596,6 +3129,75 @@
        :compare compare
        :as graph-source}
       [graph-row model-source graph-source false send]]]]])
+
+(defui graph-picker-screen [model-source send]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:column
+      {:accessibility-identifier "screen.graph-picker"
+       :main "start"
+       :cross "stretch"
+       :grow 1.0
+       :gap 16
+       :padding 24}
+      [:row {:main "space_between" :cross "center"}
+       [:heading
+        {:level 3
+         :accessibility-identifier "title.graph-picker"}
+        "Choose a graph"]
+       [graph-picker-overflow-menu send]]
+      [:text
+       {:foreground "muted-foreground"}
+       "Select a Logseq graph to download and sync on this device."]
+      [:if {:test (reactive graph-picker-error-present? model-source)}
+       [graph-picker-error-banner model-source]]
+      [:if {:test (reactive empty-graphs-loading? model-source)}
+       [flutter-graph-picker-loading-state]]
+      [:if {:test (reactive empty-graphs-refreshable? model-source)}
+       [flutter-graph-picker-empty-state send]]
+      [:if {:test (reactive graphs-present? model-source)}
+       [flutter-graph-picker-catalog model-source send]]])
+    (elements/element
+     ui-context nil
+     [:column
+      {:accessibility-identifier "screen.graph-picker"
+       :main "start"
+       :grow 1.0
+       :container-relative-frame "vertical"
+       :gap 20
+       :padding 24}
+      [:row {:main "space_between" :cross "center"}
+       [:heading "Choose a graph"]
+       [graph-picker-overflow-menu send]]
+      [:text
+       {:foreground "muted-foreground"}
+       "Select a Logseq graph to download and sync on this device."]
+      [:button
+       {:variant "ghost"
+        :foreground "foreground"
+        :accessibility-identifier "button.graph-add"
+        :on-press (fn [_event] (send model/OpenCreateGraph))}
+       "Add sync graph"]
+      [:if {:test (reactive graph-picker-error-present? model-source)}
+       [graph-picker-error-banner model-source]]
+      [:if {:test (reactive empty-graphs-loading? model-source)}
+       [:spinner {:accessibility-identifier "graphs.loading"}]]
+      [:if {:test (reactive empty-graphs-refreshable? model-source)}
+       [:button
+        {:variant "ghost"
+         :foreground "foreground"
+         :accessibility-identifier "button.graphs.refresh"
+         :on-press (fn [_event] (send model/RefreshGraphs))}
+        "Refresh graphs"]]
+      [:scroll {:grow 1.0}
+       [:column {:gap 12}
+        [:keyed
+         {:source (reactive :graphs model-source)
+          :key :id
+          :compare compare
+          :as graph-source}
+         [graph-row model-source graph-source false send]]]]])))
 
 (defn settings-main-visible? [current]
   (and (not (:settings-tabs-open current))
@@ -2654,6 +3256,101 @@
        (fn [_event] (send (model/ChooseSettingsLanguage (:id choice))))}
       (settings-language-choice-title choice)])))
 
+(defn settings-language-choice-menu-item [ui-context choice-source send]
+  (let [choice (signal/sample choice-source)]
+    (elements/element
+     ui-context nil
+     [:menu-item
+      {:text (reactive settings-language-choice-title choice-source)
+       :accessibility-identifier (settings-language-choice-identifier choice)
+       :on-press
+       (fn [_event] (send (model/ChooseSettingsLanguage (:id choice))))}])))
+
+(defui settings-language-control [model-source send]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:stack
+      {:accessibility-identifier "layout.settings.language-control"}
+      [:select
+       {:text (reactive settings-language-title model-source)
+        :label "Language"
+        :accessibility-identifier "picker.settings.language"
+        :on-press (fn [_event] (send model/OpenSettingsLanguageMenu))}]
+      [:if {:test (reactive :settings-language-menu-open model-source)}
+       [:dropdown-menu
+        {:anchor "below"
+         :anchor-alignment "end"
+         :min-width 220
+         :on-dismiss (fn [_event] (send model/CloseSettingsLanguageMenu))}
+        [:keyed
+         {:source (reactive :language-choices model-source)
+          :key :id
+          :compare compare
+          :as choice-source}
+         [settings-language-choice-menu-item choice-source send]]]]])
+    (elements/element
+     ui-context nil
+     [:radio-group
+      {:label "Language"
+       :class "menu"
+       :accessibility-identifier "picker.settings.language"}
+      [:keyed
+       {:source (reactive :language-choices model-source)
+        :key :id
+        :compare compare
+        :as choice-source}
+       [settings-language-choice-radio model-source choice-source send]]])))
+
+(defui settings-appearance-control [model-source send]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:stack
+      {:accessibility-identifier "layout.settings.appearance-control"}
+      [:select
+       {:text (reactive settings-appearance-title model-source)
+        :label "Theme"
+        :accessibility-identifier "picker.settings.appearance"
+        :on-press (fn [_event] (send model/OpenSettingsAppearanceMenu))}]
+      [:if {:test (reactive :settings-appearance-menu-open model-source)}
+       [:dropdown-menu
+        {:anchor "below"
+         :anchor-alignment "end"
+         :min-width 160
+         :on-dismiss (fn [_event] (send model/CloseSettingsAppearanceMenu))}
+        [:menu-item
+         {:on-press (fn [_event] (send (model/ChangeAppearance "system")))}
+         "System"]
+        [:menu-item
+         {:on-press (fn [_event] (send (model/ChangeAppearance "light")))}
+         "Light"]
+        [:menu-item
+         {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
+         "Dark"]]]])
+    (elements/element
+     ui-context nil
+     [:stack
+      [:select
+       {:text (reactive settings-appearance-title model-source)
+        :label "Theme"
+        :on-press (fn [_event] (send model/OpenSettingsAppearanceMenu))}]
+      [:if {:test (reactive :settings-appearance-menu-open model-source)}
+       [:dropdown-menu
+        {:anchor "below"
+         :anchor-alignment "end"
+         :min-width 160
+         :on-dismiss (fn [_event] (send model/CloseSettingsAppearanceMenu))}
+        [:menu-item
+         {:on-press (fn [_event] (send (model/ChangeAppearance "system")))}
+         "System"]
+        [:menu-item
+         {:on-press (fn [_event] (send (model/ChangeAppearance "light")))}
+         "Light"]
+        [:menu-item
+         {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
+         "Dark"]]]])))
+
 (defn settings-community-link-title [link]
   (:title link))
 
@@ -2667,22 +3364,40 @@
 
 (defn settings-community-link-row [ui-context model-source link-source send]
   (let [link (signal/sample link-source)]
-    (elements/element
-     ui-context nil
-     [:column {:gap 12}
-      [:list-item
-       {:text (reactive settings-community-link-title link-source)
-        :padding 0
-        :accessibility-identifier
-        (settings-community-link-identifier link)
-        :on-press
-        (event [current-link link-source]
-               (send (model/OpenExternalURL (:url current-link))))}]
-      [:if
-       {:test
-        (reactive settings-community-link-needs-separator?
-                  model-source link-source)}
-       [:separator]]])))
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:column {:gap 12}
+        [:list-item
+         {:text (reactive settings-community-link-title link-source)
+          :icon "app:open-external"
+          :padding 0
+          :accessibility-identifier
+          (settings-community-link-identifier link)
+          :on-press
+          (event [current-link link-source]
+                 (send (model/OpenExternalURL (:url current-link))))}]
+        [:if
+         {:test
+          (reactive settings-community-link-needs-separator?
+                    model-source link-source)}
+         [:separator]]])
+      (elements/element
+       ui-context nil
+       [:column {:gap 12}
+        [:list-item
+         {:text (reactive settings-community-link-title link-source)
+          :padding 0
+          :accessibility-identifier
+          (settings-community-link-identifier link)
+          :on-press
+          (event [current-link link-source]
+                 (send (model/OpenExternalURL (:url current-link))))}]
+        [:if
+         {:test
+          (reactive settings-community-link-needs-separator?
+                    model-source link-source)}
+         [:separator]]]))))
 
 (defn settings-tabs-visible? [current]
   (:settings-tabs-open current))
@@ -2712,6 +3427,9 @@
 
 (defn tab-selection-glyph [current tab]
   (if (tab-enabled? current tab) "✓" "○"))
+
+(defn tab-selection-icon-name [current tab]
+  (if (tab-enabled? current tab) "app:selected" "app:unselected"))
 
 (defn tab-selection-foreground [current tab]
   (if (tab-enabled? current tab) "accent" "secondary"))
@@ -2810,7 +3528,7 @@
             :class "caption"}]
     [:separator]]))
 
-(defui settings-tab-row [model-source tab title send]
+(defn settings-tab-row [ui-context model-source tab title send]
   (let [label-source
         (reactive (fn [current] (tab-toggle-label current tab)) model-source)
         toggle-disabled-source
@@ -2822,58 +3540,210 @@
         down-disabled-source
         (reactive (fn [current] (tab-move-down-disabled? current tab)) model-source)
         selection-glyph-source
-        (reactive (fn [current] (tab-selection-glyph current tab)) model-source)]
-    (elements/element
-     ui-context nil
-     [:list-item
-      {:accessibility-identifier (str "row.settings.tab." tab)}
-      [:row {:grow 1.0 :cross "center" :gap 8}
-       [:button
-        {:label label-source
-         :grow 1.0
-         :variant "ghost"
-         :disabled toggle-disabled-source
-         :accessibility-identifier (tab-toggle-identifier tab)
-         :on-press (fn [_event] (send (model/ToggleSidebarTab tab)))}
-        title]
-       [:text {:value selection-glyph-source :foreground "accent"}]
-       [:if {:test movement-visible-source}
-        [:button
-         {:disabled up-disabled-source
-          :variant "ghost"
-          :accessibility-label (str "Move " title " up")
-          :accessibility-identifier (tab-up-identifier tab)
-          :on-press
-          (fn [_event] (send (model/MoveSidebarTab tab -1)))}
-         "↑"]]
-       [:if {:test movement-visible-source}
-        [:button
-         {:disabled down-disabled-source
-          :variant "ghost"
-          :accessibility-label (str "Move " title " down")
-          :accessibility-identifier (tab-down-identifier tab)
-          :on-press
-          (fn [_event] (send (model/MoveSidebarTab tab 1)))}
-         "↓"]]]])))
+        (reactive (fn [current] (tab-selection-glyph current tab)) model-source)
+        selection-icon-source
+        (reactive (fn [current] (tab-selection-icon-name current tab)) model-source)]
+    (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:row
+        {:cross "center"
+         :padding 8
+         :background "surface-container-low"
+         :corner-radius 12
+         :accessibility-identifier (str "row.settings.tab." tab)}
+        [:row {:grow 1.0 :cross "center" :gap 8}
+         [:button
+          {:label label-source
+           :icon selection-icon-source
+           :icon-placement "trailing"
+           :accessibility-label label-source
+           :variant "ghost"
+           :disabled toggle-disabled-source
+           :accessibility-identifier (tab-toggle-identifier tab)
+           :on-press (fn [_event] (send (model/ToggleSidebarTab tab)))}
+          title]
+         [:spacer]
+         [:if {:test movement-visible-source}
+          [:button
+           {:icon "app:arrow-up"
+            :size "icon"
+            :disabled up-disabled-source
+            :variant "ghost"
+            :label "Move tab up"
+            :accessibility-identifier (tab-up-identifier tab)
+            :on-press
+            (fn [_event] (send (model/MoveSidebarTab tab -1)))}]]
+         [:if {:test movement-visible-source}
+          [:button
+           {:icon "app:arrow-down"
+            :size "icon"
+            :disabled down-disabled-source
+            :variant "ghost"
+            :label "Move tab down"
+            :accessibility-identifier (tab-down-identifier tab)
+            :on-press
+            (fn [_event] (send (model/MoveSidebarTab tab 1)))}]]]])
+      (elements/element
+       ui-context nil
+       [:list-item
+        {:accessibility-identifier (str "row.settings.tab." tab)}
+        [:row {:grow 1.0 :cross "center" :gap 8}
+         [:button
+          {:label label-source
+           :grow 1.0
+           :variant "ghost"
+           :disabled toggle-disabled-source
+           :accessibility-identifier (tab-toggle-identifier tab)
+           :on-press (fn [_event] (send (model/ToggleSidebarTab tab)))}
+          title]
+         [:text {:value selection-glyph-source :foreground "accent"}]
+         [:if {:test movement-visible-source}
+          [:button
+           {:disabled up-disabled-source
+            :variant "ghost"
+            :label "Move tab up"
+            :accessibility-identifier (tab-up-identifier tab)
+            :on-press
+            (fn [_event] (send (model/MoveSidebarTab tab -1)))}
+           "↑"]]
+         [:if {:test movement-visible-source}
+          [:button
+           {:disabled down-disabled-source
+            :variant "ghost"
+            :label "Move tab down"
+            :accessibility-identifier (tab-down-identifier tab)
+            :on-press
+            (fn [_event] (send (model/MoveSidebarTab tab 1)))}
+           "↓"]]]]))))
 
 (defui settings-tabs-screen [model-source send]
-  [:list {:accessibility-identifier "screen.settings.tabs"}
-   [:heading "Visible tabs"]
-   [settings-tab-row model-source "journals" "Journals" send]
-   [:if {:test (reactive settings-flashcards-before-graphs? model-source)}
-    [settings-tab-row model-source "flashcards" "Flashcards" send]]
-   [settings-tab-row model-source "graphs" "Graphs" send]
-   [:if {:test (reactive settings-flashcards-after-graphs? model-source)}
-    [settings-tab-row model-source "flashcards" "Flashcards" send]]
-   [:text
-    {:class "footnote" :foreground "muted-foreground"}
-    "Journals and Graphs are always available. Use the arrows to reorder tabs."]
-   [:if {:test (reactive settings-available-tabs-present? model-source)}
-    [:heading
-     {:accessibility-identifier "text.settings.tabs.available"}
-     "Available tabs"]]
-   [:if {:test (reactive settings-available-tabs-present? model-source)}
-    [settings-tab-row model-source "flashcards" "Flashcards" send]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:column
+      {:grow 1.0
+       :cross "stretch"
+       :gap 10
+       :padding 16
+       :accessibility-identifier "screen.settings.tabs"}
+      [:text {:class "headline" :foreground "muted-foreground"}
+       "Visible tabs"]
+      [:list
+       {:grow 1.0
+        :gap 8
+        :accessibility-identifier "list.settings.tabs"}
+       [settings-tab-row model-source "journals" "Journals" send]
+       [:if {:test (reactive settings-flashcards-before-graphs? model-source)}
+        [settings-tab-row model-source "flashcards" "Flashcards" send]]
+       [settings-tab-row model-source "graphs" "Graphs" send]
+       [:if {:test (reactive settings-flashcards-after-graphs? model-source)}
+        [settings-tab-row model-source "flashcards" "Flashcards" send]]
+       [:text
+        {:class "footnote" :foreground "muted-foreground"}
+        "Journals and Graphs are always available. Use the arrows to reorder tabs."]
+       [:if {:test (reactive settings-available-tabs-present? model-source)}
+        [:text
+         {:class "headline"
+          :foreground "muted-foreground"
+          :accessibility-identifier "text.settings.tabs.available"}
+         "Available tabs"]]
+       [:if {:test (reactive settings-available-tabs-present? model-source)}
+        [settings-tab-row model-source "flashcards" "Flashcards" send]]]])
+    (elements/element
+     ui-context nil
+     [:list {:accessibility-identifier "screen.settings.tabs"}
+      [:heading "Visible tabs"]
+      [settings-tab-row model-source "journals" "Journals" send]
+      [:if {:test (reactive settings-flashcards-before-graphs? model-source)}
+       [settings-tab-row model-source "flashcards" "Flashcards" send]]
+      [settings-tab-row model-source "graphs" "Graphs" send]
+      [:if {:test (reactive settings-flashcards-after-graphs? model-source)}
+       [settings-tab-row model-source "flashcards" "Flashcards" send]]
+      [:text
+       {:class "footnote" :foreground "muted-foreground"}
+       "Journals and Graphs are always available. Use the arrows to reorder tabs."]
+      [:if {:test (reactive settings-available-tabs-present? model-source)}
+       [:heading
+        {:accessibility-identifier "text.settings.tabs.available"}
+        "Available tabs"]]
+      [:if {:test (reactive settings-available-tabs-present? model-source)}
+       [settings-tab-row model-source "flashcards" "Flashcards" send]]])))
+
+(defui runtime-log-toolbar [model-source send]
+  (if (host? proto/FlutterHost)
+     (elements/element
+      ui-context nil
+      [:column {:gap 8 :cross "stretch"}
+       [:toolbar
+        {:orientation "horizontal"
+         :gap 8
+         :label "Log filters"
+         :accessibility-identifier "toolbar.log-filters.primary"}
+        [:button
+         {:text (reactive runtime-log-errors-label model-source)
+          :label "Toggle error filtering"
+          :variant "secondary"
+          :accessibility-identifier "button.log-errors"
+          :on-press (fn [_event] (send model/ToggleRuntimeLogErrors))}
+         "Errors only"]
+        [:button
+         {:text (reactive runtime-log-order-label model-source)
+          :label "Toggle log ordering"
+          :variant "secondary"
+          :accessibility-identifier "button.log-order"
+          :on-press (fn [_event] (send model/ToggleRuntimeLogOrder))}
+         "Newest first"]]
+       [:toolbar
+        {:orientation "horizontal"
+         :gap 8
+         :label "Log actions"
+         :accessibility-identifier "toolbar.log-filters.secondary"}
+        [:button
+         {:text (reactive runtime-log-source-label model-source)
+          :label "Toggle log source"
+          :variant "secondary"
+          :accessibility-identifier "button.log-source"
+          :on-press (fn [_event] (send model/ToggleRuntimeLogSource))}
+         "Core log"]
+        [:button
+         {:variant "secondary"
+          :accessibility-identifier "button.log-copy"
+          :on-press (fn [_event] (send model/CopyRuntimeLog))}
+         "Copy"]]])
+     (elements/element
+      ui-context nil
+      [:toolbar
+       {:orientation "horizontal"
+        :class "scroll"
+        :gap 8
+        :label "Log filters"}
+       [:button
+        {:text (reactive runtime-log-errors-label model-source)
+         :label "Toggle error filtering"
+         :variant "secondary"
+         :accessibility-identifier "button.log-errors"
+         :on-press (fn [_event] (send model/ToggleRuntimeLogErrors))}
+        "Errors only"]
+       [:button
+        {:text (reactive runtime-log-order-label model-source)
+         :label "Toggle log ordering"
+         :variant "secondary"
+         :accessibility-identifier "button.log-order"
+         :on-press (fn [_event] (send model/ToggleRuntimeLogOrder))}
+        "Newest first"]
+       [:button
+        {:text (reactive runtime-log-source-label model-source)
+         :label "Toggle log source"
+         :variant "secondary"
+         :accessibility-identifier "button.log-source"
+         :on-press (fn [_event] (send model/ToggleRuntimeLogSource))}
+        "Core log"]
+       [:button
+        {:variant "secondary"
+         :accessibility-identifier "button.log-copy"
+         :on-press (fn [_event] (send model/CopyRuntimeLog))}
+        "Copy"]])))
 
 (defui runtime-log-screen [model-source send]
   [:column {:gap 12
@@ -2881,37 +3751,7 @@
             :grow 1.0
             :accessibility-identifier "screen.runtime-log"
             :background "background"}
-   [:toolbar
-    {:orientation "horizontal"
-     :class "scroll"
-     :gap 8
-     :label "Log filters"}
-    [:button
-     {:text (reactive runtime-log-errors-label model-source)
-      :label "Toggle error filtering"
-      :variant "secondary"
-      :accessibility-identifier "button.log-errors"
-      :on-press (fn [_event] (send model/ToggleRuntimeLogErrors))}
-     "Errors only"]
-    [:button
-     {:text (reactive runtime-log-order-label model-source)
-      :label "Toggle log ordering"
-      :variant "secondary"
-      :accessibility-identifier "button.log-order"
-      :on-press (fn [_event] (send model/ToggleRuntimeLogOrder))}
-     "Newest first"]
-    [:button
-     {:text (reactive runtime-log-source-label model-source)
-      :label "Toggle log source"
-      :variant "secondary"
-      :accessibility-identifier "button.log-source"
-      :on-press (fn [_event] (send model/ToggleRuntimeLogSource))}
-     "Core log"]
-    [:button
-     {:variant "secondary"
-      :accessibility-identifier "button.log-copy"
-      :on-press (fn [_event] (send model/CopyRuntimeLog))}
-     "Copy"]]
+   [runtime-log-toolbar model-source send]
    [:scroll {:grow 1.0}
     [:column {:gap 10}
      [:if {:test (reactive runtime-log-empty? model-source)}
@@ -2922,6 +3762,180 @@
        :compare compare
        :as record-source}
       [runtime-log-row record-source]]]]])
+
+(defn settings-toggle-spell-check [send input-event]
+  (match input-event
+    (proto/ToggleChanged _node enabled)
+    (send (model/ToggleSpellCheck enabled))
+    _ true))
+
+(defn settings-toggle-auto-correction [send input-event]
+  (match input-event
+    (proto/ToggleChanged _node enabled)
+    (send (model/ToggleAutoCorrection enabled))
+    _ true))
+
+(defui settings-general-card [model-source send]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:column
+      {:gap 12
+       :cross "stretch"
+       :padding 16
+       :background "surface-container-low"
+       :corner-radius 14
+       :accessibility-identifier "layout.settings.general-card"}
+      [settings-appearance-control model-source send]
+      [:separator]
+      [settings-language-control model-source send]
+      [:separator]
+      [:list-item
+       {:padding 0
+        :accessibility-identifier "link.settings.tabs"
+        :on-press (fn [_event] (send model/OpenSettingsTabs))}
+       [:row {:grow 1.0 :cross "center" :gap 12}
+        [:column
+         {:grow 1.0
+          :gap 2
+          :accessibility-identifier "layout.settings.tabs-copy"}
+         [:text "Tabs"]
+         [:text
+          {:value (reactive settings-tabs-summary model-source)
+           :class "footnote"
+           :foreground "muted-foreground"
+           :accessibility-identifier "text.settings.tabs.selection"}]]
+        [:icon
+         {:name "app:chevron-right"
+          :width 20
+          :height 20
+          :foreground "muted-foreground"
+          :accessibility-identifier "icon.settings.tabs"
+          :accessibility-label "Open Tabs"}]]]])
+    (elements/element
+     ui-context nil
+     [:column
+      {:gap 12
+       :padding 16
+       :background "surface"
+       :corner-radius 14
+       :accessibility-identifier "layout.settings.general-card"}
+      [:row {:cross "center"}
+       [:text "Theme"]
+       [:spacer]
+       [settings-appearance-control model-source send]]
+      [:separator]
+      [:row {:cross "center"}
+       [:text "Language"]
+       [:spacer]
+       [settings-language-control model-source send]]
+      [:separator]
+      [:list-item
+       {:padding 0
+        :accessibility-identifier "link.settings.tabs"
+        :on-press (fn [_event] (send model/OpenSettingsTabs))}
+       [:row {:grow 1.0 :cross "center"}
+        [:text "Tabs"]
+        [:spacer]
+        [:text
+         {:value (reactive settings-tabs-summary model-source)
+          :class "single-line"
+          :foreground "secondary"
+          :accessibility-identifier "text.settings.tabs.selection"}]]]])))
+
+(defn settings-editor-card
+  [ui-context spell-check-source auto-correction-source send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:column
+        {:gap 0
+         :cross "stretch"
+         :padding 16
+         :background "surface-container-low"
+         :corner-radius 14}
+        [:switch
+         {:checked spell-check-source
+          :accessibility-identifier "switch.settings.spell-check"
+          :on-toggle (fn [input-event]
+                       (settings-toggle-spell-check send input-event))}
+         "Spell check"]
+        [:separator]
+        [:switch
+         {:checked auto-correction-source
+          :accessibility-identifier "switch.settings.auto-correction"
+          :on-toggle (fn [input-event]
+                       (settings-toggle-auto-correction send input-event))}
+         "Auto-correction"]])
+    (elements/element
+     ui-context nil
+     [:column
+      {:gap 12 :padding 16 :background "surface" :corner-radius 14}
+      [:toggle
+       {:checked spell-check-source
+        :on-toggle (fn [input-event]
+                     (settings-toggle-spell-check send input-event))}
+       "Spell check"]
+      [:separator]
+      [:toggle
+       {:checked auto-correction-source
+        :on-toggle (fn [input-event]
+                     (settings-toggle-auto-correction send input-event))}
+      "Auto-correction"]])))
+
+(defn settings-export-row [ui-context send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:icon "app:download"
+       :padding 0
+       :accessibility-identifier "button.export-graph-database"
+       :on-press (fn [_event] (send model/ExportGraphDatabase))}
+      "Export Graph SQLite DB"])
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:padding 0
+       :accessibility-identifier "button.export-graph-database"
+       :on-press (fn [_event] (send model/ExportGraphDatabase))}
+      "Export Graph SQLite DB"])))
+
+(defn settings-runtime-log-row [ui-context send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:icon "app:terminal"
+       :padding 0
+       :accessibility-identifier "button.runtime-log"
+       :on-press (fn [_event] (send model/OpenRuntimeLog))}
+      "Check log"])
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:padding 0
+       :accessibility-identifier "button.runtime-log"
+       :on-press (fn [_event] (send model/OpenRuntimeLog))}
+      "Check log"])))
+
+(defn settings-sign-out-row [ui-context send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:icon "app:sign-out"
+       :padding 0
+       :accessibility-identifier "button.sign-out"
+       :on-press (fn [_event] (send model/SignOut))}
+      "Sign Out"])
+    (elements/element
+     ui-context nil
+     [:list-item
+      {:padding 0
+       :accessibility-identifier "button.sign-out"
+       :on-press (fn [_event] (send model/SignOut))}
+      "Sign Out"])))
 
 (defui settings-screen [model-source send]
   [:column
@@ -2935,85 +3949,17 @@
       :foreground "muted-foreground"
       :accessibility-identifier "label.settings.general"}
      "General"]
-    [:column
-     {:gap 12 :padding 16 :background "surface" :corner-radius 14}
-     [:row {:cross "center"}
-      [:text "Theme"]
-      [:spacer]
-      [:stack
-       [:select
-        {:text (reactive settings-appearance-title model-source)
-         :label "Theme"
-         :on-press (fn [_event] (send model/OpenSettingsAppearanceMenu))}]
-       [:if {:test (reactive :settings-appearance-menu-open model-source)}
-        [:dropdown-menu
-         {:anchor "below"
-          :anchor-alignment "end"
-          :min-width 160
-          :on-dismiss (fn [_event] (send model/CloseSettingsAppearanceMenu))}
-         [:menu-item
-          {:on-press (fn [_event] (send (model/ChangeAppearance "system")))}
-          "System"]
-         [:menu-item
-          {:on-press (fn [_event] (send (model/ChangeAppearance "light")))}
-          "Light"]
-         [:menu-item
-          {:on-press (fn [_event] (send (model/ChangeAppearance "dark")))}
-          "Dark"]]]]]
-     [:separator]
-     [:row {:cross "center"}
-     [:text "Language"]
-     [:spacer]
-      [:radio-group
-       {:label "Language"
-        :class "menu"
-        :accessibility-identifier "picker.settings.language"}
-       [:keyed
-        {:source (reactive :language-choices model-source)
-         :key :id
-         :compare compare
-         :as choice-source}
-        [settings-language-choice-radio model-source choice-source send]]]]
-     [:separator]
-     [:list-item
-      {:padding 0
-       :accessibility-identifier "link.settings.tabs"
-       :on-press (fn [_event] (send model/OpenSettingsTabs))}
-      [:row {:grow 1.0 :cross "center"}
-       [:text "Tabs"]
-       [:spacer]
-       [:text
-        {:value (reactive settings-tabs-summary model-source)
-         :class "single-line"
-         :foreground "secondary"
-         :accessibility-identifier "text.settings.tabs.selection"}]]]]]
+    [settings-general-card model-source send]]
    [:column {:gap 8}
     [:text
      {:class "headline"
       :foreground "muted-foreground"
       :accessibility-identifier "label.settings.editor"}
      "Editor"]
-    [:column
-     {:gap 12 :padding 16 :background "surface" :corner-radius 14}
-     [:toggle
-      {:checked (reactive settings-spell-check model-source)
-       :on-toggle
-       (fn [input-event]
-         (match input-event
-           (proto/ToggleChanged _node enabled)
-           (send (model/ToggleSpellCheck enabled))
-           _ true))}
-      "Spell check"]
-     [:separator]
-     [:toggle
-      {:checked (reactive settings-auto-correction model-source)
-       :on-toggle
-       (fn [input-event]
-         (match input-event
-           (proto/ToggleChanged _node enabled)
-           (send (model/ToggleAutoCorrection enabled))
-           _ true))}
-      "Auto-correction"]]]
+    [settings-editor-card
+     (reactive settings-spell-check model-source)
+     (reactive settings-auto-correction model-source)
+     send]]
    [:column {:gap 8}
     [:text
      {:class "headline"
@@ -3021,7 +3967,12 @@
       :accessibility-identifier "label.settings.sync-server"}
      "Sync server"]
     [:column
-     {:gap 8 :padding 16 :background "surface" :corner-radius 14}
+     {:gap 8
+      :padding 16
+      :background (if (host? proto/FlutterHost)
+                    "surface-container-low"
+                    "surface")
+      :corner-radius 14}
      [:text-field
       {:text (reactive settings-base-url model-source)
        :placeholder "Server URL"
@@ -3041,14 +3992,14 @@
       {:class "headline"
        :foreground "muted-foreground"
        :accessibility-identifier "label.settings.advanced"}
-      "Advanced"]
+     "Advanced"]
      [:column
-      {:padding 16 :background "surface" :corner-radius 14}
-      [:list-item
-       {:padding 0
-        :accessibility-identifier "button.export-graph-database"
-        :on-press (fn [_event] (send model/ExportGraphDatabase))}
-       "Export Graph SQLite DB"]]]]
+      {:padding 16
+       :background (if (host? proto/FlutterHost)
+                     "surface-container-low"
+                     "surface")
+       :corner-radius 14}
+      [settings-export-row send]]]]
    [:column {:gap 8}
     [:text
      {:class "headline"
@@ -3056,7 +4007,12 @@
       :accessibility-identifier "label.settings.about"}
      "About"]
     [:column
-     {:gap 12 :padding 16 :background "surface" :corner-radius 14}
+     {:gap 12
+      :padding 16
+      :background (if (host? proto/FlutterHost)
+                    "surface-container-low"
+                    "surface")
+      :corner-radius 14}
      [:row
       [:text "Version"]
       [:spacer]
@@ -3066,97 +4022,203 @@
      [:row
       [:text "Revision"]
       [:spacer]
-      [:text {:value (reactive settings-revision model-source)
+     [:text {:value (reactive settings-revision model-source)
               :foreground "secondary"}]]
      [:separator]
-     [:list-item {:padding 0
-                  :on-press (fn [_event] (send model/OpenRuntimeLog))}
-      "Check log"]]]
+     [settings-runtime-log-row send]]]
    [:column {:gap 8}
     [:text
      {:class "headline"
       :foreground "muted-foreground"
       :accessibility-identifier "label.settings.community"}
-    "Community"]
+     "Community"]
     [:column
-     {:gap 12 :background "surface" :corner-radius 14 :padding 16}
+     {:gap 12
+      :background (if (host? proto/FlutterHost)
+                    "surface-container-low"
+                    "surface")
+      :corner-radius 14
+      :padding 16}
      [:keyed
       {:source (reactive :community-links model-source)
        :key :id
        :compare compare
        :as link-source}
       [settings-community-link-row model-source link-source send]]]]
-   [:column {:padding 16 :background "surface" :corner-radius 14}
-    [:list-item
-     {:padding 0
-      :accessibility-identifier "button.sign-out"
-      :on-press (fn [_event] (send model/SignOut))}
-     "Sign Out"]]])
+   [:column
+    {:padding 16
+     :background (if (host? proto/FlutterHost)
+                   "surface-container-low"
+                   "surface")
+     :corner-radius 14}
+    [settings-sign-out-row send]]])
 
 (defui settings-main-sheet [model-source send]
-  [:sheet
-   {:text "Settings"
-    :class "navigation-scroll"
-    :accessibility-identifier "sheet.settings"
-    :on-dismiss (fn [_event] (send model/DismissSettings))}
-   [settings-screen model-source send]
-   [:toolbar
-    {:orientation "horizontal"
-     :label "Settings actions"
-     :class "navigation-actions"
-     :accessibility-identifier "toolbar.settings.actions"}
-    [:button
-     {:class "cancellation-action"
-      :accessibility-identifier "button.connection.cancel"
-      :on-press (fn [_event] (send model/DismissSettings))}
-     "Cancel"]
-    [:button
-     {:class "confirmation-action"
-      :accessibility-identifier "button.connection.apply"
-      :disabled (reactive settings-apply-disabled? model-source)
-      :on-press (fn [_event] (send model/ApplySettings))}
-     "Apply"]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Settings"
+       :height 640
+       :accessibility-identifier "sheet.settings"
+       :on-dismiss (fn [_event] (send model/DismissSettings))}
+      [:column
+       {:grow 1.0
+        :gap 12
+        :accessibility-identifier "layout.settings.sheet"}
+       [:scroll {:grow 1.0}
+        [settings-screen model-source send]]
+       [:row
+        {:gap 12
+         :padding-horizontal 20
+         :padding-vertical 12
+         :background "surface-container-low"
+         :accessibility-identifier "toolbar.settings.actions"}
+        [:button
+         {:variant "secondary"
+          :grow 1.0
+          :accessibility-identifier "button.connection.cancel"
+          :on-press (fn [_event] (send model/DismissSettings))}
+         "Cancel"]
+        [:button
+         {:variant "primary"
+          :grow 1.0
+          :accessibility-identifier "button.connection.apply"
+          :disabled (reactive settings-apply-disabled? model-source)
+          :on-press (fn [_event] (send model/ApplySettings))}
+         "Apply"]]]])
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Settings"
+       :class "navigation-scroll"
+       :accessibility-identifier "sheet.settings"
+       :on-dismiss (fn [_event] (send model/DismissSettings))}
+      [settings-screen model-source send]
+      [:toolbar
+       {:orientation "horizontal"
+        :label "Settings actions"
+        :class "navigation-actions"
+        :accessibility-identifier "toolbar.settings.actions"}
+       [:button
+        {:class "cancellation-action"
+         :accessibility-identifier "button.connection.cancel"
+         :on-press (fn [_event] (send model/DismissSettings))}
+        "Cancel"]
+       [:button
+        {:class "confirmation-action"
+         :accessibility-identifier "button.connection.apply"
+         :disabled (reactive settings-apply-disabled? model-source)
+         :on-press (fn [_event] (send model/ApplySettings))}
+        "Apply"]]])))
 
 (defui settings-tabs-sheet [model-source send]
-  [:sheet
-   {:text "Tabs"
-    :class "navigation-list"
-    :accessibility-identifier "sheet.settings"
-    :on-dismiss (fn [_event] (send model/DismissSettings))}
-   [settings-tabs-screen model-source send]
-   [:toolbar
-    {:orientation "horizontal"
-     :label "Tabs actions"
-     :class "navigation-actions"
-     :accessibility-identifier "toolbar.settings.actions"}
-    [:button
-     {:class "cancellation-action navigation-back-action"
-      :accessibility-identifier "button.connection.cancel"
-      :on-press (fn [_event] (send model/BackSettings))}
-     "Settings"]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Tabs"
+       :class "navigation-content"
+       :accessibility-identifier "sheet.settings"
+       :on-dismiss (fn [_event] (send model/DismissSettings))}
+      [:column
+       {:grow 1.0
+        :accessibility-identifier "layout.settings.tabs-sheet"}
+       [settings-tabs-screen model-source send]
+       [:row
+        {:padding-horizontal 16
+         :padding-vertical 12
+         :background "surface-container-low"
+         :accessibility-identifier "toolbar.settings.actions"}
+        [:button
+         {:variant "secondary"
+          :grow 1.0
+          :accessibility-identifier "button.connection.cancel"
+          :on-press (fn [_event] (send model/BackSettings))}
+         "Back to Settings"]]]])
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Tabs"
+       :class "navigation-list"
+       :accessibility-identifier "sheet.settings"
+       :on-dismiss (fn [_event] (send model/DismissSettings))}
+      [settings-tabs-screen model-source send]
+      [:toolbar
+       {:orientation "horizontal"
+        :label "Tabs actions"
+        :class "navigation-actions"
+        :accessibility-identifier "toolbar.settings.actions"}
+       [:button
+        {:class "cancellation-action navigation-back-action"
+         :accessibility-identifier "button.connection.cancel"
+         :on-press (fn [_event] (send model/BackSettings))}
+        "Settings"]]])))
+
+(defn runtime-log-actions [ui-context send]
+  (if (= (ui/host ui-context) proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:row
+      {:gap 12
+       :padding-horizontal 16
+       :padding-vertical 12
+       :background "surface-container-low"
+       :accessibility-identifier "toolbar.settings.actions"}
+      [:button
+       {:variant "secondary"
+        :grow 1.0
+        :accessibility-identifier "button.log-refresh"
+        :on-press (fn [_event] (send model/RefreshRuntimeLog))}
+       "Refresh"]
+      [:button
+       {:variant "primary"
+        :grow 1.0
+        :accessibility-identifier "button.connection.apply"
+        :on-press (fn [_event] (send model/DismissRuntimeLog))}
+       "Done"]])
+    (elements/element
+     ui-context nil
+     [:toolbar
+      {:orientation "horizontal"
+       :label "Log actions"
+       :class "navigation-actions"
+       :accessibility-identifier "toolbar.settings.actions"}
+      [:button
+       {:class "cancellation-action"
+        :accessibility-identifier "button.log-refresh"
+        :on-press (fn [_event] (send model/RefreshRuntimeLog))}
+       "Refresh"]
+      [:button
+       {:class "confirmation-action"
+        :accessibility-identifier "button.connection.apply"
+        :on-press (fn [_event] (send model/DismissRuntimeLog))}
+       "Done"]])))
 
 (defui runtime-log-sheet [model-source send]
-  [:sheet
-   {:text "Log"
-    :class "navigation-content"
-    :accessibility-identifier "sheet.settings"
-    :on-dismiss (fn [_event] (send model/DismissRuntimeLog))}
-   [runtime-log-screen model-source send]
-   [:toolbar
-    {:orientation "horizontal"
-     :label "Log actions"
-     :class "navigation-actions"
-     :accessibility-identifier "toolbar.settings.actions"}
-    [:button
-     {:class "cancellation-action"
-      :accessibility-identifier "button.log-refresh"
-      :on-press (fn [_event] (send model/RefreshRuntimeLog))}
-     "Refresh"]
-    [:button
-     {:class "confirmation-action"
-      :accessibility-identifier "button.connection.apply"
-      :on-press (fn [_event] (send model/DismissRuntimeLog))}
-     "Done"]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Log"
+       :class "navigation-content"
+       :accessibility-identifier "sheet.settings"
+       :on-dismiss (fn [_event] (send model/DismissRuntimeLog))}
+      [:column
+       {:grow 1.0
+       :gap 12
+        :accessibility-identifier "layout.runtime-log.sheet"}
+       [runtime-log-screen model-source send]
+       [runtime-log-actions send]]])
+    (elements/element
+     ui-context nil
+     [:sheet
+      {:text "Log"
+       :class "navigation-content"
+       :accessibility-identifier "sheet.settings"
+       :on-dismiss (fn [_event] (send model/DismissRuntimeLog))}
+      [runtime-log-screen model-source send]
+      [runtime-log-actions send]])))
 
 (defui settings-sheet [model-source send]
   [:stack
@@ -3171,11 +4233,13 @@
   [:dialog
    {:text "Delete page?"
     :class "alert"
+    :accessibility-identifier "dialog.page-delete"
     :on-dismiss (fn [_event] (send model/CancelDeleteActivePage))}
    [:column
     [:text "The page will be moved to Recycle."]
     [:button
-     {:on-press (fn [_event] (send model/CancelDeleteActivePage))}
+     {:accessibility-identifier "button.page-delete.cancel"
+      :on-press (fn [_event] (send model/CancelDeleteActivePage))}
      "Cancel"]
     [:button
      {:accessibility-identifier "button.page-delete.confirm"
@@ -3283,7 +4347,8 @@
              :text-alignment "center"
              :accessibility-identifier "search.empty.supporting"}]]]
    [:if {:test (reactive search-results-present? model-source)}
-    [:list {:accessibility-identifier "screen.search.results"}
+    [:list {:grow 1.0
+            :accessibility-identifier "screen.search.results"}
      [:if {:test (reactive page-search-results-present? model-source)}
       [:heading {:level 5
                  :accessibility-identifier "search.section.pages"}
@@ -3310,13 +4375,12 @@
     (elements/element
      ui-context nil
      [:row
-      {:grow 1.0
-       :gap 10
+     {:gap 10
        :cross "center"
-      :accessibility-identifier "row.bottom.capture"}
+       :accessibility-identifier "row.bottom.capture"}
       [composer-view model-source send]
       [:button
-       {:icon "search"
+       {:icon "app:search"
         :variant "secondary"
         :size "icon"
         :width 58
@@ -3333,7 +4397,7 @@
        :accessibility-identifier "row.bottom.capture"}
       [composer-view model-source send]
       [:button
-       {:icon "search"
+       {:icon "app:search"
         :variant "ghost"
         :ios [[:liquid-glass {:shape "circle"}]]
         :size "icon"
@@ -3344,36 +4408,66 @@
         :on-press (fn [_event] (send model/OpenSearch))}]])))
 
 (defui main-bottom-chrome [model-source send]
-  [:stack
-   [:if {:test (reactive bottom-chrome-selection? model-source)}
-    [:column {:gap 0 :padding-horizontal 16}
-     [outliner-selection-toolbar send]
-     [:box {:height 21}]]]
-   [:if {:test (reactive bottom-chrome-editor? model-source)}
-    [:box {:ios [[:liquid-glass {:shape "container"}]]}
-     [:if {:test (reactive outliner-autocomplete-active? model-source)}
-      [outliner-autocomplete-bar model-source send]]
-     [outliner-editor-toolbar model-source send]]]
-   [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
-    [:column
-     {:container-relative-frame "horizontal"
-      :gap 0
-      :padding-horizontal 16}
-     [:box {:height 6}]
-     [:row
-      {:grow 1.0
-       :cross "center"
-       :accessibility-identifier "row.composer.placement"}
-      [composer-view model-source send]]
-     [:box {:height 21}]]]
-   [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
-    [:column
-     {:container-relative-frame "horizontal"
-      :gap 0
-      :padding-horizontal 16}
-     [:box {:height 8}]
-     [capture-and-search-row model-source send]
-     [:box {:height 21}]]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:stack
+      [:if {:test (reactive bottom-chrome-selection? model-source)}
+       [:column {:gap 0 :padding-horizontal 16}
+        [outliner-selection-toolbar send]
+        [:box {:height 21}]]]
+      [:if {:test (reactive bottom-chrome-editor? model-source)}
+       [:column {:gap 0 :cross "stretch"}
+        [:if {:test (reactive outliner-autocomplete-active? model-source)}
+         [outliner-autocomplete-bar model-source send]]
+        [outliner-editor-toolbar model-source send]]]
+      [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
+       [:column
+        {:gap 0 :padding-horizontal 16}
+        [:box {:height 6}]
+        [:row
+         {:cross "center"
+          :accessibility-identifier "row.composer.placement"}
+         [composer-view model-source send]]
+        [:box {:height 21}]]]
+      [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
+       [:column
+        {:gap 0 :padding-horizontal 16}
+        [:box {:height 8}]
+        [capture-and-search-row model-source send]
+        [:box {:height 21}]]]])
+    (elements/element
+     ui-context nil
+     [:stack
+      [:if {:test (reactive bottom-chrome-selection? model-source)}
+       [:column {:gap 0 :padding-horizontal 16}
+        [outliner-selection-toolbar send]
+        [:box {:height 21}]]]
+      [:if {:test (reactive bottom-chrome-editor? model-source)}
+       [:box {:ios [[:liquid-glass {:shape "container"}]]}
+        [:if {:test (reactive outliner-autocomplete-active? model-source)}
+         [outliner-autocomplete-bar model-source send]]
+        [outliner-editor-toolbar model-source send]]]
+      [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
+       [:column
+        {:container-relative-frame "horizontal"
+         :gap 0
+         :padding-horizontal 16}
+        [:box {:height 6}]
+        [:row
+         {:grow 1.0
+          :cross "center"
+          :accessibility-identifier "row.composer.placement"}
+         [composer-view model-source send]]
+        [:box {:height 21}]]]
+      [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
+       [:column
+        {:container-relative-frame "horizontal"
+         :gap 0
+         :padding-horizontal 16}
+        [:box {:height 8}]
+        [capture-and-search-row model-source send]
+        [:box {:height 21}]]]])))
 
 (defn selected-page-present? [current]
   (match (:selected-page current)
@@ -3424,7 +4518,7 @@
        :key :render-key
        :compare compare
        :as retained-row-source}
-     [outliner-entry model-source retained-row-source
+      [outliner-entry model-source retained-row-source
        (reactive retained-row-value retained-row-source) send]]
      [:if {:test (reactive older-journals-visible? model-source)}
       [:box
@@ -3442,37 +4536,118 @@
       [node-linked-reference-section model-source send]]
      [:box {:height 120}]]])
 
-(defui chat-main-view [model-source send]
-  [:stack {:grow 1.0}
-   [:if {:test (reactive journal-tree-retained? model-source)}
-    ;; Keep the journal home mounted while the drawer replaces the detail pane.
-    [:stack {:grow 1.0}
-     [:keyed
-      {:source (reactive selected-page-models model-source)
-       :key selected-page-model-key
-       :compare compare
-       :as selected-model-source}
-      [:box {:grow 1.0 :accessibility-identifier "pane.selected-page"}
-       [root-outliner-view
-        selected-model-source
-        (reactive selected-page-visible? selected-model-source)
-        send]]]
+(defui retained-journal-pane [model-source send]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:stack {:grow 1.0}
+      [:if {:test (reactive journal-home-visible? model-source)}
+       [:box {:grow 1.0 :accessibility-identifier "pane.journals"}
+        [root-outliner-view
+         (reactive journal-navigation-model model-source)
+         (reactive journal-home-visible? model-source)
+         send]]]])
+    (elements/element
+     ui-context nil
      [:box {:grow 1.0 :accessibility-identifier "pane.journals"}
       [root-outliner-view
        (reactive journal-navigation-model model-source)
        (reactive journal-home-visible? model-source)
-       send]]]]
+       send]])))
+
+(defui journal-tree-panes [model-source send]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:stack {:grow 1.0}
+      [retained-journal-pane model-source send]
+      [:keyed
+       {:source (reactive selected-page-models model-source)
+        :key selected-page-model-key
+        :compare compare
+        :as selected-model-source}
+       [:box {:grow 1.0 :accessibility-identifier "pane.selected-page"}
+        [root-outliner-view
+         selected-model-source
+         (reactive selected-page-visible? selected-model-source)
+         send]]]])
+    (elements/element
+     ui-context nil
+     [:stack {:grow 1.0}
+      [:keyed
+       {:source (reactive selected-page-models model-source)
+        :key selected-page-model-key
+        :compare compare
+        :as selected-model-source}
+       [:box {:grow 1.0 :accessibility-identifier "pane.selected-page"}
+        [root-outliner-view
+         selected-model-source
+         (reactive selected-page-visible? selected-model-source)
+         send]]]
+      [retained-journal-pane model-source send]])))
+
+(defui global-effect-error-feedback [model-source]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:alert
+      {:variant "destructive"
+       :padding 14
+       :corner-radius 16
+       :border-width 0
+       :accessibility-identifier "layout.error.banner"}
+      [:row {:gap 10 :cross "center"}
+       [:icon
+        {:name "app:warning"
+         :width 22
+         :height 22
+         :foreground "destructive"
+         :accessibility-label "Error"}]
+       [:text
+        {:value (reactive effect-error-message model-source)
+         :grow 1.0
+         :accessibility-identifier "error.banner"}]]])
+    (elements/element
+     ui-context nil
+     [:text
+      {:value (reactive effect-error-message model-source)
+       :accessibility-identifier "error.banner"}])))
+
+(defui graph-loading-feedback [model-source]
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:column
+      {:grow 1.0
+       :main "center"
+       :cross "center"
+       :gap 12
+       :background "background"
+       :accessibility-identifier "journals.loading"}
+      [:spinner
+       {:accessibility-identifier "spinner.graph-loading"
+        :accessibility-label "Loading"}]
+      [:text
+       {:value (reactive graph-loading-message model-source)
+        :foreground "muted-foreground"}]])
+    (elements/element
+     ui-context nil
+     [:column {:accessibility-identifier "journals.loading"}
+      [:text {:value (reactive graph-loading-message model-source)}]])))
+
+(defui chat-main-view [model-source send]
+  [:stack {:grow 1.0}
+   [:if {:test (reactive journal-tree-retained? model-source)}
+    ;; Keep the journal home mounted while the drawer replaces the detail pane.
+    [journal-tree-panes model-source send]]
    [:if {:test (reactive flashcards-destination? model-source)}
     [flashcard-screen model-source send]]
    [:if {:test (reactive graphs-destination? model-source)}
     [graphs-screen model-source send]]
    [:if {:test (reactive global-effect-error-present? model-source)}
-    [:text
-     {:value (reactive effect-error-message model-source)
-      :accessibility-identifier "error.banner"}]]
+    [global-effect-error-feedback model-source]]
    [:if {:test (reactive graph-loading-visible? model-source)}
-    [:column {:accessibility-identifier "journals.loading"}
-     [:text {:value (reactive graph-loading-message model-source)}]]]
+    [graph-loading-feedback model-source]]
    [:if {:test (reactive journal-root-visible? model-source)}
     [:text
      {:accessibility-label "Journal graph load status"
@@ -3481,6 +4656,18 @@
 
 (defui main-header-leading [model-source send]
   [:stack
+   [:if {:test (reactive
+                 (fn [current]
+                   (and (host? proto/FlutterHost)
+                        (node-screen-visible? current)))
+                 model-source)}
+    [:button
+     {:icon "app:navigation-back"
+      :variant "ghost"
+      :size "icon"
+      :label "Back"
+      :accessibility-identifier "button.navigation.back"
+      :on-press (fn [_event] (send (model/BackAppNavigation 1)))}]]
    [:if {:test (reactive primary-sidebar-button-visible? model-source)}
     [:button
      {:icon "app:sidebar-toggle"
@@ -3501,7 +4688,9 @@
   [:stack
    [:if {:test (reactive connection-control-visible? model-source)}
     [:button
-     {:icon "app:status-dot"
+     {:icon (if (host? proto/FlutterHost)
+              (reactive (fn [_current] "app:sync-status") model-source)
+              (reactive (fn [_current] "app:status-dot") model-source))
       :variant "ghost"
       :size "icon"
       :foreground-signal (reactive sync-indicator-foreground model-source)
@@ -3583,20 +4772,44 @@
   (navigation-path-depth (:search-navigation-path current)))
 
 (defn search-node-routes [current]
-  (let [routes (:node-routes current)
-        start (min (app-navigation-depth current) (count routes))]
-    (loop [index start
-           result []]
-      (if (= index (count routes))
-        result
-        (recur (inc index) (conj result (nth routes index)))))))
+  (if (= (:search-open current) false)
+    []
+    (let [routes (:node-routes current)
+          start (min (app-navigation-depth current) (count routes))]
+      (loop [index start
+             result []]
+        (if (= index (count routes))
+          result
+          (recur (inc index) (conj result (nth routes index))))))))
+
+(defn active-route-only [routes]
+  (if (empty? routes) [] [(last routes)]))
+
+(defn active-app-node-routes [current]
+  (active-route-only (model/app-node-routes current)))
+
+(defn active-search-node-routes [current]
+  (active-route-only (search-node-routes current)))
+
+(defn flutter-app-root-visible? [current]
+  (and (= (:search-open current) false)
+       (empty? (active-app-node-routes current))))
+
+(defn flutter-search-root-visible? [current]
+  (and (:search-open current)
+       (empty? (active-search-node-routes current))))
 
 (defui native-node-screen [model-source route-source send]
   (let [route-model-source
         (reactive node-route-model model-source route-source)]
-    (elements/element
-     ui-context nil
-     [node-screen route-model-source send])))
+    (if (host? proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:box {:grow 1.0 :background "background"}
+        [node-screen route-model-source send]])
+      (elements/element
+       ui-context nil
+       [node-screen route-model-source send]))))
 
 (defui native-search-view [model-source send]
   (let [node (ui/extension! ui-context "native-search-presentation")
@@ -3618,21 +4831,46 @@
      ui-context node
      (fn [input-event]
        (handle-native-search-event input-event send)))
-    (elements/element
-     ui-context node
-     [chat-main-view model-source send])
-    (elements/element
-     ui-context node
-     [:column {:grow 1.0}
-      [search-screen model-source send]])
-    (elements/element
-     ui-context node
-     [:keyed
-      {:source (reactive search-node-routes model-source)
-       :key :uuid
-       :compare compare
-       :as route-source}
-      [native-node-screen model-source route-source send]])
+    (if (host? proto/FlutterHost)
+      (do
+        (elements/element
+         ui-context node
+         [:stack {:grow 1.0}
+          [:if {:test (reactive flutter-app-root-visible? model-source)}
+           [chat-main-view model-source send]]
+          [:keyed
+           {:source (reactive active-app-node-routes model-source)
+            :key :uuid
+            :compare compare
+            :as route-source}
+           [native-node-screen model-source route-source send]]
+          [:if {:test (reactive flutter-search-root-visible? model-source)}
+           [:column {:grow 1.0 :background "background"}
+            [search-screen model-source send]]]
+          [:keyed
+           {:source (reactive active-search-node-routes model-source)
+            :key :uuid
+            :compare compare
+            :as route-source}
+           [native-node-screen model-source route-source send]]])
+        node)
+      (do
+        (elements/element
+         ui-context node
+         [chat-main-view model-source send])
+        (elements/element
+         ui-context node
+         [:column {:grow 1.0}
+          [search-screen model-source send]])
+        (elements/element
+         ui-context node
+         [:keyed
+          {:source (reactive search-node-routes model-source)
+           :key :uuid
+           :compare compare
+           :as route-source}
+          [native-node-screen model-source route-source send]])
+        node))
     node))
 
 (defui native-navigation-view [model-source send]
@@ -3661,23 +4899,45 @@
      ui-context node
      (fn [input-event]
        (handle-native-navigation-event input-event send)))
-    (elements/element
-     ui-context node
-     [:column
-      [native-search-view model-source send]])
-    (elements/element ui-context node [main-header-leading model-source send])
-    (elements/element ui-context node [main-header-title model-source])
-    (elements/element ui-context node [main-header-sync model-source send])
-    (elements/element ui-context node [main-header-connection model-source send])
-    (elements/element ui-context node [main-bottom-chrome model-source send])
-    (elements/element
-     ui-context node
-     [:keyed
-      {:source (reactive model/app-node-routes model-source)
-       :key :uuid
-       :compare compare
-       :as route-source}
-      [native-node-screen model-source route-source send]])
+    (if (host? proto/FlutterHost)
+      (do
+        (elements/element
+         ui-context node
+         [:column {:grow 1.0}
+          [:row
+           {:cross "center"
+            :gap 4
+            :height 64
+            :padding-horizontal 8
+            :accessibility-identifier "header.main"}
+           [main-header-leading model-source send]
+           [main-header-title model-source]
+           [:spacer {:grow 1.0}]
+           [main-header-sync model-source send]
+           [main-header-connection model-source send]]
+          [:stack {:grow 1.0}
+           [native-search-view model-source send]]
+          [main-bottom-chrome model-source send]])
+        node)
+      (do
+        (elements/element
+         ui-context node
+         [:column
+          [native-search-view model-source send]])
+        (elements/element ui-context node [main-header-leading model-source send])
+        (elements/element ui-context node [main-header-title model-source])
+        (elements/element ui-context node [main-header-sync model-source send])
+        (elements/element ui-context node [main-header-connection model-source send])
+        (elements/element ui-context node [main-bottom-chrome model-source send])
+        (elements/element
+         ui-context node
+         [:keyed
+          {:source (reactive model/app-node-routes model-source)
+           :key :uuid
+           :compare compare
+           :as route-source}
+          [native-node-screen model-source route-source send]])
+        node))
     node))
 
 (defn authentication-screen-visible? [current]
@@ -3722,50 +4982,97 @@
       (sidebar-drag-disabled? current)))
 
 (defui authentication-screen [model-source send]
-  [:column
-   {:accessibility-identifier "screen.authentication"
-    :grow 1.0
-    :container-relative-frame "vertical"
-    :main "center"
-    :cross "center"
-    :gap 20
-   :padding 32}
-   [:heading {:level 1} "Logseq"]
-   [:text "Sign in to connect your sync graphs."]
-   [:button
-    {:accessibility-identifier "button.hosted-sign-in"
-     :variant "primary"
-     :disabled (reactive authentication-signing-in? model-source)
-     :on-press (fn [_event] (send model/SignIn))}
-    "Sign in"]
-   [:if {:test (reactive authentication-error-present? model-source)}
-    [:text
-     {:value (reactive authentication-error-message model-source)
-      :accessibility-identifier "text.authentication-error"}]]])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:column
+      {:accessibility-identifier "screen.authentication"
+       :grow 1.0
+       :main "center"
+       :cross "stretch"
+       :padding 32}
+      [:column
+       {:cross "center"
+        :gap 20}
+       [:heading {:level 1} "Logseq Chat"]
+       [:text "Sign in to connect your sync graphs."]
+       [:button
+        {:accessibility-identifier "button.hosted-sign-in"
+         :variant "primary"
+         :disabled (reactive authentication-signing-in? model-source)
+         :on-press (fn [_event] (send model/SignIn))}
+        "Sign in"]
+       [:if {:test (reactive authentication-error-present? model-source)}
+        [:text
+         {:value (reactive authentication-error-message model-source)
+          :accessibility-identifier "text.authentication-error"}]]]])
+    (elements/element
+     ui-context nil
+     [:column
+      {:accessibility-identifier "screen.authentication"
+       :grow 1.0
+       :container-relative-frame "vertical"
+       :main "center"
+       :cross "center"
+       :gap 20
+       :padding 32}
+      [:heading {:level 1} "Logseq Chat"]
+      [:text "Sign in to connect your sync graphs."]
+      [:button
+       {:accessibility-identifier "button.hosted-sign-in"
+        :variant "primary"
+        :disabled (reactive authentication-signing-in? model-source)
+        :on-press (fn [_event] (send model/SignIn))}
+       "Sign in"]
+      [:if {:test (reactive authentication-error-present? model-source)}
+       [:text
+        {:value (reactive authentication-error-message model-source)
+         :accessibility-identifier "text.authentication-error"}]]])))
 
 (defui application-main-content [model-source send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
-    (elements/element
-     ui-context nil
-     [:stack
-      {:grow 1.0
-       :container-relative-frame "vertical"}
-      [:if {:test (reactive main-screen-visible? model-source)}
-       [native-navigation-view model-source send]]
-      [:if {:test (reactive graph-picker-screen-visible? model-source)}
-       [graph-picker-screen model-source send]]
-      [:if {:test (reactive :settings-open model-source)}
-       [settings-sheet model-source send]]
-      [:if {:test (reactive :create-graph-open model-source)}
-       [graph-create-sheet model-source send]]
-      [:if {:test (reactive graph-deletion-pending? model-source)}
-       [graph-delete-dialog model-source send]]
-      [:if {:test (reactive :graph-password-open model-source)}
-       [graph-password-sheet model-source send]]
-      [:if {:test (reactive page-deletion-pending? model-source)}
-       [page-delete-dialog send]]
-      [:if {:test (reactive :sync-details-open model-source)}
-       [sync-status-sheet model-source send]]])
+    (if (host? proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:stack
+        {:grow 1.0}
+        [:if {:test (reactive main-screen-visible? model-source)}
+         [native-navigation-view model-source send]]
+        [:if {:test (reactive graph-picker-screen-visible? model-source)}
+         [graph-picker-screen model-source send]]
+        [:if {:test (reactive :settings-open model-source)}
+         [settings-sheet model-source send]]
+        [:if {:test (reactive :create-graph-open model-source)}
+         [graph-create-sheet model-source send]]
+        [:if {:test (reactive graph-deletion-pending? model-source)}
+         [graph-delete-dialog model-source send]]
+        [:if {:test (reactive :graph-password-open model-source)}
+         [graph-password-sheet model-source send]]
+        [:if {:test (reactive page-deletion-pending? model-source)}
+         [page-delete-dialog send]]
+        [:if {:test (reactive :sync-details-open model-source)}
+         [sync-status-sheet model-source send]]])
+      (elements/element
+       ui-context nil
+       [:stack
+        {:grow 1.0
+         :container-relative-frame "vertical"}
+        [:if {:test (reactive main-screen-visible? model-source)}
+         [native-navigation-view model-source send]]
+        [:if {:test (reactive graph-picker-screen-visible? model-source)}
+         [graph-picker-screen model-source send]]
+        [:if {:test (reactive :settings-open model-source)}
+         [settings-sheet model-source send]]
+        [:if {:test (reactive :create-graph-open model-source)}
+         [graph-create-sheet model-source send]]
+        [:if {:test (reactive graph-deletion-pending? model-source)}
+         [graph-delete-dialog model-source send]]
+        [:if {:test (reactive :graph-password-open model-source)}
+         [graph-password-sheet model-source send]]
+        [:if {:test (reactive page-deletion-pending? model-source)}
+         [page-delete-dialog send]]
+        [:if {:test (reactive :sync-details-open model-source)}
+         [sync-status-sheet model-source send]]]))
     (elements/element
      ui-context nil
      [:stack
@@ -3790,28 +5097,50 @@
 
 (defui chat-view [model-source send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
-    (elements/element
-     ui-context nil
-     [:stack
-      {:grow 1.0
-       :container-relative-frame "both"}
-      [:if {:test (reactive authentication-screen-visible? model-source)}
-       [authentication-screen model-source send]]
-      [:if {:test (reactive application-shell-visible? model-source)}
-       [:drawer
-        {:selected (reactive drawer-selected? model-source)
-         :disabled (reactive drawer-disabled? model-source)
-         :width 360
-         :label "Navigation"
-         :accessibility-identifier "application.shell"
-         :on-toggle
-         (fn [input-event]
-           (match input-event
-             (proto/ToggleChanged _node open)
-             (send (if open model/OpenSidebar model/CloseSidebar))
-             _ true))}
-        [application-main-content model-source send]
-        [sidebar-view model-source send]]]])
+    (if (host? proto/FlutterHost)
+      (elements/element
+       ui-context nil
+       [:stack
+        {:grow 1.0}
+        [:if {:test (reactive authentication-screen-visible? model-source)}
+         [authentication-screen model-source send]]
+        [:if {:test (reactive application-shell-visible? model-source)}
+         [:drawer
+          {:selected (reactive drawer-selected? model-source)
+           :disabled (reactive drawer-disabled? model-source)
+           :width 320
+           :label "Navigation"
+           :accessibility-identifier "application.shell"
+           :on-toggle
+           (fn [input-event]
+             (match input-event
+               (proto/ToggleChanged _node open)
+               (send (if open model/OpenSidebar model/CloseSidebar))
+               _ true))}
+          [application-main-content model-source send]
+          [sidebar-view model-source send]]]])
+      (elements/element
+       ui-context nil
+       [:stack
+        {:grow 1.0
+         :container-relative-frame "both"}
+        [:if {:test (reactive authentication-screen-visible? model-source)}
+         [authentication-screen model-source send]]
+        [:if {:test (reactive application-shell-visible? model-source)}
+         [:drawer
+          {:selected (reactive drawer-selected? model-source)
+           :disabled (reactive drawer-disabled? model-source)
+           :width 360
+           :label "Navigation"
+           :accessibility-identifier "application.shell"
+           :on-toggle
+           (fn [input-event]
+             (match input-event
+               (proto/ToggleChanged _node open)
+               (send (if open model/OpenSidebar model/CloseSidebar))
+               _ true))}
+          [application-main-content model-source send]
+          [sidebar-view model-source send]]]]))
     (elements/element
      ui-context nil
      [:drawer

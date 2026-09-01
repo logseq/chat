@@ -371,6 +371,19 @@ const char *logseq_chat_lui_extension_event(
       call_lui_extension_event(node, identifier, name, text, value));
 }
 
+int64_t logseq_chat_lui_root_node(void) {
+  int64_t node = -1;
+  int registration = acquire_ocaml_runtime();
+  if (registration < 0) return node;
+  const value *callback = caml_named_value("logseq_chat_lui_root_node");
+  if (callback != NULL) {
+    value result = caml_callback_exn(*callback, Val_unit);
+    if (!Is_exception_result(result)) node = Long_val(result);
+  }
+  release_ocaml_runtime(registration);
+  return node;
+}
+
 const char *logseq_chat_lui_dispose(void) {
   LUI_RUNTIME_CALL(call_lui0("logseq_chat_lui_dispose"));
 }

@@ -1,0 +1,58 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "screen.graph-picker"
+    timeout: 30000
+- tapOn:
+    id: "button.overflow-menu"
+- tapOn: "Settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings"
+    timeout: 5000
+- assertVisible:
+    id: "layout.settings.appearance-control"
+- assertVisible:
+    id: "picker.settings.language"
+- assertVisible:
+    id: "link.settings.tabs"
+- tapOn:
+    id: "picker.settings.language"
+- assertVisible: "简体中文"
+- tapOn: "System"
+- tapOn:
+    id: "link.settings.tabs"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings.tabs"
+    timeout: 5000
+- assertVisible:
+    id: "toggle.settings.tab.journals"
+- assertVisible:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible:
+    id: "toggle.settings.tab.graphs"
+- tapOn: "Settings"
+- assertVisible:
+    id: "screen.settings"
+- scrollUntilVisible:
+    element:
+      text: "Check log"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Check log"
+- extendedWaitUntil:
+    visible:
+      id: "screen.runtime-log"
+    timeout: 5000
+- assertVisible:
+    id: "button.log-copy"
+- tapOn: "Done"
+- assertVisible:
+    id: "screen.settings"
+- tapOn:
+    id: "button.connection.cancel"
+- assertVisible:
+    id: "screen.graph-picker"

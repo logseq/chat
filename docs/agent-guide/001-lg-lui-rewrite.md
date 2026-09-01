@@ -15,13 +15,14 @@ baseline on iOS and Android.
   FSRS, markup, and outliner behavior.
 - Move application state, reducers, effects, projections, and ordinary UI into
   LG and LUI.
-- Evolve the LUI SwiftUI renderer into a Skip package. Apple runs native
-  SwiftUI; Android runs the SkipUI translation on Jetpack Compose.
+- Keep the LUI SwiftUI renderer native on Apple platforms. Render the same LG
+  model through LUI's Flutter backend on Android.
 - Keep operating-system services in the existing Swift and Kotlin adapters.
 - Implement Logseq-specific editor, rich content, math, code, video, WebView,
   and media behavior as validated LUI extensions rather than standard LUI
   elements.
-- Do not introduce Flutter or Dart into Logseq Chat.
+- Keep Android platform services in the Flutter Android host and its Kotlin
+  adapters.
 - Exclude Chat mode, its composer and send flow, and Chat-specific automatic
   scrolling from this rewrite. The Outliner keeps its current scroll position
   when it opens and when blocks are added.
@@ -43,12 +44,11 @@ features. The following are authoritative evidence:
 5. Chinese and English IME behavior, UTF-16 caret positions, rapid
    Return/Backspace, editor handoff, autocomplete, drag/drop, long-press
    selection, and haptics match `main`.
-6. Offline launch, optimistic edits, pending state, reconnection, SSE updates,
+6. Offline launch, optimistic edits, pending state, reconnection, WebSocket updates,
    encrypted graphs, assets, capture, sharing, audio, and background refresh
    preserve the current state transitions and feedback.
-7. iOS-specific native presentation and Android-specific Compose behavior keep
-   the platform differences deliberately encoded by the current `#if SKIP`
-   branches.
+7. iOS-specific SwiftUI presentation and Android-specific Material behavior
+   remain deliberate without coupling either platform to the other's layout.
 
 ## Interaction inventory
 
@@ -68,7 +68,7 @@ features. The following are authoritative evidence:
 ## Delivery gates
 
 1. LG/LUI native runtime shell and reducer tests.
-2. Shared LUI Swift/Skip renderer with component parity tests.
+2. Shared LG model with SwiftUI and Flutter renderer parity tests.
 3. Virtualized keyed list, viewport events, anchor preservation, and imperative
    scroll tests on both hosts.
 4. Native outliner editor extension and IME/caret stress tests.

@@ -1,22 +1,5 @@
 import SwiftUI
-#if SKIP
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-#endif
-#if !SKIP && os(iOS)
+#if os(iOS)
 import UIKit
 #endif
 
@@ -29,12 +12,12 @@ struct OutlinerInlineEditor: View {
     let onBackspace: (String, Int) -> Void
     let onCaretChange: (Int) -> Void
 
-    #if !SKIP && os(iOS) && DEBUG
+    #if os(iOS) && DEBUG
     @ObservedObject private var keyboardHideMonitor = OutlinerKeyboardHideMonitor.shared
     #endif
 
     var body: some View {
-        #if !SKIP && os(iOS)
+        #if os(iOS)
         let editor = NativeOutlinerTextView(
             blockID: blockID,
             text: text,
@@ -68,126 +51,6 @@ struct OutlinerInlineEditor: View {
         #else
         editor
         #endif
-        #elseif SKIP
-        let editor = TextField(
-            "Block",
-            text: Binding(
-                get: { text },
-                set: { _ in }
-            ),
-            selection: Binding(
-                get: {
-                    let offset = min(max(desiredCaretUTF16Offset ?? text.utf16.count, 0), text.utf16.count)
-                    return TextSelection(range: offset..<offset)
-                },
-                set: { _ in }
-            ),
-            axis: .vertical
-        )
-            .font(.body)
-            .textFieldStyle(.plain)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityIdentifier("field.outliner.block.\(blockID)")
-        editor.material3TextField { options in
-            let localTextFieldValue = remember(blockID) { mutableStateOf(options.value) }
-            let pendingTextChangeJob = remember(blockID) { mutableStateOf<Job?>(nil) }
-            let pendingCaretChangeJob = remember(blockID) { mutableStateOf<Job?>(nil) }
-            let coroutineScope = rememberCoroutineScope()
-
-            LaunchedEffect(blockID, options.value.text) {
-                if pendingTextChangeJob.value == nil,
-                   localTextFieldValue.value.text != options.value.text {
-                    localTextFieldValue.value = options.value
-                }
-            }
-
-            DisposableEffect(blockID) {
-                onDispose {
-                    if pendingTextChangeJob.value != nil {
-                        pendingTextChangeJob.value?.cancel()
-                        pendingTextChangeJob.value = nil
-                        let value = localTextFieldValue.value
-                        onTextChange(value.text, value.selection.start)
-                    }
-                    pendingCaretChangeJob.value?.cancel()
-                    pendingCaretChangeJob.value = nil
-                }
-            }
-
-            let originalOnValueChange = options.onValueChange
-            let structuralKeyModifier = options.modifier.onPreviewKeyEvent { event in
-                guard event.type == KeyEventType.KeyDown else { return false }
-                let value = localTextFieldValue.value
-                if event.key == Key.Enter || event.key == Key.NumPadEnter {
-                    pendingTextChangeJob.value?.cancel()
-                    pendingTextChangeJob.value = nil
-                    pendingCaretChangeJob.value?.cancel()
-                    pendingCaretChangeJob.value = nil
-                    onReturn(value.text, value.selection.start)
-                    return true
-                }
-                if event.key == Key.Backspace,
-                   AndroidInlineEditorInputPolicy.shouldMergeBackward(
-                    text: value.text,
-                    selectionStartUTF16Offset: value.selection.start,
-                    selectionEndUTF16Offset: value.selection.end
-                   ) {
-                    pendingTextChangeJob.value?.cancel()
-                    pendingTextChangeJob.value = nil
-                    pendingCaretChangeJob.value?.cancel()
-                    pendingCaretChangeJob.value = nil
-                    onBackspace(value.text, 0)
-                    return true
-                }
-                return false
-            }
-
-            return options.copy(
-                value: localTextFieldValue.value,
-                onValueChange: { value in
-                    let previous = localTextFieldValue.value
-                    switch AndroidInlineEditorInputPolicy.transition(
-                        previousText: previous.text,
-                        updatedText: value.text,
-                        updatedCaretUTF16Offset: value.selection.start
-                    ) {
-                    case .returnKey(let submittedText, let caret):
-                        pendingTextChangeJob.value?.cancel()
-                        pendingTextChangeJob.value = nil
-                        pendingCaretChangeJob.value?.cancel()
-                        pendingCaretChangeJob.value = nil
-                        let submittedValue = TextFieldValue(
-                            text: submittedText,
-                            selection: TextRange(caret)
-                        )
-                        localTextFieldValue.value = submittedValue
-                        originalOnValueChange(submittedValue)
-                        onReturn(submittedText, caret)
-                    case .textChange(let updatedText, let caret):
-                        localTextFieldValue.value = value
-                        originalOnValueChange(value)
-                        if updatedText != previous.text {
-                            pendingCaretChangeJob.value?.cancel()
-                            pendingCaretChangeJob.value = nil
-                            pendingTextChangeJob.value?.cancel()
-                            pendingTextChangeJob.value = coroutineScope.launch {
-                                delay(16)
-                                onTextChange(updatedText, caret)
-                                pendingTextChangeJob.value = nil
-                            }
-                        } else if value.selection != previous.selection {
-                            pendingCaretChangeJob.value?.cancel()
-                            pendingCaretChangeJob.value = coroutineScope.launch {
-                                delay(16)
-                                onCaretChange(caret)
-                                pendingCaretChangeJob.value = nil
-                            }
-                        }
-                    }
-                },
-                modifier: structuralKeyModifier
-            )
-        }
         #else
         TextField(
             "Block",
@@ -207,7 +70,7 @@ struct OutlinerInlineEditor: View {
     }
 }
 
-#if !SKIP && os(iOS)
+#if os(iOS)
 #if DEBUG
 @MainActor
 private final class OutlinerKeyboardHideMonitor: NSObject, ObservableObject {

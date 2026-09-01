@@ -7,13 +7,24 @@ app_id=com.logseq.chat
 signed_out_flow=.maestro/android-signed-out.yaml
 connect_flow=.maestro/android-staging-connect.yaml
 capture_flow=.maestro/android-capture-search.yaml
+composer_flow=.maestro/android-composer-lifecycle.yaml
 autocomplete_flow=.maestro/android-outliner-autocomplete-completion.yaml
 outliner_flow=.maestro/android-outliner-interactions.yaml
+hierarchy_flow=.maestro/android-outliner-hierarchy-navigation.yaml
+audio_flow=.maestro/android-audio-recording.yaml
 navigation_flow=.maestro/android-material-navigation.yaml
 graphs_flow=.maestro/android-graphs.yaml
 settings_flow=.maestro/android-settings.yaml
 flashcards_flow=.maestro/android-flashcards-regression.yaml
 search_flow=.maestro/android-search-navigation.yaml
+rich_content_flow=.maestro/android-rich-block-rendering.yaml
+youtube_flow=.maestro/android-youtube-playback.yaml
+node_tag_flow=.maestro/android-node-tag-navigation.yaml
+page_actions_flow=.maestro/android-page-actions.yaml
+shortcuts_flow=.maestro/android-shortcut-deep-links.yaml
+sharing_flow=.maestro/android-share-capture.yaml
+editor_regressions_flow=.maestro/android-rapid-enter-delete-regression.yaml
+sharing_image_flow=.maestro/android-share-image.yaml
 
 die() {
   echo "error: $*" >&2
@@ -27,13 +38,24 @@ case $selector in
       "$signed_out_flow"
       "$connect_flow"
       "$capture_flow"
+      "$composer_flow"
       "$autocomplete_flow"
       "$outliner_flow"
+      "$hierarchy_flow"
+      "$audio_flow"
       "$navigation_flow"
       "$graphs_flow"
       "$settings_flow"
       "$flashcards_flow"
       "$search_flow"
+      "$rich_content_flow"
+      "$youtube_flow"
+      "$node_tag_flow"
+      "$page_actions_flow"
+      "$shortcuts_flow"
+      "$sharing_flow"
+      "$editor_regressions_flow"
+      "$sharing_image_flow"
     )
     needs_connection=1
     needs_clear_state=1
@@ -57,6 +79,12 @@ case $selector in
     needs_clear_state=0
     needs_primary_button=0
     ;;
+  composer)
+    flows=("$composer_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
   autocomplete)
     flows=("$autocomplete_flow")
     needs_connection=0
@@ -65,6 +93,18 @@ case $selector in
     ;;
   outliner)
     flows=("$outliner_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  hierarchy)
+    flows=("$hierarchy_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  audio)
+    flows=("$audio_flow")
     needs_connection=0
     needs_clear_state=0
     needs_primary_button=0
@@ -99,19 +139,78 @@ case $selector in
     needs_clear_state=0
     needs_primary_button=0
     ;;
+  rich-content)
+    flows=("$rich_content_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  youtube)
+    flows=("$youtube_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  node-tag)
+    flows=("$node_tag_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  page-actions)
+    flows=("$page_actions_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  shortcuts)
+    flows=("$shortcuts_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  sharing)
+    flows=("$sharing_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  editor-regressions)
+    flows=("$editor_regressions_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
+  sharing-image)
+    flows=("$sharing_image_flow")
+    needs_connection=0
+    needs_clear_state=0
+    needs_primary_button=0
+    ;;
   --list)
-    echo "Modules: all signed-out connect capture autocomplete outliner navigation graphs settings flashcards search"
+    echo "Modules: all signed-out connect capture composer autocomplete outliner hierarchy audio navigation graphs settings flashcards search rich-content youtube node-tag page-actions shortcuts sharing editor-regressions sharing-image"
     printf '%s\n' \
       "$signed_out_flow" \
       "$connect_flow" \
       "$capture_flow" \
+      "$composer_flow" \
       "$autocomplete_flow" \
       "$outliner_flow" \
+      "$hierarchy_flow" \
+      "$audio_flow" \
       "$navigation_flow" \
       "$graphs_flow" \
       "$settings_flow" \
       "$flashcards_flow" \
-      "$search_flow"
+      "$search_flow" \
+      "$rich_content_flow" \
+      "$youtube_flow" \
+      "$node_tag_flow" \
+      "$page_actions_flow" \
+      "$shortcuts_flow" \
+      "$sharing_flow" \
+      "$editor_regressions_flow" \
+      "$sharing_image_flow"
     exit 0
     ;;
   *.yaml)
@@ -139,7 +238,7 @@ fi
 
 command -v adb >/dev/null 2>&1 || die "adb is not installed"
 command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
-command -v gradle >/dev/null 2>&1 || die "Gradle is not installed"
+command -v flutter >/dev/null 2>&1 || die "Flutter is not installed"
 
 temporary_files=()
 cleanup() {
@@ -155,12 +254,28 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
 
+if (( needs_connection )) \
+  && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
+  local_backend_port=${BASH_REMATCH[4]:-}
+  if [[ -z $local_backend_port ]]; then
+    if [[ ${BASH_REMATCH[1]} == https ]]; then
+      local_backend_port=443
+    else
+      local_backend_port=80
+    fi
+  fi
+  adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port"
+fi
+
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
-  ANDROID_SERIAL=$device gradle --project-dir "$repo_root/Android" :app:assembleDebug
+  (
+    cd "$repo_root/Flutter"
+    ANDROID_SERIAL=$device flutter build apk --debug
+  )
 fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
-  apk="$repo_root/.build/Android/app/outputs/apk/debug/app-debug.apk"
+  apk="$repo_root/Flutter/build/app/outputs/flutter-apk/app-debug.apk"
   [[ -f $apk ]] || die "Android debug APK was not produced at $apk"
   adb -s "$device" install -r "$apk" >/dev/null
 fi
@@ -202,20 +317,29 @@ fi
 seed_android_fixture() {
   local seed_mode=${1:-}
   command -v opam >/dev/null 2>&1 || die "opam is required to seed the Android fixture"
+  local selected_graph_id=""
   local graph_database=""
   local checkpoint=""
+  local graph_ready=0
   for _ in {1..120}; do
-    graph_database=$(adb -s "$device" shell run-as "$app_id" \
-      find files/graphs -name graph.sqlite -type f 2>/dev/null \
+    selected_graph_id=$(adb -s "$device" shell run-as "$app_id" \
+      cat shared_prefs/logseq_chat.xml 2>/dev/null \
+      | sed -n 's|.*<string name="logseq.selectedGraphId">\([^<]*\)</string>.*|\1|p' \
       | tr -d '\r' | head -1)
-    checkpoint=${graph_database%/graph.sqlite}/sync.checkpoint
-    if [[ -n $graph_database ]] && adb -s "$device" shell run-as "$app_id" \
-      test -f "$checkpoint"; then
+    if [[ $selected_graph_id =~ ^[A-Za-z0-9._-]+$ ]]; then
+      graph_database="files/graphs/$selected_graph_id/graph.sqlite"
+      checkpoint="files/graphs/$selected_graph_id/sync.checkpoint"
+    fi
+    if [[ -n $graph_database ]] \
+      && adb -s "$device" shell run-as "$app_id" test -f "$graph_database" \
+      && adb -s "$device" shell run-as "$app_id" test -f "$checkpoint"; then
+      graph_ready=1
       break
     fi
     sleep 0.5
   done
-  [[ -n $graph_database ]] || die "timed out waiting for the Android graph database"
+  (( graph_ready )) \
+    || die "timed out waiting for the selected Android graph database"
 
   adb -s "$device" shell am force-stop "$app_id"
   local local_database
@@ -250,11 +374,47 @@ for flow in "${flows[@]}"; do
       seed_android_fixture --outliner
     elif [[ $flow == "$outliner_flow" ]]; then
       seed_android_fixture --outliner
+    elif [[ $flow == "$hierarchy_flow" ]]; then
+      seed_android_fixture --outliner
+    elif [[ $flow == "$audio_flow" ]]; then
+      seed_android_fixture --outliner
+    elif [[ $flow == "$navigation_flow" ]]; then
+      seed_android_fixture --fixture
     elif [[ $flow == "$flashcards_flow" ]]; then
       seed_android_fixture --fixture
     elif [[ $flow == "$search_flow" ]]; then
       seed_android_fixture --fixture
+    elif [[ $flow == "$rich_content_flow" ]]; then
+      seed_android_fixture --fixture
+    elif [[ $flow == "$node_tag_flow" ]]; then
+      seed_android_fixture --fixture
+    elif [[ $flow == "$page_actions_flow" ]]; then
+      seed_android_fixture --fixture
+    elif [[ $flow == "$editor_regressions_flow" ]]; then
+      seed_android_fixture --outliner
     fi
+  fi
+  if [[ $flow == "$sharing_flow" ]]; then
+    adb -s "$device" shell am start -W \
+      -a android.intent.action.SEND \
+      -t text/plain \
+      --es android.intent.extra.TEXT https://example.com/android-share \
+      --es android.intent.extra.TITLE 'Android\ share' \
+      "$app_id/.MainActivity" >/dev/null
+  elif [[ $flow == "$sharing_image_flow" ]]; then
+    share_image="$repo_root/Darwin/Assets.xcassets/AppIcon.appiconset/AppIcon-20~ipad.png"
+    [[ -f $share_image ]] || die "Android image-share fixture is missing"
+    remote_share_image="/data/local/tmp/logseq-chat-e2e-share.png"
+    app_share_image="files/logseq-chat-e2e-share.png"
+    adb -s "$device" push "$share_image" "$remote_share_image" >/dev/null
+    adb -s "$device" shell run-as "$app_id" cp "$remote_share_image" "$app_share_image"
+    adb -s "$device" shell rm -f "$remote_share_image"
+    adb -s "$device" shell am start -W \
+      -a android.intent.action.SEND \
+      -t image/png \
+      --eu android.intent.extra.STREAM \
+      "file:///data/user/0/$app_id/$app_share_image" \
+      "$app_id/.MainActivity" >/dev/null
   fi
   maestro_args=(--device "$device" test)
   if [[ $flow == "$connect_flow" ]]; then
@@ -264,6 +424,9 @@ for flow in "${flows[@]}"; do
     )
   fi
   MAESTRO_CLI_NO_ANALYTICS=1 maestro "${maestro_args[@]}" "$flow_path"
+  if [[ $flow == "$sharing_image_flow" ]]; then
+    adb -s "$device" shell run-as "$app_id" rm -f "$app_share_image"
+  fi
   if (( needs_primary_button )) \
     && [[ $flow == "$signed_out_flow" ]] \
     && [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES:-0} != 1 ]]; then

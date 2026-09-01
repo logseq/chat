@@ -79,6 +79,15 @@ let () =
        if not patch.is_pending_sync_patch
        then failwith "pending sync patch identity was not projected"
      | Error message -> failwith message);
+    let catalog_patch =
+      decode_response
+        {|{"apiVersion":1,"ok":true,"result":{"graphs":[],"isGraphCatalogPatch":true}}|}
+    in
+    (match catalog_patch with
+     | Ok patch ->
+       if not patch.is_graph_catalog_patch
+       then failwith "graph catalog patch identity was not projected"
+     | Error message -> failwith message);
     let routed =
       decode_response
         {|{"apiVersion":1,"ok":true,"result":{"graphName":"Work","outlinerState":{"editing":null},"outlinerRows":[{"block":{"uuid":"base","title":"Base"},"depth":0,"hasChildren":false,"isCollapsed":false}],"nodeRoutes":[{"uuid":"node-a","isTag":false,"isProperty":false,"page":{"uuid":"page-a","title":"Project"},"outlinerState":{"editing":{"uuid":"child","title":"Child","caretUTF16Offset":5},"selectedBlockIds":[],"autocomplete":null},"outlinerAutocompleteCandidates":[],"outlinerRows":[{"block":{"uuid":"child","title":"Child"},"depth":1,"hasChildren":false,"isCollapsed":false}]}],"syncConnected":true}}|}

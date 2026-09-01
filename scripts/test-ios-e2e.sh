@@ -16,11 +16,11 @@ run_id=${LOGSEQ_CHAT_E2E_RUN_ID:-$(date +%s)}
 fixture_seed_mode=""
 case ${flow##*/} in
   ios-native-header-navigation.yaml)
-    graph_name=chat-local-e2e-header
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-header}
     fixture_seed_mode=--header-navigation
     ;;
   ios-capture-responsive.yaml|ios-chat-send-regression.yaml|ios-cold-start-composer.yaml|ios-search-status-regression.yaml)
-    graph_name=chat-local-e2e-composer
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-composer}
     fixture_seed_mode=--composer
     ;;
   ios-outliner-mode.yaml|ios-outliner-interactions.yaml|\
@@ -28,7 +28,7 @@ case ${flow##*/} in
   ios-outliner-autocomplete-completion.yaml|ios-outliner-autocomplete-visual.yaml|\
   ios-outliner-selection-toolbar.yaml|ios-outliner-hierarchy-navigation.yaml|\
   ios-outliner-drag.yaml)
-    graph_name=chat-local-e2e-outliner
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-outliner}
     fixture_seed_mode=--outliner
     ;;
   ios-page-outliner-only.yaml|ios-outliner-empty-block-caret.yaml|\
@@ -36,7 +36,7 @@ case ${flow##*/} in
   ios-sidebar-page-empty-block-delete.yaml|ios-node-tag-navigation.yaml|\
   ios-sidebar-node-navigation.yaml|ios-page-share.yaml|ios-page-favorite.yaml|\
   ios-rich-block-rendering.yaml)
-    graph_name=chat-local-e2e-fixtures
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-fixtures}
     fixture_seed_mode=--fixture
     ;;
 esac

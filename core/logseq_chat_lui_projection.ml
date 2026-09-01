@@ -172,6 +172,7 @@ let core_projection (snapshot : Snapshot.t) : LG.core_projection =
   ; has_pending_semantic_operations = snapshot.has_pending_semantic_operations
   ; has_pending_sync_request = snapshot.has_pending_sync_request
   ; is_pending_sync_patch = snapshot.is_pending_sync_patch
+  ; is_graph_catalog_patch = snapshot.is_graph_catalog_patch
   ; search_query = snapshot.search_query
   ; search_results = Rrbvec.of_list (List.map search_hit snapshot.search_results)
   ; node_routes = Rrbvec.of_list (List.map node_projection snapshot.node_routes)

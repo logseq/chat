@@ -52,6 +52,7 @@ enum LGChatIconPolicy {
         var result: [String: LUIAppleIconSource] = [
             "calendar": .assetName("calendar"),
             "add": .assetName("plus"),
+            "arrow-up": .systemName("arrow.up"),
             "chevron-down": .assetName("chevron_down"),
             "document": .assetName("document"),
             "flashcards": .assetName("flashcards"),
@@ -84,8 +85,8 @@ enum LGChatIconPolicy {
             "toolbar-tag": .assetName("toolbar_tag"),
             "toolbar-task": .assetName("task_done"),
             "toolbar-unselect": .systemName("xmark"),
+            "trash": .systemName("trash"),
         ]
-        #if !SKIP
         result["calendar"] = .systemName("calendar")
         result["add"] = .systemName("plus")
         result["document"] = .systemName("doc.text")
@@ -103,7 +104,6 @@ enum LGChatIconPolicy {
         result["toolbar-outdent"] = .systemName("arrow.left")
         result["toolbar-tag"] = .systemName("number")
         result["toolbar-task"] = .systemName("checkmark.square")
-        #endif
         return result
     }
 }

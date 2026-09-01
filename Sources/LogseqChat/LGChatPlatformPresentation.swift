@@ -2,14 +2,12 @@ import Observation
 import SwiftUI
 import LogseqChatModel
 
-#if !SKIP
 import CryptoKit
 import PhotosUI
 import UniformTypeIdentifiers
 #if os(iOS)
 import QuickLook
 import UIKit
-#endif
 #endif
 
 public enum LGChatAttachmentService: String, CaseIterable, Sendable {
@@ -25,7 +23,7 @@ public final class LGChatPlatformPresentationCoordinator {
     public private(set) var attachmentService: LGChatAttachmentService?
     public private(set) var attachmentTargetBlockID: String?
     public private(set) var pendingDeletionBlockIDs: [String] = []
-    #if !SKIP && os(iOS)
+    #if os(iOS)
     public private(set) var previewAssetURL: URL?
     var pageSharePayload: NodeSharePayload?
     #endif
@@ -63,7 +61,7 @@ public final class LGChatPlatformPresentationCoordinator {
         pendingDeletionBlockIDs = []
     }
 
-    #if !SKIP && os(iOS)
+    #if os(iOS)
     @discardableResult
     public func presentAsset(_ asset: LGChatAssetPresentationPayload) -> Bool {
         guard let url = LocalAssetPath.resolve(
@@ -98,7 +96,7 @@ public final class LGChatPlatformPresentationCoordinator {
     #endif
 }
 
-#if !SKIP
+
 struct LGChatImportedAsset: Sendable {
     let title: String
     let assetType: String
@@ -355,4 +353,3 @@ struct LGChatPlatformPresentationHost: ViewModifier {
         )
     }
 }
-#endif

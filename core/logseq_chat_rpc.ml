@@ -499,7 +499,7 @@ let base_outliner_context_live session =
     match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
     | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
     | _, _, Some load -> Option.value (load ()) ~default:[]
-    | _ -> []
+    | _ -> Model.visible_blocks session.model
   in
   outliner_context_with_blocks session blocks
 ;;
@@ -1349,6 +1349,24 @@ let snapshot_visible session =
   in
   if session.flashcards <> [] then debug "flashcards visible blocks selected count=%d" (List.length blocks);
   snapshot session ~context_blocks blocks
+;;
+
+let graph_catalog_snapshot session =
+  success
+    (`Assoc
+      [ "graphName",
+        (match session.config with
+         | Some { Api.graph_name = Some graph_name; _ } -> `String graph_name
+         | _ -> `Null)
+      ; "selectedGraphId",
+        (match session.config with
+         | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
+         | _ -> `Null)
+      ; "graphs", `List (List.map graph_json session.available_graphs)
+      ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
+      ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
+      ; "isGraphCatalogPatch", `Bool true
+      ])
 ;;
 
 let pending_sync_patch session =
@@ -2778,7 +2796,7 @@ let dispatch session action payload =
      | Some config -> refresh_from_remote session config)
   | "refreshGraphCatalog" ->
     (match session.config with
-     | None -> snapshot_visible session
+     | None -> graph_catalog_snapshot session
      | Some config ->
        (match discover_graphs session config with
         | Ok () ->
@@ -2789,10 +2807,10 @@ let dispatch session action payload =
             |> Option.map (fun (graph : Api.graph) -> graph.name)
           in
           session.config <- Some { config with graph_name };
-          snapshot_visible session
+          graph_catalog_snapshot session
         | Error message ->
           debug "graph catalog refresh failed: %s" message;
-          snapshot_visible session))
+          graph_catalog_snapshot session))
   | "createSyncGraph" ->
     (match session.config, payload with
      | Some config, Some payload ->
@@ -3174,6 +3192,8 @@ let dispatch session action payload =
              Ok asset_checksum, Ok local_path, Ok target_block_id ->
              let now = Option.value now ~default:(now_ms ()) in
              let asset_type = Api.normalize_asset_type asset_type in
+             let before_context = outliner_context session in
+             let before_state = session.outliner_state in
              Option.iter
                (fun target_uuid ->
                  if Option.is_none (Model.read_block session.model target_uuid)
@@ -3190,16 +3210,26 @@ let dispatch session action payload =
              Model.cache_local_asset session.model ~uuid ~title ~asset_type ~asset_size
                ~asset_checksum ~local_path ?target_block_id
                ~now;
+             let visible_asset_response () =
+               match session.selected_sidebar_page, session.node_routes with
+               | None, [] ->
+                 structural_outliner_patch
+                   session
+                   ~before_context
+                   ~before_state
+                   ~after_context:(outliner_context session)
+               | Some _, _ | None, _ :: _ -> snapshot_visible session
+             in
              (match session.config, session.stage_operation,
                     Model.read_block session.model uuid with
               | Some _, Some stage, Some block ->
                 (match asset_datoms_operation ~state:Applied session block with
                  | Ok operation ->
                    (match stage operation with
-                    | Ok () -> snapshot_visible session
-                    | Error message -> failure ~code:"stage_operation_failed" ~message)
+                   | Ok () -> visible_asset_response ()
+                   | Error message -> failure ~code:"stage_operation_failed" ~message)
                  | Error message -> failure ~code:"asset_projection_failed" ~message)
-              | _ -> snapshot_visible session)
+              | _ -> visible_asset_response ())
            | _ -> failure ~code:"invalid_params" ~message:"addAsset requires complete file metadata")
         | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
