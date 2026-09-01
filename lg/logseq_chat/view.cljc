@@ -1694,7 +1694,7 @@
         (fn [_event] (send (model/PerformOutlinerToolbarAction "indent")))}]
       [:button
        {:icon "app:toolbar-delete" :variant "ghost" :size "icon"
-        :width 48 :height 48 :foreground "destructive"
+        :width 48 :height 48 :foreground "muted-foreground"
         :label "Delete"
         :accessibility-identifier "button.outliner.selection.delete"
         :on-press
@@ -1795,6 +1795,7 @@
        :height 44
        :padding-horizontal 10
        :background "autocomplete-row-background"
+       :foreground "foreground"
        :corner-radius 8
        :text-alignment "start"
        :accessibility-identifier
@@ -1830,8 +1831,6 @@
       {:height 56
        :padding-horizontal 8
        :padding-vertical 4
-       :background "surface-container-low"
-       :corner-radius 20
        :accessibility-identifier "surface.outliner.editor-toolbar"}
       [:toolbar
        {:orientation "horizontal"
@@ -1917,8 +1916,7 @@
      :on-press
      (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
    [:button
-    {:icon "app:toolbar-page-reference"
-     :variant "ghost"
+    {:variant "ghost"
      :size "icon"
      :width 48
      :height 48
@@ -1927,7 +1925,8 @@
      :accessibility-identifier "button.outliner.editor.pageReference"
      :on-press
      (fn [_event]
-       (send (model/PerformOutlinerToolbarAction "pageReference")))}]
+       (send (model/PerformOutlinerToolbarAction "pageReference")))}
+    "[[]]"]
    [:button
     {:icon "app:toolbar-hide-keyboard"
      :variant "ghost"
@@ -4553,6 +4552,8 @@
        [:column
         {:gap 0
          :cross "stretch"
+         :background "surface-container-low"
+         :corner-radius 20
          :accessibility-identifier "container.outliner.editor-chrome"}
         [:if {:test (reactive outliner-autocomplete-active? model-source)}
          [outliner-autocomplete-bar model-source send]]

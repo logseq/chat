@@ -6236,10 +6236,10 @@
         (is (not (= "<missing>"
                     (property-string renderer button proto/AccessibilityLabel)))
             "icon-only actions retain an accessible label"))
-      (assert-equal "destructive"
+      (assert-equal "muted-foreground"
                     (property-string renderer (nth buttons 3)
                                      proto/ForegroundValue)
-                    "delete is visually distinct from reversible actions"))))
+                    "delete stays neutral until the confirmation dialog"))))
 
 (deftest flutter-outliner-editor-toolbar-uses-a-material-bottom-surface
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -6264,6 +6264,9 @@
                               (Some editing) None [] [] [row] false []))
     (driver/flush! application)
     (let [root (driver/root-node application)
+          editor-container
+          (descendant-with-identifier renderer root
+                                      "container.outliner.editor-chrome")
           surface (descendant-with-identifier
                    renderer root "surface.outliner.editor-toolbar")
           toolbar (descendant-with-identifier
@@ -6278,11 +6281,12 @@
                     (property-int renderer surface proto/PaddingVertical)
                     "editor actions are vertically centered")
       (assert-equal 20
-                    (property-int renderer surface proto/CornerRadius)
-                    "the editor toolbar has a Material surface shape")
+                    (property-int renderer editor-container proto/CornerRadius)
+                    "the editor chrome has one Material surface shape")
       (assert-equal "surface-container-low"
-                    (property-string renderer surface proto/BackgroundValue)
-                    "the editor toolbar separates from content and keyboard")
+                    (property-string renderer editor-container
+                                     proto/BackgroundValue)
+                    "the editor and autocomplete share one Material surface")
       (assert-equal 9 (count buttons)
                     "all editor actions remain reachable by horizontal scroll")
       (doseq [button buttons]
@@ -6293,13 +6297,13 @@
         (assert-equal "icon" (property-string renderer button proto/SizeValue)
                       "every editor action uses a 24dp Material glyph"))
       (let [page-reference (nth buttons 7)]
-        (assert-equal "app:toolbar-page-reference"
+        (assert-equal "<missing>"
                       (property-string renderer page-reference
                                        proto/InlineIconName)
-                      "page reference uses a native icon instead of raw brackets")
-        (assert-equal "<missing>"
+                      "page reference does not use an unrelated code glyph")
+        (assert-equal "[[]]"
                       (property-string renderer page-reference proto/TextValue)
-                      "page reference no longer renders a rough text symbol")))))
+                      "page reference matches the iOS toolbar symbol")))))
 
 (deftest outliner-editor-toolbar-and-autocomplete-use-core-owned-state
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -6389,6 +6393,10 @@
                     (property-string renderer candidate-button
                                      proto/BackgroundValue)
                     "autocomplete rows use the shared main-matching background")
+      (assert-equal "foreground"
+                    (property-string renderer candidate-button
+                                     proto/ForegroundValue)
+                    "autocomplete labels use readable content color")
       (assert-equal 8
                     (property-int renderer candidate-button proto/CornerRadius)
                     "autocomplete rows keep main's corner radius")
@@ -6506,6 +6514,13 @@
        (Some apple/AppleColumn)
        (apple/node renderer editor-container)
        "Flutter lays autocomplete above the editor toolbar instead of overlaying it")
+      (assert-equal "surface-container-low"
+                    (property-string renderer editor-container
+                                     proto/BackgroundValue)
+                    "tag and page autocomplete share the editor surface")
+      (assert-equal 20
+                    (property-int renderer editor-container proto/CornerRadius)
+                    "autocomplete and toolbar form one rounded container")
       (is (not (= -1
                   (child-with-identifier renderer editor-container
                                          "toolbar.outliner.autocomplete")))
