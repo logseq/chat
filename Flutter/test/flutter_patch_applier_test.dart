@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logseq_chat_flutter/flutter_patch_applier.dart';
+import 'package:logseq_chat_flutter/logseq_chat_icons.dart';
+import 'package:logseq_chat_flutter/logseq_chat_theme.dart';
 import 'package:lui_flutter_backend/lui_flutter_backend.dart';
 
 void main() {
@@ -115,6 +117,46 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('renders Material navigation chrome at standard size', (
+    tester,
+  ) async {
+    final backend = LUIFlutterBackend(appIcons: logseqChatAppIcons);
+    final applier = FlutterPatchApplier(backend);
+    applier.applyJson(
+      _patch(1, [
+        _createNode(1, 'row'),
+        _createNode(2, 'button'),
+        _setProperty(2, 'icon', 'app:sidebar-toggle'),
+        _setProperty(2, 'size', 'icon'),
+        _setProperty(2, 'variant', 'ghost'),
+        _setProperty(2, 'accessibility-label', 'Open sidebar'),
+        _createNode(3, 'heading'),
+        _setProperty(3, 'text', 'Journals'),
+        _setProperty(3, 'heading-level', 3),
+        _insertChild(1, 2, 0),
+        _insertChild(1, 3, 1),
+      ]),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LogseqChatTheme.light(),
+        home: Scaffold(body: Center(child: backend.widget(node: 1))),
+      ),
+    );
+
+    final icon = tester.widget<Icon>(find.byIcon(Icons.menu_rounded));
+    final button = find.byType(TextButton);
+    final buttonWidget = tester.widget<TextButton>(button);
+    final title = tester.widget<Text>(find.text('Journals'));
+    expect(icon.size, 24);
+    expect(
+      buttonWidget.style?.minimumSize?.resolve(<WidgetState>{}),
+      const Size.square(48),
+    );
+    expect(title.style?.fontSize, 22);
+  });
 
   test('keeps generation continuous when an ignored property is removed', () {
     final backend = LUIFlutterBackend();

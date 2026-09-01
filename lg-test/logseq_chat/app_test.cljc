@@ -4599,12 +4599,18 @@
                     "Flutter search receives one composed child")
       (let [navigation-content (nth navigation-children 0)
             search-content (nth search-children 0)
+            navigation-title
+            (descendant-with-identifier
+             renderer navigation-content "title.main")
             capture-row
             (descendant-with-identifier
              renderer navigation-content "row.bottom.capture")]
-        (is (not (= -1 (descendant-with-identifier
-                        renderer navigation-content "title.main")))
-            "the composed Flutter child owns the Material header")
+        (assert-equal (Some apple/AppleHeading)
+                      (apple/node renderer navigation-title)
+                      "the composed Flutter child uses Material title typography")
+        (assert-equal 3
+                      (property-int renderer navigation-title proto/HeadingLevel)
+                      "the Flutter navigation title maps to Material titleLarge")
         (is (not (= -1 (descendant-with-identifier
                         renderer navigation-content "button.search")))
             "the composed Flutter child owns the bottom controls")

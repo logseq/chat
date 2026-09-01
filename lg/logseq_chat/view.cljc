@@ -4679,10 +4679,19 @@
       :on-press (fn [_event] (send model/OpenSidebar))}]]])
 
 (defui main-header-title [model-source]
-  [:text
-   {:value (reactive main-title model-source)
-    :class "headline"
-    :accessibility-identifier "title.main"}])
+  (if (host? proto/FlutterHost)
+    (elements/element
+     ui-context nil
+     [:heading
+      {:value (reactive main-title model-source)
+       :level 3
+       :accessibility-identifier "title.main"}])
+    (elements/element
+     ui-context nil
+     [:text
+      {:value (reactive main-title model-source)
+       :class "headline"
+       :accessibility-identifier "title.main"}])))
 
 (defui main-header-sync [model-source send]
   [:stack
