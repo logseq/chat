@@ -80,7 +80,7 @@ require_text "Android/app/build.gradle.kts" "scripts/build-android-native.sh"
 require_text "Android/app/build.gradle.kts" "LOGSEQ_CHAT_ANDROID_ABIS"
 require_text "Android/app/build.gradle.kts" "x86_64"
 require_text "scripts/build-android-native.sh" "x86_64"
-require_text "Android/settings.gradle.kts" "--no-prebuild"
+require_text "Android/gradle/wrapper/gradle-wrapper.properties" "gradle-9.4.1-bin.zip"
 
 if [[ $failures -ne 0 ]]; then
   exit 1
