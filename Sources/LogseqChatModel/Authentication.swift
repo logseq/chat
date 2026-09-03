@@ -15,7 +15,7 @@ public enum LogseqAuthenticationState: String, Sendable {
     case signingOut
 }
 
-public enum LogseqAuthenticationError: Error, LocalizedError {
+public enum LogseqAuthenticationError: Error, LocalizedError, Equatable {
     case notSignedIn
 
     public var errorDescription: String? {
@@ -52,9 +52,12 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
             }
             state = .signedIn
             onAccessToken(token)
+        } catch is LogseqAuthenticationError {
+            state = .signedOut
+            onAccessToken(nil)
         } catch {
             state = .signedOut
-            errorMessage = error.localizedDescription
+            errorMessage = Self.displayedMessage(for: error)
             onAccessToken(nil)
         }
     }
@@ -71,7 +74,7 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
             onAccessToken(token)
         } catch {
             state = .signedOut
-            errorMessage = error.localizedDescription
+            errorMessage = Self.displayedMessage(for: error)
             onAccessToken(nil)
         }
     }
@@ -82,7 +85,7 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
         do {
             try await provider.signOut()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.displayedMessage(for: error)
         }
         state = .signedOut
         onAccessToken(nil)
@@ -92,7 +95,7 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
         do {
             guard let token = try await provider.accessToken(), !token.isEmpty else {
                 state = .signedOut
-                errorMessage = LogseqAuthenticationError.notSignedIn.localizedDescription
+                errorMessage = nil
                 onAccessToken(nil)
                 throw LogseqAuthenticationError.notSignedIn
             }
@@ -100,11 +103,32 @@ public enum LogseqAuthenticationError: Error, LocalizedError {
             errorMessage = nil
             onAccessToken(token)
             return token
+        } catch is LogseqAuthenticationError {
+            state = .signedOut
+            errorMessage = nil
+            onAccessToken(nil)
+            throw LogseqAuthenticationError.notSignedIn
         } catch {
             state = .signedOut
-            errorMessage = error.localizedDescription
+            errorMessage = Self.displayedMessage(for: error)
             onAccessToken(nil)
             throw error
         }
+    }
+
+    private static func displayedMessage(for error: Error) -> String {
+        if let authenticationError = error as? LogseqAuthenticationError {
+            return authenticationError.errorDescription ?? "Sign in to connect to Logseq Sync."
+        }
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return description
+        }
+        let description = error.localizedDescription
+        if description.contains("$") || description.contains("Case") {
+            return "Something went wrong. Try signing in again."
+        }
+        return description
     }
 }

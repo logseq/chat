@@ -103,6 +103,24 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
         #expect(await provider.recordedSignOutCount() == 1)
     }
 
+    @Test @MainActor func missingAccessTokenDoesNotSurfaceARawErrorOnTheSignInScreen() async {
+        let auth = LogseqAuthenticationStore(provider: FakeCognitoProvider(token: nil))
+
+        await auth.restore()
+        #expect(auth.state == .signedOut)
+        #expect(auth.errorMessage == nil)
+
+        do {
+            _ = try await auth.accessToken()
+            #expect(1 == 0, "Expected a missing access token to throw")
+        } catch is LogseqAuthenticationError {
+            #expect(auth.state == .signedOut)
+            #expect(auth.errorMessage == nil)
+        } catch {
+            #expect(1 == 0, "Expected LogseqAuthenticationError.notSignedIn")
+        }
+    }
+
     @Test @MainActor func accessTokenFailureUpdatesObservableAuthenticationState() async {
         var published: [String?] = []
         let auth = LogseqAuthenticationStore(provider: FailingCognitoProvider()) { token in
