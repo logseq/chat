@@ -22,13 +22,13 @@ require_text() {
     fail "missing $path"
     return
   fi
-  grep -F "$pattern" "$repo_root/$path" >/dev/null || fail "$path does not contain: $pattern"
+  grep -F -- "$pattern" "$repo_root/$path" >/dev/null || fail "$path does not contain: $pattern"
 }
 
 reject_text() {
   local path=$1
   local pattern=$2
-  if [[ -f $repo_root/$path ]] && grep -F "$pattern" "$repo_root/$path" >/dev/null; then
+  if [[ -f $repo_root/$path ]] && grep -F -- "$pattern" "$repo_root/$path" >/dev/null; then
     fail "$path unexpectedly contains: $pattern"
   fi
 }
@@ -77,6 +77,10 @@ require_text "Sources/LogseqChat/Skip/AndroidAssetImporter.kt" "contentResolver.
 reject_text "scripts/build-android-native.sh" "logseq_chat_https_stub.c"
 require_text "Android/app/build.gradle.kts" "buildAndroidNativeCore"
 require_text "Android/app/build.gradle.kts" "scripts/build-android-native.sh"
+require_text "Android/app/build.gradle.kts" "LOGSEQ_CHAT_ANDROID_ABIS"
+require_text "Android/app/build.gradle.kts" "x86_64"
+require_text "scripts/build-android-native.sh" "x86_64"
+require_text "Android/settings.gradle.kts" "--no-prebuild"
 
 if [[ $failures -ne 0 ]]; then
   exit 1

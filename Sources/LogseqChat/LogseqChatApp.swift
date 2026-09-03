@@ -1,5 +1,7 @@
 import Foundation
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
 import OSLog
+#endif
 import SwiftUI
 import LogseqChatModel
 
@@ -9,34 +11,34 @@ import UIKit
 #endif
 
 struct LogseqAppLogger {
-    #if !SKIP
+    #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
     private let systemLogger = os.Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
     #endif
 
     func debug(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .debug, source: .ui, message: message)
-        #if SKIP
-        print(message)
-        #else
+        #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
         systemLogger.debug("\(message, privacy: .public)")
+        #else
+        print(message)
         #endif
     }
 
     func info(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .info, source: .ui, message: message)
-        #if SKIP
-        print(message)
-        #else
+        #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
         systemLogger.info("\(message, privacy: .public)")
+        #else
+        print(message)
         #endif
     }
 
     func error(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .error, source: .ui, message: message)
-        #if SKIP
-        print(message)
-        #else
+        #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
         systemLogger.error("\(message, privacy: .public)")
+        #else
+        print(message)
         #endif
     }
 }

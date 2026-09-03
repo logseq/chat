@@ -22,10 +22,33 @@ configurations.configureEach {
 }
 
 val repoRoot = rootProject.projectDir.parentFile
+// Supported ABIs: arm64-v8a for devices, x86_64 for the Android emulator VM.
+val androidNativeAbis = (System.getenv("LOGSEQ_CHAT_ANDROID_ABIS")
+    ?: System.getenv("LOGSEQ_CHAT_ANDROID_ABI")
+    ?: "arm64-v8a")
+    .split(Regex("[,\\s]+"))
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .distinct()
 
-tasks.register<Exec>("buildAndroidNativeCore") {
-    workingDir = repoRoot
-    commandLine("bash", "scripts/build-android-native.sh")
+val androidNativeCoreTasks = androidNativeAbis.map { abi ->
+    tasks.register<Exec>("buildAndroidNativeCore_${abi.replace('-', '_')}") {
+        workingDir = repoRoot
+        environment("LOGSEQ_CHAT_ANDROID_ABI", abi)
+        listOf(
+            "ANDROID_HOME",
+            "ANDROID_SDK_ROOT",
+            "ANDROID_NDK_HOME",
+            "LOGSEQ_CHAT_BUILD_JOBS"
+        ).forEach { key ->
+            System.getenv(key)?.let { value -> environment(key, value) }
+        }
+        commandLine("bash", "scripts/build-android-native.sh")
+    }
+}
+
+tasks.register("buildAndroidNativeCore") {
+    dependsOn(androidNativeCoreTasks)
 }
 
 tasks.named("preBuild") {

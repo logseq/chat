@@ -1,6 +1,6 @@
 import Foundation
 import Observation
-#if !os(Android)
+#if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
 import OSLog
 #endif
 #if SKIP
@@ -13,25 +13,25 @@ import LogseqChatCoreABI
 #endif
 
 private struct LogseqModelLogger {
-    #if !os(Android)
+    #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
     private let logger = Logger(subsystem: "logseq.chat.model", category: "LogseqChatModel")
     #endif
 
     func info(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .info, source: .core, message: message)
-        #if os(Android)
-        print(message)
-        #else
+        #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
         logger.info("\(message, privacy: .public)")
+        #else
+        print(message)
         #endif
     }
 
     func error(_ message: String) {
         LogseqRuntimeLog.shared.append(level: .error, source: .core, message: message)
-        #if os(Android)
-        print(message)
-        #else
+        #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
         logger.error("\(message, privacy: .public)")
+        #else
+        print(message)
         #endif
     }
 }

@@ -7,8 +7,20 @@ pluginManagement {
     //System.setProperty("BUILT_PRODUCTS_DIR", "${System.getProperty("user.home")}/Library/Developer/Xcode/DerivedData/MySkipProject-HASH/Build/Products/Debug-iphonesimulator")
 
     val skipPluginResult = providers.exec {
-        commandLine("/bin/sh", "-c", "skip plugin --prebuild --package-path '${settings.rootDir.parent}' --plugin-ref '${pluginPath.absolutePath}'")
-        environment("PATH", "${System.getenv("PATH")}:/opt/homebrew/bin")
+        // Xcode `xcrun` is required for Skip's iOS prebuild. On Linux emulator
+        // hosts, fall back to `--no-prebuild` and consume existing skipstone output.
+        commandLine(
+            "/bin/sh",
+            "-c",
+            """
+            if command -v xcrun >/dev/null 2>&1; then
+              skip plugin --prebuild --package-path '${settings.rootDir.parent}' --plugin-ref '${pluginPath.absolutePath}'
+            else
+              skip plugin --no-prebuild --package-path '${settings.rootDir.parent}' --plugin-ref '${pluginPath.absolutePath}'
+            fi
+            """.trimIndent()
+        )
+        environment("PATH", "${System.getenv("PATH")}:/opt/homebrew/bin:${System.getProperty("user.home")}/opt/skip/skip.artifactbundle/bin")
     }
     val skipPluginOutput = skipPluginResult.standardOutput.asText.get()
     print(skipPluginOutput)
