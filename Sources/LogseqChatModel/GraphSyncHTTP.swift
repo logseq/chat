@@ -1,5 +1,8 @@
 import Foundation
 #if !SKIP
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import LogseqChatCoreABI
 #endif
 
@@ -184,7 +187,14 @@ public enum LogseqGraphSyncHTTP {
         }
         var downloadRequest = URLRequest(url: downloadURL.absoluteURL)
         downloadRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        #if os(iOS) || os(macOS)
         let (temporaryURL, downloadResponse) = try await URLSession.shared.download(for: downloadRequest)
+        #else
+        let (downloadData, downloadResponse) = try await URLSession.shared.data(for: downloadRequest)
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logseq-graph-\(UUID().uuidString).partial")
+        try downloadData.write(to: temporaryURL, options: .atomic)
+        #endif
         try requireSuccess(downloadResponse)
         guard let http = downloadResponse as? HTTPURLResponse,
               let rowCountText = http.value(forHTTPHeaderField: "x-snapshot-row-count"),

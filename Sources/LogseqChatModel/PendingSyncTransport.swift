@@ -1,6 +1,9 @@
 import Foundation
 
 #if !SKIP
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 public enum LogseqPendingSyncDuplicateAssetResolver {
     public static func isDuplicate(status: Int, body: String) -> Bool {
         guard status == 409,

@@ -3,6 +3,11 @@ import Observation
 #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
 import OSLog
 #endif
+#if !SKIP
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#endif
 #if SKIP
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -833,7 +838,7 @@ private struct DeletePagePayload: Encodable {
             syncError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
         }
         return false
-        #else
+        #elseif os(iOS) || os(macOS)
         do {
             let request = try LogseqGraphSyncHTTP.eventsRequest(
                 baseURL: baseURL,
@@ -896,6 +901,12 @@ private struct DeletePagePayload: Encodable {
                 )
             }
         }
+        return false
+        #else
+        lastError = LogseqChatCoreError(
+            code: "sse_unsupported_platform",
+            message: "Graph event streaming requires iOS, macOS, or Android"
+        )
         return false
         #endif
     }
