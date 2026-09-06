@@ -2289,7 +2289,7 @@
             graphs
             (child-with-identifier renderer sidebar-view "link.sidebar.graphs")
             favorites
-            (child-with-identifier renderer sidebar-view "section.sidebar.favorites")
+            (descendant-with-identifier renderer sidebar-view "section.sidebar.favorites")
             favorites-heading (nth (apple/children renderer favorites) 0)
             favorites-heading-children (apple/children renderer favorites-heading)
             favorites-heading-top (nth favorites-heading-children 0)
@@ -2298,11 +2298,17 @@
             favorites-heading-icon
             (nth (apple/children renderer favorites-heading-content) 0)
             recent
-            (child-with-identifier renderer sidebar-view "section.sidebar.recent")
+            (descendant-with-identifier renderer sidebar-view "section.sidebar.recent")
             favorite-link
             (child-with-identifier renderer favorites "link.sidebar.page.page-a")]
         (assert-equal 12 (property-int renderer sidebar-view proto/PaddingValue)
                       "sidebar keeps the main branch content inset")
+        (let [pages-scroll (descendant-with-identifier renderer sidebar-view "scroll.sidebar.pages")]
+          (is (not (= pages-scroll -1)) "Favorites and Recent have their own scroll region")
+          (assert-equal -1 (descendant-with-identifier renderer pages-scroll "link.sidebar.journals")
+                        "top navigation stays outside the scroll region")
+          (assert-equal favorites (descendant-with-identifier renderer pages-scroll "section.sidebar.favorites")
+                        "scrolling starts with Favorites"))
         (assert-equal (Some apple/AppleBox)
                       (if (= top-safe-area -1)
                         None
@@ -2515,9 +2521,9 @@
       (assert-equal 3
                     (property-int renderer page-title proto/HeadingLevel)
                     "selected page titles use main's title2 typography")
-      (assert-equal 8
+      (assert-equal 16
                     (property-int renderer page-title-layout proto/PaddingHorizontal)
-                    "selected page titles add main's inner horizontal inset")
+                    "selected page titles preserve the combined main horizontal inset")
       (is (= add-first -1)
           "non-empty selected pages hide the add-first-block action"))))
 
@@ -2640,6 +2646,124 @@
                   "a journal pagination response expands the retained cache")
     (is (not (:has-older-journals paginated))
         "pagination accepts the authoritative continuation state")))
+
+(deftest journal-node-insertion-keeps-the-rendered-sibling-position
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        first-row (journal-outline-row "a" "today" "First" "Today" 20260906 0)
+        last-row (journal-outline-row "z" "today" "Last" "Today" 20260906 0)
+        inserted-row (journal-outline-row "b" "today" "Inserted" "Today" 20260906 0)
+        route (assoc (node-projection "today" "today" "Today" [] [])
+                     :outliner-editing (Some (record model/outliner-editing
+                                               (uuid "a") (title "First")
+                                               (caret-utf16-offset 5)))
+                     :outliner-rows [first-row last-row])
+        projection (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :node-routes [route]
+                          :outliner-rows [first-row last-row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "today"))
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (driver/send! application
+      (model/ApplyCoreSnapshot
+       (assoc projection
+              :node-routes [(assoc route
+                                  :outliner-editing (Some (record model/outliner-editing
+                                                            (uuid "b") (title "Inserted")
+                                                            (caret-utf16-offset 8)))
+                                  :outliner-rows [first-row inserted-row last-row])]
+              :outliner-rows [first-row inserted-row last-row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          outliner (descendant-with-identifier renderer screen "list.outliner")
+          rows (mapv (fn [node] (property-string renderer node proto/AccessibilityIdentifier))
+                     (apple/children renderer outliner))]
+      (assert-equal ["outliner.block.a" "outliner.block.b" "outliner.block.z"] rows
+                    (str "inserting in the middle must retain the rendered sibling order: "
+                         (string/join "," rows))))))
+
+(deftest capture-refreshes-the-retained-journal-behind-a-node-route
+  (let [first-row (journal-outline-row "first" "today" "First" "Today" 20260906 0)
+        captured-row (journal-outline-row "captured" "today" "Captured" "Today" 20260906 0)
+        route (assoc (node-projection "today" "today" "Today" [] [])
+                     :outliner-rows [first-row captured-row])
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :journal-outliner-rows [first-row]
+                       :node-routes [route]
+                       :in-flight-effects [(model/SendCaptureEffect 7 "Captured")])
+        updated (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :node-routes [route]
+                          :journal-outliner-rows [first-row captured-row]
+                          :outliner-rows [first-row captured-row])))]
+    (assert-equal [first-row captured-row] (:journal-outliner-rows updated)
+                  "capture must update the mounted journal behind navigation")))
+
+(deftest recent-journal-edits-refresh-the-retained-journals-pane
+  (let [page (record model/sidebar-page (uuid "today") (title "Today"))
+        original (journal-outline-row "first" "today" "Original" "Today" 20260906 0)
+        edited (assoc original :title "Edited from Recent")
+        inserted (journal-outline-row "inserted" "today" "Inserted" "Today" 20260906 0)
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :selected-page (Some page)
+                       :journal-outliner-rows [original]
+                       :outliner-rows [original])
+        edited-page (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :sidebar (assoc (empty-sidebar-projection) :selected-page (Some page))
+                          :journal-outliner-rows [edited inserted]
+                          :outliner-rows [edited inserted])))
+        updated (model/update (model/update edited-page model/ShowJournals)
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :journal-outliner-rows [edited inserted]
+                          :outliner-rows [edited inserted])))]
+    (assert-equal [edited inserted] (:journal-outliner-rows updated)
+                  "returning from a Recent page refreshes the retained Journals data")))
+
+(deftest synchronized-capture-refreshes-an-already-visible-journal
+  (let [first-row (journal-outline-row "first" "today" "First" "Today" 20260906 0)
+        captured-row (journal-outline-row "captured" "today" "Captured" "Today" 20260906 0)
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :journal-outliner-rows [first-row]
+                       :outliner-rows [first-row])
+        updated (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :journal-outliner-rows [first-row captured-row]
+                          :outliner-rows [first-row captured-row])))]
+    (assert-equal [first-row captured-row] (:outliner-rows updated)
+                  "a sync snapshot must expose captures without restarting")))
+
+(deftest journal-refresh-applies-edits-deletions-and-a-new-day-without-loading-older-days
+  (let [old-row (journal-outline-row "old" "yesterday" "Old" "Yesterday" 20260905 0)
+        deleted-row (journal-outline-row "deleted" "yesterday" "Deleted" "Yesterday" 20260905 0)
+        edited-row (assoc old-row :title "Edited")
+        today-row (journal-outline-row "today" "today" "New day" "Today" 20260906 0)
+        older-row (journal-outline-row "older" "older" "Older" "Older" 20260904 0)
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :journal-outliner-rows [old-row deleted-row]
+                       :outliner-rows [old-row deleted-row])
+        updated (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :outliner-rows [today-row edited-row older-row])))]
+    (assert-equal [today-row edited-row] (:journal-outliner-rows updated)
+                  "refresh current days without silently expanding pagination")))
 
 (deftest flashcard-reveal-state-resets-only-when-the-current-card-changes
   (let [first-card (flashcard "card-a" "First […]" "First answer" [] true)
@@ -2990,6 +3114,22 @@
         (assert-equal (Some apple/AppleList)
                       (apple/node renderer screen)
                       "graphs use the platform-native List container")
+        (assert-equal (Some apple/AppleHeading)
+                      (apple/node renderer
+                        (child-with-identifier renderer screen "heading.graphs.local"))
+                      "local graphs have a native section header")
+        (assert-equal (Some apple/AppleHeading)
+                      (apple/node renderer
+                        (child-with-identifier renderer screen "heading.graphs.remote"))
+                      "remote graphs have a native section header")
+        (assert-equal 44 (property-int renderer local-row proto/MinHeight)
+                      "graph rows match main's content height")
+        (assert-equal "app:refresh"
+                      (property-string renderer refresh proto/InlineIconName)
+                      "Refresh uses main's clockwise arrow")
+        (assert-equal "<missing>"
+                      (property-string renderer add proto/InlineIconName)
+                      "Add sync graph matches main's text-only row")
         (assert-equal (Some apple/AppleListItem)
                       (apple/node renderer local-row)
                       "downloaded graphs use native list rows")
@@ -4522,8 +4662,15 @@
                     "node section titles add main's inner horizontal inset")
       (is (not (= related -1))
           "node routes render their linked references section")
-      (is (not (= breadcrumb -1))
-          "related rows retain the main breadcrumb container")
+      (is (= (apple/node renderer breadcrumb) (Some apple/AppleBreadcrumb))
+          "related rows reuse the breadcrumb component with native separators")
+      (let [heading (descendant-with-identifier renderer related "title.related-section")]
+        (assert-equal "subheadline"
+                      (property-string renderer heading proto/StyleClass)
+                      "related section labels are smaller than page titles")
+        (assert-equal "muted-foreground"
+                      (property-string renderer heading proto/ForegroundValue)
+                      "related section labels use secondary text color"))
       (is (not (= journal -1))
           "each structured breadcrumb remains independently navigable")
       (driver/dispatch-event! application (proto/Press journal))
@@ -5156,9 +5303,12 @@
             -1
             (nth heading-surface-children 1))]
       (assert-equal 8
-                    (property-int renderer horizontal-inset
+                    (property-int renderer first-entry
                                   proto/PaddingHorizontal)
-                    "journal content keeps main's outer horizontal inset")
+                    "journal content is inset inside the full-width scroll surface")
+      (assert-equal -1
+                    (property-int renderer horizontal-inset proto/PaddingHorizontal)
+                    "the scroll indicator reaches the screen edge")
       (assert-equal -1
                     (property-int renderer outliner proto/PaddingValue)
                     "the native virtual list does not add vertical padding")
@@ -5610,9 +5760,9 @@
                     "journal blocks use one native lazy scrolling collection")
       (assert-equal 1.0 (property-float renderer list-node proto/GrowValue)
                     "the journal collection owns the remaining viewport")
-      (assert-equal 8
+      (assert-equal -1
                     (property-int renderer horizontal-inset proto/PaddingHorizontal)
-                    "the journal collection keeps main's horizontal inset")
+                    "the scrolling surface has no outer inset")
       (assert-equal -1
                     (property-int renderer list-node proto/PaddingVertical)
                     "the journal collection does not add a vertical inset")
@@ -5637,7 +5787,7 @@
                     (breadcrumbs [])
                     (opens-as-page false)
                     (depth 0)
-                    (has-children false)
+                    (has-children true)
                     (is-collapsed false)
                     (is-asset false) (asset-type None) (local-path None)
                     (status
@@ -5660,6 +5810,11 @@
           rich-content
           (descendant-with-extension
            renderer application rendered-row "outliner-block-content")]
+      (assert-equal "app:disclosure-down"
+                    (property-string renderer
+                      (descendant-with-identifier renderer rendered-row
+                        "button.outliner.collapse.block-a") proto/InlineIconName)
+                    "native collapse uses main's filled disclosure triangle")
       (assert-equal
        (Some (apple/AppleExtension "outliner-block-content"))
        (apple/node renderer rich-content)
@@ -6053,10 +6208,10 @@
                         (property-string renderer status-option
                                          proto/InlineIconName)
                         "block task status choices preserve their semantic icons")
-          (assert-equal "accent"
+          (assert-equal "secondary"
                         (property-string renderer status-option
                                          proto/ForegroundValue)
-                        "native block task status choices use the platform accent tint")
+                        "native block task status choices use a uniform secondary tint")
           (assert-equal 0
                         (descendant-count-with-node-kind
                          renderer runtime-root apple/AppleDialog)
@@ -6566,6 +6721,8 @@
                                       "button.outliner.collapse.parent")]
       (assert-equal 44 (property-int renderer indent proto/WidthValue)
                     "depth uses main's 22-point indentation")
+      (assert-equal 2 (count (apple/children renderer (nth content-children 3)))
+                    "a block without status must not reserve an empty status column and gap")
       (assert-equal "button.outliner.zoom.parent"
                     (property-string renderer zoom
                                      proto/AccessibilityIdentifier)
@@ -6574,7 +6731,7 @@
                     "zoom uses main's 24-point bullet hit width")
       (assert-equal 24 (property-int renderer zoom proto/HeightValue)
                     "zoom uses main's 24-point bullet hit height")
-      (assert-equal "app:status-dot"
+      (assert-equal "app:outliner-bullet"
                     (property-string renderer zoom proto/InlineIconName)
                     "zoom renders main's circular bullet instead of a text glyph")
       (assert-equal "border"
@@ -6591,8 +6748,8 @@
                     "collapse keeps main's stable identifier")
       (assert-equal 28 (property-int renderer collapse proto/WidthValue)
                     "collapse keeps main's 28-point disclosure width")
-      (assert-equal 28 (property-int renderer collapse proto/HeightValue)
-                    "collapse keeps main's 28-point disclosure height")
+      (assert-equal 24 (property-int renderer collapse proto/HeightValue)
+                    "collapse preserves the normal block row height")
       (assert-equal "ghost"
                     (property-string renderer collapse proto/VariantValue)
                     "collapse uses main's plain disclosure control style")
@@ -6744,3 +6901,39 @@
               (descendant-with-identifier renderer second-selected-pane "list.outliner")]
           (is (not (= first-selected-list second-selected-list))
               "switching pages creates a fresh top-aligned scroll surface"))))))
+
+(deftest sidebar-selection-follows-visible-destination
+  (let [page (record model/sidebar-page (uuid "page-a") (title "Page A"))
+        current (assoc (model/initial)
+                       :selected-page (Some page))]
+    (is (view/sidebar-page-selected? current page))
+    (let [graphs (model/update current model/ShowGraphs)]
+      (is (view/graphs-sidebar-selected? graphs))
+      (is (not (view/sidebar-page-selected? graphs page))
+          "Graphs and a retained page cannot both be selected"))))
+
+(deftest native-outliner-controls-match-first-line-and-main-status-shapes
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        status (model/task-status "actual-status-uuid" "logseq.property/status.doing" "Doing" "progress")
+        row (assoc (journal-outline-row "control-row" "page-a" "Control" "Today" 20260907 0)
+                   :status (Some status) :has-children true)]
+    (assert-equal "app:task-doing" (view/outliner-task-status-icon row)
+                  "status identity uses its semantic ident, never a placeholder UUID")
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       true "" [] [] None None [] [] [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          bullet (descendant-with-identifier renderer root "button.outliner.zoom.control-row")
+          status-button (descendant-with-identifier renderer root "button.block-task-status")
+          collapse (descendant-with-identifier renderer root "button.outliner.collapse.control-row")]
+      (assert-equal "body-line" (property-string renderer bullet proto/StyleClass)
+                    "bullet follows the first body line as font size changes")
+      (assert-equal 24 (property-int renderer collapse proto/HeightValue)
+                    "gaining a child must not increase the parent row height")
+      (assert-equal 22 (property-int renderer status-button proto/WidthValue)
+                    "native status icon keeps main's 22-point size")
+      (assert-equal "secondary" (property-string renderer status-button proto/ForegroundValue)
+                    "every status uses the same semantic foreground"))))

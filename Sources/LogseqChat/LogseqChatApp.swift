@@ -65,7 +65,6 @@ public struct LogseqChatRootView : View {
         .luiSemanticColors([
             "background": themePalette.background,
             "surface": themePalette.surface,
-            "muted-foreground": themePalette.secondaryText,
             "autocomplete-row-background": themePalette.secondaryText.opacity(0.1),
             "task-backlog": Color(red: 0.66, green: 0.64, blue: 0.62),
             "task-todo": Color(red: 0.47, green: 0.44, blue: 0.42),

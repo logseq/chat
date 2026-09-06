@@ -187,6 +187,16 @@ let command ~base_t ~now ~fresh_uuid context = function
              ]
          ; platform = []
          })
+  | State.Create_page title ->
+    let title = String.trim title in
+    if String.equal title "" then Error "page title must not be empty"
+    else
+      let uuid = fresh_uuid () in
+      Ok
+        { operations =
+            [ operation ~base_t ~fresh_uuid (Create_page { uuid; title; created_at = now () }) ]
+        ; platform = []
+        }
   | State.Assign_tag { uuid; value } ->
     (match find_block context uuid with
      | None -> Error "tag target block no longer exists"

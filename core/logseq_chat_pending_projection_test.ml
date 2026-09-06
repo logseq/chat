@@ -1209,3 +1209,20 @@ let () =
     (match Logseq_chat_graph_store.activate ~active_path with Ok () -> () | Error message -> fail "activate import" message);
     assert_bool "snapshot replacement preserves pending ops" (Ops.list ~path:active_path = [ op ]))
 ;;
+
+let () =
+  let payload = Yojson.Basic.from_string {|{"type":"create-page","uuid":"new-page","title":"New Page","createdAt":7}|} in
+  let decoded = try Some (Ops.intent_of_json payload) with Invalid_argument _ -> None in
+  assert_bool "ordinary page creation is a persisted semantic operation" (Option.is_some decoded);
+  let intent = Option.get decoded in
+  let operation = operation "create-page" 42 intent in
+  let projected = Projection.build ~server_t:42 (base_db ()) [operation] in
+  assert_string "created page title" "New Page" (title projected.db "new-page");
+  assert_bool "ordinary page is not a tag" (not (has_ident_tag projected.db ~source:"new-page" ~target:"logseq.class/Tag"));
+  assert_bool "created page appears in page search"
+    (List.exists (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.uuid = "new-page") (Logseq_chat_graph_read.sidebar_pages projected.db).recent_pages);
+  with_temp_db (fun path ->
+    Logseq_chat_graph_store.prepare_staging path;
+    Ops.save ~path operation;
+    assert_bool "page creation survives restart" (Ops.list ~path = [operation]))
+;;

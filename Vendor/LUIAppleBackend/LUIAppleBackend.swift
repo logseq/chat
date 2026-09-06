@@ -365,6 +365,7 @@ public final class LUIAppleBackend {
     private var extensionModels: [Int: LUIExtensionNodeModel] = [:]
     private var eventDeferralDepth = 0
     private var deferredEvents: [LUIEvent] = []
+    private var interactionLockedDrawers: Set<Int> = []
     private var images: [Int: CGImage] = [:]
     private var mediaSurfaces: [Int: CGImage] = [:]
     private let decoder = JSONDecoder()
@@ -418,6 +419,27 @@ public final class LUIAppleBackend {
 
     func model(id: Int) -> LUINodeModel? {
         models[id]
+    }
+
+    func setDrawerInteractionLocked(_ locked: Bool, node: Int) {
+        if locked {
+            interactionLockedDrawers.insert(node)
+        } else {
+            interactionLockedDrawers.remove(node)
+        }
+    }
+
+    func allowsControlInteraction(node: Int) -> Bool {
+        guard models[node] != nil || extensionModels[node] != nil else { return false }
+        guard !interactionLockedDrawers.isEmpty else { return true }
+        // Hit testing cannot cancel a Button press that began before a drawer drag.
+        // Check ancestors at delivery time; the drawer's own toggle remains usable.
+        var parent = models[node]?.parent ?? extensionModels[node]?.parent
+        while let ancestor = parent {
+            if interactionLockedDrawers.contains(ancestor) { return false }
+            parent = models[ancestor]?.parent ?? extensionModels[ancestor]?.parent
+        }
+        return true
     }
 
     func extensionModel(id: Int) -> LUIExtensionNodeModel? {
@@ -524,6 +546,7 @@ public final class LUIAppleBackend {
     }
 
     func performPress(node: Int) throws {
+        guard allowsControlInteraction(node: node) else { return }
         guard let model = models[node],
               model.kind == .button || (model.kind == .text && model.supportsPress) ||
                 (model.kind == .bottomTab && model.supportsPress) ||
@@ -540,6 +563,7 @@ public final class LUIAppleBackend {
     }
 
     func performLongPress(node: Int) throws {
+        guard allowsControlInteraction(node: node) else { return }
         guard let model = models[node],
               model.kind == .button || model.kind == .toggleButton ||
                 model.kind == .listItem,
@@ -607,6 +631,7 @@ public final class LUIAppleBackend {
     }
 
     func performToggle(node: Int, checked: Bool) throws {
+        guard allowsControlInteraction(node: node) else { return }
         guard let model = models[node],
               model.kind == .toggleButton || model.kind == .checkbox ||
                 model.kind == .switchControl || model.kind == .toggle ||

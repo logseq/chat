@@ -93,6 +93,11 @@ type intent =
       ; title : string
       ; created_at : int
       }
+  | Create_page of
+      { uuid : string
+      ; title : string
+      ; created_at : int
+      }
   | Create_journal of
       { page_uuid : string
       ; block_uuid : string
@@ -125,7 +130,7 @@ type t =
   }
 
 let outliner_op = function
-  | Save_title _ | Set_property _ | Set_properties _ | Create_tag _ | Add_tag _ -> "save-block"
+  | Save_title _ | Set_property _ | Set_properties _ | Create_tag _ | Create_page _ | Add_tag _ -> "save-block"
   | Insert_block _ | Create_asset _ | Create_journal _ -> "insert-blocks"
   | Set_favorite { favorite = true; _ } -> "insert-blocks"
   | Set_favorite { favorite = false; _ } -> "delete-blocks"
@@ -340,6 +345,13 @@ let intent_json = function
       ; "title", `String title
       ; "createdAt", `Int created_at
       ]
+  | Create_page { uuid; title; created_at } ->
+    `Assoc
+      [ "type", `String "create-page"
+      ; "uuid", `String uuid
+      ; "title", `String title
+      ; "createdAt", `Int created_at
+      ]
   | Create_journal { page_uuid; block_uuid; title; journal_day; created_at } ->
     `Assoc
       [ "type", `String "create-journal"
@@ -513,6 +525,15 @@ let intent_of_json = function
          }
      | "create-tag" ->
        Create_tag
+         { uuid = string fields "uuid"
+         ; title = string fields "title"
+         ; created_at =
+             (match List.assoc_opt "createdAt" fields with
+              | Some (`Int value) -> value
+              | _ -> (invalid_arg "invalid pending intent field: createdAt" [@coverage off]))
+         }
+     | "create-page" ->
+       Create_page
          { uuid = string fields "uuid"
          ; title = string fields "title"
          ; created_at =

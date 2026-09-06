@@ -156,6 +156,7 @@ private struct LGChatRichBlock: View {
                     onSeekYouTube: { url, seconds in
                         playback.starts[url] = seconds
                     },
+                    allowsLinkInteraction: { context.isUserInteractionEnabled },
                     onOpenMarkupLink: { link in
                         switch link {
                         case .node(let uuid):
@@ -163,16 +164,34 @@ private struct LGChatRichBlock: View {
                         }
                     }
                 )
+                .padding(.vertical, titleVerticalInset)
             }
         }
+        .font(.body)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: boolProperty("is-asset") ? nil : OutlinerLayoutMetrics.titleLineHeight,
+            alignment: .leading
+        )
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .strikethrough(boolProperty("is-completed"))
         .foregroundStyle(boolProperty("is-completed") ? .secondary : .primary)
     }
 
     private var blockID: String {
         stringProperty("block-id")
+    }
+
+    private var titleVerticalInset: CGFloat {
+        #if os(iOS)
+        // Use the editor's font metrics for every line count, including wrapped text.
+        OutlinerNativeTextLayoutPolicy.verticalInset(
+            fontLineHeight: UIFont.preferredFont(forTextStyle: .body).lineHeight,
+            minimumLineHeight: OutlinerLayoutMetrics.titleLineHeight
+        )
+        #else
+        0
+        #endif
     }
 
     private func boolProperty(_ name: String) -> Bool {
@@ -201,6 +220,7 @@ private struct LGChatRichBlock: View {
     }
 
     private func emitOpenNode(_ uuid: String) {
+        guard context.isUserInteractionEnabled else { return }
         do {
             try context.emit(name: "open-node", values: ["uuid": .string(uuid)])
         } catch {
@@ -267,7 +287,7 @@ private struct LGChatAssetPreview: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: 280)
+                .frame(maxWidth: .infinity, maxHeight: 280, alignment: .leading)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .accessibilityIdentifier("asset.preview.image")
         } else if LGChatAssetPreviewPolicy.usesInlineAudioPlayer(

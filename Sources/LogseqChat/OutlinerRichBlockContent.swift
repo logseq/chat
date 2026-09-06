@@ -16,6 +16,7 @@ struct OutlinerMixedRichMarkupContent: View {
     let precedingYouTubeURL: String?
     let youtubePlaybackStarts: [String: Int]
     let onSeekYouTube: (String, Int) -> Void
+    let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
 
     private var targetedNodes: [LogseqMarkupNode] {
@@ -40,6 +41,7 @@ struct OutlinerMixedRichMarkupContent: View {
                         node: node,
                         youtubeStartSeconds: node.url.flatMap { youtubePlaybackStarts[$0] },
                         onSeekYouTube: onSeekYouTube,
+                        allowsLinkInteraction: allowsLinkInteraction,
                         onOpenMarkupLink: onOpenMarkupLink
                     )
                 } else {
@@ -53,6 +55,7 @@ struct OutlinerMixedRichMarkupContent: View {
     @ViewBuilder private func inlineContent(_ chunk: [LogseqMarkupNode]) -> some View {
         Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
             .environment(\.openURL, OpenURLAction { url in
+                guard allowsLinkInteraction() else { return .discarded }
                 guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
                 onOpenMarkupLink(link)
                 return .handled
@@ -209,6 +212,7 @@ struct OutlinerRichBlockContent: View {
     let node: LogseqMarkupNode
     let youtubeStartSeconds: Int?
     let onSeekYouTube: (String, Int) -> Void
+    let allowsLinkInteraction: () -> Bool
     let onOpenMarkupLink: (OutlinerMarkupLink) -> Void
 
     @ViewBuilder var body: some View {
@@ -273,6 +277,7 @@ struct OutlinerRichBlockContent: View {
     @ViewBuilder private var quoteText: some View {
         Text(OutlinerMarkupAttributedString.make(nodes: node.children, fallback: ""))
             .environment(\.openURL, OpenURLAction { url in
+                guard allowsLinkInteraction() else { return .discarded }
                 guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }
                 onOpenMarkupLink(link)
                 return .handled

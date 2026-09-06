@@ -823,7 +823,7 @@ let rec project_outliner_intent blocks = function
         then { block with status; sync_status = "pending" }
         else block)
       blocks
-  | Set_property _ | Set_properties _ | Create_tag _ | Create_journal _ | Add_tag _
+  | Set_property _ | Set_properties _ | Create_tag _ | Create_page _ | Create_journal _ | Add_tag _
   | Set_favorite _ | Delete_page _ -> blocks
 ;;
 
@@ -2667,6 +2667,28 @@ let dispatch_outliner_event session payload =
               , Option.is_some aggregate_page_uuid
                 || Option.is_some session.selected_sidebar_page )
           in
+          let projected_context =
+            let saves_title = List.exists
+              (fun operation -> match operation.Pending_ops.intent with Save_title _ -> true | _ -> false)
+              interpreted.operations in
+            if not saves_title then projected_context
+            else
+              let live =
+                match aggregate_page_uuid with
+                | Some page_uuid ->
+                  (match page_outliner_context session page_uuid with
+                   | Some context -> context
+                   | None -> outliner_context session)
+                | None -> outliner_context session
+              in
+              let metadata = Hashtbl.create (List.length live.blocks) in
+              List.iter (fun (block : Model.block) -> Hashtbl.replace metadata block.uuid block) live.blocks;
+              { projected_context with blocks =
+                  List.map (fun (block : Model.block) ->
+                    match Hashtbl.find_opt metadata block.uuid with
+                    | Some current -> { block with references = current.references; tags = current.tags }
+                    | None -> block) projected_context.blocks }
+          in
           let next_state =
             List.fold_left
               (fun state operation ->
@@ -2683,7 +2705,10 @@ let dispatch_outliner_event session payload =
           session.outliner_commands <- interpreted.platform;
           session.outliner_revision <- session.outliner_revision + 1;
           let patch_uuids =
-            match interpreted.operations with
+            match message, interpreted.operations with
+            | Toggle_collapsed _, _ -> None
+            | _, operations ->
+            match operations with
             | [ { Pending_ops.intent = Save_title { uuid; _ }; _ } ] -> Some [ uuid ]
             | [ { intent = Set_property { uuid; _ }; _ } ] -> Some [ uuid ]
             | [] ->

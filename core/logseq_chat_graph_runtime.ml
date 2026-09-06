@@ -71,7 +71,7 @@ let affected_uuids db = function
   | Ops.Save_title { uuid; _ }
   | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ }
   | Ops.Move_block { uuid; _ }
-  | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } -> [ uuid ]
+  | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } | Ops.Create_page { uuid; _ } -> [ uuid ]
   | Ops.Move_blocks { moves } -> List.map (fun (move : Ops.move) -> move.uuid) moves
   | Ops.Split_block { uuid; new_uuid; _ } -> [ uuid; new_uuid ]
   | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
@@ -170,7 +170,7 @@ let rebuild ?(changed_uuids = []) runtime =
 let safe_to_rebase = function
   | Ops.Save_title _ | Ops.Set_property _ | Ops.Set_properties _
   | Ops.Split_block _ | Ops.Merge_backward _
-  | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
+  | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
   | Ops.Create_asset _
   | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Set_favorite _ | Ops.Delete_page _ -> true
   | Ops.Delete_blocks _ -> false
@@ -412,7 +412,7 @@ let normalize_operation_against runtime db operation =
     | Ops.Set_properties { uuid; changes } ->
       Ok (Ops.Set_properties { uuid; changes = List.map normalize_property_change changes })
     | (Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
-      | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
+      | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
       | Ops.Set_favorite _ | Ops.Delete_page _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }

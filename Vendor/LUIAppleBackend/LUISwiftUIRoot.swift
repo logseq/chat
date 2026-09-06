@@ -2504,6 +2504,7 @@ private struct LUIMenuItemForegroundModifier: ViewModifier {
 }
 
 private struct LUIListItemView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let model: LUINodeModel
     let backend: LUIAppleBackend
     var isNativeListRow = false
@@ -2536,7 +2537,7 @@ private struct LUIListItemView: View {
         ).map { CGFloat($0) })
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            model.isSelected ? Color.accentColor.opacity(selectedOpacity) : Color.clear,
+            model.isSelected ? selectionBackground : Color.clear,
             in: RoundedRectangle(cornerRadius: cornerRadius)
         )
         .id(model.isSelected)
@@ -2582,7 +2583,7 @@ private struct LUIListItemView: View {
                     .foregroundStyle(
                         isNativeListRow
                             ? Color.primary
-                            : (model.isSelected && isNavigationRow ? Color.accentColor : .secondary)
+                            : Color.secondary
                     )
             }
             if visibleChildren.isEmpty {
@@ -2671,7 +2672,12 @@ private struct LUIListItemView: View {
         isNavigationHeading ? 6 : (isNavigationRow ? 10 : 8)
     }
     private var cornerRadius: CGFloat { isNavigationRow ? 10 : 6 }
-    private var selectedOpacity: Double { isNavigationRow ? 0.12 : 0.16 }
+    private var selectionBackground: Color {
+        if isNavigationRow && colorScheme == .light {
+            return Color.primary.opacity(0.06)
+        }
+        return Color.accentColor.opacity(isNavigationRow ? 0.12 : 0.16)
+    }
     private var iconSize: CGFloat { isNativeListRow ? 18 : (isNavigationRow ? 18 : 16) }
 
     private func performPrimaryAction() {
@@ -3078,9 +3084,15 @@ private struct LUIButtonView: View {
         )
             .scaledToFit()
             .frame(
-                width: LUIButtonVisualPolicy.iconExtent(buttonSize: model.buttonSize),
-                height: LUIButtonVisualPolicy.iconExtent(buttonSize: model.buttonSize)
+                width: iconExtent,
+                height: iconExtent
             )
+    }
+
+    private var iconExtent: CGFloat {
+        min(LUIButtonVisualPolicy.iconExtent(buttonSize: model.buttonSize),
+            buttonWidth ?? .greatestFiniteMagnitude,
+            buttonHeight ?? .greatestFiniteMagnitude)
     }
 
     private var controlSize: ControlSize {
@@ -3212,6 +3224,12 @@ private struct LUIHorizontalGroupView: View {
             }
             ForEach(Array(model.children.enumerated()), id: \.element) { index, childID in
                 if let child = backend.model(id: childID) {
+                    if model.kind == .breadcrumb && index > 0 {
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
                     groupChild(child)
                         .frame(
                             maxWidth: child.property(.grow)?.doubleValue ?? 0 > 0
@@ -3733,6 +3751,7 @@ enum LUIListSectionPolicy {
 private struct LUIListView: View {
     let model: LUINodeModel
     let backend: LUIAppleBackend
+    @Environment(\.luiSemanticColors) private var semanticColors
 
     var body: some View {
         List {
@@ -3767,9 +3786,16 @@ private struct LUIListView: View {
                 }
             }
         }
-        .scrollContentBackground(LUIListSurfacePolicy.scrollContentBackground)
+        .scrollContentBackground(
+            semanticColors["background"] == nil
+                ? LUIListSurfacePolicy.scrollContentBackground : .hidden
+        )
+        .background(semanticColors["background"])
         .foregroundStyle(.primary)
-        .preference(key: LUIListSurfacePreferenceKey.self, value: true)
+        .preference(
+            key: LUIListSurfacePreferenceKey.self,
+            value: semanticColors["background"] == nil
+        )
         #if os(iOS)
         .listStyle(.insetGrouped)
         #endif
@@ -3778,11 +3804,14 @@ private struct LUIListView: View {
     @ViewBuilder
     private func rows(_ childIDs: [Int]) -> some View {
         ForEach(childIDs, id: \.self) { childID in
-            if let child = backend.model(id: childID), child.kind == .listItem {
-                LUIListItemView(model: child, backend: backend, isNativeListRow: true)
-            } else {
-                LUIAnyNodeView(nodeID: childID, backend: backend)
+            Group {
+                if let child = backend.model(id: childID), child.kind == .listItem {
+                    LUIListItemView(model: child, backend: backend, isNativeListRow: true)
+                } else {
+                    LUIAnyNodeView(nodeID: childID, backend: backend)
+                }
             }
+            .listRowBackground(semanticColors["surface"])
         }
     }
 
@@ -3807,6 +3836,8 @@ private struct LUIListView: View {
 private struct LUIVirtualListView: View {
     let model: LUINodeModel
     let backend: LUIAppleBackend
+    @State private var unobscuredHeight: CGFloat?
+    @State private var titleTracker = LUIScrollSectionTitleTracker()
 
     var body: some View {
         ScrollView {
@@ -3814,14 +3845,68 @@ private struct LUIVirtualListView: View {
                 alignment: .leading,
                 spacing: CGFloat(model.property(.gap)?.intValue ?? 0)
             ) {
-                ForEach(model.children, id: \.self) { childID in
-                    LUIAnyNodeView(nodeID: childID, backend: backend)
+                ForEach(sectionRows, id: \.id) { row in
+                    LUIAnyNodeView(nodeID: row.id, backend: backend)
                         .equatable()
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .modifier(LUIScrollSectionFrameModifier(
+                            index: row.index, title: row.title,
+                            coordinateSpace: titleCoordinateSpace,
+                            onVisibilityChange: { index, title in
+                                titleTracker.update(index: index, title: title)
+                            }
+                        ))
                 }
             }
+            .environment(\.luiUnobscuredScrollHeight, unobscuredHeight)
+        }
+        .coordinateSpace(name: titleCoordinateSpace)
+        .background {
+            LUIScrollSectionTitleEmitter(tracker: titleTracker,
+                                         isActive: tracksSectionTitles && model.isSelected)
+        }
+        .background {
+            GeometryReader { _ in
+                // Minimum-height content uses the viewport before keyboard avoidance.
+                Color.clear
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        unobscuredHeight = height
+                    }
+            }
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
+
+    private var tracksSectionTitles: Bool {
+        model.property(.styleClass)?.stringValue?.split(separator: " ").contains("scroll-section-titles") == true
+    }
+
+    private var titleCoordinateSpace: LUIScrollTitleCoordinateSpace {
+        LUIScrollTitleCoordinateSpace(nodeID: model.id)
+    }
+
+    private struct SectionRow {
+        let id: Int
+        let index: Int
+        let title: String?
+    }
+
+    private var sectionRows: [SectionRow] {
+        var currentTitle: String?
+        return model.children.enumerated().map { index, id in
+            if tracksSectionTitles, let title = sectionTitle(in: id) { currentTitle = title }
+            return SectionRow(id: id, index: index, title: currentTitle)
+        }
+    }
+
+    private func sectionTitle(in nodeID: Int) -> String? {
+        guard let node = backend.model(id: nodeID) else { return nil }
+        if node.property(.styleClass)?.stringValue?.split(separator: " ").contains("scroll-section-title") == true {
+            return node.text.isEmpty ? nil : node.text
+        }
+        return node.children.lazy.compactMap { sectionTitle(in: $0) }.first
+    }
+
 }
 
 struct LUIVerticalScrollContent: View {
@@ -4186,6 +4271,11 @@ private struct LUISurfaceModifier: ViewModifier {
                 ).map(CGFloat.init),
                 height: model.surfaceHeight.map(CGFloat.init)
             )
+            .modifier(LUIBodyLineControlModifier(
+                enabled: model.property(.styleClass)?.stringValue?.split(separator: " ").contains("body-line") == true,
+                width: model.surfaceWidth.map(CGFloat.init),
+                minimumHeight: CGFloat(model.surfaceHeight ?? 24)
+            ))
             .frame(
                 minWidth: model.kind == .resizable ? nil : model.surfaceMinWidth.map(CGFloat.init),
                 maxWidth: model.kind == .resizable ? nil : model.surfaceMaxWidth.map(CGFloat.init),
@@ -4203,6 +4293,10 @@ private struct LUISurfaceModifier: ViewModifier {
             )
             .modifier(
                 LUIOptionalForegroundModifier(
+                    usesSecondaryStyle:
+                        LUIThemeColorPolicy.isSecondaryForeground(model.property(.foreground)?.stringValue) ||
+                        (LUIThemeColorPolicy.isMutedForeground(model.property(.foreground)?.stringValue) &&
+                         semanticColors["muted-foreground"] == nil),
                     foreground: foregroundColor(model.property(.foreground)?.stringValue) ??
                         (LUIThemeColorPolicy.usesDefaultForeground(kind: model.kind)
                             ? defaultForeground
@@ -4319,11 +4413,14 @@ private struct LUISurfaceModifier: ViewModifier {
 }
 
 private struct LUIOptionalForegroundModifier: ViewModifier {
+    var usesSecondaryStyle = false
     let foreground: Color?
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if let foreground {
+        if usesSecondaryStyle {
+            content.foregroundStyle(.secondary)
+        } else if let foreground {
             content.foregroundStyle(foreground)
         } else {
             content

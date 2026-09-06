@@ -442,9 +442,10 @@
   (= (:destination current) model/GraphsDestination))
 
 (defn sidebar-page-selected? [current page]
-  (match (:selected-page current)
-    (Some selected) (= (:uuid selected) (:uuid page))
-    None false))
+  (and (= (:destination current) model/JournalsDestination)
+       (match (:selected-page current)
+         (Some selected) (= (:uuid selected) (:uuid page))
+         None false)))
 
 (defn sidebar-tab-visible? [current tab]
   (model/string-vector-contains? (:sidebar-tabs current) tab))
@@ -610,11 +611,11 @@
         "Graphs"]))))
 
 (defui sidebar-view [model-source send]
-  [:scroll
-   [:column
-    {:accessibility-identifier "sidebar.navigation"
-     :gap 4
-     :padding 12}
+  [:column
+   {:accessibility-identifier "sidebar.navigation"
+    :grow 1.0
+    :gap 4
+    :padding 12}
    [:box {:height (if (host? proto/FlutterHost) 8 48)}]
    [:stack
     [sidebar-graph-switch model-source send]
@@ -637,26 +638,28 @@
     [sidebar-flashcards-row model-source send]]
    [:if {:test (reactive graphs-tab-visible? model-source)}
     [sidebar-graphs-row model-source send]]
-   [:column {:accessibility-identifier "section.sidebar.favorites" :gap 2}
-    [sidebar-section-heading "Favorites" "app:star"]
-    [:if {:test (reactive favorites-empty? model-source)}
-     [sidebar-empty-section-label "No favorites yet"]]
-    [:keyed
-     {:source (reactive :favorites model-source)
-      :key :uuid
-      :compare compare
-      :as page-source}
-     [sidebar-page-row model-source page-source send]]]
-   [:column {:accessibility-identifier "section.sidebar.recent" :gap 2}
-    [sidebar-section-heading "Recent" "app:history"]
-    [:if {:test (reactive recent-pages-empty? model-source)}
-     [sidebar-empty-section-label "No recent pages"]]
-    [:keyed
-     {:source (reactive :recent-pages model-source)
-      :key :uuid
-      :compare compare
-      :as page-source}
-     [sidebar-page-row model-source page-source send]]]]])
+   [:scroll {:grow 1.0 :accessibility-identifier "scroll.sidebar.pages"}
+    [:column {:gap 4}
+     [:column {:accessibility-identifier "section.sidebar.favorites" :gap 2}
+      [sidebar-section-heading "Favorites" "app:star"]
+      [:if {:test (reactive favorites-empty? model-source)}
+       [sidebar-empty-section-label "No favorites yet"]]
+      [:keyed
+       {:source (reactive :favorites model-source)
+        :key :uuid
+        :compare compare
+        :as page-source}
+       [sidebar-page-row model-source page-source send]]]
+     [:column {:accessibility-identifier "section.sidebar.recent" :gap 2}
+      [sidebar-section-heading "Recent" "app:history"]
+      [:if {:test (reactive recent-pages-empty? model-source)}
+       [sidebar-empty-section-label "No recent pages"]]
+      [:keyed
+       {:source (reactive :recent-pages model-source)
+        :key :uuid
+        :compare compare
+        :as page-source}
+       [sidebar-page-row model-source page-source send]]]]]])
 
 (defn composer-collapsed? [current]
   (not (:composer-expanded current)))
@@ -823,11 +826,19 @@
       (elements/element
        ui-context nil
        [:button
-        {:text (reactive outliner-row-collapse-glyph row-source)
+        {:icon (reactive
+                (fn [current-row]
+                  (if (= (:is-collapsed current-row) true)
+                    "app:disclosure-right"
+                    "app:disclosure-down"))
+                row-source)
+         :size "icon"
+         :class "body-line"
+         :foreground "secondary"
          :label (reactive outliner-row-collapse-label row-source)
          :variant "ghost"
          :width 28
-         :height 28
+         :height 24
          :accessibility-identifier
          (outliner-collapse-identifier row)
          :on-press
@@ -1201,7 +1212,8 @@
               (send (model/RequestAppNode (:uuid current-breadcrumb))))}])))
 
 (defui related-row-breadcrumbs [row-source send]
-  [:row {:accessibility-identifier "breadcrumb.related-blocks"}
+  [:breadcrumb {:gap 5 :main "start"
+                :accessibility-identifier "breadcrumb.related-blocks"}
    [:keyed
     {:source (reactive :breadcrumbs row-source)
      :key :uuid
@@ -1231,15 +1243,7 @@
 
 (defn outliner-task-status-icon [row]
   (match (:status row)
-    (Some status)
-    (case (:uuid status)
-      "backlog" "app:task-backlog"
-      "todo" "app:task-todo"
-      "doing" "app:task-doing"
-      "in-review" "app:task-review"
-      "done" "app:task-done"
-      "canceled" "app:task-canceled"
-      "app:task-todo")
+    (Some status) (task-status-icon-name status)
     None "app:task-todo"))
 
 (defn outliner-task-status-style-is? [row expected]
@@ -1408,7 +1412,9 @@
        ui-context nil
        [:button
         {:label (reactive outliner-row-zoom-label row-source)
-         :icon "app:status-dot"
+         :icon "app:outliner-bullet"
+         :size "icon"
+         :class "body-line"
          :variant "ghost"
          :foreground "border"
          :width 24
@@ -1486,8 +1492,10 @@
         {:icon (reactive outliner-task-status-icon row-source)
          :label (reactive outliner-row-status-title row-source)
          :variant "ghost"
+         :class "body-line"
+         :foreground "secondary"
          :size "icon"
-         :width 24
+         :width 22
          :height 24
          :accessibility-identifier "button.block-task-status"}
         [:context-menu
@@ -1528,8 +1536,8 @@
       [outliner-zoom-control row-source send search-open]
       [:box {:width 2}]
       [:row {:gap 7 :cross "start" :grow 1.0}
-       [:column {:cross "start"}
-        [:if {:test has-status-source}
+       [:if {:test has-status-source}
+        [:column {:cross "start"}
          [outliner-status-control model-source row-source send]]]
        [:column {:grow 1.0}
         [:if {:test editing-source}
@@ -1552,8 +1560,8 @@
           {:accessibility-identifier
            (str "outliner.sync-failed." (outliner-row-uuid row))}
           "Sync failed"]]]
-       [:column {:cross "start"}
-        [:if {:test has-children-source}
+       [:if {:test has-children-source}
+        [:column {:cross "start"}
          [outliner-collapse-button row-source send]]]]])))
 
 (defn outliner-row
@@ -1565,7 +1573,7 @@
       (elements/element
        ui-context nil
        [:list-item
-        {:accessibility-identifier (outliner-row-identifier row)
+        {:accessibility-identifier-signal (reactive outliner-row-identifier row-source)
          :label (reactive outliner-row-action-label model-source row-source)
          :padding 0
          :selected selected-source
@@ -1586,7 +1594,7 @@
       (elements/element
        ui-context nil
        [:box
-        {:accessibility-identifier (outliner-row-identifier row)
+        {:accessibility-identifier-signal (reactive outliner-row-identifier row-source)
          :padding 0
          :corner-radius 10
          :selected selected-source}
@@ -1599,7 +1607,7 @@
         (reactive outliner-journal-page-id model-source row-source)]
     (elements/element
      ui-context nil
-     [:column
+     [:column {:padding-horizontal 8}
       [:if {:test
             (reactive outliner-journal-divider-visible?
                       model-source row-source)}
@@ -1621,6 +1629,7 @@
          [:box {:height 14}]
          [:heading
           {:level 3
+           :class "scroll-section-title"
            :value (reactive outliner-journal-title
                             model-source row-source)}]]]]
       [outliner-row model-source retained-row-source row-source send]])))
@@ -2055,13 +2064,19 @@
                 :foreground "muted-foreground"}]]]
       [outliner-row model-source retained-row-source row-source send]])))
 
+(defui related-section-heading [title]
+  [:box {:padding-horizontal 8}
+   [:text {:class "subheadline"
+           :foreground "muted-foreground"
+           :accessibility-identifier "title.related-section"}
+    title]])
+
 (defui node-related-section [model-source send]
   [:column
    {:gap 0
     :accessibility-identifier "section.node.linked-references"}
    [:box {:height 26}]
-   [:box {:padding-horizontal 8}
-    [:heading {:level 3} "Linked references"]]
+   [related-section-heading "Linked references"]
    [:box {:height 8}]
    [:column {:accessibility-identifier "list.node.related"}
     [:keyed
@@ -2076,11 +2091,11 @@
    {:gap 0
     :accessibility-identifier "section.tag.tagged-nodes"}
    [:box {:height 26}]
-   [:box {:padding-horizontal 8}
-    [:heading {:level 3} "Tagged nodes"]]
+   [related-section-heading "Tagged nodes"]
    [:box {:height 8}]
    [:if {:test (reactive node-tag-section-empty? model-source)}
-    [:text "No tagged nodes"]]
+    [:box {:padding-horizontal 8}
+     [:text {:foreground "muted-foreground"} "No tagged nodes"]]]
    [:column {:accessibility-identifier "list.node.tagged"}
     [:keyed
      {:source (reactive active-node-related-rows model-source)
@@ -2094,8 +2109,7 @@
    {:gap 0
     :accessibility-identifier "section.node.linked-references"}
    [:box {:height 26}]
-   [:box {:padding-horizontal 8}
-    [:heading {:level 3} "Linked references"]]
+   [related-section-heading "Linked references"]
    [:box {:height 8}]
    [:column {:accessibility-identifier "list.node.linked-references"}
     [:keyed
@@ -2106,13 +2120,14 @@
      [node-related-row model-source row-source send]]]])
 
 (defui add-first-block-button [model-source send]
-  [:button
-   {:label "Add first block"
-    :accessibility-identifier "button.outliner.add-first-block"
-    :on-press
-    (event [current model-source]
-           (send (model/AddRootBlock (active-node-page-uuid current))))}
-   "Add first block"])
+  [:box {:padding-horizontal 8}
+   [:button
+    {:label "Add first block"
+     :accessibility-identifier "button.outliner.add-first-block"
+     :on-press
+     (event [current model-source]
+            (send (model/AddRootBlock (active-node-page-uuid current))))}
+    "Add first block"]])
 
 (defui node-screen [model-source send]
   [:column
@@ -2424,7 +2439,7 @@
      [:menu-item
       {:text (reactive task-status-title status-source)
        :icon (reactive task-status-icon-name status-source)
-       :foreground "accent"
+       :foreground "secondary"
        :accessibility-identifier
        (outliner-task-status-option-identifier status)
        :on-press
@@ -2793,9 +2808,12 @@
      ui-context nil
      [:list-item
       {:icon (reactive (fn [current-graph]
-                         (graph-icon-name local? current-graph))
+                         (if (and (not (= (ui/host ui-context) proto/FlutterHost))
+                                  (not local?) (= (:is-encrypted current-graph) true))
+                           "app:graph-locked"
+                           (graph-icon-name local? current-graph)))
                        graph-source)
-       :min-height 56
+       :min-height (if (= (ui/host ui-context) proto/FlutterHost) 56 44)
        :accessibility-identifier (graph-identifier graph)
        :disabled (if local?
                    (reactive graph-delete-active? model-source graph-source)
@@ -2811,7 +2829,11 @@
           :foreground "muted-foreground"
           :accessibility-identifier (graph-status-identifier graph)}
          "Preparing"]]
-       [:if {:test (reactive :is-encrypted graph-source)}
+       [:if {:test (reactive
+                    (fn [current-graph]
+                      (and (= (ui/host ui-context) proto/FlutterHost)
+                           (= (:is-encrypted current-graph) true)))
+                    graph-source)}
         [:text
          {:class "caption"
           :foreground "muted-foreground"}
@@ -3164,7 +3186,8 @@
      [:list {:accessibility-identifier "screen.graphs"
              :gap 4}
       [:list-item
-       {:min-height 56
+       {:icon "app:refresh"
+        :min-height 44
         :accessibility-identifier "button.graphs.refresh"
         :disabled (reactive model/graph-refresh-active? model-source)
         :on-press (fn [_event] (send model/RefreshGraphs))}
@@ -3172,16 +3195,14 @@
       [:if {:test (reactive model/graph-refresh-active? model-source)}
        [:spinner {:accessibility-identifier "graphs.loading"}]]
       [:list-item
-       {:icon "app:add"
-        :min-height 56
+       {:min-height 44
         :accessibility-identifier "button.graph-add"
         :on-press (fn [_event] (send model/OpenCreateGraph))}
        "Add sync graph"]
-      [:box {:padding-horizontal 16}
-       [:heading {:level 5} "Local graphs"]]
+      [:heading {:level 5 :accessibility-identifier "heading.graphs.local"}
+       "Local graphs:"]
       [:if {:test (reactive local-graphs-empty? model-source)}
-       [:box {:padding-horizontal 16}
-        [:text "No local graphs"]]]
+       [:text {:foreground "secondary"} "No local graphs"]]
       [:keyed
        {:source (reactive local-graphs model-source)
         :key :id
@@ -3189,8 +3210,8 @@
         :as graph-source}
        [graph-list-row model-source graph-source true send]]
       [:if {:test (reactive remote-graphs-present? model-source)}
-       [:box {:padding-horizontal 16}
-        [:heading {:level 5} "Remote graphs"]]]
+       [:heading {:level 5 :accessibility-identifier "heading.graphs.remote"}
+        "Remote graphs:"]]
       [:keyed
        {:source (reactive remote-graphs model-source)
         :key :id
@@ -4627,11 +4648,10 @@
 (defui root-outliner-view [model-source visible-source send]
   [:box
    {:grow 1.0
-    :padding-horizontal 8
     :accessibility-identifier "layout.outliner.horizontal-inset"}
    [:virtual-list
     {:grow 1.0
-     :class "retained-pane"
+     :class "retained-pane scroll-section-titles"
      :selected visible-source
      :accessibility-identifier "list.outliner"}
     [:box
@@ -4641,7 +4661,7 @@
      [:column {:gap 0}
       [:box {:height 26}]
       [:box
-       {:padding-horizontal 8
+       {:padding-horizontal 16
         :accessibility-identifier "layout.selected-page.title"}
        [:heading
         {:level 3
@@ -4664,13 +4684,17 @@
         :on-appear
         (fn [_event] (send model/LoadOlderJournals))}]]
      [:if {:test (reactive main-can-add-first-block? model-source)}
-      [add-first-block-button model-source send]]
+      [:box {:padding-horizontal 8}
+       [add-first-block-button model-source send]]]
      [:if {:test (reactive main-related-section-visible? model-source)}
-      [node-related-section model-source send]]
+      [:box {:padding-horizontal 8}
+       [node-related-section model-source send]]]
      [:if {:test (reactive main-tag-section-visible? model-source)}
-      [node-tagged-section model-source send]]
+      [:box {:padding-horizontal 8}
+       [node-tagged-section model-source send]]]
      [:if {:test (reactive main-linked-reference-section-visible? model-source)}
-      [node-linked-reference-section model-source send]]
+      [:box {:padding-horizontal 8}
+       [node-linked-reference-section model-source send]]]
      [:box {:height 120}]]])
 
 (defui retained-journal-pane [model-source send]

@@ -15,6 +15,22 @@ let expect_ok label = function Ok value -> value | Error message -> failwith (la
 let expect_error label = function Error _ -> () | Ok _ -> failwith (label ^ ": expected an error")
 
 let () =
+  assert_equal "midpoint pads an empty lower fraction" "0G"
+    (expect_ok "zero-prefix midpoint" (Order.midpoint "" (Some "0V")));
+  List.iter (fun lower ->
+    let rec insert count upper =
+      if count > 0 then (
+        let key = expect_ok "repeated insertion" (Order.between (Some lower) (Some upper)) in
+        assert_bool "each insertion remains valid" (Order.validate key = Ok ());
+        assert_bool "each insertion stays between adjacent blocks"
+          (String.compare lower key < 0 && String.compare key upper < 0);
+        insert (count - 1) key)
+    in
+    insert 100 (expect_ok "upper bound" (Order.between (Some lower) None)))
+    [ "a0"; "a0V"; "Zz" ]
+;;
+
+let () =
   assert_equal "empty bounds" "a0" (expect_ok "empty bounds" (Order.between None None));
   assert_equal "append" "a1" (expect_ok "append" (Order.between (Some "a0") None));
   assert_equal "middle" "a0V" (expect_ok "middle" (Order.between (Some "a0") (Some "a1")));
@@ -109,8 +125,10 @@ let () =
     (String.compare maximum after_maximum < 0 && Order.validate after_maximum = Ok ());
   let first_integer = "A" ^ String.make 25 '0' ^ "1" in
   let before_first = expect_ok "prepend first integer" (Order.between None (Some first_integer)) in
-  assert_bool "prepend before first integer never emits the reserved minimum sentinel"
-    (String.compare before_first first_integer < 0 && Order.validate before_first = Ok ())
+  assert_equal "prepend minimum integer matches Logseq's boundary behavior"
+    minimum before_first;
+  expect_error "Logseq rejects reusing the minimum sentinel"
+    (Order.n_between None (Some first_integer) 2)
 ;;
 
 let () =
@@ -148,4 +166,23 @@ let () =
                && Order.validate result = Ok ())))
         samples)
     samples
+;;
+
+(* Golden vectors from the exact clj-fractional-indexing revision pinned by Logseq. *)
+let () =
+  assert_list "Logseq batch vector 0"
+    [ "a0"; "a1"; "a2"; "a3"; "a4"; "a5"; "a6"; "a7"; "a8"; "a9"; "aA"; "aB"; "aC"; "aD"; "aE"; "aF"; "aG"; "aH"; "aI"; "aJ" ]
+    (expect_ok "Logseq batch parity" (Order.n_between None None 20));
+  assert_list "Logseq batch vector 1"
+    [ "c0Zj"; "c0Zk"; "c0Zl"; "c0Zm"; "c0Zn"; "c0Zo"; "c0Zp"; "c0Zq"; "c0Zr"; "c0Zs"; "c0Zt"; "c0Zu"; "c0Zv"; "c0Zw"; "c0Zx"; "c0Zy"; "c0Zz"; "c0a0"; "c0a1"; "c0a2" ]
+    (expect_ok "Logseq batch parity" (Order.n_between None (Some "c0a3") 20));
+  assert_list "Logseq batch vector 2"
+    [ "ZxX"; "ZxZ"; "Zxd"; "Zxf"; "Zxh"; "Zxl"; "Zxn"; "Zxp"; "Zxt"; "Zxx"; "Zy"; "Zy0V"; "Zy1"; "Zy2"; "Zy3"; "Zy4"; "Zy4V"; "Zy5"; "Zy6"; "Zy6V" ]
+    (expect_ok "Logseq batch parity" (Order.n_between (Some "ZxV") (Some "Zy7") 20));
+  assert_list "Logseq batch vector 3"
+    [ "ZyB"; "ZyE"; "ZyL"; "ZyP"; "ZyS"; "ZyZ"; "Zyd"; "Zyg"; "Zyn"; "Zyu"; "Zz"; "Zz8"; "ZzG"; "ZzV"; "Zzl"; "a0"; "a0G"; "a0V"; "a1"; "a2" ]
+    (expect_ok "Logseq batch parity" (Order.n_between (Some "Zy7") (Some "axV") 20));
+  assert_list "Logseq batch vector 4"
+    [ "c0a4"; "c0a5"; "c0a6"; "c0a7"; "c0a8"; "c0a9"; "c0aA"; "c0aB"; "c0aC"; "c0aD"; "c0aE"; "c0aF"; "c0aG"; "c0aH"; "c0aI"; "c0aJ"; "c0aK"; "c0aL"; "c0aM"; "c0aN" ]
+    (expect_ok "Logseq batch parity" (Order.n_between (Some "c0a3") None 20))
 ;;

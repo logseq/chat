@@ -3605,7 +3605,35 @@ let () =
   let first_empty = split source.uuid in
   let second_empty = split first_empty in
   if String.equal first_empty second_empty
-  then failwith "consecutive node-route Enter must create distinct blocks"
+  then failwith "consecutive node-route Enter must create distinct blocks";
+  ignore
+    (dispatch_outliner session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  let inserted = split source.uuid in
+  let response =
+    dispatch_outliner session
+      (`Assoc [ "type", `String "caretMoved"; "caretUTF16Offset", `Int 0 ])
+  in
+  let rows = required_first_assoc "nodeRoutes" response |> required_list "outlinerRows" in
+  let ids = List.map (function
+    | `Assoc row -> required_assoc "block" row |> required_string "uuid"
+    | _ -> failwith "expected an outliner row") rows in
+  if ids <> [ source.uuid; inserted; first_empty; second_empty ]
+  then failwith ("node-route insertion moved to the bottom: " ^ String.concat "," ids);
+  let expected = ref ids in
+  for _ = 1 to 20 do
+    ignore (dispatch_outliner session
+      (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+    let inserted = split source.uuid in
+    expected := source.uuid :: inserted :: List.tl !expected;
+    let response = dispatch_outliner session
+      (`Assoc [ "type", `String "caretMoved"; "caretUTF16Offset", `Int 0 ]) in
+    let rows = required_first_assoc "nodeRoutes" response |> required_list "outlinerRows" in
+    let ids = List.map (function
+      | `Assoc row -> required_assoc "block" row |> required_string "uuid"
+      | _ -> failwith "expected an outliner row") rows in
+    if ids <> !expected then failwith "repeated insertion must stay after the first block"
+  done
 ;;
 
 let () =
@@ -4065,4 +4093,74 @@ let () =
   match !reviewed with
   | Some ("flashcard", Logseq_chat_flashcards.Good, value, "review-op") when value = now -> ()
   | _ -> failwith "reviewFlashcard must preserve UUID, rating, time, and operation id"
+;;
+
+let () =
+  let parent = remote_block "parent" "Parent" in
+  let child = { (remote_block "child" "Child") with Logseq_chat_model.parent_id = Some "parent" } in
+  let staged = ref [] in
+  let session = Logseq_chat_rpc.create
+    ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+    ~sync_cursor:(fun () -> Some 92)
+    ~graph_blocks:(fun () -> Some [parent; child])
+    ~stage_operation:(fun operation -> staged := operation :: !staged; Ok ())
+    ~prepare_operation:prepare_test_operation () in
+  configure_plain_graph session;
+  ignore (dispatch_outliner session (`Assoc ["type", `String "tapBlock"; "uuid", `String "parent"]));
+  ignore (dispatch_outliner session (`Assoc ["type", `String "textChanged"; "title", `String "Changed parent"; "caretUTF16Offset", `Int 14]));
+  let collapsed = dispatch_outliner session (`Assoc ["type", `String "toggleCollapsed"; "uuid", `String "parent"]) in
+  if List.assoc_opt "editing" (required_assoc "outlinerState" collapsed) <> Some `Null
+  then failwith "collapse must finish the active editor";
+  if required_list "outlinerRowSplices" collapsed = []
+  then failwith "collapse after editing must remove child rows as well as saving the title";
+  if List.length !staged <> 1 then failwith "collapse saves the pending title exactly once"
+;;
+
+let () =
+  let staged = ref [] in
+  let session = Logseq_chat_rpc.create
+    ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+    ~sync_cursor:(fun () -> Some 92)
+    ~graph_blocks:(fun () -> Some [remote_block "editing" "Original"])
+    ~stage_operation:(fun operation -> staged := operation :: !staged; Ok ())
+    ~prepare_operation:prepare_test_operation () in
+  configure_plain_graph session;
+  ignore (dispatch_outliner session (`Assoc ["type", `String "tapBlock"; "uuid", `String "editing"]));
+  ignore (dispatch_outliner session (`Assoc ["type", `String "textChanged"; "title", `String "Draft [[Novel]]"; "caretUTF16Offset", `Int 13]));
+  let result = dispatch_outliner session (`Assoc ["type", `String "chooseAutocomplete"; "value", `String "Novel"]) in
+  let editing = required_assoc "editing" (required_assoc "outlinerState" result) in
+  assert_equal "new page keeps paired reference in the draft" "Draft [[Novel]]" (required_string "title" editing);
+  match !staged with
+  | [operation] ->
+    (match Logseq_chat_pending_ops.intent_json operation.intent with
+     | `Assoc fields -> assert_equal "new page stages creation without saving the block" "create-page" (required_string "type" fields)
+     | _ -> failwith "new page operation must be serializable")
+  | _ -> failwith "choosing New page must create exactly one real page without saving the draft"
+;;
+
+let () =
+  let live = ref (remote_block "source" "Original") in
+  let session = Logseq_chat_rpc.create
+    ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+    ~sync_cursor:(fun () -> Some 92)
+    ~graph_blocks:(fun () -> Some [!live])
+    ~stage_operation:(fun operation ->
+      (match operation.Logseq_chat_pending_ops.intent with
+       | Save_title { title; _ } ->
+         live := { !live with title; references = [{ uuid = "target"; title = "New page" }] }
+       | _ -> ());
+      Ok ())
+    ~prepare_operation:prepare_test_operation () in
+  configure_plain_graph session;
+  ignore (dispatch_outliner session (`Assoc ["type", `String "tapBlock"; "uuid", `String "source"]));
+  ignore (dispatch_outliner session (`Assoc ["type", `String "textChanged"; "title", `String "See [[target]]"; "caretUTF16Offset", `Int 14]));
+  let result = dispatch_outliner session (`Assoc ["type", `String "saveEditing"]) in
+  let rec has_reference = function
+    | `Assoc fields ->
+      List.assoc_opt "type" fields = Some (`String "nodeReference")
+      || List.exists (fun (_, value) -> has_reference value) fields
+    | `List values -> List.exists has_reference values
+    | _ -> false in
+  if not (has_reference (`Assoc result))
+  then failwith "save patch must immediately render newly staged reference metadata"
 ;;

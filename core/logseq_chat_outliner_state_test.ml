@@ -90,8 +90,8 @@ let () =
   let state, effects = State.update context state (Choose_autocomplete "Project") in
   assert_bool "autocomplete completion updates editor text"
     (State.editing_title state = Some "A [[Project]]");
-  assert_bool "autocomplete completion requests selection feedback"
-    (effects = [ State.Haptic Selection ])
+  assert_bool "new page completion creates the page without saving the draft"
+    (effects = [ State.Create_page "Project"; State.Haptic Selection ])
 ;;
 
 let () =
@@ -1174,4 +1174,57 @@ let () =
   in
   assert_bool "backspace ignores an editor whose block disappeared during rebase"
     (unchanged = state && effects = [])
+;;
+
+let () =
+  let failures = ref [] in
+  let check label passed =
+    Printf.printf "%s: %s\n%!" (if passed then "PASS" else "FAIL") label;
+    if not passed then failures := label :: !failures
+  in
+  let ctx = State.{ context with pages = [ { label = "Project"; value = "page-id" } ] } in
+  let start title caret =
+    let state, _ = State.update ctx State.empty (Tap_block "a") in
+    fst (State.update ctx state (Text_changed { title; caret }))
+  in
+  List.iter (fun (title, caret, value, expected) ->
+    let state, effects = State.update ctx (start title caret) (Choose_autocomplete value) in
+    check ("balanced completion: " ^ title)
+      (State.editing_title state = Some expected
+       && effects = (if value = "Novel"
+                     then [ State.Create_page "Novel"; State.Haptic Selection ]
+                     else [ State.Haptic Selection ])))
+    [ "[[Pro]]", 5, "page-id", "[[Project]]"
+    ; "[[]]", 2, "Novel", "[[Novel]]"
+    ; "Before [[Pro]] after", 12, "page-id", "Before [[Project]] after"
+    ; "😀 [[Pro]] tail", 8, "page-id", "😀 [[Project]] tail"
+    ; "[[Pro]", 5, "page-id", "[[Project]]"
+    ; "[[Pro", 5, "page-id", "[[Project]]"
+    ; "[[Pro]] [[Next]]", 5, "page-id", "[[Project]] [[Next]]"
+    ; "[[Project]]", 5, "page-id", "[[Project]]"
+    ];
+  check "unmatched page offers creation"
+    (State.autocomplete_candidates ctx State.{ kind = Node; query = "Novel" }
+     = [ State.{ label = "New page: Novel"; value = "Novel" } ]);
+  check "empty page query never offers creation"
+    (State.autocomplete_candidates State.{ blocks = []; pages = []; tags = [] }
+       State.{ kind = Node; query = "" } = []);
+  List.iter (fun initially_collapsed ->
+    let state = start "Edited [[Pro" 12 in
+    let state = if initially_collapsed
+      then { state with collapsed = State.String_set.singleton "b" } else state in
+    let state, effects = State.update ctx state (Toggle_collapsed "b") in
+    check (if initially_collapsed then "expand exits editing" else "collapse exits editing")
+      (State.editing_uuid state = None && State.autocomplete state = None
+       && List.exists (function State.Commit_title _ -> true | _ -> false) effects))
+    [false; true];
+  if !failures <> [] then failwith (String.concat "; " (List.rev !failures))
+;;
+
+let () =
+  let tags = State.[{label = "Project"; value = "project"}; {label = "Personal"; value = "personal"}] in
+  let context = State.{blocks = []; pages = []; tags} in
+  let matches = State.autocomplete_candidates context State.{kind = Tag; query = "prj"} in
+  assert_bool "tag completion shares Logseq fuzzy matching"
+    (List.exists (fun (candidate : State.autocomplete_candidate) -> candidate.value = "project") matches)
 ;;

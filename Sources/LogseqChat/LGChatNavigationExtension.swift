@@ -445,6 +445,7 @@ private struct LGChatNavigationContent: View {
     let rootTransform: ((AnyView) -> AnyView)?
     @State private var path: [Int] = []
     @State private var usesSystemGroupedBackground = false
+    @State private var visibleScrollTitle: String?
     @AppStorage("logseq.appearance") private var appearance = "system"
     @Environment(\.colorScheme) private var colorScheme
 
@@ -453,6 +454,9 @@ private struct LGChatNavigationContent: View {
         navigationLayout
             .onPreferenceChange(LUIListSurfacePreferenceKey.self) { usesSystemBackground in
                 usesSystemGroupedBackground = usesSystemBackground
+            }
+            .onPreferenceChange(LUIScrollTitlePreferenceKey.self) { title in
+                visibleScrollTitle = title
             }
     }
 
@@ -522,8 +526,7 @@ private struct LGChatNavigationContent: View {
                             }
                             .sharedBackgroundVisibility(.hidden)
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: context.childIDs[toolbarStartIndex + 1])
-                                    .fixedSize(horizontal: true, vertical: false)
+                                rootToolbarTitle(index: toolbarStartIndex + 1)
                             }
                             .sharedBackgroundVisibility(.hidden)
                         } else {
@@ -531,8 +534,7 @@ private struct LGChatNavigationContent: View {
                                 context.content(for: context.childIDs[toolbarStartIndex])
                             }
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
-                                context.content(for: context.childIDs[toolbarStartIndex + 1])
-                                    .fixedSize(horizontal: true, vertical: false)
+                                rootToolbarTitle(index: toolbarStartIndex + 1)
                             }
                         }
                         #if os(iOS)
@@ -607,6 +609,20 @@ private struct LGChatNavigationContent: View {
         }
         #endif
         return themePalette.background
+    }
+
+    @ViewBuilder
+    private func rootToolbarTitle(index: Int) -> some View {
+        if depth == 0, let title = visibleScrollTitle {
+            Text(title)
+                .font(.headline)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityIdentifier("title.main")
+        } else {
+            context.content(for: context.childIDs[index])
+                .fixedSize(horizontal: true, vertical: false)
+        }
     }
 
     private var navigationTitle: String {

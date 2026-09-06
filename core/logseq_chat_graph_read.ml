@@ -313,6 +313,12 @@ let last_favorite_order db =
          None
 ;;
 
+let built_in_class db eid =
+  match value db eid "db/ident" with
+  | Some (Keyword ident) -> String.starts_with ~prefix:"logseq.class/" ident
+  | _ -> false
+;;
+
 let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
   let favorites =
     favorite_page_eid db
@@ -343,6 +349,7 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
       match page_summary decrypt_title db datom.e with
       | Some page
         when value db datom.e "logseq.property/built-in?" <> Some (Bool true)
+             && not (built_in_class db datom.e)
              && not (String_set.mem page.uuid favorite_uuids) ->
         Some
           ( Option.value (int_value (value db datom.e "block/updated-at")) ~default:0
@@ -408,6 +415,23 @@ let page_block decrypt_title db eid =
         }
 ;;
 
+(* Match Logseq's get-all-classes filtering, independently of whether a tag
+   is shown on a rendered node. In particular, Task remains selectable. *)
+let tag_available_for_completion db eid =
+  match value db eid "db/ident" with
+  | Some (Keyword ident) ->
+    not (List.mem ident
+           [ "logseq.class/Root"; "logseq.class/Page"; "logseq.class/Property"
+           ; "logseq.class/Tag"; "logseq.class/Asset"; "logseq.class/Journal"
+           ; "logseq.class/Whiteboard"; "logseq.class/Pdf-annotation" ])
+  | _ -> true
+;;
+
+let tag_last_used db eid =
+  Ds_value.datoms_by_ref db Aevt "block/tags" eid
+  |> Seq.fold_left (fun latest datom -> max latest datom.tx) 0
+;;
+
 let tag_pages ?(decrypt_title = fun value -> Ok value) db =
   match Datascript.entid db "db/ident" (Keyword "logseq.class/Tag") with
   | None -> []
@@ -415,10 +439,17 @@ let tag_pages ?(decrypt_title = fun value -> Ok value) db =
     Ds_value.datoms_by_ref db Aevt "block/tags" tag_class_eid
     |> List.of_seq
     |> List.filter_map (fun datom ->
-      if tag_is_visible_in_node db datom.e
-      then page_summary decrypt_title db datom.e
+      if tag_available_for_completion db datom.e
+      then Option.map (fun page -> tag_last_used db datom.e, page)
+             (page_summary decrypt_title db datom.e)
       else None)
-    |> List.sort_uniq (fun left right -> String.compare left.uuid right.uuid)
+    |> List.sort (fun (left_used, left) (right_used, right) ->
+      match compare right_used left_used with
+      | 0 -> (match String.compare left.title right.title with
+              | 0 -> String.compare left.uuid right.uuid
+              | order -> order)
+      | order -> order)
+    |> List.map snd
 ;;
 
 let node_is_tag db uuid =

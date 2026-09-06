@@ -806,7 +806,7 @@ let () =
      |> List.map (fun (tag : Logseq_chat_graph_read.sidebar_page) -> tag.uuid, tag.title)
      |> List.sort compare
    with
-   | [ "public-built-in-tag", "Card"; "tag-target", "Project" ] -> ()
+   | [ "internal-tag", "Task"; "public-built-in-tag", "Card"; "tag-target", "Project" ] -> ()
    | _ ->
      failwith
        "tag autocomplete pages must include public built-ins and hide internal tags");
@@ -1162,4 +1162,47 @@ let () =
       [ "plain #project" ]
   in
   assert (unchanged = [ "plain #[[project-tag-uuid]]" ] && none_created = [])
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~unique:(Some Identity) ()
+    ; "db/ident", one ~unique:(Some Identity) ()
+    ; "block/name", one ()
+    ; "block/title", one ()
+    ; "block/tags", many ~value_type:RefType ()
+    ] in
+  let conn = create_conn ~schema () in
+  let tag eid name ident =
+    [Add (Entity_id eid, "block/uuid", Uuid name);
+     Add (Entity_id eid, "block/name", String (String.lowercase_ascii name));
+     Add (Entity_id eid, "block/title", String name);
+     Add (Entity_id eid, "db/ident", Keyword ident);
+     Add (Entity_id eid, "block/tags", Ref 1)] in
+  ignore (transact_conn conn
+    (List.concat
+       [ tag 1 "Tag" "logseq.class/Tag"; tag 2 "Root" "logseq.class/Root"
+       ; tag 3 "Journal" "logseq.class/Journal"; tag 4 "Card" "logseq.class/Card"
+       ; tag 5 "Task" "logseq.class/Task"; tag 6 "Alpha" "user.class/alpha"
+       ; tag 7 "Zeta" "user.class/zeta"; tag 8 "Asset" "logseq.class/Asset"
+       ; tag 9 "Page" "logseq.class/Page"; tag 10 "Property" "logseq.class/Property"
+       ; tag 11 "Whiteboard" "logseq.class/Whiteboard"
+       ; tag 12 "Pdf" "logseq.class/Pdf-annotation" ]));
+  ignore (transact_conn conn [Add (Entity_id 20, "block/uuid", Uuid "older-use"); Add (Entity_id 20, "block/tags", Ref 6)]);
+  ignore (transact_conn conn [Add (Entity_id 21, "block/uuid", Uuid "newer-use"); Add (Entity_id 21, "block/tags", Ref 7)]);
+  let db = conn_db conn in
+  let names pages = List.map (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.title) pages in
+  let recent = names (Logseq_chat_graph_read.sidebar_pages db).recent_pages in
+  let tags = names (Logseq_chat_graph_read.tag_pages db) in
+  let failures = ref [] in
+  let check label condition =
+    Printf.printf "%s: %s\n%!" (if condition then "PASS" else "FAIL") label;
+    if not condition then failures := label :: !failures in
+  check "Recent excludes built-in class idents even without a built-in flag"
+    (List.sort String.compare recent = ["Alpha"; "Zeta"]);
+  check "tag completion excludes Logseq private classes and Root but keeps public Task/Card"
+    (List.sort String.compare tags = ["Alpha"; "Card"; "Task"; "Zeta"]);
+  check "most recently assigned tags precede older tags"
+    (match tags with "Zeta" :: "Alpha" :: _ -> true | _ -> false);
+  if !failures <> [] then failwith (String.concat "; " !failures)
 ;;

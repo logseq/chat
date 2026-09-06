@@ -444,6 +444,8 @@
 (signature logseq-chat.model/initial :fn<chat-model>)
 (signature logseq-chat.model/journal-section-key
  :fn<outline-row;option<string>>)
+(signature logseq-chat.model/refresh-journal-window
+ :fn<vector<outline-row>;vector<outline-row>;vector<outline-row>>)
 (signature logseq-chat.model/journal-section-title
  :fn<outline-row;string>)
 (signature logseq-chat.model/journal-section-markers

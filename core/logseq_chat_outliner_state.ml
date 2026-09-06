@@ -140,6 +140,7 @@ type cmd =
       { uuid : string
       ; status : Ops.semantic_value
       }
+  | Create_page of string
   | Assign_tag of
       { uuid : string
       ; value : string
@@ -318,8 +319,19 @@ let autocomplete_candidates context request =
     raw
     |> Seq.filter (fun candidate ->
       not (String.equal (String.trim candidate.label) "")
-      && includes_normalized_query candidate.label normalized_query
+      && (if request.kind = Tag && normalized_query <> ""
+          then Logseq_chat_search_index.Fuzzy.score normalized_query candidate.label > 0.
+          else includes_normalized_query candidate.label normalized_query)
       && if Hashtbl.mem seen candidate.value then false else (Hashtbl.add seen candidate.value (); true))
+    |> (fun matches ->
+      if request.kind = Tag && normalized_query <> "" then
+        matches |> List.of_seq
+        |> List.stable_sort (fun left right ->
+          Float.compare
+            (Logseq_chat_search_index.Fuzzy.score normalized_query right.label)
+            (Logseq_chat_search_index.Fuzzy.score normalized_query left.label))
+        |> List.to_seq
+      else matches)
     |> Seq.take 12
     |> List.of_seq
   in
@@ -336,7 +348,12 @@ let autocomplete_candidates context request =
     if String.equal query "" || has_exact
     then matches
     else matches @ [ { label = "New tag: " ^ query; value = query } ]
-  | Node | Property -> matches
+  | Node ->
+    let query = String.trim request.query in
+    if matches = [] && not (String.equal query "")
+    then [ { label = "New page: " ^ query; value = query } ]
+    else matches
+  | Property -> matches
 ;;
 
 let contains_from value start needle =
@@ -386,6 +403,22 @@ let candidate_label context candidates value =
     candidates
 ;;
 
+(* Include an existing closing delimiter when completing inside paired brackets.
+   Stop at another reference or line so unrelated trailing text stays intact. *)
+let reference_token_end title caret_byte =
+  let length = String.length title in
+  let rec scan index =
+    if index >= length then caret_byte
+    else if title.[index] = '\n' then caret_byte
+    else if index + 1 < length && String.sub title index 2 = "[[" then caret_byte
+    else if title.[index] = ']' then
+      if index + 1 < length && title.[index + 1] = ']' then index + 2
+      else if index = caret_byte then index + 1 else caret_byte
+    else scan (index + 1)
+  in
+  scan caret_byte
+;;
+
 let complete context editing kind value =
   let caret_byte = byte_index_of_utf16 editing.title editing.caret in
   let prefix = String.sub editing.title 0 caret_byte in
@@ -412,7 +445,11 @@ let complete context editing kind value =
   in
   Option.map
     (fun (start, replacement) ->
-      let title = replace_range editing.title start caret_byte replacement in
+      let finish = match kind with
+        | Node -> reference_token_end editing.title caret_byte
+        | Tag | Property -> caret_byte
+      in
+      let title = replace_range editing.title start finish replacement in
       let completed_prefix = String.sub title 0 (start + String.length replacement) in
       { editing with title; caret = utf16_length completed_prefix })
     completion
@@ -875,7 +912,14 @@ let update context state message =
         | Node | Property ->
           (match complete context editing autocomplete.kind value with
            | Some editing ->
-             { state with editing = Some editing; autocomplete = None }, [ Haptic Selection ]
+             let create_page =
+               autocomplete.kind = Node
+               && not (Ref_text.is_uuid value)
+               && not (List.exists (fun candidate -> String.equal candidate.value value) context.pages)
+               && not (List.exists (fun (block : Model.block) -> String.equal block.uuid value) context.blocks)
+             in
+             let commands = if create_page then [ Create_page value ] else [] in
+             { state with editing = Some editing; autocomplete = None }, commands @ [ Haptic Selection ]
            | None -> state, []))
      | _ -> state, [])
   | Return_pressed ->
@@ -982,7 +1026,8 @@ let update context state message =
       then String_set.remove uuid state.collapsed
       else String_set.add uuid state.collapsed
     in
-    { state with collapsed }, [ Haptic Impact ]
+    { state with collapsed; editing = None; autocomplete = None },
+    commit_effect context state.editing @ [ Haptic Impact ]
   | Zoom_in uuid ->
     (match find_block context uuid with
      | None -> state, []

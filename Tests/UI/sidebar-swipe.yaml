@@ -1,0 +1,49 @@
+# Run with an open graph and the sidebar closed.
+appId: com.logseq.chat
+---
+- launchApp:
+    stopApp: false
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- assertVisible:
+    id: "button.sidebar"
+- repeat:
+    times: 8
+    commands:
+      - tapOn:
+          id: "button.sidebar"
+      - swipe:
+          start: "60%,27%"
+          end: "3%,27%"
+          duration: 400
+      - assertNotVisible:
+          id: "button.sidebar.dismiss"
+      - assertVisible:
+          id: "button.sidebar"
+      - swipe:
+          start: "8%,45%"
+          end: "75%,45%"
+          duration: 300
+      - assertVisible:
+          id: "button.sidebar.dismiss"
+      - swipe:
+          start: "60%,27%"
+          end: "3%,27%"
+          duration: 250
+      - assertVisible:
+          id: "button.sidebar"
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.graphs"
+- assertVisible:
+    id: "screen.graphs"
+- takeScreenshot: graphs-layout
+- tapOn:
+    id: "button.sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- assertVisible:
+    id: "button.sidebar"

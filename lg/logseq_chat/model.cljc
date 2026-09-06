@@ -408,6 +408,28 @@
       (Some day) (str day)
       None "")))
 
+(defn refresh-journal-window [current-rows projected-rows]
+  (let [oldest-day
+        (loop [index 0 oldest None]
+          (if (= index (count current-rows))
+            oldest
+            (recur (inc index)
+                   (match (:journal-day (nth current-rows index))
+                     None oldest
+                     (Some day)
+                     (Some (match oldest
+                             None day
+                             (Some previous) (min day previous)))))))]
+    (filterv
+     (fn [row]
+       (match oldest-day
+         None true
+         (Some oldest)
+         (match (:journal-day row)
+           None true
+           (Some day) (>= day oldest))))
+     projected-rows)))
+
 (defn finish-journal-section [result start start-index end-index]
   (match start
     (Some row)
@@ -1107,18 +1129,19 @@
              (Some _editing) false))
           projected-rows
           (if preserve-journal-window
-            (:journal-outliner-rows current)
+            (refresh-journal-window (:journal-outliner-rows current)
+                                    (:outliner-rows projection))
             (:outliner-rows projection))
           journal-rows
           (if projection-is-journal-home
             projected-rows
-            (if (and
-                 (empty? (:journal-outliner-rows current))
-                 (match (:selected-page sidebar)
-                   None true
-                   (Some _page) false))
-              (:journal-outliner-rows projection)
-              (:journal-outliner-rows current)))
+            (match (:selected-page sidebar)
+              None
+              (if (or selected-graph-changed (journal-refresh-active? current))
+                (:journal-outliner-rows projection)
+                (refresh-journal-window (:journal-outliner-rows current)
+                                        (:journal-outliner-rows projection)))
+              (Some _page) (:journal-outliner-rows current)))
           has-older-journals
           (if preserve-journal-window
             (:has-older-journals current)

@@ -490,8 +490,13 @@ private struct LGPlatformCommandResponse: Decodable {
         let outlinerCommandRevision: Int?
         let outlinerCommands: [LogseqOutlinerCommand]?
         let outlinerState: OutlinerState?
+        let nodeRoutes: [NodeRoute]?
         let hasPendingSemanticOperations: Bool?
         let pendingSyncRequest: PendingSyncRequest?
+    }
+
+    struct NodeRoute: Decodable {
+        let outlinerState: OutlinerState?
     }
 
     struct OutlinerState: Decodable {
@@ -1475,8 +1480,6 @@ public final class LGChatRuntime {
     ) {
         let shouldSchedule: Bool
         switch effect.kind {
-        case "choose-outliner-autocomplete":
-            shouldSchedule = true
         case "change-outliner-text":
             shouldSchedule = !responseHasOutlinerAutocomplete(response)
         default:
@@ -1498,7 +1501,9 @@ public final class LGChatRuntime {
             LGPlatformCommandResponse.self,
             from: Data(response.utf8)
         ) else { return false }
-        return envelope.result?.outlinerState?.autocomplete != nil
+        let activeState = envelope.result?.nodeRoutes?.last?.outlinerState
+            ?? envelope.result?.outlinerState
+        return activeState?.autocomplete != nil
     }
 
     private func startSyncIfNeeded(

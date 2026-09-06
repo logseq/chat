@@ -145,8 +145,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         let textView = FocusRetainingTextView()
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
-        textView.textContainer.lineFragmentPadding = 0
-        textView.isScrollEnabled = false
+        OutlinerNativeTextMeasurement.configureTextContainer(textView)
         textView.adjustsFontForContentSizeCategory = true
         applyTextLayout(to: textView)
         applyWritingAssistance(to: textView)
@@ -268,8 +267,15 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
         uiView: UITextView,
         context: Context
     ) -> CGSize? {
-        guard let width = proposal.width else { return nil }
-        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        guard let width = proposal.width, width.isFinite, width > 0,
+              let font = uiView.font else { return nil }
+        return OutlinerNativeTextMeasurement.size(
+            text: uiView.text,
+            font: font,
+            width: width,
+            verticalInset: uiView.textContainerInset.top,
+            scale: uiView.traitCollection.displayScale
+        )
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
@@ -304,11 +310,14 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
             shouldChangeTextIn range: NSRange,
             replacementText replacement: String
         ) -> Bool {
+            let isInlineLineBreak = (textView as? FocusRetainingTextView)?.isInsertingLineBreak == true
             if isAwaitingBlockHandoff {
                 // Structure events are serialized and rebound to the latest
                 // editor by the store. Forward them immediately so fast
                 // Return/Backspace input is never swallowed during handoff.
-                if replacement == "\n" {
+                if isInlineLineBreak {
+                    pendingHandoffTyping += "\n"
+                } else if replacement == "\n" {
                     parent.onReturn(textView.text, range.location)
                 } else if replacement.isEmpty, range.location == 0, range.length == 0 {
                     parent.onBackspace(textView.text, range.length)
@@ -321,6 +330,7 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
                 }
                 return false
             }
+            if isInlineLineBreak { return true }
             if let deletion = InlineEditorPairDeletion.deletingEmptyNodeReference(
                 from: textView.text ?? "",
                 range: range,
@@ -364,8 +374,25 @@ private struct NativeOutlinerTextView: UIViewRepresentable {
     }
 }
 
-private final class FocusRetainingTextView: UITextView {
+private final class FocusRetainingTextView: OutlinerLayoutTextView {
     private var focusPending = false
+    private(set) var isInsertingLineBreak = false
+
+    override var keyCommands: [UIKeyCommand]? {
+        let lineBreak = UIKeyCommand(input: "\r", modifierFlags: .shift,
+                                     action: #selector(insertInlineLineBreak))
+        lineBreak.discoverabilityTitle = "Insert Line Break"
+        lineBreak.wantsPriorityOverSystemBehavior = true
+        return [lineBreak] + (super.keyCommands ?? [])
+    }
+
+    @objc private func insertInlineLineBreak(_ command: UIKeyCommand) {
+        isInsertingLineBreak = true
+        defer { isInsertingLineBreak = false }
+        if delegate?.textView?(self, shouldChangeTextIn: selectedRange, replacementText: "\n") ?? true {
+            insertText("\n")
+        }
+    }
 
     func requestFocusWhenAttached() {
         guard !isFirstResponder else {

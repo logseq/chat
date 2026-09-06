@@ -69,7 +69,7 @@ enum LUIDrawerInteractionPolicy {
         )
     }
 
-    static func allowsContentInteraction(
+    static func contentControlsAreEnabled(
         isDragging: Bool,
         isAnimating: Bool,
         isGestureActive: Bool = false
@@ -131,8 +131,8 @@ struct LUIDrawerView: View {
                 isAnimating: isAnimating,
                 isGestureActive: isGestureActive
             )
-            let contentInteractionAllowed =
-                LUIDrawerInteractionPolicy.allowsContentInteraction(
+            let contentControlsEnabled =
+                LUIDrawerInteractionPolicy.contentControlsAreEnabled(
                     isDragging: isDragging,
                     isAnimating: isAnimating,
                     isGestureActive: isGestureActive
@@ -148,7 +148,7 @@ struct LUIDrawerView: View {
                         .scaleEffect(0.96 + (0.04 * Double(progress)))
                         .offset(x: -20.0 * (1.0 - progress))
                         .scrollDisabled(interactionsLocked)
-                        .allowsHitTesting(presented && contentInteractionAllowed)
+                        .allowsHitTesting(presented && contentControlsEnabled)
                         .accessibilityHidden(
                             LUIDrawerInteractionPolicy.panelIsAccessibilityHidden(
                                 isPresented: presented,
@@ -165,7 +165,7 @@ struct LUIDrawerView: View {
                         ))
                         .modifier(LUIDrawerMainSurfaceModifier())
                         .scrollDisabled(interactionsLocked)
-                        .allowsHitTesting(contentInteractionAllowed)
+                        .allowsHitTesting(contentControlsEnabled)
                         .overlay {
                             if presented {
                                 Button {
@@ -176,7 +176,7 @@ struct LUIDrawerView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Close sidebar")
                                 .accessibilityIdentifier("button.sidebar.dismiss")
-                                .allowsHitTesting(contentInteractionAllowed)
+                                .allowsHitTesting(contentControlsEnabled)
                             }
                         }
                         .clipShape(RoundedRectangle(
@@ -215,6 +215,9 @@ struct LUIDrawerView: View {
             #endif
         }
         .modifier(LUIDrawerFullScreenModifier())
+        .onDisappear {
+            backend.setDrawerInteractionLocked(false, node: model.id)
+        }
         .onChange(of: model.isSelected) { _, selected in
             guard selected != presented || abs(dragOffset) > 0.0 else { return }
             animatePresentation(selected)
@@ -223,6 +226,9 @@ struct LUIDrawerView: View {
             if !enabled {
                 dragOffset = 0
                 isGestureActive = false
+                if !isAnimating {
+                    backend.setDrawerInteractionLocked(false, node: model.id)
+                }
             }
         }
     }
@@ -243,6 +249,7 @@ struct LUIDrawerView: View {
                     translationY: Double(value.translation.height)
                 )
                 if isGestureActive || gestureIsEligible {
+                    backend.setDrawerInteractionLocked(true, node: model.id)
                     var transaction = Transaction()
                     transaction.animation = nil
                     withTransaction(transaction) {
@@ -284,6 +291,7 @@ struct LUIDrawerView: View {
         transitionGeneration += 1
         let generation = transitionGeneration
         isAnimating = true
+        backend.setDrawerInteractionLocked(true, node: model.id)
         #if DEBUG
         transitionStartedAt = ProcessInfo.processInfo.systemUptime
         print(
@@ -312,6 +320,7 @@ struct LUIDrawerView: View {
               transitionGeneration == generation,
               presented == selected else { return }
         isAnimating = false
+        backend.setDrawerInteractionLocked(false, node: model.id)
         #if DEBUG
         let elapsedMilliseconds =
             (ProcessInfo.processInfo.systemUptime - transitionStartedAt) * 1_000
