@@ -42,6 +42,8 @@
   logseq_chat_sync_state)
  (libraries
   datascript-ocaml-native
+  datascript-ocaml-lg
+  lg.edn-backend.native
   melange-edn-native
   melange-transit-core
   melange-transit-native

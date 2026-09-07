@@ -392,3 +392,37 @@ let () =
   assert_created_block_reconciles_server_uuid ();
   assert_remote_refresh_preserves_offline_edit ()
 ;;
+
+let () =
+  let open Datascript in
+  let module Model = Logseq_chat_model in
+  let model = Model.create () in
+  Model.commit model [ Add (Temp_id "minimal", "block/uuid", String "minimal") ];
+  let minimal = Option.get (Model.read_block model "minimal") in
+  assert_equal "missing title keeps default" "" minimal.title;
+  assert_int_equal "missing timestamp keeps default" 0 minimal.created_at;
+  assert_equal "missing sync status keeps default" "synced" minimal.sync_status;
+  if minimal.asset_size <> None then failwith "missing asset size must remain absent";
+  if Model.read_block model "absent" <> None then failwith "missing block must remain absent";
+  let failures = ref [] in
+  List.iter
+    (fun (attr, value) ->
+      let model = Model.create () in
+      model.db <- empty_db ~schema:[ List.hd Model.schema ] ();
+      Model.commit model
+        [ Add (Temp_id "invalid", "block/uuid", String "invalid")
+        ; Add (Temp_id "invalid", attr, value)
+        ];
+      match Model.read_block model "invalid" with
+      | _ -> failures := attr :: !failures
+      | exception Datascript_lg.Invalid_data error ->
+        if not (String.starts_with ~prefix:attr error.path)
+        then failwith ("missing attribute in decode error: " ^ error.path))
+    [ "block/title", Int 42
+    ; "block/created-at", Float 1.5
+    ; "block/asset-size", String "large"
+    ; "block/local-path", Bool false
+    ];
+  if !failures <> []
+  then failwith ("malformed cached attributes silently accepted: " ^ String.concat ", " !failures)
+;;

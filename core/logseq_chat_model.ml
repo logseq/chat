@@ -55,29 +55,81 @@ let one ?unique ?value_type ?(indexed = false) () =
   }
 ;;
 
+module Attribute = Datascript_lg.Attribute
+module Codec = Datascript_lg.Codec
+
+module Attr = struct
+  let block_uuid =
+    Attribute.make "block/uuid" Codec.string (one ~unique:Identity ~value_type:StringType ~indexed:true ())
+  let block_title =
+    Attribute.make "block/title" Codec.string (one ~value_type:StringType ())
+  let block_page_id =
+    Attribute.make "block/page-id" Codec.string (one ~value_type:StringType ~indexed:true ())
+  let block_parent_id =
+    Attribute.make "block/parent-id" Codec.string (one ~value_type:StringType ())
+  let block_order =
+    Attribute.make "block/order" Codec.string (one ~value_type:StringType ~indexed:true ())
+  let block_created_at =
+    Attribute.make "block/created-at" Codec.int (one ~value_type:NumberType ~indexed:true ())
+  let block_updated_at =
+    Attribute.make "block/updated-at" Codec.int (one ~value_type:NumberType ~indexed:true ())
+  let block_sync_status =
+    Attribute.make "block/sync-status" Codec.string (one ~value_type:StringType ~indexed:true ())
+  let block_tags_json =
+    Attribute.make "block/tags-json" Codec.string (one ~value_type:StringType ())
+  let block_references_json =
+    Attribute.make "block/references-json" Codec.string (one ~value_type:StringType ())
+  let block_breadcrumbs_json =
+    Attribute.make "block/breadcrumbs-json" Codec.string (one ~value_type:StringType ())
+  let block_status_json =
+    Attribute.make "block/status-json" Codec.string (one ~value_type:StringType ())
+  let block_asset_type =
+    Attribute.make "block/asset-type" Codec.string (one ~value_type:StringType ~indexed:true ())
+  let block_asset_size =
+    Attribute.make "block/asset-size" Codec.int (one ~value_type:NumberType ())
+  let block_asset_checksum =
+    Attribute.make "block/asset-checksum" Codec.string (one ~value_type:StringType ())
+  let block_local_path =
+    Attribute.make "block/local-path" Codec.string (one ~value_type:StringType ())
+  let page_journal_day =
+    Attribute.make "page/journal-day" Codec.int (one ~value_type:NumberType ~indexed:true ())
+  let page_title =
+    Attribute.make "page/title" Codec.string (one ~value_type:StringType ())
+end
+
 let schema =
-  [ "block/uuid", one ~unique:Identity ~value_type:StringType ~indexed:true ()
-  ; "block/title", one ~value_type:StringType ()
-  ; "block/page-id", one ~value_type:StringType ~indexed:true ()
-  ; "block/parent-id", one ~value_type:StringType ()
-  ; "block/order", one ~value_type:StringType ~indexed:true ()
-  ; "block/created-at", one ~value_type:NumberType ~indexed:true ()
-  ; "block/updated-at", one ~value_type:NumberType ~indexed:true ()
-  ; "block/sync-status", one ~value_type:StringType ~indexed:true ()
-  ; "block/tags-json", one ~value_type:StringType ()
-  ; "block/references-json", one ~value_type:StringType ()
-  ; "block/breadcrumbs-json", one ~value_type:StringType ()
-  ; "block/status-json", one ~value_type:StringType ()
-  ; "block/asset-type", one ~value_type:StringType ~indexed:true ()
-  ; "block/asset-size", one ~value_type:NumberType ()
-  ; "block/asset-checksum", one ~value_type:StringType ()
-  ; "block/local-path", one ~value_type:StringType ()
-  ; "page/journal-day", one ~value_type:NumberType ~indexed:true ()
-  ; "page/title", one ~value_type:StringType ()
+  [ Attribute.schema Attr.block_uuid
+  ; Attribute.schema Attr.block_title
+  ; Attribute.schema Attr.block_page_id
+  ; Attribute.schema Attr.block_parent_id
+  ; Attribute.schema Attr.block_order
+  ; Attribute.schema Attr.block_created_at
+  ; Attribute.schema Attr.block_updated_at
+  ; Attribute.schema Attr.block_sync_status
+  ; Attribute.schema Attr.block_tags_json
+  ; Attribute.schema Attr.block_references_json
+  ; Attribute.schema Attr.block_breadcrumbs_json
+  ; Attribute.schema Attr.block_status_json
+  ; Attribute.schema Attr.block_asset_type
+  ; Attribute.schema Attr.block_asset_size
+  ; Attribute.schema Attr.block_asset_checksum
+  ; Attribute.schema Attr.block_local_path
+  ; Attribute.schema Attr.page_journal_day
+  ; Attribute.schema Attr.page_title
   ]
 ;;
 
-let block_ref uuid = Lookup_ref ("block/uuid", String uuid)
+let add attribute entity_ref value =
+  Add (entity_ref, Attribute.name attribute, Codec.encode (Attribute.codec attribute) value)
+;;
+
+let read attribute entity =
+  Option.bind entity (fun entity ->
+    Datascript_lg.or_raise (Attribute.read_one attribute entity))
+;;
+
+let block_ref uuid =
+  Lookup_ref (Attribute.name Attr.block_uuid, Codec.encode (Attribute.codec Attr.block_uuid) uuid)
 
 let create ?storage () =
   let db =
@@ -92,43 +144,6 @@ let create ?storage () =
     | None -> empty_db ~schema ()
   in
   { db; selected_block_uuid = None; last_refresh_at = None; revision = 0 }
-;;
-
-let value_string = function
-  | String value -> Some value
-  | _ -> None
-;;
-
-let value_int = function
-  | Int value -> Some value
-  | _ -> None
-;;
-
-let entity_attr_value db entity_ref attr =
-  match entity db entity_ref with
-  | None -> None
-  | Some entity ->
-    (match entity_attr entity attr with
-     | Some (One_value value) -> Some value
-     | _ -> None)
-;;
-
-let string_attr db entity_ref attr default =
-  match entity_attr_value db entity_ref attr with
-  | Some value -> Option.value (value_string value) ~default
-  | None -> default
-;;
-
-let int_attr db entity_ref attr default =
-  match entity_attr_value db entity_ref attr with
-  | Some value -> Option.value (value_int value) ~default
-  | None -> default
-;;
-
-let option_string_attr db entity_ref attr =
-  match entity_attr_value db entity_ref attr with
-  | Some value -> value_string value
-  | None -> None
 ;;
 
 let summaries_json (summaries : entity_summary list) =
@@ -192,34 +207,44 @@ let status_of_json value =
 ;;
 
 let block_exists model uuid =
-  entity_attr_value model.db (block_ref uuid) "block/uuid" <> None
+  Option.is_some (read Attr.block_uuid (entity model.db (block_ref uuid)))
 ;;
 
 let read_block model uuid =
-  if not (block_exists model uuid)
-  then None
-  else (
-    let entity_ref = block_ref uuid in
+  let entity = entity model.db (block_ref uuid) in
+  match read Attr.block_uuid entity with
+  | None -> None
+  | Some uuid ->
+    let read attribute = read attribute entity in
+    let default attribute value = Option.value (read attribute) ~default:value in
+    let asset_type = read Attr.block_asset_type in
     Some
       { uuid
-      ; title = string_attr model.db entity_ref "block/title" ""
-      ; page_id = string_attr model.db entity_ref "block/page-id" ""
-      ; parent_id = option_string_attr model.db entity_ref "block/parent-id"
-      ; order = option_string_attr model.db entity_ref "block/order"
-      ; created_at = int_attr model.db entity_ref "block/created-at" 0
-      ; updated_at = int_attr model.db entity_ref "block/updated-at" 0
-      ; sync_status = string_attr model.db entity_ref "block/sync-status" "synced"
-      ; tags = summaries_of_json (string_attr model.db entity_ref "block/tags-json" "[]")
-      ; references = summaries_of_json (string_attr model.db entity_ref "block/references-json" "[]")
-      ; breadcrumbs = summaries_of_json (string_attr model.db entity_ref "block/breadcrumbs-json" "[]")
-      ; status = Option.bind (option_string_attr model.db entity_ref "block/status-json") status_of_json
-      ; is_asset = Option.is_some (option_string_attr model.db entity_ref "block/asset-type")
-      ; asset_type = option_string_attr model.db entity_ref "block/asset-type"
-      ; asset_size = Option.bind (entity_attr_value model.db entity_ref "block/asset-size") value_int
-      ; asset_checksum = option_string_attr model.db entity_ref "block/asset-checksum"
-      ; local_path = option_string_attr model.db entity_ref "block/local-path"
+      ; title = default Attr.block_title ""
+      ; page_id = default Attr.block_page_id ""
+      ; parent_id = read Attr.block_parent_id
+      ; order = read Attr.block_order
+      ; created_at = default Attr.block_created_at 0
+      ; updated_at = default Attr.block_updated_at 0
+      ; sync_status = default Attr.block_sync_status "synced"
+      ; tags = summaries_of_json (default Attr.block_tags_json "[]")
+      ; references = summaries_of_json (default Attr.block_references_json "[]")
+      ; breadcrumbs = summaries_of_json (default Attr.block_breadcrumbs_json "[]")
+      ; status = Option.bind (read Attr.block_status_json) status_of_json
+      ; is_asset = Option.is_some asset_type
+      ; asset_type
+      ; asset_size = read Attr.block_asset_size
+      ; asset_checksum = read Attr.block_asset_checksum
+      ; local_path = read Attr.block_local_path
       ; journal = None
-      })
+      }
+;;
+
+let journal_metadata model page_id =
+  let entity = entity model.db (block_ref page_id) in
+  let journal_day = Option.value (read Attr.page_journal_day entity) ~default:0 in
+  if journal_day <= 0 then None
+  else Some (Option.value (read Attr.page_title entity) ~default:"", journal_day)
 ;;
 
 let all_block_uuids model =
@@ -255,11 +280,7 @@ let journal_day_for_ms now =
 let block_journal_metadata model block =
   match block.journal with
   | Some _ as journal -> journal
-  | None ->
-    let journal_day = int_attr model.db (block_ref block.page_id) "page/journal-day" 0 in
-    if journal_day <= 0
-    then None
-    else Some (string_attr model.db (block_ref block.page_id) "page/title" "", journal_day)
+  | None -> journal_metadata model block.page_id
 ;;
 
 let is_journal_feed_block model block =
@@ -352,7 +373,7 @@ let journal_blocks ?(include_empty = false) model blocks =
           ~none:0
           ~some:snd
           (block_journal_metadata model block)
-      | [] -> int_attr model.db (block_ref page_id) "page/journal-day" 0
+      | [] -> Option.fold ~none:0 ~some:snd (journal_metadata model page_id)
     in
     let left_day = journal_day left_page left_blocks in
     let right_day = journal_day right_page right_blocks in
@@ -402,13 +423,13 @@ let upsert_statuses model statuses =
         let entity_ref =
           if block_exists model uuid then block_ref uuid else Temp_id ("status-" ^ status.uuid)
         in
-        [ Add (entity_ref, "block/uuid", String uuid)
-        ; Add (entity_ref, "block/title", String "")
-        ; Add (entity_ref, "block/page-id", String "")
-        ; Add (entity_ref, "block/created-at", Int 0)
-        ; Add (entity_ref, "block/updated-at", Int 0)
-        ; Add (entity_ref, "block/sync-status", String "synced")
-        ; Add (entity_ref, "block/status-json", String (status_json status))
+        [ add Attr.block_uuid entity_ref uuid
+        ; add Attr.block_title entity_ref ""
+        ; add Attr.block_page_id entity_ref ""
+        ; add Attr.block_created_at entity_ref 0
+        ; add Attr.block_updated_at entity_ref 0
+        ; add Attr.block_sync_status entity_ref "synced"
+        ; add Attr.block_status_json entity_ref (status_json status)
         ])
       statuses
   in
@@ -465,37 +486,37 @@ let upsert_blocks ?in_recent_feed:_ model blocks ~refresh_time =
           | Some _ -> block.order
           | None -> Option.bind existing_block (fun existing -> existing.order)
         in
-        [ Add (entity_ref, "block/uuid", String block.uuid)
-        ; Add (entity_ref, "block/title", String block.title)
-        ; Add (entity_ref, "block/page-id", String page_id)
-        ; Add (entity_ref, "block/created-at", Int created_at)
-        ; Add (entity_ref, "block/updated-at", Int updated_at)
-        ; Add (entity_ref, "block/sync-status", String block.sync_status)
-        ; Add (entity_ref, "block/tags-json", String (summaries_json block.tags))
-        ; Add (entity_ref, "block/references-json", String (summaries_json block.references))
-        ; Add (entity_ref, "block/breadcrumbs-json", String (summaries_json block.breadcrumbs))
+        [ add Attr.block_uuid entity_ref block.uuid
+        ; add Attr.block_title entity_ref block.title
+        ; add Attr.block_page_id entity_ref page_id
+        ; add Attr.block_created_at entity_ref created_at
+        ; add Attr.block_updated_at entity_ref updated_at
+        ; add Attr.block_sync_status entity_ref block.sync_status
+        ; add Attr.block_tags_json entity_ref (summaries_json block.tags)
+        ; add Attr.block_references_json entity_ref (summaries_json block.references)
+        ; add Attr.block_breadcrumbs_json entity_ref (summaries_json block.breadcrumbs)
         ]
         @ (match block.status with
-           | Some status -> [ Add (entity_ref, "block/status-json", String (status_json status)) ]
+           | Some status -> [ add Attr.block_status_json entity_ref (status_json status) ]
            | None -> [])
         @ (match block.asset_type with
-           | Some value -> [ Add (entity_ref, "block/asset-type", String value) ]
+           | Some value -> [ add Attr.block_asset_type entity_ref value ]
            | None -> [])
         @ (match block.asset_size with
-           | Some value -> [ Add (entity_ref, "block/asset-size", Int value) ]
+           | Some value -> [ add Attr.block_asset_size entity_ref value ]
            | None -> [])
         @ (match block.asset_checksum with
-           | Some value -> [ Add (entity_ref, "block/asset-checksum", String value) ]
+           | Some value -> [ add Attr.block_asset_checksum entity_ref value ]
            | None -> [])
         @ (match block.local_path with
-           | Some value -> [ Add (entity_ref, "block/local-path", String value) ]
+           | Some value -> [ add Attr.block_local_path entity_ref value ]
            | None -> [])
         @ (match order with
-           | Some value -> [ Add (entity_ref, "block/order", String value) ]
+           | Some value -> [ add Attr.block_order entity_ref value ]
            | None -> [])
         @
         match block.parent_id with
-        | Some parent_id -> [ Add (entity_ref, "block/parent-id", String parent_id) ]
+        | Some parent_id -> [ add Attr.block_parent_id entity_ref parent_id ]
         | None -> [])
       blocks
   in
@@ -527,18 +548,10 @@ let upsert_journal_page ?(title = "") model ~uuid ~journal_day =
   in
   commit
     model
-    [ Add (entity_ref, "block/uuid", String uuid)
-    ; Add (entity_ref, "page/journal-day", Int journal_day)
-    ; Add (entity_ref, "page/title", String title)
+    [ add Attr.block_uuid entity_ref uuid
+    ; add Attr.page_journal_day entity_ref journal_day
+    ; add Attr.page_title entity_ref title
     ]
-;;
-
-let journal_metadata model page_id =
-  let entity_ref = block_ref page_id in
-  let journal_day = int_attr model.db entity_ref "page/journal-day" 0 in
-  if journal_day <= 0
-  then None
-  else Some (string_attr model.db entity_ref "page/title" "", journal_day)
 ;;
 
 let cache_local_message model ~uuid ~title ~now =
@@ -631,7 +644,7 @@ let mark_block_synced model ~uuid =
   if not (block_exists model uuid)
   then Error ("unknown block: " ^ uuid)
   else (
-    commit model [ Add (block_ref uuid, "block/sync-status", String "synced") ];
+    commit model [ add Attr.block_sync_status (block_ref uuid) "synced" ];
     Ok ())
 ;;
 
@@ -639,7 +652,7 @@ let mark_block_submitted model ~uuid =
   if not (block_exists model uuid)
   then Error ("unknown block: " ^ uuid)
   else (
-    commit model [ Add (block_ref uuid, "block/sync-status", String "submitted") ];
+    commit model [ add Attr.block_sync_status (block_ref uuid) "submitted" ];
     Ok ())
 ;;
 
@@ -647,7 +660,7 @@ let reconcile_created_block ?(sync_status = "submitted") model ~local_uuid ~remo
   match read_block model local_uuid with
   | None -> Error ("unknown block: " ^ local_uuid)
   | Some _ when String.equal local_uuid remote_uuid ->
-    commit model [ Add (block_ref local_uuid, "block/sync-status", String sync_status) ];
+    commit model [ add Attr.block_sync_status (block_ref local_uuid) sync_status ];
     Ok ()
   | Some local ->
     let remote = read_block model remote_uuid in
@@ -675,7 +688,7 @@ let mark_block_sync_failed model ~uuid =
   if not (block_exists model uuid)
   then Error ("unknown block: " ^ uuid)
   else (
-    commit model [ Add (block_ref uuid, "block/sync-status", String "failed") ];
+    commit model [ add Attr.block_sync_status (block_ref uuid) "failed" ];
     Ok ())
 ;;
 
@@ -685,9 +698,9 @@ let update_block_title model ~uuid ~title ~now =
   else (
     commit
       model
-      [ Add (block_ref uuid, "block/title", String title)
-      ; Add (block_ref uuid, "block/updated-at", Int now)
-      ; Add (block_ref uuid, "block/sync-status", String "pending")
+      [ add Attr.block_title (block_ref uuid) title
+      ; add Attr.block_updated_at (block_ref uuid) now
+      ; add Attr.block_sync_status (block_ref uuid) "pending"
       ];
     Ok ())
 ;;
@@ -698,9 +711,9 @@ let update_block_status model ~uuid ~status ~now =
   else (
     commit
       model
-      [ Add (block_ref uuid, "block/status-json", String (status_json status))
-      ; Add (block_ref uuid, "block/updated-at", Int now)
-      ; Add (block_ref uuid, "block/sync-status", String "pending")
+      [ add Attr.block_status_json (block_ref uuid) (status_json status)
+      ; add Attr.block_updated_at (block_ref uuid) now
+      ; add Attr.block_sync_status (block_ref uuid) "pending"
       ];
     Ok ())
 ;;
