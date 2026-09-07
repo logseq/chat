@@ -96,7 +96,7 @@
 (test
  (name logseq_chat_http_test)
  (modules logseq_chat_http_test)
- (libraries logseq_chat_core unix))
+ (libraries logseq_chat_core unix threads.posix))
 
 (test
  (name logseq_chat_markup_test)
@@ -234,3 +234,8 @@
  (name logseq_chat_e2ee_keyring_test)
  (modules logseq_chat_e2ee_keyring_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
+
+(executable
+ (name logseq_chat_live_sync)
+ (modules logseq_chat_live_sync)
+ (libraries logseq_chat_core yojson unix))

@@ -147,23 +147,102 @@ let split_response response =
     Ok (headers, body)
 ;;
 
-let content_length_of_headers headers =
-  let parse_line line =
+let header_field ~name headers =
+  let name = String.lowercase_ascii name in
+  headers
+  |> String.split_on_char '\n'
+  |> List.find_map (fun line ->
     match String.index_opt line ':' with
     | None -> None
     | Some colon ->
-      let name = String.sub line 0 colon |> String.trim |> String.lowercase_ascii in
-      if not (String.equal name "content-length")
+      let field = String.sub line 0 colon |> String.trim |> String.lowercase_ascii in
+      if not (String.equal field name)
       then None
-      else (
-        let raw_value =
-          String.sub line (colon + 1) (String.length line - colon - 1) |> String.trim
-        in
-        match int_of_string raw_value with
-        | length -> Some length
-        | exception _ -> None)
+      else
+        Some
+          (String.sub line (colon + 1) (String.length line - colon - 1)
+           |> String.trim
+           |> String.lowercase_ascii))
+;;
+
+let content_length_of_headers headers =
+  match header_field ~name:"content-length" headers with
+  | None -> None
+  | Some raw_value ->
+    (match int_of_string raw_value with
+     | length -> Some length
+     | exception _ -> None)
+;;
+
+let transfer_encoding_is_chunked headers =
+  match header_field ~name:"transfer-encoding" headers with
+  | None -> false
+  | Some value ->
+    value
+    |> String.split_on_char ','
+    |> List.exists (fun part -> String.equal (String.trim part) "chunked")
+;;
+
+let host_header endpoint =
+  let default_port = if String.equal endpoint.scheme "https" then 443 else 80 in
+  if endpoint.port = default_port
+  then endpoint.host
+  else Printf.sprintf "%s:%d" endpoint.host endpoint.port
+;;
+
+let hex_length value =
+  match int_of_string_opt ("0x" ^ String.trim value) with
+  | Some length when length >= 0 -> Ok length
+  | Some _ | None -> Error ("invalid HTTP chunk size: " ^ value)
+;;
+
+let read_chunked_body fd initial =
+  let buffer = Buffer.create (String.length initial + 4096) in
+  Buffer.add_string buffer initial;
+  let chunk = Bytes.create 4096 in
+  let rec ensure needed =
+    if Buffer.length buffer >= needed
+    then Ok ()
+    else (
+      match Unix.read fd chunk 0 (Bytes.length chunk) with
+      | 0 -> Error "HTTP chunked body ended early"
+      | read_count ->
+        Buffer.add_subbytes buffer chunk 0 read_count;
+        ensure needed)
   in
-  headers |> String.split_on_char '\n' |> List.find_map parse_line
+  let rec line_end offset =
+    let contents = Buffer.contents buffer in
+    match find_substring ~needle:"\r\n" (String.sub contents offset (String.length contents - offset)) with
+    | Some relative -> Ok (offset + relative)
+    | None ->
+      (match ensure (Buffer.length buffer + 1) with
+       | Error _ as error -> error
+       | Ok () -> line_end offset)
+  in
+  let rec loop offset acc =
+    match line_end offset with
+    | Error _ as error -> error
+    | Ok crlf ->
+      let contents = Buffer.contents buffer in
+      let size_line = String.sub contents offset (crlf - offset) in
+      let size_line =
+        match String.index_opt size_line ';' with
+        | None -> size_line
+        | Some index -> String.sub size_line 0 index
+      in
+      (match hex_length size_line with
+       | Error _ as error -> error
+       | Ok 0 -> Ok (String.concat "" (List.rev acc))
+       | Ok size ->
+         let data_start = crlf + 2 in
+         (match ensure (data_start + size + 2) with
+          | Error _ as error -> error
+          | Ok () ->
+            let contents = Buffer.contents buffer in
+            let data = String.sub contents data_start size in
+            loop (data_start + size + 2) (data :: acc)))
+  in
+  loop 0 []
 ;;
 
 let read_response fd =
@@ -187,10 +266,13 @@ let read_response fd =
     let response = Buffer.contents buffer in
     let body_start = header_end + marker_len in
     let headers = String.sub response 0 header_end in
-    let body_buffer = Buffer.create 4096 in
-    Buffer.add_substring body_buffer response body_start (String.length response - body_start);
+    let initial_body =
+      String.sub response body_start (String.length response - body_start)
+    in
     (match content_length_of_headers headers with
      | Some body_length ->
+       let body_buffer = Buffer.create body_length in
+       Buffer.add_string body_buffer initial_body;
        let rec read_body () =
          let current_length = Buffer.length body_buffer in
          if current_length >= body_length
@@ -207,9 +289,11 @@ let read_response fd =
              read_body ()))
        in
        read_body ()
-     | None ->
-       Buffer.add_string body_buffer (read_all fd);
-       Ok (headers, Buffer.contents body_buffer))
+     | None when transfer_encoding_is_chunked headers ->
+       (match read_chunked_body fd initial_body with
+        | Error _ as error -> error
+        | Ok body -> Ok (headers, body))
+     | None -> Ok (headers, initial_body ^ read_all fd))
 ;;
 
 let status_of_headers headers =
@@ -271,18 +355,7 @@ let connect endpoint =
   try_addresses addresses
 ;;
 
-let send_https (request : Api.request) =
-  let body = Option.value request.Api.body ~default:"" in
-  let response = https_send_raw request.Api.method_ request.Api.url body request.Api.token in
-  match split_first_line response with
-  | "ERROR", message -> Error message
-  | status, body ->
-    (match int_of_string status with
-     | status -> Ok { Api.status; body }
-     | exception _ -> Error ("invalid HTTPS status: " ^ status))
-;;
-
-let send_http (request : Api.request) endpoint =
+let send_http (request : Api.request) endpoint extra_headers body =
   match connect endpoint with
   | Error message -> Error message
   | Ok fd ->
@@ -290,18 +363,20 @@ let send_http (request : Api.request) endpoint =
       ~finally:(fun () -> Unix.close fd)
       (fun () ->
         try
-          let body = Option.value request.Api.body ~default:"" in
+          let extra_header_lines =
+            List.map (fun (name, value) -> name ^ ": " ^ value) extra_headers
+          in
           let headers =
             [ Printf.sprintf "%s %s HTTP/1.0" request.Api.method_ endpoint.path
-            ; "Host: " ^ endpoint.host
+            ; "Host: " ^ host_header endpoint
             ; "Authorization: Bearer " ^ request.Api.token
             ; "Accept: application/json"
             ; "Content-Type: application/json"
             ; "Connection: close"
             ; "Content-Length: " ^ string_of_int (String.length body)
-            ; ""
-            ; body
             ]
+            @ extra_header_lines
+            @ [ ""; body ]
             |> String.concat "\r\n"
           in
           write_all fd (Bytes.of_string headers);
@@ -315,20 +390,86 @@ let send_http (request : Api.request) endpoint =
         | exn -> Error (unix_error_message exn))
 ;;
 
+let send_https (request : Api.request) =
+  let body = Option.value request.Api.body ~default:"" in
+  let response = https_send_raw request.Api.method_ request.Api.url body request.Api.token in
+  match split_first_line response with
+  | "ERROR", message -> Error message
+  | status, body ->
+    (match int_of_string status with
+     | status -> Ok { Api.status; body }
+     | exception _ -> Error ("invalid HTTPS status: " ^ status))
+;;
+
 let send request =
   match parse_url request.Api.url with
   | Error message -> Error message
   | Ok endpoint ->
     if String.equal endpoint.scheme "https"
     then send_https request
-    else send_http request endpoint
+    else send_http request endpoint [] (Option.value request.Api.body ~default:"")
+;;
+
+let read_file_bytes path =
+  try
+    let channel = open_in_bin path in
+    Fun.protect
+      ~finally:(fun () -> close_in_noerr channel)
+      (fun () -> Ok (really_input_string channel (in_channel_length channel)))
+  with
+  | exn -> Error ("could not read upload file: " ^ unix_error_message exn)
+;;
+
+let upload_http (upload : Api.file_upload) endpoint =
+  match read_file_bytes upload.file_path with
+  | Error _ as error -> error
+  | Ok body ->
+    match connect endpoint with
+    | Error message -> Error message
+    | Ok fd ->
+      Fun.protect
+        ~finally:(fun () -> Unix.close fd)
+        (fun () ->
+          try
+            let extra_header_lines =
+              List.map (fun (name, value) -> name ^ ": " ^ value) upload.headers
+            in
+            let headers =
+              [ Printf.sprintf "%s %s HTTP/1.0" upload.request.Api.method_ endpoint.path
+              ; "Host: " ^ host_header endpoint
+              ; "Authorization: Bearer " ^ upload.request.token
+              ; "Accept: application/json"
+              ; "Content-Type: " ^ upload.content_type
+              ; "Connection: close"
+              ; "Content-Length: " ^ string_of_int (String.length body)
+              ]
+              @ extra_header_lines
+              @ [ ""; body ]
+              |> String.concat "\r\n"
+            in
+            write_all fd (Bytes.of_string headers);
+            match read_response fd with
+            | Error message -> Error message
+            | Ok (response_headers, response_body) ->
+              (match status_of_headers response_headers with
+               | Ok status -> Ok { Api.status; body = response_body }
+               | Error message -> Error message)
+          with
+          | exn -> Error (unix_error_message exn))
 ;;
 
 let upload_file (upload : Api.file_upload) =
   match parse_url upload.request.Api.url with
   | Error message -> Error message
-  | Ok _ ->
-    https_upload_file_raw upload.request.method_ upload.request.url upload.file_path
-      upload.content_type upload.request.token
-    |> response_of_native
+  | Ok endpoint ->
+    if String.equal endpoint.scheme "https"
+    then
+      https_upload_file_raw
+        upload.request.method_
+        upload.request.url
+        upload.file_path
+        upload.content_type
+        upload.request.token
+      |> response_of_native
+    else upload_http upload endpoint
 ;;
