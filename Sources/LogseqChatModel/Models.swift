@@ -558,6 +558,20 @@ public struct LogseqOutlinerCommand: Codable, Equatable, Sendable {
     public let uuid: String?
     public let uuids: [String]?
     public let text: String?
+
+    public init(
+        type: String,
+        style: String? = nil,
+        uuid: String? = nil,
+        uuids: [String]? = nil,
+        text: String? = nil
+    ) {
+        self.type = type
+        self.style = style
+        self.uuid = uuid
+        self.uuids = uuids
+        self.text = text
+    }
 }
 
 public struct LogseqOutlinerEvent: Encodable, Sendable {
@@ -824,7 +838,7 @@ public struct LogseqChatRPCResponse: Decodable {
     public let error: LogseqChatCoreError?
 }
 
-public struct LogseqChatRPCParams: Encodable {
+public struct LogseqChatRPCParams: Encodable, Sendable {
     public let action: String?
     public let payload: String?
     public let path: String?
@@ -836,7 +850,7 @@ public struct LogseqChatRPCParams: Encodable {
     }
 }
 
-public struct LogseqChatRPCRequest: Encodable {
+public struct LogseqChatRPCRequest: Encodable, Sendable {
     public let apiVersion: Int
     public let method: String
     public let params: LogseqChatRPCParams

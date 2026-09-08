@@ -74,6 +74,7 @@ reset_key "UISupportedInterfaceOrientations"
 reset_key "UIBackgroundModes"
 "$plistbuddy" -c "Add :UIBackgroundModes array" "$info_plist"
 "$plistbuddy" -c "Add :UIBackgroundModes:0 string fetch" "$info_plist"
+"$plistbuddy" -c "Add :UIBackgroundModes:1 string audio" "$info_plist"
 
 reset_key "BGTaskSchedulerPermittedIdentifiers"
 "$plistbuddy" -c "Add :BGTaskSchedulerPermittedIdentifiers array" "$info_plist"

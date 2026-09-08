@@ -1,10 +1,7 @@
-// SKIP SYMBOLFILE
 
 import Foundation
 
-#if !SKIP
 import CryptoKit
-#endif
 
 struct CognitoOAuthConfiguration: Sendable {
     let domain: String
@@ -90,16 +87,12 @@ enum CognitoOAuthRequest {
 
 enum CognitoPKCE {
     static func codeChallenge(for verifier: String) -> String {
-        #if !SKIP
         let digest = SHA256.hash(data: Data(verifier.utf8))
         return Data(digest)
             .base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        #else
-        return ""
-        #endif
     }
 }
 

@@ -4,7 +4,7 @@ appId: com.logseq.chat
     file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
 - launchApp
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.journals"
 - tapOn: "Edit block Untitled block"
 - assertVisible:
     id: "toolbar.outliner.editor"

@@ -9,12 +9,12 @@ appId: com.logseq.chat
     timeout: 30000
 - tapOn:
     id: "button.sidebar"
-- tapOn: "Deepseek VS ChatGPT"
+- tapOn: "E2E Page Target"
 - extendedWaitUntil:
-    visible: "Deepseek VS ChatGPT"
+    visible: "E2E Page Target"
     timeout: 10000
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.selected-page"
 - assertNotVisible:
     id: "button.content-mode"
 - assertVisible:

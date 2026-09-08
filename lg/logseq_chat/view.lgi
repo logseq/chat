@@ -1,0 +1,541 @@
+(ns logseq-chat.view)
+
+(type-record retained-outline-row
+  (render-key :string)
+  (value :outline-row)
+  (is-editing :bool)
+  (editing-title :string)
+  (editing-caret :int))
+
+(signature logseq-chat.view/outliner-editor-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/outliner-block-content-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/native-navigation-stack-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/native-search-presentation-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/native-overflow-menu-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/liquid-glass-schema
+ :fn<extension-component-schema>)
+(signature logseq-chat.view/extension-registry :fn<extension-registry>)
+(signature logseq-chat.view/string-wire-value :fn<string;wire-value>)
+(signature logseq-chat.view/int-wire-value :fn<int;wire-value>)
+(signature logseq-chat.view/extension-string
+ :fn<map<string;wire-value>;string;string>)
+(signature logseq-chat.view/extension-int
+ :fn<map<string;wire-value>;string;int>)
+(signature logseq-chat.view/navigation-path-depth
+ :fn<vector<navigation-route>;int>)
+(signature logseq-chat.view/handle-native-navigation-event
+ :fn<event;fn<chat-action;bool>;bool>)
+(signature logseq-chat.view/handle-native-search-event
+ :fn<event;fn<chat-action;bool>;bool>)
+(signature logseq-chat.view/handle-native-overflow-menu-event
+ :fn<event;fn<chat-action;bool>;bool>)
+(signature logseq-chat.view/handle-outliner-editor-event
+ :fn<event;signal<string>;fn<chat-action;bool>;bool>)
+(signature logseq-chat.view/outliner-editor-view
+ :fn<ui-context;signal<string>;signal<string>;signal<int>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/optional-string :fn<option<string>;string>)
+(signature logseq-chat.view/outliner-row-youtube-target
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-asset-type
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-local-path
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-completed?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-has-status?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-status-title
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-editor-task-label
+ :fn<chat-model;string>)
+(signature logseq-chat.view/outliner-row-has-tags?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-sync-failed?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-list-item-press-enabled?
+ :fn<host-kind;outline-row;bool>)
+(signature logseq-chat.view/outliner-tag-identifier
+ :fn<sidebar-page;string>)
+(signature logseq-chat.view/outliner-tag-title
+ :fn<sidebar-page;string>)
+(signature logseq-chat.view/outliner-tag
+ :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/request-node-action
+ :fn<chat-model;string;chat-action>)
+(signature logseq-chat.view/handle-outliner-block-content-event
+ :fn<event;signal<chat-model>;fn<chat-action;bool>;bool>)
+(signature logseq-chat.view/outliner-block-content-view
+ :fn<ui-context;signal<chat-model>;signal<string>;signal<string>;signal<string>;signal<bool>;signal<bool>;signal<string>;signal<string>;fn<chat-action;bool>;int>)
+
+(signature logseq-chat.view/graph-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-indicator-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-accessibility-identifier
+ :fn<chat-model;string>)
+(signature logseq-chat.view/sync-indicator-foreground
+ :fn<chat-model;string>)
+(signature logseq-chat.view/sync-connection-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-pending-label :fn<chat-model;string>)
+(signature logseq-chat.view/sync-cursor-label :fn<chat-model;string>)
+(signature logseq-chat.view/active-page-actions-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/connection-settings-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/active-page-favorite-label
+ :fn<chat-model;string>)
+(signature logseq-chat.view/page-deletion-pending?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-page-identifier :fn<sidebar-page;string>)
+(signature logseq-chat.view/sidebar-page-title :fn<sidebar-page;string>)
+(signature logseq-chat.view/sidebar-graph-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-title :fn<graph;string>)
+(signature logseq-chat.view/sidebar-graph-selected?
+ :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/sidebar-graph-disabled? :fn<graph;bool>)
+(signature logseq-chat.view/journals-sidebar-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcards-sidebar-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/graphs-sidebar-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-page-selected?
+ :fn<chat-model;sidebar-page;bool>)
+(signature logseq-chat.view/favorites-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/recent-pages-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-tab-visible?
+ :fn<chat-model;string;bool>)
+(signature logseq-chat.view/flashcards-tab-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/graphs-tab-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-page-row
+ :fn<ui-context;signal<chat-model>;signal<sidebar-page>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/sidebar-graph-menu-item
+ :fn<ui-context;signal<chat-model>;signal<graph>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/sidebar-section-heading
+ :fn<ui-context;string;string;int>)
+(signature logseq-chat.view/sidebar-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/composer-collapsed? :fn<chat-model;bool>)
+(signature logseq-chat.view/composer-send-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/task-status-identifier :fn<task-status;string>)
+(signature logseq-chat.view/task-status-title :fn<task-status;string>)
+(signature logseq-chat.view/task-status-style :fn<task-status;string>)
+(signature logseq-chat.view/task-status-icon-name :fn<task-status;string>)
+(signature logseq-chat.view/task-status-foreground :fn<task-status;string>)
+(signature logseq-chat.view/task-status-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-result-identifier :fn<search-hit;string>)
+(signature logseq-chat.view/search-result-title :fn<search-hit;string>)
+(signature logseq-chat.view/search-result-icon :fn<search-hit;string>)
+(signature logseq-chat.view/search-result-context-present? :fn<search-hit;bool>)
+(signature logseq-chat.view/search-result-status :fn<chat-model;string>)
+(signature logseq-chat.view/search-result-breadcrumb :fn<search-hit;string>)
+(signature logseq-chat.view/page-search-results
+ :fn<chat-model;vector<search-hit>>)
+(signature logseq-chat.view/block-search-results
+ :fn<chat-model;vector<search-hit>>)
+(signature logseq-chat.view/page-search-results-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/block-search-results-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-empty-state-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-results-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-empty-message :fn<chat-model;string>)
+(signature logseq-chat.view/search-result-row
+ :fn<ui-context;signal<search-hit>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
+(signature logseq-chat.view/retained-outliner-rows
+ :fn<chat-model;vector<retained-outline-row>>)
+(signature logseq-chat.view/make-retained-outline-row
+ :fn<chat-model;outline-row;retained-outline-row>)
+(signature logseq-chat.view/retained-row-value
+ :fn<retained-outline-row;outline-row>)
+(signature logseq-chat.view/retained-row-editing?
+ :fn<retained-outline-row;bool>)
+(signature logseq-chat.view/retained-row-editing-title
+ :fn<retained-outline-row;string>)
+(signature logseq-chat.view/retained-row-editing-caret
+ :fn<retained-outline-row;int>)
+(signature logseq-chat.view/outliner-row-title :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-uuid :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-indent :fn<outline-row;int>)
+(signature logseq-chat.view/outliner-row-has-children :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-zoom-label :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-action-label :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-row-collapse-label :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-collapse-glyph :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-collapse-icon-name :fn<bool;string>)
+(signature logseq-chat.view/outliner-collapse-identifier
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-collapse-button
+ :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-indent-view
+ :fn<ui-context;signal<int>;int>)
+(signature logseq-chat.view/row-editing? :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/row-not-editing? :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/string-vector-contains?
+ :fn<vector<string>;string;bool>)
+(signature logseq-chat.view/row-selected? :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-selection-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-selection-inactive? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-editor-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-autocomplete-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-autocomplete-identifier
+ :fn<outliner-autocomplete-candidate;string>)
+(signature logseq-chat.view/outliner-autocomplete-label
+ :fn<outliner-autocomplete-candidate;string>)
+(signature logseq-chat.view/node-navigation-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/node-navigation-inactive? :fn<chat-model;bool>)
+(signature logseq-chat.view/journals-destination? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcards-destination? :fn<chat-model;bool>)
+(signature logseq-chat.view/graphs-destination? :fn<chat-model;bool>)
+(signature logseq-chat.view/journal-route-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/journal-root-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/journal-home-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-models
+ :fn<chat-model;vector<chat-model>>)
+(signature logseq-chat.view/selected-page-model-key :fn<chat-model;string>)
+(signature logseq-chat.view/journal-tree-retained? :fn<chat-model;bool>)
+(signature logseq-chat.view/older-journals-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/journal-section-marker-for
+ :fn<vector<journal-section-marker>;string;option<journal-section-marker>>)
+(signature logseq-chat.view/outliner-journal-marker
+ :fn<chat-model;outline-row;option<journal-section-marker>>)
+(signature logseq-chat.view/outliner-journal-heading-visible?
+ :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-journal-divider-visible?
+ :fn<chat-model;outline-row;bool>)
+(signature logseq-chat.view/outliner-journal-title
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-journal-page-id
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/outliner-journal-button-identifier
+ :fn<chat-model;outline-row;string>)
+(signature logseq-chat.view/node-screen-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/primary-sidebar-button-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-drag-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-main-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/connection-control-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/search-query-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-presentation :fn<chat-model;string>)
+(signature logseq-chat.view/bottom-chrome-selection? :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-editor? :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-expanded-composer?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-capture-and-search?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/bottom-chrome-occupies-layout-space?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/active-node-projection
+ :fn<chat-model;option<node-projection>>)
+(signature logseq-chat.view/active-node-uuid :fn<chat-model;string>)
+(signature logseq-chat.view/active-node-title :fn<chat-model;string>)
+(signature logseq-chat.view/main-title :fn<chat-model;string>)
+(signature logseq-chat.view/current-content-active? :fn<chat-model;bool>)
+(signature logseq-chat.view/current-content-is-tag? :fn<chat-model;bool>)
+(signature logseq-chat.view/current-content-is-property? :fn<chat-model;bool>)
+(signature logseq-chat.view/active-node-page-uuid :fn<chat-model;string>)
+(signature logseq-chat.view/active-node-related-rows
+ :fn<chat-model;vector<outline-row>>)
+(signature logseq-chat.view/active-node-linked-reference-rows
+ :fn<chat-model;vector<outline-row>>)
+(signature logseq-chat.view/node-related-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-tag-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-tag-section-empty?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-linked-reference-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-can-add-first-block?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-outliner-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/node-title-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/main-can-add-first-block?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/main-related-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/main-tag-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/main-linked-reference-section-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/outliner-row-has-breadcrumb?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-breadcrumb
+ :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-structured-breadcrumb?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-fallback-breadcrumb?
+ :fn<outline-row;bool>)
+(signature logseq-chat.view/breadcrumb-identifier :fn<sidebar-page;string>)
+(signature logseq-chat.view/breadcrumb-title :fn<sidebar-page;string>)
+(signature logseq-chat.view/breadcrumb-button
+ :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/related-row-breadcrumbs
+ :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/editing-title :fn<chat-model;string>)
+(signature logseq-chat.view/editing-caret :fn<chat-model;int>)
+(signature logseq-chat.view/outliner-row-content
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;bool;int>)
+(signature logseq-chat.view/outliner-row
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-entry
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-selection-toolbar
+ :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-autocomplete-row
+ :fn<ui-context;signal<outliner-autocomplete-candidate>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-autocomplete-bar
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-editor-toolbar
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-related-row
+ :fn<ui-context;signal<chat-model>;signal<outline-row>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-related-section
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-tagged-section
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-linked-reference-section
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/add-first-block-button
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/node-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/composer-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/attachment-picker-dialog
+ :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/task-status-row
+ :fn<ui-context;signal<task-status>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/task-status-picker-dialog
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/outliner-task-status-option-identifier
+ :fn<task-status;string>)
+(signature logseq-chat.view/outliner-task-status-row
+ :fn<ui-context;string;signal<task-status>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/first-flashcard
+ :fn<chat-model;option<flashcard>>)
+(signature logseq-chat.view/flashcards-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcards-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcard-question :fn<chat-model;string>)
+(signature logseq-chat.view/flashcard-remaining-label :fn<chat-model;string>)
+(signature logseq-chat.view/flashcard-show-cloze? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcard-show-answer? :fn<chat-model;bool>)
+(signature logseq-chat.view/flashcard-show-ratings? :fn<chat-model;bool>)
+(signature logseq-chat.view/visible-flashcard-answer-rows
+ :fn<chat-model;vector<flashcard-answer-row>>)
+(signature logseq-chat.view/flashcard-answer-identifier
+ :fn<flashcard-answer-row;string>)
+(signature logseq-chat.view/flashcard-answer-text
+ :fn<flashcard-answer-row;string>)
+(signature logseq-chat.view/flashcard-answer-row
+ :fn<ui-context;signal<flashcard-answer-row>;int>)
+(signature logseq-chat.view/flashcard-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-delete-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-status-identifier :fn<graph;string>)
+(signature logseq-chat.view/graph-status-visible? :fn<graph;bool>)
+(signature logseq-chat.view/graph-status-title :fn<graph;string>)
+(signature logseq-chat.view/graph-not-ready? :fn<graph;bool>)
+(signature logseq-chat.view/graph-row-disabled?
+ :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/graph-delete-active?
+ :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/graph-row-local? :fn<chat-model;graph;bool>)
+(signature logseq-chat.view/graph-icon-name :fn<bool;graph;string>)
+(signature logseq-chat.view/local-graphs :fn<chat-model;vector<graph>>)
+(signature logseq-chat.view/remote-graphs :fn<chat-model;vector<graph>>)
+(signature logseq-chat.view/local-graphs-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/remote-graphs-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/new-graph-name-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-create-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-unlock-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/empty-graphs-loading? :fn<chat-model;bool>)
+(signature logseq-chat.view/empty-graphs-refreshable? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-deletion-pending? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-deletion-message :fn<chat-model;string>)
+(signature logseq-chat.view/graph-password-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/effect-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/effect-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/graph-unlock-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-unlock-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/global-effect-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-row
+ :fn<ui-context;signal<chat-model>;signal<graph>;bool;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-list-row
+ :fn<ui-context;signal<chat-model>;signal<graph>;bool;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-create-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-delete-dialog
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-picker-overflow-menu
+ :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graph-picker-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-picker-error-reason
+ :fn<chat-model;option<string>>)
+(signature logseq-chat.view/error-separator :fn<string;int>)
+(signature logseq-chat.view/graph-picker-error-code :fn<chat-model;string>)
+(signature logseq-chat.view/graph-picker-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/graph-picker-error-banner
+ :fn<ui-context;signal<chat-model>;int>)
+(signature logseq-chat.view/graph-password-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/graphs-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-main-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-spell-check :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-auto-correction :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-base-url :fn<chat-model;string>)
+(signature logseq-chat.view/settings-base-url-invalid? :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-apply-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-version :fn<chat-model;string>)
+(signature logseq-chat.view/settings-revision :fn<chat-model;string>)
+(signature logseq-chat.view/settings-language-title :fn<chat-model;string>)
+(signature logseq-chat.view/settings-appearance-title :fn<chat-model;string>)
+(signature logseq-chat.view/settings-tab-title :fn<string;string>)
+(signature logseq-chat.view/settings-tabs-summary :fn<chat-model;string>)
+(signature logseq-chat.view/settings-language-choice-title
+ :fn<settings-language-choice;string>)
+(signature logseq-chat.view/settings-language-choice-identifier
+ :fn<settings-language-choice;string>)
+(signature logseq-chat.view/settings-language-choice-radio
+ :fn<ui-context;signal<chat-model>;signal<settings-language-choice>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-language-choice-menu-item
+ :fn<ui-context;signal<settings-language-choice>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-language-control
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-appearance-control
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-community-link-title
+ :fn<settings-community-link;string>)
+(signature logseq-chat.view/settings-community-link-identifier
+ :fn<settings-community-link;string>)
+(signature logseq-chat.view/settings-community-link-needs-separator?
+ :fn<chat-model;settings-community-link;bool>)
+(signature logseq-chat.view/settings-community-link-row
+ :fn<ui-context;signal<chat-model>;signal<settings-community-link>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-tabs-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/runtime-log-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/tab-enabled? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/tab-toggle-label :fn<chat-model;string;string>)
+(signature logseq-chat.view/tab-selection-glyph :fn<chat-model;string;string>)
+(signature logseq-chat.view/tab-selection-icon-name :fn<chat-model;string;string>)
+(signature logseq-chat.view/tab-selection-foreground :fn<chat-model;string;string>)
+(signature logseq-chat.view/tab-disabled? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/tab-index :fn<chat-model;string;int>)
+(signature logseq-chat.view/tab-movement-visible? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/settings-flashcards-before-graphs?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-flashcards-after-graphs?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/settings-available-tabs-present?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/tab-move-up-disabled? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/tab-move-down-disabled? :fn<chat-model;string;bool>)
+(signature logseq-chat.view/tab-toggle-identifier :fn<string;string>)
+(signature logseq-chat.view/tab-up-identifier :fn<string;string>)
+(signature logseq-chat.view/tab-down-identifier :fn<string;string>)
+(signature logseq-chat.view/runtime-log-level :fn<runtime-log-record;string>)
+(signature logseq-chat.view/runtime-log-timestamp :fn<runtime-log-record;string>)
+(signature logseq-chat.view/runtime-log-message :fn<runtime-log-record;string>)
+(signature logseq-chat.view/runtime-log-error? :fn<runtime-log-record;bool>)
+(signature logseq-chat.view/runtime-log-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/runtime-log-records
+ :fn<chat-model;vector<runtime-log-record>>)
+(signature logseq-chat.view/runtime-log-errors-label :fn<chat-model;string>)
+(signature logseq-chat.view/runtime-log-order-label :fn<chat-model;string>)
+(signature logseq-chat.view/runtime-log-source-label :fn<chat-model;string>)
+(signature logseq-chat.view/runtime-log-row
+ :fn<ui-context;signal<runtime-log-record>;int>)
+(signature logseq-chat.view/settings-tab-row
+ :fn<ui-context;signal<chat-model>;string;string;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-tabs-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/runtime-log-toolbar
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/runtime-log-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-main-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-tabs-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/runtime-log-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/settings-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/page-delete-dialog
+ :fn<ui-context;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/sync-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/sync-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/sync-status-sheet
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/authentication-screen-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-screen-hidden? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-picker-screen-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/navigation-root-visible? :fn<chat-model;bool>)
+(signature logseq-chat.view/graph-picker-hidden? :fn<chat-model;bool>)
+(signature logseq-chat.view/drawer-selected? :fn<chat-model;bool>)
+(signature logseq-chat.view/drawer-disabled? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-signing-in? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-error-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/authentication-error-message :fn<chat-model;string>)
+(signature logseq-chat.view/authentication-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/chat-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/chat-main-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/selected-page-present? :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-absent? :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-content-title-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/selected-page-title :fn<chat-model;string>)
+(signature logseq-chat.view/root-outliner-view
+ :fn<ui-context;signal<chat-model>;signal<bool>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/retained-journal-pane
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/journal-tree-panes
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-bottom-chrome
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-header-leading
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-header-title
+ :fn<ui-context;signal<chat-model>;int>)
+(signature logseq-chat.view/main-header-sync
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/active-overflow-menu
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/main-header-connection
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/search-screen
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/journal-navigation-model
+ :fn<chat-model;chat-model>)
+(signature logseq-chat.view/node-route-model
+ :fn<chat-model;node-projection;chat-model>)
+(signature logseq-chat.view/app-navigation-depth :fn<chat-model;int>)
+(signature logseq-chat.view/search-navigation-depth :fn<chat-model;int>)
+(signature logseq-chat.view/search-node-routes
+ :fn<chat-model;vector<node-projection>>)
+(signature logseq-chat.view/active-route-only
+ :fn<vector<node-projection>;vector<node-projection>>)
+(signature logseq-chat.view/active-app-node-routes
+ :fn<chat-model;vector<node-projection>>)
+(signature logseq-chat.view/active-search-node-routes
+ :fn<chat-model;vector<node-projection>>)
+(signature logseq-chat.view/flutter-app-root-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/flutter-search-root-visible?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/native-node-screen
+ :fn<ui-context;signal<chat-model>;signal<node-projection>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/native-search-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+(signature logseq-chat.view/native-navigation-view
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)

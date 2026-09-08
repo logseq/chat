@@ -1,0 +1,94 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 45000
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Journal 08"
+- extendedWaitUntil:
+    visible:
+      id: "pane.selected-page"
+    timeout: 30000
+- assertVisible:
+    id: "block.rich.quote"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.math"
+    direction: DOWN
+    timeout: 30000
+    speed: 20
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "block.rich.math"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.codeBlock"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "block.rich.codeBlock"
+- assertVisible: "swift"
+- assertVisible: "let answer = 42.*"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.video"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 20
+    centerElement: true
+- assertVisible:
+    id: "block.rich.video"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.iframe"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 20
+    centerElement: true
+- assertVisible:
+    id: "block.rich.iframe"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.inline.2"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "block.rich.inline.0"
+- assertVisible:
+    id: "block.rich.inline.2"
+- assertVisible:
+    id: "block.rich.video"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.youtubeTimestamp"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible:
+    id: "block.rich.youtubeTimestamp"
+- tapOn:
+    id: "block.rich.youtubeTimestamp"
+- assertVisible:
+    id: "block.rich.youtubeTimestamp.start.83"
+- scrollUntilVisible:
+    element:
+      id: "block.rich.video.start.83"
+    direction: UP
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 20
+    centerElement: true

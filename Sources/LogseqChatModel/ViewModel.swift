@@ -3,14 +3,7 @@ import Observation
 #if !os(Android)
 import OSLog
 #endif
-#if SKIP
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-#endif
-import SkipFFI
-#if !SKIP
 import LogseqChatCoreABI
-#endif
 
 private struct LogseqModelLogger {
     #if !os(Android)
@@ -39,24 +32,30 @@ private struct LogseqModelLogger {
 private let logger = LogseqModelLogger()
 
 public final class LogseqChatCore {
-    nonisolated(unsafe) public static let shared = registerNatives(
-        LogseqChatCore(),
-        frameworkName: "LogseqChat",
-        libraryName: "logseq_chat_core"
-    )
+    nonisolated(unsafe) public static let shared = LogseqChatCore()
 
     private init() {
     }
 
+    private func invokeCore(_ operation: @escaping @Sendable () -> String) -> String {
+        LogseqChatCoreExecutor.shared.callSync(
+            { _ in operation() },
+            requestJSON: "",
+            priority: .interaction
+        )
+    }
+
     public func initialize() {
         #if LOGSEQ_CHAT_CORE
-        LogseqChatCoreABI.logseq_chat_initialize()
+        _ = invokeCore { "" }
         #endif
     }
 
-    /* SKIP EXTERN */ public func logseq_chat_call(_ request: String) -> String {
+    public func logseq_chat_call(_ request: String) -> String {
         #if LOGSEQ_CHAT_CORE
-        return String(cString: LogseqChatCoreABI.logseq_chat_call(request))
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_call(request))
+        }
         #else
         return
             """
@@ -70,6 +69,244 @@ public final class LogseqChatCore {
               }
             }
             """
+        #endif
+    }
+
+    public nonisolated static func callAsync(_ request: LogseqChatRPCRequest) async -> String {
+        guard let data = try? JSONEncoder().encode(request),
+              let requestJSON = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        return await LogseqChatCoreExecutor.shared.call(
+            { request in LogseqChatCore.shared.logseq_chat_call(request) },
+            requestJSON: requestJSON,
+            priority: .interaction
+        )
+    }
+
+    public func logseq_chat_lui_initialize(
+        _ platformCode: Int,
+        _ hostCode: Int,
+        _ authenticationCode: Int
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_initialize(
+                Int32(platformCode),
+                Int32(hostCode),
+                Int32(authenticationCode)
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_press(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_press(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_appear(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_appear(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_long_press(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_long_press(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_text_changed(
+        _ node: Int,
+        _ text: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_text_changed(
+                Int64(node),
+                text
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_submit(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_submit(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_toggle_changed(
+        _ node: Int,
+        _ checked: Bool
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_toggle_changed(
+                Int64(node),
+                checked ? 1 : 0
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_change(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_change(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_value_changed(
+        _ node: Int,
+        _ value: Double
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_value_changed(
+                Int64(node),
+                value
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_dismiss(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_dismiss(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_double_press(_ node: Int) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_double_press(Int64(node)))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_extension_event(
+        _ node: Int,
+        _ identifier: String,
+        _ name: String,
+        _ text: String,
+        _ value: Int
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_extension_event(
+                Int64(node),
+                identifier,
+                name,
+                text,
+                Int64(value)
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_dispose() -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_dispose())
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_take_effect() -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_take_effect())
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_resolve_effect(
+        _ effectID: Int,
+        _ succeeded: Bool,
+        _ message: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_resolve_effect(
+                Int64(effectID),
+                succeeded ? 1 : 0,
+                message
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_apply_snapshot(
+        _ responseJSON: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_snapshot(
+                responseJSON
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_apply_host_update(
+        _ kind: String,
+        _ payloadJSON: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_apply_host_update(
+                kind,
+                payloadJSON
+            ))
+        }
+        #else
+        return ""
         #endif
     }
 }
@@ -208,6 +445,7 @@ private struct DeletePagePayload: Encodable {
 
     private let callCore: @Sendable (String) -> String
     private let pendingTransport: @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
+    private let responseObserver: @MainActor (String) -> Void
     private var searchGeneration = 0
     private var openedDatabasePath: String?
     private var activeGraphID: String?
@@ -223,17 +461,30 @@ private struct DeletePagePayload: Encodable {
     private var outlinerAutosaveTask: Task<Void, Never>?
 
     public convenience init(call: @escaping @Sendable (String) -> String) {
-        self.init(call: call) { request in
-            await LogseqPendingSyncHTTPTransport.send(request)
-        }
+        self.init(call: call, responseObserver: { _ in })
+    }
+
+    public convenience init(
+        call: @escaping @Sendable (String) -> String,
+        responseObserver: @escaping @MainActor (String) -> Void
+    ) {
+        self.init(
+            call: call,
+            pendingTransport: { request in
+                await LogseqPendingSyncHTTPTransport.send(request)
+            },
+            responseObserver: responseObserver
+        )
     }
 
     public init(
         call: @escaping @Sendable (String) -> String,
-        pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult
+        pendingTransport: @escaping @Sendable (LogseqPendingSyncRequest) async -> LogseqPendingSyncResult,
+        responseObserver: @escaping @MainActor (String) -> Void = { _ in }
     ) {
         self.callCore = call
         self.pendingTransport = pendingTransport
+        self.responseObserver = responseObserver
     }
 
     public var sections: [LogseqBlockSection] {
@@ -362,19 +613,7 @@ private struct DeletePagePayload: Encodable {
     }
 
     public nonisolated static func callForLaunch(_ request: LogseqChatRPCRequest) async -> String {
-        guard let data = try? JSONEncoder().encode(request),
-              let requestJSON = String(data: data, encoding: .utf8) else {
-            return ""
-        }
-        #if !SKIP
-        return await LogseqChatCoreExecutor.shared.call(
-            { request in LogseqChatCore.shared.logseq_chat_call(request) },
-            requestJSON: requestJSON,
-            priority: .interaction
-        )
-        #else
-        return LogseqChatCore.shared.logseq_chat_call(requestJSON)
-        #endif
+        await LogseqChatCore.callAsync(request)
     }
 
     public func applyLaunchResponse(
@@ -730,20 +969,11 @@ private struct DeletePagePayload: Encodable {
 
             guard allowSnapshotDownload else { return false }
 
-            #if SKIP
-            let artifact = try await AndroidGraphSnapshotTransport.downloadSnapshot(
-                baseURL: baseURL,
-                graphID: graphID,
-                accessToken: accessToken,
-                workingDirectory: graphDirectory.path
-            )
-            #else
             let artifact = try await LogseqGraphSyncHTTP.downloadSnapshot(
                 baseURL: baseURL,
                 graphID: graphID,
                 accessToken: accessToken
             )
-            #endif
             defer { try? FileManager.default.removeItem(atPath: artifact.filePath) }
             let isEditingOutlinerBlock = snapshot.outlinerState.editing != nil
                 || snapshot.nodeRoutes.last?.outlinerState.editing != nil
@@ -791,89 +1021,88 @@ private struct DeletePagePayload: Encodable {
         graphID: String, baseURL: String, accessToken: String,
         stopAfterFirstFrame: Bool = false
     ) async -> Bool {
-        guard let cursor = snapshot.appliedServerT else {
+        let cursor: Int = snapshot.appliedServerT ?? -1
+        guard cursor >= 0 else {
             lastError = LogseqChatCoreError(code: "sync_cursor_missing", message: "Graph checkpoint is not open")
             return false
         }
-        #if SKIP
         do {
-            let stream = try await AndroidGraphSSETransport.open(
+            let request = try LogseqGraphSyncHTTP.webSocketRequest(
                 baseURL: baseURL,
                 graphID: graphID,
-                appliedServerT: cursor,
                 accessToken: accessToken
             )
-            defer { stream.close() }
-            await dispatchRawAndWait("startSSE")
+            let socket = URLSession.shared.webSocketTask(with: request)
+            socket.maximumMessageSize = 64 * 1024 * 1024
+            socket.resume()
+            defer { socket.cancel(with: .goingAway, reason: nil) }
+            await dispatchRawAndWait("startWebSocket")
             guard lastError == nil else { return false }
             syncError = nil
             isSnapshotRefreshDeferred = false
             syncPendingSoon()
-            while let frame = try await stream.nextFrame() {
-                await dispatchRawAndWait("feedSSE", payload: frame)
-                if lastError != nil { break }
-                syncPendingSoon()
-                if lastError != nil { break }
-                if stopAfterFirstFrame { break }
-            }
-            let streamError = lastError
-            if streamError?.code == "snapshot_required" {
-                lastError = nil
-            }
-            await dispatchRawAndWait("stopSSE")
-            if let streamError {
-                if streamError.code == "snapshot_required" {
-                    return true
-                }
-                lastError = nil
-                syncError = streamError
-            }
-        } catch {
-            await dispatchRawAndWait("stopSSE")
-            syncError = LogseqChatCoreError(code: "sse_connection_failed", message: "\(error)")
-        }
-        return false
-        #else
-        do {
-            let request = try LogseqGraphSyncHTTP.eventsRequest(
-                baseURL: baseURL,
-                graphID: graphID,
-                appliedServerT: cursor,
-                accessToken: accessToken
-            )
-            let (bytes, response) = try await URLSession.shared.bytes(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw URLError(.badServerResponse)
-            }
-            await dispatchRawAndWait("startSSE")
-            guard lastError == nil else { return false }
-            syncError = nil
-            isSnapshotRefreshDeferred = false
-            syncPendingSoon()
-            var transportBuffer = LogseqGraphSSETransportBuffer()
-            var networkChunk = Data()
-            networkChunk.reserveCapacity(16 * 1024)
-            eventStream: for try await byte in bytes {
-                if Task.isCancelled { break }
-                networkChunk.append(byte)
-                if byte == 0x0a || networkChunk.count == 16 * 1024 {
-                    let frames = try transportBuffer.append(networkChunk)
-                    networkChunk.removeAll(keepingCapacity: true)
-                    for frame in frames {
-                        await dispatchRawAndWait("feedSSE", payload: frame)
-                        if lastError != nil { break }
-                        syncPendingSoon()
-                        if lastError != nil { break }
-                        if stopAfterFirstFrame { break eventStream }
+            try await socket.send(.string(
+                try LogseqGraphWebSocketProtocol.entityPullMessage(since: cursor)
+            ))
+            var pullInFlight = true
+            var latestNotifiedServerT = cursor
+            eventStream: while !Task.isCancelled {
+                let message = try await socket.receive()
+                let text: String
+                switch message {
+                case .string(let value): text = value
+                case .data(let data):
+                    guard let value = String(data: data, encoding: .utf8) else {
+                        throw URLError(.cannotDecodeContentData)
                     }
-                    if lastError != nil { break }
+                    text = value
+                @unknown default:
+                    throw URLError(.cannotParseResponse)
+                }
+                guard let data = text.data(using: .utf8),
+                      let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let type = envelope["type"] as? String else {
+                    throw URLError(.cannotParseResponse)
+                }
+                switch type {
+                case "graph-changes", "reset":
+                    await dispatchRawAndWait("applySyncEvent", payload: text)
+                    if lastError != nil { break eventStream }
+                    pullInFlight = false
+                    syncPendingSoon()
+                    if lastError != nil { break eventStream }
+                    if stopAfterFirstFrame { break eventStream }
+                    let currentCursor: Int = snapshot.appliedServerT ?? -1
+                    if currentCursor >= 0 && latestNotifiedServerT > currentCursor {
+                        try await socket.send(.string(
+                            try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                        ))
+                        pullInFlight = true
+                    }
+                case "changed":
+                    if let serverT = envelope["t"] as? Int {
+                        latestNotifiedServerT = max(latestNotifiedServerT, serverT)
+                    }
+                    guard !pullInFlight else { continue }
+                    let currentCursor: Int = snapshot.appliedServerT ?? -1
+                    guard currentCursor >= 0 else {
+                        throw URLError(.cannotParseResponse)
+                    }
+                    try await socket.send(.string(
+                        try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                    ))
+                    pullInFlight = true
+                case "error":
+                    throw URLError(.badServerResponse)
+                default:
+                    continue
                 }
             }
             let streamError = lastError
             if streamError?.code == "snapshot_required" {
                 lastError = nil
             }
-            await dispatchRawAndWait("stopSSE")
+            await dispatchRawAndWait("stopWebSocket")
             if let streamError {
                 if streamError.code == "snapshot_required" {
                     return true
@@ -882,22 +1111,21 @@ private struct DeletePagePayload: Encodable {
                 syncError = streamError
             }
         } catch {
-            await dispatchRawAndWait("stopSSE")
-            if LogseqGraphSSEFailurePolicy.shouldReport(
+            await dispatchRawAndWait("stopWebSocket")
+            if LogseqGraphWebSocketFailurePolicy.shouldReport(
                 error,
                 taskIsCancelled: Task.isCancelled
             ) {
                 #if DEBUG
-                print("LogseqChat sync event stream failed: \(error)")
+                print("LogseqChat sync WebSocket failed: \(error)")
                 #endif
                 syncError = LogseqChatCoreError(
-                    code: "sse_connection_failed",
-                    message: LogseqGraphSSEFailurePolicy.userFacingMessage(error)
+                    code: "websocket_connection_failed",
+                    message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error)
                 )
             }
         }
         return false
-        #endif
     }
 
     public func deferSnapshotRefreshWhileEditing() {
@@ -1328,14 +1556,9 @@ private struct DeletePagePayload: Encodable {
     private func opensAutocompleteImmediately(_ event: LogseqOutlinerEvent) -> Bool {
         guard event.type == "textChanged", let title = event.title,
               let caret = event.caretUTF16Offset else { return false }
-        #if SKIP
-        let location = min(max(caret, 0), title.count)
-        let prefix = title.substring(0, location)
-        #else
         let value = title as NSString
         let location = min(max(caret, 0), value.length)
         let prefix = value.substring(to: location)
-        #endif
         return prefix.hasSuffix("#") || prefix.hasSuffix("[[") || prefix.hasSuffix("::")
     }
 
@@ -1446,15 +1669,11 @@ private struct DeletePagePayload: Encodable {
         let coreStartedAt = Date()
         #endif
         logger.info("Core action started: \(actionName)")
-        #if !SKIP
         let responseJSON = await LogseqChatCoreExecutor.shared.call(
             callCore,
             requestJSON: requestJSON,
             priority: Self.corePriority(for: actionName)
         )
-        #else
-        let responseJSON = await Self.callInBackground(callCore, requestJSON: requestJSON, actionName: actionName)
-        #endif
         #if DEBUG
         let coreMilliseconds = Date().timeIntervalSince(coreStartedAt) * 1_000
         let coreTiming =
@@ -1487,13 +1706,9 @@ private struct DeletePagePayload: Encodable {
         requestJSON: String,
         actionName: String
     ) async -> String {
-        #if !SKIP
         await Task.detached(priority: .utility) {
             callCore(requestJSON)
         }.value
-        #else
-        return await AndroidCoreExecutor.call(requestJSON: requestJSON, callCore: callCore)
-        #endif
     }
 
     private func encode(_ request: LogseqChatRPCRequest) -> String? {
@@ -1585,6 +1800,7 @@ private struct DeletePagePayload: Encodable {
             )
             lastError = coreError
         }
+        responseObserver(responseJSON)
     }
 
     private static func normalizedBaseURL(_ value: String) -> String {
@@ -1602,7 +1818,6 @@ private struct DeletePagePayload: Encodable {
         Int64(Date().timeIntervalSince1970 * 1000.0)
     }
 
-    #if !SKIP
     private static func corePriority(for action: String) -> LogseqChatCorePriority {
         switch action {
         case "outlinerEvent", "selectPage", "clearSelectedPage", "openNode", "closeNode",
@@ -1611,14 +1826,13 @@ private struct DeletePagePayload: Encodable {
              "addAsset", "addChildBlock", "updateBlock", "updateBlockStatus", "deleteBlock":
             return .interaction
         case "open", "configure", "refresh", "refreshGraphCatalog", "createSyncGraph", "openGraph",
-             "importSnapshot", "startSSE", "feedSSE", "stopSSE", "beginPendingSync",
+             "importSnapshot", "startWebSocket", "applySyncEvent", "stopWebSocket", "beginPendingSync",
              "completePendingSync", "cancelPendingSync":
             return .maintenance
         default:
             return .normal
         }
     }
-    #endif
 
     private func mergedSnapshot(_ result: LogseqChatSnapshot) -> LogseqChatSnapshot {
         if result.isPendingSyncPatch {
@@ -1635,7 +1849,7 @@ private struct DeletePagePayload: Encodable {
                 selectedPage: snapshot.selectedPage,
                 selectedPageIsTag: snapshot.selectedPageIsTag,
                 selectedPageIsProperty: snapshot.selectedPageIsProperty,
-                appliedServerT: snapshot.appliedServerT,
+                appliedServerT: result.appliedServerT ?? snapshot.appliedServerT,
                 syncConnected: snapshot.syncConnected,
                 relatedBlocks: snapshot.relatedBlocks,
                 linkedReferenceBlocks: snapshot.linkedReferenceBlocks,

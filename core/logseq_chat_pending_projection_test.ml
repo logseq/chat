@@ -1195,7 +1195,7 @@ let () =
     assert_bool "cursor advance without operation identity confirms nothing"
       (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-first"; "op-second" ]);
     Ops.confirm ~path ~operation_ids:[ "op-first"; "unknown" ];
-    assert_bool "SSE confirms only matching operation identities"
+    assert_bool "WebSocket sync confirms only matching operation identities"
       (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-second" ]))
 ;;
 

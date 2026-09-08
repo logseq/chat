@@ -1,6 +1,5 @@
 import Foundation
 
-#if !SKIP
 public enum LogseqPendingSyncDuplicateAssetResolver {
     public static func isDuplicate(status: Int, body: String) -> Bool {
         guard status == 409,
@@ -48,13 +47,9 @@ public enum LogseqPendingSyncFilePath {
         return fileManager.fileExists(atPath: standardizedURL.path) ? standardizedURL : nil
     }
 }
-#endif
 
 public enum LogseqPendingSyncHTTPTransport {
     public static func send(_ pending: LogseqPendingSyncRequest) async -> LogseqPendingSyncResult {
-        #if SKIP
-        return await AndroidPendingSyncTransport.send(request: pending)
-        #else
         do {
             guard let url = URL(string: pending.url) else {
                 LogseqRuntimeLog.shared.append(
@@ -171,10 +166,8 @@ public enum LogseqPendingSyncHTTPTransport {
             #endif
             return LogseqPendingSyncResult(status: nil, body: nil, error: "\(error)")
         }
-        #endif
     }
 
-    #if !SKIP
     private static func existingAssetBody(
         forUploadURL uploadURL: URL,
         token: String
@@ -209,5 +202,4 @@ public enum LogseqPendingSyncHTTPTransport {
         } while cursor != nil
         return nil
     }
-    #endif
 }

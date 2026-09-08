@@ -1,46 +1,17 @@
-# LogseqChat
+# Logseq Chat
 
-This is a [Skip](https://skip.dev) dual-platform app project.
+Logseq Chat is a native SwiftUI app for Apple platforms and a Flutter Material
+app for Android. Both clients use the same LG application model and OCaml
+DataScript core.
 
+## Apple platforms
 
-<!-- TODO: add iOS screenshots to fastlane metadata
-## iPhone Screenshots
+Open `Project.xcworkspace` and run the `LogseqChat App` scheme in Xcode.
+The Swift package can be compile-checked without launching XCTest:
 
-<img alt="iPhone Screenshot" src="Darwin/fastlane/screenshots/en-US/1_en-US.png" style="width: 18%" /> <img alt="iPhone Screenshot" src="Darwin/fastlane/screenshots/en-US/2_en-US.png" style="width: 18%" /> <img alt="iPhone Screenshot" src="Darwin/fastlane/screenshots/en-US/3_en-US.png" style="width: 18%" /> <img alt="iPhone Screenshot" src="Darwin/fastlane/screenshots/en-US/4_en-US.png" style="width: 18%" /> <img alt="iPhone Screenshot" src="Darwin/fastlane/screenshots/en-US/5_en-US.png" style="width: 18%" />
--->
-
-<!-- TODO: add Android screenshots to fastlane metadata
-## Android Screenshots
-
-<img alt="Android Screenshot" src="Android/fastlane/metadata/android/en-US/images/phoneScreenshots/1_en-US.png" style="width: 18%" /> <img alt="Android Screenshot" src="Android/fastlane/metadata/android/en-US/images/phoneScreenshots/2_en-US.png" style="width: 18%" /> <img alt="Android Screenshot" src="Android/fastlane/metadata/android/en-US/images/phoneScreenshots/3_en-US.png" style="width: 18%" /> <img alt="Android Screenshot" src="Android/fastlane/metadata/android/en-US/images/phoneScreenshots/4_en-US.png" style="width: 18%" /> <img alt="Android Screenshot" src="Android/fastlane/metadata/android/en-US/images/phoneScreenshots/5_en-US.png" style="width: 18%" />
--->
-
-## Building
-
-This project is both a stand-alone Swift Package Manager module,
-as well as an Xcode project that builds and translates the project
-into a Kotlin Gradle project for Android using the skipstone plugin.
-
-## Running
-
-Xcode and Android Studio must be downloaded and installed in order to
-run the app in the iOS simulator / Android emulator.
-An Android emulator must already be running, which can be launched from
-Android Studio's Device Manager.
-
-The project can be opened and run in Xcode from
-`Project.xcworkspace`, which also enabled parallel
-development of any Skip libary dependencies.
-
-To run both the Swift and Kotlin apps simultaneously,
-launch the "LogseqChat App" target from Xcode.
-A build phases runs the "Launch Android APK" script that
-will deploy the Skip app to a running Android emulator or connected device.
-Logging output for the iOS app can be viewed in the Xcode console, and in
-Android Studio's logcat tab for the transpiled Kotlin app, or
-using `adb logcat` from a terminal.
-
-### macOS
+```sh
+swift build --disable-sandbox
+```
 
 Build the native macOS Release app, including the OCaml 5.5 DataScript core:
 
@@ -56,17 +27,42 @@ compiler, target, and source fingerprints, so later builds reuse them. Set
 `LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX`/`LOGSEQ_CHAT_MACOS_TOOLCHAIN_PREFIX` to use
 an existing compatible compiler directly.
 
+## Android
+
+Android is built exclusively from the Flutter project:
+
+```sh
+cd Flutter
+flutter pub get
+flutter run
+```
+
+Build a debug APK or Play Store app bundle with:
+
+```sh
+cd Flutter
+flutter build apk --debug
+flutter build appbundle --release
+```
+
+The Flutter Android host includes Capture and Journal app shortcuts, Capture
+and Today’s Journal home-screen widgets, inbound sharing, deep links, native
+authentication, media services, and the OCaml core JNI library.
+
 ## Testing
 
-The module can be tested using the standard `swift test` command
-or by running the test target for the macOS destination in Xcode,
-which will run the Swift tests as well as the transpiled
-Kotlin JUnit tests in the Robolectric Android simulation environment.
+Do not run `swift test` in this repository because the XCTest bridge hangs in
+the current environment. Use the supported gates instead:
 
-Authentication uses Cognito Hosted UI authorization-code flow with PKCE. Apple uses
-`ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are exchanged with
-the Cognito OAuth endpoint and stored in the platform secure store, so neither app
-target depends on Amplify or the AWS SDK.
+```sh
+swift build --disable-sandbox
+cd Flutter && flutter analyze && flutter test
+opam exec --switch=5.5.0 -- dune build @lg-test/runtest
+opam exec --switch=5.5.0 -- dune build @core/runtest
+./scripts/test-android-e2e-runner.sh
+```
 
-Parity testing can be performed with `skip test`,
-which will output a table of the test results for both platforms.
+Authentication uses Cognito Hosted UI authorization-code flow with PKCE. Apple
+uses `ASWebAuthenticationSession`; Android uses Custom Tabs. Tokens are stored
+in the platform secure store, so neither client depends on Amplify or the AWS
+SDK.

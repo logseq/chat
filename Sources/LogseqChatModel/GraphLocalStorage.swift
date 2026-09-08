@@ -2,11 +2,7 @@ import Foundation
 
 public enum LogseqGraphLocalStorage {
     public static func directoryURL(databasePath: String, graphID: String) -> URL {
-        #if SKIP
-        let directoryName = graphID
-        #else
         let directoryName = graphID.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
-        #endif
         return URL(fileURLWithPath: databasePath)
             .deletingLastPathComponent()
             .appendingPathComponent("graphs", isDirectory: true)

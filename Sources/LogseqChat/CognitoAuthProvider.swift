@@ -1,16 +1,13 @@
-// SKIP SYMBOLFILE
 
 import Foundation
 import LogseqChatModel
 
-#if !SKIP
 import AuthenticationServices
 import Security
 #if os(iOS)
 import UIKit
 #elseif os(macOS)
 import AppKit
-#endif
 #endif
 
 enum CognitoAuthProviderError: Error, LocalizedError {
@@ -39,7 +36,6 @@ enum CognitoAuthProviderError: Error, LocalizedError {
     }
 }
 
-#if !SKIP
 private struct CognitoTokenStore: Sendable {
     private let service = "com.logseq.chat.cognito.tokens"
     private let account = "current-session"
@@ -278,21 +274,3 @@ private struct CognitoTokenStore: Sendable {
 private struct CognitoOAuthFailureResponse: Decodable {
     let error: String
 }
-#else
-actor CognitoAuthProvider: LogseqCognitoProviding {
-    init(
-        region: String,
-        userPoolId: String,
-        appClientId: String,
-        oauthDomain: String,
-        redirectURI: String,
-        logoutURI: String,
-        scopes: [String]
-    ) {
-    }
-
-    func accessToken() async throws -> String? { nil }
-    func signIn() async throws -> String { throw CognitoAuthProviderError.invalidConfiguration }
-    func signOut() async throws {}
-}
-#endif

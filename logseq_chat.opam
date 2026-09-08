@@ -8,19 +8,33 @@ depends: [
   "dune" {>= "3.17"}
   "datascript_ocaml"
   "datascript-ocaml-native"
+  "datascript-ocaml-lg"
   "melange-edn-native"
   "melange-transit-native"
+  "lg"
+  "lg-test" {with-test}
+  "lui"
+  "signal-lg"
   "mldoc"
   "ocaml-fsrs"
   "yojson"
 ]
 pin-depends: [
-  ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#main"]
-  ["datascript-ocaml-native.dev" "git+https://github.com/logseq/datascript-ocaml.git#main"]
-  ["persistent_sorted_set_ocaml.dev" "git+https://github.com/logseq/persistent-sorted-set-ocaml.git#main"]
+  ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#b3c98542ef4e65c7a325c86c3fc6ac00f46d2d80"]
+  ["datascript-ocaml-native.dev" "git+https://github.com/logseq/datascript-ocaml.git#b3c98542ef4e65c7a325c86c3fc6ac00f46d2d80"]
+  ["datascript-ocaml-lg.dev" "git+https://github.com/logseq/datascript-ocaml.git#b3c98542ef4e65c7a325c86c3fc6ac00f46d2d80"]
+  ["persistent_sorted_set_ocaml.dev" "git+https://github.com/logseq/persistent-sorted-set-ocaml.git#4016dae1cdf4304207d8277ff9957656cdd8b177"]
+  ["melange-edn-core.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
+  ["melange-edn-native.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
+  ["melange-edn-melange.0.5.0" "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"]
   ["melange-transit-core.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-native.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
-  ["ocaml-fsrs.0.1.0-alpha3" "git+https://github.com/chaosarium/ocaml-fsrs.git#65e243d822a5dc18d50300300a2aa629cdd1beaf"]
+  ["melange-transit-melange.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
+  ["lg.dev" "git+https://github.com/tiensonqin/lg.git#e69a52952a93bcc1fa77ccfdef74a21f0d35928f"]
+  ["lui.0.1.0" "git+ssh://git@github.com/tiensonqin/lui.git#d29c94855fcd5871bfe1f732afa067568e0de152"]
+  ["signal-lg.0.1.0" "git+https://github.com/tiensonqin/signal-lg.git#ed2e6c68322316d64bf41644480a5f8901940a02"]
+  ["mldoc.dev" "git+https://github.com/logseq/mldoc.git#c51b957ccb0f9b0173bb1e0b422a6798f1a59dd2"]
+  ["ocaml-fsrs.0.1.0-alpha3" "git+https://github.com/logseq/ocaml-fsrs.git#0ac7779062df50e7a9760d926ee215ed52c73194"]
 ]
 build: [
   ["dune" "subst"] {dev}

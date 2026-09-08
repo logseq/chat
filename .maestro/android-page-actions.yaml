@@ -1,0 +1,68 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- tapOn:
+    id: "button.overflow-menu"
+- assertVisible: "Unfavorite"
+- assertVisible: "Share"
+- assertVisible: "Delete"
+- assertNotVisible: "Settings"
+- tapOn: "Unfavorite"
+- tapOn:
+    id: "button.overflow-menu"
+- assertVisible: "Favorite"
+- tapOn: "Favorite"
+- tapOn:
+    id: "button.overflow-menu"
+- assertVisible: "Unfavorite"
+- tapOn: "Share"
+- extendedWaitUntil:
+    visible: "Sharing text"
+    timeout: 10000
+- pressKey: BACK
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- tapOn:
+    id: "button.sidebar"
+- tapOn: "E2E Page Target"
+- extendedWaitUntil:
+    visible:
+      id: "section.node.linked-references"
+    timeout: 30000
+- tapOn:
+    id: "button.overflow-menu"
+- assertVisible: "Unfavorite"
+- tapOn: "Delete"
+- assertVisible:
+    id: "dialog.page-delete"
+- tapOn:
+    id: "button.page-delete.cancel"
+- tapOn:
+    id: "button.overflow-menu"
+- tapOn: "Delete"
+- assertVisible:
+    id: "dialog.page-delete"
+- tapOn:
+    id: "button.page-delete.confirm"
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 10000
+- tapOn:
+    id: "button.sidebar"
+- assertNotVisible: "E2E Page Target"

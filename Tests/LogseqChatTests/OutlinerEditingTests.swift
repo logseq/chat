@@ -5,6 +5,41 @@ import Testing
 @testable import LogseqChat
 
 @Suite struct OutlinerEditingTests {
+    @Test func keyboardHideDiagnosticsSpanInlineEditorHandoffs() {
+        var counter = OutlinerKeyboardHideCounter()
+
+        counter.editorAppeared(id: "first")
+        counter.keyboardWillHide()
+        #expect(counter.hideCount == 1)
+
+        counter.editorDisappeared(id: "first")
+        #expect(counter.hasPendingHandoff)
+        counter.editorAppeared(id: "second")
+        #expect(counter.hideCount == 1)
+
+        counter.keyboardWillHide()
+        #expect(counter.hideCount == 2)
+        counter.editorDisappeared(id: "second")
+        counter.finishPendingHandoff()
+        #expect(!counter.isEditing)
+
+        counter.editorAppeared(id: "third")
+        #expect(counter.hideCount == 0)
+    }
+
+    @Test func keyboardHideDiagnosticsCountHidesDuringPendingHandoffs() {
+        var counter = OutlinerKeyboardHideCounter()
+
+        counter.editorAppeared(id: "first")
+        counter.editorDisappeared(id: "first")
+        counter.keyboardWillHide()
+
+        #expect(counter.hideCount == 1)
+        counter.finishPendingHandoff()
+        counter.keyboardWillHide()
+        #expect(counter.hideCount == 1)
+    }
+
     @Test func autocompleteHeightFitsItsRowsUntilTheScrollLimit() {
         #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 0) == 0)
         #expect(OutlinerAutocompleteLayoutPolicy.height(candidateCount: 1) == 60)
@@ -718,71 +753,6 @@ import Testing
         #expect(!OutlinerToolbarAction.hideKeyboard.preservesInlineEditorFocus)
     }
 
-    @Test func outlinerIdleStateStillShowsTheGlobalBottomBar() {
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.outliner,
-            hasSelectedPage: false,
-            composerExpanded: false,
-            hasOutlinerSelection: false,
-            isEditingOutlinerBlock: false
-        ) == .captureAndSearch)
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.outliner,
-            hasSelectedPage: false,
-            composerExpanded: false,
-            hasOutlinerSelection: false,
-            isEditingOutlinerBlock: true
-        ) == .outlinerEditor)
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.outliner,
-            hasSelectedPage: false,
-            composerExpanded: false,
-            hasOutlinerSelection: true,
-            isEditingOutlinerBlock: true
-        ) == .outlinerSelection)
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.outliner,
-            hasSelectedPage: true,
-            composerExpanded: false,
-            hasOutlinerSelection: false,
-            isEditingOutlinerBlock: false
-        ) == .captureAndSearch)
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.outliner,
-            hasSelectedPage: true,
-            composerExpanded: false,
-            hasOutlinerSelection: false,
-            isEditingOutlinerBlock: false,
-            isNodePage: true
-        ) == .captureAndSearch)
-        #expect(BottomChromePolicy.presentation(
-            contentMode: LogseqContentMode.outliner,
-            hasSelectedPage: true,
-            composerExpanded: true,
-            hasOutlinerSelection: false,
-            isEditingOutlinerBlock: false,
-            isNodePage: true
-        ) == .expandedComposer)
-    }
-
-    @Test func destinationChangesAndOutsideComposerTapsEndEditing() {
-        #expect(DestinationEditingPolicy.sidebarSelectionEndsEditing)
-        #expect(DestinationEditingPolicy.outsideComposerTapEndsEditing)
-        #expect(DestinationEditingPolicy.preservesCaptureDraftOnDismiss)
-        #expect(DestinationEditingPolicy.shouldEndEditing(
-            previousRouteDepth: 0,
-            currentRouteDepth: 1
-        ))
-        #expect(DestinationEditingPolicy.shouldEndEditing(
-            previousRouteDepth: 2,
-            currentRouteDepth: 1
-        ))
-        #expect(!DestinationEditingPolicy.shouldEndEditing(
-            previousRouteDepth: 1,
-            currentRouteDepth: 1
-        ))
-    }
-
     @Test func dropZoneMapsOnlyPointerGeometry() {
         #expect(OutlinerDropZone.placement(locationY: 10, rowHeight: 100) == .before)
         #expect(OutlinerDropZone.placement(locationY: 50, rowHeight: 100) == .inside)
@@ -803,6 +773,57 @@ import Testing
         #expect(InlineEditorTextReconciliationPolicy.decision(
             modelText: "Remote", localText: nil
         ) == .applyModel)
+    }
+
+    @Test func inlineEditorDoesNotEchoProgrammaticCaretChanges() {
+        #expect(!InlineEditorCaretEmissionPolicy.shouldEmit(
+            textMatchesModel: true,
+            isApplyingModel: true
+        ))
+        #expect(InlineEditorCaretEmissionPolicy.shouldEmit(
+            textMatchesModel: true,
+            isApplyingModel: false
+        ))
+        #expect(!InlineEditorCaretEmissionPolicy.shouldEmit(
+            textMatchesModel: false,
+            isApplyingModel: false
+        ))
+    }
+
+    @Test func androidInlineEditorSeparatesLocalTypingFromStructuralInput() {
+        #expect(AndroidInlineEditorInputPolicy.transition(
+            previousText: "Hello",
+            updatedText: "Hello!",
+            updatedCaretUTF16Offset: 6
+        ) == .textChange(text: "Hello!", caretUTF16Offset: 6))
+
+        #expect(AndroidInlineEditorInputPolicy.transition(
+            previousText: "Hello",
+            updatedText: "Hel\nlo",
+            updatedCaretUTF16Offset: 4
+        ) == .returnKey(text: "Hello", caretUTF16Offset: 3))
+
+        #expect(AndroidInlineEditorInputPolicy.transition(
+            previousText: "你😀好",
+            updatedText: "你😀\n好",
+            updatedCaretUTF16Offset: 4
+        ) == .returnKey(text: "你😀好", caretUTF16Offset: 3))
+
+        #expect(AndroidInlineEditorInputPolicy.shouldMergeBackward(
+            text: "Block",
+            selectionStartUTF16Offset: 0,
+            selectionEndUTF16Offset: 0
+        ))
+        #expect(!AndroidInlineEditorInputPolicy.shouldMergeBackward(
+            text: "Block",
+            selectionStartUTF16Offset: 1,
+            selectionEndUTF16Offset: 1
+        ))
+        #expect(!AndroidInlineEditorInputPolicy.shouldMergeBackward(
+            text: "Block",
+            selectionStartUTF16Offset: 0,
+            selectionEndUTF16Offset: 2
+        ))
     }
 
     @Test func unchangedRowsKeepTheSameRenderIdentityAcrossUnrelatedSnapshots() throws {
@@ -867,6 +888,48 @@ import Testing
             "https://youtu.be/dQw4w9WgXcQ",
             "https://example.com/embed",
         ])
+    }
+
+    @Test func androidMarkupKeepsPlainTextOnTheNonInteractiveRenderPath() {
+        let plain = [LogseqMarkupNode(type: .text, text: "Plain block")]
+        let linked = [
+            LogseqMarkupNode(type: .text, text: "Open "),
+            LogseqMarkupNode(type: .nodeReference, uuid: "page-id", title: "Page"),
+        ]
+
+        #expect(!OutlinerMarkupMarkdown.requiresAttributedText(plain))
+        #expect(OutlinerMarkupMarkdown.requiresAttributedText(linked))
+        #expect(OutlinerMarkupMarkdown.make(nodes: plain, fallback: "") == "Plain block")
+        #expect(OutlinerMarkupMarkdown.make(nodes: linked, fallback: "") ==
+            "Open [Page](logseq-node://page-id)")
+    }
+
+    @Test func androidMarkupEscapesMarkdownLabelsWithoutBreakingNodeRoutes() {
+        let nodes = [
+            LogseqMarkupNode(type: .nodeReference, uuid: "page id", title: "Page [One]"),
+            LogseqMarkupNode(type: .text, text: " "),
+            LogseqMarkupNode(type: .tagReference, uuid: "tag-id", title: "Project"),
+        ]
+
+        #expect(OutlinerMarkupMarkdown.make(nodes: nodes, fallback: "") ==
+            "[Page \\[One\\]](logseq-node://page%20id) [\\#Project](logseq-node://tag-id)")
+    }
+
+    @Test func androidRichContentOnlyInterceptsTouchesForInteractiveNodes() {
+        #expect(!OutlinerMarkupInteractionPolicy.hasInteractiveContent([
+            LogseqMarkupNode(type: .text, text: "Plain"),
+            LogseqMarkupNode(type: .math, text: "x^2"),
+            LogseqMarkupNode(type: .codeBlock, text: "let x = 1"),
+        ]))
+        #expect(OutlinerMarkupInteractionPolicy.hasInteractiveContent([
+            LogseqMarkupNode(
+                type: .emphasis,
+                children: [LogseqMarkupNode(type: .nodeReference, uuid: "page", title: "Page")]
+            ),
+        ]))
+        #expect(OutlinerMarkupInteractionPolicy.hasInteractiveContent([
+            LogseqMarkupNode(type: .video, url: "https://example.com/video.mp4"),
+        ]))
     }
 
     @Test func youtubeLinksNormalizeToPrivacyEnhancedInlineEmbeds() throws {

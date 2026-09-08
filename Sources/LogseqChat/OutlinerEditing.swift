@@ -201,6 +201,47 @@ enum InlineEditorTextReconciliationPolicy {
     }
 }
 
+enum InlineEditorCaretEmissionPolicy {
+    static func shouldEmit(
+        textMatchesModel: Bool,
+        isApplyingModel: Bool
+    ) -> Bool {
+        textMatchesModel && !isApplyingModel
+    }
+}
+
+enum AndroidInlineEditorInputAction: Equatable {
+    case textChange(text: String, caretUTF16Offset: Int)
+    case returnKey(text: String, caretUTF16Offset: Int)
+}
+
+enum AndroidInlineEditorInputPolicy {
+    static func transition(
+        previousText: String,
+        updatedText: String,
+        updatedCaretUTF16Offset: Int
+    ) -> AndroidInlineEditorInputAction {
+        if !previousText.contains("\n"), updatedText.contains("\n") {
+            return .returnKey(
+                text: updatedText.replacingOccurrences(of: "\n", with: ""),
+                caretUTF16Offset: max(updatedCaretUTF16Offset - 1, 0)
+            )
+        }
+        return .textChange(
+            text: updatedText,
+            caretUTF16Offset: max(updatedCaretUTF16Offset, 0)
+        )
+    }
+
+    static func shouldMergeBackward(
+        text: String,
+        selectionStartUTF16Offset: Int,
+        selectionEndUTF16Offset: Int
+    ) -> Bool {
+        selectionStartUTF16Offset == 0 && selectionEndUTF16Offset == 0
+    }
+}
+
 enum InlineEditorHandoffMerge {
     /// Keystrokes swallowed while a Return handoff was pending are inserted
     /// at the caret the core requested for the new block.
@@ -211,12 +252,6 @@ enum InlineEditorHandoffMerge {
     ) -> (text: String, caretUTF16Offset: Int) {
         let caret = min(max(desiredCaretUTF16Offset ?? modelText.count, 0), modelText.count)
         guard !bufferedTyping.isEmpty else { return (modelText, caret) }
-        #if SKIP
-        let prefix = String(modelText.prefix(caret))
-        let suffix = String(modelText.dropFirst(caret))
-        let text = prefix + bufferedTyping + suffix
-        return (text, caret + bufferedTyping.count)
-        #else
         let value = modelText as NSString
         let nsCaret = min(max(desiredCaretUTF16Offset ?? value.length, 0), value.length)
         let text = value.replacingCharacters(
@@ -224,7 +259,6 @@ enum InlineEditorHandoffMerge {
             with: bufferedTyping
         )
         return (text, nsCaret + (bufferedTyping as NSString).length)
-        #endif
     }
 }
 
@@ -237,7 +271,6 @@ enum InlineEditorFocusPolicy {
     }
 }
 
-#if !SKIP
 enum InlineEditorPairDeletion {
     static func deletingEmptyNodeReference(
         from text: String,
@@ -259,7 +292,6 @@ enum InlineEditorPairDeletion {
         )
     }
 }
-#endif
 
 enum OutlinerAutocompleteLayoutPolicy {
     static let isVertical = true
@@ -815,5 +847,48 @@ enum OutlinerDropZone {
         if locationY < height * 0.25 { return .before }
         if locationY > height * 0.75 { return .after }
         return .inside
+    }
+}
+
+struct OutlinerKeyboardHideCounter {
+    private(set) var hideCount = 0
+    private(set) var hasPendingHandoff = false
+    private var activeEditorIDs: Set<String> = []
+
+    var isEditing: Bool {
+        !activeEditorIDs.isEmpty || hasPendingHandoff
+    }
+
+    mutating func editorAppeared(id: String) {
+        if activeEditorIDs.isEmpty && !hasPendingHandoff {
+            hideCount = 0
+        }
+        hasPendingHandoff = false
+        activeEditorIDs.insert(id)
+    }
+
+    mutating func editorChanged(from previousID: String, to currentID: String) {
+        activeEditorIDs.remove(previousID)
+        activeEditorIDs.insert(currentID)
+        hasPendingHandoff = false
+    }
+
+    mutating func editorDisappeared(id: String) {
+        activeEditorIDs.remove(id)
+        if activeEditorIDs.isEmpty {
+            hasPendingHandoff = true
+        }
+    }
+
+    mutating func finishPendingHandoff() {
+        if activeEditorIDs.isEmpty {
+            hasPendingHandoff = false
+        }
+    }
+
+    mutating func keyboardWillHide() {
+        if isEditing {
+            hideCount += 1
+        }
     }
 }

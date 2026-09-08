@@ -15,7 +15,8 @@ appId: com.logseq.chat
     id: "screen.graphs"
 - assertVisible:
     id: "button.sidebar"
-- assertNotVisible: "Back"
+- assertNotVisible:
+    id: "BackButton"
 - tapOn:
     id: "button.graphs.refresh"
 - assertVisible: "Local graphs:"

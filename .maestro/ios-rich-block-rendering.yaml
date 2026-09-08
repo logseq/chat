@@ -6,7 +6,7 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.sidebar"
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.journals"
 - scrollUntilVisible:
     element:
       id: "block.rich.quote"

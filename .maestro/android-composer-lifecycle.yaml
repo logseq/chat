@@ -1,0 +1,60 @@
+appId: com.logseq.chat
+---
+- stopApp
+- launchApp
+- assertNotVisible: "Choose a graph"
+- extendedWaitUntil:
+    visible:
+      id: "pane.journals"
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- assertVisible:
+    id: "field.composer"
+- assertVisible:
+    id: "row.composer.controls"
+- tapOn:
+    id: "field.composer"
+- eraseText: 20
+- tapOn:
+    id: "field.composer"
+- eraseText: 20
+- assertVisible:
+    id: "button.send"
+    enabled: false
+- tapOn:
+    id: "field.composer"
+- inputText: "Android E2E preserved draft"
+- assertVisible:
+    id: "button.send"
+    enabled: true
+- hideKeyboard
+- pressKey: BACK
+- assertVisible:
+    id: "button.composer.expand"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- assertVisible: "Android E2E preserved draft"
+- tapOn:
+    id: "field.composer"
+- eraseText: 20
+- tapOn:
+    id: "field.composer"
+- eraseText: 20
+- assertVisible:
+    id: "button.send"
+    enabled: false
+- hideKeyboard
+- pressKey: BACK
+- assertVisible:
+    id: "button.composer.expand"

@@ -5,7 +5,7 @@ appId: com.logseq.chat
 - launchApp
 - extendedWaitUntil:
     visible:
-      id: "list.outliner"
+      id: "pane.journals"
     timeout: 30000
 - assertVisible:
     id: "button.composer.expand"
@@ -13,11 +13,21 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - tapOn:
     id: "field.composer"
-- inputText: "Chat send regression 2233"
+- inputText: "Chat send regression __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
-- extendedWaitUntil:
-    visible: "Chat send regression 2233"
-    timeout: 10000
+- tapOn:
+    id: "surface.composer.dismiss"
+- assertVisible:
+    id: "button.composer.expand"
+- scrollUntilVisible:
+    element:
+      text: "Chat send regression __LOGSEQ_CHAT_E2E_RUN_ID__"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: "Chat send regression __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertNotVisible: "invalid_json"
 - stopApp

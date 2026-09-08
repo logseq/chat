@@ -1,0 +1,6955 @@
+(ns logseq-chat.app-test
+  (:require [clojure.string :as string]
+            [clojure.test :refer [deftest is testing]]
+            [lui.app :as driver]
+            [lui.backend.apple :as apple]
+            [lui.extension :as ext]
+            [lui.protocol :as proto :refer [StringValue]]
+            [logseq-chat.app :as chat]
+            [logseq-chat.native-bridge :as bridge]
+            [logseq-chat.model :as model]
+            [logseq-chat.view :as view]))
+
+(defmacro assert-equal [expected actual message]
+  `(is (= ~expected ~actual) ~message))
+
+(defn property-string [renderer node property]
+  (match (apple/property renderer node property)
+    (Some (StringValue value)) value
+    _ "<missing>"))
+
+(defn property-int [renderer node property]
+  (match (apple/property renderer node property)
+    (Some (proto/IntValue value)) value
+    _ -1))
+
+(defn property-bool [renderer node property]
+  (match (apple/property renderer node property)
+    (Some (proto/BoolValue value)) value
+    _ false))
+
+(defn property-float [renderer node property]
+  (match (apple/property renderer node property)
+    (Some (proto/FloatValue value)) value
+    _ -1.0))
+
+(defn extension-property [application node property]
+  (match (clojure.core/get
+          (deref
+           (:runtime-extension-properties (driver/runtime application))) node)
+    (Some properties) (clojure.core/get properties property)
+    None None))
+
+(defn extension-node [application identifier]
+  (let [runtime (driver/runtime application)
+        nodes (deref (:runtime-extension-nodes runtime))
+        limit (deref (:next-node-id runtime))]
+    (loop [node 1]
+      (if (> node limit)
+        -1
+        (if (= (clojure.core/get nodes node) (Some identifier))
+          node
+          (recur (inc node)))))))
+
+(defn descendant-with-node-kind [renderer parent kind]
+  (if (= (apple/node renderer parent) (Some kind))
+    parent
+    (let [children (apple/children renderer parent)]
+      (loop [index 0]
+        (if (= index (count children))
+          -1
+          (let [match (descendant-with-node-kind
+                       renderer (nth children index) kind)]
+            (if (= match -1)
+              (recur (inc index))
+              match)))))))
+
+(defn descendant-count-with-node-kind [renderer parent kind]
+  (let [children (apple/children renderer parent)
+        own (if (= (apple/node renderer parent) (Some kind)) 1 0)]
+    (loop [index 0
+           total own]
+      (if (= index (count children))
+        total
+        (recur
+         (inc index)
+         (+ total
+            (descendant-count-with-node-kind
+             renderer (nth children index) kind)))))))
+
+(defn descendant-count-with-property-string
+  [renderer parent property expected]
+  (let [children (apple/children renderer parent)
+        own (if (= expected (property-string renderer parent property)) 1 0)]
+    (loop [index 0
+           total own]
+      (if (= index (count children))
+        total
+        (recur
+         (inc index)
+         (+ total
+            (descendant-count-with-property-string
+             renderer (nth children index) property expected)))))))
+
+(defn descendant-with-extension
+  [renderer application parent identifier]
+  (let [extensions
+        (deref (:runtime-extension-nodes (driver/runtime application)))]
+    (if (= (clojure.core/get extensions parent) (Some identifier))
+      parent
+      (let [children (apple/children renderer parent)]
+        (loop [index 0]
+          (if (= index (count children))
+            -1
+            (let [found
+                  (descendant-with-extension
+                   renderer application (nth children index) identifier)]
+              (if (= found -1)
+                (recur (inc index))
+                found))))))))
+
+(defn child-with-identifier [renderer parent identifier]
+  (let [children (apple/children renderer parent)]
+    (loop [index 0]
+      (if (= index (count children))
+        -1
+        (let [child (nth children index)]
+          (if (= identifier
+                 (property-string renderer child proto/AccessibilityIdentifier))
+            child
+            (recur (inc index))))))))
+
+(defn child-index-with-identifier [renderer parent identifier]
+  (let [children (apple/children renderer parent)]
+    (loop [index 0]
+      (if (= index (count children))
+        -1
+        (if (= identifier
+               (property-string
+                renderer (nth children index) proto/AccessibilityIdentifier))
+          index
+          (recur (inc index)))))))
+
+(defn descendant-with-identifier [renderer parent identifier]
+  (let [direct (child-with-identifier renderer parent identifier)]
+    (if (not (= direct -1))
+      direct
+      (let [children (apple/children renderer parent)]
+        (loop [index 0]
+          (if (= index (count children))
+            -1
+            (let [found
+                  (descendant-with-identifier renderer (nth children index)
+                                              identifier)]
+              (if (= found -1)
+                (recur (inc index))
+                found))))))))
+
+(defn descendant-extension-containing-identifier
+  [renderer application parent extension-identifier descendant-identifier]
+  (let [extensions
+        (deref (:runtime-extension-nodes (driver/runtime application)))
+        is-matching-extension
+        (= (clojure.core/get extensions parent) (Some extension-identifier))]
+    (if (and is-matching-extension
+             (not (= -1 (descendant-with-identifier
+                         renderer parent descendant-identifier))))
+      parent
+      (let [children (apple/children renderer parent)]
+        (loop [index 0]
+          (if (= index (count children))
+            -1
+            (let [found
+                  (descendant-extension-containing-identifier
+                   renderer application (nth children index)
+                   extension-identifier descendant-identifier)]
+              (if (= found -1)
+                (recur (inc index))
+                found))))))))
+
+(defn parent-with-child-identifier [renderer parent identifier]
+  (if (not (= -1 (child-with-identifier renderer parent identifier)))
+    parent
+    (let [children (apple/children renderer parent)]
+      (loop [index 0]
+        (if (= index (count children))
+          -1
+          (let [found
+                (parent-with-child-identifier
+                 renderer (nth children index) identifier)]
+            (if (= found -1)
+              (recur (inc index))
+              found)))))))
+
+(defn descendant-count-with-identifier [renderer parent identifier]
+  (let [own (if (= identifier
+                   (property-string renderer parent
+                                    proto/AccessibilityIdentifier))
+              1
+              0)
+        children (apple/children renderer parent)]
+    (loop [index 0
+           total own]
+      (if (= index (count children))
+        total
+        (recur
+         (inc index)
+         (+ total
+            (descendant-count-with-identifier
+             renderer (nth children index) identifier)))))))
+
+(defn descendant-enabled [renderer parent identifier]
+  (let [node (descendant-with-identifier renderer parent identifier)]
+    (if (= node -1)
+      None
+      (match (apple/property renderer node proto/Enabled)
+        (Some (proto/BoolValue enabled)) (Some enabled)
+        _ None))))
+
+(defn application-shell-root [renderer application]
+  (let [runtime-root (driver/root-node application)
+        shell (descendant-with-identifier
+               renderer runtime-root "application.shell")]
+    (if (= shell -1) runtime-root shell)))
+
+(defn main-root [renderer application]
+  (let [runtime-root (driver/root-node application)
+        shell-root (application-shell-root renderer application)
+        picker-parent
+        (parent-with-child-identifier renderer shell-root "screen.graph-picker")
+        stack (nth (apple/children renderer shell-root) 0)
+        children (apple/children renderer stack)
+        container (nth children (dec (count children)))
+        extensions
+        (deref (:runtime-extension-nodes (driver/runtime application)))]
+    (if (not (= picker-parent -1))
+      picker-parent
+      (if (= (clojure.core/get extensions container)
+             (Some "native-navigation-stack"))
+        (let [wrapper (nth (apple/children renderer container) 0)
+              search (nth (apple/children renderer wrapper) 0)]
+          (if (= (clojure.core/get extensions search)
+                 (Some "native-search-presentation"))
+            (let [presented
+                  (= (extension-property application search "presented")
+                     (Some (proto/BoolValue true)))]
+              (nth (apple/children renderer search) (if presented 1 0)))
+            wrapper))
+        runtime-root))))
+
+(defn native-bottom-chrome [renderer application]
+  (let [navigation (extension-node application "native-navigation-stack")]
+    (nth (apple/children renderer navigation) 5)))
+
+(defn empty-sidebar-projection []
+  (record model/sidebar-projection
+    (favorites [])
+    (recent-pages [])
+    (selected-page None)
+    (selected-page-is-tag false)
+    (selected-page-is-property false)
+    (related-rows [])
+    (linked-reference-rows [])))
+
+(defn node-projection [uuid page-uuid title related-rows linked-reference-rows]
+  (record model/node-projection
+    (uuid uuid)
+    (page-uuid page-uuid)
+    (title title)
+    (is-tag false)
+    (is-property false)
+    (outliner-rows [])
+    (related-rows related-rows)
+    (linked-reference-rows linked-reference-rows)
+    (outliner-editing None)
+    (outliner-autocomplete None)
+    (outliner-autocomplete-candidates [])
+    (outliner-selected-block-ids [])))
+
+(defn empty-core-projection []
+  (record model/core-projection
+    (graph-name None)
+    (selected-graph-id None)
+    (graphs [])
+    (is-graph-encrypted false)
+    (is-graph-unlocked false)
+    (sidebar (empty-sidebar-projection))
+    (task-statuses [])
+    (flashcards [])
+    (sync-connected false)
+    (applied-server-t None)
+    (has-pending-semantic-operations false)
+    (has-pending-sync-request false)
+    (is-pending-sync-patch false)
+    (is-graph-catalog-patch false)
+    (search-query "")
+    (search-results [])
+    (node-routes [])
+    (journal-outliner-rows [])
+    (outliner-editing None)
+    (outliner-autocomplete None)
+    (outliner-autocomplete-candidates [])
+    (outliner-selected-block-ids [])
+    (outliner-rows [])
+    (has-older-journals false)
+    (is-outliner-patch false)
+    (outliner-row-splices [])))
+
+(defn apply-core-snapshot
+  [graph-name sidebar flashcards sync-connected search-query search-results
+   node-routes outliner-editing outliner-autocomplete
+   outliner-autocomplete-candidates outliner-selected-block-ids outliner-rows
+   is-outliner-patch outliner-row-splices]
+  (model/ApplyCoreSnapshot
+   (assoc
+    (empty-core-projection)
+    :graph-name graph-name
+    :selected-graph-id (Some "test-graph")
+    :sidebar sidebar
+    :flashcards flashcards
+    :sync-connected sync-connected
+    :search-query search-query
+    :search-results search-results
+    :node-routes node-routes
+    :outliner-editing outliner-editing
+    :outliner-autocomplete outliner-autocomplete
+    :outliner-autocomplete-candidates outliner-autocomplete-candidates
+    :outliner-selected-block-ids outliner-selected-block-ids
+    :outliner-rows outliner-rows
+    :is-outliner-patch is-outliner-patch
+    :outliner-row-splices outliner-row-splices)))
+
+(defn flashcard-answer [uuid index text]
+  (record model/flashcard-answer-row
+    (uuid uuid)
+    (index index)
+    (text text)))
+
+(defn flashcard
+  [uuid question-hidden question-revealed answer-rows has-cloze]
+  (record model/flashcard
+    (uuid uuid)
+    (question-hidden question-hidden)
+    (question-revealed question-revealed)
+    (answer-rows answer-rows)
+    (has-cloze has-cloze)))
+
+(defn graph [id name encrypted ready]
+  (record model/graph
+    (id id)
+    (name name)
+    (is-encrypted encrypted)
+    (is-ready ready)))
+
+(defn journal-outline-row [uuid page-id title journal-title journal-day depth]
+  (record model/outline-row
+    (uuid uuid)
+    (title title)
+    (markup-json "[]")
+    (youtube-target-url None)
+    (breadcrumb "")
+    (breadcrumbs [])
+    (opens-as-page false)
+    (depth depth)
+    (has-children false)
+    (is-collapsed false)
+    (is-asset false)
+    (asset-type None)
+    (local-path None)
+    (status None)
+    (tags [])
+    (sync-status None)
+    (page-id page-id)
+    (journal-title (Some journal-title))
+    (journal-day (Some journal-day))))
+
+(defn task-status [uuid ident title icon-type icon-id icon-color]
+  (record model/task-status
+    (uuid uuid)
+    (ident ident)
+    (title title)
+    (icon-type icon-type)
+    (icon-id icon-id)
+    (icon-color icon-color)))
+
+(defn settings [tabs]
+  (record model/settings-projection
+    (appearance "system")
+    (language "system")
+    (spell-check true)
+    (auto-correction true)
+    (sidebar-tabs tabs)
+    (base-url "https://api.logseq.com")
+    (version "1.0")
+    (revision "abc123")))
+
+(defn runtime-record [id level source message]
+  (record model/runtime-log-record
+    (id id)
+    (level level)
+    (source source)
+    (timestamp "12:00")
+    (message message)))
+
+(deftest empty-outliner-rows-use-the-main-untitled-accessibility-title
+  (let [row (journal-outline-row
+             "empty" "journal" "" "Aug 28th, 2026" 20260828 0)]
+    (assert-equal
+     "Edit block Untitled block"
+     (view/outliner-row-action-label (model/initial) row)
+     "empty blocks retain main's editable Untitled accessibility label")))
+
+(deftest synced-header-control-uses-the-main-accessibility-label
+  (let [current (assoc (model/initial) :sync-state model/SyncedState)]
+    (assert-equal "Synced" (view/sync-indicator-label current)
+                  "the compact header control matches main's spoken status")
+    (assert-equal "Up to date" (view/sync-label current)
+                  "the detailed status sheet keeps its descriptive summary")))
+
+(deftest sync-indicator-prioritizes-connectivity-before-pending-work
+  (let [offline-pending
+        (assoc (model/initial)
+               :sync-state model/OfflineState
+               :has-pending-semantic-operations true)
+        connected-pending
+        (assoc (model/initial)
+               :sync-state model/SyncingState
+               :has-pending-semantic-operations true)]
+    (assert-equal "Not connected" (view/sync-indicator-label offline-pending)
+                  "pending work does not hide an offline connection")
+    (assert-equal "error-foreground"
+                  (view/sync-indicator-foreground offline-pending)
+                  "offline status uses main's opaque red indicator")
+    (assert-equal "sync.disconnected"
+                  (view/sync-accessibility-identifier offline-pending)
+                  "offline pending work remains addressable as disconnected")
+    (assert-equal "Syncing" (view/sync-indicator-label connected-pending)
+                  "connected pending work keeps the syncing state")
+    (assert-equal "warning-foreground"
+                  (view/sync-indicator-foreground connected-pending)
+                  "connected pending work uses an opaque warning foreground")))
+
+(deftest settings-navigation-tabs-and-diagnostics-are-lg-owned
+  (let [initial (model/update (model/initial)
+                              (model/ApplySettingsSnapshot
+                               (settings ["journals" "flashcards" "graphs"])))
+        menu (model/update initial model/OpenConnectionMenu)
+        opened (model/update menu model/OpenSettings)
+        tabs (model/update opened model/OpenSettingsTabs)
+        hidden (model/update tabs (model/ToggleSidebarTab "flashcards"))
+        logs (model/update (model/update hidden model/BackSettings)
+                           model/OpenRuntimeLog)
+        filtered (model/update logs model/ToggleRuntimeLogErrors)
+        refreshed filtered]
+    (is (:connection-menu-open menu) "the connection menu is model-owned")
+    (is (:settings-open opened) "settings presentation is model-owned")
+    (is (not (:connection-menu-open opened))
+        "opening settings dismisses its source menu")
+    (is (:settings-tabs-open tabs) "tabs navigation is model-owned")
+    (assert-equal ["journals" "graphs"] (:sidebar-tabs hidden)
+                  "optional sidebar tabs can be hidden")
+    (is (:runtime-log-open logs) "runtime diagnostics are model-owned")
+    (is (:runtime-log-errors-only filtered) "log filtering is model-owned")
+    (assert-equal
+     [(model/SaveSettingsEffect 1 (model/current-settings hidden))
+      (model/RefreshRuntimeLogEffect 2 "ui" false false)
+      (model/RefreshRuntimeLogEffect 3 "ui" true false)]
+     (:pending-effects refreshed)
+     "opening diagnostics loads records before later filter changes")))
+
+(deftest settings-preferences-persist-without-dismissing-the-sheet
+  (let [opened
+        (model/update
+         (model/update
+          (model/initial)
+          (model/ApplySettingsSnapshot
+           (settings ["journals" "flashcards" "graphs"])))
+         model/OpenSettings)
+        themed (model/update opened (model/ChangeAppearance "dark"))
+        theme-saved
+        (model/update
+         (model/update themed (model/DequeueEffect 1))
+         (model/ResolveEffect 1 true ""))
+        language-opened
+        (model/update theme-saved model/OpenSettingsLanguageMenu)
+        localized
+        (model/update language-opened
+                      (model/ChooseSettingsLanguage "zh-CN"))
+        language-saved
+        (model/update
+         (model/update localized (model/DequeueEffect 2))
+         (model/ResolveEffect 2 true ""))
+        spell-check-disabled
+        (model/update language-saved (model/ToggleSpellCheck false))
+        spell-check-saved
+        (model/update
+         (model/update spell-check-disabled (model/DequeueEffect 3))
+         (model/ResolveEffect 3 true ""))
+        auto-correction-disabled
+        (model/update spell-check-saved
+                      (model/ToggleAutoCorrection false))]
+    (assert-equal
+     [(model/SaveSettingsEffect 1 (model/current-settings themed))]
+     (:pending-effects themed)
+     "theme changes persist immediately like main's AppStorage picker")
+    (is (:settings-open themed)
+        "persisting a preference does not dismiss settings")
+    (assert-equal
+     [(model/SaveSettingsEffect 2 (model/current-settings localized))]
+     (:pending-effects localized)
+     "language changes persist immediately like main's AppStorage picker")
+    (is (:settings-open localized)
+        "language persistence keeps settings visible")
+    (assert-equal
+     [(model/SaveSettingsEffect
+       3 (model/current-settings spell-check-disabled))]
+     (:pending-effects spell-check-disabled)
+     "spell check changes persist immediately")
+    (assert-equal
+     [(model/SaveSettingsEffect
+       4 (model/current-settings auto-correction-disabled))]
+     (:pending-effects auto-correction-disabled)
+     "auto-correction changes persist immediately")))
+
+(deftest settings-reject-invalid-connections-and-preserve-required-tabs
+  (let [opened (assoc (model/initial)
+                      :settings-open true
+                      :base-url "not a server")
+        invalid (model/update opened model/ApplySettings)
+        required-toggled
+        (model/update opened (model/ToggleSidebarTab "journals"))
+        required-moved
+        (model/update opened (model/MoveSidebarTab "journals" 2))]
+    (assert-equal [] (:pending-effects invalid)
+                  "invalid connection URLs do not leave LG")
+    (is (:settings-open invalid)
+        "invalid connection URLs keep settings open for correction")
+    (is (not (model/valid-base-url? "https:///missing-host"))
+        "HTTPS URLs require a host")
+    (is (not (model/valid-base-url? "http://?query-only"))
+        "HTTP URLs cannot substitute a query for the host")
+    (is (not (model/valid-base-url? "https://bad host.example"))
+        "connection hosts cannot contain whitespace")
+    (is (model/valid-base-url? " http://127.0.0.1:8787/path ")
+        "local development servers remain valid after trimming")
+    (assert-equal ["journals" "flashcards" "graphs"]
+                  (:sidebar-tabs required-toggled)
+                  "journals cannot be hidden")
+    (assert-equal ["journals" "flashcards" "graphs"]
+                  (:sidebar-tabs required-moved)
+                  "journals remains the first required tab")
+    (assert-equal [] (:pending-effects required-toggled)
+                  "required tab no-ops do not persist settings")
+    (assert-equal [] (:pending-effects required-moved)
+                  "required tab moves do not persist settings")))
+
+(deftest settings-snapshot-normalizes-sidebar-tabs-at-the-lg-boundary
+  (let [defaulted
+        (model/update
+         (model/initial)
+         (model/ApplySettingsSnapshot (settings [])))
+        sanitized
+        (model/update
+         (model/initial)
+         (model/ApplySettingsSnapshot
+          (settings ["graphs" "graphs" "unknown" "flashcards"])))
+        required
+        (model/update
+         (model/initial)
+         (model/ApplySettingsSnapshot (settings ["journals"])))]
+    (assert-equal ["journals" "flashcards" "graphs"]
+                  (:sidebar-tabs defaulted)
+                  "missing persisted tabs use the complete default")
+    (assert-equal ["journals" "graphs" "flashcards"]
+                  (:sidebar-tabs sanitized)
+                  "LG discards unknown and duplicate persisted tabs")
+    (assert-equal ["journals" "graphs"]
+                  (:sidebar-tabs required)
+                  "LG restores the required graphs tab without re-enabling flashcards")))
+
+(deftest runtime-log-filters-refresh-and-successful-results-enter-lg-state
+  (let [filtered (model/update (model/initial) model/ToggleRuntimeLogErrors)
+        in-flight (model/update filtered (model/DequeueEffect 1))
+        resolved (model/update in-flight (model/ResolveEffect 1 true ""))
+        expected [(runtime-record "1" "INFO" "ui" "Started")]
+        applied (model/update resolved (model/ApplyRuntimeLog expected))]
+    (assert-equal
+     [(model/RefreshRuntimeLogEffect 1 "ui" true false)]
+     (:pending-effects filtered)
+     "changing a log filter refreshes the visible result immediately")
+    (assert-equal expected (:runtime-log-records applied)
+                  "typed host log updates enter retained LG state")))
+
+(deftest graph-effect-success-owns-selection-and-selected-deletion-cleanup
+  (let [local (graph "local" "Local" false true)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :graphs [local]
+                 :selected-graph-id None)))
+        known-local (model/update projected (model/ApplyLocalGraphIds ["local"]))
+        requested (model/update known-local (model/RequestOpenGraph "local"))
+        opened
+        (model/update
+         (model/update requested (model/DequeueEffect 1))
+         (model/ResolveEffect 1 true "ok"))
+        deletion-requested
+        (model/update opened (model/RequestDeleteGraph "local"))
+        deleting
+        (model/update
+         (model/update deletion-requested model/ConfirmDeleteGraph)
+         (model/DequeueEffect 2))
+        deleted (model/update deleting (model/ResolveEffect 2 true "ok"))]
+    (assert-equal (Some "local") (:selected-graph-id opened)
+                  "opening a graph updates LG selection after platform success")
+    (assert-equal (Some "Local") (:selected-graph opened)
+                  "opening a graph projects its title without waiting for a refresh")
+    (is (:graph-loading requested)
+        "opening a graph enters the retained loading state")
+    (is (not (:graph-loading opened))
+        "platform completion exits the retained loading state")
+    (assert-equal None (:selected-graph-id deleted)
+                  "deleting the selected local graph clears its identifier")
+    (assert-equal None (:selected-graph deleted)
+                  "deleting the selected local graph clears its title")
+    (assert-equal [] (:local-graph-ids deleted)
+                  "deleting a local graph removes it from local storage state")))
+
+(deftest graph-refresh-failure-enters-the-picker-error-state
+  (let [requested (model/update (model/initial) model/RefreshGraphs)
+        in-flight (model/update requested (model/DequeueEffect 1))
+        failed
+        (model/update
+         in-flight
+         (model/ResolveEffect
+          1 false "graph_discovery_failed\nConnection refused"))]
+    (assert-equal
+     (model/FailedState "graph_discovery_failed\nConnection refused")
+     (:sync-state failed)
+     "a failed catalog refresh renders the picker-specific error state")
+    (is (not (view/global-effect-error-present? failed))
+        "the picker error does not also render the global effect error")))
+
+(deftest encrypted-graph-unlock-is-owned-by-lg
+  (let [encrypted (graph "encrypted" "Encrypted" true true)
+        catalog-projection
+        (assoc (empty-core-projection) :graphs [encrypted])
+        locked-projection
+        (assoc (empty-core-projection)
+               :graphs [encrypted]
+               :selected-graph-id (Some "encrypted")
+               :graph-name (Some "Encrypted")
+               :is-graph-encrypted true
+               :is-graph-unlocked false)
+        requested
+        (model/update
+         (model/update (model/initial)
+                       (model/ApplyCoreSnapshot catalog-projection))
+         (model/RequestOpenGraph "encrypted"))
+        opened
+        (model/update
+         (model/update
+          (model/update requested (model/DequeueEffect 1))
+          (model/ApplyCoreSnapshot locked-projection))
+         (model/ResolveEffect 1 true ""))
+        blank (model/update opened model/SubmitGraphPassword)
+        wrong
+        (model/update
+         (model/update opened (model/ChangeGraphPassword "wrong"))
+         model/SubmitGraphPassword)
+        failed
+        (model/update
+         (model/update wrong (model/DequeueEffect 2))
+         (model/ResolveEffect 2 false "Wrong password"))
+        correct
+        (model/update
+         (model/update failed (model/ChangeGraphPassword "correct"))
+         model/SubmitGraphPassword)
+        unlocked-projection (assoc locked-projection :is-graph-unlocked true)
+        succeeded
+        (model/update
+         (model/update
+          (model/update correct (model/DequeueEffect 3))
+          (model/ApplyCoreSnapshot unlocked-projection))
+         (model/ResolveEffect 3 true ""))
+        cancelled
+        (model/update
+         (model/update opened (model/ChangeGraphPassword "cancel me"))
+         model/CancelGraphUnlock)]
+    (is (:graph-password-open opened)
+        "opening a locked encrypted graph presents the password sheet")
+    (assert-equal [] (:pending-effects blank)
+                  "an empty password never crosses the platform boundary")
+    (assert-equal [(model/UnlockGraphEffect 2 "wrong")]
+                  (:pending-effects wrong)
+                  "unlock publishes one typed platform effect")
+    (is (:graph-password-open failed)
+        "an unlock failure keeps the password sheet visible")
+    (assert-equal "wrong" (:graph-password failed)
+                  "an unlock failure preserves the entered password")
+    (assert-equal (Some "Wrong password") (:effect-error failed)
+                  "an unlock failure remains visible in LG state")
+    (is (not (:graph-password-open succeeded))
+        "a successful unlock dismisses the password sheet")
+    (assert-equal "" (:graph-password succeeded)
+                  "a successful unlock clears the password")
+    (is (not (:graph-password-open cancelled))
+        "cancelling unlock dismisses the password sheet")
+    (assert-equal "" (:graph-password cancelled)
+                  "cancelling unlock clears the password")))
+
+(deftest encrypted-graph-snapshot-prompts-once-per-selection
+  (let [encrypted (graph "encrypted" "Encrypted" true true)
+        catalog (assoc (empty-core-projection) :graphs [encrypted])
+        locked
+        (assoc catalog
+               :selected-graph-id (Some "encrypted")
+               :graph-name (Some "Encrypted")
+               :is-graph-encrypted true
+               :is-graph-unlocked false)
+        selected
+        (model/update (model/initial) (model/ApplyCoreSnapshot locked))
+        cancelled (model/update selected model/CancelGraphUnlock)
+        refreshed (model/update cancelled (model/ApplyCoreSnapshot locked))
+        catalogued
+        (model/update refreshed (model/ApplyCoreSnapshot catalog))
+        selected-again
+        (model/update catalogued (model/ApplyCoreSnapshot locked))]
+    (is (:graph-password-open selected)
+        "cold-start restoration prompts for a locked selected graph")
+    (is (not (:graph-password-open refreshed))
+        "refreshing the same graph does not reopen a cancelled prompt")
+    (is (:graph-password-open selected-again)
+        "selecting the locked graph again presents a fresh prompt")))
+
+(deftest encrypted-graph-unlock-renders-the-secure-field-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        encrypted (graph "encrypted" "Encrypted" true true)
+        catalog-projection
+        (assoc (empty-core-projection) :graphs [encrypted])
+        locked-projection
+        (assoc (empty-core-projection)
+               :graphs [encrypted]
+               :selected-graph-id (Some "encrypted")
+               :graph-name (Some "Encrypted")
+               :is-graph-encrypted true
+               :is-graph-unlocked false)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot catalog-projection))
+    (driver/send! application (model/RequestOpenGraph "encrypted"))
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application (model/ApplyCoreSnapshot locked-projection))
+    (driver/send! application (model/ResolveEffect 1 true ""))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          field (descendant-with-identifier renderer root "field.graph-password")
+          unlock (descendant-with-identifier renderer root "button.graph-unlock")
+          cancel (descendant-with-identifier renderer root "button.graph-unlock.cancel")]
+      (is (not (= -1 field)) "the unlock sheet renders a secure password field")
+      (is (not (= -1 unlock)) "the unlock sheet renders its confirm action")
+      (is (not (= -1 cancel)) "the unlock sheet renders its cancel action")
+      (assert-equal "E2EE password"
+                    (property-string renderer field proto/PlaceholderValue)
+                    "the secure field preserves the existing placeholder")
+      (driver/dispatch-event! application
+                              (proto/TextChanged field "secret"))
+      (driver/flush! application)
+      (assert-equal "secret" (:graph-password (chat/model application))
+                    "secure-field input is retained by LG")
+      (driver/dispatch-event! application (proto/Press unlock))
+      (driver/flush! application)
+      (assert-equal [(model/UnlockGraphEffect 2 "secret")]
+                    (:pending-effects (chat/model application))
+                    "the unlock button submits the retained password")
+      (driver/send! application (model/DequeueEffect 2))
+      (driver/send! application
+                    (model/ResolveEffect 2 false "Wrong password"))
+      (driver/flush! application)
+      (let [error
+            (descendant-with-identifier
+             renderer root "text.graph-unlock-error")]
+        (is (not (= -1 error)) "an unlock failure stays inside the sheet")
+        (assert-equal "Wrong password"
+                      (property-string renderer error proto/TextValue)
+                      "the unlock failure explains why the graph stayed locked")
+        (assert-equal
+         0
+         (descendant-count-with-identifier renderer root "error.banner")
+         "the password sheet does not duplicate its error globally")))))
+
+(deftest encrypted-graph-unlock-has-a-stable-native-effect-payload
+  (assert-equal
+   "{\"id\":9,\"kind\":\"unlock-graph\",\"text\":\"secret \\\"phrase\\\"\"}"
+   (bridge/encode-effect (model/UnlockGraphEffect 9 "secret \"phrase\""))
+   "the native bridge escapes passwords in a typed unlock effect"))
+
+(deftest graph-database-export-has-a-stable-native-effect-payload
+  (assert-equal
+   "{\"id\":9,\"kind\":\"export-graph-database\",\"text\":\"\"}"
+   (bridge/encode-effect (model/ExportGraphDatabaseEffect 9))
+   "database export leaves file resolution at the platform boundary"))
+
+(deftest cancel-outliner-editing-has-a-stable-native-effect-payload
+  (assert-equal
+   "{\"id\":9,\"kind\":\"cancel-outliner-editing\",\"text\":\"\"}"
+   (bridge/encode-effect (model/CancelOutlinerEditingEffect 9))
+   "destination changes preserve the typed cancel-editing boundary"))
+
+(deftest settings-render-the-main-branch-navigation-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application
+                  (model/ApplySettingsSnapshot
+                   (settings ["journals" "flashcards" "graphs"])))
+    (driver/send! application model/OpenConnectionMenu)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          settings-sheet (descendant-with-identifier renderer root "sheet.settings")
+          settings-screen (descendant-with-identifier renderer root
+                                                      "screen.settings")]
+      (assert-equal "Settings"
+                    (property-string renderer settings-sheet proto/TextValue)
+                    "the settings root owns the native sheet title")
+      (assert-equal "navigation-scroll"
+                    (property-string renderer settings-sheet proto/StyleClass)
+                    "the settings root keeps its custom scrolling cards")
+      (is (not (= -1 settings-screen))
+          "settings retain their baseline screen identifier")
+      (assert-equal
+       "background"
+       (property-string renderer settings-screen proto/BackgroundValue)
+       "settings paint the app background inside the native sheet")
+      (assert-equal
+       7
+       (descendant-count-with-property-string
+        renderer settings-screen proto/BackgroundValue "surface")
+       "settings cards use the same themed surface as main")
+      (let [tabs-link
+            (descendant-with-identifier renderer root "link.settings.tabs")
+            tabs-selection
+            (descendant-with-identifier
+             renderer tabs-link "text.settings.tabs.selection")]
+        (is (not (= -1 tabs-link)) "settings expose tabs navigation")
+        (assert-equal 0
+                      (property-int renderer tabs-link proto/PaddingValue)
+                      "settings card rows do not duplicate card padding")
+        (assert-equal
+         "Journals · Flashcards · Graphs"
+         (property-string renderer tabs-selection proto/TextValue)
+         "tabs show the same selected-items summary as main")
+        (assert-equal
+         "single-line"
+         (property-string renderer tabs-selection proto/StyleClass)
+         "tabs keep the selected-items summary on one line like main"))
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toolbar.settings.actions")))
+          "settings use the native navigation-form toolbar contract")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "button.connection.cancel")))
+          "settings expose the native cancellation action")
+      (doseq [identifier ["label.settings.general"
+                          "label.settings.editor"
+                          "label.settings.sync-server"
+                          "label.settings.advanced"
+                          "label.settings.about"
+                          "label.settings.community"]]
+        (assert-equal
+         "muted-foreground"
+         (property-string
+          renderer
+          (descendant-with-identifier renderer root identifier)
+          proto/ForegroundValue)
+         "settings group labels use main's readable secondary text color"))
+      (let [export
+            (descendant-with-identifier
+             renderer root "button.export-graph-database")]
+        (is (not (= -1 export))
+            "settings expose database export for a downloaded graph")
+        (assert-equal 0
+                      (property-int renderer export proto/PaddingValue)
+                      "settings actions align with ordinary card rows")
+        (driver/dispatch-event! application (proto/Press export))
+        (driver/flush! application)
+        (assert-equal [(model/ExportGraphDatabaseEffect 1)]
+                      (:pending-effects (chat/model application))
+                      "database export stays on the typed platform boundary"))
+      (driver/send! application model/OpenSettingsTabs)
+      (driver/flush! application)
+      (let [tabs-sheet
+            (descendant-with-identifier renderer root "sheet.settings")
+            tabs-screen
+            (descendant-with-identifier renderer root "screen.settings.tabs")
+            flashcards-row
+            (descendant-with-identifier renderer root
+                                        "row.settings.tab.flashcards")
+            back
+            (descendant-with-identifier renderer root "button.connection.cancel")
+            confirmation
+            (descendant-with-identifier renderer root "button.connection.apply")]
+        (is (not (= -1 tabs-screen))
+            "tabs retain their baseline screen identifier")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer flashcards-row)
+                      "tab controls render as full-width native list rows")
+        (assert-equal "Tabs"
+                      (property-string renderer tabs-sheet proto/TextValue)
+                      "tabs replace the sheet navigation title")
+        (assert-equal "navigation-list"
+                      (property-string renderer tabs-sheet proto/StyleClass)
+                      "tabs use the native list surface")
+        (assert-equal "Settings"
+                      (property-string renderer back proto/TextValue)
+                      "tabs expose a settings back action")
+        (assert-equal -1 confirmation
+                      "tabs do not retain the root Apply action"))
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toggle.settings.tab.flashcards")))
+          "configurable tabs retain their stable identifiers")
+      (driver/send! application model/BackSettings)
+      (driver/send! application model/OpenRuntimeLog)
+      (driver/send! application
+                    (model/ApplyRuntimeLog
+                     [(runtime-record "1" "INFO" "ui" "Started")]))
+      (driver/flush! application)
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "screen.runtime-log")))
+          "runtime log retains its baseline screen identifier")
+      (is (not (= -1 (descendant-with-identifier renderer root
+                                                  "button.log-copy")))
+          "runtime diagnostics retain their actions"))))
+
+(deftest flutter-settings-sheet-uses-one-bounded-scroll-layout
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenConnectionMenu)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          sheet (descendant-with-identifier renderer root "sheet.settings")
+          layout
+          (descendant-with-identifier renderer sheet "layout.settings.sheet")]
+      (assert-equal 640
+                    (property-int renderer sheet proto/HeightValue)
+                    "Flutter bounds the Material bottom sheet")
+      (assert-equal 1
+                    (count (apple/children renderer sheet))
+                    "Flutter gives the backend one composed sheet child")
+      (is (not (= -1 layout))
+          "Flutter owns one vertical settings layout")
+      (if (not (= -1 layout))
+        (do
+          (assert-equal 1
+                        (descendant-count-with-node-kind
+                         renderer layout apple/AppleScrollView)
+                        "long Settings content scrolls inside the sheet")
+          (is (not (= -1 (descendant-with-identifier
+                          renderer layout "toolbar.settings.actions")))
+              "Settings actions remain below the scrollable content"))))))
+
+(deftest flutter-settings-tabs-open-through-the-rendered-press-handler
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplySettingsSnapshot
+      (settings ["journals" "flashcards" "graphs"])))
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          tabs-link
+          (descendant-with-identifier renderer root "link.settings.tabs")]
+      (is (not (= -1 tabs-link))
+          "Flutter renders the Settings tabs navigation row")
+      (driver/dispatch-event! application (proto/Press tabs-link))
+      (driver/flush! application)
+      (let [updated-root (main-root renderer application)
+            sheet
+            (descendant-with-identifier renderer updated-root "sheet.settings")
+            layout
+            (descendant-with-identifier
+             renderer updated-root "layout.settings.tabs-sheet")
+            tabs-screen
+            (descendant-with-identifier
+             renderer updated-root "screen.settings.tabs")
+            actions
+            (descendant-with-identifier
+             renderer updated-root "toolbar.settings.actions")
+            back
+            (descendant-with-identifier
+             renderer updated-root "button.connection.cancel")
+            flashcards-toggle
+            (descendant-with-identifier
+             renderer updated-root "toggle.settings.tab.flashcards")]
+        (is (not (= -1 (descendant-with-identifier
+                        renderer updated-root "screen.settings.tabs")))
+            "pressing the rendered row opens the Tabs screen")
+        (assert-equal
+         -1
+         (descendant-with-identifier renderer updated-root "screen.settings")
+         "the Tabs screen replaces the Settings main screen")
+        (assert-equal 1
+                      (count (apple/children renderer sheet))
+                      "Flutter gives the Tabs sheet one bounded child")
+        (is (not (= -1 layout))
+            "Flutter owns one vertical Tabs layout")
+        (if (not (= -1 layout))
+          (do
+            (assert-equal (Some apple/AppleColumn)
+                          (apple/node renderer layout)
+                          "Tabs uses one vertical Material layout")
+            (assert-equal [tabs-screen actions]
+                          (apple/children renderer layout)
+                          "the tab list and back action occupy separate rows")))
+        (assert-equal 1.0
+                      (property-float renderer tabs-screen proto/GrowValue)
+                      "the tab list consumes only the space above the action")
+        (assert-equal (Some apple/AppleRow)
+                      (apple/node renderer actions)
+                      "the back action uses an anchored Material row")
+        (assert-equal 1.0
+                      (property-float renderer back proto/GrowValue)
+                      "the back action fills the available phone width")
+        (assert-equal -1.0
+                      (property-float renderer flashcards-toggle proto/GrowValue)
+                      "tab state stays leading while spare width separates reorder actions")))))
+
+(deftest flutter-runtime-log-actions-fit-phone-width
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenSettings)
+    (driver/send! application model/OpenRuntimeLog)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          sheet (descendant-with-identifier renderer root "sheet.settings")
+          layout
+          (descendant-with-identifier renderer root "layout.runtime-log.sheet")
+          screen
+          (descendant-with-identifier renderer root "screen.runtime-log")
+          actions
+          (descendant-with-identifier renderer root "toolbar.settings.actions")
+          refresh
+          (descendant-with-identifier renderer root "button.log-refresh")
+          done
+          (descendant-with-identifier renderer root "button.connection.apply")]
+      (assert-equal 1
+                    (count (apple/children renderer sheet))
+                    "Flutter gives the Runtime log sheet one bounded child")
+      (is (not (= -1 layout))
+          "Flutter owns one vertical Runtime log layout")
+      (if (not (= -1 layout))
+        (do
+          (assert-equal (Some apple/AppleColumn)
+                        (apple/node renderer layout)
+                        "Runtime log owns one vertical Material layout")
+          (assert-equal [screen actions]
+                        (apple/children renderer layout)
+                        "the log screen and its action bar occupy separate rows")))
+      (assert-equal 1.0
+                    (property-float renderer screen proto/GrowValue)
+                    "the log screen consumes only the space above the actions")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer actions)
+                    "Runtime log actions use an anchored Material row")
+      (assert-equal "secondary"
+                    (property-string renderer refresh proto/VariantValue)
+                    "Refresh is the secondary Runtime log action")
+      (assert-equal "primary"
+                    (property-string renderer done proto/VariantValue)
+                    "Done is the primary Runtime log action")
+      (assert-equal 1.0
+                    (property-float renderer refresh proto/GrowValue)
+                    "Refresh shares the phone width")
+      (assert-equal 1.0
+                    (property-float renderer done proto/GrowValue)
+                    "Done shares the phone width")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toolbar.log-filters.primary")))
+          "Flutter groups the first two log actions into a bounded row")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "toolbar.log-filters.secondary")))
+          "Flutter groups the remaining log actions into a bounded row"))))
+
+(deftest flutter-settings-use-full-width-material-controls
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "local")
+             :graph-name (Some "Local graph"))))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          picker
+          (descendant-with-identifier
+           renderer root "picker.settings.language")
+          appearance-control
+          (descendant-with-identifier
+           renderer root "layout.settings.appearance-control")
+          appearance-picker
+          (descendant-with-identifier
+           renderer root "picker.settings.appearance")
+          language-control
+          (descendant-with-identifier
+           renderer root "layout.settings.language-control")
+          general-card
+          (descendant-with-identifier
+           renderer root "layout.settings.general-card")
+          actions
+          (descendant-with-identifier
+           renderer root "toolbar.settings.actions")
+          cancel
+          (descendant-with-identifier
+           renderer root "button.connection.cancel")
+          apply
+          (descendant-with-identifier
+           renderer root "button.connection.apply")
+          tabs-copy
+          (descendant-with-identifier
+           renderer root "layout.settings.tabs-copy")
+          tabs-selection
+          (descendant-with-identifier
+           renderer root "text.settings.tabs.selection")
+          tabs-icon
+          (descendant-with-identifier
+           renderer root "icon.settings.tabs")
+          spell-check
+          (descendant-with-identifier
+           renderer root "switch.settings.spell-check")
+          auto-correction
+          (descendant-with-identifier
+           renderer root "switch.settings.auto-correction")
+          export
+          (descendant-with-identifier
+           renderer root "button.export-graph-database")
+          runtime-log
+          (descendant-with-identifier renderer root "button.runtime-log")
+          report-bug
+          (descendant-with-identifier
+           renderer root "link.settings.community.report-bug")
+          sign-out
+          (descendant-with-identifier renderer root "button.sign-out")]
+      (assert-equal (Some apple/AppleSelect)
+                    (apple/node renderer picker)
+                    "Flutter uses one bounded Material select control")
+      (assert-equal (Some apple/AppleSelect)
+                    (apple/node renderer appearance-picker)
+                    "Flutter exposes the Material Theme select directly")
+      (assert-equal -1
+                    (property-int renderer appearance-control proto/WidthValue)
+                    "the Theme select is not pinned to a phone-specific width")
+      (assert-equal -1
+                    (property-int renderer language-control proto/WidthValue)
+                    "the Language select is not pinned to a phone-specific width")
+      (assert-equal "stretch"
+                    (property-string renderer general-card proto/CrossAlignment)
+                    "Material settings controls fill the available card width")
+      (assert-equal "surface-container-low"
+                    (property-string renderer general-card proto/BackgroundValue)
+                    "Material settings use a tonal container instead of a white form rectangle")
+      (assert-equal 8
+                    (descendant-count-with-property-string
+                     renderer root proto/BackgroundValue "surface-container-low")
+                    "Material settings cards and the action bar share one tonal hierarchy")
+      (assert-equal "Theme"
+                    (property-string renderer appearance-picker
+                                     proto/AccessibilityLabel)
+                    "the appearance select keeps a persistent Material field label")
+      (assert-equal "Language"
+                    (property-string renderer picker proto/AccessibilityLabel)
+                    "the language select keeps a persistent Material field label")
+      (assert-equal 1.0
+                    (property-float renderer tabs-copy proto/GrowValue)
+                    "the tabs label and summary own the flexible row width")
+      (assert-equal "footnote"
+                    (property-string renderer tabs-selection proto/StyleClass)
+                    "the tabs summary is secondary supporting text")
+      (assert-equal "muted-foreground"
+                    (property-string renderer tabs-selection proto/ForegroundValue)
+                    "the tabs summary uses readable Material supporting text")
+      (assert-equal "app:chevron-right"
+                    (property-string renderer tabs-icon proto/IconName)
+                    "Tabs uses a Material navigation affordance")
+      (assert-equal (Some apple/AppleSwitch)
+                    (apple/node renderer spell-check)
+                    "spell check uses a native Material switch row")
+      (assert-equal (Some apple/AppleSwitch)
+                    (apple/node renderer auto-correction)
+                    "auto-correction uses a native Material switch row")
+      (assert-equal "app:download"
+                    (property-string renderer export proto/InlineIconName)
+                    "graph export uses a recognizable Material action icon")
+      (assert-equal "app:terminal"
+                    (property-string renderer runtime-log proto/InlineIconName)
+                    "runtime diagnostics use a recognizable Material icon")
+      (assert-equal "app:open-external"
+                    (property-string renderer report-bug proto/InlineIconName)
+                    "community links disclose that they leave the app")
+      (assert-equal "app:sign-out"
+                    (property-string renderer sign-out proto/InlineIconName)
+                    "sign out uses the Android logout icon")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer actions)
+                    "settings actions use an anchored Material action row")
+      (assert-equal 12 (property-int renderer actions proto/Gap)
+                    "settings actions keep Material button separation")
+      (assert-equal "secondary"
+                    (property-string renderer cancel proto/VariantValue)
+                    "Cancel is the quiet tonal action")
+      (assert-equal "primary"
+                    (property-string renderer apply proto/VariantValue)
+                    "Apply is the unmistakable primary action")
+      (assert-equal 1.0 (property-float renderer cancel proto/GrowValue)
+                    "Cancel and Apply share the available phone width")
+      (assert-equal 1.0 (property-float renderer apply proto/GrowValue)
+                    "Cancel and Apply share the available phone width")
+      (assert-equal 0
+                    (descendant-count-with-node-kind
+                     renderer picker apple/AppleRadioGroup)
+                    "Flutter does not lay every language out in one row"))
+    (driver/send! application model/OpenSettingsLanguageMenu)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          menu (descendant-with-node-kind renderer root apple/AppleDropdownMenu)
+          system
+          (descendant-with-identifier
+           renderer root "button.settings.language.system")]
+      (is (not (= -1 menu))
+          "opening the language selector presents a Material menu")
+      (is (= 1 (descendant-count-with-property-string
+                renderer menu proto/TextValue "简体中文"))
+          "the Material menu retains every shared language choice")
+      (is (not (= -1 system))
+          "each Material language choice exposes a stable automation target")
+      (if (not (= -1 system))
+        (do
+          (driver/dispatch-event! application (proto/Press system))
+          (driver/flush! application)
+          (assert-equal "system"
+                        (:language (chat/model application))
+                        "the System menu item selects its own language id"))))))
+
+(deftest settings-tabs-match-main-visibility-and-movement-boundaries
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplySettingsSnapshot
+      (settings ["journals" "flashcards" "graphs"])))
+    (driver/send! application model/OpenSettings)
+    (driver/send! application model/OpenSettingsTabs)
+    (driver/flush! application)
+    (let [root (application-shell-root renderer application)]
+      (assert-equal 360 (property-int renderer root proto/WidthValue)
+                    "the drawer leaves the same visible main edge as main")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "toggle.settings.tab.journals")
+                    "journals remains visibly required")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.settings.tab.journals.up")
+                    "journals does not render movement controls")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "toggle.settings.tab.flashcards")
+                    "flashcards remains configurable")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.flashcards.up")
+                    "the first configurable tab cannot move above journals")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.flashcards.down")
+                    "the first configurable tab can move down")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "toggle.settings.tab.graphs")
+                    "graphs remains visibly required")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.graphs.up")
+                    "the last required tab can move within visible tabs")
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "button.settings.tab.graphs.down")
+                    "the last tab cannot move beyond the visible list")
+      (driver/dispatch-event!
+       application
+       (proto/Press
+        (descendant-with-identifier
+         renderer root "toggle.settings.tab.flashcards")))
+      (driver/flush! application)
+      (let [updated-root (driver/root-node application)]
+        (assert-equal -1
+                      (descendant-with-identifier
+                       renderer updated-root
+                       "button.settings.tab.flashcards.up")
+                      "hidden tabs do not retain movement controls")
+        (assert-equal -1
+                      (descendant-with-identifier
+                       renderer updated-root
+                       "button.settings.tab.flashcards.down")
+                      "hidden tabs do not expose invalid downward movement")
+        (assert-equal (Some false)
+                      (descendant-enabled
+                       renderer updated-root "button.settings.tab.graphs.up")
+                      "a lone configurable position cannot move up")
+        (assert-equal (Some false)
+                      (descendant-enabled
+                       renderer updated-root "button.settings.tab.graphs.down")
+                      "a lone configurable position cannot move down")))))
+
+(deftest android-disclosure-and-selection-icons-use-material-semantics
+  (let [current (assoc (model/initial) :sidebar-tabs ["journals" "graphs"])]
+    (assert-equal "app:chevron-right"
+                  (view/outliner-collapse-icon-name true)
+                  "collapsed rows use a Material forward disclosure icon")
+    (assert-equal "app:chevron-down"
+                  (view/outliner-collapse-icon-name false)
+                  "expanded rows use a Material downward disclosure icon")
+    (assert-equal "app:selected"
+                  (view/tab-selection-icon-name current "journals")
+                  "visible settings tabs use the selected Material state")
+    (assert-equal "app:unselected"
+                  (view/tab-selection-icon-name current "flashcards")
+                  "hidden settings tabs use the unselected Material state")))
+
+(deftest settings-tabs-render-saved-order-and-separate-available-tabs
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplySettingsSnapshot
+      (settings ["journals" "graphs" "flashcards"])))
+    (driver/send! application model/OpenSettings)
+    (driver/send! application model/OpenSettingsTabs)
+    (driver/flush! application)
+    (let [screen
+          (descendant-with-identifier
+           renderer (driver/root-node application) "screen.settings.tabs")
+          journals
+          (child-index-with-identifier
+           renderer screen "row.settings.tab.journals")
+          graphs
+          (child-index-with-identifier renderer screen "row.settings.tab.graphs")
+          flashcards
+          (child-index-with-identifier
+           renderer screen "row.settings.tab.flashcards")]
+      (is (and (< journals graphs) (< graphs flashcards))
+          "visible tab rows follow the persisted order")
+      (assert-equal
+       -1
+       (child-index-with-identifier
+        renderer screen "text.settings.tabs.available")
+       "the available section is absent while every tab is visible")
+      (driver/dispatch-event!
+       application
+       (proto/Press
+        (descendant-with-identifier
+         renderer screen "toggle.settings.tab.flashcards")))
+      (driver/flush! application)
+      (let [available
+            (child-index-with-identifier
+             renderer screen "text.settings.tabs.available")
+            available-flashcards
+            (child-index-with-identifier
+             renderer screen "row.settings.tab.flashcards")]
+        (is (not (= -1 available))
+            "hiding a configurable tab creates the available section")
+        (is (< available available-flashcards)
+            "hidden tabs render under the available section")))))
+
+(deftest settings-language-picker-exposes-and-validates-all-main-choices
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          picker
+          (descendant-with-identifier
+           renderer root "picker.settings.language")]
+      (assert-equal (Some apple/AppleRadioGroup)
+                    (apple/node renderer picker)
+                    "language choices use the native Picker contract")
+      (assert-equal "menu"
+                    (property-string renderer picker proto/StyleClass)
+                    "the native Picker keeps main's adaptive menu presentation")
+      (let [simplified-chinese
+            (descendant-with-identifier
+             renderer picker "button.settings.language.zh-CN")
+            system
+            (descendant-with-identifier
+             renderer picker "button.settings.language.system")
+            arabic
+            (descendant-with-identifier
+             renderer picker "button.settings.language.ar")]
+        (is (not (= -1 simplified-chinese))
+            "the picker retains the Simplified Chinese choice")
+        (is (property-bool renderer system proto/Checked)
+            "the native picker renders the selected language")
+        (is (not (= -1 arabic))
+            "the picker retains the final main-branch language choice")
+        (driver/dispatch-event!
+         application (proto/Change simplified-chinese))
+        (driver/flush! application)
+        (assert-equal "zh-CN" (:language (chat/model application))
+                      "selecting a language updates LG settings state")
+        (is (not (:settings-language-menu-open (chat/model application)))
+            "selecting a language dismisses its menu")))
+    (driver/send! application model/OpenSettingsLanguageMenu)
+    (driver/send! application (model/ChooseSettingsLanguage "unknown"))
+    (driver/flush! application)
+    (assert-equal "zh-CN" (:language (chat/model application))
+                  "unknown language identifiers cannot enter LG state")
+    (is (not (:settings-language-menu-open (chat/model application)))
+        "rejecting an unknown language still dismisses the menu")))
+
+(deftest settings-community-links-use-a-typed-platform-boundary
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSettings)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          report-bug
+          (descendant-with-identifier
+           renderer root "link.settings.community.report-bug")
+          report-row
+          (parent-with-child-identifier
+           renderer root "link.settings.community.report-bug")
+          github
+          (descendant-with-identifier
+           renderer root "link.settings.community.github")
+          github-row
+          (parent-with-child-identifier
+           renderer root "link.settings.community.github")]
+      (is (not (= -1 report-bug)) "settings retain the issue tracker link")
+      (is (not (= -1 github)) "settings retain the GitHub community link")
+      (assert-equal 12 (property-int renderer report-row proto/Gap)
+                    "community links preserve main's spacing before dividers")
+      (assert-equal 1 (count (apple/children renderer github-row))
+                    "the final community link has no trailing divider")
+      (driver/dispatch-event! application (proto/Press github))
+      (driver/flush! application)
+      (assert-equal
+       [(model/OpenExternalURLEffect 1 "https://github.com/logseq/logseq")]
+       (:pending-effects (chat/model application))
+       "community navigation stays on the typed platform boundary")
+      (assert-equal
+       "{\"id\":1,\"kind\":\"open-external-url\",\"text\":\"https://github.com/logseq/logseq\"}"
+       (bridge/encode-effect
+        (model/OpenExternalURLEffect 1 "https://github.com/logseq/logseq"))
+       "the native bridge preserves the trusted community URL"))))
+
+(deftest authentication-entry-is-lg-owned-and-idempotent
+  (let [signed-out
+        (model/update (model/initial)
+                      (model/ApplyAuthentication "signedOut" None))
+        signing-in (model/update signed-out model/SignIn)
+        duplicate (model/update signing-in model/SignIn)
+        in-flight (model/update signing-in (model/DequeueEffect 1))
+        premature-host-failure
+        (model/update
+         in-flight
+         (model/ApplyAuthentication
+          "signedOut" (Some "Authorization was cancelled")))
+        failed
+        (model/update in-flight
+                      (model/ResolveEffect 1 false "Hosted sign-in was cancelled"))
+        signed-in
+        (model/update failed (model/ApplyAuthentication "signedIn" None))
+        invalid
+        (model/update signed-in
+                      (model/ApplyAuthentication "unexpected" (Some "bad")))]
+    (assert-equal "signedOut" (:authentication-state signed-out)
+                  "the platform can publish signed-out authentication")
+    (assert-equal [(model/SignInEffect 1)] (:pending-effects signing-in)
+                  "sign-in crosses one typed platform boundary")
+    (assert-equal "signingIn" (:authentication-state signing-in)
+                  "LG disables repeated sign-in while Hosted UI is active")
+    (assert-equal signing-in duplicate
+                  "repeated sign-in requests are ignored")
+    (assert-equal "signingIn" (:authentication-state premature-host-failure)
+                  "host callbacks cannot re-enable sign-in before effect resolution")
+    (assert-equal "signedOut" (:authentication-state failed)
+                  "failed Hosted UI returns to the signed-out screen")
+    (assert-equal (Some "Hosted sign-in was cancelled")
+                  (:authentication-error failed)
+                  "authentication failures remain visible in LG state")
+    (assert-equal "signedIn" (:authentication-state signed-in)
+                  "successful authentication restores the application")
+    (assert-equal signed-in invalid
+                  "unknown platform authentication states are rejected")
+    (assert-equal "{\"id\":9,\"kind\":\"sign-in\",\"text\":\"\"}"
+                  (bridge/encode-effect (model/SignInEffect 9))
+                  "Hosted UI uses a stable typed effect payload")))
+
+(deftest authentication-screen-renders-from-lg-state
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyAuthentication "signedOut" None))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          screen (descendant-with-identifier
+                  renderer root "screen.authentication")
+          sign-in (descendant-with-identifier
+                   renderer root "button.hosted-sign-in")]
+      (is (not (= -1 screen))
+          "signed-out authentication renders the LG entry screen")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "screen.graph-picker")
+                    "authentication replaces the graph picker instead of sharing the root")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "journals.graph-loaded")
+                    "authentication replaces loaded journal content")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "journals.loading")
+                    "authentication replaces the journal loading surface")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.composer.expand")
+                    "authentication hides capture controls")
+      (assert-equal -1
+                    (descendant-with-identifier renderer root "button.search")
+                    "authentication hides search controls")
+      (assert-equal -1
+                    (descendant-with-identifier renderer root "button.sidebar")
+                    "authentication hides the signed-in navigation header")
+      (assert-equal 1.0 (property-float renderer screen proto/GrowValue)
+                    "authentication fills the available root height")
+      (assert-equal "vertical"
+                    (property-string
+                     renderer screen proto/ContainerRelativeFrameValue)
+                    "authentication owns the full vertical container")
+      (assert-equal "center"
+                    (property-string renderer screen proto/MainAlignment)
+                    "authentication content is vertically centered")
+      (assert-equal "center"
+                    (property-string renderer screen proto/CrossAlignment)
+                    "authentication content is horizontally centered")
+      (assert-equal "<missing>"
+                    (property-string renderer screen proto/BackgroundValue)
+                    "authentication inherits the app theme background")
+      (assert-equal "primary"
+                    (property-string renderer sign-in proto/VariantValue)
+                    "authentication uses main's prominent sign-in action")
+      (assert-equal (Some true)
+                    (descendant-enabled
+                     renderer root "button.hosted-sign-in")
+                    "the signed-out action is enabled")
+      (driver/dispatch-event! application (proto/Press sign-in))
+      (driver/flush! application)
+      (assert-equal (Some false)
+                    (descendant-enabled
+                     renderer root "button.hosted-sign-in")
+                    "the button disables while Hosted UI is active")
+      (driver/send! application (model/DequeueEffect 1))
+      (driver/send!
+       application
+       (model/ResolveEffect 1 false "Authorization was cancelled"))
+      (driver/flush! application)
+      (let [error
+            (descendant-with-identifier
+             renderer root "text.authentication-error")]
+        (assert-equal "Authorization was cancelled"
+                      (property-string renderer error proto/TextValue)
+                    "authentication errors render inside the LG screen"))
+      (driver/send! application
+                    (model/ApplyAuthentication "signedIn" None))
+      (driver/flush! application)
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "screen.authentication")
+                    "signed-in authentication dismisses the LG entry screen"))))
+
+(deftest authentication-screen-uses-the-product-name-on-every-host
+  (doseq [backend [(fn [renderer] (apple/backend renderer))
+                   (fn [renderer]
+                     (apple/backend-for
+                      renderer proto/AndroidOS proto/FlutterHost))]]
+    (let [renderer (apple/create-with-extensions (view/extension-registry))
+          application (chat/create (backend renderer))]
+      (driver/start! application)
+      (driver/send! application
+                    (model/ApplyAuthentication "signedOut" None))
+      (driver/flush! application)
+      (let [root (driver/root-node application)]
+        (assert-equal
+         1
+         (descendant-count-with-property-string
+          renderer root proto/TextValue "Logseq Chat")
+         "the signed-out surface uses the installed product name")
+        (assert-equal
+         0
+         (descendant-count-with-property-string
+          renderer root proto/TextValue "Logseq")
+         "the old product name is not exposed by either host")))))
+
+(deftest outliner-editor-extension-contract-is-pinned
+  (assert-equal
+   "lui-extension-v1|15:outliner-editor|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+   (ext/fingerprint (view/outliner-editor-schema))
+   "the native editor registry must match the LG wire schema"))
+
+(deftest outliner-block-content-extension-contract-is-pinned
+  (assert-equal
+   "lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+   (ext/fingerprint (view/outliner-block-content-schema))
+   "the rich block renderer must match the LG wire schema"))
+
+(deftest native-navigation-stack-extension-contract-is-pinned
+  (let [schema (ext/schema (view/extension-registry)
+                           "native-navigation-stack")
+        fingerprint
+        (match schema
+          (Some current) (Some (ext/fingerprint current))
+          None None)]
+    (assert-equal
+     (Some
+      "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
+     fingerprint
+     (str "native navigation must share one pinned LG and Swift wire contract: "
+          fingerprint))))
+
+(deftest native-search-presentation-extension-contract-is-pinned
+  (let [schema (ext/schema (view/extension-registry)
+                           "native-search-presentation")
+        fingerprint
+        (match schema
+          (Some current) (Some (ext/fingerprint current))
+          None None)]
+    (assert-equal
+     (Some
+      "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+     fingerprint
+     (str "search must use a distinct native full-screen navigation contract: "
+          fingerprint))))
+
+(deftest liquid-glass-remains-an-ios-local-tweak
+  (let [registry (view/extension-registry)
+        schema (ext/schema registry "liquid-glass")]
+    (is (ext/tweak? registry "liquid-glass")
+        "app-specific appearance does not expand the standard LUI protocol")
+    (assert-equal
+     (Some
+      "lui-tweak-v1|12:liquid-glass|profiles:ios/swiftui|properties:5:shape:string:required:none")
+     (match schema
+       (Some current) (Some (ext/tweak-fingerprint current))
+       None None)
+     "the native tweak registry must match the LG wire schema")))
+
+(deftest outliner-drag-selects-once-and-drop-keeps-placement
+  (let [unselected
+        (chat/create
+         (apple/backend
+          (apple/create-with-extensions (view/extension-registry))))
+        selected
+        (chat/create
+         (apple/backend
+          (apple/create-with-extensions (view/extension-registry))))]
+    (driver/start! unselected)
+    (driver/send! unselected (model/BeginOutlinerDrag "source"))
+    (driver/flush! unselected)
+    (assert-equal
+     [(model/LongPressOutlinerBlockEffect 1 "source")]
+     (:pending-effects (chat/model unselected))
+     "dragging an unselected block first selects it through the core")
+    (driver/start! selected)
+    (driver/send!
+     selected
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                          None None [] ["source"] [] false []))
+    (driver/flush! selected)
+    (driver/send! selected (model/BeginOutlinerDrag "source"))
+    (driver/flush! selected)
+    (assert-equal [] (:pending-effects (chat/model selected))
+                  "dragging an already selected block does not toggle selection")
+    (driver/send! selected (model/DropOutlinerBlocks "target" "inside"))
+    (driver/flush! selected)
+    (assert-equal
+     [(model/DropOutlinerBlocksEffect 1 "target" "inside")]
+     (:pending-effects (chat/model selected))
+     "drop placement crosses the typed LG boundary unchanged")
+    (assert-equal
+     "{\"id\":9,\"kind\":\"drop-outliner-blocks\",\"text\":\"target\",\"metadata\":\"after\"}"
+     (bridge/encode-effect
+      (model/DropOutlinerBlocksEffect 9 "target" "after"))
+     "the native bridge preserves the drop target and placement")))
+
+(deftest initial-shell-renders-the-graph-picker-without-a-selected-graph
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        remote (graph "remote" "Remote graph" false true)]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          picker (child-with-identifier renderer main "screen.graph-picker")]
+      (assert-equal None (:selected-graph (chat/model application))
+                    "the shell starts without an invented graph")
+      (is (not (= -1 picker))
+          "an empty launch matches main's graph picker")
+      (assert-equal -1
+                    (extension-node application "native-navigation-stack")
+                    "the launch picker bypasses journal navigation chrome")
+      (is (not (= -1 (child-with-identifier
+                       renderer picker "button.graph-add")))
+          "the launch picker can create a graph")
+      (driver/send! application model/OpenSidebar)
+      (driver/flush! application)
+      (let [drawer (descendant-with-node-kind
+                    renderer (driver/root-node application) apple/AppleDrawer)]
+        (assert-equal false
+                      (property-bool renderer drawer proto/Enabled)
+                      "the graph picker keeps sidebar content non-interactive")
+        (assert-equal false
+                      (property-bool renderer drawer proto/Selected)
+                      "the graph picker cannot reveal a retained open drawer"))
+      (driver/send! application model/CloseSidebar)
+      (driver/flush! application)
+      (driver/send!
+      application
+      (model/ApplyCoreSnapshot
+       (assoc (empty-core-projection) :graphs [remote])))
+      (driver/flush! application)
+      (let [updated-main (main-root renderer application)
+            updated-picker
+            (child-with-identifier renderer updated-main "screen.graph-picker")
+            graph-row
+            (descendant-with-identifier renderer updated-picker "graph.remote")
+            graph-scroll
+            (descendant-with-node-kind
+             renderer updated-picker apple/AppleScrollView)]
+        (is (not (= -1 graph-row))
+            "catalog updates retain the launch picker")
+        (is (not (= -1 graph-scroll))
+            "the graph catalog uses main's plain scrolling card stack")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer graph-row)
+                      "a graph card keeps native list-item interaction")
+        (assert-equal 0
+                      (descendant-count-with-node-kind
+                       renderer graph-row apple/AppleIcon)
+                      "main's graph cards do not add graph-type icons")
+        (assert-equal 16
+                      (property-int renderer graph-row proto/PaddingValue)
+                      "graph cards preserve main's content inset")
+        (assert-equal 16
+                      (property-int renderer graph-row proto/CornerRadius)
+                      "graph cards preserve main's corner radius")
+        (assert-equal "surface"
+                      (property-string renderer graph-row proto/BackgroundValue)
+                      "graph cards use the app theme surface")
+        (driver/dispatch-event! application (proto/Press graph-row))
+        (driver/flush! application)
+        (assert-equal [(model/OpenGraphEffect 1 "remote")]
+                      (:pending-effects (chat/model application))
+                      "a launch graph uses the typed graph lifecycle")))))
+
+(deftest graph-picker-not-ready-status-matches-main-copy
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        preparing (graph "preparing" "Preparing graph" false false)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection) :graphs [preparing])))
+    (driver/flush! application)
+    (let [picker (child-with-identifier
+                  renderer (main-root renderer application)
+                  "screen.graph-picker")
+          status (descendant-with-identifier
+                  renderer picker "graph.status.preparing")]
+      (assert-equal "Graph is not ready for sync."
+                    (property-string renderer status proto/TextValue)
+                    "the unavailable graph explanation matches main"))))
+
+(deftest graph-picker-matches-main-layout-actions-errors-and-overflow-menu
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          picker (child-with-identifier renderer main "screen.graph-picker")
+          add (child-with-identifier renderer picker "button.graph-add")
+          refresh (child-with-identifier renderer picker "button.graphs.refresh")
+          overflow (extension-node application "native-overflow-menu")]
+      (assert-equal 20 (property-int renderer picker proto/Gap)
+                    "the picker preserves main's vertical spacing")
+      (assert-equal 24 (property-int renderer picker proto/PaddingValue)
+                    "the picker preserves main's page inset")
+      (assert-equal "start" (property-string renderer picker proto/MainAlignment)
+                    "a long graph catalog remains pinned below the safe area")
+      (assert-equal "vertical"
+                    (property-string renderer picker proto/ContainerRelativeFrameValue)
+                    "the picker is constrained to the navigation viewport")
+      (assert-equal 1.0 (property-float renderer picker proto/GrowValue)
+                    "the picker fills the available navigation height")
+      (assert-equal "ghost" (property-string renderer add proto/VariantValue)
+                    "the add action is a plain text button")
+      (assert-equal "ghost" (property-string renderer refresh proto/VariantValue)
+                    "the refresh action is a plain text button")
+      (is (not (= -1 overflow))
+          "the picker renders the native overflow menu in its header")
+      (assert-equal -1
+                    (child-with-identifier renderer main "button.connection")
+                    "the picker does not render a second connection control")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent overflow "native-overflow-menu" "settings" {}))
+      (driver/flush! application)
+      (is (:settings-open (chat/model application))
+          "the native overflow menu routes settings through LG"))
+    (driver/send!
+     application
+     (model/SyncFailed "graph_discovery_failed\nConnection refused"))
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          picker (child-with-identifier renderer main "screen.graph-picker")
+          banner (child-with-identifier renderer picker "error.banner")]
+      (is (not (= -1 banner)) "the picker displays core failures")
+      (assert-equal
+       "Couldn't load graphs"
+       (property-string
+        renderer
+        (descendant-with-identifier renderer banner "error.banner.code")
+        proto/TextValue)
+       "the failure code is presented as a user-facing title")
+      (assert-equal
+       "Connection refused"
+       (property-string
+        renderer
+        (descendant-with-identifier renderer banner "error.banner.message")
+        proto/TextValue)
+       "the failure message remains visible"))))
+
+(deftest flutter-graph-picker-uses-a-material-empty-state
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          picker (descendant-with-identifier renderer root "screen.graph-picker")
+          title (descendant-with-identifier renderer picker "title.graph-picker")
+          empty-state
+          (descendant-with-identifier renderer picker "empty.graph-picker")
+          add (descendant-with-identifier renderer picker "button.graph-add")
+          refresh
+          (descendant-with-identifier renderer picker "button.graphs.refresh")]
+      (assert-equal "stretch"
+                    (property-string renderer picker proto/CrossAlignment)
+                    "the Material picker fills the available screen width")
+      (assert-equal 3
+                    (property-int renderer title proto/HeadingLevel)
+                    "the Material title uses a compact app-bar scale")
+      (is (not (= -1 empty-state))
+          "an empty catalog renders a purposeful Material empty state")
+      (assert-equal "primary"
+                    (property-string renderer add proto/VariantValue)
+                    "Add graph is the empty state's primary action")
+      (assert-equal "app:add"
+                    (property-string renderer add proto/InlineIconName)
+                    "Add graph uses the Android Material add icon")
+      (assert-equal "app:sync-status"
+                    (property-string renderer refresh proto/InlineIconName)
+                    "Refresh uses the Android Material sync icon"))))
+
+(deftest persisted-graph-loading-hides-the-launch-picker
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/ApplyGraphLoading true))
+    (driver/flush! application)
+    (let [main (main-root renderer application)]
+      (is (not (= -1 (child-with-identifier
+                       renderer main "journals.loading")))
+          "a persisted graph renders the main loading state")
+      (assert-equal -1
+                    (child-with-identifier renderer main "screen.graph-picker")
+                    "the launch picker does not flash while a graph loads"))
+    (driver/send! application (model/ApplyGraphLoading false))
+    (driver/flush! application)
+    (is (not (= -1
+                (child-with-identifier
+                 renderer (main-root renderer application)
+                 "screen.graph-picker")))
+        "the empty catalog picker appears after loading completes")
+    (driver/send! application (model/ApplyGraphLoading true))
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          loading (child-with-identifier renderer main "journals.loading")]
+      (assert-equal
+       "Loading graphs"
+       (property-string
+        renderer (nth (apple/children renderer loading) 0) proto/TextValue)
+       "an unselected catalog has a graph-specific loading label")
+      (assert-equal -1
+                    (child-with-identifier renderer main "screen.graph-picker")
+                    "the picker stays hidden until the catalog is ready"))
+    (let [cached
+          (assoc (model/initial)
+                 :selected-graph-id (Some "local")
+                 :graph-loading true
+                 :outliner-rows
+                 [(journal-outline-row
+                   "cached" "journal" "Cached" "Today" 20260827 0)])]
+      (is (view/journal-root-visible? cached)
+          "cached journals remain visible during a background reload"))))
+
+(deftest flutter-loading-and-errors-use-material-feedback-surfaces
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        local (graph "local" "Local graph" false true)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyGraphLoading true))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          loading (descendant-with-identifier renderer root "journals.loading")
+          spinner
+          (descendant-with-identifier renderer loading "spinner.graph-loading")]
+      (assert-equal (Some apple/AppleSpinner)
+                    (apple/node renderer spinner)
+                    "Android graph restore uses Material progress feedback")
+      (assert-equal "center"
+                    (property-string renderer loading proto/MainAlignment)
+                    "Android graph restore stays centered in the viewport"))
+    (driver/send! application (model/ApplyGraphLoading false))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graphs [local]
+             :selected-graph-id None)))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/send! application model/ConfirmDeleteGraph)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application
+                  (model/ResolveEffect 1 false "Could not delete graph"))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          surface
+          (descendant-with-identifier renderer root "layout.error.banner")
+          message (descendant-with-identifier renderer surface "error.banner")]
+      (assert-equal (Some apple/AppleAlert)
+                    (apple/node renderer surface)
+                    "Android failures use a Material error surface")
+      (assert-equal "Could not delete graph"
+                    (property-string renderer message proto/TextValue)
+                    "the Material error surface preserves the failure reason"))))
+
+(deftest graph-and-sync-actions-update-retained-status-in-place
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (apple/children renderer navigation)
+          title (nth chrome 2)
+          sidebar-control (nth (apple/children renderer (nth chrome 1)) 0)
+          sync-control (nth (apple/children renderer (nth chrome 3)) 0)
+          connection-control (nth (apple/children renderer (nth chrome 4)) 0)]
+      (driver/send! application model/BeginSync)
+      (driver/flush! application)
+      (doseq [control [sidebar-control sync-control]]
+        (assert-equal "ghost"
+                      (property-string renderer control proto/VariantValue)
+                      "journal header actions keep semantic ghost styling"))
+      (assert-equal (Some (apple/AppleExtension "native-overflow-menu"))
+                    (apple/node renderer connection-control)
+                    "the trailing action uses the platform-native menu")
+      (assert-equal "Journals"
+                    (property-string renderer title proto/TextValue)
+                    "the journal root keeps the main navigation title")
+      (assert-equal "Syncing"
+                    (property-string renderer sync-control proto/AccessibilityLabel)
+                    "begin sync exposes progress")
+      (assert-equal sync-control
+                    (nth (apple/children renderer (nth chrome 3)) 0)
+                    "sync changes retain the native status node")
+
+      (driver/send! application model/SyncSucceeded)
+      (driver/flush! application)
+      (assert-equal "Synced"
+                    (property-string renderer sync-control proto/AccessibilityLabel)
+                    "success is visible")
+
+      (driver/send! application (model/SyncFailed "Network unavailable"))
+      (driver/flush! application)
+      (assert-equal "Sync failed"
+                    (property-string renderer sync-control proto/AccessibilityLabel)
+                    "the compact control matches main's failure label"))))
+
+(deftest sync-details-render-projected-cursor-and-trigger-the-existing-pump
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        projection (assoc (empty-core-projection)
+                          :selected-graph-id (Some "work")
+                          :graph-name (Some "Work")
+                          :sync-connected true
+                          :applied-server-t (Some 42)
+                          :has-pending-semantic-operations true
+                          :has-pending-sync-request false)]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (assert-equal model/SyncingState (:sync-state (chat/model application))
+                  "projected pending work keeps the compact status syncing")
+    (let [application-root (driver/root-node application)
+          sync-button
+          (descendant-with-identifier renderer application-root "sync.connected")]
+      (driver/dispatch-event! application (proto/Press sync-button))
+      (driver/flush! application)
+      (is (:sync-details-open (chat/model application))
+          "sync detail presentation is LG-owned")
+      (let [cursor (descendant-with-identifier
+                    renderer application-root "sync.cursor")
+            pending (descendant-with-identifier
+                     renderer application-root "sync.pending")
+            sheet (descendant-with-identifier
+                   renderer application-root "sheet.sync-status")
+            form-node (descendant-with-identifier
+                       renderer application-root "form.sync-status")
+            status-row (descendant-with-identifier
+                        renderer application-root "row.sync.status")
+            done (descendant-with-identifier
+                  renderer application-root "button.sync.done")
+            sync-now (descendant-with-identifier
+                      renderer application-root "button.sync-now")]
+        (assert-equal "navigation-form"
+                      (property-string renderer sheet proto/StyleClass)
+                      "sync details use main's native navigation Form sheet")
+        (assert-equal (Some apple/AppleColumn)
+                      (apple/node renderer form-node)
+                      "sync details expose native Form rows")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer status-row)
+                      "sync values use native Form rows")
+        (assert-equal "confirmation-action"
+                      (property-string renderer done proto/StyleClass)
+                      "Done stays in the native confirmation toolbar placement")
+        (assert-equal (Some apple/AppleButton)
+                      (apple/node renderer sync-now)
+                      "Sync now uses the native Form button interaction")
+        (assert-equal "42" (property-string renderer cursor proto/TextValue)
+                      "the authoritative server cursor is visible")
+        (assert-equal "Waiting to save"
+                      (property-string renderer pending proto/TextValue)
+                      "pending semantic work is visible")
+        (driver/dispatch-event! application (proto/Press sync-now))
+        (driver/flush! application)
+        (assert-equal [(model/SyncNowEffect 1)]
+                      (:pending-effects (chat/model application))
+                      "Sync now reuses the existing platform sync pump")))))
+
+(deftest sync-details-show-the-last-sync-failure
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application (model/SyncFailed "Network unavailable"))
+    (driver/send! application model/OpenSyncDetails)
+    (driver/flush! application)
+    (let [error
+          (descendant-with-identifier
+           renderer (driver/root-node application) "sync.error")]
+      (is (not (= -1 error))
+          "the sync failure has a stable status-sheet identifier")
+      (assert-equal "Network unavailable"
+                    (property-string renderer error proto/TextValue)
+                    "the status sheet preserves the actionable failure reason"))))
+
+(deftest pending-sync-patches-preserve-the-current-screen-and-cursor
+  (let [full (assoc (empty-core-projection)
+                    :graph-name (Some "Work")
+                    :sync-connected true
+                    :applied-server-t (Some 42)
+                    :has-pending-semantic-operations true)
+        current (model/update (model/initial) (model/ApplyCoreSnapshot full))
+        patch (assoc (empty-core-projection)
+                     :is-pending-sync-patch true
+                     :has-pending-semantic-operations false
+                     :has-pending-sync-request false)
+        updated (model/update current (model/ApplyCoreSnapshot patch))]
+    (assert-equal (Some "Work") (:selected-graph updated)
+                  "pending transport patches do not clear graph state")
+    (assert-equal (Some 42) (:applied-server-t updated)
+                  "pending transport patches preserve the server cursor")
+    (is (not (:has-pending-semantic-operations updated))
+        "pending transport patches update their owned sync flags")))
+
+(deftest graph-catalog-patches-preserve-the-active-editor-state
+  (let [current (assoc (model/initial)
+                       :composer-expanded true
+                       :composer-draft "Editing now"
+                       :journal-outliner-rows
+                       [(journal-outline-row
+                         "block-a" "page-a" "Existing" "Journal" 20260901 0)])
+        graph (record model/graph
+                (id "graph-a")
+                (name "Graph A")
+                (is-encrypted false)
+                (is-ready true))
+        patch (assoc (empty-core-projection)
+                     :is-graph-catalog-patch true
+                     :graph-name (Some "Graph A")
+                     :selected-graph-id (Some "graph-a")
+                     :graphs [graph])
+        updated (model/update current (model/ApplyCoreSnapshot patch))]
+    (assert-equal "Editing now" (:composer-draft updated)
+                  "catalog refreshes preserve the active composer")
+    (assert-equal (:journal-outliner-rows current)
+                  (:journal-outliner-rows updated)
+                  "catalog refreshes preserve journal rows")
+    (assert-equal [graph] (:graphs updated)
+                  "catalog refreshes update their owned graph list")))
+
+(deftest sidebar-state-and-page-selection-are-owned-by-lg
+  (let [favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
+        recent (record model/sidebar-page (uuid "page-b") (title "Recent"))
+        journal-row
+        (journal-outline-row
+         "page-a-root" "page-a" "Loaded journal content" "Favorite" 20260829 0)
+        opened (model/update (model/initial) model/OpenSidebar)
+        projected
+        (model/update
+         opened
+         (apply-core-snapshot
+          None
+          (record model/sidebar-projection
+            (favorites [favorite])
+            (recent-pages [recent])
+            (selected-page None)
+            (selected-page-is-tag false)
+            (selected-page-is-property false)
+            (related-rows [])
+            (linked-reference-rows []))
+          [] false "" [] [] None None [] [] [journal-row] false []))
+        selected (model/update projected (model/SelectSidebarPage "page-a"))
+        selected-row
+        (journal-outline-row
+         "selected-page-row" "page-a" "Authoritative content" "Favorite" 20260829 0)
+        selected-sidebar
+        (record model/sidebar-projection
+          (favorites [favorite])
+          (recent-pages [recent])
+          (selected-page (Some favorite))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))
+        reconciled
+        (model/update
+         selected
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "test-graph")
+                 :sidebar selected-sidebar
+                 :journal-outliner-rows [selected-row]
+                 :outliner-rows [selected-row])))
+        journals (model/update selected model/ShowJournals)]
+    (is (:sidebar-open opened) "sidebar presentation is LG-owned")
+    (assert-equal [favorite] (:favorites projected)
+                  "favorites come from the core projection")
+    (assert-equal [recent] (:recent-pages projected)
+                  "recent pages come from the core projection")
+    (assert-equal (Some favorite) (:selected-page selected)
+                  "loaded sidebar pages expose their title immediately")
+    (assert-equal [journal-row] (:outliner-rows selected)
+                  "loaded journals expose their retained rows immediately")
+    (assert-equal [journal-row] (:journal-outliner-rows reconciled)
+                  "selected page snapshots preserve the loaded journal cache")
+    (is (not (:sidebar-open selected))
+        "selecting a page dismisses the sidebar")
+    (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
+                  (:pending-effects selected)
+                  "page selection crosses the typed core boundary")
+    (assert-equal
+     [(model/SelectSidebarPageEffect 1 "page-a")
+      (model/ClearSelectedPageEffect 2)]
+     (:pending-effects journals)
+     "journals clears the selected core page")))
+
+(deftest sidebar-renders-main-branch-navigation-identifiers
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
+        current-graph (graph "current" "sync 2" false true)
+        remote-graph (graph "remote" "Remote graph" false true)
+        preparing-graph (graph "preparing" "Preparing graph" false false)
+        sidebar
+        (record model/sidebar-projection
+          (favorites [favorite])
+          (recent-pages [])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot
+                   (assoc
+                    (empty-core-projection)
+                    :graph-name (Some "sync 2")
+                    :selected-graph-id (Some "current")
+                    :graphs [current-graph remote-graph preparing-graph]
+                    :sidebar sidebar)))
+    (driver/flush! application)
+    (let [root (application-shell-root renderer application)]
+      (is (not (property-bool renderer root proto/Selected))
+          "the native drawer starts from LG's closed state")
+      (is (property-bool renderer root proto/Enabled)
+          "the journal surface accepts horizontal sidebar gestures")
+      (driver/send! application model/OpenSearch)
+      (driver/flush! application)
+      (is (not (property-bool renderer root proto/Enabled))
+          "full-screen search owns the horizontal gesture")
+      (driver/send! application model/CloseSearch)
+      (driver/flush! application)
+      (is (property-bool renderer root proto/Enabled)
+          "closing search restores sidebar gestures")
+      (driver/dispatch-event!
+       application
+       (proto/Press
+        (descendant-with-identifier renderer root "button.sidebar")))
+      (driver/flush! application)
+      (is (property-bool renderer root proto/Selected)
+          "opening the sidebar patches the controlled drawer")
+      (let [sidebar-view (descendant-with-identifier renderer root "sidebar.navigation")
+            sidebar-children (apple/children renderer sidebar-view)
+            top-safe-area (if (empty? sidebar-children)
+                            -1
+                            (nth sidebar-children 0))
+            dismiss
+            (child-with-identifier renderer sidebar-view "button.sidebar.dismiss")
+            graph-switch
+            (descendant-with-identifier renderer sidebar-view
+                                        "button.graph-switch")
+            journals
+            (child-with-identifier renderer sidebar-view "link.sidebar.journals")
+            flashcards
+            (child-with-identifier renderer sidebar-view "link.sidebar.flashcards")
+            graphs
+            (child-with-identifier renderer sidebar-view "link.sidebar.graphs")
+            favorites
+            (descendant-with-identifier renderer sidebar-view "section.sidebar.favorites")
+            favorites-heading (nth (apple/children renderer favorites) 0)
+            favorites-heading-children (apple/children renderer favorites-heading)
+            favorites-heading-top (nth favorites-heading-children 0)
+            favorites-heading-content (nth favorites-heading-children 1)
+            favorites-heading-bottom (nth favorites-heading-children 2)
+            favorites-heading-icon
+            (nth (apple/children renderer favorites-heading-content) 0)
+            recent
+            (descendant-with-identifier renderer sidebar-view "section.sidebar.recent")
+            favorite-link
+            (child-with-identifier renderer favorites "link.sidebar.page.page-a")]
+        (assert-equal 12 (property-int renderer sidebar-view proto/PaddingValue)
+                      "sidebar keeps the main branch content inset")
+        (let [pages-scroll (descendant-with-identifier renderer sidebar-view "scroll.sidebar.pages")]
+          (is (not (= pages-scroll -1)) "Favorites and Recent have their own scroll region")
+          (assert-equal -1 (descendant-with-identifier renderer pages-scroll "link.sidebar.journals")
+                        "top navigation stays outside the scroll region")
+          (assert-equal favorites (descendant-with-identifier renderer pages-scroll "section.sidebar.favorites")
+                        "scrolling starts with Favorites"))
+        (assert-equal (Some apple/AppleBox)
+                      (if (= top-safe-area -1)
+                        None
+                        (apple/node renderer top-safe-area))
+                      "the full-height drawer reserves sidebar status-bar space in LG")
+        (assert-equal 48
+                      (property-int renderer top-safe-area proto/HeightValue)
+                      "the sidebar spacer plus the following 4-point gap matches main")
+        (assert-equal graph-switch
+                      (descendant-with-identifier
+                       renderer
+                       (nth sidebar-children 1)
+                       "button.graph-switch")
+                      "the graph switch follows the explicit full-screen safe-area spacer")
+        (assert-equal 4 (property-int renderer sidebar-view proto/Gap)
+                      "sidebar keeps the main branch row spacing")
+        (assert-equal -1 dismiss
+                      "the main surface owns dismissal instead of rendering a close row")
+        (is (not (= graph-switch -1)) "sidebar keeps the graph switch identifier")
+        (assert-equal "sync 2"
+                      (property-string renderer graph-switch proto/TextValue)
+                      "the graph switch displays the selected graph name")
+        (assert-equal "navigation-heading"
+                      (property-string renderer graph-switch proto/RoleValue)
+                      "the graph switch uses the reusable navigation heading role")
+        (assert-equal "app:chevron-down"
+                      (property-string renderer graph-switch proto/InlineIconName)
+                      "the graph switch keeps the disclosure affordance")
+        (assert-equal "trailing"
+                      (property-string renderer graph-switch proto/IconPlacementValue)
+                      "the graph switch places its disclosure icon after the title")
+        (assert-equal "navigation"
+                      (property-string renderer journals proto/RoleValue)
+                      "sidebar destinations use native navigation rows")
+        (assert-equal "app:calendar"
+                      (property-string renderer journals proto/InlineIconName)
+                      "journals keeps its navigation icon")
+        (is (property-bool renderer journals proto/Selected)
+            "the current journal destination keeps its selected row")
+        (assert-equal "app:flashcards"
+                      (property-string renderer flashcards proto/InlineIconName)
+                      "flashcards keeps its navigation icon")
+        (assert-equal "app:folder"
+                      (property-string renderer graphs proto/InlineIconName)
+                      "graphs keeps its navigation icon")
+        (is (not (= recent -1)) "sidebar keeps the recent section identifier")
+        (assert-equal "app:document"
+                      (property-string renderer favorite-link proto/InlineIconName)
+                      "sidebar pages keep their document icon")
+        (assert-equal 14
+                      (property-int renderer favorites-heading-icon proto/WidthValue)
+                      "sidebar section glyphs match main's caption2 metrics")
+        (assert-equal 16
+                      (property-int renderer favorites-heading-top proto/HeightValue)
+                      "sidebar section headings keep main's top spacing")
+        (assert-equal 6
+                      (property-int renderer favorites-heading-bottom proto/HeightValue)
+                      "sidebar section headings keep main's bottom spacing")
+        (driver/dispatch-event! application (proto/Press favorite-link))
+        (driver/flush! application)
+        (is (not (property-bool renderer root proto/Selected))
+            "page selection closes the controlled drawer")
+        (assert-equal [(model/SelectSidebarPageEffect 1 "page-a")]
+                      (:pending-effects (chat/model application))
+                      "sidebar page presses reuse the typed selection effect")
+        (driver/dispatch-event!
+         application
+         (proto/Press
+          (descendant-with-identifier renderer root "button.sidebar")))
+        (driver/flush! application)
+        (let [reopened-sidebar
+              (descendant-with-identifier renderer root "sidebar.navigation")
+              switch-button
+              (descendant-with-identifier
+               renderer reopened-sidebar "button.graph-switch")]
+          (driver/dispatch-event! application (proto/Press switch-button))
+          (driver/flush! application)
+          (let [menu
+                (descendant-with-identifier renderer reopened-sidebar
+                                            "menu.graph-switch")]
+            (is (not (= menu -1)) "the graph heading opens a native menu")
+            (when (not (= menu -1))
+              (let [current-item
+                    (child-with-identifier renderer menu "menu.graph.current")
+                    preparing-item
+                    (child-with-identifier renderer menu "menu.graph.preparing")]
+                (is (property-bool renderer current-item proto/Selected)
+                    "the current graph is selected in the native menu")
+                (is (not (property-bool renderer preparing-item proto/Enabled))
+                    "graphs that are not ready stay disabled"))
+              (assert-equal model/JournalsDestination
+                            (:destination (chat/model application))
+                            "opening the graph menu keeps the current destination")
+              (is (property-bool renderer root proto/Selected)
+                  "opening the graph menu keeps the drawer visible")
+              (driver/dispatch-event! application (proto/Dismiss menu))
+              (driver/flush! application)
+              (assert-equal
+               -1
+               (descendant-with-identifier renderer reopened-sidebar
+                                           "menu.graph-switch")
+               "native menu dismissal removes the retained menu")
+              (driver/dispatch-event! application (proto/Press switch-button))
+              (driver/flush! application)
+              (let [reopened-menu
+                    (descendant-with-identifier renderer reopened-sidebar
+                                                "menu.graph-switch")]
+                (when (not (= reopened-menu -1))
+                  (let [remote-item
+                        (child-with-identifier renderer reopened-menu
+                                               "menu.graph.remote")]
+                    (driver/dispatch-event! application (proto/Press remote-item))
+                    (driver/flush! application)
+                    (assert-equal
+                     [(model/SelectSidebarPageEffect 1 "page-a")
+                      (model/OpenGraphEffect 2 "remote")]
+                     (:pending-effects (chat/model application))
+                     "choosing another graph reuses the typed open-graph effect")
+                    (is (not (property-bool renderer root proto/Selected))
+                        "choosing a graph closes the controlled drawer")))))))))))
+
+(deftest sidebar-drag-reserves-app-navigation
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        sidebar
+        (record model/sidebar-projection
+          (favorites [])
+          (recent-pages [])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] false "" [] []
+                                       None None [] [] [] false []))
+    (driver/flush! application)
+    (let [root (application-shell-root renderer application)]
+      (is (property-bool renderer root proto/Enabled)
+          "the journal surface accepts horizontal sidebar gestures")
+      (driver/send! application (model/RequestAppNode "node-a"))
+      (driver/flush! application)
+      (is (not (property-bool renderer root proto/Enabled))
+          "node navigation reserves the leading-edge back gesture"))))
+
+(deftest selected-sidebar-pages-render-their-outliner-and-related-content
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        related-row
+        (record model/outline-row
+          (uuid "reference")
+          (title "Linked from journal")
+          (markup-json "[]")
+          (youtube-target-url None)
+          (breadcrumb "Journal")
+          (breadcrumbs [])
+          (opens-as-page false)
+          (depth 0)
+          (has-children false)
+          (is-collapsed false)
+          (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        content-row
+        (assoc related-row :uuid "content" :title "Page content")
+        sidebar
+        (record model/sidebar-projection
+          (favorites [page])
+          (recent-pages [page])
+          (selected-page (Some page))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [related-row])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] false "" [] []
+                                           None None [] [] [content-row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          title (descendant-with-identifier
+                 renderer (driver/root-node application) "title.main")
+          related
+          (descendant-with-identifier
+           renderer outliner "section.node.linked-references")
+          related-list
+          (descendant-with-identifier renderer outliner "list.node.related")
+          related-group (nth (apple/children renderer related-list) 0)
+          add-first
+          (descendant-with-identifier
+           renderer outliner "button.outliner.add-first-block")
+          content
+          (descendant-with-identifier renderer outliner "outliner.block.content")
+          page-title
+          (descendant-with-identifier renderer outliner "title.selected-page")
+          page-title-layout
+          (descendant-with-identifier renderer outliner "layout.selected-page.title")]
+      (assert-equal "Project" (property-string renderer title proto/TextValue)
+                    "selected pages own the main header title")
+      (is (not (= related -1))
+          "selected pages render their core-projected linked references")
+      (assert-equal 0
+                    (property-int renderer related-group proto/Gap)
+                    "related breadcrumbs and rows use main's zero-spacing stack")
+      (is (not (= content -1))
+          "selected pages render their own projected outliner rows")
+      (is (not (= page-title -1))
+          "selected non-tag pages repeat their title in the content surface")
+      (assert-equal 3
+                    (property-int renderer page-title proto/HeadingLevel)
+                    "selected page titles use main's title2 typography")
+      (assert-equal 16
+                    (property-int renderer page-title-layout proto/PaddingHorizontal)
+                    "selected page titles preserve the combined main horizontal inset")
+      (is (= add-first -1)
+          "non-empty selected pages hide the add-first-block action"))))
+
+(deftest flashcard-presentation-and-review-state-are-owned-by-lg
+  (let [card (flashcard "card-a" "Remember […]" "Remember this"
+                        [(flashcard-answer "answer-a" 0 "Child answer")]
+                        true)
+        projected
+        (model/update
+         (model/initial)
+         (apply-core-snapshot None (empty-sidebar-projection) [card]
+                                  false "" [] [] None None [] [] [] false []))
+        shown (model/update projected model/ShowFlashcards)
+        cloze (model/update shown model/RevealFlashcardCloze)
+        answer (model/update cloze model/RevealFlashcardAnswer)
+        reviewed (model/update answer (model/ReviewFlashcard "good"))]
+    (assert-equal model/FlashcardsDestination (:destination shown)
+                  "the primary destination is LG-owned")
+    (is (not (:sidebar-open shown))
+        "opening flashcards closes the sidebar")
+    (assert-equal
+     [(model/ClearSelectedPageEffect 1)
+      (model/LoadFlashcardsEffect 2)]
+     (:pending-effects shown)
+     "entering flashcards clears page context before loading due cards")
+    (is (:flashcard-cloze-revealed cloze)
+        "cloze reveal is retained in LG state")
+    (is (:flashcard-answer-revealed answer)
+        "answer reveal is retained in LG state")
+    (assert-equal
+     [(model/ClearSelectedPageEffect 1)
+      (model/LoadFlashcardsEffect 2)
+      (model/ReviewFlashcardEffect 3 "card-a" "good")]
+     (:pending-effects reviewed)
+     "ratings use the current projected card identity")))
+
+(deftest load-older-journals-coalesces-while-pending
+  (let [requested (model/update (model/initial) model/LoadOlderJournals)
+        duplicate-pending (model/update requested model/LoadOlderJournals)
+        in-flight (model/update requested (model/DequeueEffect 1))
+        duplicate-in-flight (model/update in-flight model/LoadOlderJournals)
+        resolved (model/update in-flight (model/ResolveEffect 1 true ""))
+        requested-again (model/update resolved model/LoadOlderJournals)]
+    (assert-equal
+     [(model/LoadOlderJournalsEffect 1)]
+     (:pending-effects duplicate-pending)
+     "a pending journal pagination request should absorb duplicate appears")
+    (assert-equal
+     []
+     (:pending-effects duplicate-in-flight)
+     "an in-flight journal pagination request should absorb duplicate appears")
+    (assert-equal
+     [(model/LoadOlderJournalsEffect 2)]
+     (:pending-effects requested-again)
+     "pagination should become available again after the request resolves")))
+
+(deftest unrelated-snapshots-preserve-the-journal-pagination-window
+  (let [first-day
+        (journal-outline-row
+         "day-a-root" "page-a" "First" "August 29th" 20260829 0)
+        older-day
+        (journal-outline-row
+         "day-b-root" "page-b" "Older" "August 28th" 20260828 0)
+        initial
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals true
+                 :outliner-rows [first-day])))
+        unrelated
+        (model/update
+         initial
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals false
+                 :outliner-rows [first-day older-day])))
+        loading
+        (model/update
+         (model/update initial model/LoadOlderJournals)
+         (model/DequeueEffect 1))
+        captured-row
+        (journal-outline-row
+         "captured-block" "page-a" "Captured now" "August 29th" 20260829 0)
+        capturing
+        (assoc initial
+               :in-flight-effects
+               [(model/SendCaptureEffect 7 "Captured now")])
+        captured
+        (model/update
+         capturing
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals true
+                 :outliner-rows [first-day captured-row])))
+        paginated
+        (model/update
+         loading
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals false
+                 :outliner-rows [first-day older-day])))]
+    (assert-equal [first-day] (:outliner-rows unrelated)
+                  "unrelated snapshots keep the visible journal window")
+    (assert-equal [first-day] (:journal-outliner-rows unrelated)
+                  "unrelated snapshots keep the retained journal cache")
+    (is (:has-older-journals unrelated)
+        "unrelated snapshots keep pagination available")
+    (assert-equal [first-day captured-row] (:outliner-rows captured)
+                  "a capture response refreshes today's visible journal")
+    (assert-equal [first-day captured-row] (:journal-outliner-rows captured)
+                  "a capture response refreshes the retained journal cache")
+    (assert-equal [first-day older-day] (:outliner-rows paginated)
+                  "a journal pagination response expands the visible window")
+    (assert-equal [first-day older-day] (:journal-outliner-rows paginated)
+                  "a journal pagination response expands the retained cache")
+    (is (not (:has-older-journals paginated))
+        "pagination accepts the authoritative continuation state")))
+
+(deftest journal-node-insertion-keeps-the-rendered-sibling-position
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        first-row (journal-outline-row "a" "today" "First" "Today" 20260906 0)
+        last-row (journal-outline-row "z" "today" "Last" "Today" 20260906 0)
+        inserted-row (journal-outline-row "b" "today" "Inserted" "Today" 20260906 0)
+        route (assoc (node-projection "today" "today" "Today" [] [])
+                     :outliner-editing (Some (record model/outliner-editing
+                                               (uuid "a") (title "First")
+                                               (caret-utf16-offset 5)))
+                     :outliner-rows [first-row last-row])
+        projection (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :node-routes [route]
+                          :outliner-rows [first-row last-row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "today"))
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (driver/send! application
+      (model/ApplyCoreSnapshot
+       (assoc projection
+              :node-routes [(assoc route
+                                  :outliner-editing (Some (record model/outliner-editing
+                                                            (uuid "b") (title "Inserted")
+                                                            (caret-utf16-offset 8)))
+                                  :outliner-rows [first-row inserted-row last-row])]
+              :outliner-rows [first-row inserted-row last-row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          outliner (descendant-with-identifier renderer screen "list.outliner")
+          rows (mapv (fn [node] (property-string renderer node proto/AccessibilityIdentifier))
+                     (apple/children renderer outliner))]
+      (assert-equal ["outliner.block.a" "outliner.block.b" "outliner.block.z"] rows
+                    (str "inserting in the middle must retain the rendered sibling order: "
+                         (string/join "," rows))))))
+
+(deftest capture-refreshes-the-retained-journal-behind-a-node-route
+  (let [first-row (journal-outline-row "first" "today" "First" "Today" 20260906 0)
+        captured-row (journal-outline-row "captured" "today" "Captured" "Today" 20260906 0)
+        route (assoc (node-projection "today" "today" "Today" [] [])
+                     :outliner-rows [first-row captured-row])
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :journal-outliner-rows [first-row]
+                       :node-routes [route]
+                       :in-flight-effects [(model/SendCaptureEffect 7 "Captured")])
+        updated (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :node-routes [route]
+                          :journal-outliner-rows [first-row captured-row]
+                          :outliner-rows [first-row captured-row])))]
+    (assert-equal [first-row captured-row] (:journal-outliner-rows updated)
+                  "capture must update the mounted journal behind navigation")))
+
+(deftest recent-journal-edits-refresh-the-retained-journals-pane
+  (let [page (record model/sidebar-page (uuid "today") (title "Today"))
+        original (journal-outline-row "first" "today" "Original" "Today" 20260906 0)
+        edited (assoc original :title "Edited from Recent")
+        inserted (journal-outline-row "inserted" "today" "Inserted" "Today" 20260906 0)
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :selected-page (Some page)
+                       :journal-outliner-rows [original]
+                       :outliner-rows [original])
+        edited-page (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :sidebar (assoc (empty-sidebar-projection) :selected-page (Some page))
+                          :journal-outliner-rows [edited inserted]
+                          :outliner-rows [edited inserted])))
+        updated (model/update (model/update edited-page model/ShowJournals)
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :journal-outliner-rows [edited inserted]
+                          :outliner-rows [edited inserted])))]
+    (assert-equal [edited inserted] (:journal-outliner-rows updated)
+                  "returning from a Recent page refreshes the retained Journals data")))
+
+(deftest synchronized-capture-refreshes-an-already-visible-journal
+  (let [first-row (journal-outline-row "first" "today" "First" "Today" 20260906 0)
+        captured-row (journal-outline-row "captured" "today" "Captured" "Today" 20260906 0)
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :journal-outliner-rows [first-row]
+                       :outliner-rows [first-row])
+        updated (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :journal-outliner-rows [first-row captured-row]
+                          :outliner-rows [first-row captured-row])))]
+    (assert-equal [first-row captured-row] (:outliner-rows updated)
+                  "a sync snapshot must expose captures without restarting")))
+
+(deftest journal-refresh-applies-edits-deletions-and-a-new-day-without-loading-older-days
+  (let [old-row (journal-outline-row "old" "yesterday" "Old" "Yesterday" 20260905 0)
+        deleted-row (journal-outline-row "deleted" "yesterday" "Deleted" "Yesterday" 20260905 0)
+        edited-row (assoc old-row :title "Edited")
+        today-row (journal-outline-row "today" "today" "New day" "Today" 20260906 0)
+        older-row (journal-outline-row "older" "older" "Older" "Older" 20260904 0)
+        current (assoc (model/initial)
+                       :selected-graph-id (Some "graph-a")
+                       :journal-outliner-rows [old-row deleted-row]
+                       :outliner-rows [old-row deleted-row])
+        updated (model/update current
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "graph-a")
+                          :outliner-rows [today-row edited-row older-row])))]
+    (assert-equal [today-row edited-row] (:journal-outliner-rows updated)
+                  "refresh current days without silently expanding pagination")))
+
+(deftest flashcard-reveal-state-resets-only-when-the-current-card-changes
+  (let [first-card (flashcard "card-a" "First […]" "First answer" [] true)
+        same-card (flashcard "card-a" "Updated […]" "Updated answer" [] true)
+        next-card (flashcard "card-b" "Second […]" "Second answer" [] true)
+        projected
+        (model/update
+         (model/initial)
+         (apply-core-snapshot None (empty-sidebar-projection) [first-card]
+                                  false "" [] [] None None [] [] [] false []))
+        revealed
+        (model/update
+         (model/update projected model/RevealFlashcardCloze)
+         model/RevealFlashcardAnswer)
+        refreshed
+        (model/update
+         revealed
+         (apply-core-snapshot None (empty-sidebar-projection) [same-card]
+                                  false "" [] [] None None [] [] [] false []))
+        advanced
+        (model/update
+         refreshed
+         (apply-core-snapshot None (empty-sidebar-projection) [next-card]
+                                  false "" [] [] None None [] [] [] false []))]
+    (is (:flashcard-cloze-revealed refreshed)
+        "a refresh of the same card retains its reveal state")
+    (is (:flashcard-answer-revealed refreshed)
+        "a refresh of the same card retains its answer state")
+    (is (not (:flashcard-cloze-revealed advanced))
+        "advancing cards hides the next cloze")
+    (is (not (:flashcard-answer-revealed advanced))
+        "advancing cards hides the next answer")
+    (assert-equal []
+                  (:pending-effects
+                   (model/update (model/initial)
+                                 (model/ReviewFlashcard "again")))
+                  "reviewing an empty queue is a no-op")))
+
+(deftest flashcards-render-the-main-branch-reveal-and-rating-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        card (flashcard "card-a" "Remember […]" "Remember this"
+                        [(flashcard-answer "answer-a" 0 "Child answer")]
+                        true)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [card]
+                              false "" [] [] None None [] [] [] false []))
+    (driver/send! application model/ShowFlashcards)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          screen (child-with-identifier renderer main "screen.flashcards")
+          review
+          (descendant-with-identifier renderer screen "layout.flashcards.review")
+          review-content
+          (descendant-with-identifier renderer screen "layout.flashcards.review-content")
+          top-spacer
+          (descendant-with-identifier renderer screen "spacer.flashcards.top")
+          bottom-spacer
+          (descendant-with-identifier renderer screen "spacer.flashcards.bottom")
+          status
+          (descendant-with-identifier renderer screen "row.flashcards.status")
+          question-card
+          (descendant-with-identifier renderer screen "card.flashcard.question")
+          question (descendant-with-identifier renderer screen "flashcard.question")
+          show-cloze
+          (descendant-with-identifier renderer screen "button.flashcard.show-cloze")
+          show-cloze-row
+          (parent-with-child-identifier
+           renderer screen "button.flashcard.show-cloze")]
+      (assert-equal 18 (property-int renderer review-content proto/Gap)
+                    "review content keeps main's section spacing")
+      (assert-equal 20 (property-int renderer review proto/PaddingHorizontal)
+                    "review content keeps main's edge inset")
+      (assert-equal 18 (property-int renderer top-spacer proto/HeightValue)
+                    "review content keeps main's top inset")
+      (assert-equal 24 (property-int renderer bottom-spacer proto/HeightValue)
+                    "review content keeps main's bottom inset")
+      (assert-equal (Some apple/AppleRow) (apple/node renderer status)
+                    "due count is one native status row")
+      (assert-equal "surface"
+                    (property-string renderer question-card proto/BackgroundValue)
+                    "the question uses the themed card surface")
+      (assert-equal 18
+                    (property-int renderer question-card proto/CornerRadius)
+                    "the question card matches main's corner radius")
+      (assert-equal 22
+                    (property-int renderer question-card proto/PaddingValue)
+                    "the question card matches main's content inset")
+      (assert-equal 50
+                    (property-int renderer show-cloze proto/MinHeight)
+                    "the reveal action keeps main's minimum height")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer show-cloze-row)
+                    "the reveal action grows across a row without consuming vertical space")
+      (assert-equal "primary"
+                    (property-string renderer show-cloze proto/BackgroundValue)
+                    "the reveal action uses the accent fill")
+      (assert-equal "center"
+                    (property-string renderer show-cloze proto/TextAlignment)
+                    "the reveal action centers its native button label")
+      (assert-equal "semibold"
+                    (property-string renderer show-cloze proto/StyleClass)
+                    "the reveal action matches main's emphasized label")
+      (assert-equal "Remember […]"
+                    (property-string renderer question proto/TextValue)
+                    "clozes start hidden")
+      (driver/dispatch-event! application (proto/Press show-cloze))
+      (driver/flush! application)
+      (assert-equal "Remember this"
+                    (property-string renderer question proto/TextValue)
+                    "cloze reveal patches the retained question")
+      (let [show-answer
+            (descendant-with-identifier renderer screen "button.flashcard.show-answer")]
+        (driver/dispatch-event! application (proto/Press show-answer))
+        (driver/flush! application)
+        (let [answer-row
+              (descendant-with-identifier renderer screen "flashcard.answer.0")
+              answer-divider
+              (descendant-with-identifier renderer screen "flashcard.answer-divider")
+              good
+              (descendant-with-identifier renderer screen "button.flashcard.rating.good")]
+          (assert-equal (Some apple/AppleDivider)
+                        (apple/node renderer answer-divider)
+                        "revealed answers use main's full-width semantic divider")
+          (assert-equal "Child answer"
+                        (property-string renderer answer-row proto/TextValue)
+                        "answer children appear after reveal")
+          (assert-equal "center"
+                        (property-string renderer good proto/TextAlignment)
+                        "rating actions center their native button labels")
+          (assert-equal "semibold"
+                        (property-string renderer good proto/StyleClass)
+                        "rating actions match main's emphasized labels")
+          (driver/dispatch-event! application (proto/Press good))
+          (driver/flush! application)
+          (assert-equal
+           [(model/ClearSelectedPageEffect 1)
+            (model/LoadFlashcardsEffect 2)
+            (model/ReviewFlashcardEffect 3 "card-a" "good")]
+           (:pending-effects (chat/model application))
+           "rating controls publish the typed review effect"))))))
+
+(deftest flashcards-render-empty-and-non-cloze-control-states
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/ShowFlashcards)
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          screen (child-with-identifier renderer main "screen.flashcards")
+          empty-state
+          (descendant-with-identifier renderer screen "layout.flashcards.empty")
+          empty-children (apple/children renderer empty-state)
+          empty-icon (nth empty-children 0)
+          empty-title (nth empty-children 1)
+          empty-description (nth empty-children 2)]
+      (is (not (= -1 empty-state))
+          "an empty due queue preserves the existing empty state")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer screen)
+                    "empty and review layouts share a gap-free root container")
+      (assert-equal 0
+                    (property-int renderer screen proto/Gap)
+                    "hidden review content cannot shift the empty-state center")
+      (assert-equal 1
+                    (count (apple/children renderer screen))
+                    "hidden review content does not leave a layout sibling")
+      (assert-equal 1.0
+                    (property-float renderer empty-state proto/GrowValue)
+                    "the empty state fills the page before centering")
+      (assert-equal "center"
+                    (property-string renderer empty-state proto/MainAlignment)
+                    "the empty state is vertically centered like main")
+      (assert-equal "center"
+                    (property-string renderer empty-state proto/CrossAlignment)
+                    "the empty state is horizontally centered like main")
+      (assert-equal "app:flashcards"
+                    (property-string renderer empty-icon proto/IconName)
+                    "the empty state uses the flashcards navigation icon")
+      (assert-equal 3
+                    (property-int renderer empty-title proto/HeadingLevel)
+                    "the empty title uses main's title2 typography")
+      (assert-equal "center"
+                    (property-string renderer empty-description
+                                     proto/TextAlignment)
+                    "the empty description is centered")
+      (assert-equal "muted-foreground"
+                    (property-string renderer empty-description
+                                     proto/ForegroundValue)
+                    "the empty description uses secondary foreground"))
+    (driver/send!
+     application
+     (apply-core-snapshot
+      None (empty-sidebar-projection)
+      [(flashcard "card-a" "Plain question" "Plain question" [] false)]
+      false "" [] [] None None [] [] [] false []))
+    (driver/flush! application)
+    (let [main (main-root renderer application)
+          screen (child-with-identifier renderer main "screen.flashcards")]
+      (is (= -1
+             (descendant-with-identifier renderer screen
+                                         "button.flashcard.show-cloze"))
+          "cards without a cloze skip the cloze control")
+      (is (not (= -1
+                  (descendant-with-identifier renderer screen
+                                              "button.flashcard.show-answer")))
+          "cards without a cloze can reveal their answer immediately"))))
+
+(deftest sidebar-flashcards-link-selects-the-flashcard-destination
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/OpenSidebar)
+    (driver/flush! application)
+    (let [root (application-shell-root renderer application)
+          sidebar (descendant-with-identifier renderer root "sidebar.navigation")
+          link (child-with-identifier renderer sidebar "link.sidebar.flashcards")]
+      (driver/dispatch-event! application (proto/Press link))
+      (driver/flush! application)
+      (assert-equal model/FlashcardsDestination
+                    (:destination (chat/model application))
+                    "the existing sidebar link enters the LG destination")
+      (is (not (property-bool renderer root proto/Selected))
+          "selecting flashcards closes the controlled drawer"))))
+
+(deftest graph-catalog-and-lifecycle-state-are-owned-by-lg
+  (let [local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" true true)
+        preparing (graph "preparing" "Preparing graph" false false)
+        projection
+        (assoc (empty-core-projection)
+               :graph-name (Some "Local graph")
+               :selected-graph-id (Some "local")
+               :graphs [local remote preparing]
+               :is-graph-encrypted false
+               :is-graph-unlocked true)
+        projected
+        (model/update (model/initial) (model/ApplyCoreSnapshot projection))
+        with-local
+        (model/update projected (model/ApplyLocalGraphIds ["local"]))
+        shown
+        (model/update (model/update with-local model/OpenSidebar) model/ShowGraphs)
+        refreshed (model/update shown model/RefreshGraphs)
+        rejected (model/update refreshed (model/RequestOpenGraph "preparing"))
+        opened (model/update refreshed (model/RequestOpenGraph "remote"))
+        create-open (model/update shown model/OpenCreateGraph)
+        named (model/update create-open (model/ChangeNewGraphName " New graph "))
+        encrypted (model/update named (model/ToggleNewGraphEncrypted false))
+        create-failed (assoc encrypted :effect-error
+                             (Some "graph_create_failed\nServer rejected it"))
+        create-dismissed (model/update create-failed model/DismissCreateGraph)
+        submitted (model/update encrypted model/SubmitCreateGraph)
+        remote-delete (model/update shown (model/RequestDeleteGraph "remote"))
+        delete-requested (model/update shown (model/RequestDeleteGraph "local"))
+        delete-confirmed (model/update delete-requested model/ConfirmDeleteGraph)]
+    (assert-equal [local remote preparing] (:graphs projected)
+                  "the catalog is projected into LG state")
+    (assert-equal ["local"] (:local-graph-ids with-local)
+                  "downloaded graph identity comes from the platform boundary")
+    (assert-equal model/GraphsDestination (:destination shown)
+                  "graphs is a primary LG destination")
+    (is (not (:sidebar-open shown)) "opening graphs closes the drawer")
+    (assert-equal [(model/RefreshGraphsEffect 1)] (:pending-effects refreshed)
+                  "refresh crosses the typed effect boundary")
+    (assert-equal (:pending-effects refreshed) (:pending-effects rejected)
+                  "preparing graphs cannot be opened")
+    (assert-equal
+     [(model/RefreshGraphsEffect 1) (model/OpenGraphEffect 2 "remote")]
+     (:pending-effects opened)
+     "ready graphs publish their stable id")
+    (is (:create-graph-open create-open) "the add sheet is LG-owned")
+    (is (:new-graph-encrypted create-open)
+        "new graphs preserve main's encrypted-by-default behavior")
+    (is (not (:create-graph-open create-dismissed))
+        "dismissing the add graph sheet closes it")
+    (assert-equal "" (:new-graph-name create-dismissed)
+                  "dismissing the add graph sheet clears stale input")
+    (is (:new-graph-encrypted create-dismissed)
+        "dismissing restores the encrypted-by-default form state")
+    (assert-equal None (:effect-error create-dismissed)
+                  "dismissing clears the sheet's stale error")
+    (assert-equal
+     [(model/CreateGraphEffect 1 "New graph" false)]
+     (:pending-effects submitted)
+     "graph creation trims its name and preserves encryption")
+    (assert-equal (Some local) (:pending-graph-deletion delete-requested)
+                  "deletion confirmation retains the selected graph")
+    (assert-equal None (:pending-graph-deletion remote-delete)
+                  "remote-only graphs cannot enter local deletion")
+    (assert-equal [(model/DeleteLocalGraphEffect 1 "local")]
+                  (:pending-effects delete-confirmed)
+                  "confirming deletion publishes a platform effect")))
+
+(deftest graph-picker-surfaces-open-graph-effect-failures
+  (let [remote (graph "remote" "Remote graph" true true)
+        ready (assoc (model/initial) :graphs [remote])
+        requested (model/update ready (model/RequestOpenGraph "remote"))
+        in-flight (model/update requested (model/DequeueEffect 1))
+        failed
+        (model/update
+         in-flight
+         (model/ResolveEffect
+          1 false "graph_open_failed\nSnapshot download timed out"))]
+    (is (not (:graph-loading failed))
+        "a failed graph open releases the loading state")
+    (is (view/graph-picker-error-present? failed)
+        "the graph picker exposes graph lifecycle failures")
+    (assert-equal "graph_open_failed"
+                  (view/graph-picker-error-code failed)
+                  "the graph picker retains the structured error code")
+    (assert-equal "Snapshot download timed out"
+                  (view/graph-picker-error-message failed)
+                  "the graph picker shows the actionable failure message")))
+
+(deftest graphs-render-the-existing-catalog-and-modal-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        local (graph "local" "Local graph" false false)
+        remote (graph "remote" "Remote graph" true true)
+        projection
+        (assoc (empty-core-projection)
+               :selected-graph-id (Some "local")
+               :graphs [local remote])]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/OpenSidebar)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          sidebar (descendant-with-identifier renderer root "sidebar.navigation")
+          link (child-with-identifier renderer sidebar "link.sidebar.graphs")]
+      (driver/dispatch-event! application (proto/Press link))
+      (driver/flush! application)
+      (let [main (main-root renderer application)
+            screen (child-with-identifier renderer main "screen.graphs")
+            refresh (child-with-identifier renderer screen "button.graphs.refresh")
+            add (child-with-identifier renderer screen "button.graph-add")
+            local-row (child-with-identifier renderer screen "graph.local")
+            remote-row (child-with-identifier renderer screen "graph.remote")
+            delete
+            (descendant-with-identifier renderer screen "button.graph.delete.local")
+            local-title-stack
+            (descendant-with-node-kind renderer local-row apple/AppleColumn)
+            delete-action
+            (descendant-with-node-kind renderer delete apple/AppleMenuItem)]
+        (assert-equal (Some apple/AppleList)
+                      (apple/node renderer screen)
+                      "graphs use the platform-native List container")
+        (assert-equal (Some apple/AppleHeading)
+                      (apple/node renderer
+                        (child-with-identifier renderer screen "heading.graphs.local"))
+                      "local graphs have a native section header")
+        (assert-equal (Some apple/AppleHeading)
+                      (apple/node renderer
+                        (child-with-identifier renderer screen "heading.graphs.remote"))
+                      "remote graphs have a native section header")
+        (assert-equal 44 (property-int renderer local-row proto/MinHeight)
+                      "graph rows match main's content height")
+        (assert-equal "app:refresh"
+                      (property-string renderer refresh proto/InlineIconName)
+                      "Refresh uses main's clockwise arrow")
+        (assert-equal "<missing>"
+                      (property-string renderer add proto/InlineIconName)
+                      "Add sync graph matches main's text-only row")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer local-row)
+                      "downloaded graphs use native list rows")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer remote-row)
+                      "remote graphs use native list rows")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer refresh)
+                      "Refresh is a native List row rather than a styled button")
+        (assert-equal (Some apple/AppleListItem)
+                      (apple/node renderer add)
+                      "Add sync graph is a native List row rather than a styled button")
+        (assert-equal "app:graph-local"
+                      (property-string renderer local-row proto/InlineIconName)
+                      "local graph rows use main's database icon")
+        (assert-equal -1 (property-int renderer local-row proto/PaddingValue)
+                      "native graph rows do not add card padding")
+        (assert-equal -1 (property-int renderer local-row proto/CornerRadius)
+                      "native graph rows do not add a custom card radius")
+        (assert-equal "<missing>"
+                      (property-string renderer local-row proto/BackgroundValue)
+                      "native graph rows do not add a custom surface")
+        (is (not (= -1 refresh)) "graphs keeps its refresh identifier")
+        (is (not (= -1 local-row)) "local graphs remain addressable")
+        (assert-equal (Some true)
+                      (descendant-enabled renderer screen "graph.local")
+                      "preparing local graphs stay interactive like main")
+        (is (not (= -1 remote-row)) "remote graphs remain addressable")
+        (is (not (= -1 delete)) "local graphs expose deletion")
+        (assert-equal (Some apple/AppleContextMenu)
+                      (apple/node renderer delete)
+                      "the visible native Menu owns main's deletion identifier")
+        (assert-equal -1.0
+                      (property-float renderer local-title-stack proto/GrowValue)
+                      "local graph titles keep main's native HStack compression")
+        (assert-equal "<missing>"
+                      (property-string renderer delete-action proto/InlineIconName)
+                      "graph deletion does not add an icon absent from main")
+        (driver/dispatch-event! application (proto/Press add))
+        (driver/flush! application)
+        (let [application-root (driver/root-node application)
+              form
+              (descendant-with-identifier renderer application-root "form.graph-create")
+              toolbar
+              (descendant-with-identifier renderer application-root "toolbar.graph-create")]
+          (is (not (= -1 form)) "graph fields use one native form group")
+          (is (not (= -1 toolbar)) "graph actions use the navigation toolbar")
+          (when (and (not (= -1 form)) (not (= -1 toolbar)))
+            (assert-equal "form"
+                          (property-string renderer form proto/StyleClass)
+                          "graph fields retain their form presentation")
+            (assert-equal "navigation-actions"
+                          (property-string renderer toolbar proto/StyleClass)
+                          "modal actions retain their navigation placement")
+            (is (not (= -1
+                        (descendant-with-identifier renderer form "field.graph-name")))
+                "add graph exposes the existing graph-name field")
+            (assert-equal
+             "cancellation-action"
+             (property-string
+              renderer
+              (descendant-with-identifier renderer toolbar "button.graph-add.cancel")
+              proto/StyleClass)
+             "Cancel uses the platform cancellation placement")
+            (assert-equal
+             "confirmation-action"
+             (property-string
+              renderer
+              (descendant-with-identifier renderer toolbar "button.graph-add.confirm")
+              proto/StyleClass)
+             "Add uses the platform confirmation placement")
+            (assert-equal
+             (Some false)
+             (descendant-enabled renderer toolbar "button.graph-add.confirm")
+             "Add remains disabled while the graph name is blank")))))))
+
+(deftest flutter-graphs-use-a-compact-material-action-group
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" false true)
+        projection
+        (assoc (empty-core-projection)
+               :selected-graph-id (Some "local")
+               :graph-name (Some "Local graph")
+               :graphs [local remote])]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/flush! application)
+    (let [screen
+          (descendant-with-identifier
+           renderer (main-root renderer application) "screen.graphs")
+          actions
+          (child-with-identifier renderer screen "row.graphs.actions")
+          local-row (child-with-identifier renderer screen "graph.local")]
+      (is (not (= -1 actions))
+          "Android groups catalog actions into one compact Material row")
+      (when (not (= -1 actions))
+        (let [refresh
+              (descendant-with-identifier
+               renderer actions "button.graphs.refresh")
+              add
+              (descendant-with-identifier renderer actions "button.graph-add")]
+          (assert-equal 12 (property-int renderer actions proto/Gap)
+                        "Material actions use the compact spacing scale")
+          (assert-equal 16 (property-int renderer actions proto/PaddingValue)
+                        "Material actions align with graph row content")
+          (assert-equal (Some apple/AppleButton)
+                        (apple/node renderer refresh)
+                        "Refresh is a Material button rather than a list row")
+          (assert-equal "secondary"
+                        (property-string renderer refresh proto/VariantValue)
+                        "Refresh has lower emphasis than graph creation")
+          (assert-equal "app:sync-status"
+                        (property-string renderer refresh proto/InlineIconName)
+                        "Refresh has an immediately recognizable sync icon")
+          (assert-equal 1.0 (property-float renderer refresh proto/GrowValue)
+                        "Refresh shares the available action width")
+          (assert-equal (Some apple/AppleButton)
+                        (apple/node renderer add)
+                        "Add graph is a Material button rather than a list row")
+          (assert-equal "primary"
+                        (property-string renderer add proto/VariantValue)
+                        "Add graph is the clear primary action")
+          (assert-equal "app:add"
+                        (property-string renderer add proto/InlineIconName)
+                        "Add graph uses the native Android add icon")
+          (assert-equal 1.0 (property-float renderer add proto/GrowValue)
+                        "Add graph shares the available action width")
+          (driver/dispatch-event! application (proto/Press refresh))
+          (driver/flush! application)
+          (assert-equal [(model/RefreshGraphsEffect 1)]
+                        (:pending-effects (chat/model application))
+                        "the Material Refresh button reaches the LG effect boundary")))
+      (assert-equal (Some apple/AppleListItem)
+                    (apple/node renderer local-row)
+                    "catalog entries remain native lazy list rows"))))
+
+(deftest flutter-add-graph-sheet-uses-one-material-form-layout
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send! application model/OpenCreateGraph)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          sheet
+          (descendant-with-identifier renderer root "sheet.graph-create")
+          layout
+          (descendant-with-identifier renderer sheet "layout.graph-create.sheet")]
+      (assert-equal 480
+                    (property-int renderer sheet proto/HeightValue)
+                    "Flutter bounds the Add graph Material sheet")
+      (assert-equal 1
+                    (count (apple/children renderer sheet))
+                    "Flutter gives the backend one composed Add graph child")
+      (is (not (= -1 layout))
+          "Flutter owns one vertical Add graph layout")
+      (when (not (= -1 layout))
+        (let [form
+              (descendant-with-identifier renderer layout "form.graph-create")
+              encryption
+              (descendant-with-identifier
+               renderer layout "toggle.graph-encryption")]
+          (is (not (= -1 form))
+              "the form remains inside the composed layout")
+          (assert-equal "stretch"
+                        (property-string renderer form proto/CrossAlignment)
+                        "the Material form fills the sheet width")
+          (assert-equal (Some apple/AppleSwitch)
+                        (apple/node renderer encryption)
+                        "encryption uses a native Material switch row"))
+        (is (not (= -1 (descendant-with-identifier
+                        renderer layout "toolbar.graph-create")))
+            "the actions remain inside the composed layout")))))
+
+(deftest flutter-add-graph-sheet-shows-creation-errors-inline
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send! application model/OpenCreateGraph)
+    (driver/send! application (model/ChangeNewGraphName "Broken graph"))
+    (driver/send! application model/SubmitCreateGraph)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/send! application
+                  (model/ResolveEffect 1 false "Initial snapshot upload failed"))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          error
+          (descendant-with-identifier renderer root "text.graph-create.error")]
+      (is (not (= -1 error)) "the Add graph sheet keeps its error visible")
+      (assert-equal
+       "Initial snapshot upload failed"
+       (property-string renderer error proto/TextValue)
+       "the Add graph sheet explains why creation failed"))))
+
+(deftest graph-lifecycle-effects-disable-duplicate-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        local (graph "local" "Local graph" false true)
+        remote (graph "remote" "Remote graph" true true)
+        projection
+        (assoc (empty-core-projection)
+               :graphs [local remote]
+               :selected-graph-id None)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application model/RefreshGraphs)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/flush! application)
+    (let [screen (child-with-identifier
+                  renderer (main-root renderer application) "screen.graphs")
+          refresh (child-with-identifier renderer screen "button.graphs.refresh")
+          loading (child-with-identifier renderer screen "graphs.loading")]
+      (assert-equal (Some false)
+                    (descendant-enabled renderer screen "button.graphs.refresh")
+                    "an in-flight refresh cannot be requested twice")
+      (is (not (= -1 loading)) "refresh renders native progress feedback")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer screen "graph.status.remote")
+                    "ready encrypted graphs rely on main's lock icon without extra status text")
+      (driver/dispatch-event! application (proto/Press refresh))
+      (driver/flush! application)
+      (assert-equal [] (:pending-effects (chat/model application))
+                    "disabled refresh does not enqueue duplicate work"))
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/send! application model/ConfirmDeleteGraph)
+    (driver/send! application (model/DequeueEffect 2))
+    (driver/flush! application)
+    (assert-equal
+     (Some false)
+     (descendant-enabled
+      renderer (main-root renderer application) "graph.local")
+     "the local graph row disables every action while deletion is in flight")))
+
+(deftest empty-graph-picker-replaces-refresh-with-progress-while-loading
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application model/RefreshGraphs)
+    (driver/send! application (model/DequeueEffect 1))
+    (driver/flush! application)
+    (let [picker (child-with-identifier
+                  renderer (main-root renderer application)
+                  "screen.graph-picker")]
+      (is (not (= -1 (child-with-identifier renderer picker "graphs.loading")))
+          "an empty refreshing catalog shows progress")
+      (assert-equal -1
+                    (child-with-identifier
+                     renderer picker "button.graphs.refresh")
+                    "the empty picker hides refresh while it is running"))))
+
+(deftest graph-deletion-confirmation-names-the-local-graph
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        local (graph "local" "Local graph" false true)
+        projection
+        (assoc (empty-core-projection)
+               :graphs [local]
+               :selected-graph-id None)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/flush! application)
+    (let [warning
+          (descendant-with-identifier
+           renderer
+           (driver/root-node application)
+           "text.graph-delete-warning")]
+      (is (not (= -1 warning))
+          "the graph deletion warning has a stable identifier")
+      (assert-equal
+       "Are you sure you want to permanently delete the graph \"Local graph\" from Logseq?"
+       (property-string renderer warning proto/TextValue)
+       "the confirmation identifies the graph being deleted")
+      (driver/send! application model/ConfirmDeleteGraph)
+      (driver/send! application (model/DequeueEffect 1))
+      (driver/send! application
+                    (model/ResolveEffect 1 false "Could not delete graph"))
+      (driver/flush! application)
+      (let [error
+            (descendant-with-identifier
+             renderer (driver/root-node application) "error.banner")]
+        (is (not (= -1 error))
+            "a platform failure remains visible after the confirmation closes")
+        (assert-equal "Could not delete graph"
+                      (property-string renderer error proto/TextValue)
+                      "the visible error preserves the platform reason")))))
+
+(deftest flutter-graph-deletion-uses-a-material-destructive-dialog
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        local (graph "local" "Local graph" false true)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graphs [local]
+             :selected-graph-id None)))
+    (driver/send! application (model/ApplyLocalGraphIds ["local"]))
+    (driver/send! application model/ShowGraphs)
+    (driver/send! application (model/RequestDeleteGraph "local"))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          dialog
+          (descendant-with-identifier renderer root "dialog.graph-delete")
+          warning-icon
+          (descendant-with-identifier renderer dialog "icon.graph-delete-warning")
+          actions
+          (descendant-with-identifier renderer dialog "toolbar.graph-delete")
+          cancel
+          (descendant-with-identifier renderer actions "button.graph-delete.cancel")
+          confirm
+          (descendant-with-identifier renderer actions "button.graph-delete.confirm")]
+      (assert-equal 320
+                    (property-int renderer dialog proto/HeightValue)
+                    "the Material dialog has enough room without filling the screen")
+      (assert-equal "app:warning"
+                    (property-string renderer warning-icon proto/IconName)
+                    "the irreversible warning uses a Material icon")
+      (assert-equal "horizontal"
+                    (property-string renderer actions proto/OrientationValue)
+                    "dialog actions follow the Material horizontal action row")
+      (assert-equal "ghost"
+                    (property-string renderer cancel proto/VariantValue)
+                    "Cancel remains the quiet action")
+      (assert-equal "destructive"
+                    (property-string renderer confirm proto/VariantValue)
+                    "Delete is visually marked as destructive"))))
+
+(deftest search-lifecycle-keeps-query-owned-by-the-lg-model
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [chrome (native-bottom-chrome renderer application)
+          search-button
+          (descendant-with-identifier renderer chrome "button.search")]
+      (assert-equal "button.search"
+                    (property-string renderer search-button
+                                     proto/AccessibilityIdentifier)
+                    "search keeps the main-branch accessibility identifier")
+      (driver/dispatch-event! application (proto/Press search-button))
+      (driver/flush! application)
+      (is (:search-open (chat/model application))
+          "search presentation is model-owned")
+      (let [search-root (main-root renderer application)
+            search-extension
+            (extension-node application "native-search-presentation")
+            search-panel
+            (child-with-identifier renderer search-root "screen.search")]
+        (assert-equal "screen.search"
+                      (property-string renderer search-panel
+                                       proto/AccessibilityIdentifier)
+                      "search presentation keeps its screen identifier")
+        (assert-equal -1
+                      (descendant-with-identifier renderer search-panel
+                                                  "field.search")
+                      "LG does not duplicate the platform search field")
+        (assert-equal -1
+                      (descendant-with-identifier renderer search-root
+                                                  "list.outliner")
+                      "full-screen search replaces the journal list")
+        (assert-equal -1
+                      (child-with-identifier renderer search-root "button.sidebar")
+                      "full-screen search hides the journal header controls")
+        (assert-equal -1
+                      (child-with-identifier renderer search-root
+                                             "button.connection")
+                      "full-screen search owns the complete visible surface")
+        (driver/dispatch-event!
+         application
+         (proto/ExtensionEvent search-extension "native-search-presentation"
+                               "query-changed"
+                               {"query" (proto/StringValue "project alpha")}))
+        (driver/flush! application)
+        (assert-equal "project alpha" (:search-query (chat/model application))
+                      "the query is stored in LG state")
+        (driver/dispatch-event!
+         application
+         (proto/ExtensionEvent search-extension "native-search-presentation"
+                               "dismiss" {}))
+        (driver/flush! application)
+        (is (not (:search-open (chat/model application)))
+            "close removes the search presentation")
+        (assert-equal "" (:search-query (chat/model application))
+                      "close clears transient search input")
+        (assert-equal -1
+                      (child-with-identifier
+                       renderer (main-root renderer application) "screen.search")
+                      "the retained search subtree is disposed")))))
+
+(deftest bottom-chrome-presentation-is-mutually-exclusive
+  (let [journal
+        (assoc (model/initial)
+               :selected-graph (Some "Work")
+               :selected-graph-id (Some "graph-a"))
+        expanded (assoc journal :composer-expanded true)
+        editing (record model/outliner-editing
+                        (uuid "block-a")
+                        (title "Draft")
+                        (caret-utf16-offset 5))]
+    (assert-equal "capture-and-search"
+                  (view/bottom-chrome-presentation journal)
+                  "the journal root defaults to Capture and Search")
+    (assert-equal "expanded-composer"
+                  (view/bottom-chrome-presentation expanded)
+                  "expanded Capture replaces Search")
+    (assert-equal "outliner-editor"
+                  (view/bottom-chrome-presentation
+                   (assoc expanded :outliner-editing (Some editing)))
+                  "the editor replaces an expanded composer")
+    (assert-equal "outliner-selection"
+                  (view/bottom-chrome-presentation
+                   (assoc expanded
+                          :outliner-editing (Some editing)
+                          :outliner-selected-block-ids ["block-a"]))
+                  "selection has highest priority")
+    (assert-equal "capture-and-search"
+                  (view/bottom-chrome-presentation
+                   (assoc journal
+                          :app-navigation-path [(model/NodeRoute "node-a")]))
+                  "node pages keep Capture visible like main")))
+
+(deftest composer-matches-the-main-branch-expand-draft-and-send-contract
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (native-bottom-chrome renderer application)
+          composer
+          (descendant-with-identifier renderer chrome "surface.composer.root")
+          placement
+          (descendant-with-identifier renderer chrome "row.bottom.capture")
+          search (descendant-with-identifier renderer chrome "button.search")
+          collapsed (nth (apple/children renderer composer) 0)]
+      (assert-equal (Some apple/AppleBox)
+                    (apple/node renderer composer)
+                    "the composer keeps intrinsic height inside a bottom overlay")
+      (assert-equal (Some (proto/BoolValue false))
+                    (extension-property application navigation
+                                        "bottom-occupies-layout-space")
+                    "Capture floats above the Outliner like main")
+      (assert-equal 1.0 (property-float renderer placement proto/GrowValue)
+                    "the collapsed bottom row fills the viewport for symmetric edge insets")
+      (assert-equal "app:search"
+                    (property-string renderer search proto/InlineIconName)
+                    "collapsed search uses the main branch icon control")
+      (assert-equal "ghost"
+                    (property-string renderer search proto/VariantValue)
+                    "search keeps semantic ghost styling")
+      (assert-equal "button.composer.expand"
+                    (property-string renderer collapsed
+                                     proto/AccessibilityIdentifier)
+                    "collapsed capture keeps its automation identifier")
+      (assert-equal "ghost"
+                    (property-string renderer collapsed proto/VariantValue)
+                    "collapsed capture keeps semantic ghost styling")
+      (assert-equal "muted-foreground"
+                    (property-string renderer collapsed proto/ForegroundValue)
+                    "collapsed capture uses main's secondary label color")
+      (driver/dispatch-event! application (proto/Press collapsed))
+      (driver/flush! application)
+      (is (:composer-expanded (chat/model application))
+          "capture expands from LG-owned state")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome "button.search")
+                    "expanded Capture replaces Search")
+      (let [expanded-row
+            (descendant-with-identifier renderer chrome "row.composer.placement")
+            expanded-composer
+            (descendant-with-identifier renderer chrome "surface.composer.root")
+            expanded (nth (apple/children renderer expanded-composer) 0)
+            field (descendant-with-identifier renderer expanded "field.composer")
+            controls
+            (descendant-with-identifier renderer expanded "row.composer.controls")
+            top-spacer
+            (descendant-with-identifier renderer expanded "spacer.composer.top")
+            field-controls-spacer
+            (descendant-with-identifier
+             renderer expanded "spacer.composer.field-controls")
+            control-children (apple/children renderer controls)
+            attachment
+            (descendant-with-identifier renderer controls "button.attachment")
+            task-status
+            (descendant-with-identifier renderer controls "button.task-status")
+            control-spacer
+            (descendant-with-identifier
+             renderer controls "spacer.composer.controls")
+            send-button
+            (descendant-with-identifier renderer controls "button.send")]
+        (assert-equal "center"
+                      (property-string renderer expanded-row
+                                       proto/CrossAlignment)
+                      "expanded Capture keeps intrinsic bottom-overlay height")
+        (assert-equal 1.0
+                      (property-float renderer expanded-row proto/GrowValue)
+                      "expanded Capture fills the viewport before applying equal edge insets")
+        (assert-equal "field.composer"
+                      (property-string renderer field
+                                       proto/AccessibilityIdentifier)
+                      "expanded capture keeps its field identifier")
+        (assert-equal 10
+                      (property-int renderer expanded proto/CornerRadius)
+                      "expanded capture uses main's low-radius rectangle")
+        (assert-equal 16
+                      (property-int renderer expanded proto/PaddingHorizontal)
+                      "expanded capture keeps main's horizontal inset")
+        (assert-equal 8
+                      (property-int renderer expanded proto/PaddingVertical)
+                      "expanded capture keeps compact vertical padding")
+        (assert-equal 0
+                      (property-int renderer expanded proto/Gap)
+                      "explicit spacers preserve asymmetric main padding")
+        (assert-equal 6
+                      (property-int renderer top-spacer proto/HeightValue)
+                      "the composer adds main's six-point top inset delta")
+        (assert-equal 8
+                      (property-int renderer field-controls-spacer
+                                    proto/HeightValue)
+                      "the field and controls retain main's separation")
+        (assert-equal "button.attachment"
+                      (property-string renderer attachment
+                                       proto/AccessibilityIdentifier)
+                      "attachment keeps its automation identifier")
+        (assert-equal "button.task-status"
+                      (property-string renderer task-status
+                                       proto/AccessibilityIdentifier)
+                      "task status keeps its automation identifier")
+        (assert-equal 4 (count control-children)
+                      "main's controls include a flexible trailing spacer")
+        (assert-equal "spacer.composer.controls"
+                      (property-string renderer control-spacer
+                                       proto/AccessibilityIdentifier)
+                      "the composer spacer remains directly testable")
+        (assert-equal "app:task-todo"
+                      (property-string renderer task-status proto/InlineIconName)
+                      "the unset task status uses main's circular outline")
+        (assert-equal 1.0
+                      (property-float renderer control-spacer proto/GrowValue)
+                      "a flexible spacer keeps Send at the trailing edge")
+        (assert-equal "button.send"
+                      (property-string renderer send-button
+                                       proto/AccessibilityIdentifier)
+                      "send keeps its automation identifier")
+        (assert-equal "app:arrow-up"
+                      (property-string renderer send-button proto/InlineIconName)
+                      "send uses main's upward arrow")
+        (assert-equal "black"
+                      (property-string renderer send-button proto/BackgroundValue)
+                      "an empty draft lets native disabled styling dim main's black fill")
+        (assert-equal "white"
+                      (property-string renderer send-button proto/ForegroundValue)
+                      "send arrow contrasts with the filled surface")
+        (assert-equal 40
+                      (property-int renderer send-button proto/WidthValue)
+                      "send keeps main's 40-point hit target")
+        (assert-equal 40
+                      (property-int renderer send-button proto/HeightValue)
+                      "send keeps main's 40-point hit target")
+        (assert-equal 20
+                      (property-int renderer send-button proto/CornerRadius)
+                      "send remains circular")
+        (driver/dispatch-event!
+         application (proto/TextChanged field "  Project note  "))
+        (driver/flush! application)
+        (assert-equal "black"
+                      (property-string renderer send-button proto/BackgroundValue)
+                      "a nonempty draft enables main's black send fill")
+        (assert-equal "  Project note  "
+                      (:composer-draft (chat/model application))
+                      "draft text is model-owned without eager trimming")
+        (driver/dispatch-event! application (proto/Press send-button))
+        (driver/flush! application)
+        (assert-equal "" (:composer-draft (chat/model application))
+                      "successful send clears the draft")
+        (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                       (model/SendCaptureEffect 3 "Project note")]
+                      (:pending-effects (chat/model application))
+                      "send clears persisted text before publishing capture")
+        (assert-equal 4
+                      (:next-effect-id (chat/model application))
+                      "draft persistence and capture receive stable identifiers")
+        (is (:composer-expanded (chat/model application))
+            "send keeps the composer expanded like main")
+        (assert-equal (Some (proto/BoolValue true))
+                      (extension-property application navigation
+                                          "composer-dismissal-enabled")
+                      "the native host owns the outside-tap dismissal layer")
+        (driver/dispatch-event!
+         application
+         (proto/ExtensionEvent navigation "native-navigation-stack"
+                               "dismiss-composer" {}))
+        (driver/flush! application)
+        (is (not (:composer-expanded (chat/model application)))
+            "the native outside-tap layer dismisses through LG state")))))
+
+(deftest ios-capture-and-search-match-main-native-metrics
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [chrome (native-bottom-chrome renderer application)
+          row (descendant-with-identifier renderer chrome "row.bottom.capture")
+          search (descendant-with-identifier renderer chrome "button.search")
+          capture (descendant-with-identifier
+                   renderer chrome "button.composer.expand")
+          top-inset
+          (descendant-with-identifier
+           renderer (driver/root-node application) "spacer.outliner.top")
+          capture-glass
+          (descendant-with-extension
+           renderer application chrome "liquid-glass")]
+      (assert-equal 10 (property-int renderer row proto/Gap)
+                    "Capture and Search keep main's ten-point separation")
+      (assert-equal 58 (property-int renderer search proto/WidthValue)
+                    "Search keeps main's native 58-point hit target")
+      (assert-equal 58 (property-int renderer search proto/HeightValue)
+                    "Search keeps main's native 58-point hit target")
+      (assert-equal "icon" (property-string renderer search proto/SizeValue)
+                    "Search uses the native 24-point icon size policy")
+      (assert-equal 16 (property-int renderer top-inset proto/HeightValue)
+                    "iOS keeps main's compact native-navigation inset")
+      (assert-equal 30 (property-int renderer capture proto/PaddingHorizontal)
+                    "Capture insets its label without moving its glass surface.")
+      (assert-equal None
+                    (extension-property application capture-glass "leading-inset")
+                    "Liquid Glass remains independent from app content spacing"))))
+
+(deftest composer-dismissal-preserves-an-unsent-draft
+  (let [expanded (model/update (model/initial) model/ExpandComposer)
+        drafted (model/update expanded (model/ChangeComposerDraft "Later"))
+        dismissed (model/update drafted model/DismissComposer)
+        empty-send (model/update dismissed model/SendComposer)]
+    (is (not (:composer-expanded dismissed))
+        "dismiss collapses composer state")
+    (assert-equal "Later" (:composer-draft dismissed)
+                  "dismiss preserves the persisted draft")
+    (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                   (model/SendCaptureEffect 3 "Later")]
+                  (:pending-effects empty-send)
+                  "a preserved non-empty draft can still be submitted")))
+
+(deftest pending-outliner-text-keeps-the-latest-optimistic-edit
+  (let [latest
+        (record model/outliner-editing
+          (uuid "block-a")
+          (title "Latest local text")
+          (caret-utf16-offset 17))
+        stale
+        (record model/outliner-editing
+          (uuid "block-a")
+          (title "Stale core text")
+          (caret-utf16-offset 15))
+        projection
+        (assoc (empty-core-projection) :outliner-editing (Some stale))
+        pending
+        (assoc (model/initial)
+               :outliner-editing (Some latest)
+               :pending-effects
+               [(model/ChangeOutlinerTextEffect
+                 1 "block-a" "Latest local text" 17)])
+        preserved
+        (model/update pending (model/ApplyCoreSnapshot projection))
+        settled
+        (model/update
+         (assoc pending :pending-effects [])
+         (model/ApplyCoreSnapshot projection))]
+    (assert-equal (Some latest) (:outliner-editing preserved)
+                  "an older core response cannot overwrite queued typing")
+    (assert-equal (Some stale) (:outliner-editing settled)
+                  "the authoritative value applies after local typing settles")))
+
+(deftest outliner-typing-removes-stale-autocomplete-candidates
+  (let [editing
+        (record model/outliner-editing
+          (uuid "block-a") (title "Draft #") (caret-utf16-offset 7))
+        autocomplete
+        (record model/outliner-autocomplete
+          (kind model/TagAutocomplete) (query ""))
+        candidate
+        (record model/outliner-autocomplete-candidate
+          (index 0) (label "Card") (value "tag-card"))
+        current
+        (assoc (model/initial)
+               :outliner-editing (Some editing)
+               :outliner-autocomplete (Some autocomplete)
+               :outliner-autocomplete-candidates [candidate])
+        updated
+        (model/update current
+                      (model/ChangeOutlinerText "block-a" "Draft #Project" 14))]
+    (assert-equal [] (:outliner-autocomplete-candidates updated)
+                  "typing hides candidates produced for the previous query")
+    (assert-equal
+     [(model/ChangeOutlinerTextEffect 1 "block-a" "Draft #Project" 14)]
+     (:pending-effects updated)
+     "the authoritative core query still runs after stale candidates disappear")))
+
+(deftest autocomplete-selection-waits-for-pending-text-to-settle
+  (let [editing
+        (record model/outliner-editing
+          (uuid "block-a") (title "Draft #Project") (caret-utf16-offset 14))
+        change (model/ChangeOutlinerTextEffect 1 "block-a" "Draft #Project" 14)
+        base (assoc (model/initial) :outliner-editing (Some editing))
+        pending (assoc base :pending-effects [change] :next-effect-id 2)
+        in-flight (assoc base :in-flight-effects [change] :next-effect-id 2)
+        settled (assoc base :next-effect-id 2)]
+    (assert-equal
+     [change (model/ChooseOutlinerAutocompleteEffect 2 "tag-project")]
+                  (:pending-effects
+                   (model/update pending
+                                 (model/ChooseOutlinerAutocomplete "tag-project")))
+     "completion queues behind pending typing")
+    (let [updated
+          (model/update in-flight
+                        (model/ChooseOutlinerAutocomplete "tag-project"))]
+      (assert-equal [change] (:in-flight-effects updated)
+                    "in-flight typing retains ownership")
+      (assert-equal [(model/ChooseOutlinerAutocompleteEffect 2 "tag-project")]
+                    (:pending-effects updated)
+                    "completion waits behind in-flight typing"))
+    (assert-equal
+     [(model/ChooseOutlinerAutocompleteEffect 2 "tag-project")]
+     (:pending-effects
+      (model/update settled
+                    (model/ChooseOutlinerAutocomplete "tag-project")))
+     "the refreshed candidate remains selectable after typing settles")))
+
+(deftest hide-keyboard-optimistically-finishes-outliner-editing
+  (let [editing
+        (record model/outliner-editing
+          (uuid "block-a")
+          (title "Latest local text")
+          (caret-utf16-offset 17))
+        autocomplete
+        (record model/outliner-autocomplete
+          (kind model/NodeAutocomplete)
+          (query "Latest"))
+        current
+        (assoc (model/initial)
+               :outliner-editing (Some editing)
+               :outliner-autocomplete (Some autocomplete)
+               :outliner-autocomplete-candidates [])
+        updated
+        (model/update current
+                      (model/PerformOutlinerToolbarAction "hideKeyboard"))]
+    (assert-equal None (:outliner-editing updated)
+                  "hide keyboard removes the inline editor immediately")
+    (assert-equal None (:outliner-autocomplete updated)
+                  "hide keyboard removes autocomplete with the editor")
+    (assert-equal [(model/OutlinerToolbarEffect 1 "hideKeyboard")]
+                  (:pending-effects updated)
+                  "core still owns committing the final editor value")))
+
+(deftest outliner-return-handoff-retains-one-native-editor-node
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        first-row
+        (journal-outline-row "block-a" "journal" "First" "Aug 28th, 2026"
+                             20260828 0)
+        second-row
+        (journal-outline-row "block-b" "journal" "" "Aug 28th, 2026"
+                             20260828 0)
+        first-editing
+        (record model/outliner-editing
+          (uuid "block-a") (title "First") (caret-utf16-offset 5))
+        second-editing
+        (record model/outliner-editing
+          (uuid "block-b") (title "") (caret-utf16-offset 0))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                          (Some first-editing) None [] [] [first-row] false []))
+    (driver/flush! application)
+    (let [first-editor (extension-node application "outliner-editor")]
+      (driver/send!
+       application
+       (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                            (Some second-editing) None [] []
+                            [first-row second-row] false []))
+      (driver/flush! application)
+      (assert-equal first-editor
+                    (extension-node application "outliner-editor")
+                    "Return moves one retained editor between keyed rows"))))
+
+(deftest composer-draft-restore-focus-and-dismissal-are-owned-by-lg
+  (let [restored
+        (model/update (model/initial)
+                      (model/ApplyComposerDraft "稍后处理\nsecond line"))
+        expanded (model/update restored model/ExpandComposer)
+        drafted (model/update expanded (model/ChangeComposerDraft "Later"))
+        dismissed (model/update drafted model/DismissComposer)]
+    (assert-equal "稍后处理\nsecond line" (:composer-draft restored)
+                  "the persisted draft is restored through a typed host update")
+    (is (:composer-autofocus expanded)
+        "expanding requests native focus on the mounted composer field")
+    (is (not (:composer-autofocus drafted))
+        "typing consumes the edge-triggered autofocus request")
+    (assert-equal [(model/PersistComposerDraftEffect 1 "Later")]
+                  (:pending-effects drafted)
+                  "draft persistence crosses one coalescible platform boundary")
+    (is (not (:composer-autofocus dismissed))
+        "dismissal releases composer focus")
+    (assert-equal "Later" (:composer-draft dismissed)
+                  "dismissal keeps the persisted capture text")))
+
+(deftest composer-renders-autofocus-and-native-outside-dismissal
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/ExpandComposer)
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          navigation (extension-node application "native-navigation-stack")
+          field (descendant-with-identifier renderer root "field.composer")
+          dismissal-enabled
+          (extension-property application navigation
+                              "composer-dismissal-enabled")]
+      (is (property-bool renderer field proto/Autofocus)
+          "the expanded field receives the native autofocus edge")
+      (assert-equal (Some (proto/BoolValue true)) dismissal-enabled
+                    "expanded capture enables the native dismissal layer")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack"
+                             "dismiss-composer" {}))
+      (driver/flush! application)
+        (is (not (:composer-expanded (chat/model application)))
+            "the native outside tap collapses the composer"))))
+
+(deftest flutter-composer-uses-a-tonal-material-dock
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "work")
+             :graph-name (Some "Work"))))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          chrome (nth (apple/children renderer navigation) 0)
+          placement
+          (descendant-with-identifier renderer chrome "row.bottom.capture")
+          composer
+          (descendant-with-identifier renderer chrome "surface.composer.root")
+          collapsed (nth (apple/children renderer composer) 0)]
+      (assert-equal -1.0 (property-float renderer placement proto/GrowValue)
+                    "the Android bottom dock keeps intrinsic height inside an unbounded bottom slot")
+      (assert-equal "secondary"
+                    (property-string renderer collapsed proto/VariantValue)
+                    "collapsed Capture is a tonal Material affordance")
+      (assert-equal "app:add"
+                    (property-string renderer collapsed proto/InlineIconName)
+                    "collapsed Capture exposes its primary action")
+      (assert-equal 1.0 (property-float renderer collapsed proto/GrowValue)
+                    "collapsed Capture fills the available dock width")
+      (driver/dispatch-event! application (proto/Press collapsed))
+      (driver/flush! application)
+      (let [expanded-composer
+            (descendant-with-identifier
+             renderer chrome "surface.composer.root")
+            expanded (nth (apple/children renderer expanded-composer) 0)
+            send-button
+            (descendant-with-identifier renderer expanded "button.send")]
+        (assert-equal "surface-container-high"
+                      (property-string renderer expanded proto/BackgroundValue)
+                      "expanded Capture uses a distinct Material surface")
+        (assert-equal 24
+                      (property-int renderer expanded proto/CornerRadius)
+                      "expanded Capture uses the Android large shape")
+        (assert-equal 48
+                      (property-int renderer send-button proto/WidthValue)
+                      "Send keeps a 48-point Android touch target")
+        (assert-equal "icon"
+                      (property-string renderer send-button proto/SizeValue)
+                      "Send is a compact trailing icon action")))))
+
+(deftest flutter-sidebar-uses-compact-material-drawer-metrics
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "work")
+             :graph-name (Some "Work"))))
+    (driver/send! application model/OpenSidebar)
+    (driver/flush! application)
+    (let [drawer (application-shell-root renderer application)
+          sidebar
+          (descendant-with-identifier renderer drawer "sidebar.navigation")
+          top-spacer (nth (apple/children renderer sidebar) 0)]
+      (assert-equal 320 (property-int renderer drawer proto/WidthValue)
+                    "the Android drawer leaves meaningful content visible")
+      (assert-equal 8 (property-int renderer top-spacer proto/HeightValue)
+                    "SafeArea already owns Android system-bar spacing"))))
+
+(deftest composer-attachment-selection-is-owned-by-lg
+  (let [opened (model/update (model/initial) model/OpenAttachmentPicker)
+        selected (model/update opened (model/ChooseAttachment "photos"))]
+    (is (:attachment-picker-open opened)
+        "the composer attachment menu is model-owned")
+    (is (not (:attachment-picker-open selected))
+        "choosing an attachment closes the menu")
+    (assert-equal [(model/PresentAttachmentEffect 1 "photos")]
+                  (:pending-effects selected)
+                  "the chosen system service crosses one typed boundary")
+    (assert-equal
+     "{\"id\":7,\"kind\":\"present-attachment\",\"text\":\"files\"}"
+     (bridge/encode-effect (model/PresentAttachmentEffect 7 "files"))
+     "the native bridge preserves the attachment service kind")))
+
+(deftest composer-attachment-menu-preserves-main-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/ExpandComposer)
+    (driver/send! application model/OpenAttachmentPicker)
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          files (descendant-with-identifier renderer navigation "button.attachment.files")
+          camera (descendant-with-identifier renderer navigation "button.attachment.camera")
+          photos (descendant-with-identifier renderer navigation "button.attachment.photos")
+          audio (descendant-with-identifier renderer navigation "button.attachment.audio")]
+      (doseq [action [files camera photos audio]]
+        (assert-equal (Some apple/AppleMenuItem)
+                      (apple/node renderer action)
+                      "attachment actions are native menu items"))
+      (assert-equal "File"
+                    (property-string renderer files proto/TextValue)
+                    "main uses the singular File action")
+      (assert-equal "Photo"
+                    (property-string renderer photos proto/TextValue)
+                    "main uses the singular Photo action")
+      (assert-equal "app:toolbar-attachment"
+                    (property-string renderer files proto/InlineIconName)
+                    "File keeps main's menu icon")
+      (assert-equal "app:toolbar-camera"
+                    (property-string renderer camera proto/InlineIconName)
+                    "Camera keeps main's menu icon")
+      (assert-equal "app:composer-photo"
+                    (property-string renderer photos proto/InlineIconName)
+                    "Photo keeps main's menu icon")
+      (assert-equal "app:toolbar-audio"
+                    (property-string renderer audio proto/InlineIconName)
+                    "Audio recording keeps main's menu icon")
+      (is (not (= -1 files)) "the attachment menu includes files")
+      (is (not (= -1 camera)) "the attachment menu includes camera")
+      (is (not (= -1 photos)) "the attachment menu includes photos")
+      (is (not (= -1 audio)) "the attachment menu includes audio recording"))))
+
+(deftest composer-task-status-selection-and-send-are-owned-by-lg
+  (let [todo
+        (task-status
+         "todo" (Some "logseq.property/status.todo") "Todo"
+         (Some "tabler-icon") (Some "Todo") None)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection) :task-statuses [todo])))
+        opened (model/update projected model/OpenTaskStatusPicker)
+        selected (model/update opened (model/ChooseTaskStatus "todo"))
+        drafted (model/update selected (model/ChangeComposerDraft " Follow up "))
+        sent (model/update drafted model/SendComposer)
+        cleared (model/update selected model/ClearTaskStatus)]
+    (assert-equal todo (nth (:task-statuses projected) 0)
+                  "core task statuses enter LG state before fallbacks")
+    (is (:task-status-picker-open opened)
+        "the task status menu is model-owned")
+    (assert-equal (Some todo) (:selected-task-status selected)
+                  "the chosen status remains selected for subsequent captures")
+    (is (not (:task-status-picker-open selected))
+        "choosing a status closes the menu")
+    (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                   (model/SendTaskEffect 3 "Follow up" todo)]
+                  (:pending-effects sent)
+                  "task capture preserves its full semantic status")
+    (assert-equal (Some todo) (:selected-task-status sent)
+                  "sending a task preserves the selected status like main")
+    (assert-equal None (:selected-task-status cleared)
+                  "the status can be cleared without changing the draft")))
+
+(deftest composer-task-status-menu-preserves-main-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        todo
+        (task-status
+         "todo" (Some "logseq.property/status.todo") "Todo"
+         (Some "tabler-icon") (Some "Todo") None)]
+    (driver/start! application)
+    (driver/send! application
+                  (model/ApplyCoreSnapshot
+                   (assoc (empty-core-projection)
+                          :selected-graph-id (Some "test-graph")
+                          :task-statuses [todo])))
+    (driver/send! application model/ExpandComposer)
+    (driver/send! application model/OpenTaskStatusPicker)
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          option
+          (descendant-with-identifier
+           renderer navigation "button.task-status.option.todo")]
+      (is (not (= -1 option)) "the task status menu renders Todo")
+      (assert-equal "Todo"
+                    (property-string renderer option proto/TextValue)
+                    "the native task status action preserves its label")
+      (assert-equal "app:task-todo"
+                    (property-string renderer option proto/InlineIconName)
+                    "the task status menu preserves main's semantic icon")
+      (assert-equal "task-todo"
+                    (property-string renderer option proto/ForegroundValue)
+                    "the task status menu preserves main's semantic color"))))
+
+(deftest task-capture-has-a-stable-native-effect-payload
+  (let [todo
+        (task-status
+         "todo" (Some "logseq.property/status.todo") "Todo"
+         (Some "tabler-icon") (Some "Todo") None)]
+    (assert-equal
+     "{\"id\":8,\"kind\":\"send-task\",\"text\":\"Follow up\",\"metadata\":\"{\\\"uuid\\\":\\\"todo\\\",\\\"ident\\\":\\\"logseq.property/status.todo\\\",\\\"title\\\":\\\"Todo\\\",\\\"iconType\\\":\\\"tabler-icon\\\",\\\"iconId\\\":\\\"Todo\\\",\\\"iconColor\\\":null}\"}"
+     (bridge/encode-effect (model/SendTaskEffect 8 "Follow up" todo))
+     "the native task payload preserves semantic status metadata")))
+
+(deftest task-status-choices-preserve-main-built-in-fallbacks
+  (let [custom
+        (task-status
+         "waiting" (Some "user.status/waiting") "Waiting"
+         (Some "tabler-icon") (Some "clock") None)
+        projected
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection) :task-statuses [custom])))]
+    (assert-equal
+     ["Backlog" "Todo" "Doing" "In Review" "Done" "Canceled"]
+     (mapv :title (:task-statuses (model/initial)))
+     "the composer offers main's built-in choices before remote refresh")
+    (assert-equal custom (nth (:task-statuses projected) 0)
+                  "graph-specific statuses remain first")
+    (assert-equal 7 (count (:task-statuses projected))
+                  "built-in fallbacks are appended after custom statuses")))
+
+(deftest native-bridge-renders-restored-authentication-in-the-first-patch
+  (let [patch (bridge/initialize 3 1 1)]
+    (is (string/includes? patch "screen.authentication")
+        "signed-out initialization renders authentication immediately")
+    (is (not (string/includes? patch "journals.graph-loaded"))
+        "signed-out initialization never constructs the journals tree")
+    (is (not (string/includes? patch "button.search"))
+        "signed-out initialization excludes main navigation controls")))
+
+(deftest native-bridge-selects-the-flutter-host-profile
+  (is (= proto/FlutterHost (bridge/host-kind 3))
+      "Flutter Android uses the retained Flutter backend profile")
+  (is (= proto/SwiftUIHost (bridge/host-kind 2))
+      "Apple hosts keep the SwiftUI profile")
+  (let [patch (bridge/initialize 3 3 1)]
+    (is (string/includes? patch "screen.authentication")
+        "Flutter renders the shared authentication screen")
+    (is (not (string/includes? patch "container-relative-frame"))
+        "Flutter does not receive SwiftUI-only viewport properties"))
+  (let [patch (bridge/initialize 3 3 3)]
+    (is (string/includes? patch "native-overflow-menu")
+        "signed-in Flutter renders the Material graph picker controls")
+    (is (not (string/includes? patch "container-relative-frame"))
+        "signed-in Flutter excludes every SwiftUI-only viewport property")
+    (is (not (string/includes? patch "icon-placement"))
+        "signed-in Flutter excludes unsupported list-item icon placement")
+    (is (not (string/includes? patch "navigation-heading"))
+        "signed-in Flutter excludes unsupported list-item heading roles")
+    (is (not (string/includes? patch "\"navigation\""))
+        "signed-in Flutter excludes unsupported list-item navigation roles"))
+  (let [patch
+        (bridge/flush-action!
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :graph-name (Some "Work")
+                 :selected-graph-id (Some "graph-a")
+                 :graphs [(graph "graph-a" "Work" false true)])))]
+    (is (not (string/includes? patch "icon-placement"))
+        "graph restoration excludes unsupported list-item icon placement")
+    (is (not (string/includes? patch "navigation-heading"))
+        "graph restoration excludes unsupported list-item heading roles")
+    (is (not (string/includes? patch "\"navigation\""))
+        "graph restoration excludes unsupported list-item navigation roles"))
+  (bridge/dispose))
+
+(deftest flutter-search-presentation-owns-an-opaque-background
+  (bridge/initialize 3 3 3)
+  (bridge/flush-action!
+   (model/ApplyCoreSnapshot
+    (assoc (empty-core-projection)
+           :graph-name (Some "Work")
+           :selected-graph-id (Some "graph-a")
+           :graphs [(graph "graph-a" "Work" false true)])))
+  (let [patch (bridge/flush-action! model/OpenSearch)]
+    (is (string/includes? patch "screen.search")
+        "opening Flutter search mounts the search screen")
+    (is (string/includes? patch
+                          "\"property\":\"background\",\"value\":\"background\"")
+        "Flutter search covers the retained journal surface"))
+  (bridge/dispose)
+  (bridge/initialize 2 2 3)
+  (bridge/flush-action!
+   (model/ApplyCoreSnapshot
+    (assoc (empty-core-projection)
+           :graph-name (Some "Work")
+           :selected-graph-id (Some "graph-a")
+           :graphs [(graph "graph-a" "Work" false true)])))
+  (let [patch (bridge/flush-action! model/OpenSearch)]
+    (is (not (string/includes? patch
+                               "\"property\":\"background\",\"value\":\"background\""))
+        "the Flutter-only backdrop does not alter SwiftUI search"))
+  (bridge/dispose))
+
+(deftest flutter-node-route-owns-an-opaque-background
+  (let [route (node-projection "node-a" "page-a" "Project" [] [])]
+    (bridge/initialize 3 3 3)
+    (bridge/flush-action! (model/RequestAppNode "node-a"))
+    (let [patch
+          (bridge/flush-action!
+           (model/ApplyCoreSnapshot
+            (assoc (empty-core-projection)
+                   :graph-name (Some "Work")
+                   :selected-graph-id (Some "graph-a")
+                   :node-routes [route])))]
+      (is (string/includes? patch "screen.node")
+          "opening a Flutter node mounts the node screen")
+      (is (string/includes? patch
+                            "\"property\":\"background\",\"value\":\"background\"")
+          "Flutter node routes cover the retained journal surface"))
+    (bridge/dispose)
+    (bridge/initialize 2 2 3)
+    (bridge/flush-action! (model/RequestAppNode "node-a"))
+    (let [patch
+          (bridge/flush-action!
+           (model/ApplyCoreSnapshot
+            (assoc (empty-core-projection)
+                   :graph-name (Some "Work")
+                   :selected-graph-id (Some "graph-a")
+                   :node-routes [route])))]
+      (is (not (string/includes?
+                patch
+                "\"property\":\"background\",\"value\":\"background\""))
+          "the Flutter-only node backdrop does not alter SwiftUI navigation"))
+    (bridge/dispose)))
+
+(deftest native-bridge-drains-and-resolves-typed-effects-once
+  (bridge/initialize 2 1 0)
+  (let [application (bridge/app)]
+    (driver/send! application model/ExpandComposer)
+    (driver/send! application (model/ChangeComposerDraft "Project \"alpha\"\nNext"))
+    (driver/send! application model/SendComposer)
+    (driver/flush! application)
+    (let [persist-dispatch (bridge/take-effect)
+          capture-dispatch (bridge/take-effect)]
+      (is (string/includes?
+           persist-dispatch
+           "\"effect\":{\"id\":2,\"kind\":\"persist-composer-draft\",\"text\":\"\"}")
+          "the bridge clears persisted text before capture")
+      (is (string/includes?
+           capture-dispatch
+           "\"effect\":{\"id\":3,\"kind\":\"send-capture\",\"text\":\"Project \\\"alpha\\\"\\nNext\"}")
+          "the bridge emits escaped capture JSON for the host executor")
+      (is (and
+           (string/includes? persist-dispatch
+                             "\"patch\":")
+           (string/includes? capture-dispatch
+                             "\"patch\":"))
+          "each dispatch explicitly carries its dequeue patch"))
+    (assert-equal "" (bridge/take-effect)
+                  "an effect is never dispatched to the host twice")
+    (assert-equal [(model/PersistComposerDraftEffect 2 "")
+                   (model/SendCaptureEffect 3 "Project \"alpha\"\nNext")]
+                  (:in-flight-effects (chat/model application))
+                  "dequeued effects remain tracked until resolution")
+    (bridge/resolve-effect 2 true "")
+    (bridge/resolve-effect 3 false "Network unavailable")
+    (assert-equal [] (:in-flight-effects (chat/model application))
+                  "resolution retires the matching in-flight effect")
+    (assert-equal (Some "Network unavailable")
+                  (:effect-error (chat/model application))
+                  "effect failures return to LG-owned application state")
+    (bridge/dispose)))
+
+(deftest successful-effect-resolution-preserves-the-core-response-for-projection
+  (let [drafted (model/update (model/initial)
+                              (model/ChangeComposerDraft "Project note"))
+        queued (model/update drafted model/SendComposer)
+        dequeued (model/update queued (model/DequeueEffect 3))
+        resolved (model/update dequeued
+                               (model/ResolveEffect 3 true "{\"ok\":true}"))]
+    (assert-equal [] (:in-flight-effects resolved)
+                  "success retires the in-flight effect")
+    (assert-equal None (:effect-error resolved)
+                  "success clears the visible effect failure")
+    (assert-equal (Some "{\"ok\":true}") (:last-core-response resolved)
+                  "the LG projection boundary receives the core response")))
+
+(deftest app-navigation-matches-the-main-branch-path-contract
+  (let [initial (model/initial)
+        first-request (model/update initial (model/RequestAppNode "page-a"))
+        duplicate-request
+        (model/update first-request (model/RequestAppNode "page-a"))
+        nested-request
+        (model/update duplicate-request (model/RequestAppNode "page-b"))]
+    (assert-equal [(model/NodeRoute "page-a")]
+                  (:app-navigation-path first-request)
+                  "the first node request pushes one route")
+    (assert-equal (:app-navigation-path first-request)
+                  (:app-navigation-path duplicate-request)
+                  "a consecutive duplicate route is not pushed")
+    (assert-equal [(model/NodeRoute "page-a") (model/NodeRoute "page-b")]
+                  (:app-navigation-path nested-request)
+                  "a distinct nested route is appended")
+    (assert-equal (:app-navigation-path nested-request)
+                  (:app-navigation-path
+                   (model/update nested-request
+                                 (model/ResolveAppNode "page-b" true)))
+                  "a resolved route remains presented")
+    (assert-equal [(model/NodeRoute "page-a")]
+                  (:app-navigation-path
+                   (model/update nested-request
+                                 (model/ResolveAppNode "page-b" false)))
+                  "an unresolved route is removed")
+    (assert-equal [(model/NodeRoute "page-a")]
+                  (:app-navigation-path
+                   (model/update nested-request (model/BackAppNavigation 1)))
+                  "the back action removes exactly one route")))
+
+(deftest native-header-title-follows-the-active-destination
+  (let [initial (model/initial)
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        route (node-projection "node-a" "page-a" "Nested" [] [])
+        routed (assoc initial
+                      :node-routes [route]
+                      :app-navigation-path [(model/NodeRoute "node-a")])]
+    (assert-equal "Journals" (view/main-title initial)
+                  "journals use the root application title")
+    (assert-equal "Project"
+                  (view/main-title (assoc initial :selected-page (Some page)))
+                  "selected pages use their projected title")
+    (assert-equal "Nested"
+                  (view/main-title routed)
+                  "native routes use their projected title")
+    (assert-equal "Flashcards"
+                  (view/main-title
+                   (assoc initial :destination model/FlashcardsDestination))
+                  "flashcards use their destination title")
+    (assert-equal "Graphs"
+                  (view/main-title
+                   (assoc initial :destination model/GraphsDestination))
+                  "graphs use their destination title")))
+
+(deftest native-header-title-follows-the-optimistic-navigation-path
+  (let [initial (model/initial)
+        route-a (node-projection "node-a" "page-a" "Project" [] [])
+        route-b (node-projection "node-b" "page-b" "Nested" [] [])
+        prepared (assoc initial :app-navigation-previews [route-a route-b])
+        requested-a (model/update prepared (model/RequestAppNode "node-a"))
+        opened-a (assoc requested-a :node-routes [route-a])
+        requested-b (model/update opened-a (model/RequestAppNode "node-b"))
+        opened-b (assoc requested-b :node-routes [route-a route-b])
+        returned-a (model/update opened-b (model/BackAppNavigation 1))
+        returned-root (model/update returned-a (model/BackAppNavigation 1))]
+    (assert-equal "Project" (view/main-title requested-a)
+                  "push uses the preview title before open-node resolves")
+    (assert-equal true (view/active-page-actions-visible? requested-a)
+                  "push exposes destination actions with the optimistic route")
+    (assert-equal "Nested" (view/main-title requested-b)
+                  "a nested push immediately uses its requested route title")
+    (assert-equal "Project" (view/main-title returned-a)
+                  "one native pop immediately restores the preceding route title")
+    (assert-equal true (view/active-page-actions-visible? returned-a)
+                  "one native pop keeps the preceding destination actions")
+    (assert-equal "Journals" (view/main-title returned-root)
+                  "returning to root does not wait for close-node projections")
+    (assert-equal false (view/active-page-actions-visible? returned-root)
+                  "returning to root immediately restores settings actions")))
+
+(deftest native-back-count-is-reduced-as-one-navigation-transition
+  (let [requested-a
+        (model/update (model/initial) (model/RequestAppNode "page-a"))
+        requested-b
+        (model/update requested-a (model/RequestAppNode "page-b"))
+        returned (model/update requested-b (model/BackAppNavigation 2))]
+    (assert-equal [] (:app-navigation-path returned)
+                  "one native callback removes its complete returned path")
+    (assert-equal
+     [(model/OpenAppNodeEffect 1 "page-a")
+      (model/OpenAppNodeEffect 2 "page-b")
+      (model/CloseAppNodeEffect 3 "page-b")
+      (model/CloseAppNodeEffect 4 "page-a")]
+     (:pending-effects returned)
+     "the one transition retains top-to-root core close ordering")))
+
+(deftest navigation-requests-and-back-cross-the-core-effect-boundary
+  (let [requested
+        (model/update (model/initial) (model/RequestSearchNode "node-a"))
+        returned (model/update requested (model/BackSearchNavigation 1))]
+    (assert-equal [(model/NodeRoute "node-a")]
+                  (:search-navigation-path requested)
+                  "search navigation remains optimistic")
+    (assert-equal [(model/OpenSearchNodeEffect 1 "node-a")]
+                  (:pending-effects requested)
+                  "opening a search node calls the core")
+    (assert-equal [] (:search-navigation-path returned)
+                  "back pops the visible search route")
+    (assert-equal
+     [(model/OpenSearchNodeEffect 1 "node-a")
+      (model/CloseSearchNodeEffect 2 "node-a")]
+     (:pending-effects returned)
+     "back closes the matching core projection")))
+
+(deftest native-search-back-and-dismiss-own-the-full-screen-search-path
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application (model/RequestAppNode "app-node"))
+    (driver/send! application (model/RequestSearchNode "search-node"))
+    (driver/flush! application)
+    (let [navigation
+          (extension-node application "native-search-presentation")]
+      (assert-equal (Some (proto/StringValue "Search"))
+                    (extension-property application navigation "title")
+                    "native search owns a stable navigation title")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-search-presentation" "back"
+                             {"count" (proto/IntValue 1)}))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "app-node")]
+                    (:app-navigation-path (chat/model application))
+                    "native back leaves the underlying app route intact")
+      (assert-equal []
+                    (:search-navigation-path (chat/model application))
+                    "native back first pops the full-screen search route")
+      (assert-equal
+       [(model/OpenAppNodeEffect 1 "app-node")
+        (model/OpenSearchNodeEffect 2 "search-node")
+        (model/CloseSearchNodeEffect 3 "search-node")]
+       (:pending-effects (chat/model application))
+       "native search back closes the matching core projection")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-search-presentation" "dismiss"
+                             {}))
+      (driver/flush! application)
+      (is (not (:search-open (chat/model application)))
+          "system dismissal closes the LG-owned search presentation"))))
+
+(deftest native-search-query-event-updates-the-lg-search-model
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/OpenSearch)
+    (driver/flush! application)
+    (let [navigation
+          (extension-node application "native-search-presentation")]
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-search-presentation"
+                             "query-changed"
+                             {"query" (proto/StringValue "project alpha")}))
+      (driver/flush! application)
+      (assert-equal "project alpha"
+                    (:search-query (chat/model application))
+                    "native searchable text must remain LG-owned state"))))
+
+(deftest destination-navigation-ends-active-outliner-editing
+  (let [editing
+        (record model/outliner-editing
+                (uuid "block-a")
+                (title "Draft")
+                (caret-utf16-offset 5))
+        current (assoc (model/initial) :outliner-editing (Some editing))
+        node (model/update current (model/RequestAppNode "page-a"))
+        sidebar (model/update current (model/SelectSidebarPage "page-a"))
+        journals (model/update current model/ShowJournals)
+        flashcards (model/update current model/ShowFlashcards)
+        graphs (model/update current model/ShowGraphs)
+        graph-switch
+        (model/update
+         (assoc current :graphs [(graph "graph-a" "Work" false true)])
+         (model/RequestOpenGraph "graph-a"))
+        nested (assoc current
+                      :app-navigation-path [(model/NodeRoute "page-a")])
+        nested-sidebar (model/update nested (model/SelectSidebarPage "page-b"))
+        nested-journals (model/update nested model/ShowJournals)
+        nested-flashcards (model/update nested model/ShowFlashcards)
+        nested-graphs (model/update nested model/ShowGraphs)]
+    (doseq [updated [node sidebar journals flashcards graphs graph-switch]]
+      (assert-equal None (:outliner-editing updated)
+                    "destination changes clear the retained editor immediately"))
+    (doseq [updated [nested-sidebar nested-journals nested-flashcards nested-graphs]]
+      (assert-equal [] (:app-navigation-path updated)
+                    "sidebar destinations return the native stack to its root"))
+    (assert-equal 2 (count (:pending-effects node))
+                  "node navigation cancels editing before opening the route")
+    (assert-equal 2 (count (:pending-effects sidebar))
+                  "sidebar navigation cancels editing before selecting the page")
+    (assert-equal 1 (count (:pending-effects graphs))
+                  "a local-only destination still cancels core editing")
+    (assert-equal 2 (count (:pending-effects graph-switch))
+                  "graph switches cancel editing before opening the graph")))
+
+(deftest failed-navigation-effects-restore-the-optimistic-path
+  (let [requested
+        (model/update (model/initial) (model/RequestAppNode "node-a"))
+        opening (model/update requested (model/DequeueEffect 1))
+        open-failed
+        (model/update opening (model/ResolveEffect 1 false "Open failed"))
+        opened-again
+        (model/update open-failed (model/RequestAppNode "node-a"))
+        opened
+        (model/update
+         (model/update opened-again (model/DequeueEffect 2))
+         (model/ResolveEffect 2 true "{\"ok\":true}"))
+        returned (model/update opened (model/BackAppNavigation 1))
+        closing (model/update returned (model/DequeueEffect 3))
+        close-failed
+        (model/update closing (model/ResolveEffect 3 false "Close failed"))]
+    (assert-equal [] (:app-navigation-path open-failed)
+                  "a failed open removes its optimistic route")
+    (assert-equal [(model/NodeRoute "node-a")]
+                  (:app-navigation-path close-failed)
+                  "a failed close restores the optimistically popped route")))
+
+(deftest active-node-route-renders-a-core-backed-navigation-screen
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+              (uuid "child") (title "Child")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 1)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        route
+        (assoc
+         (node-projection
+          "node-a" "page-a" "Project"
+          [(record model/outline-row
+             (uuid "reference")
+             (title "Linked from journal")
+             (markup-json "[]")
+             (youtube-target-url None)
+             (breadcrumb "Journal")
+             (breadcrumbs
+              [(record model/sidebar-page
+                 (uuid "journal") (title "Journal"))])
+             (opens-as-page false)
+             (depth 0)
+             (has-children false)
+             (is-collapsed false)
+             (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+          [])
+         :outliner-rows [row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
+                              None None [] [] [row] false []))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          title (descendant-with-identifier renderer screen "title.node")
+          title-layout
+          (descendant-with-identifier renderer screen "layout.node.title")
+          outliner (descendant-with-identifier renderer screen "scroll.outliner")
+          content (nth (apple/children renderer outliner) 0)
+          top-inset (nth (apple/children renderer content) 0)
+          related
+          (descendant-with-identifier
+           renderer outliner "section.node.linked-references")
+          breadcrumb
+          (descendant-with-identifier renderer related "breadcrumb.related-blocks")
+          journal
+          (descendant-with-identifier renderer related "button.breadcrumb.journal")]
+      (assert-equal "Project"
+                    (property-string renderer title proto/TextValue)
+                    "the route title comes from the core projection")
+      (assert-equal 8
+                    (property-int renderer content proto/PaddingHorizontal)
+                    "node content uses the same outer inset as main")
+      (assert-equal 0
+                    (property-int renderer content proto/Gap)
+                    "node content uses explicit main spacing instead of a global gap")
+      (assert-equal 16
+                    (property-int renderer top-inset proto/HeightValue)
+                    "node content starts at main's native-navigation inset")
+      (assert-equal 3
+                    (property-int renderer title proto/HeadingLevel)
+                    "node section titles use main's title2 typography")
+      (assert-equal 8
+                    (property-int renderer title-layout proto/PaddingHorizontal)
+                    "node section titles add main's inner horizontal inset")
+      (is (not (= related -1))
+          "node routes render their linked references section")
+      (is (= (apple/node renderer breadcrumb) (Some apple/AppleBreadcrumb))
+          "related rows reuse the breadcrumb component with native separators")
+      (let [heading (descendant-with-identifier renderer related "title.related-section")]
+        (assert-equal "subheadline"
+                      (property-string renderer heading proto/StyleClass)
+                      "related section labels are smaller than page titles")
+        (assert-equal "muted-foreground"
+                      (property-string renderer heading proto/ForegroundValue)
+                      "related section labels use secondary text color"))
+      (is (not (= journal -1))
+          "each structured breadcrumb remains independently navigable")
+      (driver/dispatch-event! application (proto/Press journal))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "node-a") (model/NodeRoute "journal")]
+                    (:app-navigation-path (chat/model application))
+                    "pressing a breadcrumb opens its retained node identity")
+      (driver/send! application (model/BackAppNavigation 1))
+      (driver/flush! application)
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 1)}))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "native back removes the presented route"))))
+
+(deftest ios-node-navigation-is-owned-by-the-native-stack
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        route (node-projection "node-a" "page-a" "Project" [] [])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
+                          None None [] [] [] false []))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          chrome (native-bottom-chrome renderer application)]
+      (assert-equal 0.0 (property-float renderer screen proto/GrowValue)
+                    "SwiftUI node navigation does not receive Flutter flex sizing")
+      (assert-equal -1 (child-with-identifier renderer screen "BackButton")
+                    "the retained node does not duplicate the system back button")
+      (assert-equal -1
+                    (descendant-with-identifier renderer screen
+                                                "surface.composer.root")
+                    "node content does not contain a duplicate composer")
+      (is (not (= -1
+                  (descendant-with-identifier renderer chrome
+                                              "surface.composer.root")))
+          "the global bottom slot keeps Capture on node pages like main")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 1)}))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "the native iOS back action pops the LG route"))))
+
+(deftest flutter-navigation-and-search-own-one-composed-standard-child
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "test-graph")
+             :graph-name (Some "Work"))))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          search (extension-node application "native-search-presentation")
+          navigation-children (apple/children renderer navigation)
+          search-children (apple/children renderer search)]
+      (assert-equal 1 (count navigation-children)
+                    "Flutter navigation receives one composed child")
+      (assert-equal 1 (count search-children)
+                    "Flutter search receives one composed child")
+      (let [navigation-content (nth navigation-children 0)
+            search-content (nth search-children 0)
+            navigation-title
+            (descendant-with-identifier
+             renderer navigation-content "title.main")
+            capture-row
+            (descendant-with-identifier
+             renderer navigation-content "row.bottom.capture")]
+        (assert-equal (Some apple/AppleHeading)
+                      (apple/node renderer navigation-title)
+                      "the composed Flutter child uses Material title typography")
+        (assert-equal 3
+                      (property-int renderer navigation-title proto/HeadingLevel)
+                      "the Flutter navigation title maps to Material titleLarge")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer navigation-content "button.search")))
+            "the composed Flutter child owns the bottom controls")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer search-content "list.outliner")))
+            "the closed Flutter search child retains journal content")
+        (assert-equal -1.0
+                      (property-float renderer capture-row proto/GrowValue)
+                      "Flutter capture keeps intrinsic height inside the bottom dock")
+        (driver/send! application model/ExpandComposer)
+        (driver/flush! application)
+        (let [expanded-row
+              (descendant-with-identifier
+               renderer navigation-content "row.composer.placement")]
+          (assert-equal
+           -1.0
+           (property-float renderer expanded-row proto/GrowValue)
+           "Flutter expanded Capture uses intrinsic height inside the bottom overlay"))))))
+
+(deftest flutter-navigation-renders-each-active-node-row-once
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (journal-outline-row "route-child" "route-page" "Route child"
+                                 "" 0 0)
+        route
+        (assoc (node-projection "node-a" "page-a" "Project" [] [])
+               :outliner-rows [row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :node-routes [route]
+             :outliner-rows [row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          back-button
+          (descendant-with-identifier renderer navigation
+                                      "button.navigation.back")]
+      (is (not (= -1 back-button))
+          "Flutter node destinations expose a Material top-app-bar back action")
+      (assert-equal
+       "Back"
+       (property-string renderer back-button proto/AccessibilityLabel)
+       "the Android back action remains available to TalkBack")
+      (assert-equal
+       1.0
+       (property-float renderer screen proto/GrowValue)
+       "Flutter node content receives a bounded flex height")
+      (assert-equal
+       1
+       (descendant-count-with-identifier
+       renderer navigation "outliner.block.route-child")
+       "Flutter keeps the journal as the stack root instead of duplicating the active node route")
+      (driver/dispatch-event! application (proto/Press back-button))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "the visible Android back action pops exactly one route"))))
+
+(deftest flutter-selected-pages-unmount-the-hidden-journal-pane
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        row (journal-outline-row "selected-row" "page-a" "Selected row"
+                                 "" 0 0)
+        journal-row
+        (journal-outline-row "journal-row" "journal-page" "Journal row"
+                             "Journal" 20260901 0)
+        sidebar
+        (record model/sidebar-projection
+          (favorites [page])
+          (recent-pages [])
+          (selected-page (Some page))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :sidebar sidebar
+             :outliner-rows [row]
+             :journal-outliner-rows [journal-row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (is (not (= -1 (descendant-with-identifier
+                      renderer navigation "pane.selected-page")))
+          "Flutter renders the selected page")
+      (assert-equal
+       -1
+       (descendant-with-identifier renderer navigation "pane.journals")
+       "Flutter removes the hidden journal so it cannot paint or receive input behind the selected page"))))
+
+(deftest flutter-selected-page-navigation-renders-the-opened-node
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        selected-row
+        (journal-outline-row "selected-row" "page-a" "Selected row" "" 0 0)
+        route-row
+        (journal-outline-row "route-row" "route-page" "Opened row" "" 0 0)
+        route
+        (assoc (node-projection "node-a" "route-page" "Opened page" [] [])
+               :outliner-rows [route-row])
+        sidebar
+        (record model/sidebar-projection
+          (favorites [page])
+          (recent-pages [])
+          (selected-page (Some page))
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :sidebar sidebar
+             :outliner-rows [selected-row])))
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :sidebar sidebar
+             :node-routes [route]
+             :outliner-rows [route-row])))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (assert-equal
+       1
+       (descendant-count-with-identifier
+        renderer navigation "outliner.block.route-row")
+       "Flutter renders the opened route above an existing selected page")
+      (assert-equal
+       -1
+       (descendant-with-identifier renderer navigation "pane.selected-page")
+       "Flutter unmounts the selected-page root while a node route is active"))))
+
+(deftest native-navigation-retains-the-journal-and-every-node-route
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        journal-row
+        (journal-outline-row "journal" "journal-page" "Journal"
+                             "Aug 27th, 2026" 20260827 0)
+        first-row
+        (journal-outline-row "first-child" "first-page" "First child"
+                             "" 0 0)
+        second-row
+        (journal-outline-row "second-child" "second-page" "Second child"
+                             "" 0 0)
+        first-route
+        (assoc (node-projection "node-a" "page-a" "First" [] [])
+               :outliner-rows [first-row])
+        second-route
+        (assoc (node-projection "node-b" "page-b" "Second" [] [])
+               :outliner-rows [second-row])
+        projection
+        (assoc (empty-core-projection)
+               :graph-name (Some "Work")
+               :selected-graph-id (Some "test-graph")
+               :node-routes [first-route second-route]
+               :journal-outliner-rows [journal-row]
+               :outliner-rows [second-row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "node-a"))
+    (driver/send! application (model/RequestAppNode "node-b"))
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (is (not (= navigation -1))
+          "the Outliner is hosted by the native navigation extension")
+      (assert-equal (Some (proto/IntValue 2))
+                    (extension-property application navigation "depth")
+                    "the native path depth follows LG state")
+      (let [children (apple/children renderer navigation)]
+        (assert-equal 8 (count children)
+                      "native chrome slots remain separate from retained routes")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 0) "outliner.block.journal")))
+            "the navigation root retains the journal Outliner")
+        (assert-equal 0
+                      (count (apple/children renderer (nth children 1)))
+                      "the system back action replaces the root sidebar control")
+        (assert-equal "title.main"
+                      (property-string renderer (nth children 2)
+                                       proto/AccessibilityIdentifier)
+                      "LG supplies the native title")
+        (assert-equal "app:status-dot"
+                      (property-string
+                       renderer
+                       (descendant-with-identifier
+                        renderer (nth children 3) "sync.disconnected")
+                       proto/InlineIconName)
+                      "LG supplies the native sync control")
+        (assert-equal
+         (Some (apple/AppleExtension "native-overflow-menu"))
+         (apple/node renderer (nth (apple/children renderer (nth children 4)) 0))
+         "LG supplies the native trailing menu")
+        (assert-equal "<missing>"
+                      (property-string renderer (nth children 5)
+                                       proto/AccessibilityIdentifier)
+                      "the internal bottom chrome slot does not override its active control identifier")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 6) "outliner.block.first-child")))
+            "the first pushed route retains its own Outliner")
+        (is (not (= -1 (descendant-with-identifier
+                        renderer (nth children 7) "outliner.block.second-child")))
+            "the active route renders the deepest Outliner"))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue -1)}))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "node-a") (model/NodeRoute "node-b")]
+                    (:app-navigation-path (chat/model application))
+                    "an invalid native back count does not mutate the path")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent navigation "native-navigation-stack" "back"
+                             {"count" (proto/IntValue 5)}))
+      (driver/flush! application)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "a native multi-pop is safely clamped to the LG path"))))
+
+(deftest journal-navigation-exposes-an-immediate-preview-route
+  (let [row
+        (journal-outline-row "journal-block" "journal-page" "Journal row"
+                             "Aug 27th, 2026" 20260827 0)
+        current
+        (assoc (model/initial)
+               :journal-outliner-rows [row]
+               :outliner-section-markers (model/journal-section-markers [row]))
+        requested (model/update current (model/RequestAppNode "journal-page"))
+        routes (model/app-node-routes requested)
+        returned (model/update requested (model/BackAppNavigation 1))]
+    (assert-equal 1 (count routes)
+                  "the model publishes a route before core resolution")
+    (assert-equal "journal-page" (:uuid (first routes))
+                  "the preview route keeps the requested page identity")
+    (assert-equal "Aug 27th, 2026" (:title (first routes))
+                  "the preview route uses the visible journal title")
+    (assert-equal [row] (:outliner-rows (first routes))
+                  "the preview route reuses the already projected journal rows")
+    (assert-equal [] (:app-navigation-previews returned)
+                  "leaving the route releases its optimistic preview")))
+
+(deftest popped-native-path-restores-root-before-core-route-cleanup
+  (let [route (node-projection "node-a" "page-a" "Project" [] [])
+        current
+        (assoc (model/initial)
+               :destination model/JournalsDestination
+               :selected-graph-id (Some "test-graph")
+               :graph-loading false
+               :node-routes [route]
+               :app-navigation-path [])]
+    (is (view/node-navigation-inactive? current)
+        "the visible navigation layer follows the already-popped native path")
+    (is (view/journal-root-visible? current)
+        "the journal root is restored during the native pop transition")
+    (is (view/primary-sidebar-button-visible? current)
+        "the root header returns before delayed core route cleanup")))
+
+(deftest app-and-search-routes-are-retained-by-distinct-native-stacks
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        app-row
+        (journal-outline-row "app-child" "app-page" "App child" "" 0 0)
+        search-row
+        (journal-outline-row "search-child" "search-page" "Search child" "" 0 0)
+        app-route
+        (assoc (node-projection "app-node" "app-page" "App" [] [])
+               :outliner-rows [app-row])
+        search-route
+        (assoc (node-projection "search-node" "search-page" "Search" [] [])
+               :outliner-rows [search-row])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "app-node"))
+    (driver/send! application model/OpenSearch)
+    (driver/send! application (model/RequestSearchNode "search-node"))
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :graph-name (Some "Work")
+             :selected-graph-id (Some "test-graph")
+             :node-routes [app-route search-route]
+             :outliner-rows [search-row])))
+    (driver/flush! application)
+    (let [app-navigation (extension-node application "native-navigation-stack")
+          search-navigation
+          (extension-node application "native-search-presentation")
+          app-children (apple/children renderer app-navigation)
+          search-children (apple/children renderer search-navigation)]
+      (assert-equal (Some (proto/IntValue 1))
+                    (extension-property application app-navigation "depth")
+                    "the app stack owns only the app route depth")
+      (assert-equal (Some (proto/IntValue 1))
+                    (extension-property application search-navigation "depth")
+                    "the full-screen search stack owns only its route depth")
+      (assert-equal 7 (count app-children)
+                    "the app stack retains chrome, its root, and app route")
+      (assert-equal 3 (count search-children)
+                    "search retains the app surface, search root, and search route")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer (nth app-children 6) "outliner.block.app-child")))
+          "the app route remains behind the search presentation")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer (nth search-children 2)
+                      "outliner.block.search-child")))
+          "the search route is retained only by the search stack"))))
+
+(deftest closed-search-does-not-render-core-node-routes
+  (let [route (node-projection "node-a" "page-a" "Node" [] [])
+        closed (assoc (model/initial)
+                      :node-routes [route]
+                      :search-open false)
+        opened (assoc closed :search-open true)]
+    (assert-equal [] (view/search-node-routes closed)
+                  "closed search never overlays core node routes on the app")
+    (assert-equal [route] (view/search-node-routes opened)
+                  "open search retains its unresolved route suffix")))
+
+(deftest empty-node-routes-add-the-first-block-through-the-core
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        route (node-projection "page-a" "page-a" "Empty page" [] [])]
+    (driver/start! application)
+    (driver/send! application (model/RequestAppNode "page-a"))
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                           false "" [] [route]
+                                           None None [] [] [] false []))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          screen (descendant-with-identifier renderer navigation "screen.node")
+          add-button
+          (descendant-with-identifier
+           renderer screen "button.outliner.add-first-block")]
+      (driver/dispatch-event! application (proto/Press add-button))
+      (driver/flush! application)
+      (assert-equal
+       [(model/OpenAppNodeEffect 1 "page-a")
+        (model/AddRootBlockEffect 2 "page-a")]
+       (:pending-effects (chat/model application))
+       "empty pages reuse the core addRootBlock outliner action"))))
+
+(deftest older-journals-use-an-invisible-scroll-sentinel
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        projection (assoc (empty-core-projection)
+                          :selected-graph-id (Some "test-graph")
+                          :has-older-journals true)]
+    (driver/start! application)
+    (driver/send! application (model/ApplyCoreSnapshot projection))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          sentinel (descendant-with-identifier
+                    renderer root "outliner.load-older-sentinel")
+          outliner-children (apple/children renderer outliner)
+          bottom-spacer (nth outliner-children (dec (count outliner-children)))]
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.outliner.load-older-journals")
+                    "main does not expose load-more as a visible button")
+      (is (not (= sentinel -1))
+          "journals expose an invisible end-of-scroll sentinel")
+      (assert-equal sentinel
+                    (descendant-with-identifier
+                     renderer outliner "outliner.load-older-sentinel")
+                    "the sentinel remains inside the virtualized Outliner")
+      (assert-equal 1 (property-int renderer sentinel proto/HeightValue)
+                    "the sentinel matches main's one-point marker")
+      (assert-equal 120 (property-int renderer bottom-spacer proto/HeightValue)
+                    "main keeps bottom padding after the pagination marker")
+      (is (not (= sentinel bottom-spacer))
+          "pagination begins before the user reaches the absolute scroll edge")
+      (assert-equal [] (:pending-effects (chat/model application))
+                    "retained rendering alone does not eagerly load journals")
+      (driver/send!
+       application
+       (model/ApplyCoreSnapshot (assoc projection :has-older-journals false)))
+      (driver/flush! application)
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer (main-root renderer application)
+                     "outliner.load-older-sentinel")
+                    "the sentinel disappears when the core reaches the oldest journal"))))
+
+(deftest older-journals-only-appear-at-the-journal-root
+  (let [available (assoc (model/initial)
+                         :selected-graph (Some "Work")
+                         :has-older-journals true)
+        selected-page
+        (assoc available
+               :selected-page
+               (Some (record model/sidebar-page
+                       (uuid "page-a") (title "Page"))))
+        nested (assoc available
+                      :node-routes
+                      [(node-projection
+                        "node-a" "page-a" "Node" [] [])]
+                      :app-navigation-path [(model/NodeRoute "node-a")])]
+    (is (view/older-journals-visible? available))
+    (is (not (view/older-journals-visible? selected-page)))
+    (is (not (view/older-journals-visible? nested)))))
+
+(deftest journal-section-markers-preserve-boundaries-and-stable-pages
+  (let [unsectioned
+        (assoc (journal-outline-row "draft" "" "Draft" "" 0 0)
+               :journal-title None
+               :journal-day None)
+        first-root
+        (journal-outline-row "day-a-root" "page-a" "First" "August 27th" 20260827 0)
+        first-child
+        (journal-outline-row "day-a-child" "page-a" "Child" "August 27th" 20260827 1)
+        second-root
+        (journal-outline-row "day-b-root" "page-b" "Second" "August 28th" 20260828 0)
+        markers
+        (model/journal-section-markers
+         [unsectioned first-root first-child second-root])]
+    (assert-equal ["day-a-root" "day-b-root"]
+                  (mapv :block-id markers)
+                  "only the first row of each journal starts a section")
+    (assert-equal ["page-a" "page-b"]
+                  (mapv :page-id markers)
+                  "journal navigation keeps the page identity")
+    (assert-equal [false true]
+                  (mapv :has-divider markers)
+                  "only later journal sections receive a divider")))
+
+(deftest journal-section-markers-recompute-after-row-splices
+  (let [day-a
+        (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
+        day-b
+        (journal-outline-row "day-b" "page-b" "B" "August 28th" 20260828 0)
+        day-c
+        (journal-outline-row "day-c" "page-c" "C" "August 29th" 20260829 0)
+        initial
+        (model/update
+         (model/initial)
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :graph-name (Some "Work")
+                 :selected-graph-id (Some "graph-a")
+                 :has-older-journals true
+                 :outliner-rows [day-a day-c])))
+        splice
+        (record model/outline-row-splice
+          (start (Some 1))
+          (after-block-id None)
+          (before-block-id None)
+          (delete-count 0)
+          (rows [day-b]))
+        updated
+        (model/update
+         initial
+         (model/ApplyCoreSnapshot
+          (assoc (empty-core-projection)
+                 :is-outliner-patch true
+                 :outliner-row-splices [splice])))]
+    (assert-equal ["page-a" "page-b" "page-c"]
+                  (mapv :page-id (:outliner-section-markers updated))
+                  "splice application recomputes all journal boundaries")
+    (assert-equal [false true true]
+                  (mapv :has-divider (:outliner-section-markers updated))
+                  "inserted sections keep exactly one divider per boundary")
+    (assert-equal (Some "graph-a") (:selected-graph-id updated)
+                  "outliner patches preserve the selected graph")
+    (assert-equal (Some "Work") (:selected-graph updated)
+                  "outliner patches preserve the graph title")
+    (is (:has-older-journals updated)
+        "outliner patches preserve journal pagination state")))
+
+(deftest journal-home-keeps-first-day-viewport-and-later-block-items-flat
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        day-a
+        (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
+        day-b
+        (journal-outline-row "day-b" "page-b" "B" "August 28th" 20260828 0)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "test-graph")
+             :outliner-rows [day-a day-b])))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner
+          (descendant-with-identifier renderer root "list.outliner")
+          horizontal-inset
+          (descendant-with-identifier
+           renderer root "layout.outliner.horizontal-inset")
+          first-heading
+          (descendant-with-identifier renderer root "button.journal.page-a")
+          second-heading
+          (descendant-with-identifier renderer root "button.journal.page-b")
+          first-section
+          (descendant-with-identifier renderer outliner "journal.section.page-a")
+          first-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-a")
+          second-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-b")
+          first-entry-children (apple/children renderer first-entry)
+          first-block
+          (descendant-with-identifier renderer first-entry "outliner.block.day-a")
+          heading-children (apple/children renderer first-heading)
+          heading-surface
+          (if (empty? heading-children) -1 (nth heading-children 0))
+          heading-surface-children
+          (if (= heading-surface -1)
+            []
+            (apple/children renderer heading-surface))
+          heading-top-space
+          (if (empty? heading-surface-children)
+            -1
+            (nth heading-surface-children 0))
+          heading-content
+          (if (< (count heading-surface-children) 2)
+            -1
+            (nth heading-surface-children 1))]
+      (assert-equal 8
+                    (property-int renderer first-entry
+                                  proto/PaddingHorizontal)
+                    "journal content is inset inside the full-width scroll surface")
+      (assert-equal -1
+                    (property-int renderer horizontal-inset proto/PaddingHorizontal)
+                    "the scroll indicator reaches the screen edge")
+      (assert-equal -1
+                    (property-int renderer outliner proto/PaddingValue)
+                    "the native virtual list does not add vertical padding")
+      (is (not (= first-heading -1))
+          "the first journal heading is visible and navigable")
+      (is (not (= second-heading -1))
+          "the second journal heading is visible and navigable")
+      (assert-equal "Open August 27th"
+                    (property-string renderer first-heading
+                                     proto/AccessibilityLabel)
+                    "journal headings expose their native open action")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer outliner "outliner.block.day-a")))
+          "the first day's row stays inside the virtualized collection")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer outliner "outliner.block.day-b")))
+          "the second day's row stays inside the virtualized collection")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer first-section)
+                    "the first journal owns one viewport-preserving section")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer second-entry)
+                    "later journal blocks keep independent lazy entries")
+      (assert-equal first-heading (nth first-entry-children 0)
+                    "the first block entry owns the journal heading")
+      (assert-equal first-block (nth first-entry-children 1)
+                    "the journal block follows its heading in one lazy item")
+      (assert-equal "min-vertical"
+                    (property-string renderer first-section
+                                     proto/ContainerRelativeFrameValue)
+                    "the first journal reserves the visible viewport")
+      (assert-equal 136
+                    (property-int renderer first-section
+                                  proto/ContainerRelativeFrameInset)
+                    "the first journal leaves room for native chrome")
+      (assert-equal "<missing>"
+                    (property-string renderer second-entry
+                                     proto/ContainerRelativeFrameValue)
+                    "later journal blocks use their intrinsic height")
+      (is (not (= -1
+                  (if (= first-section -1)
+                    -1
+                    (descendant-with-identifier
+                     renderer first-section "outliner.block.day-a"))))
+          "the first journal row belongs to the first section")
+      (assert-equal -1
+                    (if (= first-section -1)
+                      -1
+                      (descendant-with-identifier
+                       renderer first-section "outliner.block.day-b"))
+                    "the next journal row does not leak into the first section")
+      (assert-equal (Some apple/AppleListItem)
+                    (apple/node renderer first-heading)
+                    "journal headings use a plain interactive content row")
+      (assert-equal 0
+                    (property-int renderer first-heading proto/PaddingValue)
+                    "the interactive heading row does not add a native inset")
+      (assert-equal (Some apple/AppleBox)
+                    (if (= heading-surface -1)
+                      None
+                      (apple/node renderer heading-surface))
+                    "journal heading spacing is owned by one intrinsic surface")
+      (assert-equal 8
+                    (property-int renderer heading-surface
+                                  proto/PaddingHorizontal)
+                    "journal titles keep main's inner horizontal inset")
+      (assert-equal 12
+                    (property-int renderer heading-surface
+                                  proto/PaddingVertical)
+                    "journal titles keep main's bottom inset")
+      (assert-equal (Some apple/AppleBox)
+                    (if (= heading-top-space -1)
+                      None
+                      (apple/node renderer heading-top-space))
+                    "journal titles express their extra top inset as layout")
+      (assert-equal 14
+                    (property-int renderer heading-top-space proto/HeightValue)
+                    "journal title top spacing completes main's 26-point inset")
+      (assert-equal (Some apple/AppleHeading)
+                    (if (= heading-content -1)
+                      None
+                      (apple/node renderer heading-content))
+                    "journal titles retain semantic heading typography")
+      (assert-equal 3
+                    (property-int renderer heading-content proto/HeadingLevel)
+                    "journal titles map main's title2 scale")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer root "journals.graph-loaded")))
+          "the loaded journal graph keeps main's readiness contract")
+      (assert-equal 1
+                    (descendant-count-with-identifier
+                     renderer root "journal.divider")
+                    "later journal sections render main's native divider")
+      (driver/dispatch-event! application (proto/Press second-heading))
+      (driver/flush! application)
+      (assert-equal [(model/OpenAppNodeEffect 1 "page-b")]
+                    (:pending-effects (chat/model application))
+                    "journal headings use the existing page navigation effect"))))
+
+(deftest only-the-first-journal-groups-blocks-for-viewport-retention
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        day-a-root
+        (journal-outline-row "day-a-root" "page-a" "A" "August 27th" 20260827 0)
+        day-a-child
+        (journal-outline-row "day-a-child" "page-a" "Child" "August 27th" 20260827 1)
+        day-b
+        (journal-outline-row "day-b" "page-b" "B" "August 28th" 20260828 0)]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :selected-graph-id (Some "test-graph")
+             :outliner-rows [day-a-root day-a-child day-b])))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          first-section
+          (descendant-with-identifier renderer outliner "journal.section.page-a")
+          first-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-a-root")
+          child-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-a-child")
+          next-entry
+          (parent-with-child-identifier renderer outliner "outliner.block.day-b")]
+      (is (not (= first-entry child-entry))
+          "blocks from one large journal remain independent lazy items")
+      (is (not (= child-entry next-entry))
+          "journal boundaries do not change block-level virtualization")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer first-entry)
+                    "the first block entry owns its journal heading")
+      (assert-equal (Some apple/AppleColumn)
+                    (apple/node renderer child-entry)
+                    "first-journal blocks keep independent entry wrappers")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer child-entry "button.journal.page-a")
+                    "only the first block repeats the journal heading")
+      (is (not (= -1 first-section))
+          "the first journal owns the single viewport-preserving section")
+      (is (not (= -1
+                  (if (= first-section -1)
+                    -1
+                    (descendant-with-identifier
+                     renderer first-section "outliner.block.day-a-child"))))
+          "all first-journal rows remain inside that section")
+      (assert-equal -1
+                    (if (= first-section -1)
+                      -1
+                      (descendant-with-identifier
+                       renderer first-section "outliner.block.day-b"))
+                    "later journals stay outside the viewport section")
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer outliner "journal.section.page-b")
+                    "later journals do not create nested section containers")
+      (assert-equal "<missing>"
+                    (property-string renderer next-entry
+                                     proto/ContainerRelativeFrameValue)
+                    "later journal blocks remain intrinsic lazy entries"))))
+
+(deftest selected-pages-do-not-render-journal-home-headings
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row
+        (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
+        selected-sidebar
+        (assoc (empty-sidebar-projection)
+               :selected-page
+               (Some (record model/sidebar-page
+                       (uuid "page-a") (title "August 27th"))))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (model/ApplyCoreSnapshot
+      (assoc (empty-core-projection)
+             :sidebar selected-sidebar
+             :outliner-rows [row])))
+    (driver/flush! application)
+    (let [root (main-root renderer application)]
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer root "button.journal.page-a")
+                    "journal navigation headings stay specific to journal home"))))
+
+(deftest search-navigation-is-isolated-and-cleared-with-the-presentation
+  (let [open-model (model/update (model/initial) model/OpenSearch)
+        app-model (model/update open-model (model/RequestAppNode "journal"))
+        search-model
+        (model/update app-model (model/RequestSearchNode "search-result"))
+        failed-model
+        (model/update search-model
+                      (model/ResolveSearchNode "search-result" false))
+        reopened-model
+        (model/update
+         (model/update failed-model (model/RequestSearchNode "search-result"))
+         (model/ChangeSearchQuery "project alpha"))
+        closed-model (model/update reopened-model model/CloseSearch)]
+    (assert-equal [(model/NodeRoute "journal")]
+                  (:app-navigation-path search-model)
+                  "search navigation does not mutate the app path")
+    (assert-equal [(model/NodeRoute "search-result")]
+                  (:search-navigation-path search-model)
+                  "search owns a separate navigation path")
+    (assert-equal [] (:search-navigation-path failed-model)
+                  "a failed search route is removed")
+    (assert-equal [] (:search-navigation-path closed-model)
+                  "closing search clears its navigation history")
+    (assert-equal
+     [(model/OpenAppNodeEffect 1 "journal")
+      (model/OpenSearchNodeEffect 2 "search-result")
+      (model/OpenSearchNodeEffect 3 "search-result")
+      (model/CloseSearchNodeEffect 5 "search-result")]
+     (:pending-effects closed-model)
+     "closing search closes every core-backed search route from the top")
+    (assert-equal [(model/NodeRoute "journal")]
+                  (:app-navigation-path closed-model)
+                  "closing search preserves the app navigation history")
+    (assert-equal "" (:search-query closed-model)
+                  "closing search clears its transient query")))
+
+(deftest search-query-publishes-a-core-effect-and-rejects-stale-results
+  (let [queried (model/update (model/initial)
+                              (model/ChangeSearchQuery "project alpha"))
+        hit (record model/search-hit
+                    (uuid "page-a")
+                    (title "Project Alpha")
+                    (breadcrumb "")
+                    (breadcrumbs [])
+                    (is-page true))
+        stale (model/update queried
+                            (model/ApplySearchResults "older" [hit]))
+        current (model/update queried
+                              (model/ApplySearchResults "project alpha" [hit]))]
+    (assert-equal [(model/SearchNodesEffect 1 "project alpha")]
+                  (:pending-effects queried)
+                  "typing publishes one typed search request")
+    (is (:search-loading queried)
+        "the query visibly remains in progress")
+    (assert-equal [] (:search-results stale)
+                  "a response for an older query is ignored")
+    (assert-equal [hit] (:search-results current)
+                  "the current query accepts its projected hits")
+    (is (not (:search-loading current))
+        "the current result ends the loading state")))
+
+(deftest search-results-render-as-keyed-native-rows
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        hit (record model/search-hit
+                    (uuid "block-a")
+                    (title "Project note")
+                    (breadcrumb "Journal › Parent")
+                    (breadcrumbs [])
+                    (is-page false))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/OpenSearch)
+    (driver/send! application (model/ChangeSearchQuery "project"))
+    (driver/send! application
+                  (model/ApplySearchResults "project" [hit]))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          search-panel (child-with-identifier renderer root "screen.search")
+          row
+          (descendant-with-identifier
+           renderer search-panel "search.result.block-a")]
+      (assert-equal "search.result.block-a"
+                    (property-string renderer row
+                                     proto/AccessibilityIdentifier)
+                    "the row keeps main's stable search result identifier")
+      (let [title (descendant-with-identifier renderer row "search.result.title.block-a")
+            context (descendant-with-identifier renderer row "search.result.context.block-a")]
+        (assert-equal "search-match line-clamp-3"
+                      (property-string renderer title proto/StyleClass)
+                      "result previews emphasize matches and bound multiline content")
+        (assert-equal "caption single-line"
+                      (property-string renderer context proto/StyleClass)
+                      "result ancestry uses a compact secondary line")
+        (assert-equal "muted-foreground"
+                      (property-string renderer context proto/ForegroundValue)
+                      "result ancestry is visually distinct from the matching text"))
+      (driver/dispatch-event! application (proto/Press row))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "block-a")]
+                    (:search-navigation-path (chat/model application))
+                    "pressing a result requests navigation in LG state"))))
+
+(deftest search-renders-main-empty-states-and-result-sections
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        page (record model/search-hit
+                     (uuid "page-a")
+                     (title "Project")
+                     (breadcrumb "")
+                     (breadcrumbs [])
+                     (is-page true))
+        block (record model/search-hit
+                      (uuid "block-a")
+                      (title "Project note")
+                      (breadcrumb "Journal")
+                      (breadcrumbs [])
+                      (is-page false))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/OpenSearch)
+    (driver/flush! application)
+    (let [panel
+          (child-with-identifier
+           renderer (main-root renderer application) "screen.search")
+          empty-state
+          (descendant-with-identifier renderer panel "search.empty")
+          empty-icon
+          (descendant-with-identifier renderer panel "search.empty.icon")
+          empty-supporting
+          (descendant-with-identifier renderer panel "search.empty.supporting")]
+      (assert-equal 1.0 (property-float renderer panel proto/GrowValue)
+                    "native search content fills the presentation viewport")
+      (assert-equal "Search your graph"
+                    (property-string renderer empty-state proto/TextValue)
+                    "an empty query explains the search entry state")
+      (assert-equal (Some apple/AppleIcon)
+                    (apple/node renderer empty-icon)
+                    "search empty states use the shared search icon")
+      (assert-equal "Find pages and blocks by title or content."
+                    (property-string renderer empty-supporting proto/TextValue)
+                    "search empty states explain what can be found")
+      (driver/send! application (model/ChangeSearchQuery "missing"))
+      (driver/flush! application)
+      (is (not (= -1 (descendant-with-identifier renderer panel "search.loading")))
+          "pending queries show progress before any results are available")
+      (assert-equal -1 (descendant-with-identifier renderer panel "search.empty")
+                    "a pending query must not flash a false no-results state")
+      (driver/send! application (model/ApplySearchResults "missing" []))
+      (driver/flush! application)
+      (assert-equal
+       "No results"
+       (property-string
+        renderer
+        (descendant-with-identifier renderer panel "search.empty")
+        proto/TextValue)
+       "an empty result set is distinguished from an empty query")
+      (driver/send! application (model/ChangeSearchQuery "project"))
+      (driver/send! application
+                    (model/ApplySearchResults "project" [block page]))
+      (driver/flush! application)
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "screen.search.results")))
+          "search results use a native list surface for safe-area and scrolling behavior")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.section.pages")))
+          "page results have the main section label")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.section.blocks")))
+          "block results have the main section label")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.result.page-a")))
+          "page results remain addressable")
+      (is (not (= -1
+                  (descendant-with-identifier
+                   renderer panel "search.result.block-a")))
+          "block results remain addressable"))))
+
+(deftest native-search-clear-updates-lg-owned-query
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/OpenSearch)
+    (driver/send! application (model/ChangeSearchQuery "project"))
+    (driver/flush! application)
+    (let [search-extension
+          (extension-node application "native-search-presentation")]
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent search-extension "native-search-presentation"
+                             "query-changed"
+                             {"query" (proto/StringValue "")}))
+      (driver/flush! application)
+      (assert-equal "" (:search-query (chat/model application))
+                    "the platform clear affordance updates LG state"))))
+
+(deftest core-snapshot-renders-keyed-outliner-rows
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+                    (uuid "block-a")
+                    (title "Project note")
+                    (markup-json "[]")
+              (youtube-target-url None)
+              (breadcrumb "")
+              (breadcrumbs [])
+              (opens-as-page false)
+                    (depth 2)
+                    (has-children true)
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        editing (record model/outliner-editing
+                        (uuid "block-a")
+                        (title "Project note")
+                        (caret-utf16-offset 4))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                           false "" [] []
+                                           (Some editing) None [] []
+                                           [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.block-a")]
+      (assert-equal "outliner.block.block-a"
+                    (property-string renderer rendered-row
+                                     proto/AccessibilityIdentifier)
+                    "the LG row keeps main's stable block identifier")
+      (assert-equal "Edit block Project note"
+                    (property-string renderer rendered-row
+                                     proto/AccessibilityLabel)
+                    "the LG row keeps main's edit accessibility action")
+      (assert-equal (Some apple/AppleRow)
+                    (apple/node renderer
+                                (nth (apple/children renderer rendered-row) 0))
+                    "custom list-item content starts with its native row without a redundant column")
+      (let [editor
+            (descendant-with-extension
+             renderer application rendered-row "outliner-editor")]
+        (assert-equal (Some (apple/AppleExtension "outliner-editor"))
+                      (apple/node renderer editor)
+                      "editing uses the registered native editor service")
+        (driver/dispatch-event!
+         application
+         (proto/ExtensionEvent
+          editor "outliner-editor" "text-change"
+          {"title" (proto/StringValue "Updated")
+           "caret-utf16-offset" (proto/IntValue 7)}))
+        (driver/flush! application)
+        (assert-equal
+         [(model/ChangeOutlinerTextEffect 1 "block-a" "Updated" 7)]
+         (:pending-effects (chat/model application))
+         "native editor events return to the typed LG reducer")
+        (assert-equal model/SyncingState (:sync-state (chat/model application))
+                      "typing hides stale synced state immediately")))))
+
+(deftest outliner-rows-live-inside-a-native-virtual-list
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          list-node (descendant-with-identifier renderer root "list.outliner")
+          horizontal-inset
+          (descendant-with-identifier
+           renderer root "layout.outliner.horizontal-inset")]
+      (assert-equal (Some apple/AppleVirtualList)
+                    (apple/node renderer list-node)
+                    "journal blocks use one native lazy scrolling collection")
+      (assert-equal 1.0 (property-float renderer list-node proto/GrowValue)
+                    "the journal collection owns the remaining viewport")
+      (assert-equal -1
+                    (property-int renderer horizontal-inset proto/PaddingHorizontal)
+                    "the scrolling surface has no outer inset")
+      (assert-equal -1
+                    (property-int renderer list-node proto/PaddingVertical)
+                    "the journal collection does not add a vertical inset")
+      (assert-equal 16
+                    (property-int renderer (nth (apple/children renderer list-node) 0)
+                                  proto/HeightValue)
+                    "journal content starts at main's native outliner inset")
+      (assert-equal -1
+                    (descendant-with-identifier renderer root "scroll.outliner")
+                    "the virtual list does not retain a redundant scroll wrapper"))))
+
+(deftest projected-markup-renders-through-the-native-rich-block-extension
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+                    (uuid "block-a")
+                    (title "See [[Project]]")
+                    (markup-json
+                     "[{\"type\":\"nodeReference\",\"uuid\":\"page-a\",\"title\":\"Project\"}]")
+                    (youtube-target-url None)
+                    (breadcrumb "")
+                    (breadcrumbs [])
+                    (opens-as-page false)
+                    (depth 0)
+                    (has-children true)
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status
+                     (Some (record model/task-status
+                             (uuid "done")
+                             (ident (Some "logseq.property/status.done"))
+                             (title "Done")
+                             (icon-type None) (icon-id None) (icon-color None))))
+                    (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                           false "" [] [] None None [] []
+                                           [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.block-a")
+          rich-content
+          (descendant-with-extension
+           renderer application rendered-row "outliner-block-content")]
+      (assert-equal "app:disclosure-down"
+                    (property-string renderer
+                      (descendant-with-identifier renderer rendered-row
+                        "button.outliner.collapse.block-a") proto/InlineIconName)
+                    "native collapse uses main's filled disclosure triangle")
+      (assert-equal
+       (Some (apple/AppleExtension "outliner-block-content"))
+       (apple/node renderer rich-content)
+       "non-editing markup uses the registered native rich renderer")
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application rich-content "is-completed")
+                    "completed task styling reaches the native rich renderer")
+      (assert-equal (Some (proto/StringValue "block-a"))
+                    (extension-property application rich-content "block-id")
+                    "the native rich renderer receives its draggable block id")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "drag-start"
+        {"uuid" (proto/StringValue "block-a")}))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "drop"
+        {"uuid" (proto/StringValue "target-a")
+         "placement" (proto/StringValue "before")}))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "open-node"
+        {"uuid" (proto/StringValue "page-a")}))
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent
+        rich-content "outliner-block-content" "edit"
+        {"uuid" (proto/StringValue "block-a")}))
+      (driver/flush! application)
+      (assert-equal [(model/NodeRoute "page-a")]
+                    (:app-navigation-path (chat/model application))
+                    "rich node references return to LG-owned navigation")
+      (assert-equal
+       [(model/LongPressOutlinerBlockEffect 1 "block-a")
+        (model/DropOutlinerBlocksEffect 2 "target-a" "before")
+        (model/OpenAppNodeEffect 3 "page-a")
+        (model/TapOutlinerBlockEffect 4 "block-a")]
+       (:pending-effects (chat/model application))
+       "native rich-content events return to the typed LG reducer"))))
+
+(deftest projected-assets-render-and-open-through-the-native-extension
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+                    (uuid "asset-a")
+                    (title "Photo.jpg")
+                    (markup-json "[]")
+                    (youtube-target-url None)
+                    (breadcrumb "")
+                    (breadcrumbs [])
+                    (opens-as-page false)
+                    (depth 0)
+                    (has-children false)
+                    (is-collapsed false)
+                    (is-asset true)
+                    (asset-type (Some "image/jpeg"))
+                    (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       false "" [] [] None None [] []
+                                       [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.asset-a")
+          rich-content
+          (descendant-with-extension
+           renderer application rendered-row "outliner-block-content")]
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application rich-content "is-asset")
+                    "asset identity reaches the native extension")
+      (assert-equal (Some (proto/StringValue "image/jpeg"))
+                    (extension-property application rich-content "asset-type")
+                    "asset content type reaches the native extension")
+      (assert-equal (Some (proto/StringValue "Assets/Photo.jpg"))
+                    (extension-property application rich-content "local-path")
+                    "local path reaches the native extension")
+      (driver/dispatch-event! application (proto/Press rendered-row))
+      (driver/flush! application)
+      (assert-equal
+       [(model/PresentAssetEffect
+         1 "Photo.jpg" "image/jpeg" "Assets/Photo.jpg")]
+       (:pending-effects (chat/model application))
+       "opening an asset crosses the typed platform-effect boundary"))))
+
+(deftest outliner-row-press-publishes-a-typed-core-effect
+  (let [current (model/initial)
+        editing (model/update current (model/BeginOutlinerEdit "block-a"))]
+    (assert-equal [(model/TapOutlinerBlockEffect 1 "block-a")]
+                  (:pending-effects editing)
+                  "tapBlock crosses the LG effect boundary")
+    (assert-equal 2 (:next-effect-id editing)
+                  "outliner effects share the monotonic effect sequence")))
+
+(deftest flutter-rich-rows-own-their-primary-tap
+  (let [row (record model/outline-row
+                    (uuid "block-a") (title "Linked block")
+                    (markup-json "[]") (youtube-target-url None)
+                    (breadcrumb "") (breadcrumbs []) (opens-as-page false)
+                    (depth 0) (has-children false) (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status None) (tags []) (sync-status None) (page-id "")
+                    (journal-title None) (journal-day None))]
+    (assert-equal
+     false
+     (view/outliner-row-list-item-press-enabled? proto/FlutterHost row)
+     "Flutter rich content avoids a competing whole-row primary tap")
+    (assert-equal
+     true
+     (view/outliner-row-list-item-press-enabled?
+      proto/FlutterHost (assoc row :is-asset true))
+     "Flutter asset rows retain their whole-row presentation action")
+    (assert-equal
+     true
+     (view/outliner-row-list-item-press-enabled?
+      proto/FlutterHost (assoc row :opens-as-page true))
+     "Flutter page rows retain their whole-row navigation action")
+    (assert-equal
+     true
+     (view/outliner-row-list-item-press-enabled? proto/SwiftUIHost row)
+     "SwiftUI row interaction remains unchanged")))
+
+(deftest active-page-actions-use-typed-core-and-platform-effects
+  (let [page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        asset (record model/outline-row
+                      (uuid "asset-a") (title "Photo.jpg")
+                      (markup-json "[]") (youtube-target-url None)
+                      (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+                      (has-children false) (is-collapsed false)
+                      (is-asset true) (asset-type (Some "image/jpeg"))
+                      (local-path (Some "Assets/Photo.jpg")) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        current (assoc (model/initial)
+                       :selected-page (Some page)
+                       :outliner-rows [asset])
+        favorited (model/update current model/ToggleActivePageFavorite)
+        shared (model/update favorited model/ShareActivePage)
+        requested (model/update shared model/RequestDeleteActivePage)
+        deleted (model/update requested model/ConfirmDeleteActivePage)]
+    (assert-equal [(model/SetPageFavoriteEffect 1 "page-a" true)]
+                  (:pending-effects favorited)
+                  "favorite changes cross the semantic core boundary")
+    (assert-equal
+     [(model/SetPageFavoriteEffect 1 "page-a" true)
+      (model/PresentPageShareEffect
+       2 "Project\n- Photo.jpg" ["Assets/Photo.jpg"])]
+     (:pending-effects shared)
+     "sharing carries rendered text and unique local assets to the platform")
+    (assert-equal (Some page) (:pending-page-deletion requested)
+                  "page deletion requires explicit confirmation")
+    (assert-equal
+     [(model/SetPageFavoriteEffect 1 "page-a" true)
+      (model/PresentPageShareEffect
+       2 "Project\n- Photo.jpg" ["Assets/Photo.jpg"])
+      (model/DeletePageEffect 3 "page-a")
+      (model/ClearSelectedPageEffect 4)]
+     (:pending-effects deleted)
+     "confirmed deletion recycles the page and leaves its selected route")))
+
+(deftest page-delete-dialog-exposes-stable-material-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        sidebar (assoc (empty-sidebar-projection)
+                       :selected-page (Some page))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] true "" [] []
+                                       None None [] [] [] false []))
+    (driver/send! application model/RequestDeleteActivePage)
+    (driver/flush! application)
+    (let [root (main-root renderer application)]
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "dialog.page-delete")))
+          "the Material confirmation exposes its dialog root")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "button.page-delete.cancel")))
+          "the Material confirmation exposes an independent cancel action")
+      (is (not (= -1 (descendant-with-identifier
+                      renderer root "button.page-delete.confirm")))
+          "the Material confirmation exposes an independent delete action"))))
+
+(deftest connection-menu-matches-active-page-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        page (record model/sidebar-page (uuid "page-a") (title "Project"))
+        sidebar (assoc (empty-sidebar-projection)
+                       :favorites [page]
+                       :selected-page (Some page))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None sidebar [] true "" [] []
+                                       None None [] [] [] false []))
+    (driver/flush! application)
+    (let [connection (extension-node application "native-overflow-menu")]
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application connection
+                                        "page-actions-visible")
+                    "active pages expose native page actions")
+      (assert-equal (Some (proto/StringValue "Unfavorite"))
+                    (extension-property application connection
+                                        "favorite-label")
+                    "the native action label reflects favorite state")
+      (assert-equal (Some (proto/BoolValue false))
+                    (extension-property application connection
+                                        "settings-visible")
+                    "page overflow excludes graph settings")
+      (driver/dispatch-event!
+       application
+       (proto/ExtensionEvent connection "native-overflow-menu" "favorite" {}))
+      (driver/flush! application)
+      (assert-equal [(model/SetPageFavoriteEffect 1 "page-a" false)]
+                    (:pending-effects (chat/model application))
+                    "the native favorite action keeps its typed LG event"))))
+
+(deftest outliner-structure-controls-use-native-navigation-and-core-effects
+  (let [collapsed
+        (model/update (model/initial)
+                      (model/ToggleOutlinerCollapsed "parent"))
+        zoomed
+        (model/update collapsed (model/RequestAppNode "parent"))]
+    (assert-equal
+     [(model/ToggleOutlinerCollapsedEffect 1 "parent")]
+     (:pending-effects collapsed)
+     "collapse crosses the LG effect boundary")
+    (assert-equal
+     [(model/ToggleOutlinerCollapsedEffect 1 "parent")
+      (model/OpenAppNodeEffect 2 "parent")]
+     (:pending-effects zoomed)
+     "zoom enters the native route through the ordered core effect queue")
+    (assert-equal [(model/NodeRoute "parent")]
+                  (:app-navigation-path zoomed)
+                  "zoom is represented in the native navigation path")
+    (assert-equal 3 (:next-effect-id zoomed)
+                  "both structure controls advance stable effect IDs")))
+
+(deftest outliner-task-status-selection-uses-the-core-event-boundary
+  (let [todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+        done (model/task-status "done" "logseq.property/status.done" "Done" "Done")
+        current (assoc (model/initial) :task-statuses [todo done])
+        chosen
+        (model/update current (model/SetOutlinerTaskStatus "block-a" "done"))]
+    (assert-equal [(model/SetOutlinerTaskStatusEffect 1 "block-a" done)]
+                  (:pending-effects chosen)
+                  "status changes use one direct typed outliner core boundary")))
+
+(deftest flutter-outliner-markers-match-ios-visual-metrics
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+        done (model/task-status "done" "logseq.property/status.done" "Done" "Done")
+        row (record model/outline-row
+                    (uuid "block-a") (title "Ship it")
+                    (markup-json "[]") (youtube-target-url None)
+                    (breadcrumb "") (breadcrumbs []) (opens-as-page false)
+                    (depth 0) (has-children false) (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status (Some todo)) (tags []) (sync-status None)
+                    (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       true "" [] [] None None [] []
+                                       [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          rendered-row (descendant-with-identifier
+                        renderer root "outliner.block.block-a")
+          bullet (descendant-with-identifier
+                  renderer rendered-row "outliner.bullet-glyph.block-a")
+          zoom-button (descendant-with-identifier
+                       renderer rendered-row "button.outliner.zoom.block-a")
+          status-icon (descendant-with-identifier
+                       renderer rendered-row "outliner.task-status-icon.block-a")
+          status-button (descendant-with-identifier
+                         renderer rendered-row "button.block-task-status")]
+      (is (not (= -1 bullet))
+          "Flutter renders a dedicated visual bullet inside its hit target")
+      (assert-equal 7 (property-int renderer bullet proto/WidthValue)
+                    "Flutter uses iOS main's seven-point bullet diameter")
+      (assert-equal 7 (property-int renderer bullet proto/HeightValue)
+                    "the outliner bullet remains circular")
+      (assert-equal 24 (property-int renderer zoom-button proto/WidthValue)
+                    "the zoom control keeps iOS main's 24-point layout slot")
+      (assert-equal 24 (property-int renderer zoom-button proto/HeightValue)
+                    "the zoom control keeps a stable square interaction slot")
+      (is (not (= -1 status-icon))
+          "Flutter renders the task glyph independently from its menu target")
+      (assert-equal 22 (property-int renderer status-icon proto/WidthValue)
+                    "Flutter uses iOS main's 22-point task status glyph")
+      (assert-equal 22 (property-int renderer status-icon proto/HeightValue)
+                    "the task status glyph keeps iOS main's square frame")
+      (assert-equal "foreground"
+                    (property-string renderer status-icon proto/ForegroundValue)
+                    "Flutter matches iOS by using the row foreground for Todo")
+      (assert-equal "<missing>"
+                    (property-string renderer zoom-button proto/InlineIconName)
+                    "the transparent zoom target does not re-add a large Material circle")
+      (assert-equal "<missing>"
+                    (property-string renderer status-button proto/InlineIconName)
+                    "the transparent status target does not duplicate the visible glyph")
+      (driver/send! application
+                    (apply-core-snapshot None (empty-sidebar-projection) []
+                                         true "" [] [] None None [] []
+                                         [(assoc row :status (Some done))] true []))
+      (driver/flush! application)
+      (let [updated-root (main-root renderer application)
+            updated-row (descendant-with-identifier
+                         renderer updated-root "outliner.block.block-a")
+            updated-status-icon
+            (descendant-with-identifier
+             renderer updated-row "outliner.task-status-icon.block-a")]
+        (assert-equal "app:task-done"
+                      (property-string renderer updated-status-icon
+                                       proto/IconName)
+                      "a retained Flutter row replaces the task glyph when status changes")
+        (assert-equal "foreground"
+                      (property-string renderer updated-status-icon
+                                       proto/ForegroundValue)
+                      "retained status changes preserve iOS row foreground styling")))))
+
+(deftest outliner-rows-render-status-tags-and-sync-failures
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
+        tag (record model/sidebar-page (uuid "tag-a") (title "Project"))
+        row (record model/outline-row
+                    (uuid "block-a") (title "Ship it")
+                    (markup-json "[]") (youtube-target-url None)
+                    (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+                    (has-children false) (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None)
+                    (status (Some todo)) (tags [tag])
+                    (sync-status (Some "failed"))
+                    (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       true "" [] [] None None [] []
+                                       [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          rendered-row (descendant-with-identifier
+                        renderer root "outliner.block.block-a")]
+      (let [status-button (descendant-with-identifier
+                           renderer rendered-row "button.block-task-status")
+            tag-button (descendant-with-identifier
+                        renderer rendered-row "button.block-tag.tag-a")
+            tag-row (parent-with-child-identifier
+                     renderer rendered-row "button.block-tag.tag-a")
+            content-row (nth (apple/children renderer rendered-row) 0)]
+        (assert-equal 0
+                      (property-int renderer content-row proto/Gap)
+                      "depth zero does not add spacing before main's bullet")
+        (is (not (= -1 status-button))
+            "task blocks expose their status control")
+        (is (not (= -1 tag-button)) "trailing tags remain interactive")
+        (assert-equal "ghost"
+                      (property-string renderer status-button proto/VariantValue)
+                      "task status uses a plain inline-control style")
+        (assert-equal "app:task-todo"
+                      (property-string renderer status-button proto/InlineIconName)
+                      "task status renders main's icon instead of a text caption")
+        (assert-equal "<missing>"
+                      (property-string renderer status-button proto/TextValue)
+                      "task status does not prefix the block title with visible text")
+        (assert-equal "Todo"
+                      (property-string renderer status-button proto/AccessibilityLabel)
+                      "the icon still announces the task status")
+        (let [runtime-root (driver/root-node application)
+              status-menu (descendant-with-node-kind
+                           renderer status-button apple/AppleContextMenu)
+              status-option
+              (descendant-with-identifier
+               renderer status-button
+               "button.block-task-status-option.logseq.property/status.todo")]
+          (is (not (= -1 status-menu))
+              "block task status is backed by main's native button menu")
+          (assert-equal (Some apple/AppleMenuItem)
+                        (apple/node renderer status-option)
+                        "block task status choices are native menu items")
+          (assert-equal "app:task-todo"
+                        (property-string renderer status-option
+                                         proto/InlineIconName)
+                        "block task status choices preserve their semantic icons")
+          (assert-equal "secondary"
+                        (property-string renderer status-option
+                                         proto/ForegroundValue)
+                        "native block task status choices use a uniform secondary tint")
+          (assert-equal 0
+                        (descendant-count-with-node-kind
+                         renderer runtime-root apple/AppleDialog)
+                        "block task status does not contain a custom dialog")
+          (driver/dispatch-event! application (proto/Press status-option))
+          (driver/flush! application)
+          (assert-equal
+           [(model/SetOutlinerTaskStatusEffect 1 "block-a" todo)]
+           (:pending-effects (chat/model application))
+           "the native menu choice targets its owning block directly"))
+        (assert-equal "ghost"
+                      (property-string renderer tag-button proto/VariantValue)
+                      "block tags use a plain inline-control style")
+        (assert-equal "caption"
+                      (property-string renderer tag-button proto/StyleClass)
+                      "trailing tags match main's caption typography")
+        (assert-equal "accent"
+                      (property-string renderer tag-button proto/ForegroundValue)
+                      "trailing tags use the platform accent color")
+        (assert-equal 6
+                      (property-int renderer tag-row proto/Gap)
+                      "multiple trailing tags use main's compact spacing")
+        (driver/dispatch-event! application (proto/Press tag-button))
+        (driver/flush! application)
+        (assert-equal [(model/NodeRoute "tag-a")]
+                      (:app-navigation-path (chat/model application))
+                      "tag presses use LG-owned node navigation")
+        (is (not (= -1 (descendant-with-identifier
+                         renderer content-row "button.block-tag.tag-a")))
+            "trailing tags share the block content row so their leading edge aligns")
+        (is (not (= -1 (descendant-with-identifier
+                         renderer content-row "outliner.sync-failed.block-a")))
+            "sync failures share the block content row so their leading edge aligns"))
+      (is (not (= -1 (descendant-with-identifier
+                       renderer rendered-row "outliner.sync-failed.block-a")))
+          "failed block sync remains visible"))))
+
+(deftest outliner-long-press-selection-and-toolbar-use-typed-effects
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+              (uuid "parent") (title "Parent")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                           false "" [] [] None None []
+                                           ["parent"] [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          chrome (native-bottom-chrome renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.parent")
+          toolbar (descendant-with-identifier
+                   renderer chrome "toolbar.outliner.selection")
+          selection-buttons (apple/children renderer toolbar)
+          copy-button (nth selection-buttons 0)]
+      (is (property-bool renderer rendered-row proto/Selected)
+          "the selected block is projected into retained row state")
+      (assert-equal "toolbar.outliner.selection"
+                    (property-string renderer toolbar
+                                     proto/AccessibilityIdentifier)
+                    "selection exposes main's stable toolbar identifier")
+      (assert-equal "scroll-leading leading-inset-12"
+                    (property-string renderer toolbar proto/StyleClass)
+                    "selection keeps its trailing action and main inset on narrow screens")
+      (assert-equal "button.outliner.selection.copy"
+                    (property-string renderer copy-button
+                                     proto/AccessibilityIdentifier)
+                    "selection actions keep main's automation identifiers")
+      (doseq [button-contract
+              [(tuple 0 "app:toolbar-copy" "Copy")
+               (tuple 1 "app:toolbar-outdent" "Outdent")
+               (tuple 2 "app:toolbar-indent" "Indent")
+               (tuple 3 "app:toolbar-delete" "Delete")
+               (tuple 4 "app:toolbar-copy-reference" "Copy reference")
+               (tuple 5 "app:toolbar-copy-url" "Copy URL")
+               (tuple 6 "app:toolbar-unselect" "Unselect")]]
+        (match button-contract
+          (tuple index icon caption)
+          (let [button (nth selection-buttons index)]
+            (assert-equal icon
+                          (property-string renderer button proto/InlineIconName)
+                          "selection actions retain main's iconography")
+            (assert-equal caption
+                          (property-string renderer button proto/TextValue)
+                          "selection actions retain main's captions")
+            (assert-equal (if (= index 6) 70 58)
+                          (property-int renderer button proto/WidthValue)
+                          "selection actions retain main's fixed widths"))))
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "surface.composer.root")
+                    "selection replaces Capture")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "toolbar.outliner.editor")
+                    "selection replaces the editor toolbar")
+      (driver/dispatch-event! application (proto/LongPress rendered-row))
+      (driver/dispatch-event! application (proto/Press copy-button))
+      (driver/flush! application)
+      (assert-equal
+       [(model/LongPressOutlinerBlockEffect 1 "parent")
+        (model/OutlinerToolbarEffect 2 "copy")]
+       (:pending-effects (chat/model application))
+       "selection gestures and toolbar actions cross one typed boundary"))))
+
+(deftest flutter-outliner-selection-toolbar-uses-compact-material-actions
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (record model/outline-row
+              (uuid "parent") (title "Parent")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None)
+              (status None) (tags []) (sync-status None) (page-id "")
+              (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       false "" [] [] None None []
+                                       ["parent"] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          selected-row
+          (descendant-with-identifier renderer root "outliner.block.parent")
+          surface (descendant-with-identifier
+                   renderer root "surface.outliner.selection-toolbar")
+          toolbar (descendant-with-identifier
+                   renderer root "toolbar.outliner.selection")
+          buttons (apple/children renderer toolbar)]
+      (assert-equal (Some apple/AppleBox)
+                    (apple/node renderer selected-row)
+                    "Flutter keeps the editor-compatible row surface")
+      (is (property-bool renderer selected-row proto/Selected)
+          "Flutter projects selection onto the row surface")
+      (assert-equal 4
+                    (property-int renderer toolbar proto/Gap)
+                    "Android uses compact Material action spacing")
+      (assert-equal 56
+                    (property-int renderer surface proto/HeightValue)
+                    "the contextual toolbar uses Material bottom-app-bar height")
+      (assert-equal 8
+                    (property-int renderer surface proto/PaddingHorizontal)
+                    "the contextual toolbar keeps balanced horizontal insets")
+      (assert-equal 4
+                    (property-int renderer surface proto/PaddingVertical)
+                    "the contextual toolbar centers 48dp actions")
+      (assert-equal 20
+                    (property-int renderer surface proto/CornerRadius)
+                    "the contextual toolbar has a deliberate Material surface")
+      (assert-equal "surface-container-high"
+                    (property-string renderer surface proto/BackgroundValue)
+                    "selection receives a stronger contextual surface")
+      (assert-equal 7 (count buttons)
+                    "all selection actions remain directly reachable")
+      (doseq [button buttons]
+        (assert-equal 48
+                      (property-int renderer button proto/WidthValue)
+                      "Android selection actions use compact 48dp targets")
+        (assert-equal 48
+                      (property-int renderer button proto/HeightValue)
+                      "Android selection actions fit without vertical overflow")
+        (assert-equal "<missing>"
+                      (property-string renderer button proto/TextValue)
+                      "Android uses icon-only actions instead of clipped captions")
+        (assert-equal "icon"
+                      (property-string renderer button proto/SizeValue)
+                      "Android selection actions render 24dp Material glyphs")
+        (is (not (= "<missing>"
+                    (property-string renderer button proto/AccessibilityLabel)))
+            "icon-only actions retain an accessible label"))
+      (assert-equal "muted-foreground"
+                    (property-string renderer (nth buttons 3)
+                                     proto/ForegroundValue)
+                    "delete stays neutral until the confirmation dialog"))))
+
+(deftest flutter-outliner-editor-toolbar-uses-a-material-bottom-surface
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (record model/outline-row
+              (uuid "block-a") (title "Draft")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None)
+              (status None) (tags []) (sync-status None) (page-id "")
+              (journal-title None) (journal-day None))
+        editing (record model/outliner-editing
+                        (uuid "block-a") (title "Draft")
+                        (caret-utf16-offset 5))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                              (Some editing) None [] [] [row] false []))
+    (driver/flush! application)
+    (let [root (driver/root-node application)
+          editor-container
+          (descendant-with-identifier renderer root
+                                      "container.outliner.editor-chrome")
+          surface (descendant-with-identifier
+                   renderer root "surface.outliner.editor-toolbar")
+          toolbar (descendant-with-identifier
+                   renderer root "toolbar.outliner.editor")
+          buttons (apple/children renderer toolbar)]
+      (assert-equal 56 (property-int renderer surface proto/HeightValue)
+                    "the editor toolbar uses Material bottom-app-bar height")
+      (assert-equal 8
+                    (property-int renderer surface proto/PaddingHorizontal)
+                    "editor actions have balanced horizontal insets")
+      (assert-equal 4
+                    (property-int renderer surface proto/PaddingVertical)
+                    "editor actions are vertically centered")
+      (assert-equal 20
+                    (property-int renderer editor-container proto/CornerRadius)
+                    "the editor chrome has one Material surface shape")
+      (assert-equal "surface-container-low"
+                    (property-string renderer editor-container
+                                     proto/BackgroundValue)
+                    "the editor and autocomplete share one Material surface")
+      (assert-equal 9 (count buttons)
+                    "all editor actions remain reachable by horizontal scroll")
+      (doseq [button buttons]
+        (assert-equal 48 (property-int renderer button proto/WidthValue)
+                      "every editor action has a 48dp target")
+        (assert-equal 48 (property-int renderer button proto/HeightValue)
+                      "every editor action fits the toolbar")
+        (assert-equal "icon" (property-string renderer button proto/SizeValue)
+                      "every editor action uses a 24dp Material glyph"))
+      (let [page-reference (nth buttons 7)]
+        (assert-equal "<missing>"
+                      (property-string renderer page-reference
+                                       proto/InlineIconName)
+                      "page reference does not use an unrelated code glyph")
+        (assert-equal "[[]]"
+                      (property-string renderer page-reference proto/TextValue)
+                      "page reference matches the iOS toolbar symbol")))))
+
+(deftest outliner-editor-toolbar-and-autocomplete-use-core-owned-state
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
+        row (record model/outline-row
+              (uuid "block-a") (title "Project [[Pro")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        editing (record model/outliner-editing
+                        (uuid "block-a")
+                        (title "Project [[Pro")
+                        (caret-utf16-offset 13))
+        autocomplete (record model/outliner-autocomplete
+                             (kind model/NodeAutocomplete)
+                             (query "Pro"))
+        candidate (record model/outliner-autocomplete-candidate
+                          (index 10)
+                          (label "Project Alpha")
+                          (value "page-a"))]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                              (Some editing) (Some autocomplete) [candidate]
+                              [] [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          sidebar-button
+          (descendant-with-identifier renderer root "button.sidebar")
+          navigation (extension-node application "native-navigation-stack")
+          chrome (native-bottom-chrome renderer application)
+          autocomplete-bar
+          (descendant-with-identifier renderer chrome
+                                      "toolbar.outliner.autocomplete")
+          editor-glass
+          (descendant-extension-containing-identifier
+           renderer application chrome "liquid-glass"
+           "toolbar.outliner.editor")
+          autocomplete-column (nth (apple/children renderer autocomplete-bar) 0)
+          candidate-button
+          (descendant-with-identifier renderer autocomplete-column
+                                      "button.outliner.autocomplete.0")
+          editor-toolbar
+          (descendant-with-identifier renderer chrome "toolbar.outliner.editor")
+          editor-buttons (apple/children renderer editor-toolbar)
+          task-button (nth editor-buttons 0)]
+      (is (not (property-bool renderer sidebar-button proto/Enabled))
+          "editing disables both the sidebar button and drawer gesture")
+      (assert-equal (Some (proto/BoolValue true))
+                    (extension-property application navigation
+                                        "bottom-occupies-layout-space")
+                    "the editor reserves safe-area layout space like main")
+      (assert-equal (Some (proto/StringValue "container"))
+                    (extension-property application editor-glass "shape")
+                    "the editor and autocomplete share main's glass container")
+      (assert-equal "button.outliner.autocomplete.0"
+                    (property-string renderer candidate-button
+                                     proto/AccessibilityIdentifier)
+                    "autocomplete numbers the first visible candidate from zero")
+      (assert-equal (Some apple/AppleScrollView)
+                    (apple/node renderer autocomplete-bar)
+                    "autocomplete uses main's vertically scrolling surface")
+      (assert-equal 220
+                    (property-int renderer autocomplete-bar proto/MaxHeight)
+                    "autocomplete keeps main's maximum height")
+      (assert-equal 8
+                    (property-int renderer autocomplete-column proto/PaddingValue)
+                    "autocomplete keeps main's outer padding")
+      (assert-equal 2
+                    (property-int renderer autocomplete-column proto/Gap)
+                    "autocomplete keeps main's row spacing")
+      (assert-equal 44
+                    (property-int renderer candidate-button proto/HeightValue)
+                    "autocomplete rows keep main's touch target height")
+      (assert-equal 1.0
+                    (property-float renderer candidate-button proto/GrowValue)
+                    "autocomplete rows fill the available width")
+      (assert-equal 10
+                    (property-int renderer candidate-button
+                                  proto/PaddingHorizontal)
+                    "autocomplete labels keep main's horizontal inset")
+      (assert-equal "autocomplete-row-background"
+                    (property-string renderer candidate-button
+                                     proto/BackgroundValue)
+                    "autocomplete rows use the shared main-matching background")
+      (assert-equal "foreground"
+                    (property-string renderer candidate-button
+                                     proto/ForegroundValue)
+                    "autocomplete labels use readable content color")
+      (assert-equal 8
+                    (property-int renderer candidate-button proto/CornerRadius)
+                    "autocomplete rows keep main's corner radius")
+      (assert-equal "start"
+                    (property-string renderer candidate-button proto/TextAlignment)
+                    "autocomplete labels align like main")
+      (assert-equal "scroll-leading leading-inset-8"
+                    (property-string renderer editor-toolbar proto/StyleClass)
+                    "the editor keeps hide-keyboard visible with main's inset")
+      (assert-equal "button.outliner.editor.task"
+                    (property-string renderer task-button
+                                     proto/AccessibilityIdentifier)
+                    "the editor toolbar keeps main's task identifier")
+      (assert-equal "Task: None"
+                    (property-string renderer task-button
+                                     proto/AccessibilityLabel)
+                    "the task action announces the active block status like main")
+      (doseq [button-contract
+              [(tuple 0 "app:toolbar-task")
+               (tuple 1 "app:toolbar-outdent")
+               (tuple 2 "app:toolbar-indent")
+               (tuple 3 "app:toolbar-tag")
+               (tuple 4 "app:toolbar-camera")
+               (tuple 5 "app:toolbar-audio")
+               (tuple 6 "app:toolbar-attachment")
+               (tuple 8 "app:toolbar-hide-keyboard")]]
+        (match button-contract
+          (tuple index icon)
+          (let [button (nth editor-buttons index)]
+            (assert-equal icon
+                          (property-string renderer button proto/InlineIconName)
+                          "editor actions retain main's iconography")
+            (assert-equal "<missing>"
+                          (property-string renderer button proto/TextValue)
+                          "editor icon buttons do not render text labels")
+            (assert-equal (if (= index 8) 54 42)
+                          (property-int renderer button proto/WidthValue)
+                          "editor actions retain main's fixed widths"))))
+      (let [page-reference-button (nth editor-buttons 7)]
+        (assert-equal "[[]]"
+                      (property-string renderer page-reference-button
+                                       proto/TextValue)
+                      "page reference retains main's compact symbolic label")
+        (assert-equal "<missing>"
+                      (property-string renderer page-reference-button
+                                       proto/InlineIconName)
+                      "page reference does not replace its main-branch symbol")
+        (assert-equal 42
+                      (property-int renderer page-reference-button proto/WidthValue)
+                      "page reference retains main's toolbar item width"))
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "surface.composer.root")
+                    "the editor replaces Capture")
+      (assert-equal -1
+                    (descendant-with-identifier renderer chrome
+                                                "toolbar.outliner.selection")
+                    "the editor excludes the selection toolbar")
+      (driver/dispatch-event! application (proto/Press candidate-button))
+      (driver/dispatch-event! application (proto/Press task-button))
+      (driver/flush! application)
+      (assert-equal
+       [(model/ChooseOutlinerAutocompleteEffect 1 "page-a")
+        (model/OutlinerToolbarEffect 2 "task")]
+       (:pending-effects (chat/model application))
+       "autocomplete and editor actions cross the typed core boundary")
+      (assert-equal model/SyncingState (:sync-state (chat/model application))
+                    "a task mutation hides stale synced state immediately"))))
+
+(deftest flutter-outliner-autocomplete-stacks-above-the-editor-toolbar
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application
+        (chat/create
+         (apple/backend-for renderer proto/AndroidOS proto/FlutterHost))
+        row (record model/outline-row
+              (uuid "block-a") (title "Draft #")
+              (markup-json "[]") (youtube-target-url None)
+              (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+              (has-children false) (is-collapsed false)
+              (is-asset false) (asset-type None) (local-path None) (status None)
+              (tags []) (sync-status None) (page-id "")
+              (journal-title None) (journal-day None))
+        editing (record model/outliner-editing
+                        (uuid "block-a")
+                        (title "Draft #")
+                        (caret-utf16-offset 7))
+        autocomplete (record model/outliner-autocomplete
+                             (kind model/TagAutocomplete)
+                             (query ""))
+        candidate (record model/outliner-autocomplete-candidate
+                          (index 0)
+                          (label "Project")
+                          (value "tag-a"))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send!
+     application
+     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+                              (Some editing) (Some autocomplete) [candidate]
+                              [] [row] false []))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")
+          navigation-content (nth (apple/children renderer navigation) 0)
+          editor-container
+          (descendant-with-identifier renderer navigation-content
+                                      "container.outliner.editor-chrome")
+          autocomplete-bar
+          (descendant-with-identifier renderer editor-container
+                                      "toolbar.outliner.autocomplete")
+          autocomplete-column (nth (apple/children renderer autocomplete-bar) 0)
+          candidate-button
+          (descendant-with-identifier renderer autocomplete-column
+                                      "button.outliner.autocomplete.0")]
+      (assert-equal
+       (Some apple/AppleColumn)
+       (apple/node renderer editor-container)
+       "Flutter lays autocomplete above the editor toolbar instead of overlaying it")
+      (assert-equal "surface-container-low"
+                    (property-string renderer editor-container
+                                     proto/BackgroundValue)
+                    "tag and page autocomplete share the editor surface")
+      (assert-equal 20
+                    (property-int renderer editor-container proto/CornerRadius)
+                    "autocomplete and toolbar form one rounded container")
+      (is (not (= -1
+                  (child-with-identifier renderer editor-container
+                                         "toolbar.outliner.autocomplete")))
+          "the autocomplete surface shares the visible vertical editor container")
+      (assert-equal "stretch"
+                    (property-string renderer autocomplete-column proto/CrossAlignment)
+                    "Flutter fills autocomplete width with cross-axis stretching")
+      (assert-equal 0.0
+                    (property-float renderer candidate-button proto/GrowValue)
+                    "Flutter does not flex rows along an unbounded scroll axis"))))
+
+(deftest outliner-rows-preserve-depth-zoom-and-collapse-controls
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        row (record model/outline-row
+                    (uuid "parent")
+                    (title "Parent")
+                    (markup-json "[]")
+              (youtube-target-url None)
+              (breadcrumb "")
+              (breadcrumbs [])
+              (opens-as-page false)
+                    (depth 2)
+                    (has-children true)
+                    (is-collapsed false)
+                    (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                           false "" [] [] None None [] []
+                                           [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          outliner (descendant-with-identifier renderer root "list.outliner")
+          rendered-row
+          (descendant-with-identifier renderer outliner "outliner.block.parent")
+          content (nth (apple/children renderer rendered-row) 0)
+          content-children (apple/children renderer content)
+          indent (nth content-children 0)
+          zoom (nth content-children 1)
+          collapse
+          (descendant-with-identifier renderer content
+                                      "button.outliner.collapse.parent")]
+      (assert-equal 44 (property-int renderer indent proto/WidthValue)
+                    "depth uses main's 22-point indentation")
+      (assert-equal 2 (count (apple/children renderer (nth content-children 3)))
+                    "a block without status must not reserve an empty status column and gap")
+      (assert-equal "button.outliner.zoom.parent"
+                    (property-string renderer zoom
+                                     proto/AccessibilityIdentifier)
+                    "zoom keeps main's stable identifier")
+      (assert-equal 24 (property-int renderer zoom proto/WidthValue)
+                    "zoom uses main's 24-point bullet hit width")
+      (assert-equal 24 (property-int renderer zoom proto/HeightValue)
+                    "zoom uses main's 24-point bullet hit height")
+      (assert-equal "app:outliner-bullet"
+                    (property-string renderer zoom proto/InlineIconName)
+                    "zoom renders main's circular bullet instead of a text glyph")
+      (assert-equal "border"
+                    (property-string renderer zoom proto/ForegroundValue)
+                    "the bullet uses main's translucent secondary color")
+      (assert-equal 0 (count (apple/children renderer zoom))
+                    "the graphical bullet has no baseline-dependent text child")
+      (assert-equal "ghost"
+                    (property-string renderer zoom proto/VariantValue)
+                    "zoom uses main's plain bullet control style")
+      (assert-equal "button.outliner.collapse.parent"
+                    (property-string renderer collapse
+                                     proto/AccessibilityIdentifier)
+                    "collapse keeps main's stable identifier")
+      (assert-equal 28 (property-int renderer collapse proto/WidthValue)
+                    "collapse keeps main's 28-point disclosure width")
+      (assert-equal 24 (property-int renderer collapse proto/HeightValue)
+                    "collapse preserves the normal block row height")
+      (assert-equal "ghost"
+                    (property-string renderer collapse proto/VariantValue)
+                    "collapse uses main's plain disclosure control style")
+      (driver/dispatch-event! application (proto/Press zoom))
+      (driver/dispatch-event! application (proto/Press collapse))
+      (driver/flush! application)
+      (assert-equal
+       [(model/OpenAppNodeEffect 1 "parent")
+        (model/ToggleOutlinerCollapsedEffect 2 "parent")]
+       (:pending-effects (chat/model application))
+       "both controls route through LG without triggering row editing")
+      (assert-equal [(model/NodeRoute "parent")]
+                    (:app-navigation-path (chat/model application))
+                    "zoom participates in native Back navigation"))))
+
+(deftest outliner-row-splices-update-the-existing-keyed-projection
+  (let [parent (record model/outline-row
+                 (uuid "parent") (title "Parent")
+                 (markup-json "[]") (youtube-target-url None)
+                 (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+                 (has-children true) (is-collapsed false)
+                 (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        child (record model/outline-row
+                (uuid "child") (title "Child")
+                (markup-json "[]") (youtube-target-url None)
+                (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 1)
+                (has-children false) (is-collapsed false)
+                (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        sibling (record model/outline-row
+                  (uuid "sibling") (title "Sibling")
+                  (markup-json "[]") (youtube-target-url None)
+                  (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+                  (has-children false) (is-collapsed false)
+                  (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        collapsed-parent (record model/outline-row
+                           (uuid "parent") (title "Parent")
+                           (markup-json "[]") (youtube-target-url None)
+                           (breadcrumb "") (breadcrumbs []) (opens-as-page false) (depth 0)
+                           (has-children true) (is-collapsed true)
+                           (is-asset false) (asset-type None) (local-path None) (status None) (tags []) (sync-status None) (page-id "") (journal-title None) (journal-day None))
+        initial
+        (model/update
+         (model/initial)
+         (apply-core-snapshot None (empty-sidebar-projection) []
+                                  false "" [] [] None None [] []
+                                  [parent child sibling] false []))
+        splice (record model/outline-row-splice
+                       (start (Some 0))
+                       (after-block-id None)
+                       (before-block-id None)
+                       (delete-count 2)
+                       (rows [collapsed-parent]))
+        collapsed
+        (model/update
+         initial
+         (apply-core-snapshot None (empty-sidebar-projection) []
+                                  false "" [] [] None None [] [] []
+                                  true [splice]))]
+    (assert-equal [collapsed-parent sibling]
+                  (:outliner-rows collapsed)
+                  "a bounded core splice preserves unaffected keyed rows")))
+
+(deftest native-bridge-returns-initial-and-disposal-patch-batches
+  (let [initial-patch (bridge/initialize 2 1 0)]
+    (is (not (= "" initial-patch)))
+    (is (> (bridge/root-node) 0))
+    (is (not (= "" (bridge/dispose))))))
+
+(deftest native-bridge-preserves-native-search-query-values
+  (bridge/initialize 2 1 0)
+  (let [application (bridge/app)]
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application model/OpenSearch)
+    (driver/flush! application)
+    (let [search (extension-node application "native-search-presentation")]
+      (bridge/extension-event search "native-search-presentation"
+                              "query-changed" "project alpha" 0)
+      (assert-equal "project alpha" (:search-query (chat/model application))
+                    "the native bridge preserves the declared query field"))
+    (bridge/dispose)))
+
+(deftest native-bridge-preserves-native-navigation-back-counts
+  (bridge/initialize 2 1 0)
+  (let [application (bridge/app)]
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application (model/RequestAppNode "page-a"))
+    (driver/flush! application)
+    (let [navigation (extension-node application "native-navigation-stack")]
+      (bridge/extension-event navigation "native-navigation-stack" "back" "" 1)
+      (assert-equal [] (:app-navigation-path (chat/model application))
+                    "the native bridge preserves the declared back count"))
+    (bridge/dispose)))
+
+(deftest journal-list-remains-retained-across-sidebar-destinations
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        first-page (record model/sidebar-page (uuid "page-a") (title "First"))
+        second-page (record model/sidebar-page (uuid "page-b") (title "Second"))
+        sidebar
+        (record model/sidebar-projection
+          (favorites [first-page])
+          (recent-pages [second-page])
+          (selected-page None)
+          (selected-page-is-tag false)
+          (selected-page-is-property false)
+          (related-rows [])
+          (linked-reference-rows []))
+        rows
+        [(journal-outline-row "row-a" "page-a" "A" "First" 20260829 0)
+         (journal-outline-row "row-b" "page-b" "B" "Second" 20260828 0)]]
+    (driver/start! application)
+    (driver/send!
+     application
+     (apply-core-snapshot (Some "Work") sidebar []
+                          false "" [] [] None None [] [] rows false []))
+    (driver/flush! application)
+    (let [journal-pane
+          (descendant-with-identifier
+           renderer (driver/root-node application) "pane.journals")
+          initial-list
+          (descendant-with-identifier
+           renderer journal-pane "list.outliner")]
+      (is (not (= -1 initial-list)) "journals render the retained virtual list")
+      (driver/send! application model/ShowGraphs)
+      (driver/flush! application)
+      (assert-equal
+       initial-list
+       (descendant-with-identifier
+        renderer journal-pane "list.outliner")
+       "switching destinations keeps the expensive journal tree mounted")
+      (driver/send! application (model/SelectSidebarPage "page-a"))
+      (driver/flush! application)
+      (let [first-selected-pane
+            (descendant-with-identifier
+             renderer (driver/root-node application) "pane.selected-page")
+            first-selected-list
+            (descendant-with-identifier renderer first-selected-pane "list.outliner")]
+        (assert-equal
+         initial-list
+         (descendant-with-identifier renderer journal-pane "list.outliner")
+         "selecting a page does not rebuild the long journal list")
+        (driver/send! application model/OpenSidebar)
+        (driver/send! application (model/SelectSidebarPage "page-b"))
+        (driver/flush! application)
+        (let [second-selected-pane
+              (descendant-with-identifier
+               renderer (driver/root-node application) "pane.selected-page")
+              second-selected-list
+              (descendant-with-identifier renderer second-selected-pane "list.outliner")]
+          (is (not (= first-selected-list second-selected-list))
+              "switching pages creates a fresh top-aligned scroll surface"))))))
+
+(deftest sidebar-selection-follows-visible-destination
+  (let [page (record model/sidebar-page (uuid "page-a") (title "Page A"))
+        current (assoc (model/initial)
+                       :selected-page (Some page))]
+    (is (view/sidebar-page-selected? current page))
+    (let [graphs (model/update current model/ShowGraphs)]
+      (is (view/graphs-sidebar-selected? graphs))
+      (is (not (view/sidebar-page-selected? graphs page))
+          "Graphs and a retained page cannot both be selected"))))
+
+(deftest native-outliner-controls-match-first-line-and-main-status-shapes
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        status (model/task-status "actual-status-uuid" "logseq.property/status.doing" "Doing" "progress")
+        row (assoc (journal-outline-row "control-row" "page-a" "Control" "Today" 20260907 0)
+                   :status (Some status) :has-children true)]
+    (assert-equal "app:task-doing" (view/outliner-task-status-icon row)
+                  "status identity uses its semantic ident, never a placeholder UUID")
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       true "" [] [] None None [] [] [row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          bullet (descendant-with-identifier renderer root "button.outliner.zoom.control-row")
+          status-button (descendant-with-identifier renderer root "button.block-task-status")
+          collapse (descendant-with-identifier renderer root "button.outliner.collapse.control-row")]
+      (assert-equal "body-line" (property-string renderer bullet proto/StyleClass)
+                    "bullet follows the first body line as font size changes")
+      (assert-equal 24 (property-int renderer collapse proto/HeightValue)
+                    "gaining a child must not increase the parent row height")
+      (assert-equal 22 (property-int renderer status-button proto/WidthValue)
+                    "native status icon keeps main's 22-point size")
+      (assert-equal "secondary" (property-string renderer status-button proto/ForegroundValue)
+                    "every status uses the same semantic foreground"))))

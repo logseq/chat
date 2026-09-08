@@ -2,7 +2,7 @@
 #     https://docs.fastlane.tools/advanced/#appfile
 
 require('dotenv')
-Dotenv.load '../../Skip.env'
-app_identifier(ENV['ANDROID_APPLICATION_ID'] || ENV['PRODUCT_BUNDLE_IDENTIFIER'])
+Dotenv.load '../../App.env'
+app_identifier(ENV['PRODUCT_BUNDLE_IDENTIFIER'])
 
 # apple_id("my@email")

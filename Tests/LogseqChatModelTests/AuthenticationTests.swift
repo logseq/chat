@@ -118,4 +118,20 @@ private struct FailingCognitoProvider: LogseqCognitoProviding {
             #expect(published == [nil])
         }
     }
+
+    @Test @MainActor func missingAccessTokenLeavesExpectedSignedOutStateWithoutAnError() async {
+        var published: [String?] = []
+        let auth = LogseqAuthenticationStore(provider: FakeCognitoProvider(token: nil)) { token in
+            published.append(token)
+        }
+
+        do {
+            _ = try await auth.accessToken()
+            #expect(1 == 0, "Expected a missing access token to throw")
+        } catch {
+            #expect(auth.state == .signedOut)
+            #expect(auth.errorMessage == nil)
+            #expect(published == [nil])
+        }
+    }
 }

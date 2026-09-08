@@ -1,0 +1,29 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible: ".*E2E Outliner Fixture.*"
+    timeout: 30000
+- tapOn: "Edit block E2E Outliner Fixture.*"
+- pressKey: ENTER
+- inputText: "Android E2E hierarchy parent"
+- pressKey: ENTER
+- inputText: "Android E2E hierarchy child"
+- tapOn:
+    id: "button.outliner.editor.indent"
+- tapOn: "Hide keyboard"
+- assertVisible: "Android E2E hierarchy parent"
+- assertVisible: "Android E2E hierarchy child"
+- tapOn: "Collapse Android E2E hierarchy parent"
+- assertNotVisible: "Android E2E hierarchy child"
+- tapOn: "Expand Android E2E hierarchy parent"
+- assertVisible: "Android E2E hierarchy child"
+- tapOn: "Zoom into Android E2E hierarchy parent"
+- extendedWaitUntil:
+    visible: "Android E2E hierarchy child"
+    timeout: 10000
+- assertVisible: "Android E2E hierarchy parent"
+- pressKey: BACK
+- assertVisible: ".*E2E Outliner Fixture.*"
+- assertVisible: "Android E2E hierarchy parent"
+- assertNotVisible: "outliner_effect_failed"

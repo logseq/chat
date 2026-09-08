@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import LogseqChat
 
-#if !SKIP
 @Suite struct CognitoOAuthTests {
     private let configuration = CognitoOAuthConfiguration(
         domain: "auth.example.com",
@@ -125,4 +124,3 @@ import Testing
         })
     }
 }
-#endif

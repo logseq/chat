@@ -313,6 +313,12 @@ let last_favorite_order db =
          None
 ;;
 
+let built_in_class db eid =
+  match value db eid "db/ident" with
+  | Some (Keyword ident) -> String.starts_with ~prefix:"logseq.class/" ident
+  | _ -> false
+;;
+
 let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
   let favorites =
     favorite_page_eid db
@@ -353,6 +359,7 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
         |> Option.map (fun datom -> datom.v)
       in
       if attr "logseq.property/built-in?" = Some (Bool true)
+         || built_in_class db datom.e
       then None
       else
         Some
@@ -419,6 +426,23 @@ let page_block decrypt_title db eid =
         }
 ;;
 
+(* Match Logseq's get-all-classes filtering, independently of whether a tag
+   is shown on a rendered node. In particular, Task remains selectable. *)
+let tag_available_for_completion db eid =
+  match value db eid "db/ident" with
+  | Some (Keyword ident) ->
+    not (List.mem ident
+           [ "logseq.class/Root"; "logseq.class/Page"; "logseq.class/Property"
+           ; "logseq.class/Tag"; "logseq.class/Asset"; "logseq.class/Journal"
+           ; "logseq.class/Whiteboard"; "logseq.class/Pdf-annotation" ])
+  | _ -> true
+;;
+
+let tag_last_used db eid =
+  Ds_value.datoms_by_ref db Aevt "block/tags" eid
+  |> Seq.fold_left (fun latest datom -> max latest datom.tx) 0
+;;
+
 let tag_pages ?(decrypt_title = fun value -> Ok value) db =
   match Datascript.entid db "db/ident" (Keyword "logseq.class/Tag") with
   | None -> []
@@ -426,10 +450,17 @@ let tag_pages ?(decrypt_title = fun value -> Ok value) db =
     Ds_value.datoms_by_ref db Aevt "block/tags" tag_class_eid
     |> List.of_seq
     |> List.filter_map (fun datom ->
-      if tag_is_visible_in_node db datom.e
-      then page_summary decrypt_title db datom.e
+      if tag_available_for_completion db datom.e
+      then Option.map (fun page -> tag_last_used db datom.e, page)
+             (page_summary decrypt_title db datom.e)
       else None)
-    |> List.sort_uniq (fun left right -> String.compare left.uuid right.uuid)
+    |> List.sort (fun (left_used, left) (right_used, right) ->
+      match compare right_used left_used with
+      | 0 -> (match String.compare left.title right.title with
+              | 0 -> String.compare left.uuid right.uuid
+              | order -> order)
+      | order -> order)
+    |> List.map snd
 ;;
 
 let node_is_tag db uuid =
@@ -537,6 +568,15 @@ let compare_blocks left right =
   | Some _, None -> -1
   | None, Some _ -> 1
   | None, None -> compare left.created_at right.created_at
+;;
+
+let compare_journal_blocks left right =
+  let journal_day block =
+    match block.Model.journal with Some (_, day) -> day | None -> 0
+  in
+  match compare (journal_day right) (journal_day left) with
+  | 0 -> compare_blocks left right
+  | order -> order
 ;;
 
 (* Match Logseq's related-content visibility rules: hidden or recycled nodes,
@@ -656,7 +696,7 @@ let blocks ?(decrypt_title = fun value -> Ok value) ?(journal_limit = 7) db =
   |> Int_set.to_seq
   |> Seq.filter_map (block decrypt_title db)
   |> List.of_seq
-  |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
+  |> List.sort compare_journal_blocks
 ;;
 
 type projection =
@@ -689,7 +729,7 @@ let create_projection ?(decrypt_title = fun value -> Ok value) db =
 let projection_blocks projection =
   Hashtbl.to_seq_values projection.blocks_by_uuid
   |> List.of_seq
-  |> List.sort (fun left right -> compare left.Model.created_at right.Model.created_at)
+  |> List.sort compare_journal_blocks
 ;;
 
 let identity = function

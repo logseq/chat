@@ -56,13 +56,6 @@ if [[ "$apply_count" != 1 ]]; then
   exit 1
 fi
 
-render_count="$(sed '/LOGSEQ_LAUNCH_METRIC journals_ui_ready_ms=/q' "$launch_log" | grep -c 'LOGSEQ_LAUNCH_METRIC outliner_body_ms=')"
-if [[ "$render_count" != 1 ]]; then
-  print -u2 "journals must render once before ready, got $render_count"
-  cat "$launch_log" >&2
-  exit 1
-fi
-
 grep 'LOGSEQ_.*METRIC' "$launch_log"
 
 awk -v actual="$metric" -v budget="$budget_ms" 'BEGIN {

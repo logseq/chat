@@ -1,0 +1,46 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible: ".*E2E Outliner Fixture.*"
+    timeout: 30000
+- tapOn: "Edit block E2E Outliner Fixture.*"
+- tapOn:
+    id: "button.outliner.editor.audio"
+- assertVisible: "Audio recording"
+- extendedWaitUntil:
+    visible:
+      id: "toggle.audio.transcription"
+    timeout: 10000
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: "Stop recording"
+    timeout: 10000
+- tapOn: "Stop recording"
+- extendedWaitUntil:
+    visible: "Audio-.*\\.m4a"
+    timeout: 15000
+- assertVisible:
+    id: "player.asset.audio"
+- tapOn:
+    id: "player.asset.audio"
+- assertVisible: "Pause audio"
+- tapOn: "Pause audio"
+- assertVisible: "Play audio"
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible: "Audio-.*\\.m4a"
+    timeout: 15000
+- assertVisible:
+    id: "player.asset.audio"

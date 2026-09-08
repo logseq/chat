@@ -1,0 +1,170 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.overflow-menu"
+    timeout: 30000
+- tapOn:
+    id: "button.overflow-menu"
+- tapOn: "Settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings"
+    timeout: 5000
+- assertVisible:
+    id: "layout.settings.appearance-control"
+- assertVisible:
+    id: "picker.settings.language"
+- assertVisible:
+    id: "label.settings.editor"
+- tapOn:
+    id: "picker.settings.appearance"
+- assertVisible: "Dark"
+- tapOn: "Dark"
+- tapOn:
+    id: "button.connection.apply"
+- extendedWaitUntil:
+    visible:
+      id: "button.overflow-menu"
+    timeout: 10000
+- takeScreenshot: "android-settings-dark-theme"
+- tapOn:
+    id: "button.overflow-menu"
+- tapOn: "Settings"
+- tapOn:
+    id: "picker.settings.appearance"
+- tapOn: "System"
+- tapOn:
+    id: "button.connection.apply"
+- extendedWaitUntil:
+    visible:
+      id: "button.overflow-menu"
+    timeout: 10000
+- tapOn:
+    id: "button.overflow-menu"
+- tapOn: "Settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings"
+    timeout: 5000
+- tapOn:
+    id: "picker.settings.language"
+- assertVisible: "简体中文"
+- tapOn:
+    id: "button.settings.language.system"
+- assertVisible:
+    id: "switch.settings.spell-check"
+- assertVisible:
+    id: "switch.settings.auto-correction"
+- scrollUntilVisible:
+    element:
+      id: "label.settings.sync-server"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "field.base-url"
+- scrollUntilVisible:
+    element:
+      id: "link.settings.tabs"
+    direction: UP
+    timeout: 10000
+- assertVisible:
+    id: "link.settings.tabs"
+- tapOn:
+    id: "link.settings.tabs"
+- extendedWaitUntil:
+    visible:
+      id: "screen.settings.tabs"
+    timeout: 5000
+- assertVisible:
+    id: "toggle.settings.tab.journals"
+- assertVisible:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible:
+    id: "toggle.settings.tab.graphs"
+- assertVisible: "Graphs, on"
+- tapOn:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible: "Flashcards, off"
+- tapOn:
+    id: "toggle.settings.tab.flashcards"
+- assertVisible: "Flashcards, on"
+- takeScreenshot: "android-settings-material-icons"
+- tapOn:
+    id: "button.connection.cancel"
+- assertVisible:
+    id: "screen.settings"
+- scrollUntilVisible:
+    element:
+      id: "label.settings.about"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "label.settings.about"
+- scrollUntilVisible:
+    element:
+      id: "button.runtime-log"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "button.runtime-log"
+- extendedWaitUntil:
+    visible:
+      id: "screen.runtime-log"
+    timeout: 5000
+- assertVisible:
+    id: "button.log-errors"
+- assertVisible:
+    id: "button.log-order"
+- assertVisible:
+    id: "button.log-source"
+- assertVisible:
+    id: "button.log-copy"
+- extendedWaitUntil:
+    visible: "INFO"
+    timeout: 10000
+- tapOn:
+    id: "button.log-source"
+- extendedWaitUntil:
+    visible: "INFO"
+    timeout: 10000
+- tapOn:
+    id: "button.log-order"
+- tapOn:
+    id: "button.log-copy"
+- tapOn: "Done"
+- assertVisible:
+    id: "screen.settings"
+- scrollUntilVisible:
+    element:
+      id: "link.settings.community.report-bug"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "link.settings.community.report-bug"
+- scrollUntilVisible:
+    element:
+      id: "link.settings.community.discord"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "link.settings.community.discord"
+- scrollUntilVisible:
+    element:
+      id: "link.settings.community.forum"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "link.settings.community.forum"
+- scrollUntilVisible:
+    element:
+      id: "link.settings.community.github"
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: "link.settings.community.github"
+- tapOn:
+    id: "button.connection.cancel"
+- assertVisible:
+    id: "button.overflow-menu"

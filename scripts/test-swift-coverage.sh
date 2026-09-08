@@ -5,7 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
-swift test --enable-code-coverage --skip XCSkipTests
+swift test --enable-code-coverage
 
 bin_path=$(swift build --show-bin-path)
 test_binary="$bin_path/logseq-chatPackageTests.xctest/Contents/MacOS/logseq-chatPackageTests"

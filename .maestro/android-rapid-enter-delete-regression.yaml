@@ -1,0 +1,27 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible: ".*E2E Outliner Fixture.*"
+    timeout: 30000
+- tapOn: "Edit block E2E Outliner Fixture.*"
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- pressKey: BACKSPACE
+- inputText: "Android keyboard remains active"
+- assertVisible: ".*Android keyboard remains active.*"
+- pressKey: ENTER
+- pressKey: BACKSPACE
+- assertVisible: ".*Android keyboard remains active.*"
+- assertVisible:
+    id: "toolbar.outliner.editor"
+- assertNotVisible: "outliner_effect_failed"

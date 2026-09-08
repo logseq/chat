@@ -17,40 +17,58 @@ appId: com.logseq.chat
 - inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
+- tapOn:
+    id: "surface.composer.dismiss"
+- assertVisible:
+    id: "button.composer.expand"
+- scrollUntilVisible:
+    element:
+      text: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
 - assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible:
     id: "button.block-task-status"
-- tapOn: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible:
-    id: "button.composer.expand"
 - tapOn:
     id: "button.search"
 - assertVisible:
     id: "screen.search"
 - assertVisible:
-    id: "button.search.close"
+    text: "close"
 - assertNotVisible: "Cancel"
-- assertNotVisible: "Back"
+- assertNotVisible:
+    id: "BackButton"
+- tapOn: "Search pages and blocks"
+- waitForAnimationToEnd
+- inputText: "x"
+- eraseText: 1
 - inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn: "Search"
 - extendedWaitUntil:
-    visible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+    visible:
+      id: "search.result.*"
     timeout: 10000
 - swipe:
     direction: UP
     duration: 400
 - assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
-- tapOn: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn:
+    id: "search.result.*"
 - extendedWaitUntil:
-    visible: "Back"
+    visible:
+      id: "BackButton"
     timeout: 10000
-- tapOn: "Back"
+- tapOn:
+    id: "BackButton"
 - extendedWaitUntil:
     visible:
       id: "screen.search"
     timeout: 10000
 - assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
-- tapOn:
-    id: "button.search.close"
+- tapOn: "close"
 - assertNotVisible:
     id: "screen.search"
 - extendedWaitUntil:

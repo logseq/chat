@@ -10,7 +10,7 @@ appId: com.logseq.chat
           index: 0
 - extendedWaitUntil:
     visible:
-      id: "list.outliner"
+      id: "pane.journals"
     timeout: 60000
 - tapOn: "Edit block First synced block"
 - pressKey: ENTER

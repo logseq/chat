@@ -4,7 +4,14 @@ module Model = Logseq_chat_model
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
 
-let block ?(page_id = "page") ?(parent_id = Some "page") ?(order = Some "a0") uuid title =
+let block
+      ?(page_id = "page")
+      ?(parent_id = Some "page")
+      ?(order = Some "a0")
+      ?(journal = None)
+      uuid
+      title
+  =
   Model.
     { uuid
     ; title
@@ -23,8 +30,49 @@ let block ?(page_id = "page") ?(parent_id = Some "page") ?(order = Some "a0") uu
     ; asset_size = None
     ; asset_checksum = None
     ; local_path = None
-    ; journal = None
+    ; journal
     }
+;;
+
+let () =
+  let blocks =
+    [ block
+        ~page_id:"older-page"
+        ~parent_id:(Some "older-page")
+        ~order:(Some "a0")
+        ~journal:(Some ("Older", 20260827))
+        "older-first"
+        "Older first"
+    ; block
+        ~page_id:"newer-page"
+        ~parent_id:(Some "newer-page")
+        ~order:(Some "a1")
+        ~journal:(Some ("Newer", 20260828))
+        "newer-second"
+        "Newer second"
+    ; block
+        ~page_id:"older-page"
+        ~parent_id:(Some "older-page")
+        ~order:(Some "a1")
+        ~journal:(Some ("Older", 20260827))
+        "older-second"
+        "Older second"
+    ; block
+        ~page_id:"newer-page"
+        ~parent_id:(Some "newer-page")
+        ~order:(Some "a0")
+        ~journal:(Some ("Newer", 20260828))
+        "newer-first"
+        "Newer first"
+    ]
+  in
+  let uuids =
+    State.visible_rows State.{ blocks; pages = []; tags = [] } State.empty
+    |> List.map (fun row -> row.State.block.uuid)
+  in
+  assert_bool
+    "journal roots stay grouped newest-first in outliner order"
+    (uuids = [ "newer-first"; "newer-second"; "older-first"; "older-second" ])
 ;;
 
 let context = State.{ blocks = [ block "a" "Alpha"; block ~order:(Some "a1") "b" "Beta" ]; pages = []; tags = [] }
@@ -42,8 +90,8 @@ let () =
   let state, effects = State.update context state (Choose_autocomplete "Project") in
   assert_bool "autocomplete completion updates editor text"
     (State.editing_title state = Some "A [[Project]]");
-  assert_bool "autocomplete completion requests selection feedback"
-    (effects = [ State.Haptic Selection ])
+  assert_bool "new page completion creates the page without saving the draft"
+    (effects = [ State.Create_page "Project"; State.Haptic Selection ])
 ;;
 
 let () =
@@ -681,6 +729,12 @@ let () =
   assert_bool "autocomplete candidates deduplicate by value"
     (State.autocomplete_candidates candidates_context State.{ kind = Node; query = "project" }
      = [ State.{ label = "Project"; value = "project" } ]);
+  let context_with_blank_block =
+    State.{ candidates_context with blocks = block "blank" "" :: candidates_context.blocks }
+  in
+  assert_bool "node autocomplete excludes blank blocks"
+    (State.autocomplete_candidates context_with_blank_block State.{ kind = Node; query = "" }
+     |> List.for_all (fun candidate -> not (String.equal candidate.State.label "")));
   assert_bool "tag candidates reuse page entities"
     (List.length
        (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "project" })
@@ -1120,4 +1174,57 @@ let () =
   in
   assert_bool "backspace ignores an editor whose block disappeared during rebase"
     (unchanged = state && effects = [])
+;;
+
+let () =
+  let failures = ref [] in
+  let check label passed =
+    Printf.printf "%s: %s\n%!" (if passed then "PASS" else "FAIL") label;
+    if not passed then failures := label :: !failures
+  in
+  let ctx = State.{ context with pages = [ { label = "Project"; value = "page-id" } ] } in
+  let start title caret =
+    let state, _ = State.update ctx State.empty (Tap_block "a") in
+    fst (State.update ctx state (Text_changed { title; caret }))
+  in
+  List.iter (fun (title, caret, value, expected) ->
+    let state, effects = State.update ctx (start title caret) (Choose_autocomplete value) in
+    check ("balanced completion: " ^ title)
+      (State.editing_title state = Some expected
+       && effects = (if value = "Novel"
+                     then [ State.Create_page "Novel"; State.Haptic Selection ]
+                     else [ State.Haptic Selection ])))
+    [ "[[Pro]]", 5, "page-id", "[[Project]]"
+    ; "[[]]", 2, "Novel", "[[Novel]]"
+    ; "Before [[Pro]] after", 12, "page-id", "Before [[Project]] after"
+    ; "😀 [[Pro]] tail", 8, "page-id", "😀 [[Project]] tail"
+    ; "[[Pro]", 5, "page-id", "[[Project]]"
+    ; "[[Pro", 5, "page-id", "[[Project]]"
+    ; "[[Pro]] [[Next]]", 5, "page-id", "[[Project]] [[Next]]"
+    ; "[[Project]]", 5, "page-id", "[[Project]]"
+    ];
+  check "unmatched page offers creation"
+    (State.autocomplete_candidates ctx State.{ kind = Node; query = "Novel" }
+     = [ State.{ label = "New page: Novel"; value = "Novel" } ]);
+  check "empty page query never offers creation"
+    (State.autocomplete_candidates State.{ blocks = []; pages = []; tags = [] }
+       State.{ kind = Node; query = "" } = []);
+  List.iter (fun initially_collapsed ->
+    let state = start "Edited [[Pro" 12 in
+    let state = if initially_collapsed
+      then { state with collapsed = State.String_set.singleton "b" } else state in
+    let state, effects = State.update ctx state (Toggle_collapsed "b") in
+    check (if initially_collapsed then "expand exits editing" else "collapse exits editing")
+      (State.editing_uuid state = None && State.autocomplete state = None
+       && List.exists (function State.Commit_title _ -> true | _ -> false) effects))
+    [false; true];
+  if !failures <> [] then failwith (String.concat "; " (List.rev !failures))
+;;
+
+let () =
+  let tags = State.[{label = "Project"; value = "project"}; {label = "Personal"; value = "personal"}] in
+  let context = State.{blocks = []; pages = []; tags} in
+  let matches = State.autocomplete_candidates context State.{kind = Tag; query = "prj"} in
+  assert_bool "tag completion shares Logseq fuzzy matching"
+    (List.exists (fun (candidate : State.autocomplete_candidate) -> candidate.value = "project") matches)
 ;;

@@ -1,0 +1,37 @@
+appId: com.logseq.chat
+---
+- launchApp
+- runFlow:
+    when:
+      visible:
+        id: "screen.graph-picker"
+    commands:
+      - tapOn:
+          id: "button.graph-add"
+- extendedWaitUntil:
+    visible:
+      id: "field.graph-name"
+    timeout: 30000
+- tapOn:
+    id: "field.graph-name"
+- eraseText: 100
+- inputText: "android-regression-20260901-0242"
+- hideKeyboard
+- tapOn:
+    id: "toggle.graph-encryption"
+- tapOn:
+    id: "button.graph-add.confirm"
+- extendedWaitUntil:
+    visible: "android-regression-20260901-0242"
+    timeout: 60000
+- assertNotVisible:
+    id: "sheet.graph-create"
+- extendedWaitUntil:
+    visible:
+      id: "journals.graph-loaded"
+    timeout: 60000
+- assertVisible:
+    id: "pane.journals"
+- assertNotVisible: "snapshot_download_failed"
+- assertNotVisible: "snapshot required"
+- assertVisible: "Edit block Untitled block"

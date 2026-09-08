@@ -5,28 +5,8 @@ appId: com.logseq.chat
 - launchApp
 - tapOn:
     id: "button.sidebar"
-- tapOn:
-    id: "link.sidebar.journals"
-    retryTapIfNoChange: true
-- extendedWaitUntil:
-    notVisible:
-      id: "button.sidebar.dismiss"
-    timeout: 10000
-- scrollUntilVisible:
-    element:
-      id: "button.journal.e2e10000-0000-4000-8000-000000000007"
-    direction: DOWN
-    timeout: 30000
-    speed: 50
-    visibilityPercentage: 100
-    centerElement: true
-- waitForAnimationToEnd
-- assertVisible:
-    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
-- tapOn:
-    id: "button.journal.e2e10000-0000-4000-8000-000000000007"
-- assertVisible:
-    id: "BackButton"
+- tapOn: "E2E Page Target"
+- assertVisible: "E2E Block Target"
 - tapOn: "Edit block E2E Block Target"
 - pressKey: ENTER
 - pressKey: ENTER

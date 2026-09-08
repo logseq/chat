@@ -1,5 +1,5 @@
 # This file contains the fastlane.tools configuration
-# for the iOS half of the Skip app.
+# for the Apple app.
 # You can find the documentation at https://docs.fastlane.tools
 
 default_platform(:ios)
@@ -39,4 +39,3 @@ lane :release do |options|
     release_notes: { default: "Fixes and improvements." }
   )
 end
-

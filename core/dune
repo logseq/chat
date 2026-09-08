@@ -1,3 +1,8 @@
+(env
+ (android
+  (link_flags
+   (:standard -runtime-variant _pic))))
+
 (library
  (name logseq_chat_core)
  (wrapped false)
@@ -16,6 +21,8 @@
   logseq_chat_flashcards
   logseq_chat_graph_runtime
   logseq_chat_http
+  logseq_chat_lui_host_update
+  logseq_chat_lui_snapshot
   logseq_chat_logseq_storage_codec
   logseq_chat_markup
   logseq_chat_model
@@ -28,7 +35,6 @@
   logseq_chat_rpc
   logseq_chat_search_index
   logseq_chat_snapshot
-  logseq_chat_sse
   logseq_chat_sync_checkpoint
   logseq_chat_sync_protocol
   logseq_chat_sync_tx
@@ -36,6 +42,8 @@
   logseq_chat_sync_state)
  (libraries
   datascript-ocaml-native
+  datascript-ocaml-lg
+  lg.edn-backend.native
   melange-edn-native
   melange-transit-core
   melange-transit-native
@@ -50,20 +58,57 @@
   (language c)
   (names logseq_chat_https_stub logseq_chat_graph_store_stubs))
  (c_library_flags
-  (:standard -lsqlite3)))
+  (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
+
+(rule
+ (target logseq_chat_lui_native.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  (glob_files %{libexec:lui:lg/lui}/*.clj*)
+  (glob_files %{libexec:lui:lg/lui/backend}/*.clj*)
+  (source_tree ../lg/logseq_chat)
+  %{bin:lg})
+ (action
+  (run
+   %{bin:lg}
+   --target native
+   --compile-files-from %{lib:signal-lg.states:signal_native.state}
+   %{libexec:lui:lg/lui}
+   %{libexec:lui:lg/lui/backend/retained.lgi}
+   %{libexec:lui:lg/lui/backend/retained.cljc}
+   %{libexec:lui:lg/lui/backend/apple.lgi}
+   %{libexec:lui:lg/lui/backend/apple.cljc}
+   %{libexec:lui:lg/lui/backend/flutter.lgi}
+   %{libexec:lui:lg/lui/backend/flutter.cljc}
+   ../lg/logseq_chat
+   -o %{target})))
 
 (executable
  (name logseq_chat_mobile_entry)
  (modules
   logseq_chat_mobile_entry
+  logseq_chat_lui_native
+  logseq_chat_lui_projection
+  logseq_chat_platform_crypto
   logseq_chat_sqlite)
- (modes exe object shared_object)
- (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix)
+ (modes object)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries
+  logseq_chat_core
+  datascript-ocaml-native.sqlite
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  threads.posix)
  (foreign_stubs
   (language c)
   (names logseq_chat_core_ffi))
- (link_flags :standard -cclib -L/opt/homebrew/opt/sqlite/lib)
- (flags :standard -linkall))
+ (link_deps
+  %{env:LOGSEQ_CHAT_SQLITE_LINK_FILE=./libsqlite3.a})
+ (link_flags
+  :standard
+  -cclib
+  -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.}))
 
 (library
  (name logseq_chat_e2e_seed_support)
@@ -86,6 +131,29 @@
 (test
  (name logseq_chat_model_test)
  (modules logseq_chat_model_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_lui_snapshot_test)
+ (modules logseq_chat_lui_snapshot_test)
+ (libraries logseq_chat_core))
+
+(test
+ (name logseq_chat_lui_projection_test)
+ (modules
+  logseq_chat_lui_projection_test
+  logseq_chat_lui_native
+  logseq_chat_lui_projection)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries
+  logseq_chat_core
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec))
+
+(test
+ (name logseq_chat_lui_host_update_test)
+ (modules logseq_chat_lui_host_update_test)
  (libraries logseq_chat_core))
 
 (test
@@ -114,11 +182,6 @@
   logseq_chat_sqlite_test
   logseq_chat_sqlite)
  (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix))
-
-(test
- (name logseq_chat_sse_test)
- (modules logseq_chat_sse_test)
- (libraries logseq_chat_core))
 
 (test
  (name logseq_chat_sync_protocol_test)

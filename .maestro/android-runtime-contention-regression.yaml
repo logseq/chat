@@ -1,0 +1,19 @@
+appId: com.logseq.chat
+---
+- repeat:
+    times: 3
+    commands:
+      - launchApp
+      - extendedWaitUntil:
+          visible: "Journals"
+          timeout: 30000
+      # Android 16's accessibility driver intermittently lists the testTag in
+      # hierarchy output but fails to match it immediately after process start.
+      - tapOn:
+          point: "7%,8%"
+      - extendedWaitUntil:
+          visible:
+            id: "sidebar.navigation"
+          timeout: 30000
+      - back
+      - assertVisible: "Journals"

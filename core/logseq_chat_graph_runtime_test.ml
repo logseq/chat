@@ -428,8 +428,11 @@ let () =
       assert_bool "journal launch projection contains only today's journal"
         (List.length (Runtime.blocks runtime) = 1 && Runtime.has_older_journals runtime);
       Runtime.load_older_journals runtime;
-      assert_bool "journal projection expands only when requested"
-        (List.length (Runtime.blocks runtime) = 8 && not (Runtime.has_older_journals runtime)))
+      assert_bool "journal pagination appends two pages per request"
+        (List.length (Runtime.blocks runtime) = 3 && Runtime.has_older_journals runtime);
+      Runtime.load_older_journals runtime;
+      assert_bool "each subsequent request appends two more pages"
+        (List.length (Runtime.blocks runtime) = 5 && Runtime.has_older_journals runtime))
 ;;
 
 let () =
@@ -677,7 +680,48 @@ let () =
     assert_bool "semantic conflict is retained"
       (match List.assoc_opt "op-title" (Runtime.operation_statuses runtime) with
        | Some (Ops.Conflicted _) -> true
-       | _ -> false))
+      | _ -> false))
+;;
+
+let () =
+  with_runtime (fun path conn runtime ->
+    let insert =
+      Ops.
+        { operation_id = "authoritative-insert-echo"
+        ; base_t = 42
+        ; state = Queued
+        ; intent =
+            Insert_block
+              { uuid = "echoed-new"
+              ; title = "Local title"
+              ; page_uuid = "page"
+              ; parent_uuid = "page"
+              ; order = "a1"
+              ; created_at = 100
+              }
+        }
+    in
+    assert_bool "insert stages before its authoritative echo"
+      (Runtime.stage runtime insert = Ok ());
+    let authoritative =
+      base_db "Old"
+      |> db_with
+           [ Add (Entity_id 20, "block/uuid", Uuid "echoed-new")
+           ; Add (Entity_id 20, "block/title", String "Server-normalized title")
+           ; Add (Entity_id 20, "block/page", Ref 1)
+           ; Add (Entity_id 20, "block/parent", Ref 1)
+           ; Add (Entity_id 20, "block/order", String "a2")
+           ]
+    in
+    ignore (reset_conn conn authoritative);
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+    assert_bool
+      "an authoritative insert echo clears the pending operation despite server normalization"
+      (Ops.list ~path = []);
+    assert_bool
+      "the authoritative echoed insert remains visible"
+      (Option.is_some
+         (entity (Runtime.db runtime) (Lookup_ref ("block/uuid", Uuid "echoed-new")))))
 ;;
 
 let () =

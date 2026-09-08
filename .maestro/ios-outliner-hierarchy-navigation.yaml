@@ -11,7 +11,8 @@ appId: com.logseq.chat
     duration: 600
 - assertVisible:
     id: "button.sidebar.dismiss"
-- assertNotVisible: "Back"
+- assertNotVisible:
+    id: "BackButton"
 - tapOn:
     id: "button.sidebar.dismiss"
 - assertVisible: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"

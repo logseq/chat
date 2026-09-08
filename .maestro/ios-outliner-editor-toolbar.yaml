@@ -9,6 +9,7 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "Task: None"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/editor-leading"
 - tapOn:
     id: "button.outliner.editor.task"
 - extendedWaitUntil:
@@ -37,11 +38,12 @@ appId: com.logseq.chat
     id: "toolbar.outliner.autocomplete"
 - pressKey: BACKSPACE
 - swipe:
-    start: 80%, 55%
-    end: 15%, 55%
+    start: 80%, 59%
+    end: 15%, 59%
     duration: 800
 - assertVisible:
     id: "toolbar.outliner.editor"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/toolbars/editor-trailing"
 - tapOn:
     id: "button.outliner.editor.pageReference"
 - assertVisible:

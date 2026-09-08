@@ -24,7 +24,11 @@ let refresh_search runtime =
         Logseq_chat_search_index.refresh index runtime.snapshot.Projection.db;
         runtime.search_index_is_fresh <- true
       with
-      | Failure _ -> runtime.search_index_is_fresh <- false)
+      | error ->
+        Printf.eprintf
+          "LOGSEQ_SEARCH_INDEX_ERROR stage=refresh error=%s\n%!"
+          (Printexc.to_string error);
+        runtime.search_index_is_fresh <- false)
     runtime.search_index
 ;;
 
@@ -172,6 +176,12 @@ let safe_to_rebase = function
   | Ops.Delete_blocks _ -> false
 ;;
 
+let inserted_result_exists db = function
+  | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ } ->
+    Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
+  | _ -> false
+;;
+
 let split_result_exists db = function
   | Ops.Split_block { new_uuid; _ } ->
     Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid new_uuid))
@@ -179,7 +189,9 @@ let split_result_exists db = function
 ;;
 
 let committed_despite_later_changes ~server_t authoritative (operation : Ops.t) =
-  match operation.state with
+  if inserted_result_exists authoritative operation.intent
+  then true
+  else match operation.state with
   | Ops.Accepted accepted_t ->
     accepted_t <= server_t && split_result_exists authoritative operation.intent
   | Ops.Submitted -> split_result_exists authoritative operation.intent
@@ -258,7 +270,11 @@ let create_base
   let search_index =
     Option.bind search_index_path (fun path ->
       try Some (Logseq_chat_search_index.create ~path) with
-      | Failure _ -> None)
+      | error ->
+        Printf.eprintf
+          "LOGSEQ_SEARCH_INDEX_ERROR stage=open error=%s\n%!"
+          (Printexc.to_string error);
+        None)
   in
   report "search";
   let runtime =
@@ -638,7 +654,7 @@ let has_older_journals runtime =
 ;;
 
 let load_older_journals runtime =
-  runtime.journal_limit <- runtime.journal_limit + 7
+  runtime.journal_limit <- runtime.journal_limit + 2
 ;;
 
 let blocks_for_page runtime page_uuid =
@@ -757,6 +773,19 @@ let search runtime query =
   | None -> []
   | Some index ->
     if not runtime.search_index_is_fresh then refresh_search runtime;
-    (try Logseq_chat_search_index.search_hits index runtime.snapshot.db query with
-     | Failure _ -> [])
+    (try
+       let hits = Logseq_chat_search_index.search_hits index runtime.snapshot.db query in
+       Printf.eprintf
+         "LOGSEQ_SEARCH_INDEX_QUERY query=%S fresh=%b hits=%d\n%!"
+         query
+         runtime.search_index_is_fresh
+         (List.length hits);
+       hits
+     with
+     | error ->
+       Printf.eprintf
+         "LOGSEQ_SEARCH_INDEX_ERROR stage=query query=%S error=%s\n%!"
+         query
+         (Printexc.to_string error);
+       [])
 ;;

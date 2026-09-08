@@ -1,0 +1,56 @@
+# Start on Journals with a short first entry and the sidebar closed.
+appId: com.logseq.chat
+---
+- assertVisible:
+    id: "button.sidebar"
+- repeat:
+    times: 4
+    commands:
+      - swipe:
+          start: "30%,20%"
+          end: "85%,20%"
+          duration: 400
+      - assertVisible:
+          id: "button.sidebar.dismiss"
+      - tapOn:
+          id: "button.sidebar.dismiss"
+      - assertVisible:
+          id: "button.sidebar"
+      - swipe:
+          start: "5%,24%"
+          end: "85%,24%"
+          duration: 250
+      - assertVisible:
+          id: "button.sidebar.dismiss"
+      - swipe:
+          start: "90%,20%"
+          end: "5%,20%"
+          duration: 300
+      - assertVisible:
+          id: "button.sidebar"
+      - swipe:
+          start: "15%,24%"
+          end: "80%,24%"
+          duration: 400
+      - assertVisible:
+          id: "button.sidebar.dismiss"
+      - tapOn:
+          id: "button.sidebar.dismiss"
+      - assertVisible:
+          id: "button.sidebar"
+- tapOn:
+    point: "30%,20%"
+- assertNotVisible:
+    id: "button.sidebar"
+- tapOn:
+    point: "10%,10%"
+- assertVisible:
+    id: "button.sidebar"
+- tapOn:
+    point: "5%,24%"
+- assertNotVisible:
+    id: "button.sidebar"
+- tapOn:
+    point: "10%,10%"
+- assertVisible:
+    id: "button.sidebar"

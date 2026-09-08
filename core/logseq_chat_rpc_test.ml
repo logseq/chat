@@ -120,6 +120,27 @@ let () =
   | _ -> failwith "block JSON must remain an object"
 ;;
 
+let () =
+  let rich_block uuid title =
+    Logseq_chat_model.
+      { uuid; title; page_id = "page"; parent_id = None; order = None
+      ; created_at = 0; updated_at = 0; sync_status = "synced"; tags = []
+      ; references = []; breadcrumbs = []; status = None; is_asset = false
+      ; asset_type = None; asset_size = None; asset_checksum = None
+      ; local_path = None; journal = None
+      }
+  in
+  let targets =
+    Logseq_chat_rpc.youtube_target_urls
+      [ rich_block "video" "{{youtube dQw4w9WgXcQ}}"
+      ; rich_block "timestamp" "{{youtube-timestamp 01:23}}"
+      ]
+  in
+  match List.assoc_opt "timestamp" targets with
+  | Some "https://www.youtube.com/watch?v=dQw4w9WgXcQ" -> ()
+  | _ -> failwith "outliner projection must associate timestamps with the preceding YouTube video"
+;;
+
 let contains text fragment =
   try
     ignore (Str.search_forward (Str.regexp_string fragment) text 0);
@@ -1463,10 +1484,28 @@ let () =
     Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
   in
   configure_plain_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"}}|});
+  let response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"}}|}
+    |> from_string
+  in
+  (match response with
+   | `Assoc fields ->
+     let result = required_assoc "result" fields in
+     if not (required_bool "isOutlinerPatch" result)
+     then failwith "shared assets must insert into the visible journal incrementally";
+     (match required_list "outlinerRowSplices" result with
+      | [ `Assoc splice ] ->
+        (match required_list "rows" splice with
+         | [ `Assoc row ] ->
+           assert_equal
+             "shared asset row"
+             "shared-image"
+             (required_assoc "block" row |> required_string "uuid")
+         | _ -> failwith "shared asset patch must insert one visible row")
+      | _ -> failwith "shared asset patch must contain one bounded row splice")
+   | _ -> failwith "shared asset should return an RPC response");
   let asset = Option.get (Logseq_chat_model.read_block session.model "shared-image") in
   assert_equal "shared asset stores normalized type" "jpeg" (Option.get asset.asset_type);
   let request =
@@ -1517,10 +1556,51 @@ let () =
 ;;
 
 let () =
+  let applied = ref [] in
+  let session =
+    Logseq_chat_rpc.create
+      ~apply_sync_event:(fun payload ->
+        applied := payload :: !applied;
+        Ok ())
+      ()
+  in
+  let started =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"startWebSocket"}}|}
+    |> from_string
+  in
+  let applied_response =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"wire-event"}}|}
+    |> from_string
+  in
+  let stopped =
+    Logseq_chat_rpc.call
+      session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"stopWebSocket"}}|}
+    |> from_string
+  in
+  let assert_ok label = function
+    | `Assoc fields ->
+      (match assoc "ok" fields with
+       | Some (`Bool true) -> ()
+       | _ -> failwith (label ^ " should succeed"))
+    | _ -> failwith (label ^ " should return an RPC response")
+  in
+  assert_ok "startWebSocket" started;
+  assert_ok "applySyncEvent" applied_response;
+  assert_ok "stopWebSocket" stopped;
+  if !applied <> [ "wire-event" ]
+  then failwith "applySyncEvent should apply exactly one WebSocket event"
+;;
+
+let () =
   let authoritative_blocks = ref [] in
   let session =
     Logseq_chat_rpc.create
-      ~feed_sse:(fun _chunk ->
+      ~apply_sync_event:(fun _event ->
         authoritative_blocks :=
           [ Logseq_chat_model.
               { uuid = "local-self-echo"
@@ -1556,9 +1636,9 @@ let () =
   ignore
     (Logseq_chat_rpc.call
        session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"self-echo"}}|});
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"self-echo"}}|});
   if Logseq_chat_model.pending_blocks session.model <> []
-  then failwith "authoritative SSE self-echo should clear local pending state"
+  then failwith "authoritative WebSocket self-echo should clear local pending state"
 ;;
 
 let () =
@@ -1664,12 +1744,12 @@ let remote_block uuid title =
 
 let () =
   let session =
-    Logseq_chat_rpc.create ~feed_sse:(fun _ -> Error "sync schema mismatch") ()
+    Logseq_chat_rpc.create ~apply_sync_event:(fun _ -> Error "sync schema mismatch") ()
   in
   let response =
     Logseq_chat_rpc.call
       session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"remote-change"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"remote-change"}}|}
     |> from_string
   in
   match response with
@@ -1689,7 +1769,7 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~graph_blocks:(fun () -> Some !authoritative)
-      ~feed_sse:(fun _ ->
+      ~apply_sync_event:(fun _ ->
         authoritative := [ remote_block "editing-sync" "Local draft"; remote_block "remote-sync" "After" ];
         Ok ())
       ()
@@ -1699,7 +1779,7 @@ let () =
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"outlinerEvent","payload":"{\"type\":\"tapBlock\",\"uuid\":\"editing-sync\"}"}}|});
   let synced =
     Logseq_chat_rpc.call session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"feedSSE","payload":"remote-change"}}|}
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"remote-change"}}|}
     |> from_string
   in
   match synced with
@@ -1723,7 +1803,7 @@ let () =
       failwith
         ("sync received while editing must update the visible projection: "
          ^ Yojson.Basic.to_string synced)
-  | _ -> failwith "feedSSE while editing should return a snapshot"
+  | _ -> failwith "applySyncEvent while editing should return a snapshot"
 ;;
 
 let prepare_test_operation operation =
@@ -2615,6 +2695,136 @@ let () =
 
 let () =
   let staged = ref [] in
+  let stage operation =
+    staged :=
+      List.filter
+        (fun pending ->
+          not
+            (String.equal
+               pending.Logseq_chat_pending_ops.operation_id
+               operation.Logseq_chat_pending_ops.operation_id))
+        !staged
+      @ [ operation ];
+    Ok ()
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ remote_block "remote" "Old" ])
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations:(fun () ->
+        List.filter
+          (fun operation ->
+            match operation.Logseq_chat_pending_ops.state with
+            | Queued | Retryable | Submitted -> true
+            | Accepted _ | Applied | Conflicted _ -> false)
+          !staged)
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote\",\"operationId\":\"first-after-response\",\"expectedTitle\":\"Old\",\"title\":\"First\",\"status\":null}"}}|});
+  let first_request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  let completion =
+    match
+      Logseq_chat_rpc.call session
+        (Printf.sprintf
+           {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":43}\",\"error\":null}"}}|}
+           (required_int "id" first_request))
+      |> from_string
+    with
+    | `Assoc fields -> required_assoc "result" fields
+    | _ -> failwith "pending sync completion must be an object"
+  in
+  assert_int_equal
+    "a successful batch response projects its accepted cursor before WebSocket echo"
+    43
+    (required_int "appliedServerT" completion);
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote\",\"operationId\":\"second-after-response\",\"expectedTitle\":\"First\",\"title\":\"Second\",\"status\":null}"}}|});
+  let second_request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  assert_int_equal
+    "a successful batch response advances the next pump before its WebSocket echo"
+    43
+    (required_assoc "bodyObject" second_request |> required_int "t-before")
+;;
+
+let () =
+  (* A batch acceptance can advance the transport cursor before WebSocket sync advances
+     the authoritative graph. New edits must still stage against the graph
+     runtime cursor while their request chains from the accepted cursor. *)
+  let source = remote_block "accepted-before-sse" "First" in
+  let staged = ref [] in
+  let stage (operation : Logseq_chat_pending_ops.t) =
+    (match operation.state with
+     | Queued when operation.base_t <> 42 ->
+       Error "operation was created against a stale server cursor"
+     | _ ->
+       staged :=
+         List.filter
+           (fun (pending : Logseq_chat_pending_ops.t) ->
+             not (String.equal pending.operation_id operation.operation_id))
+           !staged
+         @ [ operation ];
+       Ok ())
+  in
+  let session =
+    Logseq_chat_rpc.create
+      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+      ~sync_cursor:(fun () -> Some 42)
+      ~graph_blocks:(fun () -> Some [ source ])
+      ~stage_operation:stage
+      ~prepare_operation:prepare_test_operation
+      ~pending_operations:(fun () ->
+        List.filter
+          (fun operation ->
+            match operation.Logseq_chat_pending_ops.state with
+            | Queued | Retryable | Submitted -> true
+            | Accepted _ | Applied | Conflicted _ -> false)
+          !staged)
+      ()
+  in
+  configure_plain_graph session;
+  ignore
+    (Logseq_chat_rpc.call session
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"accepted-before-sse\",\"operationId\":\"accepted-first\",\"expectedTitle\":\"First\",\"title\":\"Updated\",\"status\":null}"}}|});
+  let request =
+    Logseq_chat_rpc.call session
+      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
+    |> pending_request |> Option.get
+  in
+  ignore
+    (Logseq_chat_rpc.call session
+       (Printf.sprintf
+          {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":43}\",\"error\":null}"}}|}
+          (required_int "id" request)));
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  ignore
+    (dispatch_outliner
+       session
+       (`Assoc [ "type", `String "returnPressed"; "uuid", `String source.uuid ]));
+  match List.rev !staged with
+  | { Logseq_chat_pending_ops.state = Queued; base_t = 42; _ } :: _ -> ()
+  | _ -> failwith "post-acceptance outliner edits must use the authoritative cursor"
+;;
+
+let () =
+  let staged = ref [] in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
@@ -3395,7 +3605,53 @@ let () =
   let first_empty = split source.uuid in
   let second_empty = split first_empty in
   if String.equal first_empty second_empty
-  then failwith "consecutive node-route Enter must create distinct blocks"
+  then failwith "consecutive node-route Enter must create distinct blocks";
+  ignore
+    (dispatch_outliner session
+       (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+  let inserted = split source.uuid in
+  let response =
+    dispatch_outliner session
+      (`Assoc [ "type", `String "caretMoved"; "caretUTF16Offset", `Int 0 ])
+  in
+  let rows = required_first_assoc "nodeRoutes" response |> required_list "outlinerRows" in
+  let ids = List.map (function
+    | `Assoc row -> required_assoc "block" row |> required_string "uuid"
+    | _ -> failwith "expected an outliner row") rows in
+  if ids <> [ source.uuid; inserted; first_empty; second_empty ]
+  then failwith ("node-route insertion moved to the bottom: " ^ String.concat "," ids);
+  let expected = ref ids in
+  for _ = 1 to 20 do
+    ignore (dispatch_outliner session
+      (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
+    let inserted = split source.uuid in
+    expected := source.uuid :: inserted :: List.tl !expected;
+    let response = dispatch_outliner session
+      (`Assoc [ "type", `String "caretMoved"; "caretUTF16Offset", `Int 0 ]) in
+    let rows = required_first_assoc "nodeRoutes" response |> required_list "outlinerRows" in
+    let ids = List.map (function
+      | `Assoc row -> required_assoc "block" row |> required_string "uuid"
+      | _ -> failwith "expected an outliner row") rows in
+    if ids <> !expected then failwith "repeated insertion must stay after the first block"
+  done
+;;
+
+let () =
+  let source = remote_block "optimistic-task" "Task" in
+  let projected =
+    Logseq_chat_rpc.project_outliner_intent
+      [ source ]
+      (Logseq_chat_pending_ops.Set_property
+         { uuid = source.uuid
+         ; attr = "logseq.property/status"
+         ; expected = None
+         ; value = Some (Ref_ident "logseq.property/status.todo")
+         })
+  in
+  match projected with
+  | [ { Logseq_chat_model.status = Some status; sync_status = "pending"; _ } ]
+    when status.ident = Some "logseq.property/status.todo" && status.title = "Todo" -> ()
+  | _ -> failwith "task status operations must update the optimistic outliner row"
 ;;
 
 let () =
@@ -3837,4 +4093,74 @@ let () =
   match !reviewed with
   | Some ("flashcard", Logseq_chat_flashcards.Good, value, "review-op") when value = now -> ()
   | _ -> failwith "reviewFlashcard must preserve UUID, rating, time, and operation id"
+;;
+
+let () =
+  let parent = remote_block "parent" "Parent" in
+  let child = { (remote_block "child" "Child") with Logseq_chat_model.parent_id = Some "parent" } in
+  let staged = ref [] in
+  let session = Logseq_chat_rpc.create
+    ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+    ~sync_cursor:(fun () -> Some 92)
+    ~graph_blocks:(fun () -> Some [parent; child])
+    ~stage_operation:(fun operation -> staged := operation :: !staged; Ok ())
+    ~prepare_operation:prepare_test_operation () in
+  configure_plain_graph session;
+  ignore (dispatch_outliner session (`Assoc ["type", `String "tapBlock"; "uuid", `String "parent"]));
+  ignore (dispatch_outliner session (`Assoc ["type", `String "textChanged"; "title", `String "Changed parent"; "caretUTF16Offset", `Int 14]));
+  let collapsed = dispatch_outliner session (`Assoc ["type", `String "toggleCollapsed"; "uuid", `String "parent"]) in
+  if List.assoc_opt "editing" (required_assoc "outlinerState" collapsed) <> Some `Null
+  then failwith "collapse must finish the active editor";
+  if required_list "outlinerRowSplices" collapsed = []
+  then failwith "collapse after editing must remove child rows as well as saving the title";
+  if List.length !staged <> 1 then failwith "collapse saves the pending title exactly once"
+;;
+
+let () =
+  let staged = ref [] in
+  let session = Logseq_chat_rpc.create
+    ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+    ~sync_cursor:(fun () -> Some 92)
+    ~graph_blocks:(fun () -> Some [remote_block "editing" "Original"])
+    ~stage_operation:(fun operation -> staged := operation :: !staged; Ok ())
+    ~prepare_operation:prepare_test_operation () in
+  configure_plain_graph session;
+  ignore (dispatch_outliner session (`Assoc ["type", `String "tapBlock"; "uuid", `String "editing"]));
+  ignore (dispatch_outliner session (`Assoc ["type", `String "textChanged"; "title", `String "Draft [[Novel]]"; "caretUTF16Offset", `Int 13]));
+  let result = dispatch_outliner session (`Assoc ["type", `String "chooseAutocomplete"; "value", `String "Novel"]) in
+  let editing = required_assoc "editing" (required_assoc "outlinerState" result) in
+  assert_equal "new page keeps paired reference in the draft" "Draft [[Novel]]" (required_string "title" editing);
+  match !staged with
+  | [operation] ->
+    (match Logseq_chat_pending_ops.intent_json operation.intent with
+     | `Assoc fields -> assert_equal "new page stages creation without saving the block" "create-page" (required_string "type" fields)
+     | _ -> failwith "new page operation must be serializable")
+  | _ -> failwith "choosing New page must create exactly one real page without saving the draft"
+;;
+
+let () =
+  let live = ref (remote_block "source" "Original") in
+  let session = Logseq_chat_rpc.create
+    ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+    ~sync_cursor:(fun () -> Some 92)
+    ~graph_blocks:(fun () -> Some [!live])
+    ~stage_operation:(fun operation ->
+      (match operation.Logseq_chat_pending_ops.intent with
+       | Save_title { title; _ } ->
+         live := { !live with title; references = [{ uuid = "target"; title = "New page" }] }
+       | _ -> ());
+      Ok ())
+    ~prepare_operation:prepare_test_operation () in
+  configure_plain_graph session;
+  ignore (dispatch_outliner session (`Assoc ["type", `String "tapBlock"; "uuid", `String "source"]));
+  ignore (dispatch_outliner session (`Assoc ["type", `String "textChanged"; "title", `String "See [[target]]"; "caretUTF16Offset", `Int 14]));
+  let result = dispatch_outliner session (`Assoc ["type", `String "saveEditing"]) in
+  let rec has_reference = function
+    | `Assoc fields ->
+      List.assoc_opt "type" fields = Some (`String "nodeReference")
+      || List.exists (fun (_, value) -> has_reference value) fields
+    | `List values -> List.exists has_reference values
+    | _ -> false in
+  if not (has_reference (`Assoc result))
+  then failwith "save patch must immediately render newly staged reference metadata"
 ;;

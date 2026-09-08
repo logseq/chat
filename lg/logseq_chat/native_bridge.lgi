@@ -1,0 +1,44 @@
+(ns logseq-chat.native-bridge)
+
+(signature logseq-chat.native-bridge/send-patch! :fn<string;bool>)
+(signature logseq-chat.native-bridge/operating-system
+  :fn<int;operating-system>)
+(signature logseq-chat.native-bridge/host-kind :fn<int;host-kind>)
+(signature logseq-chat.native-bridge/app
+  :fn<reducer-app<chat-model;chat-action>>)
+(signature logseq-chat.native-bridge/flush-event! :fn<event;string>)
+(signature logseq-chat.native-bridge/flush-action! :fn<chat-action;string>)
+(signature logseq-chat.native-bridge/encode-string-vector
+ :fn<vector<string>;string>)
+(signature logseq-chat.native-bridge/encode-option-string
+ :fn<option<string>;string>)
+(signature logseq-chat.native-bridge/encode-task-status
+ :fn<task-status;string>)
+(signature logseq-chat.native-bridge/encode-asset-presentation
+ :fn<string;string;string;string>)
+(signature logseq-chat.native-bridge/encode-settings
+ :fn<settings-projection;string>)
+(signature logseq-chat.native-bridge/encode-runtime-log-record
+ :fn<runtime-log-record;string>)
+(signature logseq-chat.native-bridge/encode-runtime-log-records
+ :fn<vector<runtime-log-record>;string>)
+(signature logseq-chat.native-bridge/encode-effect :fn<chat-effect;string>)
+(signature logseq-chat.native-bridge/encode-effect-dispatch :fn<chat-effect;string;string>)
+(signature logseq-chat.native-bridge/take-effect :fn<string>)
+(signature logseq-chat.native-bridge/resolve-effect :fn<int;bool;string;string>)
+(signature logseq-chat.native-bridge/initialize :fn<int;int;int;string>)
+(signature logseq-chat.native-bridge/linked :fn<bool>)
+(signature logseq-chat.native-bridge/appear :fn<int;string>)
+(signature logseq-chat.native-bridge/press :fn<int;string>)
+(signature logseq-chat.native-bridge/long-press :fn<int;string>)
+(signature logseq-chat.native-bridge/text-changed :fn<int;string;string>)
+(signature logseq-chat.native-bridge/submit :fn<int;string>)
+(signature logseq-chat.native-bridge/toggle-changed :fn<int;bool;string>)
+(signature logseq-chat.native-bridge/change :fn<int;string>)
+(signature logseq-chat.native-bridge/value-changed :fn<int;float;string>)
+(signature logseq-chat.native-bridge/dismiss :fn<int;string>)
+(signature logseq-chat.native-bridge/double-press :fn<int;string>)
+(signature logseq-chat.native-bridge/extension-event
+ :fn<int;string;string;string;int;string>)
+(signature logseq-chat.native-bridge/dispose :fn<string>)
+(signature logseq-chat.native-bridge/root-node :fn<int>)

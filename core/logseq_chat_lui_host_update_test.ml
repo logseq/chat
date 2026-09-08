@@ -1,0 +1,66 @@
+open Logseq_chat_lui_host_update
+
+let fail message = raise (Failure message)
+
+let () =
+  let settings_json =
+    {|{"appearance":"dark","language":"zh-CN","spellCheck":false,"autoCorrection":true,"sidebarTabs":["journals","graphs"],"baseURL":"https://example.com","version":"1.2.3","revision":"abc123"}|}
+  in
+  (match decode "settings" settings_json with
+   | Ok
+       (Settings
+         { appearance = "dark"
+         ; language = "zh-CN"
+         ; spell_check = false
+         ; auto_correction = true
+         ; sidebar_tabs = [ "journals"; "graphs" ]
+         ; base_url = "https://example.com"
+         ; version = "1.2.3"
+         ; revision = "abc123"
+         }) -> ()
+   | _ -> fail "settings host update was not decoded");
+  let logs_json =
+    {|[{"id":"7","level":"ERROR","source":"ui","timestamp":"12:34","message":"第一行\nsecond line"}]|}
+  in
+  (match decode "runtime-log" logs_json with
+   | Ok
+       (Runtime_log
+         [ { id = "7"
+           ; level = "ERROR"
+           ; source = "ui"
+           ; timestamp = "12:34"
+           ; message = "第一行\nsecond line"
+           }
+         ]) -> ()
+   | _ -> fail "runtime log host update lost Unicode or newlines");
+  (match decode "local-graph-ids" {|["a","b"]|} with
+   | Ok (Local_graph_ids [ "a"; "b" ]) -> ()
+   | _ -> fail "local graph identifiers were not decoded");
+  (match decode "open-capture" {|{}|} with
+   | Ok Open_capture -> ()
+   | _ -> fail "capture presentation host updates were not decoded");
+  (match decode "composer-draft" {|"稍后处理\nsecond line"|} with
+   | Ok (Composer_draft "稍后处理\nsecond line") -> ()
+   | _ -> fail "composer draft host updates lost Unicode or newlines");
+  (match decode "graph-loading" {|true|} with
+   | Ok (Graph_loading true) -> ()
+   | _ -> fail "graph loading host updates were not decoded");
+  (match
+     decode
+       "authentication"
+       {|{"state":"signedOut","errorMessage":"Authorization was cancelled"}|}
+   with
+   | Ok
+       (Authentication
+         { state = "signedOut"; error_message = Some "Authorization was cancelled" }) ->
+     ()
+   | Error message -> fail ("authentication host update was rejected: " ^ message)
+   | Ok _ -> fail "authentication host update lost its state or error");
+  (match decode "authentication" {|{"state":"signedIn","errorMessage":null}|} with
+   | Ok (Authentication { state = "signedIn"; error_message = None }) -> ()
+   | Error message -> fail ("nullable authentication errors were rejected: " ^ message)
+   | Ok _ -> fail "signed-in authentication did not preserve a null error");
+  (match decode "unknown" {|{}|} with
+   | Error _ -> ()
+   | Ok _ -> fail "unknown host updates must be rejected")
+;;

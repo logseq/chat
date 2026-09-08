@@ -2,13 +2,70 @@ appId: com.logseq.chat
 ---
 - launchApp
 - tapOn:
-    id: "field.email"
+    id: "button.hosted-sign-in"
+- runFlow:
+    when:
+      visible: "Use without an account"
+    commands:
+      - tapOn: "Use without an account"
+- extendedWaitUntil:
+    visible:
+      id: "signInFormUsername"
+    timeout: 30000
+- tapOn:
+    id: "signInFormUsername"
 - inputText: ${USERNAME}
+- runFlow:
+    when:
+      visible: "Try out your stylus"
+    commands:
+      - tapOn: "Cancel"
 - tapOn:
-    id: "field.password"
+    id: "signInFormPassword"
 - inputText: ${PASSWORD}
-- tapOn:
-    id: "button.sign-in"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "submit"
+    timeout: 10000
+- tapOn: "submit"
+- extendedWaitUntil:
+    visible:
+      id: "screen.graph-picker"
+    timeout: 60000
+- runFlow:
+    file: "android-graph-picker-sheet.yaml"
+- runFlow:
+    file: "android-graph-picker-settings.yaml"
+- runFlow:
+    when:
+      notVisible:
+        id: "graph\\..*"
+    commands:
+      - tapOn:
+          id: "button.graph-add"
+      - extendedWaitUntil:
+          visible:
+            id: "form.graph-create"
+          timeout: 10000
+      - tapOn:
+          id: "field.graph-name"
+      - inputText: "android-e2e-graph"
+      - hideKeyboard
+      - tapOn:
+          id: "toggle.graph-encryption"
+      - tapOn:
+          id: "button.graph-add.confirm"
+- runFlow:
+    when:
+      visible:
+        id: "graph\\..*"
+    commands:
+      - runFlow:
+          file: "android-graph-picker-open.yaml"
+- extendedWaitUntil:
+    visible:
+      id: "button.composer.expand"
+    timeout: 60000
 - extendedWaitUntil:
     visible:
       id: "button.connection"
@@ -16,11 +73,10 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.connection"
 - tapOn: "Settings"
-- assertVisible: "Connection"
-- tapOn:
-    id: "field.base-url"
-- eraseText
-- inputText: ${BASE_URL}
+- assertVisible:
+    id: "sheet.settings"
+- assertVisible:
+    id: "button.connection.apply"
 - tapOn:
     id: "button.connection.apply"
 - assertVisible:

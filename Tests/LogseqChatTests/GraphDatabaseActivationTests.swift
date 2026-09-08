@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import LogseqChatModel
 
-#if !SKIP
 @Suite(.serialized) struct GraphDatabaseActivationTests {
     @Test @MainActor func reopeningCatalogForAuthenticationCannotLeaveGraphSnapshotOnCatalogRuntime() async throws {
         let recorder = GraphDatabaseRequestRecorder()
@@ -58,4 +57,3 @@ private final class GraphDatabaseRequestRecorder: @unchecked Sendable {
         lock.unlock()
     }
 }
-#endif

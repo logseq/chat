@@ -1,21 +1,18 @@
 import Foundation
-#if !SKIP
 import LogseqChatCoreABI
-#endif
 
 public struct LogseqGraphSnapshotArtifact: Sendable {
     public let metadataBody: String
     public let filePath: String
 }
 
-#if !SKIP
-enum LogseqGraphSSEFailurePolicy {
-    static func shouldReport(_ error: Error, taskIsCancelled: Bool) -> Bool {
+public enum LogseqGraphWebSocketFailurePolicy {
+    public static func shouldReport(_ error: Error, taskIsCancelled: Bool) -> Bool {
         guard !taskIsCancelled, !(error is CancellationError) else { return false }
         return (error as? URLError)?.code != .cancelled
     }
 
-    static func userFacingMessage(_ error: Error) -> String {
+    public static func userFacingMessage(_ error: Error) -> String {
         guard let urlError = error as? URLError else {
             return error.localizedDescription
         }
@@ -34,41 +31,38 @@ enum LogseqGraphSSEFailurePolicy {
     }
 }
 
-struct LogseqGraphSSETransportBuffer {
-    private static let maximumFrameBytes = 64 * 1024 * 1024
-    private static let lineFeedBoundary = Data([0x0a, 0x0a])
-    private static let carriageReturnBoundary = Data([0x0d, 0x0a, 0x0d, 0x0a])
-    private var bytes = Data()
 
-    mutating func append(_ chunk: Data) throws -> [String] {
-        bytes.append(chunk)
-        guard bytes.count <= Self.maximumFrameBytes else {
-            throw URLError(.dataLengthExceedsMaximum)
+public enum LogseqGraphWebSocketProtocol {
+    public static func entityPullMessage(since: Int) throws -> String {
+        let data = try JSONSerialization.data(
+            withJSONObject: ["since": since, "type": "entity/pull"],
+            options: [.sortedKeys]
+        )
+        guard let message = String(data: data, encoding: .utf8) else {
+            throw URLError(.cannotParseResponse)
         }
-
-        var frames: [String] = []
-        while let boundary = nextBoundary() {
-            let frameData = bytes[..<boundary]
-            guard let frame = String(data: frameData, encoding: .utf8) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            frames.append(frame)
-            bytes.removeSubrange(..<boundary)
-        }
-        return frames
-    }
-
-    private func nextBoundary() -> Data.Index? {
-        let lineFeed = bytes.range(of: Self.lineFeedBoundary)?.upperBound
-        let carriageReturn = bytes.range(of: Self.carriageReturnBoundary)?.upperBound
-        switch (lineFeed, carriageReturn) {
-        case (let left?, let right?): return min(left, right)
-        case (let boundary?, nil), (nil, let boundary?): return boundary
-        case (nil, nil): return nil
-        }
+        return message
     }
 }
-#endif
+
+public enum LogseqGraphWebSocketReconnectPolicy {
+    public static func delaySeconds(attempt: Int) -> Int {
+        let seconds: Int
+        switch min(max(attempt, 0), 5) {
+        case 0: seconds = 1
+        case 1: seconds = 2
+        case 2: seconds = 4
+        case 3: seconds = 8
+        case 4: seconds = 16
+        default: seconds = 30
+        }
+        return seconds
+    }
+
+    public static func shouldReconnect(_ error: LogseqChatCoreError?) -> Bool {
+        error?.code == "websocket_connection_failed"
+    }
+}
 
 public enum LogseqGraphSnapshotRefreshPolicy {
     public static func shouldRefresh(
@@ -144,25 +138,27 @@ public enum LogseqGraphSyncHTTP {
         return request
     }
 
-    public static func eventsRequest(
-        baseURL: String, graphID: String, appliedServerT: Int, accessToken: String
+    public static func webSocketRequest(
+        baseURL: String, graphID: String, accessToken: String
     ) throws -> URLRequest {
-        let eventsURL = try apiRoot(baseURL)
+        let socketURL = try apiRoot(baseURL)
             .appendingPathComponent("sync")
             .appendingPathComponent(graphID)
-            .appendingPathComponent("events")
-        guard var components = URLComponents(url: eventsURL, resolvingAgainstBaseURL: false) else {
+        guard var components = URLComponents(url: socketURL, resolvingAgainstBaseURL: false) else {
             throw URLError(.badURL)
         }
-        components.queryItems = [URLQueryItem(name: "since", value: "\(appliedServerT)")]
+        switch components.scheme?.lowercased() {
+        case "http": components.scheme = "ws"
+        case "https": components.scheme = "wss"
+        case "ws", "wss": break
+        default: throw URLError(.unsupportedURL)
+        }
         guard let url = components.url else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         return request
     }
 
-    #if !SKIP
     public static func downloadSnapshot(
         baseURL: String, graphID: String, accessToken: String
     ) async throws -> LogseqGraphSnapshotArtifact {
@@ -298,5 +294,4 @@ public enum LogseqGraphSyncHTTP {
             }
         }
     }
-    #endif
 }

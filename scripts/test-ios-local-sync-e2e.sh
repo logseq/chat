@@ -8,7 +8,7 @@ username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
 password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
 graph_name=${LOGSEQ_CHAT_E2E_GRAPH_NAME:?set LOGSEQ_CHAT_E2E_GRAPH_NAME to the graph created by the desktop test}
 desktop_block=${LOGSEQ_CHAT_E2E_DESKTOP_BLOCK:?set LOGSEQ_CHAT_E2E_DESKTOP_BLOCK to the block created by the desktop test}
-mobile_block=${LOGSEQ_CHAT_E2E_MOBILE_BLOCK:-"Mobile SSE $(date +%s)"}
+mobile_block=${LOGSEQ_CHAT_E2E_MOBILE_BLOCK:-"Mobile WebSocket $(date +%s)"}
 
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-local-sync.XXXXXX")
 rendered_flow="$temporary_directory/flow.yaml"

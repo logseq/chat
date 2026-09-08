@@ -67,9 +67,7 @@ import LogseqChatModel
     @Test @MainActor func durableInboxDrainsEachCaptureExactlyOnce() {
         let suiteName = "SharedCaptureTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
-        #if !SKIP
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        #endif
         let inbox = SharedCaptureInbox(defaults: defaults)
 
         inbox.enqueue(.text(id: "first", text: "First"))
@@ -88,9 +86,7 @@ import LogseqChatModel
     @Test @MainActor func durableInboxPreservesSharedAssetMetadata() throws {
         let suiteName = "SharedCaptureAssetTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
-        #if !SKIP
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        #endif
         let inbox = SharedCaptureInbox(defaults: defaults)
         let asset = SharedCaptureAsset(
             title: "Voice note.m4a",
@@ -107,7 +103,6 @@ import LogseqChatModel
         #expect(inbox.pendingItems().isEmpty)
     }
 
-    #if !SKIP
     @Test @MainActor func appGroupFileInboxIsVisibleAcrossProcesses() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("shared-capture-inbox-\(UUID().uuidString)", isDirectory: true)
@@ -123,14 +118,11 @@ import LogseqChatModel
         reader.acknowledge(id: "cross-process")
         #expect(writer.pendingItems().isEmpty)
     }
-    #endif
 
     @Test @MainActor func shortcutCaptureQueuesTrimmedTextForTheJournal() {
         let suiteName = "ShortcutCaptureTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
-        #if !SKIP
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        #endif
         let inbox = SharedCaptureInbox(defaults: defaults)
 
         #expect(ShortcutCapture.enqueue("  Remember this  ", inbox: inbox, id: "shortcut-1"))
@@ -142,9 +134,7 @@ import LogseqChatModel
     @Test @MainActor func processorStopsAtFailureAndRetriesWithoutReordering() async {
         let suiteName = "SharedCaptureProcessorTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
-        #if !SKIP
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        #endif
         let inbox = SharedCaptureInbox(defaults: defaults)
         inbox.enqueue(.text(id: "first", text: "First"))
         inbox.enqueue(.text(id: "second", text: "Second"))
@@ -167,7 +157,6 @@ import LogseqChatModel
         #expect(inbox.pendingItems().isEmpty)
     }
 
-    #if !SKIP
     @Test func stagesBinaryAssetsWithStableMetadataAndImportsThemIntoDocuments() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("shared-capture-\(UUID().uuidString)", isDirectory: true)
@@ -232,5 +221,4 @@ import LogseqChatModel
             )
         }
     }
-    #endif
 }

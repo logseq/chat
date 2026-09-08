@@ -1,3 +1,5 @@
+(* Base-62 port of logseq/clj-fractional-indexing at
+   1087f0fb18aa8e25ee3bbbb0db983b7a29bce270, as pinned by Logseq. *)
 let digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 let zero = digits.[0]
 let option_exists predicate = function Some value -> predicate value | None -> false
@@ -141,10 +143,13 @@ let rec midpoint lower upper =
       | None -> 0
       | Some upper ->
         let rec loop index =
-          if index = min (String.length lower) (String.length upper)
+          if index = String.length upper
           then index
           else
-            if Char.equal lower.[index] upper.[index] then loop (index + 1) else index
+            let lower_character =
+              if index < String.length lower then lower.[index] else zero
+            in
+            if Char.equal lower_character upper.[index] then loop (index + 1) else index
         in
         loop 0
     in
@@ -193,11 +198,7 @@ let between lower upper =
               then Result.map (fun value -> integer ^ value) (midpoint "" (Some fraction))
               else
                 Result.bind (decrement integer) (function
-                  | Some value ->
-                    (match validate value with
-                     | Ok () -> Ok value
-                     | Error _ ->
-                       Result.map (fun fraction -> value ^ fraction) (midpoint "" None))
+                  | Some value -> Ok value
                   | None -> (Error "cannot decrement order key" [@coverage off])))
           | Some lower, None ->
             Result.bind (integer_part lower) (fun integer ->
@@ -223,7 +224,11 @@ let between lower upper =
                         (fun value -> lower_integer ^ value)
                         (midpoint lower_fraction None))))
         in
-        result))
+        Result.bind result (fun value ->
+          if option_exists (fun lower -> String.compare lower value >= 0) lower
+             || option_exists (fun upper -> String.compare value upper >= 0) upper
+          then Error "generate-key-between failed"
+          else Ok value)))
 ;;
 
 let rec n_between lower upper count =

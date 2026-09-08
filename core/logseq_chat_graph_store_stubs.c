@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
 static void fail_sqlite(sqlite3 *db, const char *operation)
 {
   char message[1024];
@@ -15,6 +19,9 @@ static void fail_sqlite(sqlite3 *db, const char *operation)
            "SQLite error while %s: %s",
            operation,
            db == NULL ? "unknown error" : sqlite3_errmsg(db));
+#ifdef __ANDROID__
+  __android_log_print(ANDROID_LOG_ERROR, "LogseqChatCore", "%s", message);
+#endif
   if (db != NULL) {
     sqlite3_close(db);
   }

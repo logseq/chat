@@ -19,7 +19,7 @@ let () =
   in
   Logseq_chat_sync_state.submission_accepted state ~server_t:11;
   if Logseq_chat_sync_state.applied_server_t state <> 10
-  then failwith "HTTP acknowledgement must not advance the applied SSE cursor";
+  then failwith "HTTP acknowledgement must not advance the applied WebSocket cursor";
   let applied = ref false in
   (match
      Logseq_chat_sync_state.apply_change_set
@@ -33,7 +33,7 @@ let () =
    | Error _ -> failwith "valid change set was rejected");
   if not !applied then failwith "change set was not applied";
   if Logseq_chat_sync_state.applied_server_t state <> 11
-  then failwith "successful SSE application must advance the cursor"
+  then failwith "successful WebSocket application must advance the cursor"
 ;;
 
 let () =

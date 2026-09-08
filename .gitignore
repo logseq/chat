@@ -15,6 +15,7 @@ local.properties
 Android/app/keystore.jks
 Android/app/keystore.properties
 Android/app/src/main/jniLibs/
+Flutter/android/app/src/main/jniLibs/
 .maestro/screenshots/
 
 xcodebuild*.log
@@ -32,6 +33,8 @@ default.profraw
 .build/
 _build/
 _coverage/
+.lg-cache/
+/*.install
 build/
 DerivedData/
 xcuserdata/
@@ -71,6 +74,9 @@ Package.resolved
 #*.xcodeproj
 
 Carthage/Build/
+
+# Pulled from logseq_chat.opam.locked by opam-monorepo.
+duniverse/
 
 # fastlane
 

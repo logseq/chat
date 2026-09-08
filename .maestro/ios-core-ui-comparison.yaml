@@ -1,0 +1,26 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
+- assertVisible: "Journals"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/journals"
+- tapOn:
+    id: "button.sidebar"
+- assertVisible:
+    id: "sidebar.navigation"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/sidebar"
+- tapOn:
+    id: "link.sidebar.journals"
+- scrollUntilVisible:
+    element: "Open Aug 24th, 2026"
+    direction: DOWN
+    timeout: 30000
+    visibilityPercentage: 50
+    centerElement: true
+- tapOn: "Open Aug 24th, 2026"
+- assertVisible:
+    id: "BackButton"
+- takeScreenshot: "docs/agent-guide/ui-comparison/ios/node"

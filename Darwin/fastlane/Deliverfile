@@ -1,7 +1,7 @@
 
 copyright "#{Time.now.year}"
 
-force(true) # Skip HTML report verification
+force(true) # Bypass HTML report verification.
 automatic_release(true)
 skip_screenshots(false)
 precheck_include_in_app_purchases(false)

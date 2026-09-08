@@ -9,6 +9,7 @@ module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
 module Order = Logseq_chat_fractional_order
 module Graph_bootstrap = Logseq_chat_graph_bootstrap
+module Markup = Logseq_chat_markup
 
 type pending_transport =
   | Json_request of Api.request
@@ -75,9 +76,9 @@ type t =
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (graph_id:string -> Model.t) option
-  ; start_sse : (unit -> unit) option
-  ; feed_sse : (string -> (unit, string) result) option
+  ; apply_sync_event : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
+  ; mutable accepted_server_t : int option
   ; graph_blocks : (unit -> Model.block list option) option
   ; graph_sidebar_pages : (unit -> Logseq_chat_graph_read.sidebar_pages option) option
   ; graph_tag_pages : (unit -> Logseq_chat_graph_read.sidebar_page list option) option
@@ -130,6 +131,23 @@ type t =
   ; mutable outliner_revision : int
   ; save_graph_catalog : (string -> unit) option
   }
+
+let current_server_t session =
+  match Option.bind session.sync_cursor (fun cursor -> cursor ()), session.accepted_server_t with
+  | Some authoritative_t, Some accepted_t -> Some (max authoritative_t accepted_t)
+  | Some authoritative_t, None -> Some authoritative_t
+  | None, Some accepted_t -> Some accepted_t
+  | None, None -> None
+;;
+
+let projection_server_t session =
+  Option.bind session.sync_cursor (fun cursor -> cursor ())
+;;
+
+let record_accepted_server_t session accepted_t =
+  session.accepted_server_t <-
+    Some (Option.fold ~none:accepted_t ~some:(max accepted_t) session.accepted_server_t)
+;;
 
 let debug format =
   Printf.ksprintf
@@ -481,7 +499,7 @@ let base_outliner_context_live session =
     match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
     | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
     | _, _, Some load -> Option.value (load ()) ~default:[]
-    | _ -> []
+    | _ -> Model.visible_blocks session.model
   in
   outliner_context_with_blocks session blocks
 ;;
@@ -766,6 +784,45 @@ let rec project_outliner_intent blocks = function
     List.filter
       (fun (block : Model.block) -> not (List.mem block.uuid uuids))
       blocks
+  | Set_property { uuid; attr = "logseq.property/status"; value; _ } ->
+    let status =
+      Option.bind value (function
+        | Pending_ops.Ref_ident ident ->
+          let uuid, title =
+            match ident with
+            | "logseq.property/status.backlog" -> "backlog", "Backlog"
+            | "logseq.property/status.todo" -> "todo", "Todo"
+            | "logseq.property/status.doing" -> "doing", "Doing"
+            | "logseq.property/status.in-review" -> "in-review", "In Review"
+            | "logseq.property/status.done" -> "done", "Done"
+            | "logseq.property/status.canceled" -> "canceled", "Canceled"
+            | _ -> ident, ident
+          in
+          Some Model.
+            { uuid
+            ; ident = Some ident
+            ; title
+            ; icon_type = None
+            ; icon_id = None
+            ; icon_color = None
+            }
+        | Pending_ops.Ref_uuid uuid ->
+          Some Model.
+            { uuid
+            ; ident = None
+            ; title = uuid
+            ; icon_type = None
+            ; icon_id = None
+            ; icon_color = None
+            }
+        | _ -> None)
+    in
+    List.map
+      (fun (block : Model.block) ->
+        if String.equal block.uuid uuid
+        then { block with status; sync_status = "pending" }
+        else block)
+      blocks
   | Set_property _ | Set_properties _ | Create_tag _ | Create_page _ | Create_journal _ | Add_tag _
   | Set_favorite _ | Delete_page _ -> blocks
 ;;
@@ -809,18 +866,77 @@ let outliner_state_json state =
     ]
 ;;
 
+let contains_case_insensitive value fragment =
+  try
+    ignore
+      (Str.search_forward
+         (Str.regexp_string (String.lowercase_ascii fragment))
+         (String.lowercase_ascii value)
+         0);
+    true
+  with
+  | Not_found -> false
+;;
+
+let is_youtube_url url =
+  contains_case_insensitive url "youtube.com"
+  || contains_case_insensitive url "youtu.be"
+;;
+
+let youtube_target_urls (blocks : Model.block list) =
+  let _, targets =
+    List.fold_left
+      (fun (current_url, targets) (block : Model.block) ->
+        let nodes = Markup.parse ~references:block.references ~tags:block.tags block.title in
+        let current_url, target_url =
+          List.fold_left
+            (fun (current_url, target_url) node ->
+              match node with
+              | Markup.Video url when is_youtube_url url -> Some url, target_url
+              | Markup.Youtube_timestamp _ ->
+                current_url,
+                (match current_url with Some _ -> current_url | None -> target_url)
+              | _ -> current_url, target_url)
+            (current_url, None)
+            nodes
+        in
+        let targets =
+          match target_url with
+          | Some url -> (block.uuid, url) :: targets
+          | None -> targets
+        in
+        current_url, targets)
+      (None, [])
+      blocks
+  in
+  List.rev targets
+;;
+
+let outliner_row_json_with ?youtube_target_url serialize_block row =
+  `Assoc
+    ([ "block", serialize_block row.Outliner_state.block
+     ; "depth", `Int row.depth
+     ; "hasChildren", `Bool row.has_children
+     ; "isCollapsed", `Bool row.is_collapsed
+     ]
+     @
+     match youtube_target_url with
+     | Some url -> [ "youtubeTargetURL", `String url ]
+     | None -> [])
+;;
+
 let outliner_rows_json ?serialize_block session context state =
   let serialize_block =
     Option.value serialize_block ~default:(visible_block_json session.model)
   in
-  Outliner_state.visible_rows context state
+  let rows = Outliner_state.visible_rows context state in
+  let targets = youtube_target_urls (List.map (fun row -> row.Outliner_state.block) rows) in
+  rows
   |> List.map (fun row ->
-    `Assoc
-      [ "block", serialize_block row.Outliner_state.block
-      ; "depth", `Int row.depth
-      ; "hasChildren", `Bool row.has_children
-      ; "isCollapsed", `Bool row.is_collapsed
-      ])
+    outliner_row_json_with
+      ?youtube_target_url:(List.assoc_opt row.Outliner_state.block.uuid targets)
+      serialize_block
+      row)
   |> fun rows -> `List rows
 ;;
 
@@ -987,7 +1103,7 @@ let snapshot session ~context_blocks blocks =
       Hashtbl.add serialized_blocks block.uuid json;
       json
   in
-  success
+  let response = success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List (List.map serialize_block blocks)
@@ -1026,9 +1142,7 @@ let snapshot session ~context_blocks blocks =
       ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
       ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
       ; "appliedServerT",
-        (match session.sync_cursor with
-         | Some cursor -> Option.fold ~none:`Null ~some:(fun value -> `Int value) (cursor ())
-         | None -> `Null)
+        Option.fold ~none:`Null ~some:(fun value -> `Int value) (current_server_t session)
       ; "syncConnected", `Bool session.sync_connected
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ; "pendingSyncRequest", pending_request_json session
@@ -1045,15 +1159,9 @@ let snapshot session ~context_blocks blocks =
         `Bool (Option.fold ~none:false ~some:(fun read -> read ()) session.has_older_journals)
       ; "isOutlinerPatch", `Bool false
       ])
-;;
-
-let outliner_row_json session row =
-  `Assoc
-    [ "block", visible_block_json session.model row.Outliner_state.block
-    ; "depth", `Int row.depth
-    ; "hasChildren", `Bool row.has_children
-    ; "isCollapsed", `Bool row.is_collapsed
-    ]
+  in
+  if session.flashcards <> [] then debug "flashcards snapshot encoded bytes=%d" (String.length response);
+  response
 ;;
 
 let outliner_patch_result
@@ -1133,6 +1241,11 @@ let structural_outliner_patch
   let after_rows =
     Outliner_state.visible_rows after_context session.outliner_state |> Array.of_list
   in
+  let after_youtube_targets =
+    Array.to_list after_rows
+    |> List.map (fun row -> row.Outliner_state.block)
+    |> youtube_target_urls
+  in
   let before_length = Array.length before_rows in
   let after_length = Array.length after_rows in
   let rec common_prefix index =
@@ -1162,7 +1275,12 @@ let structural_outliner_patch
       let rows =
         Array.sub after_rows start insert_count
         |> Array.to_list
-        |> List.map (outliner_row_json session)
+        |> List.map (fun row ->
+          outliner_row_json_with
+            ?youtube_target_url:
+              (List.assoc_opt row.Outliner_state.block.uuid after_youtube_targets)
+            (visible_block_json session.model)
+            row)
       in
       let position =
         if not anchored
@@ -1228,6 +1346,7 @@ let snapshot_visible session =
        | None -> [])
     | None -> Model.visible_blocks session.model
   in
+  if session.flashcards <> [] then debug "flashcards visible blocks loaded count=%d" (List.length blocks);
   let context_blocks = blocks in
   let blocks =
     if Option.is_some session.graph_blocks || Option.is_some session.selected_sidebar_page
@@ -1242,12 +1361,32 @@ let snapshot_visible session =
   result
 ;;
 
+let graph_catalog_snapshot session =
+  success
+    (`Assoc
+      [ "graphName",
+        (match session.config with
+         | Some { Api.graph_name = Some graph_name; _ } -> `String graph_name
+         | _ -> `Null)
+      ; "selectedGraphId",
+        (match session.config with
+         | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
+         | _ -> `Null)
+      ; "graphs", `List (List.map graph_json session.available_graphs)
+      ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
+      ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
+      ; "isGraphCatalogPatch", `Bool true
+      ])
+;;
+
 let pending_sync_patch session =
   success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List []
       ; "selectedBlock", `Null
+      ; "appliedServerT",
+        Option.fold ~none:`Null ~some:(fun value -> `Int value) (current_server_t session)
       ; "pendingSyncRequest", pending_request_json session
       ; "hasPendingSemanticOperations",
         `Bool (has_pending_operations session)
@@ -1299,8 +1438,7 @@ let create
       ?open_graph
       ?import_snapshot
       ?model_for_graph
-      ?start_sse
-      ?feed_sse
+      ?apply_sync_event
       ?sync_cursor
       ?graph_blocks
       ?graph_sidebar_pages
@@ -1355,9 +1493,9 @@ let create
   ; open_graph
   ; import_snapshot
   ; model_for_graph
-  ; start_sse
-  ; feed_sse
+  ; apply_sync_event
   ; sync_cursor
+  ; accepted_server_t = None
   ; graph_blocks
   ; graph_sidebar_pages
   ; graph_tag_pages
@@ -1771,7 +1909,7 @@ let activate_semantic_request ?t_before session config =
          Option.value
            t_before
            ~default:
-             (Option.bind session.sync_cursor (fun cursor -> cursor ())
+             (current_server_t session
               |> Option.value ~default:pending.operation.base_t)
        in
        let request =
@@ -1848,7 +1986,7 @@ let normalize_operation_titles session (operation : Pending_ops.t) =
 
 let capture_operations session ~uuid ~title ~now ?status () =
   let base_t =
-    Option.bind session.sync_cursor (fun cursor -> cursor ())
+    current_server_t session
     |> Option.to_result ~none:"A current server cursor is required"
   in
   Result.bind base_t (fun base_t ->
@@ -1998,6 +2136,7 @@ let finish_semantic_active session active ~succeeded ~accepted_t =
     (fun stage ->
       ignore (stage { active.pending.operation with state }))
     session.stage_operation;
+  if succeeded then Option.iter (record_accepted_server_t session) accepted_t;
   session.semantic_active <- None;
   if succeeded
   then
@@ -2024,7 +2163,7 @@ let asset_operation_id uuid = "asset:" ^ uuid
 
 let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.block) =
   let base_t =
-    Option.bind session.sync_cursor (fun cursor -> cursor ())
+    current_server_t session
     |> Option.to_result ~none:"A current server cursor is required"
   in
   Result.bind base_t (fun base_t ->
@@ -2498,7 +2637,7 @@ let dispatch_outliner_event session payload =
     in
     let previous_state = session.outliner_state in
     let next_state, commands = Outliner_state.update context previous_state message in
-    let base_t = Option.bind session.sync_cursor (fun cursor -> cursor ()) |> Option.value ~default:(-1) in
+    let base_t = projection_server_t session |> Option.value ~default:(-1) in
     (match
        Result.map
          (fun (interpreted : Outliner_effects.result) ->
@@ -2538,6 +2677,28 @@ let dispatch_outliner_event session payload =
               , Option.is_some aggregate_page_uuid
                 || Option.is_some session.selected_sidebar_page )
           in
+          let projected_context =
+            let saves_title = List.exists
+              (fun operation -> match operation.Pending_ops.intent with Save_title _ -> true | _ -> false)
+              interpreted.operations in
+            if not saves_title then projected_context
+            else
+              let live =
+                match aggregate_page_uuid with
+                | Some page_uuid ->
+                  (match page_outliner_context session page_uuid with
+                   | Some context -> context
+                   | None -> outliner_context session)
+                | None -> outliner_context session
+              in
+              let metadata = Hashtbl.create (List.length live.blocks) in
+              List.iter (fun (block : Model.block) -> Hashtbl.replace metadata block.uuid block) live.blocks;
+              { projected_context with blocks =
+                  List.map (fun (block : Model.block) ->
+                    match Hashtbl.find_opt metadata block.uuid with
+                    | Some current -> { block with references = current.references; tags = current.tags }
+                    | None -> block) projected_context.blocks }
+          in
           let next_state =
             List.fold_left
               (fun state operation ->
@@ -2554,7 +2715,10 @@ let dispatch_outliner_event session payload =
           session.outliner_commands <- interpreted.platform;
           session.outliner_revision <- session.outliner_revision + 1;
           let patch_uuids =
-            match interpreted.operations with
+            match message, interpreted.operations with
+            | Toggle_collapsed _, _ -> None
+            | _, operations ->
+            match operations with
             | [ { Pending_ops.intent = Save_title { uuid; _ }; _ } ] -> Some [ uuid ]
             | [ { intent = Set_property { uuid; _ }; _ } ] -> Some [ uuid ]
             | [] ->
@@ -2592,6 +2756,7 @@ let switch_graph_model session payload =
          (match List.assoc_opt "graphId" fields with
           | Some (`String graph_id) when not (String.equal graph_id "") ->
             session.model <- model_for_graph ~graph_id;
+            session.accepted_server_t <- None;
             session.pending_sync <- None;
             session.semantic_queue <- [];
             session.semantic_active <- None;
@@ -2634,6 +2799,7 @@ let dispatch session action payload =
                    session.available_graphs
                  |> Option.map (fun (graph : Api.graph) -> graph.name)
              in
+             session.accepted_server_t <- None;
              session.config <- Some { Api.base_url; graph_id; graph_name; token };
              (match
                 List.find_opt
@@ -2665,7 +2831,7 @@ let dispatch session action payload =
      | Some config -> refresh_from_remote session config)
   | "refreshGraphCatalog" ->
     (match session.config with
-     | None -> snapshot_visible session
+     | None -> graph_catalog_snapshot session
      | Some config ->
        (match discover_graphs session config with
         | Ok () ->
@@ -2676,10 +2842,10 @@ let dispatch session action payload =
             |> Option.map (fun (graph : Api.graph) -> graph.name)
           in
           session.config <- Some { config with graph_name };
-          snapshot_visible session
+          graph_catalog_snapshot session
         | Error message ->
           debug "graph catalog refresh failed: %s" message;
-          snapshot_visible session))
+          graph_catalog_snapshot session))
   | "createSyncGraph" ->
     (match session.config, payload with
      | Some config, Some payload ->
@@ -2725,6 +2891,7 @@ let dispatch session action payload =
                         (match discover_graphs session config with
                          | Error message -> failure ~code:"graph_discovery_failed" ~message
                          | Ok () ->
+                           session.accepted_server_t <- None;
                            session.config <-
                              Some
                                { config with
@@ -2761,6 +2928,7 @@ let dispatch session action payload =
           clear_node_navigation session;
           session.selected_sidebar_page <- None;
           reset_outliner session;
+          session.accepted_server_t <- None;
           session.config <- Some { config with graph_id = graph.id; graph_name = Some graph.name };
           if graph.e2ee
           then
@@ -2849,6 +3017,7 @@ let dispatch session action payload =
         ~none:[]
         ~some:(fun load -> load ~now)
         session.graph_due_flashcards;
+    debug "loadFlashcards count=%d now=%d" (List.length session.flashcards) now;
     snapshot_visible session
   | "reviewFlashcard" ->
     (match payload, session.graph_review_flashcard with
@@ -2961,17 +3130,13 @@ let dispatch session action payload =
         | Error message -> failure ~code:"graph_open_failed" ~message)
      | None, _ -> failure ~code:"graph_open_unavailable" ~message:"Graph storage is unavailable"
      | _, None -> failure ~code:"invalid_params" ~message:"openGraph requires a JSON payload")
-  | "startSSE" ->
-    (match session.start_sse with
-     | Some start_sse ->
-       start_sse ();
-       session.sync_connected <- true;
-       snapshot_visible session
-     | None -> failure ~code:"sse_unavailable" ~message:"SSE sync is unavailable")
-  | "feedSSE" ->
-    (match session.feed_sse, payload with
-     | Some feed_sse, Some chunk ->
-       (match feed_sse chunk with
+  | "startWebSocket" ->
+    session.sync_connected <- true;
+    snapshot_visible session
+  | "applySyncEvent" ->
+    (match session.apply_sync_event, payload with
+     | Some apply_sync_event, Some event ->
+       (match apply_sync_event event with
         | Ok () ->
           reconcile_authoritative_blocks session;
           snapshot_visible session
@@ -2980,12 +3145,13 @@ let dispatch session action payload =
             if String.starts_with ~prefix:"snapshot required:" message
                || String.equal message "sync schema mismatch"
             then "snapshot_required"
-            else "sse_apply_failed"
+            else "websocket_apply_failed"
           in
           failure ~code ~message)
-     | None, _ -> failure ~code:"sse_unavailable" ~message:"SSE sync is unavailable"
-     | _, None -> failure ~code:"invalid_params" ~message:"feedSSE requires a raw chunk")
-  | "stopSSE" ->
+     | None, _ ->
+       failure ~code:"websocket_unavailable" ~message:"WebSocket sync is unavailable"
+     | _, None -> failure ~code:"invalid_params" ~message:"applySyncEvent requires a payload")
+  | "stopWebSocket" ->
     session.sync_connected <- false;
     snapshot_visible session
   | "searchNodes" ->
@@ -3061,6 +3227,8 @@ let dispatch session action payload =
              Ok asset_checksum, Ok local_path, Ok target_block_id ->
              let now = Option.value now ~default:(now_ms ()) in
              let asset_type = Api.normalize_asset_type asset_type in
+             let before_context = outliner_context session in
+             let before_state = session.outliner_state in
              Option.iter
                (fun target_uuid ->
                  if Option.is_none (Model.read_block session.model target_uuid)
@@ -3077,16 +3245,26 @@ let dispatch session action payload =
              Model.cache_local_asset session.model ~uuid ~title ~asset_type ~asset_size
                ~asset_checksum ~local_path ?target_block_id
                ~now;
+             let visible_asset_response () =
+               match session.selected_sidebar_page, session.node_routes with
+               | None, [] ->
+                 structural_outliner_patch
+                   session
+                   ~before_context
+                   ~before_state
+                   ~after_context:(outliner_context session)
+               | Some _, _ | None, _ :: _ -> snapshot_visible session
+             in
              (match session.config, session.stage_operation,
                     Model.read_block session.model uuid with
               | Some _, Some stage, Some block ->
                 (match asset_datoms_operation ~state:Applied session block with
                  | Ok operation ->
                    (match stage operation with
-                    | Ok () -> snapshot_visible session
-                    | Error message -> failure ~code:"stage_operation_failed" ~message)
+                   | Ok () -> visible_asset_response ()
+                   | Error message -> failure ~code:"stage_operation_failed" ~message)
                  | Error message -> failure ~code:"asset_projection_failed" ~message)
-              | _ -> snapshot_visible session)
+              | _ -> visible_asset_response ())
            | _ -> failure ~code:"invalid_params" ~message:"addAsset requires complete file metadata")
         | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
         | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
@@ -3100,16 +3278,15 @@ let dispatch session action payload =
                  required_string "parentId" fields, optional_int "now" fields with
            | Ok uuid, Ok title, Ok parent_id, Ok now ->
              let now = Option.value now ~default:(now_ms ()) in
-             (match session.config, session.sync_cursor with
-              | Some config, Some cursor ->
+             (match session.config, current_server_t session with
+              | Some config, Some base_t ->
                 let context = outliner_context session in
                 (match
                    List.find_opt
                      (fun (block : Model.block) -> String.equal block.uuid parent_id)
-                     context.blocks,
-                   cursor ()
+                     context.blocks
                  with
-                 | Some parent, Some base_t ->
+                 | Some parent ->
                    let last_order =
                      context.blocks
                      |> List.filter (fun (block : Model.block) ->
@@ -3139,10 +3316,10 @@ let dispatch session action payload =
                        | Ok () -> snapshot_visible session
                        | Error message ->
                          failure ~code:"stage_operation_failed" ~message))
-                 | None, _ -> failure ~code:"invalid_params" ~message:"parent block is unavailable"
-                 | _, None ->
-                   failure ~code:"invalid_params" ~message:"A current server cursor is required")
-              | _ ->
+                 | None -> failure ~code:"invalid_params" ~message:"parent block is unavailable")
+              | Some _, None ->
+                failure ~code:"invalid_params" ~message:"A current server cursor is required"
+              | None, _ ->
                 (match Model.cache_local_child session.model ~uuid ~title ~parent_id ~now with
                  | Ok () -> snapshot_visible session
                  | Error message -> failure ~code:"invalid_params" ~message))
@@ -3223,7 +3400,7 @@ let dispatch session action payload =
                     optional_string "expectedStatusIdent" fields,
                     status_payload fields,
                     session.config,
-                    Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                    current_server_t session with
               | Ok uuid, Ok operation_id, Ok expected_status_uuid, Ok expected_status_ident, Ok status,
                 Some config, Some base_t ->
                 let expected =
@@ -3281,7 +3458,7 @@ let dispatch session action payload =
                     required_string "expectedTitle" fields,
                     required_string "title" fields,
                     session.config,
-                    Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                    current_server_t session with
               | Ok uuid, Ok operation_id, Ok expected_title, Ok title,
                 Some config, Some base_t ->
                 let title = String.trim title in
@@ -3346,7 +3523,7 @@ let dispatch session action payload =
                  required_string "newOrder" fields,
                  optional_int "createdAt" fields,
                  session.config,
-                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                 current_server_t session with
            | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Ok expected_title,
              Ok before, Ok after, Ok new_uuid, Ok new_order, Ok (Some created_at),
              Some config, Some current_t
@@ -3404,7 +3581,7 @@ let dispatch session action payload =
                  required_string "previousUuid" fields,
                  required_string "expectedPreviousTitle" fields,
                  session.config,
-                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                 current_server_t session with
            | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Ok expected_title,
              Ok title, Ok previous_uuid, Ok expected_previous_title, Some config, Some current_t
              when expected_server_t = current_t ->
@@ -3458,7 +3635,7 @@ let dispatch session action payload =
                  optional_int "expectedServerT" fields,
                  required_moves fields,
                  session.config,
-                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                 current_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok moves, Some config, Some current_t
              when expected_server_t = current_t ->
              let identities = List.map (fun move -> move.Pending_ops.uuid) moves in
@@ -3498,7 +3675,7 @@ let dispatch session action payload =
                  optional_int "expectedServerT" fields,
                  required_string_list "uuids" fields,
                  session.config,
-                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                 current_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok uuids, Some config, Some current_t
              when expected_server_t = current_t ->
              let uuids = List.sort_uniq String.compare uuids in
@@ -3538,7 +3715,7 @@ let dispatch session action payload =
                  required_string "operationId" fields,
                  optional_int "expectedServerT" fields,
                  session.config,
-                 Option.bind session.sync_cursor (fun cursor -> cursor ()) with
+                 current_server_t session with
            | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Some config, Some current_t
              when expected_server_t = current_t ->
              let operation =

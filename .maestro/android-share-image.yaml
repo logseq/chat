@@ -1,0 +1,8 @@
+appId: com.logseq.chat
+---
+- extendedWaitUntil:
+    visible:
+      id: "asset.preview.image"
+    timeout: 45000
+- assertVisible:
+    id: "pane.journals"

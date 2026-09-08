@@ -4,7 +4,7 @@ appId: com.logseq.chat
     file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
 - launchApp
 - assertVisible:
-    id: "list.outliner"
+    id: "pane.journals"
 - assertVisible: "Aug 21st, 2026"
 - tapOn: "Edit block Untitled block"
 - pressKey: ENTER
@@ -13,4 +13,4 @@ appId: com.logseq.chat
 - assertNotVisible:
     text: "Syncing"
     childOf:
-      id: "list.outliner"
+      id: "pane.journals"

@@ -164,5 +164,5 @@ let decode_event ~event_name wire =
   | "graph-changes" ->
     bind (decode_change_set wire) (fun change -> Ok (Graph_changes change))
   | "reset" -> protect decode_reset_value wire |> Result.map (fun reset -> Reset reset)
-  | name -> Error ("unsupported SSE event: " ^ name)
+  | name -> Error ("unsupported sync event: " ^ name)
 ;;

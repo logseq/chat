@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import LogseqChatModel
 
-#if !SKIP
 @Suite(.serialized) struct PendingAssetSyncTests {
     @Test @MainActor func authenticatedConfigurationStartsPendingSyncAfterConfigureApplies() async throws {
         let recorder = PendingSyncRequestRecorder()
@@ -162,4 +161,3 @@ private final class PendingSyncRequestRecorder: @unchecked Sendable {
     }
     #expect(condition())
 }
-#endif
