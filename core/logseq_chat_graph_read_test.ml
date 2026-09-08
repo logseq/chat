@@ -1076,3 +1076,36 @@ let () =
   in
   assert (unchanged = [ "plain #[[project-tag-uuid]]" ] && none_created = [])
 ;;
+
+let () =
+  let conn = create_conn () in
+  let page eid title attrs =
+    Entity
+      { db_id = Some (Entity_id eid)
+      ; attrs =
+          [ "block/uuid", One_value (Uuid ("recent-" ^ string_of_int eid))
+          ; "block/name", One_value (String ("recent-" ^ string_of_int eid))
+          ; "block/title", One_value (String title)
+          ; "block/updated-at", One_value (Instant eid)
+          ] @ attrs
+      }
+  in
+  ignore (transact_conn conn
+    (List.init 100 (fun index -> page (index + 1) (string_of_int (index + 1)) [])
+     @ [ page 101 "Hidden" ["logseq.property/hide?", One_value (Bool true)]
+       ; page 102 "Built-in" ["logseq.property/built-in?", One_value (Bool true)]
+       ; page 103 "Deleted" ["logseq.property/deleted-at", One_value (Instant 1)]
+       ; page 104 "  " []
+       ; page 105 "Hidden child" ["block/parent", One_value (Ref 101)]
+       ]));
+  let decrypted = ref [] in
+  let decrypt_title title = decrypted := title :: !decrypted; Ok title in
+  let sidebar = Logseq_chat_graph_read.sidebar_pages ~decrypt_title (conn_db conn) in
+  let actual = List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.recent_pages in
+  let expected = List.init 15 (fun index -> "recent-" ^ string_of_int (100 - index)) in
+  if actual <> expected then failwith "recent window must fill past hidden and blank pages in newest-first order";
+  if List.exists (fun title -> List.mem title !decrypted) ["1"; "85"]
+  then failwith "recent window must not decrypt titles outside the visible 15 pages";
+  if (Logseq_chat_graph_read.sidebar_pages (empty_db ())).recent_pages <> []
+  then failwith "an empty graph must have no recent pages"
+;;

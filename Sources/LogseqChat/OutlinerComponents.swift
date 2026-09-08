@@ -46,6 +46,9 @@ struct OutlinerView: View {
     let onAddFirstBlock: (() -> Void)?
     let isJournalHome: Bool
     var body: some View {
+        #if DEBUG && !SKIP
+        let _ = logLaunchRender()
+        #endif
         let rowsByID = rowIndex(rows)
         let orderedRows = sections.flatMap { section in
             section.blocks.compactMap { rowsByID[$0.uuid] }
@@ -87,6 +90,14 @@ struct OutlinerView: View {
         content
         #endif
     }
+
+    #if DEBUG && !SKIP
+    private func logLaunchRender() {
+        guard isJournalHome,
+              ProcessInfo.processInfo.environment["LOGSEQ_CHAT_TRACE_STARTUP"] == "1" else { return }
+        LogseqChatAppDelegate.shared.reportLaunchStage("outliner_body")
+    }
+    #endif
 
     @ViewBuilder private func outlinerContent(
         viewportHeight: CGFloat,

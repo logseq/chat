@@ -213,7 +213,9 @@ public struct LogseqChatRootView : View {
     }
 
     private func applyLocalLaunchResultWhenReady() async {
-        guard !didApplyLocalLaunchResult, let result = await localLaunchTask?.value else { return }
+        guard let result = await localLaunchTask?.value,
+              !didApplyLocalLaunchResult else { return }
+        LogseqChatAppDelegate.shared.reportLaunchStage("local_result_received")
         didApplyLocalLaunchResult = true
         if let isEncrypted = result.isEncrypted {
             UserDefaults.standard.set(isEncrypted, forKey: "logseq.selectedGraphEncrypted")

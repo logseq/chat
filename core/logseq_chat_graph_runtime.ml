@@ -67,7 +67,7 @@ let affected_uuids db = function
   | Ops.Save_title { uuid; _ }
   | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ }
   | Ops.Move_block { uuid; _ }
-  | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } -> [ uuid ]
+  | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } | Ops.Create_page { uuid; _ } -> [ uuid ]
   | Ops.Move_blocks { moves } -> List.map (fun (move : Ops.move) -> move.uuid) moves
   | Ops.Split_block { uuid; new_uuid; _ } -> [ uuid; new_uuid ]
   | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
@@ -166,7 +166,7 @@ let rebuild ?(changed_uuids = []) runtime =
 let safe_to_rebase = function
   | Ops.Save_title _ | Ops.Set_property _ | Ops.Set_properties _
   | Ops.Split_block _ | Ops.Merge_backward _
-  | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
+  | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
   | Ops.Create_asset _
   | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Set_favorite _ | Ops.Delete_page _ -> true
   | Ops.Delete_blocks _ -> false
@@ -246,15 +246,21 @@ let create_base
       ~server_t
       conn
   =
-  let operations = Ops.list ~path in
-  let snapshot =
-    Projection.build ~server_t (Datascript.conn_db conn) operations
+  let started = Unix.gettimeofday () in
+  let report stage =
+    if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+      Printf.eprintf "LOGSEQ_RUNTIME_METRIC stage=%s elapsed_ms=%.3f\n%!"
+        stage ((Unix.gettimeofday () -. started) *. 1000.)
   in
+  (* Rebase below constructs the pending projection once the operation states
+     have been reconciled with the authoritative graph. *)
+  let snapshot = Projection.{ db = Datascript.conn_db conn; server_t; statuses = [] } in
   let search_index =
     Option.bind search_index_path (fun path ->
       try Some (Logseq_chat_search_index.create ~path) with
       | Failure _ -> None)
   in
+  report "search";
   let runtime =
     { path
     ; conn
@@ -396,7 +402,7 @@ let normalize_operation_against runtime db operation =
     | Ops.Set_properties { uuid; changes } ->
       Ok (Ops.Set_properties { uuid; changes = List.map normalize_property_change changes })
     | (Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
-      | Ops.Create_tag _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
+      | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
       | Ops.Set_favorite _ | Ops.Delete_page _) as intent -> Ok intent
   in
   intent >>| fun intent -> { operation with Ops.intent }
@@ -561,7 +567,10 @@ let create
       ~server_t
       conn
   =
+  let started = Unix.gettimeofday () in
   let runtime = create_base ~encrypt_title ?search_index_path ~path ~server_t conn in
+  if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+    Printf.eprintf "LOGSEQ_RUNTIME_METRIC stage=base elapsed_ms=%.3f\n%!" ((Unix.gettimeofday () -. started) *. 1000.);
   if auto_create_today
   then (
     match ensure_today_journal runtime with

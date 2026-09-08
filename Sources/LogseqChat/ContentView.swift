@@ -73,6 +73,7 @@ private struct SidebarMenuIcon: View {
 }
 
 private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
+    @State private var hasLoadedSidebar = false
     let motion: SidebarMotionState
     let activationAvailable: Bool
     let sidebar: Sidebar
@@ -96,21 +97,24 @@ private struct SidebarMotionShell<Sidebar: View, Main: View>: View {
                 .frame(width: 0, height: 0)
                 #endif
 
-                sidebar
-                    .frame(width: width)
-                    .scrollDisabled(SidebarDragPolicy.disablesScrollEnvironment(
-                        isDragging: isDragging,
-                        isAnimating: motion.isAnimating
-                    ))
-                    .allowsHitTesting(SidebarDragPolicy.allowsSidebarInteraction(
-                        isPresented: motion.isPresented,
-                        isDragging: isDragging,
-                        isAnimating: motion.isAnimating
-                    ))
-                    .background(Color.black.opacity(0.001))
-                    .opacity(0.35 + (0.65 * progress))
-                    .scaleEffect(0.96 + (0.04 * progress))
-                    .offset(x: -20.0 * (1.0 - progress))
+                if hasLoadedSidebar || motion.isPresented || isDragging {
+                    sidebar
+                        .onAppear { hasLoadedSidebar = true }
+                        .frame(width: width)
+                        .scrollDisabled(SidebarDragPolicy.disablesScrollEnvironment(
+                            isDragging: isDragging,
+                            isAnimating: motion.isAnimating
+                        ))
+                        .allowsHitTesting(SidebarDragPolicy.allowsSidebarInteraction(
+                            isPresented: motion.isPresented,
+                            isDragging: isDragging,
+                            isAnimating: motion.isAnimating
+                        ))
+                        .background(Color.black.opacity(0.001))
+                        .opacity(0.35 + (0.65 * progress))
+                        .scaleEffect(0.96 + (0.04 * progress))
+                        .offset(x: -20.0 * (1.0 - progress))
+                }
 
                 main
                     .platformSidebarSafeAreaPadding(
@@ -345,7 +349,9 @@ struct ContentView: View {
                         + "ms=\(String(format: "%.2f", graphLoadMilliseconds))"
                 )
                 #endif
+                LogseqChatAppDelegate.shared.reportLaunchStage("authentication_restore_started")
                 await authentication.restore()
+                LogseqChatAppDelegate.shared.reportLaunchStage("authentication_restore_returned")
                 #if DEBUG
                 print("LogseqChat debug: authentication restore finished state=\(authentication.state.rawValue)")
                 #endif
@@ -1691,7 +1697,9 @@ struct ContentView: View {
             isGraphsPresented: graphsDestinationPresented
         ) {
             graphPicker
-        } else if isLoadingGraph, store.snapshot.blocks.isEmpty {
+        } else if isLoadingGraph {
+            // Publish journals only after launch loading completes, even if the
+            // store receives its snapshot before this view's task resumes.
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel("Loading journals")

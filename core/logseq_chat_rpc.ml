@@ -766,7 +766,7 @@ let rec project_outliner_intent blocks = function
     List.filter
       (fun (block : Model.block) -> not (List.mem block.uuid uuids))
       blocks
-  | Set_property _ | Set_properties _ | Create_tag _ | Create_journal _ | Add_tag _
+  | Set_property _ | Set_properties _ | Create_tag _ | Create_page _ | Create_journal _ | Add_tag _
   | Set_favorite _ | Delete_page _ -> blocks
 ;;
 
@@ -962,14 +962,22 @@ let has_pending_operations session =
 ;;
 
 let snapshot session ~context_blocks blocks =
+  let started = Unix.gettimeofday () in
+  let report stage =
+    if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+      Printf.eprintf "LOGSEQ_SNAPSHOT_METRIC stage=%s elapsed_ms=%.3f\n%!"
+        stage ((Unix.gettimeofday () -. started) *. 1000.)
+  in
   let sidebar_pages =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
     |> Option.value ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
   in
+  report "sidebar";
   let base_state = Option.value session.node_base_state ~default:session.outliner_state in
   let base_context =
     base_outliner_context_with_blocks ~sidebar_pages session context_blocks
   in
+  report "context";
   let serialized_blocks = Hashtbl.create (List.length blocks) in
   let serialize_block (block : Model.block) =
     match Hashtbl.find_opt serialized_blocks block.uuid with
@@ -1196,6 +1204,7 @@ let structural_outliner_patch
 ;;
 
 let snapshot_visible session =
+  let started = Unix.gettimeofday () in
   let blocks =
     match session.selected_sidebar_page, session.graph_page_blocks with
     | Some page, Some graph_page_blocks ->
@@ -1225,7 +1234,12 @@ let snapshot_visible session =
     then blocks
     else Model.visible_from session.model blocks
   in
-  snapshot session ~context_blocks blocks
+  if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+    Printf.eprintf "LOGSEQ_SNAPSHOT_METRIC stage=blocks elapsed_ms=%.3f\n%!" ((Unix.gettimeofday () -. started) *. 1000.);
+  let result = snapshot session ~context_blocks blocks in
+  if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+    Printf.eprintf "LOGSEQ_SNAPSHOT_METRIC stage=complete elapsed_ms=%.3f\n%!" ((Unix.gettimeofday () -. started) *. 1000.);
+  result
 ;;
 
 let pending_sync_patch session =

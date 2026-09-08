@@ -1,6 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 
+# Requires a Debug app with a selected graph already cached on the simulator.
+# Restart the process without clearing the graph or authentication state.
 device="${LOGSEQ_CHAT_IOS_SIMULATOR:-booted}"
 bundle_id="${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}"
 budget_ms="${LOGSEQ_CHAT_JOURNALS_READY_BUDGET_MS:-300}"
@@ -16,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 xcrun simctl terminate "$device" "$bundle_id" >/dev/null 2>&1 || true
-xcrun simctl launch --console-pty "$device" "$bundle_id" >"$launch_log" 2>&1 &
+SIMCTL_CHILD_LOGSEQ_CHAT_TRACE_STARTUP=1 xcrun simctl launch --console-pty "$device" "$bundle_id" >"$launch_log" 2>&1 &
 launch_pid="$!"
 
 for _ in {1..100}; do
@@ -46,6 +48,22 @@ if ! grep -q "LOGSEQ_LAUNCH_APPLY_METRIC action=openGraph" "$launch_log"; then
   cat "$launch_log" >&2
   exit 1
 fi
+
+apply_count="$(grep -c 'LOGSEQ_LAUNCH_APPLY_METRIC action=openGraph' "$launch_log")"
+if [[ "$apply_count" != 1 ]]; then
+  print -u2 "local launch response must be applied once, got $apply_count"
+  cat "$launch_log" >&2
+  exit 1
+fi
+
+render_count="$(sed '/LOGSEQ_LAUNCH_METRIC journals_ui_ready_ms=/q' "$launch_log" | grep -c 'LOGSEQ_LAUNCH_METRIC outliner_body_ms=')"
+if [[ "$render_count" != 1 ]]; then
+  print -u2 "journals must render once before ready, got $render_count"
+  cat "$launch_log" >&2
+  exit 1
+fi
+
+grep 'LOGSEQ_.*METRIC' "$launch_log"
 
 awk -v actual="$metric" -v budget="$budget_ms" 'BEGIN {
   if (actual > budget) {

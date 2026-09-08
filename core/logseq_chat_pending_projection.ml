@@ -441,6 +441,22 @@ let rec compile db = function
     else if List.exists (page_entity db) roots
     then Error "ordinary block delete cannot delete a page"
     else Ok (List.map (fun eid -> RetractEntity (Entity_id eid)) (subtree db roots))
+  | Create_page { uuid; title; created_at } ->
+    if Option.is_some (entid db "block/uuid" (Uuid uuid))
+    then Ok []
+    else
+      Ok
+        [ Entity
+            { db_id = Some (Temp_id ("pending/" ^ uuid))
+            ; attrs =
+                [ "block/uuid", One_value (Uuid uuid)
+                ; "block/name", One_value (String (String.lowercase_ascii title))
+                ; "block/title", One_value (String title)
+                ; "block/created-at", One_value (Int created_at)
+                ; "block/updated-at", One_value (Int created_at)
+                ]
+            }
+        ]
   | Create_tag { uuid; title; created_at } ->
     if Option.is_some (entid db "block/uuid" (Uuid uuid))
     then Ok []
@@ -663,7 +679,7 @@ let rec satisfied db = function
        = Some (Option.value merged_title ~default:(expected_previous_title ^ title))
   | Delete_blocks { uuids } ->
     List.for_all (fun uuid -> Option.is_none (entid db "block/uuid" (Uuid uuid))) uuids
-  | Create_tag { uuid; _ } -> Option.is_some (entid db "block/uuid" (Uuid uuid))
+  | Create_tag { uuid; _ } | Create_page { uuid; _ } -> Option.is_some (entid db "block/uuid" (Uuid uuid))
   | Create_journal { block_uuid; journal_day; _ } ->
     (match journal_page_eid db journal_day, entid db "block/uuid" (Uuid block_uuid) with
      | Some page_eid, Some block_eid ->

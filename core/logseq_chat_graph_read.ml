@@ -337,34 +337,45 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
       favorites
   in
   let recent_pages =
+    let seen = Hashtbl.create 15 in
+    (* Rank lightweight page metadata first; only decrypt and resolve titles
+       until the visible window is full. *)
     Datascript.datoms db Aevt ~a:"block/name" ()
     |> List.of_seq
+    |> List.filter (fun datom ->
+      match datom.v with
+      | String name -> not (String.starts_with ~prefix:"$$$" name)
+      | _ -> false)
     |> List.filter_map (fun datom ->
-      match page_summary decrypt_title db datom.e with
-      | Some page
-        when value db datom.e "logseq.property/built-in?" <> Some (Bool true)
-             && not (String_set.mem page.uuid favorite_uuids) ->
+      let attrs = Datascript.datoms db Eavt ~e:datom.e () |> List.of_seq in
+      let attr name =
+        List.find_opt (fun datom -> String.equal datom.a name) attrs
+        |> Option.map (fun datom -> datom.v)
+      in
+      if attr "logseq.property/built-in?" = Some (Bool true)
+      then None
+      else
         Some
-          ( Option.value (int_value (value db datom.e "block/updated-at")) ~default:0
-          , Option.value (int_value (value db datom.e "block/journal-day")) ~default:0
-          , datom.e
-          , page )
-      | Some _ | None -> None)
-    |> List.sort (fun (left_updated, left_journal, left_eid, _) (right_updated, right_journal, right_eid, _) ->
+        ( Option.value (int_value (attr "block/updated-at")) ~default:0
+        , Option.value (int_value (attr "block/journal-day")) ~default:0
+        , datom.e ))
+    |> List.sort (fun (left_updated, left_journal, left_eid) (right_updated, right_journal, right_eid) ->
       match compare right_updated left_updated with
       | 0 ->
         (match compare right_journal left_journal with
          | 0 -> compare right_eid left_eid
          | order -> order)
       | order -> order)
-    |> List.fold_left
-         (fun (seen, pages) (_updated_at, _journal_day, eid, page) ->
-           if Int_set.mem eid seen then seen, pages
-           else Int_set.add eid seen, page :: pages)
-         (Int_set.empty, [])
-    |> snd
-    |> List.rev
-    |> take 15
+    |> List.to_seq
+    |> Seq.filter_map (fun (_updated_at, _journal_day, eid) ->
+      if Hashtbl.mem seen eid then None
+      else (
+        Hashtbl.add seen eid ();
+        match page_summary decrypt_title db eid with
+        | Some page when not (String_set.mem page.uuid favorite_uuids) -> Some page
+        | Some _ | None -> None))
+    |> Seq.take 15
+    |> List.of_seq
   in
   { favorites; recent_pages }
 ;;

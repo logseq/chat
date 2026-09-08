@@ -1443,3 +1443,45 @@ let () =
          | [ block ] -> String.equal block.Logseq_chat_model.uuid block_uuid
          | _ -> false))
 ;;
+
+let () =
+  List.iter (fun state ->
+    with_runtime (fun path conn _ ->
+      let payload = {|{"type":"create-page","uuid":"offline-page","title":"Offline Page","createdAt":7}|} in
+      Ops.store_raw path "offline-create-page" 42 state payload;
+      let restored =
+        try Some (Runtime.create ~path ~server_t:43 conn)
+        with Invalid_argument _ -> None
+      in
+      assert_bool "a persisted create-page operation must not prevent opening the graph"
+        (Option.is_some restored);
+      let runtime = Option.get restored in
+      assert_bool "existing journal blocks remain visible" (Runtime.blocks runtime <> []);
+      let page = entity (Runtime.db runtime) (Lookup_ref ("block/uuid", Uuid "offline-page")) in
+      assert_bool "offline page title is restored"
+        (Option.bind page (fun entity -> entity_attr entity "block/title") = Some (One_value (String "Offline Page")));
+      let operations = Ops.list ~path in
+      assert_bool "opening the graph preserves the pending operation" (List.length operations = 1);
+      let operation = List.hd operations in
+      assert_bool "the persisted payload remains compatible"
+        (Ops.intent_json operation.intent = Yojson.Basic.from_string payload);
+      if state = "accepted:43" then
+        assert_bool "accepted creation is not resubmitted"
+          (Runtime.pending_operations runtime = [])
+      else
+        assert_bool "the restored page can still be synchronized"
+          (match Runtime.prepare_sync runtime operation with Ok ("save-block", _) -> true | _ -> false);
+      ignore (transact_conn conn
+        [ Add (Entity_id 20, "block/uuid", Uuid "offline-page")
+        ; Add (Entity_id 20, "block/title", String "Server Page")
+        ; Add (Entity_id 20, "block/name", String "server page") ]);
+      Ops.save ~path { operation with state = Ops.Accepted 44 };
+      let reopened = Runtime.create ~path ~server_t:44 conn in
+      assert_bool "confirmed creation is removed without overwriting the server page"
+        (Ops.list ~path = []
+         && Option.bind
+              (entity (Runtime.db reopened) (Lookup_ref ("block/uuid", Uuid "offline-page")))
+              (fun entity -> entity_attr entity "block/title")
+            = Some (One_value (String "Server Page")))))
+    [ "queued"; "retryable"; "submitted"; "accepted:43" ]
+;;
