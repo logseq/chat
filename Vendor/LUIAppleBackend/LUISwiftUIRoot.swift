@@ -320,7 +320,7 @@ struct LUIAnyNodeView: View, Equatable {
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.retainedSnapshot == rhs.retainedSnapshot
+        lhs.backend === rhs.backend && lhs.retainedSnapshot == rhs.retainedSnapshot
     }
 
     @ViewBuilder
@@ -381,189 +381,211 @@ private struct LUINodeView: View {
         .modifier(LUIRetainedPaneModifier(model: model))
     }
 
-    @ViewBuilder
-    private var content: some View {
+    // Each wire node has a stable ID and one concrete control kind. Erase only
+    // this dynamic dispatch boundary, rather than building a giant conditional type.
+    private var content: AnyView {
         switch model.kind {
         case .root:
-            if let childID = model.children.first {
-                LUIAnyNodeView(nodeID: childID, backend: backend)
-            }
+            guard let childID = model.children.first else { return AnyView(EmptyView()) }
+            return AnyView(LUIAnyNodeView(nodeID: childID, backend: backend))
         case .row:
-            LUIRowView(model: model, backend: backend)
+            return AnyView(LUIRowView(model: model, backend: backend))
         case .tabs, .buttonGroup, .toggleGroup, .breadcrumb, .pagination:
-            LUIHorizontalGroupView(model: model, backend: backend)
+            return AnyView(LUIHorizontalGroupView(model: model, backend: backend))
         case .bottomTabs:
-            LUIBottomTabsView(model: model, backend: backend)
+            return AnyView(LUIBottomTabsView(model: model, backend: backend))
         case .bottomTab:
-            VStack(alignment: .leading, spacing: 0) {
-                children
-            }
-        case .column, .list:
-            if model.kind == .list {
-                LUIListView(model: model, backend: backend)
-                    .modifier(
-                        LUIDialogPresentationModifier(anchorID: model.id, backend: backend)
-                    )
-            } else {
-                LUIColumnView(model: model, backend: backend)
-            }
+            return AnyView(
+                VStack(alignment: .leading, spacing: 0) {
+                    children
+                }
+            )
+        case .list:
+            return AnyView(LUIListView(model: model, backend: backend)
+                .modifier(LUIDialogPresentationModifier(anchorID: model.id, backend: backend)))
+        case .column:
+            return AnyView(LUIColumnView(model: model, backend: backend))
         case .virtualList:
-            LUIVirtualListView(model: model, backend: backend)
+            return AnyView(LUIVirtualListView(model: model, backend: backend))
         case .grid:
-            LUIGridView(model: model, backend: backend)
+            return AnyView(LUIGridView(model: model, backend: backend))
         case .stack:
-            LUIStackView(model: model, backend: backend)
+            return AnyView(LUIStackView(model: model, backend: backend))
         case .panel, .card:
-            ZStack {
-                children
-            }
+            return AnyView(
+                ZStack {
+                    children
+                }
+            )
         case .alert:
-            LUIAlertView(model: model, backend: backend)
+            return AnyView(LUIAlertView(model: model, backend: backend))
         case .bubble:
-            LUIBubbleView(model: model, backend: backend)
+            return AnyView(LUIBubbleView(model: model, backend: backend))
         case .box:
-            VStack(
-                alignment: .leading,
-                spacing: CGFloat(model.property(.gap)?.intValue ?? 0)
+            return AnyView(
+                VStack(
+                    alignment: .leading,
+                    spacing: CGFloat(model.property(.gap)?.intValue ?? 0)
             ) {
                 children
             }
+            )
         case .text:
-            LUITextView(model: model, backend: backend)
+            return AnyView(LUITextView(model: model, backend: backend))
         case .heading:
-            Text(verbatim: model.text)
-                .font(headingFont)
-                .fontWeight(
-                    LUIHeadingTypography.isBold(level: headingLevel) ? .bold : nil
-                )
-                .accessibilityAddTraits(.isHeader)
+            return AnyView(
+                Text(verbatim: model.text)
+                    .font(headingFont)
+                    .fontWeight(
+                        LUIHeadingTypography.isBold(level: headingLevel) ? .bold : nil
+                    )
+                    .accessibilityAddTraits(.isHeader)
+            )
         case .paragraph:
-            Text(verbatim: model.text)
-                .font(.body)
+            return AnyView(
+                Text(verbatim: model.text)
+                    .font(.body)
+            )
         case .label:
-            Text(verbatim: model.text)
-                .font(.body)
+            return AnyView(
+                Text(verbatim: model.text)
+                    .font(.body)
+            )
         case .button:
-            LUIButtonView(model: model, backend: backend)
+            return AnyView(LUIButtonView(model: model, backend: backend))
         case .toggleButton:
-            LUIButtonView(model: model, backend: backend, isToggle: true)
+            return AnyView(LUIButtonView(model: model, backend: backend, isToggle: true))
         case .textField, .secureField, .input, .searchField, .textarea:
-            LUITextControlView(model: model, backend: backend)
+            return AnyView(LUITextControlView(model: model, backend: backend))
         case .select:
-            LUISelectView(model: model, backend: backend)
+            return AnyView(LUISelectView(model: model, backend: backend))
         case .combobox:
-            LUIComboboxView(model: model, backend: backend)
+            return AnyView(LUIComboboxView(model: model, backend: backend))
         case .dropdownMenu:
-            LUIDropdownMenuView(model: model, backend: backend)
+            return AnyView(LUIDropdownMenuView(model: model, backend: backend))
         case .contextMenu:
-            EmptyView()
+            return AnyView(EmptyView())
         case .tooltip:
-            LUITooltipLabel(model: model)
+            return AnyView(LUITooltipLabel(model: model))
         case .toast:
-            LUIToastView(model: model, backend: backend)
+            return AnyView(LUIToastView(model: model, backend: backend))
         case .toolbar:
-            LUIToolbarView(model: model, backend: backend)
+            return AnyView(LUIToolbarView(model: model, backend: backend))
         case .accordion:
-            LUIAccordionView(model: model, backend: backend)
+            return AnyView(LUIAccordionView(model: model, backend: backend))
         case .dialog, .sheet:
-            EmptyView()
+            return AnyView(EmptyView())
         case .menuItem:
-            LUIMenuItemView(model: model, backend: backend)
+            return AnyView(LUIMenuItemView(model: model, backend: backend))
         case .listItem:
-            LUIListItemView(model: model, backend: backend)
+            return AnyView(LUIListItemView(model: model, backend: backend))
         case .table:
-            LUITableView(model: model, backend: backend)
+            return AnyView(LUITableView(model: model, backend: backend))
         case .tree:
-            LUITreeView(model: model, backend: backend)
+            return AnyView(LUITreeView(model: model, backend: backend))
         case .resizable:
-            LUIResizableView(model: model, backend: backend)
+            return AnyView(LUIResizableView(model: model, backend: backend))
         case .split:
-            LUISplitView(model: model, backend: backend)
+            return AnyView(LUISplitView(model: model, backend: backend))
         case .drawer:
-            LUIDrawerView(model: model, backend: backend)
+            return AnyView(LUIDrawerView(model: model, backend: backend))
         case .tableRow:
-            LUITableRowView(model: model, backend: backend, isLast: true)
+            return AnyView(LUITableRowView(model: model, backend: backend, isLast: true))
         case .tableCell:
-            LUITableCellView(model: model, backend: backend)
+            return AnyView(LUITableCellView(model: model, backend: backend))
         case .avatar:
-            LUIAvatarView(model: model, backend: backend)
+            return AnyView(LUIAvatarView(model: model, backend: backend))
         case .image:
-            LUIImageView(model: model, backend: backend)
+            return AnyView(LUIImageView(model: model, backend: backend))
         case .mediaSurface:
-            LUIMediaSurfaceView(model: model, backend: backend)
+            return AnyView(LUIMediaSurfaceView(model: model, backend: backend))
         case .stepper:
-            LUIStepperView(model: model, backend: backend)
+            return AnyView(LUIStepperView(model: model, backend: backend))
         case .step:
-            Text(verbatim: model.text)
+            return AnyView(Text(verbatim: model.text))
         case .timeline:
-            LUITimelineView(model: model, backend: backend)
+            return AnyView(LUITimelineView(model: model, backend: backend))
         case .timelineItem:
-            LUITimelineItemView(model: model, backend: backend)
+            return AnyView(LUITimelineItemView(model: model, backend: backend))
         case .inputGroup:
-            LUIInputGroupView(model: model, backend: backend)
+            return AnyView(LUIInputGroupView(model: model, backend: backend))
         case .inputGroupActions:
-            LUIInputGroupActionsView(model: model, backend: backend)
+            return AnyView(LUIInputGroupActionsView(model: model, backend: backend))
         case .checkbox:
-            LUICheckboxView(model: model, backend: backend)
+            return AnyView(LUICheckboxView(model: model, backend: backend))
         case .switchControl, .toggle:
-            LUIBinaryToggleView(model: model, backend: backend)
+            return AnyView(LUIBinaryToggleView(model: model, backend: backend))
         case .radioGroup:
-            LUIRadioGroupView(model: model, backend: backend)
+            return AnyView(LUIRadioGroupView(model: model, backend: backend))
         case .radio:
-            Button {
-                try? backend.performChange(node: model.id)
-            } label: {
-                Label(model.text, systemImage: model.isChecked ? "circle.inset.filled" : "circle")
-            }
-            .buttonStyle(.plain)
-            .disabled(!model.isEnabled)
-            .frame(minHeight: minimumTouchHeight)
-            .accessibilityAddTraits(model.isChecked ? .isSelected : [])
+            return AnyView(
+                Button {
+                    try? backend.performChange(node: model.id)
+                } label: {
+                    Label(model.text, systemImage: model.isChecked ? "circle.inset.filled" : "circle")
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.isEnabled)
+                .frame(minHeight: minimumTouchHeight)
+                .accessibilityAddTraits(model.isChecked ? .isSelected : [])
+            )
         case .slider:
-            Slider(
-                value: Binding(
-                    get: { min(max(model.sliderValue, 0), 1) },
-                    set: { try? backend.performValueChange(node: model.id, value: $0) }
-                ),
-                in: 0...1
+            return AnyView(
+                Slider(
+                    value: Binding(
+                        get: { min(max(model.sliderValue, 0), 1) },
+                        set: { try? backend.performValueChange(node: model.id, value: $0) }
+                    ),
+                    in: 0...1
             )
             .disabled(!model.isEnabled)
             .frame(minHeight: minimumTouchHeight)
+            )
         case .progress:
-            ProgressView(value: model.progressFraction)
-                .accessibilityValue(Text(progressAccessibilityValue))
+            return AnyView(
+                ProgressView(value: model.progressFraction)
+                    .accessibilityValue(Text(progressAccessibilityValue))
+            )
         case .divider:
-            LUISeparatorView(model: model)
+            return AnyView(LUISeparatorView(model: model))
         case .scroll:
-            ScrollView {
-                LUIVerticalScrollContent(model: model, backend: backend)
-            }
+            return AnyView(
+                ScrollView {
+                    LUIVerticalScrollContent(model: model, backend: backend)
+                }
+            )
         case .spacer:
-            Spacer()
+            return AnyView(Spacer())
         case .spinner:
-            ProgressView()
-                .progressViewStyle(.circular)
-                .controlSize(model.spinnerControlSize)
-                .frame(
-                    width: CGFloat(model.spinnerWidth),
-                    height: CGFloat(model.spinnerHeight)
-                )
+            return AnyView(
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(model.spinnerControlSize)
+                    .frame(
+                        width: CGFloat(model.spinnerWidth),
+                        height: CGFloat(model.spinnerHeight)
+                    )
+            )
         case .icon:
-            LUIIconImage(
-                source: backend.iconSource(for: model.iconName),
-                bundle: backend.appIconBundle
+            return AnyView(
+                LUIIconImage(
+                    source: backend.iconSource(for: model.iconName),
+                    bundle: backend.appIconBundle
             )
                 .scaledToFit()
                 .frame(
                     width: CGFloat(model.iconWidth),
                     height: CGFloat(model.iconHeight)
                 )
+            )
         case .statusBar:
-            Text(verbatim: model.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(messageTextAlignment)
-                .frame(maxWidth: .infinity, alignment: messageFrameAlignment)
+            return AnyView(
+                Text(verbatim: model.text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(messageTextAlignment)
+                    .frame(maxWidth: .infinity, alignment: messageFrameAlignment)
+            )
         }
     }
 
@@ -4754,6 +4776,7 @@ private struct LUIAccessibilityModifier: ViewModifier {
                 )
             )
         )
+        .modifier(LUIAppearanceTraceModifier(identifier: identifier))
         if let label, let hint, let identifier {
             accessibleContent
                 .accessibilityLabel(Text(label))
@@ -4775,6 +4798,21 @@ private struct LUIAccessibilityModifier: ViewModifier {
             accessibleContent.accessibilityHint(Text(hint))
         } else {
             accessibleContent
+        }
+    }
+}
+
+private struct LUIAppearanceTraceModifier: ViewModifier {
+    let identifier: String?
+    private static let target = ProcessInfo.processInfo.environment["LUI_TRACE_APPEAR_IDENTIFIER"]
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let identifier, identifier == Self.target {
+            content.onAppear {
+                print(String(format: "LUI_APPEAR_METRIC identifier=%@ timestamp=%.6f", identifier, Date().timeIntervalSince1970))
+            }
+        } else {
+            content
         }
     }
 }

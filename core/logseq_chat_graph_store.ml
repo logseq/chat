@@ -1,5 +1,10 @@
 type row = Logseq_chat_snapshot.row
 
+type reader
+external open_reader : string -> reader = "logseq_chat_graph_reader_open"
+external reader_row : reader -> int -> (string * string option) option
+  = "logseq_chat_graph_reader_read"
+
 external prepare_staging : string -> unit = "logseq_chat_graph_store_prepare"
 external append_staging : string -> row list -> unit = "logseq_chat_graph_store_append"
 external copy_app_tables : string -> string -> unit = "logseq_chat_graph_store_copy_app_tables"
@@ -55,6 +60,9 @@ let int_of_address address =
 ;;
 
 let storage_with_paths ~read_path ~write_path : Datascript.storage =
+  (* One reader per storage instance keeps lazy index reads on the same graph
+     file, even when a newer downloaded snapshot replaces its path. *)
+  let reader = lazy (open_reader read_path) in
   let storage_store entries =
     entries
     |> List.map (fun (address, payload) ->
@@ -65,7 +73,7 @@ let storage_with_paths ~read_path ~write_path : Datascript.storage =
   { storage_store
   ; storage_restore =
       (fun address ->
-        match read_stored_row read_path (int_of_address address) with
+        match reader_row (Lazy.force reader) (int_of_address address) with
         | None -> None
         | Some (content, addresses) ->
           Some (Logseq_chat_logseq_storage_codec.decode ?addresses content))

@@ -53,7 +53,13 @@ struct OutlinerMixedRichMarkupContent: View {
     }
 
     @ViewBuilder private func inlineContent(_ chunk: [LogseqMarkupNode]) -> some View {
-        Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
+        Group {
+            if chunk.allSatisfy({ $0.type == .text }) {
+                Text(verbatim: chunk.isEmpty ? fallback : chunk.map { $0.text ?? "" }.joined())
+            } else {
+                Text(OutlinerMarkupAttributedString.make(nodes: chunk, fallback: fallback))
+            }
+        }
             .environment(\.openURL, OpenURLAction { url in
                 guard allowsLinkInteraction() else { return .discarded }
                 guard let link = OutlinerMarkupLink(url: url) else { return .systemAction }

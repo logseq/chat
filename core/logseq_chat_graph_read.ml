@@ -358,8 +358,13 @@ let sidebar_pages ?(decrypt_title = fun value -> Ok value) db =
         List.find_opt (fun datom -> String.equal datom.a name) attrs
         |> Option.map (fun datom -> datom.v)
       in
+      let is_built_in_class =
+        match attr "db/ident" with
+        | Some (Keyword ident) -> String.starts_with ~prefix:"logseq.class/" ident
+        | _ -> false
+      in
       if attr "logseq.property/built-in?" = Some (Bool true)
-         || built_in_class db datom.e
+         || is_built_in_class
       then None
       else
         Some

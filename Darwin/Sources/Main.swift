@@ -55,7 +55,9 @@ typealias AppType = NSApplication
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         AppDelegate.shared.onLaunch()
         LogseqChatBackgroundRefresh.register()
+        AppDelegate.shared.reportLaunchStage("background_registered")
         LogseqChatBackgroundRefresh.schedule()
+        AppDelegate.shared.reportLaunchStage("background_scheduled")
         return true
     }
 

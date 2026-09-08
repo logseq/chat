@@ -1,11 +1,12 @@
 #!/bin/zsh
 set -euo pipefail
 
-# Requires a Debug app with a selected graph already cached on the simulator.
+# Requires an app with a selected graph already cached.
+# Set LOGSEQ_CHAT_IOS_DEVICE=iPhone to measure a physical device.
 # Restart the process without clearing the graph or authentication state.
 device="${LOGSEQ_CHAT_IOS_SIMULATOR:-booted}"
 bundle_id="${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}"
-budget_ms="${LOGSEQ_CHAT_JOURNALS_READY_BUDGET_MS:-300}"
+budget_ms="${LOGSEQ_CHAT_JOURNALS_READY_BUDGET_MS:-200}"
 launch_log="$(mktemp -t logseq-journals-launch).log"
 launch_pid=""
 
@@ -17,20 +18,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
-xcrun simctl terminate "$device" "$bundle_id" >/dev/null 2>&1 || true
-SIMCTL_CHILD_LOGSEQ_CHAT_TRACE_STARTUP=1 xcrun simctl launch --console-pty "$device" "$bundle_id" >"$launch_log" 2>&1 &
+if [[ -n "${LOGSEQ_CHAT_IOS_DEVICE:-}" ]]; then
+  xcrun devicectl device process launch --terminate-existing \
+    --device "$LOGSEQ_CHAT_IOS_DEVICE" --console \
+    --environment-variables '{"LOGSEQ_CHAT_TRACE_STARTUP":"1","LUI_TRACE_APPEAR_IDENTIFIER":"journals.graph-loaded"}' \
+    "$bundle_id" >"$launch_log" 2>&1 &
+else
+  xcrun simctl terminate "$device" "$bundle_id" >/dev/null 2>&1 || true
+  SIMCTL_CHILD_LUI_TRACE_APPEAR_IDENTIFIER=journals.graph-loaded SIMCTL_CHILD_LOGSEQ_CHAT_TRACE_STARTUP=1 \
+    xcrun simctl launch --console-pty "$device" "$bundle_id" >"$launch_log" 2>&1 &
+fi
 launch_pid="$!"
 
-for _ in {1..100}; do
-  if grep -q "LOGSEQ_LAUNCH_METRIC journals_ui_ready_ms=" "$launch_log"; then
+for _ in {1..300}; do
+  if grep -q "LUI_APPEAR_METRIC identifier=journals.graph-loaded timestamp=" "$launch_log" \
+     && grep -q "LOGSEQ_LAUNCH_METRIC first_ui_rendered_ms=" "$launch_log"; then
+    break
+  fi
+  if ! kill -0 "$launch_pid" 2>/dev/null; then
     break
   fi
   sleep 0.05
 done
 
-metric="$(sed -n 's/.*LOGSEQ_LAUNCH_METRIC journals_ui_ready_ms=\([0-9.]*\).*/\1/p' "$launch_log" | tail -1)"
+metric="$(python3 - "$launch_log" <<'PYTHON'
+import re, sys
+text = open(sys.argv[1]).read()
+start = re.search(r"LOGSEQ_LAUNCH_METRIC start=([0-9.]+)", text)
+ready = re.search(r"LUI_APPEAR_METRIC identifier=journals.graph-loaded timestamp=([0-9.]+)", text)
+if start and ready:
+    print(f"{(float(ready[1]) - float(start[1])) * 1000:.3f}")
+PYTHON
+)"
 if [[ -z "$metric" ]]; then
-  print -u2 "journals UI ready launch metric was not emitted"
+  print -u2 "journals onAppear launch metric was not emitted"
   cat "$launch_log" >&2
   exit 1
 fi
@@ -56,12 +77,29 @@ if [[ "$apply_count" != 1 ]]; then
   exit 1
 fi
 
-grep 'LOGSEQ_.*METRIC' "$launch_log"
+python3 - "$launch_log" <<'PYTHON'
+import re, sys
+text = open(sys.argv[1]).read()
+def stage(name):
+    match = re.search(r"LOGSEQ_LAUNCH_METRIC " + name + r"_ms=([0-9.]+)", text)
+    if not match:
+        sys.exit("missing launch stage: " + name)
+    return float(match[1])
+start = re.search(r"LOGSEQ_LAUNCH_METRIC start=([0-9.]+)", text)
+appearances = re.findall(r"LUI_APPEAR_METRIC identifier=journals.graph-loaded timestamp=([0-9.]+)", text)
+if len(appearances) != 1:
+    sys.exit("journals must appear once during startup")
+appeared_ms = (float(appearances[0]) - float(start[1])) * 1000
+if stage("store_opened") > appeared_ms or stage("store_opened") > stage("first_ui_rendered"):
+    sys.exit("the first UI must receive the complete local snapshot synchronously")
+PYTHON
+
+grep -E '(LOGSEQ_.*METRIC|LUI_APPEAR_METRIC)' "$launch_log"
 
 awk -v actual="$metric" -v budget="$budget_ms" 'BEGIN {
   if (actual > budget) {
-    printf "journals UI ready exceeded budget: %.3fms > %.3fms\n", actual, budget > "/dev/stderr"
+    printf "journals onAppear exceeded budget: %.3fms > %.3fms\n", actual, budget > "/dev/stderr"
     exit 1
   }
-  printf "journals UI ready: %.3fms (budget %.3fms)\n", actual, budget
+  printf "journals onAppear: %.3fms (budget %.3fms)\n", actual, budget
 }'

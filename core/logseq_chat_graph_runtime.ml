@@ -11,6 +11,7 @@ type t =
   ; encrypt_title : string -> (string, string) result
   ; mutable server_t : int
   ; mutable snapshot : Projection.snapshot
+  ; mutable sidebar_cache : (Datascript.db * Logseq_chat_graph_read.sidebar_pages) option
   ; prepared : (string, Ops.t) Hashtbl.t
   ; mutable journal_limit : int
   ; search_index : Logseq_chat_search_index.t option
@@ -117,37 +118,8 @@ let refresh_search_affected runtime ~before intent =
   | Some _ -> ()
 ;;
 
-let persist_projected_conflicts ~path operations statuses =
-  let persisted = Hashtbl.create (List.length operations) in
-  List.iter
-    (fun operation ->
-      Hashtbl.replace persisted operation.Ops.operation_id operation.Ops.state)
-    operations;
-  List.iter
-    (function
-      | operation_id, Ops.Conflicted message ->
-        (match Hashtbl.find_opt persisted operation_id with
-         | Some (Ops.Queued | Ops.Retryable | Ops.Submitted) ->
-           Ops.set_state ~path ~operation_id (Ops.Conflicted message)
-         | Some (Ops.Accepted _ | Ops.Applied | Ops.Conflicted _) | None -> ())
-      | _, (Ops.Queued | Ops.Submitted | Ops.Accepted _ | Ops.Retryable | Ops.Applied) -> ())
-    statuses
-;;
-
-let rebuild ?(changed_uuids = []) runtime =
-  let before = runtime.snapshot.Projection.db in
-  let operations = Ops.list ~path:runtime.path in
-  let snapshot =
-    Projection.build
-      ~server_t:runtime.server_t
-      (Datascript.conn_db runtime.conn)
-      operations
-  in
-  persist_projected_conflicts
-    ~path:runtime.path
-    operations
-    snapshot.statuses;
-  runtime.snapshot <- snapshot;
+let refresh_search_after_rebase ~changed_uuids runtime ~before ~operations =
+  let snapshot = runtime.snapshot in
   match runtime.search_index with
   | Some index when runtime.search_index_is_fresh ->
     let pending_uuids =
@@ -201,35 +173,41 @@ let committed_despite_later_changes ~server_t authoritative (operation : Ops.t) 
 ;;
 
 let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
+  let started = Unix.gettimeofday () in
+  let report stage =
+    if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+      Printf.eprintf "LOGSEQ_REBASE_METRIC stage=%s elapsed_ms=%.3f\n%!"
+        stage ((Unix.gettimeofday () -. started) *. 1000.)
+  in
   let confirmed = Hashtbl.create (List.length operation_ids) in
   List.iter (fun operation_id -> Hashtbl.replace confirmed operation_id ()) operation_ids;
   List.iter (Hashtbl.remove runtime.prepared) operation_ids;
+  let before = runtime.snapshot.Projection.db in
   let authoritative = Datascript.conn_db runtime.conn in
-  Ops.list ~path:runtime.path
-  |> List.iter (fun operation ->
-    match operation.Ops.state with
-    | _ when
-        Hashtbl.mem confirmed operation.operation_id
-        && Projection.satisfied authoritative operation.intent ->
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
-    | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent ->
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
-    | _ when committed_despite_later_changes ~server_t authoritative operation ->
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id
-    | _ -> ());
+  let operations = Ops.list ~path:runtime.path |> List.filter (fun operation ->
+    let is_confirmed = match operation.Ops.state with
+    | _ when Hashtbl.mem confirmed operation.operation_id
+             && Projection.satisfied authoritative operation.intent -> true
+    | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent -> true
+    | _ -> committed_despite_later_changes ~server_t authoritative operation
+    in
+    if is_confirmed then
+      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id;
+    not is_confirmed) in
+  report "confirmed";
   runtime.server_t <- server_t;
   let projected = ref authoritative in
-  Ops.list ~path:runtime.path
-  |> List.iter (fun (operation : Ops.t) ->
-    match operation.state with
-    | Ops.Conflicted _ -> ()
+  let statuses = List.map (fun (operation : Ops.t) ->
+    let status = match operation.state with
+    | Ops.Conflicted message -> Ops.Conflicted message
     | Ops.Accepted _ | Ops.Applied ->
       (match Projection.compile !projected operation.intent with
-       | Ok tx -> projected := Datascript.db_with tx !projected
+       | Ok tx ->
+         projected := Datascript.db_with tx !projected;
+         Ops.Applied
        | Error message ->
-         Ops.save
-           ~path:runtime.path
-           { operation with state = Ops.Conflicted message })
+         Ops.save ~path:runtime.path { operation with state = Ops.Conflicted message };
+         Ops.Conflicted message)
     | Ops.Queued | Ops.Retryable | Ops.Submitted ->
       Hashtbl.remove runtime.prepared operation.operation_id;
       (match
@@ -238,17 +216,23 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
          else Projection.compile !projected operation.intent
        with
        | Error message ->
-         Ops.save
-           ~path:runtime.path
-           { operation with base_t = server_t; state = Ops.Conflicted message }
+         Ops.save ~path:runtime.path
+           { operation with base_t = server_t; state = Ops.Conflicted message };
+         Ops.Conflicted message
        | Ok tx ->
          projected := Datascript.db_with tx !projected;
-         if operation.base_t <> server_t
-         then
-           Ops.save
-             ~path:runtime.path
-             { operation with base_t = server_t; state = Ops.Queued }));
-  rebuild ~changed_uuids runtime
+         if operation.base_t <> server_t then
+           Ops.save ~path:runtime.path
+             { operation with base_t = server_t; state = Ops.Queued };
+         Ops.Applied)
+    in
+    operation.operation_id, status) operations in
+  (* Reconciliation already built the complete ordered projection. Publishing
+     that same value avoids replaying every pending transaction a second time. *)
+  runtime.snapshot <- Projection.{ db = !projected; server_t; statuses };
+  report "projected";
+  refresh_search_after_rebase ~changed_uuids runtime ~before ~operations;
+  report "complete"
 ;;
 
 let create_base
@@ -283,6 +267,7 @@ let create_base
     ; encrypt_title
     ; server_t
     ; snapshot
+    ; sidebar_cache = None
     ; prepared = Hashtbl.create 16
     ; journal_limit = 1
     ; search_index
@@ -664,8 +649,13 @@ let blocks_for_page runtime page_uuid =
 ;;
 
 let sidebar_pages runtime =
-  Logseq_chat_graph_read.sidebar_pages
-    runtime.snapshot.db
+  let db = runtime.snapshot.db in
+  match runtime.sidebar_cache with
+  | Some (cached_db, pages) when cached_db == db -> pages
+  | _ ->
+    let pages = Logseq_chat_graph_read.sidebar_pages db in
+    runtime.sidebar_cache <- Some (db, pages);
+    pages
 ;;
 
 let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =

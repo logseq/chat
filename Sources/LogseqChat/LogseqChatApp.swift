@@ -137,7 +137,7 @@ public struct LogseqChatRootView : View {
         let graphResponse: String?
         let isEncrypted: Bool?
     }
-    private var localLaunchTask: Task<LocalLaunchResult, Never>?
+    private var localLaunchResult: LocalLaunchResult?
     private var didApplyLocalLaunchResult = false
     private var sharedCaptureTask: Task<Void, Never>?
     private var authenticationRestoreTask: Task<Void, Never>?
@@ -540,14 +540,14 @@ public struct LogseqChatRootView : View {
     }
 
     public func startLocalLaunchLoad() {
-        guard localLaunchTask == nil else { return }
+        guard localLaunchResult == nil else { return }
         let graphID = UserDefaults.standard.string(forKey: "logseq.selectedGraphId") ?? ""
         let databasePath = databasePath
         let baseURL = UserDefaults.standard.string(forKey: "logseq.baseURL")
             ?? "http://127.0.0.1:8787"
-        localLaunchTask = Task.detached(priority: .userInitiated) {
+        localLaunchResult = {
             LogseqChatAppDelegate.shared.reportLaunchStage("local_load_started")
-            func configureGraph() async {
+            func configureGraph() {
                 let payloadObject: [String: Any] = [
                     "baseUrl": baseURL,
                     "graphId": graphID,
@@ -555,7 +555,7 @@ public struct LogseqChatRootView : View {
                 ]
                 guard let data = try? JSONSerialization.data(withJSONObject: payloadObject),
                       let payload = String(data: data, encoding: .utf8) else { return }
-                _ = await LogseqChatStore.callForLaunch(
+                _ = LogseqChatStore.callForLaunch(
                     LogseqChatRPCRequest(
                         method: "dispatch",
                         params: LogseqChatRPCParams(action: "configure", payload: payload)
@@ -564,7 +564,7 @@ public struct LogseqChatRootView : View {
                 LogseqChatAppDelegate.shared.reportLaunchStage("graph_configured")
             }
 
-            func openGraph(isEncrypted: Bool) async -> String? {
+            func openGraph(isEncrypted: Bool) -> String? {
                 guard !graphID.isEmpty else { return nil }
                 let graphDirectory = LogseqGraphLocalStorage.directoryURL(
                     databasePath: databasePath,
@@ -579,7 +579,7 @@ public struct LogseqChatRootView : View {
                 guard let payloadData = try? JSONSerialization.data(withJSONObject: payloadObject),
                       let payload = String(data: payloadData, encoding: .utf8) else { return nil }
                 LogseqChatAppDelegate.shared.reportLaunchStage("open_graph_started")
-                let response = await LogseqChatStore.callForLaunch(
+                let response = LogseqChatStore.callForLaunch(
                     LogseqChatRPCRequest(
                         method: "dispatch",
                         params: LogseqChatRPCParams(action: "openGraph", payload: payload)
@@ -589,7 +589,7 @@ public struct LogseqChatRootView : View {
                 return response
             }
 
-            let catalogResponse = await LogseqChatStore.callForLaunch(
+            let catalogResponse = LogseqChatStore.callForLaunch(
                 LogseqChatRPCRequest(
                     method: "open",
                     params: LogseqChatRPCParams(action: nil, path: databasePath)
@@ -610,26 +610,24 @@ public struct LogseqChatRootView : View {
             }
             let isEncrypted = catalog.result?.graphs?
                 .first(where: { $0.id == graphID })?.isEncrypted ?? false
-            await configureGraph()
-            let graphResponse = await openGraph(isEncrypted: isEncrypted)
+            configureGraph()
+            let graphResponse = openGraph(isEncrypted: isEncrypted)
             return LocalLaunchResult(
                 catalogResponse: catalogResponse,
                 graphResponse: graphResponse,
                 isEncrypted: isEncrypted
             )
-        }
-        Task { [weak self] in
-            await self?.applyLocalLaunchResultWhenReady()
-        }
+        }()
+        applyLocalLaunchResultWhenReady()
     }
 
     public func waitForLocalLaunchLoad() async {
         startLocalLaunchLoad()
-        await applyLocalLaunchResultWhenReady()
+        applyLocalLaunchResultWhenReady()
     }
 
-    private func applyLocalLaunchResultWhenReady() async {
-        guard let result = await localLaunchTask?.value,
+    private func applyLocalLaunchResultWhenReady() {
+        guard let result = localLaunchResult,
               !didApplyLocalLaunchResult else { return }
         LogseqChatAppDelegate.shared.reportLaunchStage("local_result_received")
         didApplyLocalLaunchResult = true
@@ -951,6 +949,7 @@ public final class LogseqChatAppDelegate : Sendable {
         let runtime = LogseqChatRuntime.shared
         runtime.startLocalLaunchLoad()
         runtime.startAuthenticationRestore()
+        runtime.startLGRenderer()
         logger.debug("onInit")
     }
 

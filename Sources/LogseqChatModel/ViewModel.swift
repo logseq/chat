@@ -612,8 +612,10 @@ private struct DeletePagePayload: Encodable {
         )
     }
 
-    public nonisolated static func callForLaunch(_ request: LogseqChatRPCRequest) async -> String {
-        await LogseqChatCore.callAsync(request)
+    public nonisolated static func callForLaunch(_ request: LogseqChatRPCRequest) -> String {
+        guard let data = try? JSONEncoder().encode(request),
+              let requestJSON = String(data: data, encoding: .utf8) else { return "" }
+        return LogseqChatCore.shared.logseq_chat_call(requestJSON)
     }
 
     public func applyLaunchResponse(

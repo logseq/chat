@@ -1529,3 +1529,63 @@ let () =
             = Some (One_value (String "Server Page")))))
     [ "queued"; "retryable"; "submitted"; "accepted:43" ]
 ;;
+
+let () =
+  with_runtime (fun path conn runtime ->
+    let initial = Runtime.sidebar_pages runtime in
+    Gc.full_major ();
+    let before = Gc.allocated_bytes () in
+    for _ = 1 to 100 do ignore (Runtime.sidebar_pages runtime) done;
+    let allocated = Gc.allocated_bytes () -. before in
+    (* Repeated sync status snapshots must reuse reads of the same immutable graph. *)
+    assert_bool "Unchanged sidebar reads must not allocate full page summaries again"
+      (allocated < 50_000.);
+    ignore (transact_conn conn [Add (Entity_id 1, "block/title", String "Remote title")]);
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+    let remote = Runtime.sidebar_pages runtime in
+    assert_bool "Authoritative page changes invalidate sidebar results"
+      (remote <> initial && List.exists
+        (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.title = "Remote title")
+        remote.recent_pages);
+    Ops.save ~path
+      { Ops.operation_id = "pending-page-title"; base_t = 43; state = Queued
+      ; intent = Save_title { uuid = "page"; expected_title = "Remote title"; title = "Local title" } };
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+    assert_bool "Pending local titles appear in the same sidebar snapshot"
+      (List.exists
+        (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.title = "Local title")
+        (Runtime.sidebar_pages runtime).recent_pages);
+    Ops.remove ~path ~operation_id:"pending-page-title";
+    Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
+    assert_bool "Removing a pending change restores authoritative sidebar data"
+      (Runtime.sidebar_pages runtime = remote))
+;;
+
+let () =
+  with_runtime (fun path conn _ ->
+    let operations = List.init 30 (fun index ->
+      { Ops.operation_id = Printf.sprintf "restore-%d" index
+      ; base_t = 42; state = Ops.Queued
+      ; intent = Ops.Save_title
+          { uuid = "block"
+          ; expected_title = if index = 0 then "Old" else string_of_int (index - 1)
+          ; title = string_of_int index } }) in
+    List.iter (Ops.save ~path) operations;
+    let measure f =
+      Gc.full_major ();
+      let before = Gc.allocated_bytes () in
+      let result = f () in
+      result, Gc.allocated_bytes () -. before
+    in
+    let expected, projection_bytes = measure (fun () ->
+      Logseq_chat_pending_projection.build ~server_t:42 (conn_db conn) operations) in
+    let runtime, restore_bytes = measure (fun () -> Runtime.create ~path ~server_t:42 conn) in
+    assert_bool "Restoring sequential pending edits preserves the projected title"
+      (title (Runtime.db runtime) = title expected.db);
+    assert_bool "Restoring pending edits preserves their projected statuses"
+      (Runtime.operation_statuses runtime = expected.statuses);
+    assert_bool "Restoring pending edits keeps the authoritative graph unchanged"
+      (title (conn_db conn) = "Old" && Ops.list ~path = operations);
+    assert_bool "Graph restore must not construct the pending projection twice"
+      (restore_bytes < projection_bytes *. 1.6))
+;;

@@ -1,4 +1,5 @@
 #include <caml/alloc.h>
+#include <caml/custom.h>
 #include <caml/fail.h>
 #include <caml/memory.h>
 #include <caml/mlvalues.h>
@@ -35,6 +36,90 @@ static sqlite3 *open_database(const char *path)
     fail_sqlite(db, "opening graph database");
   }
   return db;
+}
+
+typedef struct {
+  sqlite3 *db;
+  sqlite3_stmt *statement;
+} graph_reader;
+
+static void finalize_graph_reader(value handle)
+{
+  graph_reader *reader = (graph_reader *)Data_custom_val(handle);
+  if (reader->statement != NULL) sqlite3_finalize(reader->statement);
+  if (reader->db != NULL) sqlite3_close(reader->db);
+  reader->statement = NULL;
+  reader->db = NULL;
+}
+
+static struct custom_operations graph_reader_operations = {
+  .identifier = "logseq_chat.graph_reader",
+  .finalize = finalize_graph_reader,
+  .compare = custom_compare_default,
+  .hash = custom_hash_default,
+  .serialize = custom_serialize_default,
+  .deserialize = custom_deserialize_default,
+  .compare_ext = custom_compare_ext_default,
+  .fixed_length = custom_fixed_length_default
+};
+
+CAMLprim value logseq_chat_graph_reader_open(value path)
+{
+  CAMLparam1(path);
+  CAMLlocal1(handle);
+  handle = caml_alloc_custom_mem(&graph_reader_operations, sizeof(graph_reader), 4096);
+  graph_reader *reader = (graph_reader *)Data_custom_val(handle);
+  reader->db = NULL;
+  reader->statement = NULL;
+  reader->db = open_database(String_val(path));
+  if (sqlite3_prepare_v2(reader->db,
+                        "select content, addresses from kvs where addr = ?",
+                        -1, &reader->statement, NULL) != SQLITE_OK) {
+    char message[1024];
+    snprintf(message, sizeof(message), "SQLite error preparing graph reader: %s",
+             sqlite3_errmsg(reader->db));
+    finalize_graph_reader(handle);
+    caml_failwith(message);
+  }
+  CAMLreturn(handle);
+}
+
+CAMLprim value logseq_chat_graph_reader_read(value handle, value address)
+{
+  CAMLparam2(handle, address);
+  CAMLlocal5(result, pair, content, addresses, address_option);
+  graph_reader *reader = (graph_reader *)Data_custom_val(handle);
+  sqlite3_stmt *statement = reader->statement;
+  sqlite3_bind_int64(statement, 1, Long_val(address));
+  int rc = sqlite3_step(statement);
+  if (rc == SQLITE_DONE) {
+    result = Val_none;
+  } else if (rc == SQLITE_ROW) {
+    const char *text = (const char *)sqlite3_column_text(statement, 0);
+    content = caml_copy_string(text == NULL ? "" : text);
+    if (sqlite3_column_type(statement, 1) == SQLITE_NULL) {
+      address_option = Val_none;
+    } else {
+      text = (const char *)sqlite3_column_text(statement, 1);
+      addresses = caml_copy_string(text == NULL ? "" : text);
+      address_option = caml_alloc(1, 0);
+      Store_field(address_option, 0, addresses);
+    }
+    pair = caml_alloc(2, 0);
+    Store_field(pair, 0, content);
+    Store_field(pair, 1, address_option);
+    result = caml_alloc(1, 0);
+    Store_field(result, 0, pair);
+  } else {
+    char message[1024];
+    snprintf(message, sizeof(message), "SQLite error reading graph node: %s",
+             sqlite3_errmsg(sqlite3_db_handle(statement)));
+    sqlite3_reset(statement);
+    caml_failwith(message);
+  }
+  // Release the read transaction so subsequent committed writes are visible.
+  sqlite3_reset(statement);
+  CAMLreturn(result);
 }
 
 static void execute(sqlite3 *db, const char *sql, const char *operation)

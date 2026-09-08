@@ -185,3 +185,45 @@ let () =
           ("transaction did not persist in Logseq storage format: "
            ^ String.concat ", " (List.map show_value persisted_values)))
 ;;
+
+let () =
+  let path = Filename.temp_file "graph-reader-lifetime" ".sqlite" in
+  Sys.remove path;
+  Fun.protect
+    ~finally:(fun () -> List.iter (fun p -> if Sys.file_exists p then Sys.remove p)
+      [path; Store.staging_path path])
+    (fun () ->
+      let activate rows =
+        expect_ok "reader import" (Store.begin_import ~active_path:path);
+        expect_ok "reader append" (Store.append_rows ~active_path:path rows);
+        expect_ok "reader activate" (Store.activate ~active_path:path)
+      in
+      let rows = fixture_rows () in
+      activate rows;
+      let storage = Store.storage ~path in
+      let original = storage.storage_restore "2" in
+      let replace source =
+        let from = "whiteboard" in
+        let buffer = Buffer.create (String.length source) in
+        let rec loop i =
+          if i >= String.length source then Buffer.contents buffer
+          else if i + String.length from <= String.length source
+                  && String.sub source i (String.length from) = from then (
+            Buffer.add_string buffer "canvas"; loop (i + String.length from))
+          else (Buffer.add_char buffer source.[i]; loop (i + 1))
+        in loop 0
+      in
+      activate (List.map (fun (row : Snapshot.row) -> {row with content = replace row.content}) rows);
+      let current = Store.storage ~path in
+      let replaced = current.storage_restore "2" in
+      if original = replaced then fail "fixture" "replacement must change the node";
+      if storage.storage_restore "2" <> original
+      then fail "snapshot reader" "an existing reader must not mix nodes from a replacement graph file";
+      current.storage_store ["2", Option.get original];
+      if current.storage_restore "2" <> original
+      then fail "reader write" "committed writes must be visible immediately";
+      current.storage_delete ["2"];
+      if current.storage_restore "2" <> None
+      then fail "reader delete" "deleted nodes must not be cached";
+      Gc.full_major ())
+;;
