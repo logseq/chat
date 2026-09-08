@@ -97,6 +97,7 @@ struct LUIDrawerView: View {
     @Environment(\.luiSemanticColors) private var semanticColors
     @Environment(\.colorScheme) private var colorScheme
     @State private var presented: Bool
+    @State private var hasLoadedPanel: Bool
     @State private var dragOffset: CGFloat = 0
     @State private var isGestureActive = false
     @State private var isAnimating = false
@@ -109,6 +110,7 @@ struct LUIDrawerView: View {
         self.model = model
         self.backend = backend
         _presented = State(initialValue: model.isSelected)
+        _hasLoadedPanel = State(initialValue: model.isSelected)
     }
 
     var body: some View {
@@ -139,7 +141,8 @@ struct LUIDrawerView: View {
                 )
 
             ZStack(alignment: .leading) {
-                if let panelID = model.children.dropFirst().first {
+                // Retain the panel after its first reveal so closing preserves its state.
+                if hasLoadedPanel, let panelID = model.children.dropFirst().first {
                     LUIAnyNodeView(nodeID: panelID, backend: backend)
                         .frame(width: width)
                         .frame(maxHeight: CGFloat.infinity, alignment: Alignment.leading)
@@ -253,6 +256,7 @@ struct LUIDrawerView: View {
                     var transaction = Transaction()
                     transaction.animation = nil
                     withTransaction(transaction) {
+                        if value.translation.width > 0 { hasLoadedPanel = true }
                         isGestureActive = true
                         dragOffset = CGFloat(LUIDrawerGeometry.dragOffset(
                             isPresented: presented,
@@ -288,6 +292,7 @@ struct LUIDrawerView: View {
     }
 
     private func animatePresentation(_ selected: Bool) {
+        if selected { hasLoadedPanel = true }
         transitionGeneration += 1
         let generation = transitionGeneration
         isAnimating = true
