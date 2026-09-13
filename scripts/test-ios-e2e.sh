@@ -10,17 +10,17 @@ screenshots_dir="$repo_root/.maestro/screenshots"
 username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
 password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
 e2ee_password=${LOGSEQ_CHAT_E2EE_PASSWORD:-$password}
-base_url=${LOGSEQ_CHAT_E2E_BASE_URL:-http://127.0.0.1:8787}
-graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-sync 2}
 run_id=${LOGSEQ_CHAT_E2E_RUN_ID:-$(date +%s)}
+base_url=${LOGSEQ_CHAT_E2E_BASE_URL:-http://127.0.0.1:8787}
+graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-sync-$run_id}
 fixture_seed_mode=""
 case ${flow##*/} in
   ios-native-header-navigation.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-header}
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-header-$run_id}
     fixture_seed_mode=--header-navigation
     ;;
   ios-capture-responsive.yaml|ios-chat-send-regression.yaml|ios-cold-start-composer.yaml|ios-search-status-regression.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-composer}
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-composer-$run_id}
     fixture_seed_mode=--composer
     ;;
   ios-outliner-mode.yaml|ios-outliner-interactions.yaml|\
@@ -28,7 +28,7 @@ case ${flow##*/} in
   ios-outliner-autocomplete-completion.yaml|ios-outliner-autocomplete-visual.yaml|\
   ios-outliner-selection-toolbar.yaml|ios-outliner-hierarchy-navigation.yaml|\
   ios-outliner-drag.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-outliner}
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-outliner-$run_id}
     fixture_seed_mode=--outliner
     ;;
   ios-page-outliner-only.yaml|ios-outliner-empty-block-caret.yaml|\
@@ -36,7 +36,7 @@ case ${flow##*/} in
   ios-sidebar-page-empty-block-delete.yaml|ios-node-tag-navigation.yaml|\
   ios-sidebar-node-navigation.yaml|ios-page-share.yaml|ios-page-favorite.yaml|\
   ios-rich-block-rendering.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-fixtures}
+    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-fixtures-$run_id}
     fixture_seed_mode=--fixture
     ;;
 esac
