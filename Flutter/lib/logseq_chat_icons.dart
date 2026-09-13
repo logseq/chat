@@ -8,6 +8,8 @@ const logseqChatAppIcons = <String, IconData>{
   'calendar': Icons.calendar_month_outlined,
   'chevron-down': Icons.expand_more_rounded,
   'chevron-right': Icons.chevron_right_rounded,
+  'close': Icons.close_rounded,
+  'composer-add': Icons.add_circle_outline_rounded,
   'composer-photo': Icons.photo_library_outlined,
   'disclosure-down': Icons.expand_more_rounded,
   'disclosure-right': Icons.chevron_right_rounded,

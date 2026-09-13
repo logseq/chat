@@ -71,7 +71,9 @@ final class LogseqChatCoreExecutor: @unchecked Sendable {
         self.state = state
         self.thread = Thread {
             Thread.current.name = "LogseqChatCore"
+            #if LOGSEQ_CHAT_CORE
             LogseqChatCoreABI.logseq_chat_initialize()
+            #endif
             while true {
                 let job = state.next()
                 job.complete(job.callCore(job.requestJSON))
