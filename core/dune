@@ -63,24 +63,29 @@
 (rule
  (target logseq_chat_lui_native.ml)
  (deps
-  %{lib:signal-lg.states:signal_native.state}
-  (glob_files %{libexec:lui:lg/lui}/*.clj*)
-  (glob_files %{libexec:lui:lg/lui/backend}/*.clj*)
-  (source_tree ../lg/logseq_chat)
+  %{lib:lui.states:lui_native_backends.state}
+  ../lg/logseq_chat/model.lgi
+  ../lg/logseq_chat/model.cljc
+  ../lg/logseq_chat/view.lgi
+  ../lg/logseq_chat/view.cljc
+  ../lg/logseq_chat/app.lgi
+  ../lg/logseq_chat/app.cljc
+  ../lg/logseq_chat/native_bridge.lgi
+  ../lg/logseq_chat/native_bridge.cljc
   %{bin:lg})
  (action
   (run
    %{bin:lg}
    --target native
-   --compile-files-from %{lib:signal-lg.states:signal_native.state}
-   %{libexec:lui:lg/lui}
-   %{libexec:lui:lg/lui/backend/retained.lgi}
-   %{libexec:lui:lg/lui/backend/retained.cljc}
-   %{libexec:lui:lg/lui/backend/apple.lgi}
-   %{libexec:lui:lg/lui/backend/apple.cljc}
-   %{libexec:lui:lg/lui/backend/flutter.lgi}
-   %{libexec:lui:lg/lui/backend/flutter.cljc}
-   ../lg/logseq_chat
+   --compile-files-from %{lib:lui.states:lui_native_backends.state}
+   ../lg/logseq_chat/model.lgi
+   ../lg/logseq_chat/model.cljc
+   ../lg/logseq_chat/view.lgi
+   ../lg/logseq_chat/view.cljc
+   ../lg/logseq_chat/app.lgi
+   ../lg/logseq_chat/app.cljc
+   ../lg/logseq_chat/native_bridge.lgi
+   ../lg/logseq_chat/native_bridge.cljc
    -o %{target})))
 
 (executable

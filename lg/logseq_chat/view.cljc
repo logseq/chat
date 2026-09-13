@@ -2913,11 +2913,11 @@
           :foreground "muted-foreground"
           :accessibility-identifier (graph-status-identifier graph)}]]]
       [:context-menu
-       {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:menu-item
          {:icon "app:trash"
           :variant "destructive"
+          :accessibility-identifier (graph-delete-identifier graph)
           :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
@@ -2960,10 +2960,10 @@
           :foreground "muted-foreground"}
          "Encrypted"]]]
       [:context-menu
-       {:accessibility-identifier (graph-delete-identifier graph)}
        [:if {:test (reactive graph-row-local? model-source graph-source)}
         [:menu-item
          {:variant "destructive"
+          :accessibility-identifier (graph-delete-identifier graph)
           :disabled (reactive graph-delete-active? model-source graph-source)
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))

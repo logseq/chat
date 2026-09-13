@@ -754,11 +754,13 @@
     (let [routes (app-node-routes current)]
       (if (empty? routes)
         (:selected-page current)
-        (let [route (last routes)]
-        (Some
-         (record sidebar-page
-           (uuid (:page-uuid route))
-           (title (:title route)))))))))
+        (match (last routes)
+          (Some route)
+          (Some
+           (record sidebar-page
+             (uuid (:page-uuid route))
+             (title (:title route))))
+          None None)))))
 
 (defn page-is-favorite? [current uuid]
   (loop [index 0]
