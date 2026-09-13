@@ -159,8 +159,8 @@ packages:
     dependency: "direct main"
     description:
       path: "platform/flutter"
-      ref: f5ab59355d81612cb698aa6a23ee1ce63e0633e3
-      resolved-ref: f5ab59355d81612cb698aa6a23ee1ce63e0633e3
+      ref: ff0216f6cfceb63568d5a4f913c38057d607e60f
+      resolved-ref: ff0216f6cfceb63568d5a4f913c38057d607e60f
       url: "ssh://git@github.com/tiensonqin/lui.git"
     source: git
     version: "0.1.0"
