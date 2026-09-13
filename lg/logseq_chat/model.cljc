@@ -510,6 +510,36 @@
                (outliner-selected-block-ids [])))
             (recur (inc index))))))))
 
+(defn outliner-preview-end-index [rows start depth]
+  (loop [index (inc start)]
+    (if (= index (count rows))
+      index
+      (if (<= (:depth (nth rows index)) depth)
+        index
+        (recur (inc index))))))
+
+(defn outliner-preview-route [current uuid]
+  (let [rows (:outliner-rows current)]
+    (match (row-index rows uuid)
+      (Some index)
+      (let [row (nth rows index)
+            end-index (outliner-preview-end-index rows index (:depth row))]
+        (Some
+         (record node-projection
+           (uuid uuid)
+           (page-uuid (:page-id row))
+           (title (:title row))
+           (is-tag false)
+           (is-property false)
+           (outliner-rows (subvec rows index end-index))
+           (related-rows [])
+           (linked-reference-rows [])
+           (outliner-editing None)
+           (outliner-autocomplete None)
+           (outliner-autocomplete-candidates [])
+           (outliner-selected-block-ids []))))
+      None None)))
+
 (defn publish-navigation-preview [current uuid]
   (match (node-route-by-uuid (:node-routes current) uuid)
     (Some _route) current
@@ -521,7 +551,12 @@
         (Some preview)
         (assoc current :app-navigation-previews
                (conj (:app-navigation-previews current) preview))
-        None current))))
+        None
+        (match (outliner-preview-route current uuid)
+          (Some preview)
+          (assoc current :app-navigation-previews
+                 (conj (:app-navigation-previews current) preview))
+          None current)))))
 
 (defn app-node-routes-from [current path index]
   (if (= index (count path))

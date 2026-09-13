@@ -7,6 +7,18 @@ appId: com.logseq.chat
     file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
 - assertVisible:
     id: "button.composer.expand"
+- tapOn:
+    id: "button.outliner.zoom.*E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- extendedWaitUntil:
+    visible:
+      id: "BackButton"
+    timeout: 10000
+- tapOn:
+    id: "BackButton"
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 30000
 - tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
 - assertVisible:
     id: "toolbar.outliner.editor"
@@ -54,25 +66,25 @@ appId: com.logseq.chat
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "return"
-- tapOn: "Hide keyboard"
+- tapOn:
+    id: "button.outliner.editor.hideKeyboard"
 - assertVisible:
     id: "button.composer.expand"
-- tapOn:
-    text: "Zoom into E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible:
-    id: "BackButton"
-- tapOn:
-    id: "BackButton"
-- extendedWaitUntil:
-    visible:
-      id: "button.sidebar"
-    timeout: 30000
 - stopApp
 - launchApp
 - extendedWaitUntil:
     visible:
       id: "pane.journals"
     timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: "surface.composer.dismiss"
+    commands:
+      - tapOn:
+          id: "surface.composer.dismiss"
+      - assertVisible:
+          id: "button.composer.expand"
 - scrollUntilVisible:
     element:
       text: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
@@ -85,7 +97,13 @@ appId: com.logseq.chat
     start: 50%, 25%
     end: 50%, 35%
     duration: 1000
-- longPressOn: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "Copy"
-- assertVisible: "Delete"
+- longPressOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- extendedWaitUntil:
+    visible:
+      id: "toolbar.outliner.selection"
+    timeout: 10000
+- assertVisible:
+    id: "button.outliner.selection.copy"
+- assertVisible:
+    id: "button.outliner.selection.delete"
 - stopApp

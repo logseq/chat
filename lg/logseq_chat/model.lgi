@@ -483,6 +483,10 @@
  :fn<vector<node-projection>;string;option<node-projection>>)
 (signature logseq-chat.model/journal-preview-route
  :fn<chat-model;string;option<node-projection>>)
+(signature logseq-chat.model/outliner-preview-end-index
+ :fn<vector<outline-row>;int;int;int>)
+(signature logseq-chat.model/outliner-preview-route
+ :fn<chat-model;string;option<node-projection>>)
 (signature logseq-chat.model/publish-navigation-preview
  :fn<chat-model;string;chat-model>)
 (signature logseq-chat.model/app-node-routes-from

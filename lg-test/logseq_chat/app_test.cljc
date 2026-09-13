@@ -5052,6 +5052,35 @@
     (assert-equal [] (:app-navigation-previews returned)
                   "leaving the route releases its optimistic preview")))
 
+(deftest block-navigation-exposes-an-immediate-outliner-preview-route
+  (let [parent (assoc (journal-outline-row "parent" "journal-page" "Parent"
+                                           "Sep 14th, 2026" 20260914 0)
+                      :has-children true)
+        child (journal-outline-row "child" "journal-page" "Child"
+                                   "Sep 14th, 2026" 20260914 1)
+        sibling (journal-outline-row "sibling" "journal-page" "Sibling"
+                                     "Sep 14th, 2026" 20260914 0)
+        editing (record model/outliner-editing
+                  (uuid "child")
+                  (title "Child")
+                  (caret-utf16-offset 5))
+        current (assoc (model/initial)
+                       :journal-outliner-rows [parent child sibling]
+                       :outliner-rows [parent child sibling]
+                       :outliner-editing (Some editing))
+        requested (model/update current (model/RequestAppNode "parent"))
+        routes (model/app-node-routes requested)]
+    (assert-equal 1 (count routes)
+                  "block zoom publishes a native route before core resolution")
+    (assert-equal "parent" (:uuid (first routes))
+                  "the preview route keeps the requested block identity")
+    (assert-equal "journal-page" (:page-uuid (first routes))
+                  "the preview route keeps the containing page identity")
+    (assert-equal [parent child] (:outliner-rows (first routes))
+                  "the preview route owns the selected subtree")
+    (assert-equal None (:outliner-editing requested)
+                  "opening a block route exits inline editing")))
+
 (deftest popped-native-path-restores-root-before-core-route-cleanup
   (let [route (node-projection "node-a" "page-a" "Project" [] [])
         current
@@ -5424,7 +5453,7 @@
                     "journal titles map main's title2 scale")
       (is (not (= -1
                   (descendant-with-identifier
-                   renderer root "journals.graph-loaded")))
+                     renderer root "journals.graph-loaded")))
           "the loaded journal graph keeps main's readiness contract")
       (assert-equal 1
                     (descendant-count-with-identifier
@@ -5432,7 +5461,8 @@
                     "later journal sections render main's native divider")
       (assert-equal (Some apple/AppleIcon)
                     (apple/node renderer
-                     (descendant-with-identifier renderer root "button.outliner.zoom.day-a"))
+                     (descendant-with-identifier renderer root
+                                               "button.outliner.zoom.day-a.A"))
                     "journal bullets expose no press action")
       (assert-equal []
                     (:pending-effects (chat/model application))
@@ -5758,19 +5788,24 @@
     (let [root (main-root renderer application)
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row
-          (descendant-with-identifier renderer outliner "outliner.block.block-a")]
+          (descendant-with-identifier renderer outliner "outliner.block.block-a")
+          action-row
+          (descendant-with-identifier renderer rendered-row
+                                      "outliner.block-action.block-a")]
       (assert-equal "outliner.block.block-a"
                     (property-string renderer rendered-row
                                      proto/AccessibilityIdentifier)
                     "the LG row keeps main's stable block identifier")
       (assert-equal "Edit block Project note"
-                    (property-string renderer rendered-row
+                    (property-string renderer action-row
                                      proto/AccessibilityLabel)
-                    "the LG row keeps main's edit accessibility action")
+                    "the LG row action keeps main's edit accessibility action")
       (assert-equal (Some apple/AppleRow)
                     (apple/node renderer
-                                (nth (apple/children renderer rendered-row) 0))
-                    "custom list-item content starts with its native row without a redundant column")
+                                (nth (apple/children renderer
+                                                     (nth (apple/children renderer rendered-row) 0))
+                                     0))
+                    "custom list-item content remains in the first native row")
       (let [editor
             (descendant-with-extension
              renderer application rendered-row "outliner-editor")]
@@ -5932,6 +5967,9 @@
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row
           (descendant-with-identifier renderer outliner "outliner.block.asset-a")
+          action-row
+          (descendant-with-identifier renderer rendered-row
+                                      "outliner.block-action.asset-a")
           rich-content
           (descendant-with-extension
            renderer application rendered-row "outliner-block-content")]
@@ -5944,7 +5982,7 @@
       (assert-equal (Some (proto/StringValue "Assets/Photo.jpg"))
                     (extension-property application rich-content "local-path")
                     "local path reaches the native extension")
-      (driver/dispatch-event! application (proto/Press rendered-row))
+      (driver/dispatch-event! application (proto/Press action-row))
       (driver/flush! application)
       (assert-equal
        [(model/PresentAssetEffect
@@ -5987,7 +6025,7 @@
     (assert-equal
      true
      (view/outliner-row-list-item-press-enabled? proto/SwiftUIHost row)
-     "SwiftUI row interaction remains unchanged")))
+     "SwiftUI rows keep native list item editing outside the bullet control")))
 
 (deftest active-page-actions-use-typed-core-and-platform-effects
   (let [page (record model/sidebar-page (uuid "page-a") (title "Project"))
@@ -6141,7 +6179,8 @@
           bullet (descendant-with-identifier
                   renderer rendered-row "outliner.bullet-glyph.block-a")
           zoom-button (descendant-with-identifier
-                       renderer rendered-row "button.outliner.zoom.block-a")
+                       renderer rendered-row
+                       "button.outliner.zoom.block-a.Ship it")
           status-icon (descendant-with-identifier
                        renderer rendered-row "outliner.task-status-icon.block-a")
           status-button (descendant-with-identifier
@@ -6220,7 +6259,9 @@
                         renderer rendered-row "button.block-tag.tag-a")
             tag-row (parent-with-child-identifier
                      renderer rendered-row "button.block-tag.tag-a")
-            content-row (nth (apple/children renderer rendered-row) 0)]
+            content-row (nth (apple/children renderer
+                                            (nth (apple/children renderer rendered-row) 0))
+                             0)]
         (assert-equal 0
                       (property-int renderer content-row proto/Gap)
                       "depth zero does not add spacing before main's bullet")
@@ -6361,14 +6402,12 @@
                     (descendant-with-identifier renderer chrome
                                                 "toolbar.outliner.editor")
                     "selection replaces the editor toolbar")
-      (driver/dispatch-event! application (proto/LongPress rendered-row))
       (driver/dispatch-event! application (proto/Press copy-button))
       (driver/flush! application)
       (assert-equal
-       [(model/LongPressOutlinerBlockEffect 1 "parent")
-        (model/OutlinerToolbarEffect 2 "copy")]
+       [(model/OutlinerToolbarEffect 1 "copy")]
        (:pending-effects (chat/model application))
-       "selection gestures and toolbar actions cross one typed boundary"))))
+       "selection toolbar actions cross the typed core boundary"))))
 
 (deftest flutter-outliner-selection-toolbar-uses-compact-material-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -6605,9 +6644,9 @@
       (assert-equal "start"
                     (property-string renderer candidate-button proto/TextAlignment)
                     "autocomplete labels align like main")
-      (assert-equal "scroll-leading leading-inset-8"
+      (assert-equal "scroll leading-inset-8"
                     (property-string renderer editor-toolbar proto/StyleClass)
-                    "the editor keeps hide-keyboard visible with main's inset")
+                    "the editor allows trailing controls to scroll without overlap")
       (assert-equal "button.outliner.editor.task"
                     (property-string renderer task-button
                                      proto/AccessibilityIdentifier)
@@ -6624,7 +6663,7 @@
                (tuple 4 "app:toolbar-camera")
                (tuple 5 "app:toolbar-audio")
                (tuple 6 "app:toolbar-attachment")
-               (tuple 8 "app:toolbar-hide-keyboard")]]
+               (tuple 7 "app:toolbar-hide-keyboard")]]
         (match button-contract
           (tuple index icon)
           (let [button (nth editor-buttons index)]
@@ -6634,10 +6673,10 @@
             (assert-equal "<missing>"
                           (property-string renderer button proto/TextValue)
                           "editor icon buttons do not render text labels")
-            (assert-equal (if (= index 8) 54 42)
+            (assert-equal (if (= index 7) 42 38)
                           (property-int renderer button proto/WidthValue)
                           "editor actions retain main's fixed widths"))))
-      (let [page-reference-button (nth editor-buttons 7)]
+      (let [page-reference-button (nth editor-buttons 8)]
         (assert-equal "[[]]"
                       (property-string renderer page-reference-button
                                        proto/TextValue)
@@ -6646,7 +6685,7 @@
                       (property-string renderer page-reference-button
                                        proto/InlineIconName)
                       "page reference does not replace its main-branch symbol")
-        (assert-equal 42
+        (assert-equal 38
                       (property-int renderer page-reference-button proto/WidthValue)
                       "page reference retains main's toolbar item width"))
       (assert-equal -1
@@ -6760,20 +6799,25 @@
           rendered-row
           (descendant-with-identifier renderer outliner "outliner.block.parent")
           content (nth (apple/children renderer rendered-row) 0)
-          content-children (apple/children renderer content)
+          content-row (nth (apple/children renderer content) 0)
+          zoom-row (nth (apple/children renderer content) 1)
+          content-children (apple/children renderer content-row)
+          zoom-children (apple/children renderer zoom-row)
           indent (nth content-children 0)
-          zoom (nth content-children 1)
+          zoom (nth zoom-children 1)
+          action-row (nth content-children 2)
+          action-content (nth (apple/children renderer action-row) 0)
           collapse
-          (descendant-with-identifier renderer content
+          (descendant-with-identifier renderer content-row
                                       "button.outliner.collapse.parent")]
       (assert-equal 44 (property-int renderer indent proto/WidthValue)
                     "depth uses main's 22-point indentation")
-      (assert-equal 2 (count (apple/children renderer (nth content-children 3)))
+      (assert-equal 2 (count (apple/children renderer action-content))
                     "a block without status must not reserve an empty status column and gap")
-      (assert-equal "button.outliner.zoom.parent"
+      (assert-equal "button.outliner.zoom.parent.Parent"
                     (property-string renderer zoom
                                      proto/AccessibilityIdentifier)
-                    "zoom keeps main's stable identifier")
+                    "zoom exposes uuid and title for dynamic UI tests")
       (assert-equal 24 (property-int renderer zoom proto/WidthValue)
                     "zoom uses main's 24-point bullet hit width")
       (assert-equal 24 (property-int renderer zoom proto/HeightValue)
@@ -6811,6 +6855,35 @@
       (assert-equal [(model/NodeRoute "parent")]
                     (:app-navigation-path (chat/model application))
                     "zoom participates in native Back navigation"))))
+
+(deftest journal-child-blocks-keep-zoom-navigation
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        root-row
+        (journal-outline-row
+         "day-root" "page-a" "Journal root" "Sep 14th, 2026" 20260914 0)
+        child-row
+        (journal-outline-row
+         "block-a" "page-a" "Journal child" "Sep 14th, 2026" 20260914 1)]
+    (driver/start! application)
+    (driver/send! application
+                  (apply-core-snapshot None (empty-sidebar-projection) []
+                                       false "" [] [] None None [] []
+                                       [root-row child-row] false []))
+    (driver/flush! application)
+    (let [root (main-root renderer application)
+          zoom (descendant-with-identifier
+                renderer root "button.outliner.zoom.block-a.Journal child")]
+      (is (not (= -1 zoom))
+          "journal child blocks expose the normal zoom button")
+      (assert-equal "ghost"
+                    (property-string renderer zoom proto/VariantValue)
+                    "journal child zoom keeps the pressable button chrome")
+      (driver/dispatch-event! application (proto/Press zoom))
+      (driver/flush! application)
+      (assert-equal [(model/OpenAppNodeEffect 1 "block-a")]
+                    (:pending-effects (chat/model application))
+                    "journal child zoom opens the block instead of acting like a journal marker"))))
 
 (deftest outliner-row-splices-update-the-existing-keyed-projection
   (let [parent (record model/outline-row
@@ -6973,7 +7046,8 @@
                                        true "" [] [] None None [] [] [row] false []))
     (driver/flush! application)
     (let [root (main-root renderer application)
-          bullet (descendant-with-identifier renderer root "button.outliner.zoom.control-row")
+          bullet (descendant-with-identifier renderer root
+                                            "button.outliner.zoom.control-row.Control")
           status-button (descendant-with-identifier renderer root "button.block-task-status")
           collapse (descendant-with-identifier renderer root "button.outliner.collapse.control-row")]
       (assert-equal "body-line" (property-string renderer bullet proto/StyleClass)

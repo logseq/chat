@@ -31,7 +31,7 @@ pin-depends: [
   ["melange-transit-native.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-melange.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["lg.dev" "git+ssh://git@github.com/tiensonqin/lg.git#c4f05931ea8fe47590634bd394282afc48b417e8"]
-  ["lui.0.1.0" "git+ssh://git@github.com/tiensonqin/lui.git#493155378a27fb57409a095a6353f2778dacf3da"]
+  ["lui.0.1.0" "git+ssh://git@github.com/tiensonqin/lui.git#ff4bb07c2e6802e67152b68a75d809b57dff7c39"]
   ["signal-lg.0.1.0" "git+https://github.com/tiensonqin/signal-lg.git#ed2e6c68322316d64bf41644480a5f8901940a02"]
   ["mldoc.dev" "git+https://github.com/logseq/mldoc.git#c51b957ccb0f9b0173bb1e0b422a6798f1a59dd2"]
   ["ocaml-fsrs.0.1.0-alpha3" "git+https://github.com/logseq/ocaml-fsrs.git#0ac7779062df50e7a9760d926ee215ed52c73194"]

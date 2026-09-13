@@ -55,7 +55,7 @@
  :fn<chat-model;string>)
 (signature logseq-chat.view/outliner-row-has-tags?
  :fn<outline-row;bool>)
-(signature logseq-chat.view/outliner-row-journal? :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-journal? :fn<chat-model;outline-row;bool>)
 (signature logseq-chat.view/outliner-row-sync-failed?
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-list-item-press-enabled?
@@ -142,6 +142,7 @@
 (signature logseq-chat.view/search-result-row
  :fn<ui-context;signal<search-hit>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-action-identifier :fn<outline-row;string>)
 (signature logseq-chat.view/retained-outliner-rows
  :fn<chat-model;vector<retained-outline-row>>)
 (signature logseq-chat.view/make-retained-outline-row
@@ -159,6 +160,8 @@
 (signature logseq-chat.view/outliner-row-indent :fn<outline-row;int>)
 (signature logseq-chat.view/outliner-row-has-children :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-zoom-label :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-zoom-identifier
+ :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-action-label :fn<chat-model;outline-row;string>)
 (signature logseq-chat.view/outliner-row-collapse-label :fn<outline-row;string>)
 (signature logseq-chat.view/outliner-row-collapse-glyph :fn<outline-row;string>)
@@ -277,6 +280,8 @@
  :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
 (signature logseq-chat.view/editing-caret :fn<chat-model;int>)
+(signature logseq-chat.view/outliner-row-main-content
+ :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-row-content
  :fn<ui-context;signal<chat-model>;signal<retained-outline-row>;signal<outline-row>;fn<chat-action;bool>;bool;int>)
 (signature logseq-chat.view/outliner-row

@@ -803,6 +803,10 @@
   (let [_depth (:depth row)]
     (str "outliner.block." (:uuid row))))
 
+(defn outliner-row-action-identifier [row]
+  (let [_depth (:depth row)]
+    (str "outliner.block-action." (:uuid row))))
+
 (defn outliner-row-title [row]
   (let [_depth (:depth row)]
     (:title row)))
@@ -815,6 +819,12 @@
 
 (defn outliner-row-zoom-label [row]
   (str "Zoom into "
+       (if (empty? (:title row)) "Untitled block" (:title row))))
+
+(defn outliner-row-zoom-identifier [row]
+  (str "button.outliner.zoom."
+       (:uuid row)
+       "."
        (if (empty? (:title row)) "Untitled block" (:title row))))
 
 (defn outliner-row-action-label [current row]
@@ -1445,13 +1455,18 @@
        (event [current-tag tag-source]
               (send (model/RequestAppNode (:uuid current-tag))))}])))
 
-(defn outliner-row-journal? [row]
-  (match (:journal-day row) (Some day) (> day 0) None false))
+(defn outliner-row-journal? [current row]
+  (and
+   (journal-root-visible? current)
+   (match (outliner-journal-marker current row)
+     (Some _marker) true
+     None false)))
 
-(defn outliner-zoom-control [ui-context row-source send search-open]
-  (let [row (signal/sample row-source)]
+(defn outliner-zoom-control [ui-context model-source row-source send search-open]
+  (let [current (signal/sample model-source)
+        row (signal/sample row-source)]
     (if (and (not search-open)
-             (outliner-row-journal? row))
+             (outliner-row-journal? current row))
       (if (= (ui/host ui-context) proto/FlutterHost)
         (elements/element
          ui-context nil
@@ -1467,8 +1482,8 @@
            :foreground "border"
            :width 24
            :height 24
-           :accessibility-identifier
-           (str "button.outliner.zoom." (outliner-row-uuid row))}]))
+           :accessibility-identifier-signal
+           (reactive outliner-row-zoom-identifier row-source)}]))
       (if (= (ui/host ui-context) proto/FlutterHost)
         (elements/element
          ui-context nil
@@ -1483,11 +1498,12 @@
              (str "outliner.bullet-glyph." (outliner-row-uuid row))}]]
           [:button
            {:label (reactive outliner-row-zoom-label row-source)
+            :accessibility-label (reactive outliner-row-zoom-label row-source)
             :variant "ghost"
             :width 24
             :height 24
-            :accessibility-identifier
-            (str "button.outliner.zoom." (outliner-row-uuid row))
+            :accessibility-identifier-signal
+            (reactive outliner-row-zoom-identifier row-source)
             :on-press
             (event [current-row row-source]
                    (if search-open
@@ -1497,6 +1513,7 @@
          ui-context nil
          [:button
           {:label (reactive outliner-row-zoom-label row-source)
+           :accessibility-label (reactive outliner-row-zoom-label row-source)
            :icon "app:outliner-bullet"
            :size "icon"
            :class "body-line"
@@ -1504,8 +1521,8 @@
            :foreground "border"
            :width 24
            :height 24
-           :accessibility-identifier
-           (str "button.outliner.zoom." (outliner-row-uuid row))
+           :accessibility-identifier-signal
+           (reactive outliner-row-zoom-identifier row-source)
            :on-press
            (event [current-row row-source]
                   (if search-open
@@ -1591,8 +1608,8 @@
            :as status-source}
           [outliner-task-status-row (outliner-row-uuid row) status-source send]]]]))))
 
-(defn outliner-row-content
-  [ui-context model-source retained-row-source row-source send search-open]
+(defn outliner-row-main-content
+  [ui-context model-source retained-row-source row-source send]
   (let [row (signal/sample row-source)
         block-id-source (reactive outliner-row-uuid row-source)
         title-source (reactive outliner-row-title row-source)
@@ -1606,7 +1623,6 @@
         (reactive retained-row-editing-title retained-row-source)
         editing-caret-source
         (reactive retained-row-editing-caret retained-row-source)
-        indent-source (reactive outliner-row-indent row-source)
         editing-source (reactive retained-row-editing? retained-row-source)
         not-editing-source
         (reactive row-not-editing? model-source row-source)
@@ -1616,38 +1632,46 @@
         sync-failed-source (reactive outliner-row-sync-failed? row-source)]
     (elements/element
      ui-context nil
+     [:row {:gap 7 :cross "start" :grow 1.0}
+      [:if {:test has-status-source}
+       [:column {:cross "start"}
+        [outliner-status-control model-source row-source send]]]
+      [:column {:grow 1.0}
+       [:if {:test editing-source}
+        [outliner-editor-view block-id-source
+         editing-title-source editing-caret-source send]]
+       [:if {:test not-editing-source}
+        [outliner-rich-block-view
+         model-source title-source markup-source youtube-target-source
+         is-asset-source row-source asset-type-source local-path-source send]]
+       [:if {:test has-tags-source}
+        [:row {:gap 6}
+         [:keyed
+          {:source (reactive :tags row-source)
+           :key :uuid
+           :compare compare
+           :as tag-source}
+          [outliner-tag tag-source send]]]]
+       [:if {:test sync-failed-source}
+        [:text
+         {:accessibility-identifier
+          (str "outliner.sync-failed." (outliner-row-uuid row))}
+         "Sync failed"]]]
+      [:if {:test has-children-source}
+       [:column {:cross "start"}
+        [outliner-collapse-button row-source send]]]])))
+
+(defn outliner-row-content
+  [ui-context model-source retained-row-source row-source send search-open]
+  (let [indent-source (reactive outliner-row-indent row-source)]
+    (elements/element
+     ui-context nil
      [:row {:gap 0 :cross "start" :padding-vertical 5}
       [outliner-indent-view indent-source]
-      [outliner-zoom-control row-source send search-open]
+      [outliner-zoom-control model-source row-source send search-open]
       [:box {:width 2}]
-      [:row {:gap 7 :cross "start" :grow 1.0}
-       [:if {:test has-status-source}
-        [:column {:cross "start"}
-         [outliner-status-control model-source row-source send]]]
-       [:column {:grow 1.0}
-        [:if {:test editing-source}
-         [outliner-editor-view block-id-source
-          editing-title-source editing-caret-source send]]
-        [:if {:test not-editing-source}
-         [outliner-rich-block-view
-          model-source title-source markup-source youtube-target-source
-          is-asset-source row-source asset-type-source local-path-source send]]
-        [:if {:test has-tags-source}
-         [:row {:gap 6}
-          [:keyed
-           {:source (reactive :tags row-source)
-            :key :uuid
-            :compare compare
-            :as tag-source}
-           [outliner-tag tag-source send]]]]
-        [:if {:test sync-failed-source}
-         [:text
-          {:accessibility-identifier
-           (str "outliner.sync-failed." (outliner-row-uuid row))}
-          "Sync failed"]]]
-       [:if {:test has-children-source}
-        [:column {:cross "start"}
-         [outliner-collapse-button row-source send]]]]])))
+      [outliner-row-main-content model-source retained-row-source
+       row-source send]])))
 
 (defn outliner-row
   [ui-context model-source retained-row-source row-source send]
@@ -1657,29 +1681,45 @@
     (if (outliner-row-list-item-press-enabled? (ui/host ui-context) row)
       (elements/element
        ui-context nil
-       [:list-item
+       [:box
         {:accessibility-identifier-signal (reactive outliner-row-identifier row-source)
-         :label (reactive outliner-row-action-label model-source row-source)
          :padding 0
-         :selected selected-source
-         :on-press
-         (event [current-row row-source]
-                (if (= (:is-asset current-row) true)
-                  (send (model/OpenOutlinerAsset (:uuid current-row)))
-                  (if (= (:opens-as-page current-row) true)
-                    (if search-open
-                      (send (model/RequestSearchNode (:uuid current-row)))
-                      (send (model/RequestAppNode (:uuid current-row))))
-                    (send (model/BeginOutlinerEdit (:uuid current-row))))))
-         :on-long-press
-         (event [current-row row-source]
-                (send (model/LongPressOutlinerBlock (:uuid current-row))))}
-        [outliner-row-content model-source retained-row-source row-source
-         send search-open]])
+         :corner-radius 10
+         :selected selected-source}
+        [:stack
+         [:row {:gap 0 :cross "start" :padding-vertical 5}
+          [outliner-indent-view (reactive outliner-row-indent row-source)]
+          [:box {:width 26 :height 24}]
+          [:list-item
+           {:accessibility-identifier-signal
+            (reactive outliner-row-action-identifier row-source)
+            :label (reactive outliner-row-action-label model-source row-source)
+            :padding 0
+            :grow 1.0
+            :selected selected-source
+            :on-press
+            (event [current-row row-source]
+                   (if (= (:is-asset current-row) true)
+                     (send (model/OpenOutlinerAsset (:uuid current-row)))
+                     (if (= (:opens-as-page current-row) true)
+                       (if search-open
+                         (send (model/RequestSearchNode (:uuid current-row)))
+                         (send (model/RequestAppNode (:uuid current-row))))
+                       (send (model/BeginOutlinerEdit (:uuid current-row))))))
+            :on-long-press
+            (event [current-row row-source]
+                   (send (model/LongPressOutlinerBlock (:uuid current-row))))}
+           [outliner-row-main-content model-source retained-row-source
+            row-source send]]]
+         [:row {:gap 0 :cross "start" :padding-vertical 5}
+          [outliner-indent-view (reactive outliner-row-indent row-source)]
+          [outliner-zoom-control model-source row-source send search-open]
+          [:box {:grow 1.0 :height 24}]]]])
       (elements/element
        ui-context nil
        [:box
         {:accessibility-identifier-signal (reactive outliner-row-identifier row-source)
+         :label (reactive outliner-row-action-label model-source row-source)
          :padding 0
          :corner-radius 10
          :selected selected-source}
@@ -2032,13 +2072,13 @@
       {:orientation "horizontal"
        :label "Outliner editor"
        :accessibility-identifier "toolbar.outliner.editor"
-       :class "scroll-leading leading-inset-8"
+       :class "scroll leading-inset-8"
        :height 50
        :gap 4}
       [:button
        {:icon "app:toolbar-task"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label (reactive outliner-editor-task-label model-source)
         :accessibility-identifier "button.outliner.editor.task"
@@ -2047,7 +2087,7 @@
       [:button
        {:icon "app:toolbar-outdent"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label "Outdent"
         :accessibility-identifier "button.outliner.editor.outdent"
@@ -2056,7 +2096,7 @@
       [:button
        {:icon "app:toolbar-indent"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label "Indent"
         :accessibility-identifier "button.outliner.editor.indent"
@@ -2065,7 +2105,7 @@
       [:button
        {:icon "app:toolbar-tag"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label "Tag"
         :accessibility-identifier "button.outliner.editor.tag"
@@ -2074,7 +2114,7 @@
       [:button
        {:icon "app:toolbar-camera"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label "Photo"
         :accessibility-identifier "button.outliner.editor.camera"
@@ -2083,7 +2123,7 @@
       [:button
        {:icon "app:toolbar-audio"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label "Record audio"
         :accessibility-identifier "button.outliner.editor.audio"
@@ -2092,32 +2132,32 @@
       [:button
        {:icon "app:toolbar-attachment"
         :variant "ghost"
-        :width 42
+        :width 38
         :height 42
         :label "Upload asset"
         :accessibility-identifier "button.outliner.editor.attachment"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
       [:button
-       {:variant "ghost"
+       {:icon "app:toolbar-hide-keyboard"
+        :variant "ghost"
         :width 42
+        :height 42
+        :label "Hide keyboard"
+        :accessibility-identifier "button.outliner.editor.hideKeyboard"
+        :on-press
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]
+      [:button
+       {:variant "ghost"
+        :width 38
         :height 42
         :label "Page reference"
         :accessibility-identifier "button.outliner.editor.pageReference"
         :on-press
         (fn [_event]
           (send (model/PerformOutlinerToolbarAction "pageReference")))}
-       "[[]]"]
-      [:button
-       {:icon "app:toolbar-hide-keyboard"
-        :variant "ghost"
-        :width 54
-        :height 42
-        :label "Hide keyboard"
-        :accessibility-identifier "button.outliner.editor.hideKeyboard"
-        :on-press
-        (fn [_event]
-          (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]])))
+       "[[]]"]])))
 
 (defn node-related-row [ui-context model-source row-source send]
   (let [structured-breadcrumb-source
