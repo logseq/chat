@@ -2005,14 +2005,20 @@ let () =
     ; order = Some "a0"
     }
   in
+  let projected = ref [ target ] in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~sync_cursor:(fun () -> Some 41)
-      ~graph_blocks:(fun () -> Some [ target ])
+      ~graph_blocks:(fun () -> Some !projected)
+      ~authoritative_graph_blocks:(fun () -> Some [ target ])
       ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
       ~stage_operation:(fun operation ->
         staged := !staged @ [ operation ];
+        (match operation.Logseq_chat_pending_ops.intent with
+         | Create_asset { uuid; title; _ } ->
+           projected := [target; { (remote_block uuid title) with is_asset = true }]
+         | _ -> ());
         Ok ())
       ~prepare_operation:prepare_test_operation
       ()
@@ -2021,10 +2027,10 @@ let () =
   ignore
     (Logseq_chat_rpc.call
        session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"plain-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
+       {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"2f659891-3fbc-492c-8943-9e08de2ed949\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
   (match !staged with
    | [ { Logseq_chat_pending_ops.state = Applied
-       ; intent = Create_asset { uuid = "plain-asset"; _ }
+       ; intent = Create_asset { uuid = "2f659891-3fbc-492c-8943-9e08de2ed949"; _ }
        ; _ } ] -> ()
    | _ -> failwith "local asset must enter projection before its raw upload");
   let upload =
@@ -2037,7 +2043,7 @@ let () =
   assert_equal "plain asset raw method" "PUT" (required_string "method" upload);
   assert_equal
     "plain asset raw URL"
-    "http://127.0.0.1:8787/assets/plain-1/plain-asset.m4a"
+    "http://127.0.0.1:8787/assets/plain-1/2f659891-3fbc-492c-8943-9e08de2ed949.m4a"
     (required_string "url" upload);
   let tx_request =
     Logseq_chat_rpc.call
@@ -2050,12 +2056,18 @@ let () =
     "plain asset datom URL"
     "http://127.0.0.1:8787/sync/plain-1/tx/batch"
     (required_string "url" tx_request);
+  let txs = required_assoc "bodyObject" tx_request |> required_list "txs" in
+  (match txs with
+   | [ `Assoc tx ] ->
+     assert_equal "asset batch transaction ID is its stable UUID"
+       "2f659891-3fbc-492c-8943-9e08de2ed949" (required_string "tx-id" tx)
+   | _ -> failwith "asset batch must contain one transaction");
   (match !staged with
    | [ { Logseq_chat_pending_ops.state = Applied; _ }
      ; { state = Queued
        ; intent = Create_asset { uuid; page_uuid; parent_uuid; order; _ }
        ; _ } ] ->
-     assert_equal "plain asset UUID" "plain-asset" uuid;
+     assert_equal "plain asset UUID" "2f659891-3fbc-492c-8943-9e08de2ed949" uuid;
      assert_equal "plain asset page" "target-page" page_uuid;
      assert_equal "plain asset parent" "editing-block" parent_uuid;
      if String.equal order "" then failwith "plain asset must have an outliner order"
@@ -2744,8 +2756,8 @@ let () =
     | _ -> failwith "pending sync completion must be an object"
   in
   assert_int_equal
-    "a successful batch response projects its accepted cursor before WebSocket echo"
-    43
+    "HTTP acceptance does not advance the applied replay cursor"
+    42
     (required_int "appliedServerT" completion);
   ignore
     (Logseq_chat_rpc.call session
@@ -2769,7 +2781,7 @@ let () =
   let staged = ref [] in
   let stage (operation : Logseq_chat_pending_ops.t) =
     (match operation.state with
-     | Queued when operation.base_t <> 42 ->
+     | (Queued | Applied) when operation.base_t <> 42 ->
        Error "operation was created against a stale server cursor"
      | _ ->
        staged :=
@@ -2810,6 +2822,21 @@ let () =
        (Printf.sprintf
           {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":43}\",\"error\":null}"}}|}
           (required_int "id" request)));
+  List.iter
+    (fun (action, payload) ->
+      let response =
+        Logseq_chat_rpc.call session
+          (to_string (`Assoc
+             [ "apiVersion", `Int 1; "method", `String "dispatch"
+             ; "params", `Assoc [ "action", `String action; "payload", `String payload ] ]))
+        |> from_string
+      in
+      match response with
+      | `Assoc fields when List.assoc_opt "ok" fields = Some (`Bool true) -> ()
+      | _ -> failwith ("capture after acceptance must use the local cursor: " ^ to_string response))
+    [ "send", {|{"text":"After acceptance","uuid":"capture-after-acceptance","now":1788000000000}|}
+    ; "sendTask", {|{"text":"Task after acceptance","uuid":"task-after-acceptance","now":1788000000001,"status":{"uuid":"todo","ident":"logseq.property/status.todo","title":"Todo"}}|}
+    ; "addAsset", {|{"uuid":"2f659891-3fbc-492c-8943-9e08de2ed949","title":"photo.jpg","now":1788000000002,"assetType":"jpg","assetSize":4,"assetChecksum":"abcd","localPath":"Assets/photo.jpg","targetBlockId":"accepted-before-sse"}|} ];
   ignore
     (dispatch_outliner
        session
@@ -4163,4 +4190,110 @@ let () =
     | _ -> false in
   if not (has_reference (`Assoc result))
   then failwith "save patch must immediately render newly staged reference metadata"
+;;
+
+let () =
+  (* Exercise the host-visible cursor used by entity/pull while several asset
+     uploads and metadata acknowledgements run ahead of WebSocket replay. *)
+  List.iter (fun timing ->
+    let replay_first = timing = 1 in
+    let deferred_replay = timing = 2 in
+    let state = Logseq_chat_sync_state.create
+        ~graph_id:"plain-1" ~schema_version:"65.33" ~applied_server_t:42 in
+    let attribute =
+      { Datascript.cardinality = One; unique = Some Identity; indexed = true;
+        is_component = false; no_history = false; doc = None;
+        value_type = Some UuidType; tuple_attrs = None; tuple_types = None } in
+    let conn = Datascript.create_conn ~schema:["block/uuid", attribute] () in
+    let applied_count = ref 0 in
+    let session = Logseq_chat_rpc.create
+        ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
+        ~sync_cursor:(fun () -> Some (Logseq_chat_sync_state.applied_server_t state))
+        ~graph_blocks:(fun () -> Some [])
+        ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
+        ~stage_operation:(fun _ -> Ok ())
+        ~prepare_operation:prepare_test_operation
+        ~apply_sync_event:(fun payload ->
+          let fields = from_string payload |> function `Assoc fields -> fields | _ -> assert false in
+          let change = { Logseq_chat_sync_protocol.format_version = 1;
+            graph_id = "plain-1"; schema_version = "65.33";
+            t_before = required_int "before" fields; t = required_int "t" fields;
+            upserts = List.init (required_int "t" fields - required_int "before" fields)
+              (fun offset ->
+                let module V = Transit_core.Json in
+                let index = required_int "before" fields - 42 + offset + 1 in
+                let uuid = Printf.sprintf "00000000-0000-4000-8000-%012d" index in
+                { Logseq_chat_sync_protocol.id = V.Array [V.Keyword "block/uuid"; V.Uuid uuid];
+                  attrs = [V.Keyword "block/uuid", V.Uuid uuid;
+                           V.Keyword "block/title", V.String "photo.jpg"] });
+            deleted = []; operation_ids = [] } in
+          Logseq_chat_sync_state.apply_change_set state change
+            ~apply:(fun change ->
+              Logseq_chat_entity_sync.apply_change_set conn change
+              |> Result.map (fun () -> incr applied_count))
+          |> Result.map_error (fun _ -> "sync cursor mismatch")) () in
+    let dispatch action payload =
+      let params = ["action", `String action] @
+        (match payload with None -> [] | Some value -> ["payload", `String (to_string value)]) in
+      Logseq_chat_rpc.call session
+        (to_string (`Assoc ["apiVersion", `Int 1; "method", `String "dispatch";
+                           "params", `Assoc params])) in
+    let result response = match from_string response with
+      | `Assoc fields when assoc "ok" fields = Some (`Bool true) -> required_assoc "result" fields
+      | _ -> failwith ("multi-asset dispatch failed: " ^ response) in
+    let complete request body = dispatch "completePendingSync" (Some (`Assoc
+      ["id", `Int (required_int "id" request); "status", `Int 200;
+       "body", `String (to_string body); "error", `Null])) in
+    configure_plain_graph session;
+    for index = 1 to 3 do
+      ignore (dispatch "addAsset" (Some (`Assoc [
+        "uuid", `String (Printf.sprintf "00000000-0000-4000-8000-%012d" index);
+        "title", `String "photo.jpg"; "now", `Int (1788000000000 + index);
+        "assetType", `String "jpg"; "assetSize", `Int 4;
+        "assetChecksum", `String "abcd"; "localPath", `String "Assets/photo.jpg"])))
+    done;
+    let next = ref (dispatch "beginPendingSync" None |> pending_request |> Option.get) in
+    for index = 1 to 3 do
+      assert_equal "each asset uploads bytes first" "PUT" (required_string "method" !next);
+      let tx = complete !next (`Assoc ["ok", `Bool true]) |> pending_request |> Option.get in
+      let before = Logseq_chat_sync_state.applied_server_t state in
+      let accepted = 42 + index in
+      if replay_first then ignore (dispatch "applySyncEvent"
+        (Some (`Assoc ["before", `Int before; "t", `Int accepted])) |> result);
+      let completion = complete tx (`Assoc ["type", `String "tx/batch/ok"; "t", `Int accepted]) in
+      let visible = completion |> result |> required_int "appliedServerT" in
+      assert_int_equal "asset completion reports only the applied cursor"
+        (Logseq_chat_sync_state.applied_server_t state) visible;
+      let snapshot_cursor = dispatch "startWebSocket" None |> result |> required_int "appliedServerT" in
+      assert_int_equal "full snapshots preserve the same applied cursor" visible snapshot_cursor;
+      if not replay_first && not deferred_replay then ignore (dispatch "applySyncEvent"
+        (Some (`Assoc ["before", `Int snapshot_cursor; "t", `Int accepted])) |> result);
+      if index < 3 then next := (dispatch "beginPendingSync" None |> pending_request |> Option.get)
+    done;
+    if deferred_replay then ignore (dispatch "applySyncEvent"
+      (Some (`Assoc ["before", `Int 42; "t", `Int 45])) |> result);
+    assert_int_equal "all asset replays applied" (if deferred_replay then 1 else 3) !applied_count;
+    assert_int_equal "final applied cursor" 45 (Logseq_chat_sync_state.applied_server_t state);
+    let asset_count = Datascript.datoms (Datascript.conn_db conn) Datascript.Aevt
+      ~a:"block/uuid" () |> List.of_seq |> List.length in
+    assert_int_equal "replay materializes every asset exactly once" 3 asset_count
+  ) [0; 1; 2]
+;;
+
+let () =
+  let session = Logseq_chat_rpc.create
+      ~sync_cursor:(fun () -> Some 60)
+      ~prepare_operation:prepare_test_operation () in
+  let operation : Logseq_chat_pending_ops.t =
+    { operation_id = "late-ack"; base_t = 60; state = Queued;
+      intent = Save_title { uuid = "remote"; expected_title = "Old"; title = "New" } } in
+  configure_plain_graph session;
+  session.semantic_queue <- [{ Logseq_chat_rpc.operation }];
+  Logseq_chat_rpc.activate_semantic_request ~t_before:43 session (Option.get session.config);
+  let request = Option.get session.semantic_active in
+  let body = from_string (Option.get request.request.body) in
+  match body with
+  | `Assoc fields -> assert_int_equal "late HTTP acknowledgement cannot rewind transport cursor"
+      60 (required_int "t-before" fields)
+  | _ -> failwith "expected transaction request body"
 ;;

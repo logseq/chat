@@ -219,6 +219,14 @@ let graph_blocks () =
   | None -> None
 ;;
 
+let authoritative_graph_blocks () =
+  match !graph_runtime with
+  | Some runtime ->
+    Some (Logseq_chat_graph_read.blocks
+            (Datascript.conn_db runtime.read_runtime.conn))
+  | None -> None
+;;
+
 let graph_sidebar_pages () =
   match !graph_runtime with
   | Some runtime ->
@@ -459,6 +467,7 @@ let create_session ?storage ?catalog_session () =
     ~apply_sync_event
     ~sync_cursor
     ~graph_blocks
+    ~authoritative_graph_blocks
     ~graph_sidebar_pages
     ~graph_tag_pages
     ~graph_node_is_tag

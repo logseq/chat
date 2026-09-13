@@ -54,6 +54,31 @@
     (Some text) (wire/quoted text)
     None "null"))
 
+(defn encode-session-asset [asset]
+  (str "{\"uuid\":" (wire/quoted (:uuid asset))
+       ",\"title\":" (wire/quoted (:title asset))
+       ",\"localPath\":" (wire/quoted (:local-path asset))
+       ",\"payload\":" (wire/quoted (:payload asset)) "}"))
+
+(defn encode-session-routes [routes]
+  (encode-string-vector (mapv (fn [route] (match route (model/NodeRoute uuid) uuid)) routes)))
+
+(defn encode-ui-session [session]
+  (str "{\"graphId\":" (encode-option-string (:graph-id session))
+       ",\"destination\":" (wire/quoted (if (= (:destination session) model/FlashcardsDestination)
+                                            "flashcards"
+                                            (if (= (:destination session) model/GraphsDestination)
+                                              "graphs" "journals")))
+       ",\"draft\":" (wire/quoted (:draft session))
+       ",\"assets\":[" (string/join "," (mapv encode-session-asset (:assets session))) "]"
+       ",\"composerExpanded\":" (:composer-expanded session)
+       ",\"searchOpen\":" (:search-open session)
+       ",\"query\":" (wire/quoted (:query session))
+       ",\"appPath\":" (encode-session-routes (:app-path session))
+       ",\"searchPath\":" (encode-session-routes (:search-path session))
+       ",\"selectedPageId\":" (encode-option-string (:selected-page-id session))
+       ",\"settingsOpen\":" (:settings-open session) "}"))
+
 (defn encode-task-status [status]
   (str "{\"uuid\":" (wire/quoted (:uuid status))
        ",\"ident\":" (encode-option-string (:ident status))
@@ -92,6 +117,10 @@
 
 (defn encode-effect [effect]
   (match effect
+    (model/SendAssetEffect id asset)
+    (str "{\"id\":" id
+         ",\"kind\":\"send-asset\",\"text\":"
+         (wire/quoted (:payload asset)) "}")
     (model/SendCaptureEffect id text)
     (str "{\"id\":" id
          ",\"kind\":\"send-capture\",\"text\":"
@@ -101,6 +130,9 @@
          ",\"kind\":\"send-task\",\"text\":"
          (wire/quoted text) ",\"metadata\":"
          (wire/quoted (encode-task-status status)) "}")
+    (model/PersistUISessionEffect id session)
+    (str "{\"id\":" id ",\"kind\":\"persist-ui-session\",\"text\":"
+         (wire/quoted (encode-ui-session session)) "}")
     (model/PersistComposerDraftEffect id draft)
     (str "{\"id\":" id
          ",\"kind\":\"persist-composer-draft\",\"text\":"

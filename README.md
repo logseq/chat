@@ -49,6 +49,22 @@ The Flutter Android host includes Capture and Journal app shortcuts, Capture
 and Today’s Journal home-screen widgets, inbound sharing, deep links, native
 authentication, media services, and the OCaml core JNI library.
 
+## iPhone shortcuts and widgets
+
+Long-press the app icon for Voice and Quick Add.
+The Shortcuts app exposes Quick Add, Record Audio, Today's Journal, and Capture
+to Journal (text input). The Quick Capture home-screen widget includes recording
+and capture buttons; Today's Journal opens the journal. On iOS 18 and later,
+Quick Add and Record Audio are also available in Control Center and on the Lock
+Screen. These entry points open the existing composer and recorder, including
+when the app needs to launch first.
+
+Both iOS build scripts include App Intents metadata and the widget extension.
+Device builds select a compatible development profile for `com.logseq.chat.widgets`;
+set `LOGSEQ_CHAT_IOS_WIDGET_PROFILE` in `.logseq-chat-ios-device.env` to specify one.
+The extension and app must be signed by the same team, and their profiles must
+include the target device.
+
 ## Testing
 
 Do not run `swift test` in this repository because the XCTest bridge hangs in

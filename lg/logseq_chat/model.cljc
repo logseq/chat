@@ -146,6 +146,7 @@
           (has-older-journals false)
           (composer-expanded false)
           (composer-draft "")
+          (composer-assets [])
           (composer-autofocus false)
           (pending-effects [])
           (in-flight-effects [])
@@ -224,8 +225,10 @@
 (defn effect-id [effect]
   (match effect
     (SendCaptureEffect id _text) id
+    (SendAssetEffect id _asset) id
     (SendTaskEffect id _text _status) id
     (PersistComposerDraftEffect id _draft) id
+    (PersistUISessionEffect id _session) id
     (PresentAttachmentEffect id _kind) id
     (PresentAssetEffect id _title _asset-type _local-path) id
     (PresentPageShareEffect id _text _paths) id
@@ -826,8 +829,22 @@
     (assoc current :sync-state (FailedState message))
     _ (rollback-navigation-effect current effect)))
 
+(defn composer-assets-sending? [current]
+  (let [effects (concat (:pending-effects current) (:in-flight-effects current))]
+    (loop [index 0]
+      (if (= index (count effects))
+        false
+        (let [sending (match (nth effects index)
+                        (SendAssetEffect _id _asset) true
+                        _ false)]
+          (if sending true (recur (inc index))))))))
+
 (defn resolve-successful-effect [current effect message]
   (match effect
+    (SendAssetEffect _id asset)
+    (assoc current :composer-assets
+           (filterv (fn [candidate] (not= (:uuid candidate) (:uuid asset)))
+                    (:composer-assets current)))
     (SignInEffect _id)
     (assoc current
            :authentication-state "signedIn"
@@ -1023,8 +1040,74 @@
                  result
                  (conj result effect)))))))
 
+(defn editing-sync-state [current]
+  (match (:sync-state current)
+    OfflineState OfflineState
+    (FailedState reason) (FailedState reason)
+    _ SyncingState))
+
+(defn ui-session [current]
+  (record ui-session
+    (graph-id (:selected-graph-id current))
+    (destination (:destination current))
+    (draft (:composer-draft current))
+    (assets (:composer-assets current))
+    (composer-expanded (:composer-expanded current))
+    (search-open (:search-open current))
+    (query (:search-query current))
+    (app-path (:app-navigation-path current))
+    (search-path (:search-navigation-path current))
+    (selected-page-id (match (:selected-page current)
+                        (Some page) (Some (:uuid page)) None None))
+    (settings-open (:settings-open current))))
+
+(defn restore-session-routes [current paths search]
+  (loop [index 0 result current]
+    (if (= index (count paths))
+      result
+      (let [uuid (match (nth paths index) (NodeRoute value) value)
+            id (:next-effect-id result)]
+        (recur (inc index)
+               (enqueue-effect result (if search
+                                        (OpenSearchNodeEffect id uuid)
+                                        (OpenAppNodeEffect id uuid))))))))
+
+(defn restore-ui-session [current session]
+  (if (or (= (:graph-id session) None)
+          (not= (:graph-id session) (:selected-graph-id current)))
+    current
+    (let [restored (assoc current
+                          :destination (:destination session)
+                          :composer-draft (:draft session)
+                          :composer-assets (:assets session)
+                          :composer-expanded (:composer-expanded session)
+                          :composer-autofocus (:composer-expanded session)
+                          :search-open (:search-open session)
+                          :search-query (:query session)
+                          :app-navigation-path (:app-path session)
+                          :search-navigation-path (:search-path session)
+                          :settings-open (:settings-open session))
+          selected (match (:selected-page-id session)
+                     (Some uuid) (enqueue-effect restored
+                                    (SelectSidebarPageEffect (:next-effect-id restored) uuid))
+                     None restored)
+          app-restored (restore-session-routes selected (:app-path session) false)
+          searched (if (and (:search-open session) (not (empty? (:query session))))
+                     (enqueue-effect (assoc app-restored :search-loading true)
+                                     (SearchNodesEffect (:next-effect-id app-restored) (:query session)))
+                     app-restored)
+          routed (restore-session-routes searched (:search-path session) true)]
+      (match (:destination session)
+        FlashcardsDestination (enqueue-effect routed (LoadFlashcardsEffect (:next-effect-id routed)))
+        _ routed))))
+
 (defn update [current action]
   (match action
+    SaveUISession
+    (enqueue-effect current (PersistUISessionEffect (:next-effect-id current) (ui-session current)))
+
+    (RestoreUISession session) (restore-ui-session current session)
+
     (SelectGraph graph-name)
     (assoc current :selected-graph (Some graph-name))
 
@@ -1073,6 +1156,14 @@
              :is-graph-unlocked (:is-graph-unlocked projection))
       (if (:is-pending-sync-patch projection)
       (assoc current
+             :sync-state
+             (match (:sync-state current)
+               OfflineState OfflineState
+               (FailedState reason) (FailedState reason)
+               _ (if (or (:has-pending-semantic-operations projection)
+                         (:has-pending-sync-request projection))
+                   SyncingState
+                   SyncedState))
              :has-pending-semantic-operations
              (:has-pending-semantic-operations projection)
              :has-pending-sync-request
@@ -1229,7 +1320,7 @@
 
     (ChangeOutlinerText uuid title caret)
     (let [updated (assoc (update-editing current uuid title caret)
-                         :sync-state SyncingState
+                         :sync-state (editing-sync-state current)
                          :outliner-autocomplete-candidates [])
           id (:next-effect-id updated)]
       (enqueue-effect updated
@@ -1279,7 +1370,7 @@
     (PerformOutlinerToolbarAction action)
     (let [updated (cond
                     (= action "task")
-                    (assoc current :sync-state SyncingState)
+                    (assoc current :sync-state (editing-sync-state current))
 
                     (= action "hideKeyboard")
                     (assoc current
@@ -1355,27 +1446,41 @@
     DismissComposer
     (assoc current :composer-expanded false :composer-autofocus false)
 
+    (StageComposerAsset asset)
+    (assoc current :composer-expanded true :composer-autofocus true
+           :composer-assets (conj (:composer-assets current) asset))
+
+    (RemoveComposerAsset uuid)
+    (if (composer-assets-sending? current)
+      current
+      (assoc current :composer-assets
+             (filterv (fn [asset] (not= (:uuid asset) uuid)) (:composer-assets current))))
+
     SendComposer
-    (let [submission (string/trim (:composer-draft current))]
-      (if (empty? submission)
-        current
-        (let [cleared
-              (assoc current
-                     :composer-expanded true
-                     :composer-draft ""
-                     :composer-autofocus true
-                     :pending-effects
-                     (remove-composer-draft-effects (:pending-effects current)))
-              persist-id (:next-effect-id cleared)
-              persisted
-              (enqueue-effect
-               cleared (PersistComposerDraftEffect persist-id ""))
-              send-id (:next-effect-id persisted)]
-          (enqueue-effect
-           persisted
-           (match (:selected-task-status current)
-             (Some status) (SendTaskEffect send-id submission status)
-             None (SendCaptureEffect send-id submission))))))
+    (if (composer-assets-sending? current)
+      current
+      (let [submission (string/trim (:composer-draft current))
+            with-text
+            (if (empty? submission)
+              current
+              (let [cleared
+                    (assoc current :composer-expanded true :composer-draft ""
+                           :composer-autofocus true
+                           :pending-effects
+                           (remove-composer-draft-effects (:pending-effects current)))
+                    persisted (enqueue-effect cleared
+                               (PersistComposerDraftEffect (:next-effect-id cleared) ""))]
+                (enqueue-effect persisted
+                 (match (:selected-task-status current)
+                   (Some status) (SendTaskEffect (:next-effect-id persisted) submission status)
+                   None (SendCaptureEffect (:next-effect-id persisted) submission)))))]
+        (loop [index 0 updated with-text]
+          (if (= index (count (:composer-assets current)))
+            updated
+            (recur (inc index)
+                   (enqueue-effect updated
+                    (SendAssetEffect (:next-effect-id updated)
+                                     (nth (:composer-assets current) index))))))))
 
     (DequeueEffect id)
     (let [pending (:pending-effects current)]
@@ -1536,6 +1641,22 @@
           id (:next-effect-id updated)]
       (enqueue-effect updated (SelectSidebarPageEffect id uuid)))
 
+    (OpenQuickAction kind)
+    (if (not (or (= kind "capture") (= kind "audio") (= kind "journal")))
+      current
+      (let [updated (assoc (cancel-outliner-editing current)
+                           :search-open false :search-navigation-path []
+                           :app-navigation-path [] :app-navigation-previews []
+                           :settings-open false :settings-tabs-open false
+                           :runtime-log-open false :sidebar-open false :graph-menu-open false
+                           :destination JournalsDestination
+                           :composer-expanded (not= kind "journal")
+                           :composer-autofocus (= kind "capture"))
+            cleared (enqueue-effect updated (ClearSelectedPageEffect (:next-effect-id updated)))]
+        (if (= kind "audio")
+          (enqueue-effect cleared (PresentAttachmentEffect (:next-effect-id cleared) "audio"))
+          cleared)))
+
     ShowJournals
     (let [updated (assoc (cancel-outliner-editing (return-to-app-root current))
                          :sidebar-open false
@@ -1690,7 +1811,7 @@
     (SetOutlinerTaskStatus block-id status-id)
     (match (task-status-by-id (:task-statuses current) status-id)
       (Some status)
-      (let [updated (assoc current :sync-state SyncingState)
+      (let [updated (assoc current :sync-state (editing-sync-state current))
             id (:next-effect-id updated)]
         (enqueue-effect
          updated (SetOutlinerTaskStatusEffect id block-id status)))

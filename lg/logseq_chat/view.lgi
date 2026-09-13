@@ -55,6 +55,7 @@
  :fn<chat-model;string>)
 (signature logseq-chat.view/outliner-row-has-tags?
  :fn<outline-row;bool>)
+(signature logseq-chat.view/outliner-row-journal? :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-sync-failed?
  :fn<outline-row;bool>)
 (signature logseq-chat.view/outliner-row-list-item-press-enabled?
@@ -126,7 +127,6 @@
 (signature logseq-chat.view/task-status-selected? :fn<chat-model;bool>)
 (signature logseq-chat.view/search-result-identifier :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-title :fn<search-hit;string>)
-(signature logseq-chat.view/search-result-icon :fn<search-hit;string>)
 (signature logseq-chat.view/search-result-context-present? :fn<search-hit;bool>)
 (signature logseq-chat.view/search-result-status :fn<chat-model;string>)
 (signature logseq-chat.view/search-result-breadcrumb :fn<search-hit;string>)
@@ -272,7 +272,7 @@
 (signature logseq-chat.view/breadcrumb-identifier :fn<sidebar-page;string>)
 (signature logseq-chat.view/breadcrumb-title :fn<sidebar-page;string>)
 (signature logseq-chat.view/breadcrumb-button
- :fn<ui-context;signal<sidebar-page>;fn<chat-action;bool>;int>)
+ :fn<ui-context;signal<sidebar-page>;bool;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/related-row-breadcrumbs
  :fn<ui-context;signal<outline-row>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/editing-title :fn<chat-model;string>)
@@ -539,3 +539,24 @@
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/native-navigation-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+
+(signature logseq-chat.view/composer-asset-schema :fn<extension-component-schema>)
+
+(signature logseq-chat.view/composer-asset-preview :fn<ui-context;signal<composer-asset>;int>)
+(signature logseq-chat.view/composer-assets-present? :fn<chat-model;bool>)
+
+(signature logseq-chat.view/composer-asset-title :fn<composer-asset;string>)
+(signature logseq-chat.view/composer-asset-path :fn<composer-asset;string>)
+
+(signature logseq-chat.view/active-node-breadcrumbs :fn<chat-model;vector<sidebar-page>>)
+(signature logseq-chat.view/active-node-has-breadcrumbs? :fn<chat-model;bool>)
+(signature logseq-chat.view/node-breadcrumbs
+ :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
+
+(signature logseq-chat.view/node-breadcrumb-button
+ :fn<ui-context;signal<chat-model>;signal<sidebar-page>;fn<chat-action;bool>;int>)
+
+(signature logseq-chat.view/composer-asset-view
+ :fn<ui-context;signal<composer-asset>;fn<chat-action;bool>;int>)
+
+(signature logseq-chat.view/composer-asset-identifier :fn<composer-asset;string>)

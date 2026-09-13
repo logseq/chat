@@ -173,6 +173,7 @@ enum LGChatAssetImporter {
 struct LGChatPlatformPresentationHost: ViewModifier {
     @Bindable var coordinator: LGChatPlatformPresentationCoordinator
     let store: LogseqChatStore
+    let stageAsset: @MainActor (String) throws -> Void
 
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
@@ -184,6 +185,7 @@ struct LGChatPlatformPresentationHost: ViewModifier {
                 allowsMultipleSelection: true,
                 onCompletion: importFiles
             )
+            #if !os(iOS)
             .photosPicker(
                 isPresented: presentationBinding(for: .photos),
                 selection: $selectedPhotoItems,
@@ -193,6 +195,7 @@ struct LGChatPlatformPresentationHost: ViewModifier {
             .onChange(of: selectedPhotoItems) { _, items in
                 importPhotos(items)
             }
+            #endif
             .alert(deletionTitle, isPresented: deletionBinding) {
                 Button("Delete", role: .destructive) {
                     store.outlinerEvent(LogseqOutlinerEvent(type: "confirmDelete"))
@@ -209,34 +212,42 @@ struct LGChatPlatformPresentationHost: ViewModifier {
             .sheet(item: pageSharePayloadBinding) { payload in
                 NodeShareSheet(items: payload.items)
             }
-            .fullScreenCover(isPresented: presentationBinding(for: .camera)) {
-                CameraPicker { image in
-                    coordinator.dismissAttachment()
-                    importCapturedPhoto(image)
-                } onCancel: {
-                    coordinator.dismissAttachment()
+            .sheet(isPresented: mediaPanelBinding) {
+                let target = coordinator.attachmentTargetBlockID
+                VStack(spacing: 0) {
+                    LGChatMediaPanel(initialService: coordinator.attachmentService ?? .photos) { items in
+                        importPhotos(items, closeWhenFinished: false, targetBlockID: target)
+                    } onCapture: { data in
+                        importCapturedData(data, targetBlockID: target)
+                    } onPhotoData: { data, fileExtension in
+                        importCapturedData(data, targetBlockID: target,
+                                           title: "Photo-\(UUID().uuidString).\(fileExtension)")
+                    }
                 }
-                .ignoresSafeArea()
+                .background(Color(uiColor: .systemBackground))
+                .presentationDetents([.fraction(0.58), .large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(32)
             }
             .sheet(isPresented: presentationBinding(for: .audio)) {
                 AudioRecorderSheet(
                     targetBlockID: coordinator.attachmentTargetBlockID
-                ) { asset, targetBlockID in
-                    let assetUUID = store.addAsset(
-                        title: asset.title,
-                        assetType: AudioRecordingPolicy.fileExtension,
-                        assetSize: asset.size,
-                        assetChecksum: asset.checksum,
-                        localPath: LocalAssetPath.storedPath(asset.path),
-                        targetBlockId: targetBlockID
-                    )
+                ) { asset, targetBlockID, transcript in
+                    try addImportedAsset(LGChatImportedAsset(
+                        title: asset.title, assetType: AudioRecordingPolicy.fileExtension,
+                        size: asset.size, checksum: asset.checksum, path: asset.path
+                    ), targetBlockID: targetBlockID, transcript: transcript)
                     coordinator.completeAttachment()
-                    return assetUUID
-                } onTranscript: { assetUUID, transcript in
-                    store.addChildBlock(transcript, parentId: assetUUID)
                 }
             }
             #endif
+    }
+
+    private var mediaPanelBinding: Binding<Bool> {
+        Binding(
+            get: { coordinator.attachmentService == .camera || coordinator.attachmentService == .photos },
+            set: { if !$0 { coordinator.completeAttachment() } }
+        )
     }
 
     private func presentationBinding(for service: LGChatAttachmentService) -> Binding<Bool> {
@@ -286,10 +297,11 @@ struct LGChatPlatformPresentationHost: ViewModifier {
             coordinator.completeAttachment()
             return
         }
+        let target = coordinator.attachmentTargetBlockID
         Task {
             for url in urls {
                 do {
-                    addImportedAsset(try await LGChatAssetImporter.persist(url))
+                    try addImportedAsset(try await LGChatAssetImporter.persist(url), targetBlockID: target)
                 } catch {
                     logger.error("Asset import failed: \(String(describing: error))")
                 }
@@ -298,9 +310,11 @@ struct LGChatPlatformPresentationHost: ViewModifier {
         }
     }
 
-    private func importPhotos(_ items: [PhotosPickerItem]) {
+    private func importPhotos(_ items: [PhotosPickerItem], closeWhenFinished: Bool = true,
+                              targetBlockID: String? = nil) {
         guard !items.isEmpty else { return }
         selectedPhotoItems = []
+        let target = targetBlockID ?? coordinator.attachmentTargetBlockID
         Task {
             for item in items {
                 do {
@@ -310,46 +324,58 @@ struct LGChatPlatformPresentationHost: ViewModifier {
                     let fileExtension = item.supportedContentTypes.first?
                         .preferredFilenameExtension ?? "jpg"
                     let title = "Photo-\(UUID().uuidString).\(fileExtension)"
-                    addImportedAsset(
-                        try await LGChatAssetImporter.persist(data: data, title: title)
+                    try addImportedAsset(
+                        try await LGChatAssetImporter.persist(data: data, title: title),
+                        targetBlockID: target
                     )
                 } catch {
                     logger.error("Photo import failed: \(String(describing: error))")
                 }
             }
-            coordinator.completeAttachment()
+            if closeWhenFinished { coordinator.completeAttachment() }
         }
     }
 
     #if os(iOS)
-    private func importCapturedPhoto(_ image: UIImage) {
-        guard let data = image.jpegData(compressionQuality: 0.9) else {
-            logger.error("Camera import failed: JPEG encoding returned no data")
-            return
-        }
+    private func importCapturedData(_ data: Data, targetBlockID: String?,
+                                    title: String = "Camera-\(UUID().uuidString).jpg") {
         Task {
             do {
-                let title = "Camera-\(UUID().uuidString).jpg"
-                addImportedAsset(
-                    try await LGChatAssetImporter.persist(data: data, title: title)
+                try addImportedAsset(
+                    try await LGChatAssetImporter.persist(data: data, title: title),
+                    targetBlockID: targetBlockID
                 )
-                coordinator.completeAttachment()
             } catch {
                 logger.error("Camera import failed: \(String(describing: error))")
-                coordinator.completeAttachment()
             }
         }
     }
     #endif
 
-    private func addImportedAsset(_ asset: LGChatImportedAsset) {
-        store.addAsset(
-            title: asset.title,
-            assetType: asset.assetType,
-            assetSize: asset.size,
+    private func addImportedAsset(_ asset: LGChatImportedAsset, targetBlockID: String? = nil, transcript: String? = nil) throws {
+        let payload = LGChatStagedAssetPayload(
+            uuid: UUID().uuidString.lowercased(), title: asset.title,
+            now: Int64(Date().timeIntervalSince1970 * 1_000),
+            assetType: asset.assetType, assetSize: asset.size,
             assetChecksum: asset.checksum,
             localPath: LocalAssetPath.storedPath(asset.path),
-            targetBlockId: coordinator.attachmentTargetBlockID
+            targetBlockId: targetBlockID,
+            transcript: transcript, transcriptUUID: transcript == nil ? nil : UUID().uuidString.lowercased()
         )
+        let data = try JSONEncoder().encode(payload)
+        try stageAsset(String(decoding: data, as: UTF8.self))
     }
+}
+
+private struct LGChatStagedAssetPayload: Encodable {
+    let uuid: String
+    let title: String
+    let now: Int64
+    let assetType: String
+    let assetSize: Int
+    let assetChecksum: String
+    let localPath: String
+    let targetBlockId: String?
+    let transcript: String?
+    let transcriptUUID: String?
 }

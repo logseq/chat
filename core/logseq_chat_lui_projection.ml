@@ -231,11 +231,34 @@ let apply_host_update kind payload =
       LG.ApplyRuntimeLog (Rrbvec.of_list (List.map runtime_log_record records))
     | Ok (Local_graph_ids graph_ids) ->
       LG.ApplyLocalGraphIds (Rrbvec.of_list graph_ids)
+    | Ok (Composer_asset asset) ->
+      LG.StageComposerAsset { uuid = asset.uuid; title = asset.title;
+                              local_path = asset.local_path; payload = asset.payload }
+    | Ok Save_ui_session -> LG.SaveUISession
+    | Ok (Restore_ui_session session) ->
+      LG.RestoreUISession
+        { graph_id = session.graph_id
+        ; destination = (match session.destination with
+            | "flashcards" -> LG.FlashcardsDestination
+            | "graphs" -> LG.GraphsDestination
+            | _ -> LG.JournalsDestination)
+        ; draft = session.draft
+        ; assets = Rrbvec.of_list (List.map (fun (asset : Host_update.composer_asset) : LG.composer_asset ->
+            { uuid = asset.uuid; title = asset.title; local_path = asset.local_path; payload = asset.payload }) session.assets)
+        ; composer_expanded = session.composer_expanded
+        ; search_open = session.search_open
+        ; query = session.query
+        ; app_path = Rrbvec.of_list (List.map (fun uuid -> LG.NodeRoute uuid) session.app_path)
+        ; search_path = Rrbvec.of_list (List.map (fun uuid -> LG.NodeRoute uuid) session.search_path)
+        ; selected_page_id = session.selected_page_id
+        ; settings_open = session.settings_open
+        }
     | Ok (Composer_draft draft) -> LG.ApplyComposerDraft draft
     | Ok (Graph_loading loading) -> LG.ApplyGraphLoading loading
     | Ok (Authentication authentication) ->
       LG.ApplyAuthentication
         (authentication.state, authentication.error_message)
+    | Ok (Open_quick_action kind) -> LG.OpenQuickAction kind
     | Ok Open_capture -> LG.ExpandComposer
     | Error message -> LG.SyncFailed message
   in

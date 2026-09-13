@@ -61,6 +61,13 @@ typealias AppType = NSApplication
         return true
     }
 
+    func application(_ application: UIApplication, configurationForConnecting session: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let configuration = session.configuration
+        configuration.delegateClass = QuickActionSceneDelegate.self
+        return configuration
+    }
+
     func applicationWillTerminate(_ application: UIApplication) {
         AppDelegate.shared.onDestroy()
     }
@@ -95,6 +102,27 @@ typealias AppType = NSApplication
 }
 
 #if os(iOS)
+@MainActor final class QuickActionSceneDelegate: NSObject, UIWindowSceneDelegate {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
+               options connectionOptions: UIScene.ConnectionOptions) {
+        if let item = connectionOptions.shortcutItem {
+            _ = perform(item)
+        }
+    }
+
+    func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem,
+                     completionHandler: @escaping (Bool) -> Void) {
+        completionHandler(perform(shortcutItem))
+    }
+
+    private func perform(_ item: UIApplicationShortcutItem) -> Bool {
+        guard ["logseqchat://capture", "logseqchat://audio"].contains(item.type),
+              let url = URL(string: item.type) else { return false }
+        LogseqChatRuntime.shared.acceptSharedCaptureURL(url)
+        return true
+    }
+}
+
 @available(iOS 17.0, *)
 struct CaptureToJournalIntent: AppIntent {
     static let title: LocalizedStringResource = "Capture to Journal"
@@ -119,6 +147,24 @@ struct CaptureToJournalIntent: AppIntent {
 @available(iOS 17.0, *)
 struct LogseqAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: QuickAddIntent(),
+            phrases: ["Quick add in \(.applicationName)", "Add note in \(.applicationName)"],
+            shortTitle: "Quick Add",
+            systemImageName: "plus.circle"
+        )
+        AppShortcut(
+            intent: RecordAudioIntent(),
+            phrases: ["Record audio in \(.applicationName)", "Start recording in \(.applicationName)"],
+            shortTitle: "Record Audio",
+            systemImageName: "waveform"
+        )
+        AppShortcut(
+            intent: OpenJournalIntent(),
+            phrases: ["Open today's journal in \(.applicationName)"],
+            shortTitle: "Today's Journal",
+            systemImageName: "book"
+        )
         AppShortcut(
             intent: CaptureToJournalIntent(),
             phrases: [

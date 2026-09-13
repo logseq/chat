@@ -64,7 +64,7 @@ struct LGChatLiquidGlassSurface: ViewModifier {
             } else if shape == .roundedRectangle {
                 content.glassEffect(
                     .regular,
-                    in: .rect(cornerRadius: 10)
+                    in: .rect(cornerRadius: 24)
                 )
             } else if shape == .container {
                 content.glassEffect(
@@ -80,7 +80,7 @@ struct LGChatLiquidGlassSurface: ViewModifier {
             } else if shape == .roundedRectangle {
                 content.background(
                     .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 24, style: .continuous)
                 )
             } else if shape == .container {
                 content.background(

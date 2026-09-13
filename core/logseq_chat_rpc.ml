@@ -80,6 +80,7 @@ type t =
   ; sync_cursor : (unit -> int option) option
   ; mutable accepted_server_t : int option
   ; graph_blocks : (unit -> Model.block list option) option
+  ; authoritative_graph_blocks : (unit -> Model.block list option) option
   ; graph_sidebar_pages : (unit -> Logseq_chat_graph_read.sidebar_pages option) option
   ; graph_tag_pages : (unit -> Logseq_chat_graph_read.sidebar_page list option) option
   ; graph_node_is_tag : (string -> bool) option
@@ -132,7 +133,9 @@ type t =
   ; save_graph_catalog : (string -> unit) option
   }
 
-let current_server_t session =
+(* HTTP acceptance may lead local replay. This cursor is only for submissions,
+   never for appliedServerT or entity/pull. *)
+let submission_server_t session =
   match Option.bind session.sync_cursor (fun cursor -> cursor ()), session.accepted_server_t with
   | Some authoritative_t, Some accepted_t -> Some (max authoritative_t accepted_t)
   | Some authoritative_t, None -> Some authoritative_t
@@ -1142,7 +1145,7 @@ let snapshot session ~context_blocks blocks =
       ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
       ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
       ; "appliedServerT",
-        Option.fold ~none:`Null ~some:(fun value -> `Int value) (current_server_t session)
+        Option.fold ~none:`Null ~some:(fun value -> `Int value) (projection_server_t session)
       ; "syncConnected", `Bool session.sync_connected
       ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
       ; "pendingSyncRequest", pending_request_json session
@@ -1386,7 +1389,7 @@ let pending_sync_patch session =
       ; "blocks", `List []
       ; "selectedBlock", `Null
       ; "appliedServerT",
-        Option.fold ~none:`Null ~some:(fun value -> `Int value) (current_server_t session)
+        Option.fold ~none:`Null ~some:(fun value -> `Int value) (projection_server_t session)
       ; "pendingSyncRequest", pending_request_json session
       ; "hasPendingSemanticOperations",
         `Bool (has_pending_operations session)
@@ -1395,7 +1398,7 @@ let pending_sync_patch session =
 ;;
 
 let reconcile_authoritative_blocks session =
-  match session.graph_blocks with
+  match session.authoritative_graph_blocks with
   | None -> ()
   | Some graph_blocks ->
     (match graph_blocks () with
@@ -1441,6 +1444,7 @@ let create
       ?apply_sync_event
       ?sync_cursor
       ?graph_blocks
+      ?authoritative_graph_blocks
       ?graph_sidebar_pages
       ?graph_tag_pages
       ?graph_node_is_tag
@@ -1497,6 +1501,8 @@ let create
   ; sync_cursor
   ; accepted_server_t = None
   ; graph_blocks
+  ; authoritative_graph_blocks =
+      (match authoritative_graph_blocks with Some _ -> authoritative_graph_blocks | None -> graph_blocks)
   ; graph_sidebar_pages
   ; graph_tag_pages
   ; graph_node_is_tag
@@ -1906,17 +1912,20 @@ let activate_semantic_request ?t_before session config =
          message
      | Ok (outliner_op, tx) ->
        let t_before =
-         Option.value
-           t_before
-           ~default:
-             (current_server_t session
-              |> Option.value ~default:pending.operation.base_t)
+         let latest = submission_server_t session
+           |> Option.value ~default:pending.operation.base_t in
+         Option.fold ~none:latest ~some:(max latest) t_before
        in
        let request =
+         let tx_id =
+           match pending.operation.intent with
+           | Pending_ops.Create_asset { uuid; _ } -> uuid
+           | _ -> pending.operation.operation_id
+         in
          Api.tx_batch_request
            config
            ~t_before
-           ~tx_id:pending.operation.operation_id
+           ~tx_id
            ~outliner_op
            ~tx
        in
@@ -1985,8 +1994,10 @@ let normalize_operation_titles session (operation : Pending_ops.t) =
 ;;
 
 let capture_operations session ~uuid ~title ~now ?status () =
+  (* A batch acknowledgement can precede its local graph update. Stage captures
+     against the applied graph; the transport separately uses the accepted cursor. *)
   let base_t =
-    current_server_t session
+    projection_server_t session
     |> Option.to_result ~none:"A current server cursor is required"
   in
   Result.bind base_t (fun base_t ->
@@ -2099,7 +2110,10 @@ let begin_pending_sync session (config : Api.config) =
   then ()
   else (
     restore_semantic_queue session config;
-    activate_semantic_request session config;
+    let pending = Model.pending_blocks session.model in
+    let pending_assets = List.filter (fun (block : Model.block) -> block.is_asset) pending in
+    (* Upload local files before operations that may reference their blocks. *)
+    if pending_assets = [] then activate_semantic_request session config;
     match session.semantic_active, session.pending_sync with
     | Some _, _ -> ()
     | None, Some _ -> ()
@@ -2110,10 +2124,10 @@ let begin_pending_sync session (config : Api.config) =
           List.iter
             (fun (block : Model.block) -> Hashtbl.replace authoritative block.uuid ())
             blocks)
-        (Option.bind session.graph_blocks (fun graph_blocks -> graph_blocks ()));
+        (Option.bind session.authoritative_graph_blocks (fun graph_blocks -> graph_blocks ()));
       let pump =
         { config
-        ; remaining = Model.pending_blocks session.model
+        ; remaining = (if pending_assets = [] then pending else pending_assets)
         ; authoritative
         ; resolved_journal_pages = Hashtbl.create 8
         ; active = None
@@ -2163,7 +2177,7 @@ let asset_operation_id uuid = "asset:" ^ uuid
 
 let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.block) =
   let base_t =
-    current_server_t session
+    projection_server_t session
     |> Option.to_result ~none:"A current server cursor is required"
   in
   Result.bind base_t (fun base_t ->
@@ -2255,6 +2269,10 @@ let complete_pending_active session pump (active : pending_active) response =
           debug "stage asset datoms failed uuid=%s message=%s" block.uuid message;
           finish_pending_block session pump block ~succeeded:false
         | Ok () ->
+          let asset, rest = List.partition
+              (fun pending -> String.equal pending.operation.Pending_ops.operation_id operation.operation_id)
+              session.semantic_queue in
+          session.semantic_queue <- asset @ rest;
           finish_pending_block session pump block ~succeeded:true;
           activate_semantic_request session pump.config))
   | Upload_asset block -> finish_pending_block session pump block ~succeeded:false
@@ -3278,7 +3296,7 @@ let dispatch session action payload =
                  required_string "parentId" fields, optional_int "now" fields with
            | Ok uuid, Ok title, Ok parent_id, Ok now ->
              let now = Option.value now ~default:(now_ms ()) in
-             (match session.config, current_server_t session with
+             (match session.config, projection_server_t session with
               | Some config, Some base_t ->
                 let context = outliner_context session in
                 (match
@@ -3400,7 +3418,7 @@ let dispatch session action payload =
                     optional_string "expectedStatusIdent" fields,
                     status_payload fields,
                     session.config,
-                    current_server_t session with
+                    projection_server_t session with
               | Ok uuid, Ok operation_id, Ok expected_status_uuid, Ok expected_status_ident, Ok status,
                 Some config, Some base_t ->
                 let expected =
@@ -3458,7 +3476,7 @@ let dispatch session action payload =
                     required_string "expectedTitle" fields,
                     required_string "title" fields,
                     session.config,
-                    current_server_t session with
+                    projection_server_t session with
               | Ok uuid, Ok operation_id, Ok expected_title, Ok title,
                 Some config, Some base_t ->
                 let title = String.trim title in
@@ -3523,7 +3541,7 @@ let dispatch session action payload =
                  required_string "newOrder" fields,
                  optional_int "createdAt" fields,
                  session.config,
-                 current_server_t session with
+                 projection_server_t session with
            | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Ok expected_title,
              Ok before, Ok after, Ok new_uuid, Ok new_order, Ok (Some created_at),
              Some config, Some current_t
@@ -3581,7 +3599,7 @@ let dispatch session action payload =
                  required_string "previousUuid" fields,
                  required_string "expectedPreviousTitle" fields,
                  session.config,
-                 current_server_t session with
+                 projection_server_t session with
            | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Ok expected_title,
              Ok title, Ok previous_uuid, Ok expected_previous_title, Some config, Some current_t
              when expected_server_t = current_t ->
@@ -3635,7 +3653,7 @@ let dispatch session action payload =
                  optional_int "expectedServerT" fields,
                  required_moves fields,
                  session.config,
-                 current_server_t session with
+                 projection_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok moves, Some config, Some current_t
              when expected_server_t = current_t ->
              let identities = List.map (fun move -> move.Pending_ops.uuid) moves in
@@ -3675,7 +3693,7 @@ let dispatch session action payload =
                  optional_int "expectedServerT" fields,
                  required_string_list "uuids" fields,
                  session.config,
-                 current_server_t session with
+                 projection_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok uuids, Some config, Some current_t
              when expected_server_t = current_t ->
              let uuids = List.sort_uniq String.compare uuids in
@@ -3715,7 +3733,7 @@ let dispatch session action payload =
                  required_string "operationId" fields,
                  optional_int "expectedServerT" fields,
                  session.config,
-                 current_server_t session with
+                 projection_server_t session with
            | Ok uuid, Ok operation_id, Ok (Some expected_server_t), Some config, Some current_t
              when expected_server_t = current_t ->
              let operation =

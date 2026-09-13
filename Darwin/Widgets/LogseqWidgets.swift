@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import AppIntents
 
 private struct JournalEntry: TimelineEntry {
     let date: Date
@@ -53,22 +54,67 @@ private struct TodayJournalWidgetView: View {
 }
 
 private struct CaptureWidgetView: View {
+    let entry: JournalEntry
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "square.and.pencil")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.green)
+            Button(intent: OpenJournalIntent()) {
+                HStack {
+                    Text(entry.date, format: .dateTime.weekday(.wide))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.65))
+                    Spacer(minLength: 0)
+                    Image(systemName: "book.closed").foregroundStyle(.white)
+                }
+            }
+            .buttonStyle(.plain)
+            Text("I have an idea…")
+                .font(.headline).foregroundStyle(.white.opacity(0.9))
             Spacer(minLength: 0)
-            Text("Capture")
-                .font(.title3.weight(.bold))
-            Text("Add to today's journal")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                action("Record Audio", icon: "waveform", intent: RecordAudioIntent())
+                action("Quick Add", icon: "plus", intent: QuickAddIntent())
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding()
-        .containerBackground(.fill.tertiary, for: .widget)
+        .containerBackground(Color(red: 0, green: 0.17, blue: 0.21), for: .widget)
         .widgetURL(URL(string: "logseqchat://capture"))
+    }
+
+    private func action<I: AppIntent>(_ title: String, icon: String, intent: I) -> some View {
+        Button(intent: intent) {
+            Image(systemName: icon).font(.body.weight(.medium))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .background(.white.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+}
+
+@available(iOS 18.0, *)
+private struct QuickAddControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.logseq.chat.quickAdd") {
+            ControlWidgetButton(action: QuickAddIntent()) {
+                Label("Quick Add", systemImage: "plus.circle")
+            }
+        }
+        .displayName("Quick Add")
+        .description("Open Logseq quick capture.")
+    }
+}
+
+@available(iOS 18.0, *)
+private struct RecordAudioControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "com.logseq.chat.recordAudio") {
+            ControlWidgetButton(action: RecordAudioIntent()) {
+                Label("Record Audio", systemImage: "waveform")
+            }
+        }
+        .displayName("Record Audio")
+        .description("Start a recording in Logseq.")
     }
 }
 
@@ -89,8 +135,8 @@ private struct CaptureWidget: Widget {
     let kind = "CaptureWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: JournalTimelineProvider()) { _ in
-            CaptureWidgetView()
+        StaticConfiguration(kind: kind, provider: JournalTimelineProvider()) { entry in
+            CaptureWidgetView(entry: entry)
         }
         .configurationDisplayName("Quick Capture")
         .description("Capture a block in today's Logseq journal.")
@@ -102,5 +148,9 @@ private struct CaptureWidget: Widget {
     var body: some Widget {
         TodayJournalWidget()
         CaptureWidget()
+        if #available(iOS 18.0, *) {
+            QuickAddControl()
+            RecordAudioControl()
+        }
     }
 }

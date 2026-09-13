@@ -156,10 +156,49 @@ if [[ -d $logseq_resource_bundle ]]; then
     "$repo_root/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
 fi
 
+# SwiftPM does not run Xcode's App Intents metadata build phase.
+"$repo_root/scripts/extract-app-intents.sh" LogseqChatShell "$sdk_path" "$triple" \
+  "$deployment_target" "$app_dir" \
+  -I "$swift_build_dir/Modules" \
+  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
+  -I "$repo_root/Sources/LogseqChatCoreABI/include" \
+  "$repo_root/Darwin/Sources/Main.swift" "$repo_root/Darwin/Sources/QuickActions.swift"
+
+widget_bundle_id="$bundle_id.widgets"
+widget_profile=$(python3 "$repo_root/scripts/select-widget-profile.py" \
+  "$profile_plist" "$widget_bundle_id" "${LOGSEQ_CHAT_IOS_WIDGET_PROFILE:-}")
+widget_dir="$app_dir/PlugIns/LogseqChatWidgets.appex"
+widget_profile_plist="$core_build_dir/widget-profile.plist"
+widget_entitlements="$core_build_dir/widget-entitlements.plist"
+# Use Xcode's extension build pipeline so WidgetKit receives the same platform
+# metadata and linker settings as an extension built from the project.
+widget_build_dir="$repo_root/.build/ios-device-extensions"
+configuration_name=Debug
+[[ $build_configuration == release ]] && configuration_name=Release
+xcodebuild -project "$repo_root/Darwin/LogseqChat.xcodeproj" \
+  -target LogseqChatWidgets -configuration "$configuration_name" \
+  -sdk iphoneos -arch arm64 ONLY_ACTIVE_ARCH=YES \
+  IPHONEOS_DEPLOYMENT_TARGET="$deployment_target" \
+  PRODUCT_BUNDLE_IDENTIFIER="$widget_bundle_id" \
+  CONFIGURATION_BUILD_DIR="$widget_build_dir" CODE_SIGNING_ALLOWED=NO -quiet build
+mkdir -p "$app_dir/PlugIns"
+cp -R "$widget_build_dir/LogseqChatWidgets.appex" "$widget_dir"
+for key in CFBundleShortVersionString CFBundleVersion; do
+  value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$app_dir/Info.plist")
+  /usr/libexec/PlistBuddy -c "Set :$key $value" "$widget_dir/Info.plist"
+done
+cp "$widget_profile" "$widget_dir/embedded.mobileprovision"
+security cms -D -i "$widget_profile" > "$widget_profile_plist"
+plutil -extract Entitlements xml1 -o "$widget_entitlements" "$widget_profile_plist"
+plutil -replace application-identifier -string "$team_id.$widget_bundle_id" "$widget_entitlements"
+codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
+  --entitlements "$widget_entitlements" "$widget_dir"
+
 plutil -extract Entitlements xml1 -o "$entitlements" "$profile_plist"
 plutil -replace application-identifier -string "$expected_app_id" "$entitlements"
 codesign "${codesign_keychain_args[@]}" --force --sign "$signing_identity" --timestamp=none \
   --entitlements "$entitlements" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 
+python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
 echo "$app_dir"

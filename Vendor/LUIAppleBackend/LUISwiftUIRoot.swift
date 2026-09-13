@@ -18,6 +18,7 @@ struct LUIModalPresentation: Identifiable {
 @MainActor
 final class LUIModalPresentationStore {
     private(set) var item: LUIModalPresentation?
+    var nestedSheets: [Int: LUIModalPresentation] = [:]
     private var interactiveDismissalID: Int?
     private var dialogActionID: Int?
 
@@ -1584,8 +1585,23 @@ private struct LUIModalSurfaceContent: View {
     let backend: LUIAppleBackend
     @Environment(\.luiSemanticColors) private var semanticColors
 
-    @ViewBuilder
     var body: some View {
+        surfaceContent.sheet(item: Binding(
+            get: { backend.modalPresentation.nestedSheets[model.id] },
+            set: { value in
+                if value == nil,
+                   let dismissed = backend.modalPresentation.nestedSheets.removeValue(forKey: model.id) {
+                    try? backend.performDismiss(node: dismissed.id)
+                }
+            }
+        )) { presentation in
+            LUIModalSurfaceContent(model: presentation.model, backend: backend)
+                .modifier(LUIModalPresentationStyle(kind: presentation.model.kind))
+        }
+    }
+
+    @ViewBuilder
+    private var surfaceContent: some View {
         let _ = model.revision
         if LUINavigationFormSheetPolicy.isNavigationForm(
             model.property(.styleClass)?.stringValue
@@ -4069,7 +4085,7 @@ private struct LUITextControlView: View {
                 text: binding,
                 axis: .vertical
             )
-            .lineLimit(1...)
+            .lineLimit(1...(model.property(.styleClass)?.stringValue == "composer-input" ? 6 : Int.max))
         } else if model.kind == .searchField {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")

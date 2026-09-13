@@ -42,6 +42,7 @@ import LogseqChatModel
         let populatedURL = try #require(URL(string: "logseqchat://capture?text=From%20widget"))
         let unrelatedURL = try #require(URL(string: "logseqchat://journal"))
 
+        #expect(LogseqDeepLink(URL(string: "logseqchat://audio")!) == .openAudio)
         #expect(LogseqDeepLink(widgetURL) == .openCapture)
         #expect(LogseqDeepLink(populatedURL) == .captureText("From widget"))
         #expect(LogseqDeepLink(unrelatedURL) == .openJournal)

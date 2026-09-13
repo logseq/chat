@@ -166,12 +166,12 @@ private extension String {
 
 struct AudioRecorderSheet: View {
     let targetBlockID: String?
-    let onSave: (RecordedAudioAsset, String?) -> String
-    let onTranscript: (String, String) -> Void
+    let onSave: (RecordedAudioAsset, String?, String?) throws -> Void
     @Environment(\.dismiss) private var dismiss
     @StateObject private var recorder = AudioRecorderController()
     @State private var transcriptionEnabled = true
     @State private var isSaving = false
+    @State private var saveError: String?
 
     var body: some View {
         NavigationStack {
@@ -185,7 +185,7 @@ struct AudioRecorderSheet: View {
                     Toggle("Transcribe recording", isOn: $transcriptionEnabled)
                         .accessibilityIdentifier("toggle.audio.transcription")
                 }
-                if let errorMessage = recorder.errorMessage {
+                if let errorMessage = saveError ?? recorder.errorMessage {
                     Text(errorMessage).foregroundStyle(.red)
                 }
                 Button {
@@ -193,13 +193,14 @@ struct AudioRecorderSheet: View {
                         isSaving = true
                         defer { isSaving = false }
                         if let asset = try? recorder.stop() {
-                            let assetUUID = onSave(asset, targetBlockID)
-                            dismiss()
-                            if transcriptionEnabled,
-                               let transcript = try? await recorder.transcript(
-                                for: URL(fileURLWithPath: asset.path)
-                               ) {
-                                onTranscript(assetUUID, transcript)
+                            let transcript = transcriptionEnabled
+                                ? try? await recorder.transcript(for: URL(fileURLWithPath: asset.path))
+                                : nil
+                            do {
+                                try onSave(asset, targetBlockID, transcript)
+                                dismiss()
+                            } catch {
+                                saveError = String(describing: error)
                             }
                         }
                     }

@@ -42,3 +42,7 @@
  :fn<int;string;string;string;int;string>)
 (signature logseq-chat.native-bridge/dispose :fn<string>)
 (signature logseq-chat.native-bridge/root-node :fn<int>)
+
+(signature logseq-chat.native-bridge/encode-session-asset :fn<composer-asset;string>)
+(signature logseq-chat.native-bridge/encode-session-routes :fn<vector<navigation-route>;string>)
+(signature logseq-chat.native-bridge/encode-ui-session :fn<ui-session;string>)

@@ -16,6 +16,7 @@ enum LGChatExtensionRegistry {
         try LGChatNavigationExtension.register(in: registry)
         try LGChatSearchPresentationExtension.register(in: registry)
         try LGChatOverflowMenuExtension.register(in: registry)
+        try LGChatComposerAssetExtension.register(in: registry)
         try LGChatOutlinerEditorExtension.register(in: registry)
         try LGChatRichBlockExtension.register(
             in: registry,
@@ -282,14 +283,8 @@ private struct LGChatAssetPreview: View {
                localPath,
                title: title,
                assetType: assetType
-           ),
-           let image = UIImage(contentsOfFile: url.path) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity, maxHeight: 280, alignment: .leading)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .accessibilityIdentifier("asset.preview.image")
+           ) {
+            LGChatInlineImage(url: url)
         } else if LGChatAssetPreviewPolicy.usesInlineAudioPlayer(
             assetType: assetType,
             localPath: localPath

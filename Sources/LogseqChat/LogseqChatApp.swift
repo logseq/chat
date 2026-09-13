@@ -106,7 +106,10 @@ public struct LogseqChatRootView : View {
             }
             .modifier(LGChatPlatformPresentationHost(
                 coordinator: runtime.presentationCoordinator,
-                store: runtime.store
+                store: runtime.store,
+                stageAsset: { payload in
+                    try runtime.lgRuntime.applyHostUpdate(kind: "composer-asset", payload: payload)
+                }
             ))
     }
 
@@ -233,6 +236,7 @@ public struct LogseqChatRootView : View {
                 await authentication.signOut()
                 let defaults = UserDefaults.standard
                 defaults.set("", forKey: "logseq.selectedGraphId")
+                defaults.removeObject(forKey: "logseq.uiSession")
                 store.configure(
                     baseURL: defaults.string(forKey: "logseq.baseURL")
                         ?? "http://127.0.0.1:8787",
@@ -407,7 +411,15 @@ public struct LogseqChatRootView : View {
         publishAuthenticationState()
         LogseqChatAppDelegate.shared.reportLaunchStage("authentication_published")
         await waitForLocalLaunchLoad()
+        if let session = UserDefaults.standard.string(forKey: "logseq.uiSession") {
+            do {
+                try lgRuntime.applyHostUpdate(kind: "restore-ui-session", payload: session)
+            } catch {
+                logger.error("Could not restore UI session: \(error)")
+            }
+        }
         isLGApplicationReady = true
+        presentPendingQuickAction()
         await resumeLGApplication()
         await store.runPendingSyncLoop()
     }
@@ -461,6 +473,13 @@ public struct LogseqChatRootView : View {
     }
 
     public func pauseLGApplication() {
+        if didApplyLocalLaunchResult {
+            do {
+                try lgRuntime.applyHostUpdate(kind: "save-ui-session", payload: "null")
+            } catch {
+                logger.error("Could not preserve UI session: \(error)")
+            }
+        }
         didResumeCurrentActivation = false
     }
 
@@ -686,6 +705,19 @@ public struct LogseqChatRootView : View {
         }
     }
 
+    private var pendingQuickAction: String?
+
+    private func presentPendingQuickAction() {
+        guard isLGApplicationReady, let action = pendingQuickAction else { return }
+        pendingQuickAction = nil
+        do {
+            let data = try JSONEncoder().encode(action)
+            try lgRuntime.applyHostUpdate(kind: "open-quick-action", payload: String(decoding: data, as: UTF8.self))
+        } catch {
+            logger.error("Could not open quick action: \(error)")
+        }
+    }
+
     public func acceptSharedCaptureURL(_ url: URL) {
         guard let deepLink = LogseqDeepLink(url) else { return }
         switch deepLink {
@@ -693,13 +725,14 @@ public struct LogseqChatRootView : View {
             SharedCaptureInbox.shared.enqueueText(text)
             drainSharedCapturesIfReady()
         case .openCapture:
-            do {
-                try lgRuntime.applyHostUpdate(kind: "open-capture", payload: "{}")
-            } catch {
-                logger.error("Could not present LG capture: \(String(describing: error))")
-            }
+            pendingQuickAction = "capture"
+            presentPendingQuickAction()
+        case .openAudio:
+            pendingQuickAction = "audio"
+            presentPendingQuickAction()
         case .openJournal:
-            store.clearSelectedPage()
+            pendingQuickAction = "journal"
+            presentPendingQuickAction()
         }
     }
 
@@ -889,10 +922,10 @@ public enum LogseqChatBackgroundRefresh {
         task.expirationHandler = {
             Task { @MainActor in
                 refreshTask.cancel()
-                await LogseqChatRuntime.shared.cancelBackgroundSync()
                 completion.finish(success: false) { result in
                     task.setTaskCompleted(success: result)
                 }
+                await LogseqChatRuntime.shared.cancelBackgroundSync()
             }
         }
     }
@@ -916,9 +949,10 @@ public enum LogseqChatBackgroundRefresh {
 
     private func expire() {
         syncTask?.cancel()
-        Task { [self] in
+        // Relinquish the iOS assertion before awaiting potentially slow network cleanup.
+        finish()
+        Task {
             await LogseqChatRuntime.shared.cancelBackgroundSync()
-            finish()
         }
     }
 

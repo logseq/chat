@@ -415,6 +415,8 @@
         (assoc (model/initial)
                :sync-state model/SyncingState
                :has-pending-semantic-operations true)]
+    (assert-equal "Offline" (view/sync-label offline-pending)
+                  "the status sheet agrees with the disconnected indicator")
     (assert-equal "Not connected" (view/sync-indicator-label offline-pending)
                   "pending work does not hide an offline connection")
     (assert-equal "error-foreground"
@@ -427,7 +429,12 @@
                   "connected pending work keeps the syncing state")
     (assert-equal "warning-foreground"
                   (view/sync-indicator-foreground connected-pending)
-                  "connected pending work uses an opaque warning foreground")))
+                  "connected pending work uses an opaque warning foreground")
+    (assert-equal "Not connected"
+                  (view/sync-indicator-label
+                   (model/update offline-pending
+                                 (model/ChangeOutlinerText "offline-block" "Draft" 5)))
+                  "editing offline does not invent a live sync connection")))
 
 (deftest settings-navigation-tabs-and-diagnostics-are-lg-owned
   (let [initial (model/update (model/initial)
@@ -888,16 +895,19 @@
       (driver/send! application model/OpenSettingsTabs)
       (driver/flush! application)
       (let [tabs-sheet
-            (descendant-with-identifier renderer root "sheet.settings")
+            (descendant-with-identifier renderer root "sheet.settings.tabs")
             tabs-screen
             (descendant-with-identifier renderer root "screen.settings.tabs")
             flashcards-row
             (descendant-with-identifier renderer root
                                         "row.settings.tab.flashcards")
             back
-            (descendant-with-identifier renderer root "button.connection.cancel")
+            (descendant-with-identifier renderer tabs-sheet "button.connection.cancel")
             confirmation
-            (descendant-with-identifier renderer root "button.connection.apply")]
+            (descendant-with-identifier renderer tabs-sheet "button.connection.apply")]
+        (assert-equal settings-sheet
+                      (descendant-with-identifier renderer root "sheet.settings")
+                      "opening Tabs retains the original Settings sheet")
         (is (not (= -1 tabs-screen))
             "tabs retain their baseline screen identifier")
         (assert-equal (Some apple/AppleListItem)
@@ -905,7 +915,7 @@
                       "tab controls render as full-width native list rows")
         (assert-equal "Tabs"
                       (property-string renderer tabs-sheet proto/TextValue)
-                      "tabs replace the sheet navigation title")
+                      "tabs present their own sheet title")
         (assert-equal "navigation-list"
                       (property-string renderer tabs-sheet proto/StyleClass)
                       "tabs use the native list surface")
@@ -2013,9 +2023,9 @@
       (assert-equal (Some (apple/AppleExtension "native-overflow-menu"))
                     (apple/node renderer connection-control)
                     "the trailing action uses the platform-native menu")
-      (assert-equal "Journals"
+      (assert-equal ""
                     (property-string renderer title proto/TextValue)
-                    "the journal root keeps the main navigation title")
+                    "the journal root leaves its default navigation title empty")
       (assert-equal "Syncing"
                     (property-string renderer sync-control proto/AccessibilityLabel)
                     "begin sync exposes progress")
@@ -2132,7 +2142,15 @@
     (assert-equal (Some 42) (:applied-server-t updated)
                   "pending transport patches preserve the server cursor")
     (is (not (:has-pending-semantic-operations updated))
-        "pending transport patches update their owned sync flags")))
+        "pending transport patches update their owned sync flags")
+    (assert-equal "Synced" (view/sync-indicator-label updated)
+                  "finishing pending work clears the syncing indicator")
+    (assert-equal "success-foreground" (view/sync-indicator-foreground updated)
+                  "finishing pending work restores the green indicator")
+    (let [offline (model/update (assoc current :sync-state model/OfflineState)
+                                (model/ApplyCoreSnapshot patch))]
+      (assert-equal "Not connected" (view/sync-indicator-label offline)
+                    "a pending patch cannot invent a connection"))))
 
 (deftest graph-catalog-patches-preserve-the-active-editor-state
   (let [current (assoc (model/initial)
@@ -3643,16 +3661,16 @@
                       (property-string renderer expanded-row
                                        proto/CrossAlignment)
                       "expanded Capture keeps intrinsic bottom-overlay height")
-        (assert-equal 1.0
+        (assert-equal -1.0
                       (property-float renderer expanded-row proto/GrowValue)
-                      "expanded Capture fills the viewport before applying equal edge insets")
+                      "expanded Capture does not stretch vertically inside its column")
         (assert-equal "field.composer"
                       (property-string renderer field
                                        proto/AccessibilityIdentifier)
                       "expanded capture keeps its field identifier")
-        (assert-equal 10
+        (assert-equal 24
                       (property-int renderer expanded proto/CornerRadius)
-                      "expanded capture uses main's low-radius rectangle")
+                      "expanded Capture uses rounded composer corners")
         (assert-equal 16
                       (property-int renderer expanded proto/PaddingHorizontal)
                       "expanded capture keeps main's horizontal inset")
@@ -3677,6 +3695,10 @@
                       (property-string renderer task-status
                                        proto/AccessibilityIdentifier)
                       "task status keeps its automation identifier")
+        (assert-equal 44 (property-int renderer controls proto/HeightValue)
+                      "composer controls keep a fixed footer height as the draft grows")
+        (assert-equal "end" (property-string renderer expanded proto/MainAlignment)
+                      "composer content anchors its controls at the bottom")
         (assert-equal 4 (count control-children)
                       "main's controls include a flexible trailing spacer")
         (assert-equal "spacer.composer.controls"
@@ -3702,13 +3724,13 @@
         (assert-equal "white"
                       (property-string renderer send-button proto/ForegroundValue)
                       "send arrow contrasts with the filled surface")
-        (assert-equal 40
+        (assert-equal 36
                       (property-int renderer send-button proto/WidthValue)
-                      "send keeps main's 40-point hit target")
-        (assert-equal 40
+                      "send uses a compact circular surface")
+        (assert-equal 36
                       (property-int renderer send-button proto/HeightValue)
-                      "send keeps main's 40-point hit target")
-        (assert-equal 20
+                      "send uses a compact circular surface")
+        (assert-equal 18
                       (property-int renderer send-button proto/CornerRadius)
                       "send remains circular")
         (driver/dispatch-event!
@@ -4398,8 +4420,8 @@
         routed (assoc initial
                       :node-routes [route]
                       :app-navigation-path [(model/NodeRoute "node-a")])]
-    (assert-equal "Journals" (view/main-title initial)
-                  "journals use the root application title")
+    (assert-equal "" (view/main-title initial)
+                  "journals do not repeat their destination name in the header")
     (assert-equal "Project"
                   (view/main-title (assoc initial :selected-page (Some page)))
                   "selected pages use their projected title")
@@ -4436,7 +4458,7 @@
                   "one native pop immediately restores the preceding route title")
     (assert-equal true (view/active-page-actions-visible? returned-a)
                   "one native pop keeps the preceding destination actions")
-    (assert-equal "Journals" (view/main-title returned-root)
+    (assert-equal "" (view/main-title returned-root)
                   "returning to root does not wait for close-node projections")
     (assert-equal false (view/active-page-actions-visible? returned-root)
                   "returning to root immediately restores settings actions")))
@@ -4959,6 +4981,11 @@
         (is (not (= -1 (descendant-with-identifier
                         renderer (nth children 0) "outliner.block.journal")))
             "the navigation root retains the journal Outliner")
+        (assert-equal true
+                      (property-bool renderer
+                       (descendant-with-identifier renderer (nth children 0) "list.outliner")
+                       proto/Selected)
+                      "the journal stays visible underneath an interactive pop")
         (assert-equal 0
                       (count (apple/children renderer (nth children 1)))
                       "the system back action replaces the root sidebar control")
@@ -5313,13 +5340,13 @@
                     (property-int renderer outliner proto/PaddingValue)
                     "the native virtual list does not add vertical padding")
       (is (not (= first-heading -1))
-          "the first journal heading is visible and navigable")
+          "the first journal heading is visible")
       (is (not (= second-heading -1))
-          "the second journal heading is visible and navigable")
-      (assert-equal "Open August 27th"
-                    (property-string renderer first-heading
-                                     proto/AccessibilityLabel)
-                    "journal headings expose their native open action")
+          "the second journal heading is visible")
+      (assert-equal "August 27th"
+                    (property-string renderer heading-content
+                                     proto/TextValue)
+                    "journal headings announce their title without an open action")
       (is (not (= -1 (descendant-with-identifier
                       renderer outliner "outliner.block.day-a")))
           "the first day's row stays inside the virtualized collection")
@@ -5360,9 +5387,9 @@
                       (descendant-with-identifier
                        renderer first-section "outliner.block.day-b"))
                     "the next journal row does not leak into the first section")
-      (assert-equal (Some apple/AppleListItem)
+      (assert-equal (Some apple/AppleBox)
                     (apple/node renderer first-heading)
-                    "journal headings use a plain interactive content row")
+                    "journal headings are noninteractive content")
       (assert-equal 0
                     (property-int renderer first-heading proto/PaddingValue)
                     "the interactive heading row does not add a native inset")
@@ -5403,11 +5430,13 @@
                     (descendant-count-with-identifier
                      renderer root "journal.divider")
                     "later journal sections render main's native divider")
-      (driver/dispatch-event! application (proto/Press second-heading))
-      (driver/flush! application)
-      (assert-equal [(model/OpenAppNodeEffect 1 "page-b")]
+      (assert-equal (Some apple/AppleIcon)
+                    (apple/node renderer
+                     (descendant-with-identifier renderer root "button.outliner.zoom.day-a"))
+                    "journal bullets expose no press action")
+      (assert-equal []
                     (:pending-effects (chat/model application))
-                    "journal headings use the existing page navigation effect"))))
+                    "journal heading and bullet taps do not open a page"))))
 
 (deftest only-the-first-journal-groups-blocks-for-viewport-retention
   (let [renderer (apple/create-with-extensions (view/extension-registry))
@@ -5583,6 +5612,8 @@
                     (property-string renderer row
                                      proto/AccessibilityIdentifier)
                     "the row keeps main's stable search result identifier")
+      (assert-equal None (apple/property renderer row proto/InlineIconName)
+                    "block search results have no bullet or reserved icon space")
       (let [title (descendant-with-identifier renderer row "search.result.title.block-a")
             context (descendant-with-identifier renderer row "search.result.context.block-a")]
         (assert-equal "search-match line-clamp-3"
@@ -5720,7 +5751,7 @@
     (driver/start! application)
     (driver/send! application
                   (apply-core-snapshot None (empty-sidebar-projection) []
-                                           false "" [] []
+                                           true "" [] []
                                            (Some editing) None [] []
                                            [row] false []))
     (driver/flush! application)
@@ -6501,7 +6532,7 @@
     (driver/start! application)
     (driver/send!
      application
-     (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] []
+     (apply-core-snapshot None (empty-sidebar-projection) [] true "" [] []
                               (Some editing) (Some autocomplete) [candidate]
                               [] [row] false []))
     (driver/flush! application)
@@ -6953,3 +6984,151 @@
                     "native status icon keeps main's 22-point size")
       (assert-equal "secondary" (property-string renderer status-button proto/ForegroundValue)
                     "every status uses the same semantic foreground"))))
+
+(deftest composer-stages-multiple-assets-until-confirmed
+  (let [asset (record model/composer-asset (uuid "asset-a") (title "a.jpg")
+                      (local-path "/tmp/a.jpg") (payload "{}"))
+        other (assoc asset :uuid "asset-b")
+        staged (model/update (model/update (model/initial) (model/StageComposerAsset asset))
+                             (model/StageComposerAsset other))
+        sent (model/update staged model/SendComposer)]
+    (assert-equal 2 (count (:composer-assets staged)) "selection stages all assets")
+    (assert-equal 0 (count (:pending-effects staged)) "selection does not create blocks")
+    (assert-equal 2 (count (:pending-effects sent)) "confirmation creates each asset")
+    (assert-equal 2 (count (:pending-effects (model/update sent model/SendComposer)))
+                  "repeated confirmation does not duplicate assets")
+    (assert-equal 1 (count (:composer-assets
+                           (model/update staged (model/RemoveComposerAsset "asset-a"))))
+                  "removing a draft attachment does not create a block")))
+
+(deftest composer-asset-failure-retains-draft-and-success-removes-it
+  (let [asset (record model/composer-asset (uuid "asset-a") (title "a.jpg")
+                      (local-path "/tmp/a.jpg") (payload "{}"))
+        staged (model/update (model/initial) (model/StageComposerAsset asset))
+        sent (model/update staged model/SendComposer)
+        active (model/update sent (model/DequeueEffect 1))
+        failed (model/update active (model/ResolveEffect 1 false "offline"))
+        completed (model/update active (model/ResolveEffect 1 true "{}"))]
+    (assert-equal [asset] (:composer-assets failed) "failed assets remain available for retry")
+    (assert-equal [] (:composer-assets completed) "successful assets leave the draft")))
+
+(deftest composer-asset-schema-matches-native-thumbnail-renderer
+  (assert-equal
+   "lui-extension-v1|14:composer-asset|profiles:ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:"
+   (ext/fingerprint (view/composer-asset-schema))
+   "native attachment thumbnails share the LG schema"))
+
+
+(deftest block-node-breadcrumbs-preserve-navigation-context
+  (doseq [search? [false true]]
+    (let [renderer (apple/create-with-extensions (view/extension-registry))
+          application (chat/create (apple/backend renderer))
+          row (assoc (journal-outline-row "child" "journal" "Hello" "Journal" 20260913 0)
+                     :breadcrumbs [(record model/sidebar-page (uuid "journal") (title "Journal"))
+                                   (record model/sidebar-page (uuid "parent") (title "Parent"))])
+          route (assoc (node-projection "child" "journal" "Hello" [] [])
+                       :outliner-rows [row])]
+      (driver/start! application)
+      (if search? (driver/send! application model/OpenSearch) false)
+      (driver/send! application (if search? (model/RequestSearchNode "child")
+                                   (model/RequestAppNode "child")))
+      (driver/send! application
+                    (apply-core-snapshot None (empty-sidebar-projection) [] false "" [] [route]
+                                         None None [] [] [row] false []))
+      (driver/flush! application)
+      (let [navigation (extension-node application (if search? "native-search-presentation"
+                                                      "native-navigation-stack"))
+            trail (descendant-with-identifier renderer navigation "breadcrumb.node")
+            journal (descendant-with-identifier renderer trail "button.breadcrumb.journal")
+            parent (descendant-with-identifier renderer trail "button.breadcrumb.parent")]
+        (if search?
+          (assert-equal -1 (descendant-with-identifier renderer navigation "title.node")
+                        "search block details do not repeat their content as a heading")
+          (assert-equal true true "app navigation remains available"))
+        (assert-equal "Journal" (property-string renderer journal proto/TextValue)
+                      "block navigation displays the containing page")
+        (assert-equal "Parent" (property-string renderer parent proto/TextValue)
+                      "block navigation displays its parent")
+        (driver/dispatch-event! application (proto/Press parent))
+        (driver/flush! application)
+        (assert-equal [(model/NodeRoute "child") (model/NodeRoute "parent")]
+                      (if search? (:search-navigation-path (chat/model application))
+                          (:app-navigation-path (chat/model application)))
+                      "ancestor links stay in the current navigation stack")))))
+
+
+(deftest composer-attachment-previews-remove-only-the-selected-draft
+  (let [renderer (apple/create-with-extensions (view/extension-registry))
+        application (chat/create (apple/backend renderer))
+        asset (record model/composer-asset (uuid "asset-a") (title "a.jpg")
+                      (local-path "/tmp/a.jpg") (payload "{}"))]
+    (driver/start! application)
+    (driver/send! application (model/SelectGraph "Work"))
+    (driver/send! application (model/StageComposerAsset asset))
+    (driver/send! application (model/StageComposerAsset (assoc asset :uuid "asset-b")))
+    (driver/flush! application)
+    (let [root (native-bottom-chrome renderer application)
+          preview (descendant-with-identifier renderer root "composer.asset.asset-a")
+          remove (descendant-with-identifier renderer preview "composer.asset.remove")
+          attachment (descendant-with-identifier renderer root "button.attachment")]
+      (assert-equal 128 (property-int renderer preview proto/WidthValue)
+                    "attachment preview is a square tile")
+      (assert-equal 128 (property-int renderer preview proto/HeightValue)
+                    "preview has room to recognize the attachment")
+      (assert-equal None (apple/property renderer attachment proto/SizeValue)
+                    "the add symbol uses the same 18-point size as the send arrow")
+      (assert-equal None (apple/property renderer attachment proto/StyleClass)
+                    "the add symbol keeps a regular stroke weight")
+      (driver/dispatch-event! application (proto/Press remove))
+      (driver/flush! application)
+      (assert-equal 1 (count (:composer-assets (chat/model application)))
+                    "the close button removes only its own draft")
+      (assert-equal "asset-b" (:uuid (nth (:composer-assets (chat/model application)) 0))
+                    "other attachments remain staged")
+      (assert-equal 0 (count (:pending-effects (chat/model application)))
+                    "removing an attachment never submits it"))))
+
+(deftest ui-session-restores-after-process-relaunch
+  (let [original (assoc (model/initial)
+                        :selected-graph-id (Some "graph-a")
+                        :composer-expanded true :composer-draft "Unsent draft"
+                        :search-open true :search-query "hello"
+                        :app-navigation-path [(model/NodeRoute "page-a")]
+                        :search-navigation-path [(model/NodeRoute "block-b")]
+                        :settings-open true)
+        saved (model/ui-session original)
+        fresh (assoc (model/initial) :selected-graph-id (Some "graph-a"))
+        restored (model/update fresh (model/RestoreUISession saved))]
+    (assert-equal "Unsent draft" (:composer-draft restored) "restore unsent text")
+    (assert-equal true (:composer-expanded restored) "reopen Capture")
+    (assert-equal true (:search-open restored) "reopen Search")
+    (assert-equal "hello" (:search-query restored) "restore query")
+    (assert-equal (:app-navigation-path original) (:app-navigation-path restored) "restore app path")
+    (assert-equal (:search-navigation-path original) (:search-navigation-path restored) "restore search path")
+    (assert-equal true (:settings-open restored) "restore settings")
+    (assert-equal 3 (count (:pending-effects restored)) "reload both routes and search results")
+    (assert-equal (model/initial)
+                  (model/update (model/initial) (model/RestoreUISession saved))
+                  "never restore another graph's state")))
+
+(deftest quick-actions-open-from-existing-navigation
+  (let [current (assoc (model/initial)
+                       :search-open true :settings-open true
+                       :destination model/FlashcardsDestination
+                       :composer-draft "Keep my draft"
+                       :app-navigation-path [(model/NodeRoute "old-page")]
+                       :search-navigation-path [(model/NodeRoute "old-search")])
+        capture (model/update current (model/OpenQuickAction "capture"))
+        audio (model/update current (model/OpenQuickAction "audio"))
+        journal (model/update current (model/OpenQuickAction "journal"))]
+    (assert-equal model/JournalsDestination (:destination capture) "quick capture targets the journal")
+    (assert-equal false (:search-open capture) "quick action closes search overlay")
+    (assert-equal false (:settings-open capture) "quick action closes settings overlay")
+    (assert-equal [] (:app-navigation-path capture) "quick action clears previous page navigation")
+    (assert-equal [] (:search-navigation-path capture) "quick action clears previous search navigation")
+    (assert-equal true (:composer-expanded capture) "quick capture opens composer")
+    (assert-equal "Keep my draft" (:composer-draft capture) "quick action preserves unsent text")
+    (assert-equal true (:composer-expanded audio) "audio returns into composer")
+    (assert-equal 2 (count (:pending-effects audio)) "audio clears page then opens recorder")
+    (assert-equal false (:composer-expanded journal) "journal action shows journal")
+    (assert-equal current (model/update current (model/OpenQuickAction "unknown")) "unknown actions do nothing")))

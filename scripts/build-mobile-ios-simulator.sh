@@ -150,7 +150,15 @@ if [[ -d $logseq_resource_bundle ]]; then
     "$repo_root/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
 fi
 
+"$repo_root/scripts/extract-app-intents.sh" LogseqChatShell "$sdk_path" "$triple" \
+  "$deployment_target" "$app_dir" \
+  -I "$swift_build_dir/Modules" \
+  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
+  -I "$repo_root/Sources/LogseqChatCoreABI/include" \
+  "$repo_root/Darwin/Sources/Main.swift" "$repo_root/Darwin/Sources/QuickActions.swift"
+
 codesign --force --sign - --entitlements "$signature_entitlements" \
   --timestamp=none --generate-entitlement-der "$app_dir"
 
+python3 "$repo_root/scripts/verify-ios-shortcuts.py" "$app_dir"
 echo "$app_dir"

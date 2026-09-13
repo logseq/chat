@@ -178,6 +178,9 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
         do {
             switch effect.kind {
+            case "persist-ui-session":
+                UserDefaults.standard.set(effect.text, forKey: "logseq.uiSession")
+                return LGChatEffectResolution(succeeded: true, message: "", output: .discard)
             case "persist-composer-draft":
                 persistComposerDraft(effect.text)
                 return LGChatEffectResolution(
@@ -430,6 +433,19 @@ public protocol LGChatEffectExecuting {
     func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution
 }
 
+private struct LGAssetTranscript: Decodable {
+    let uuid: String
+    let transcript: String?
+    let transcriptUUID: String?
+}
+
+private struct LGAssetTranscriptChild: Encodable {
+    let uuid: String
+    let title: String
+    let parentId: String
+    let now: Int64
+}
+
 private struct LGSendCapturePayload: Encodable {
     let text: String
     let uuid: String
@@ -547,6 +563,11 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
     public func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
         let request: LogseqChatRPCRequest
         switch effect.kind {
+        case "send-asset":
+            request = LogseqChatRPCRequest(
+                method: "dispatch",
+                params: LogseqChatRPCParams(action: "addAsset", payload: effect.text)
+            )
         case "send-capture":
             do {
                 let payload = LGSendCapturePayload(
@@ -764,7 +785,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
                 )
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
-        case "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
+        case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
              "copy-runtime-log", "sign-out",
              "present-attachment", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
@@ -964,7 +985,25 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
         }
 
         let responseJSON = await callCore(request)
-        return Self.resolution(from: responseJSON)
+        let resolution = Self.resolution(from: responseJSON)
+        if effect.kind == "send-asset", resolution.succeeded,
+           let asset = try? JSONDecoder().decode(LGAssetTranscript.self, from: Data(effect.text.utf8)),
+           let title = asset.transcript, !title.isEmpty, let uuid = asset.transcriptUUID {
+            do {
+                let payload = try JSONEncoder().encode(LGAssetTranscriptChild(
+                    uuid: uuid, title: title, parentId: asset.uuid,
+                    now: Int64(Date().timeIntervalSince1970 * 1_000)
+                ))
+                return Self.resolution(from: await callCore(LogseqChatRPCRequest(
+                    method: "dispatch", params: LogseqChatRPCParams(
+                        action: "addChildBlock", payload: String(decoding: payload, as: UTF8.self)
+                    )
+                )))
+            } catch {
+                return LGChatEffectResolution(succeeded: false, message: String(describing: error))
+            }
+        }
+        return resolution
     }
 
     private static func resolution(from responseJSON: String) -> LGChatEffectResolution {
@@ -1429,6 +1468,10 @@ public final class LGChatRuntime {
                     case .discard:
                         break
                     }
+                }
+                if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task") {
+                    // A send may finish while backgrounded; do not restore already submitted drafts.
+                    try apply(native.applyHostUpdate(kind: "save-ui-session", payload: "null"))
                 }
                 lastError = resolution.succeeded ? nil : resolution.message
             } catch {

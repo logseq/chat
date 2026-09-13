@@ -78,6 +78,7 @@ public struct SharedCapturePayload: Sendable, Equatable {
 public enum LogseqDeepLink: Sendable, Equatable {
     case captureText(String)
     case openCapture
+    case openAudio
     case openJournal
 
     public init?(_ url: URL) {
@@ -88,6 +89,7 @@ public enum LogseqDeepLink: Sendable, Equatable {
         } else {
             switch url.host?.lowercased() {
             case "capture": self = .openCapture
+            case "audio": self = .openAudio
             case "journal": self = .openJournal
             default: return nil
             }

@@ -52,7 +52,9 @@ enum LGChatIconPolicy {
         var result: [String: LUIAppleIconSource] = [
             "calendar": .assetName("calendar"),
             "add": .assetName("plus"),
+            "composer-add": .systemName("plus"),
             "arrow-up": .systemName("arrow.up"),
+            "close": .assetName("close"),
             "chevron-down": .assetName("chevron_down"),
             "document": .assetName("document"),
             "disclosure-down": .assetName("disclosure_down"),

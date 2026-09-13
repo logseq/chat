@@ -844,20 +844,27 @@ public final class LUIAppleBackend {
 
     private func syncModalPresentation() {
         var presentation: LUIModalPresentation?
+        var nestedSheets: [Int: LUIModalPresentation] = [:]
         var visited = Set<Int>()
 
-        func visit(_ nodeID: Int, rootID: Int, dialogAnchorID: Int?) {
+        func visit(_ nodeID: Int, rootID: Int, dialogAnchorID: Int?, parentSheetID: Int?) {
             guard visited.insert(nodeID).inserted else { return }
             if let model = models[nodeID] {
                 if model.kind == .dialog || model.kind == .sheet {
-                    presentation = LUIModalPresentation(
+                    let item = LUIModalPresentation(
                         model: model,
                         rootID: rootID,
                         anchorID: model.kind == .dialog
                             ? (dialogAnchorID ?? rootID)
                             : rootID
                     )
+                    if model.kind == .sheet, let parentSheetID {
+                        nestedSheets[parentSheetID] = item
+                    } else {
+                        presentation = item
+                    }
                 }
+                let childSheetID = model.kind == .sheet ? model.id : parentSheetID
                 let childDialogAnchorID = model.kind == .list
                     ? model.id
                     : dialogAnchorID
@@ -865,19 +872,20 @@ public final class LUIAppleBackend {
                     visit(
                         childID,
                         rootID: rootID,
-                        dialogAnchorID: childDialogAnchorID
+                        dialogAnchorID: childDialogAnchorID, parentSheetID: childSheetID
                     )
                 }
             } else if let model = extensionModels[nodeID] {
                 for childID in model.children {
-                    visit(childID, rootID: rootID, dialogAnchorID: dialogAnchorID)
+                    visit(childID, rootID: rootID, dialogAnchorID: dialogAnchorID, parentSheetID: parentSheetID)
                 }
             }
         }
 
         for rootID in rootIDs {
-            visit(rootID, rootID: rootID, dialogAnchorID: nil)
+            visit(rootID, rootID: rootID, dialogAnchorID: nil, parentSheetID: nil)
         }
+        modalPresentation.nestedSheets = nestedSheets
         modalPresentation.synchronize(with: presentation)
     }
 

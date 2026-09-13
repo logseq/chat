@@ -8,6 +8,14 @@
             [logseq-chat.model :as model]
             [signal.core :as signal]))
 
+(defn composer-asset-schema []
+  (ext/component "composer-asset"
+   [(proto/profile proto/MacOS proto/SwiftUIHost)
+    (proto/profile proto/IOS proto/SwiftUIHost)]
+   false []
+   [(ext/property "title" ext/StringScalar true None)
+    (ext/property "local-path" ext/StringScalar true None)] []))
+
 (defn outliner-editor-schema []
   (ext/component
    "outliner-editor"
@@ -119,6 +127,7 @@
   (let [registry (ext/registry)]
     (ext/register-component! registry (outliner-editor-schema))
     (ext/register-component! registry (outliner-block-content-schema))
+    (ext/register-component! registry (composer-asset-schema))
     (ext/register-component! registry (native-navigation-stack-schema))
     (ext/register-component! registry (native-search-presentation-schema))
     (ext/register-component! registry (native-overflow-menu-schema))
@@ -326,14 +335,15 @@
     None "No graph selected"))
 
 (defn sync-label [current]
-  (if (or (:has-pending-semantic-operations current)
-          (:has-pending-sync-request current))
-    "Syncing"
-    (match (:sync-state current)
-      OfflineState "Offline"
-      SyncingState "Syncing"
-      SyncedState "Up to date"
-      (FailedState reason) (str "Sync failed: " reason))))
+  (match (:sync-state current)
+    OfflineState "Offline"
+    (FailedState reason) (str "Sync failed: " reason)
+    _ (if (or (:has-pending-semantic-operations current)
+              (:has-pending-sync-request current))
+        "Syncing"
+        (match (:sync-state current)
+          SyncedState "Up to date"
+          _ "Syncing"))))
 
 (defn sync-indicator-label [current]
   (match (:sync-state current)
@@ -665,7 +675,9 @@
   (not (:composer-expanded current)))
 
 (defn composer-send-disabled? [current]
-  (string/blank? (:composer-draft current)))
+  (or (model/composer-assets-sending? current)
+      (and (string/blank? (:composer-draft current))
+           (empty? (:composer-assets current)))))
 
 (defn task-status-identifier [status]
   (str "button.task-status.option." (:uuid status)))
@@ -754,10 +766,6 @@
 (defn search-result-context-present? [hit]
   (not (string/blank? (:breadcrumb hit))))
 
-(defn search-result-icon [hit]
-  (let [_breadcrumb (:breadcrumb hit)]
-    (if (:is-page hit) "app:document" "app:outliner-bullet")))
-
 (defn search-empty-message [current]
   (if (string/blank? (:search-query current))
     "Search your graph"
@@ -769,12 +777,11 @@
     "Try a different keyword."))
 
 (defn search-result-row [ui-context hit-source send]
-  (let [hit (signal/sample hit-source)]
-    (elements/element
+  (let [hit (signal/sample hit-source)
+        row (elements/element
      ui-context nil
      [:list-item
       {:accessibility-identifier (search-result-identifier hit)
-       :icon (reactive search-result-icon hit-source)
        :on-press
        (event [current-hit hit-source]
               (send (model/RequestSearchNode (:uuid current-hit))))}
@@ -786,7 +793,11 @@
         [:text {:value (reactive search-result-breadcrumb hit-source)
                 :class "caption single-line"
                 :foreground "muted-foreground"
-                :accessibility-identifier (str "search.result.context." (:uuid hit))}]]]])))
+                :accessibility-identifier (str "search.result.context." (:uuid hit))}]]]])]
+    (if (:is-page hit)
+      (ui/string-property! ui-context row proto/InlineIconName "app:document")
+      false)
+    row))
 
 (defn outliner-row-identifier [row]
   (let [_depth (:depth row)]
@@ -1105,6 +1116,18 @@
     (Some route) (:uuid route)
     None ""))
 
+(defn active-node-breadcrumbs [current]
+  (match (active-node-projection current)
+    (Some route)
+    (match (first (filterv (fn [row] (= (:uuid row) (:uuid route)))
+                          (:outliner-rows route)))
+      (Some row) (:breadcrumbs row)
+      None [])
+    None []))
+
+(defn active-node-has-breadcrumbs? [current]
+  (not (empty? (active-node-breadcrumbs current))))
+
 (defn active-node-title [current]
   (match (active-node-projection current)
     (Some route) (:title route)
@@ -1117,7 +1140,7 @@
       "Graphs"
       (match (model/active-page current)
         (Some page) (:title page)
-        None "Journals"))))
+        None ""))))
 
 (defn current-content-active? [current]
   (match (active-node-projection current)
@@ -1182,7 +1205,9 @@
 
 (defn node-title-visible? [current]
   (and (node-outliner-visible? current)
-       (not (current-content-is-tag? current))))
+       (not (current-content-is-tag? current))
+       (not (and (:search-open current)
+                 (not (= (active-node-uuid current) (active-node-page-uuid current)))))))
 
 (defn main-can-add-first-block? [current]
   (and (journal-root-visible? current)
@@ -1219,7 +1244,7 @@
 (defn breadcrumb-title [breadcrumb]
   (:title breadcrumb))
 
-(defn breadcrumb-button [ui-context breadcrumb-source send]
+(defn breadcrumb-button [ui-context breadcrumb-source search-open send]
   (let [breadcrumb (signal/sample breadcrumb-source)]
     (elements/element
      ui-context nil
@@ -1231,7 +1256,23 @@
        :accessibility-identifier (breadcrumb-identifier breadcrumb)
        :on-press
        (event [current-breadcrumb breadcrumb-source]
-              (send (model/RequestAppNode (:uuid current-breadcrumb))))}])))
+              (send (if search-open
+                      (model/RequestSearchNode (:uuid current-breadcrumb))
+                      (model/RequestAppNode (:uuid current-breadcrumb)))))}])))
+
+(defn node-breadcrumb-button [ui-context model-source breadcrumb-source send]
+  (let [search-open (:search-open (signal/sample model-source))]
+    (breadcrumb-button ui-context breadcrumb-source search-open send)))
+
+(defui node-breadcrumbs [model-source send]
+  [:breadcrumb {:gap 5 :main "start"
+                :accessibility-identifier "breadcrumb.node"}
+   [:keyed
+    {:source (reactive active-node-breadcrumbs model-source)
+     :key :uuid
+     :compare compare
+     :as breadcrumb-source}
+    [node-breadcrumb-button model-source breadcrumb-source send]]])
 
 (defui related-row-breadcrumbs [row-source send]
   [:breadcrumb {:gap 5 :main "start"
@@ -1241,7 +1282,7 @@
      :key :uuid
      :compare compare
      :as breadcrumb-source}
-    [breadcrumb-button breadcrumb-source send]]])
+    [breadcrumb-button breadcrumb-source false send]]])
 
 (defn editing-title [current]
   (match (:outliner-editing current)
@@ -1404,50 +1445,72 @@
        (event [current-tag tag-source]
               (send (model/RequestAppNode (:uuid current-tag))))}])))
 
+(defn outliner-row-journal? [row]
+  (match (:journal-day row) (Some day) (> day 0) None false))
+
 (defn outliner-zoom-control [ui-context row-source send search-open]
   (let [row (signal/sample row-source)]
-    (if (= (ui/host ui-context) proto/FlutterHost)
-      (elements/element
-       ui-context nil
-       [:stack {:width 24 :height 24}
-        [:row {:width 24 :height 24 :main "center" :cross "center"}
-         [:box
-          {:width 7
-           :height 7
-           :corner-radius 4
-           :background "border"
+    (if (and (not search-open)
+             (outliner-row-journal? row))
+      (if (= (ui/host ui-context) proto/FlutterHost)
+        (elements/element
+         ui-context nil
+         [:row {:width 24 :height 24 :main "center" :cross "center"}
+          [:box {:width 7 :height 7 :corner-radius 4 :background "border"
+                 :accessibility-identifier
+                 (str "outliner.bullet-glyph." (outliner-row-uuid row))}]])
+        (elements/element
+         ui-context nil
+         [:icon
+          {:name "app:outliner-bullet"
+           :class "body-line"
+           :foreground "border"
+           :width 24
+           :height 24
            :accessibility-identifier
-           (str "outliner.bullet-glyph." (outliner-row-uuid row))}]]
-        [:button
-         {:label (reactive outliner-row-zoom-label row-source)
-          :variant "ghost"
-          :width 24
-          :height 24
-          :accessibility-identifier
-          (str "button.outliner.zoom." (outliner-row-uuid row))
-          :on-press
-          (event [current-row row-source]
-                 (if search-open
-                   (send (model/RequestSearchNode (:uuid current-row)))
-                   (send (model/RequestAppNode (:uuid current-row)))))}]])
-      (elements/element
-       ui-context nil
-       [:button
-        {:label (reactive outliner-row-zoom-label row-source)
-         :icon "app:outliner-bullet"
-         :size "icon"
-         :class "body-line"
-         :variant "ghost"
-         :foreground "border"
-         :width 24
-         :height 24
-         :accessibility-identifier
-         (str "button.outliner.zoom." (outliner-row-uuid row))
-         :on-press
-         (event [current-row row-source]
-                (if search-open
-                  (send (model/RequestSearchNode (:uuid current-row)))
-                  (send (model/RequestAppNode (:uuid current-row)))))}]))))
+           (str "button.outliner.zoom." (outliner-row-uuid row))}]))
+      (if (= (ui/host ui-context) proto/FlutterHost)
+        (elements/element
+         ui-context nil
+         [:stack {:width 24 :height 24}
+          [:row {:width 24 :height 24 :main "center" :cross "center"}
+           [:box
+            {:width 7
+             :height 7
+             :corner-radius 4
+             :background "border"
+             :accessibility-identifier
+             (str "outliner.bullet-glyph." (outliner-row-uuid row))}]]
+          [:button
+           {:label (reactive outliner-row-zoom-label row-source)
+            :variant "ghost"
+            :width 24
+            :height 24
+            :accessibility-identifier
+            (str "button.outliner.zoom." (outliner-row-uuid row))
+            :on-press
+            (event [current-row row-source]
+                   (if search-open
+                     (send (model/RequestSearchNode (:uuid current-row)))
+                     (send (model/RequestAppNode (:uuid current-row)))))}]])
+        (elements/element
+         ui-context nil
+         [:button
+          {:label (reactive outliner-row-zoom-label row-source)
+           :icon "app:outliner-bullet"
+           :size "icon"
+           :class "body-line"
+           :variant "ghost"
+           :foreground "border"
+           :width 24
+           :height 24
+           :accessibility-identifier
+           (str "button.outliner.zoom." (outliner-row-uuid row))
+           :on-press
+           (event [current-row row-source]
+                  (if search-open
+                    (send (model/RequestSearchNode (:uuid current-row)))
+                    (send (model/RequestAppNode (:uuid current-row)))))}])))))
 
 (defn outliner-status-control
   [ui-context model-source row-source send]
@@ -1625,36 +1688,29 @@
 
 (defn outliner-entry
   [ui-context model-source retained-row-source row-source send]
-  (let [journal-page-id-source
-        (reactive outliner-journal-page-id model-source row-source)]
-    (elements/element
-     ui-context nil
-     [:column {:padding-horizontal 8}
-      [:if {:test
-            (reactive outliner-journal-divider-visible?
-                      model-source row-source)}
-       [:separator {:accessibility-identifier "journal.divider"}]]
-      [:if {:test
-            (reactive outliner-journal-heading-visible?
-                      model-source row-source)}
-       [:list-item
-        {:label (reactive outliner-journal-accessibility-label
-                          model-source row-source)
-         :padding 0
-         :accessibility-identifier-signal
-         (reactive outliner-journal-button-identifier
-                   model-source row-source)
-         :on-press
-         (event [page-id journal-page-id-source]
-                (send (model/RequestAppNode page-id)))}
-        [:box {:padding-horizontal 8 :padding-vertical 12}
-         [:box {:height 14}]
-         [:heading
-          {:level 3
-           :class "scroll-section-title"
-           :value (reactive outliner-journal-title
-                            model-source row-source)}]]]]
-      [outliner-row model-source retained-row-source row-source send]])))
+  (elements/element
+   ui-context nil
+   [:column {:padding-horizontal 8}
+    [:if {:test
+          (reactive outliner-journal-divider-visible?
+                    model-source row-source)}
+     [:separator {:accessibility-identifier "journal.divider"}]]
+    [:if {:test
+          (reactive outliner-journal-heading-visible?
+                    model-source row-source)}
+     [:box
+      {:padding 0
+       :accessibility-identifier-signal
+       (reactive outliner-journal-button-identifier
+                 model-source row-source)}
+      [:box {:padding-horizontal 8 :padding-vertical 12}
+       [:box {:height 14}]
+       [:heading
+        {:level 3
+         :class "scroll-section-title"
+         :value (reactive outliner-journal-title
+                          model-source row-source)}]]]]
+    [outliner-row model-source retained-row-source row-source send]]))
 
 (defn outliner-first-journal-section [ui-context model-source send]
   (if (= (ui/host ui-context) proto/FlutterHost)
@@ -2158,6 +2214,9 @@
    [:scroll {:grow 1.0 :accessibility-identifier "scroll.outliner"}
     [:column {:gap 0 :padding-horizontal 8}
      [:box {:height 16}]
+     [:if {:test (reactive active-node-has-breadcrumbs? model-source)}
+      [:box {:padding-horizontal 8}
+       [node-breadcrumbs model-source send]]]
      [:if {:test (reactive node-title-visible? model-source)}
       [:column {:gap 0}
        [:box {:height 26}]
@@ -2225,9 +2284,8 @@
     (elements/element
      ui-context nil
      [:button
-      {:icon "app:add"
+      {:icon "app:composer-add"
        :variant "ghost"
-       :size "icon"
        :width 32
        :height 32
        :label "Add attachment"
@@ -2309,11 +2367,11 @@
   [:button
    {:icon "app:arrow-up"
     :variant "ghost"
-    :width 40
-    :height 40
+    :width 36
+    :height 36
     :background "black"
     :foreground "white"
-    :corner-radius 20
+    :corner-radius 18
     :label "Send"
     :accessibility-identifier "button.send"
     :disabled disabled-source
@@ -2362,6 +2420,38 @@
        :on-press (fn [_event] (send model/ExpandComposer))}
       "Capture"])))
 
+(defn composer-asset-title [asset] (:title asset))
+(defn composer-asset-path [asset] (:local-path asset))
+(defn composer-asset-identifier [asset] (str "composer.asset." (:uuid asset)))
+
+(defn composer-asset-preview [ui-context asset-source]
+  (let [node (ui/extension! ui-context "composer-asset")]
+    (ui/extension-property-signal! ui-context node "title"
+     (reactive string-wire-value (reactive composer-asset-title asset-source)))
+    (ui/extension-property-signal! ui-context node "local-path"
+     (reactive string-wire-value (reactive composer-asset-path asset-source)))
+    node))
+
+(defn composer-asset-view [ui-context asset-source send]
+  (let [asset (signal/sample asset-source)]
+    (elements/element ui-context nil
+     [:stack {:width 128 :height 128
+              :accessibility-identifier (composer-asset-identifier asset)}
+      [composer-asset-preview asset-source]
+      [:column {:width 128 :height 128 :padding 4 :main "start"}
+       [:row {:main "end" :height 24}
+        [:button {:icon "app:close" :variant "ghost" :size "sm"
+                  :width 24 :height 24 :corner-radius 12
+                  :background "muted-foreground" :foreground "white"
+                  :label "Remove attachment"
+                  :accessibility-identifier "composer.asset.remove"
+                  :on-press (event [current-asset asset-source]
+                             (send (model/RemoveComposerAsset (:uuid current-asset))))}]]
+       [:spacer {:grow 1.0}]]])))
+
+(defn composer-assets-present? [current]
+  (not (empty? (:composer-assets current))))
+
 (defui composer-view [model-source send]
   [:box
    {:accessibility-identifier "surface.composer.root"
@@ -2371,21 +2461,29 @@
     [:column
      {:ios [[:liquid-glass {:shape "rounded-rectangle"}]]
       :grow 1.0
+      :main "end"
       :gap 0
       :padding-horizontal (if (host? proto/FlutterHost) 12 16)
       :padding-vertical (if (host? proto/FlutterHost) 12 8)
       :background (if (host? proto/FlutterHost)
                     "surface-container-high"
                     "glass-fallback")
-      :corner-radius (if (host? proto/FlutterHost) 24 10)
+      :corner-radius 24
       :on-press (fn [_event] (send model/FocusComposer))}
      [:box
       {:height 6
        :accessibility-identifier "spacer.composer.top"}]
+     [:if {:test (reactive composer-assets-present? model-source)}
+      [:scroll {:orientation "horizontal" :height 140}
+       [:row {:gap 8}
+        [:keyed {:source (reactive :composer-assets model-source)
+                 :key :uuid :compare compare :as asset-source}
+         [composer-asset-view asset-source send]]]]]
      [:textarea
       {:text (reactive :composer-draft model-source)
        :autofocus (reactive :composer-autofocus model-source)
        :min-height 36
+       :class "composer-input"
        :placeholder "Capture"
        :label "Capture"
        :accessibility-identifier "field.composer"
@@ -2401,6 +2499,7 @@
        :accessibility-identifier "spacer.composer.field-controls"}]
      [:row
       {:gap 8
+       :height 44
        :cross-alignment "center"
        :accessibility-identifier "row.composer.controls"}
       [composer-attachment-button send]
@@ -4270,6 +4369,10 @@
        :accessibility-identifier "sheet.settings"
        :on-dismiss (fn [_event] (send model/DismissSettings))}
       [settings-screen model-source send]
+      [:if {:test (reactive settings-tabs-visible? model-source)}
+       [settings-tabs-sheet model-source send]]
+      [:if {:test (reactive runtime-log-visible? model-source)}
+       [runtime-log-sheet model-source send]]
       [:toolbar
        {:orientation "horizontal"
         :label "Settings actions"
@@ -4295,7 +4398,7 @@
       {:text "Tabs"
        :class "navigation-content"
        :accessibility-identifier "sheet.settings"
-       :on-dismiss (fn [_event] (send model/DismissSettings))}
+       :on-dismiss (fn [_event] (send model/BackSettings))}
       [:column
        {:grow 1.0
         :accessibility-identifier "layout.settings.tabs-sheet"}
@@ -4316,8 +4419,8 @@
      [:sheet
       {:text "Tabs"
        :class "navigation-list"
-       :accessibility-identifier "sheet.settings"
-       :on-dismiss (fn [_event] (send model/DismissSettings))}
+       :accessibility-identifier "sheet.settings.tabs"
+       :on-dismiss (fn [_event] (send model/BackSettings))}
       [settings-tabs-screen model-source send]
       [:toolbar
        {:orientation "horizontal"
@@ -4390,19 +4493,22 @@
      [:sheet
       {:text "Log"
        :class "navigation-content"
-       :accessibility-identifier "sheet.settings"
+       :accessibility-identifier "sheet.settings.log"
        :on-dismiss (fn [_event] (send model/DismissRuntimeLog))}
       [runtime-log-screen model-source send]
       [runtime-log-actions send]])))
 
 (defui settings-sheet [model-source send]
-  [:stack
-   [:if {:test (reactive settings-main-visible? model-source)}
-    [settings-main-sheet model-source send]]
-   [:if {:test (reactive settings-tabs-visible? model-source)}
-    [settings-tabs-sheet model-source send]]
-   [:if {:test (reactive runtime-log-visible? model-source)}
-    [runtime-log-sheet model-source send]]])
+  (if (host? proto/FlutterHost)
+    (elements/element ui-context nil
+     [:stack
+      [:if {:test (reactive settings-main-visible? model-source)}
+       [settings-main-sheet model-source send]]
+      [:if {:test (reactive settings-tabs-visible? model-source)}
+       [settings-tabs-sheet model-source send]]
+      [:if {:test (reactive runtime-log-visible? model-source)}
+       [runtime-log-sheet model-source send]]])
+    (settings-main-sheet ui-context model-source send)))
 
 (defui page-delete-dialog [send]
   [:dialog
@@ -4638,18 +4744,19 @@
       [:if {:test (reactive bottom-chrome-expanded-composer? model-source)}
        [:column
         {:container-relative-frame "horizontal"
+         :cross "stretch"
          :gap 0
          :padding-horizontal 16}
         [:box {:height 6}]
         [:row
-         {:grow 1.0
-          :cross "center"
+         {:cross "center"
           :accessibility-identifier "row.composer.placement"}
          [composer-view model-source send]]
         [:box {:height 21}]]]
       [:if {:test (reactive bottom-chrome-capture-and-search? model-source)}
        [:column
         {:container-relative-frame "horizontal"
+         :cross "stretch"
          :gap 0
          :padding-horizontal 16}
         [:box {:height 8}]
@@ -4742,7 +4849,12 @@
      [:box {:grow 1.0 :accessibility-identifier "pane.journals"}
       [root-outliner-view
        (reactive journal-navigation-model model-source)
-       (reactive journal-home-visible? model-source)
+       (reactive
+        (fn [current]
+          (journal-home-visible?
+           (assoc current :node-routes [] :app-navigation-path []
+                          :search-open false :search-navigation-path [])))
+        model-source)
        send]])))
 
 (defui journal-tree-panes [model-source send]

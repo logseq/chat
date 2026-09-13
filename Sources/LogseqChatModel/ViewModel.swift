@@ -1036,81 +1036,86 @@ private struct DeletePagePayload: Encodable {
             )
             let socket = URLSession.shared.webSocketTask(with: request)
             socket.maximumMessageSize = 64 * 1024 * 1024
-            socket.resume()
-            defer { socket.cancel(with: .goingAway, reason: nil) }
-            await dispatchRawAndWait("startWebSocket")
-            guard lastError == nil else { return false }
-            syncError = nil
-            isSnapshotRefreshDeferred = false
-            syncPendingSoon()
-            try await socket.send(.string(
-                try LogseqGraphWebSocketProtocol.entityPullMessage(since: cursor)
-            ))
-            var pullInFlight = true
-            var latestNotifiedServerT = cursor
-            eventStream: while !Task.isCancelled {
-                let message = try await socket.receive()
-                let text: String
-                switch message {
-                case .string(let value): text = value
-                case .data(let data):
-                    guard let value = String(data: data, encoding: .utf8) else {
-                        throw URLError(.cannotDecodeContentData)
+            return try await withTaskCancellationHandler {
+                socket.resume()
+                defer { socket.cancel(with: .goingAway, reason: nil) }
+                await dispatchRawAndWait("startWebSocket")
+                guard lastError == nil else { return false }
+                syncError = nil
+                isSnapshotRefreshDeferred = false
+                syncPendingSoon()
+                try await socket.send(.string(
+                    try LogseqGraphWebSocketProtocol.entityPullMessage(since: cursor)
+                ))
+                var pullInFlight = true
+                var latestNotifiedServerT = cursor
+                eventStream: while !Task.isCancelled {
+                    let message = try await socket.receive()
+                    let text: String
+                    switch message {
+                    case .string(let value): text = value
+                    case .data(let data):
+                        guard let value = String(data: data, encoding: .utf8) else {
+                            throw URLError(.cannotDecodeContentData)
+                        }
+                        text = value
+                    @unknown default:
+                        throw URLError(.cannotParseResponse)
                     }
-                    text = value
-                @unknown default:
-                    throw URLError(.cannotParseResponse)
-                }
-                guard let data = text.data(using: .utf8),
-                      let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let type = envelope["type"] as? String else {
-                    throw URLError(.cannotParseResponse)
-                }
-                switch type {
-                case "graph-changes", "reset":
-                    await dispatchRawAndWait("applySyncEvent", payload: text)
-                    if lastError != nil { break eventStream }
-                    pullInFlight = false
-                    syncPendingSoon()
-                    if lastError != nil { break eventStream }
-                    if stopAfterFirstFrame { break eventStream }
-                    let currentCursor: Int = snapshot.appliedServerT ?? -1
-                    if currentCursor >= 0 && latestNotifiedServerT > currentCursor {
+                    guard let data = text.data(using: .utf8),
+                          let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let type = envelope["type"] as? String else {
+                        throw URLError(.cannotParseResponse)
+                    }
+                    switch type {
+                    case "graph-changes", "reset":
+                        await dispatchRawAndWait("applySyncEvent", payload: text)
+                        if lastError != nil { break eventStream }
+                        pullInFlight = false
+                        syncPendingSoon()
+                        if lastError != nil { break eventStream }
+                        if stopAfterFirstFrame { break eventStream }
+                        let currentCursor: Int = snapshot.appliedServerT ?? -1
+                        if currentCursor >= 0 && latestNotifiedServerT > currentCursor {
+                            try await socket.send(.string(
+                                try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
+                            ))
+                            pullInFlight = true
+                        }
+                    case "changed":
+                        if let serverT = envelope["t"] as? Int {
+                            latestNotifiedServerT = max(latestNotifiedServerT, serverT)
+                        }
+                        guard !pullInFlight else { continue }
+                        let currentCursor: Int = snapshot.appliedServerT ?? -1
+                        guard currentCursor >= 0 else {
+                            throw URLError(.cannotParseResponse)
+                        }
                         try await socket.send(.string(
                             try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
                         ))
                         pullInFlight = true
+                    case "error":
+                        throw URLError(.badServerResponse)
+                    default:
+                        continue
                     }
-                case "changed":
-                    if let serverT = envelope["t"] as? Int {
-                        latestNotifiedServerT = max(latestNotifiedServerT, serverT)
-                    }
-                    guard !pullInFlight else { continue }
-                    let currentCursor: Int = snapshot.appliedServerT ?? -1
-                    guard currentCursor >= 0 else {
-                        throw URLError(.cannotParseResponse)
-                    }
-                    try await socket.send(.string(
-                        try LogseqGraphWebSocketProtocol.entityPullMessage(since: currentCursor)
-                    ))
-                    pullInFlight = true
-                case "error":
-                    throw URLError(.badServerResponse)
-                default:
-                    continue
                 }
-            }
-            let streamError = lastError
-            if streamError?.code == "snapshot_required" {
-                lastError = nil
-            }
-            await dispatchRawAndWait("stopWebSocket")
-            if let streamError {
-                if streamError.code == "snapshot_required" {
-                    return true
+                let streamError = lastError
+                if streamError?.code == "snapshot_required" {
+                    lastError = nil
                 }
-                lastError = nil
-                syncError = streamError
+                await dispatchRawAndWait("stopWebSocket")
+                if let streamError {
+                    if streamError.code == "snapshot_required" {
+                        return true
+                    }
+                    lastError = nil
+                    syncError = streamError
+                }
+                return false
+            } onCancel: {
+                socket.cancel(with: .goingAway, reason: nil)
             }
         } catch {
             await dispatchRawAndWait("stopWebSocket")

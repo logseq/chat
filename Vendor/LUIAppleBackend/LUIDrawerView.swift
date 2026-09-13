@@ -6,7 +6,7 @@ enum LUIDrawerGeometry {
         translationX: Double,
         translationY: Double
     ) -> Bool {
-        enabled && abs(translationX) > abs(translationY)
+        enabled && abs(translationX) >= 18 && abs(translationX) > abs(translationY) * 2
     }
 
     static func dragOffset(
@@ -100,6 +100,7 @@ struct LUIDrawerView: View {
     @State private var hasLoadedPanel: Bool
     @State private var dragOffset: CGFloat = 0
     @State private var isGestureActive = false
+    @State private var rejectedGesture = false
     @State private var isAnimating = false
     @State private var transitionGeneration = 0
     #if DEBUG
@@ -229,6 +230,7 @@ struct LUIDrawerView: View {
             if !enabled {
                 dragOffset = 0
                 isGestureActive = false
+                rejectedGesture = false
                 if !isAnimating {
                     backend.setDrawerInteractionLocked(false, node: model.id)
                 }
@@ -241,10 +243,16 @@ struct LUIDrawerView: View {
     }
 
     private func drawerGesture(width: CGFloat) -> some Gesture {
-        let gesture = DragGesture(minimumDistance: 3, coordinateSpace: .global)
+        let gesture = DragGesture(minimumDistance: 10, coordinateSpace: .global)
         return gesture
             .onChanged { value in
-                guard !isAnimating else { return }
+                guard !isAnimating, !rejectedGesture else { return }
+                // Once a drag commits to scrolling, never turn it into a drawer swipe.
+                if !isGestureActive, abs(value.translation.height) >= 10,
+                   abs(value.translation.width) <= abs(value.translation.height) * 2 {
+                    rejectedGesture = true
+                    return
+                }
                 let activationAllowed = presented || model.isEnabled
                 let gestureIsEligible = LUIDrawerGeometry.gestureIsEligible(
                     enabled: activationAllowed,
@@ -269,6 +277,7 @@ struct LUIDrawerView: View {
                 }
             }
             .onEnded { value in
+                rejectedGesture = false
                 guard !isAnimating else { return }
                 guard isGestureActive else {
                     dragOffset = 0

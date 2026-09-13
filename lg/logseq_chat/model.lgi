@@ -14,6 +14,25 @@
   (FlashcardsDestination)
   (GraphsDestination))
 
+(type-record composer-asset
+  (uuid :string)
+  (title :string)
+  (local-path :string)
+  (payload :string))
+
+(type-record ui-session
+  (graph-id :option<string>)
+  (destination :primary-destination)
+  (draft :string)
+  (assets :vector<composer-asset>)
+  (composer-expanded :bool)
+  (search-open :bool)
+  (query :string)
+  (app-path :vector<navigation-route>)
+  (search-path :vector<navigation-route>)
+  (selected-page-id :option<string>)
+  (settings-open :bool))
+
 (type-record sidebar-page
   (uuid :string)
   (title :string))
@@ -187,8 +206,10 @@
 
 (type-variant chat-effect
   (SendCaptureEffect :int :string)
+  (SendAssetEffect :int :composer-asset)
   (SendTaskEffect :int :string :task-status)
   (PersistComposerDraftEffect :int :string)
+  (PersistUISessionEffect :int :ui-session)
   (PresentAttachmentEffect :int :string)
   (PresentAssetEffect :int :string :string :string)
   (PresentPageShareEffect :int :string :vector<string>)
@@ -303,6 +324,7 @@
   (has-older-journals :bool)
   (composer-expanded :bool)
   (composer-draft :string)
+  (composer-assets :vector<composer-asset>)
   (composer-autofocus :bool)
   (pending-effects :vector<chat-effect>)
   (in-flight-effects :vector<chat-effect>)
@@ -340,9 +362,13 @@
   (ExpandComposer)
   (FocusComposer)
   (ApplyComposerDraft :string)
+  (SaveUISession)
+  (RestoreUISession :ui-session)
   (ChangeComposerDraft :string)
   (DismissComposer)
   (SendComposer)
+  (StageComposerAsset :composer-asset)
+  (RemoveComposerAsset :string)
   (DequeueEffect :int)
   (ResolveEffect :int :bool :string)
   (OpenAttachmentPicker)
@@ -366,6 +392,7 @@
   (DismissGraphMenu)
   (SelectSidebarGraph :string)
   (SelectSidebarPage :string)
+  (OpenQuickAction :string)
   (ShowJournals)
   (ShowFlashcards)
   (ShowGraphs)
@@ -586,3 +613,11 @@
 (signature logseq-chat.model/remove-composer-draft-effects
  :fn<vector<chat-effect>;vector<chat-effect>>)
 (signature logseq-chat.model/update :fn<chat-model;chat-action;chat-model>)
+
+(signature logseq-chat.model/editing-sync-state :fn<chat-model;sync-state>)
+
+(signature logseq-chat.model/composer-assets-sending? :fn<chat-model;bool>)
+
+(signature logseq-chat.model/ui-session :fn<chat-model;ui-session>)
+(signature logseq-chat.model/restore-session-routes :fn<chat-model;vector<navigation-route>;bool;chat-model>)
+(signature logseq-chat.model/restore-ui-session :fn<chat-model;ui-session;chat-model>)
