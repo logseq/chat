@@ -1,5 +1,4 @@
 module Sync_session = Logseq_chat_sync_session
-module Checkpoint = Logseq_chat_sync_checkpoint
 module E2ee_keyring = Logseq_chat_e2ee_keyring
 
 let () =
@@ -20,7 +19,7 @@ let e2ee_keyring =
 
 type graph_runtime =
   { conn : Datascript.conn
-  ; state : Logseq_chat_sync_state.t
+  ; state : Sync_session.state
   ; checkpoint_path : string
   ; graph_id : string
   ; e2ee : bool
@@ -78,7 +77,7 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
   in
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
   let ( let* ) = bind in
-  let* checkpoint = Checkpoint.load checkpoint_path in
+  let* checkpoint = Sync_session.load_checkpoint checkpoint_path in
   report "checkpoint_loaded";
   let* checkpoint =
     match checkpoint with
@@ -95,7 +94,7 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
   in
   report "encryption_ready";
   let state =
-    Logseq_chat_sync_state.create
+    Sync_session.create_state
       ~graph_id
       ~schema_version:checkpoint.schema_version
       ~applied_server_t:checkpoint.applied_server_t
@@ -209,7 +208,7 @@ let apply_sync_event payload =
 
 let sync_cursor () =
   match !graph_runtime with
-  | Some runtime -> Some (Logseq_chat_sync_state.applied_server_t runtime.state)
+  | Some runtime -> Some (Sync_session.applied_server_t runtime.state)
   | None -> None
 ;;
 

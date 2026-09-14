@@ -1,6 +1,26 @@
 module Snapshot = Logseq_chat_snapshot
 module Store = Logseq_chat_graph_store
-module Checkpoint = Logseq_chat_sync_checkpoint
+module LG = Logseq_chat_lg_core_native
+
+type checkpoint = LG.sync_checkpoint =
+  { graph_id : string
+  ; schema_version : string
+  ; applied_server_t : int
+  }
+
+type state =
+  { graph_id : string
+  ; schema_version : string
+  ; mutable applied_server_t : int
+  }
+
+type sync_error =
+  | Unsupported_format
+  | Graph_mismatch
+  | Schema_mismatch
+  | Cursor_mismatch
+  | Invalid_cursor
+  | Apply_failed of string
 
 type snapshot_metadata =
   { url : string
@@ -14,6 +34,90 @@ let bind result f =
   match result with
   | Ok value -> f value
   | Error _ as error -> error
+;;
+
+let create_checkpoint ~graph_id ~schema_version ~applied_server_t =
+  LG.logseq_chat_sync_checkpoint_create graph_id schema_version applied_server_t
+;;
+
+let encode_checkpoint = LG.logseq_chat_sync_checkpoint_encode
+let decode_checkpoint = LG.logseq_chat_sync_checkpoint_decode
+
+let checkpoint_error_message operation path error =
+  Printf.sprintf "%s %s: %s" operation path (Printexc.to_string error)
+;;
+
+let load_checkpoint path =
+  if not (Sys.file_exists path)
+  then Ok None
+  else
+    try
+      let channel = open_in_bin path in
+      let source =
+        Fun.protect
+          ~finally:(fun () -> close_in_noerr channel)
+          (fun () -> really_input_string channel (in_channel_length channel))
+      in
+      Result.map Option.some (decode_checkpoint source)
+    with
+    | error -> Error (checkpoint_error_message "read checkpoint" path error)
+;;
+
+let save_checkpoint_atomic path checkpoint =
+  let temporary = path ^ ".tmp" in
+  try
+    let channel = open_out_gen [ Open_wronly; Open_creat; Open_trunc; Open_binary ] 0o600 temporary in
+    Fun.protect
+      ~finally:(fun () -> close_out_noerr channel)
+      (fun () ->
+        output_string channel (encode_checkpoint checkpoint);
+        flush channel;
+        Unix.fsync (Unix.descr_of_out_channel channel));
+    Unix.rename temporary path;
+    Ok ()
+  with
+  | error ->
+    (try if Sys.file_exists temporary then Sys.remove temporary with
+     | _ -> ());
+    Error (checkpoint_error_message "write checkpoint" path error)
+;;
+
+let create_state ~graph_id ~schema_version ~applied_server_t =
+  { graph_id; schema_version; applied_server_t }
+;;
+
+let applied_server_t state = state.applied_server_t
+let submission_accepted _state ~server_t:_ = ()
+
+let sync_error_of_lg_code = function
+  | "unsupported-format" -> Unsupported_format
+  | "graph-mismatch" -> Graph_mismatch
+  | "schema-mismatch" -> Schema_mismatch
+  | "cursor-mismatch" -> Cursor_mismatch
+  | "invalid-cursor" -> Invalid_cursor
+  | code -> Apply_failed ("Unknown LG sync-state error: " ^ code)
+;;
+
+let apply_validated_change_set (state : state) (change : Logseq_chat_sync_protocol.change_set) ~apply =
+  let open Logseq_chat_sync_protocol in
+  match
+    LG.logseq_chat_sync_state_apply_change_set_error
+      state.graph_id
+      state.schema_version
+      state.applied_server_t
+      change.format_version
+      change.graph_id
+      change.schema_version
+      change.t_before
+      change.t
+  with
+  | Some code -> Error (sync_error_of_lg_code code)
+  | None ->
+    (match apply change with
+     | Error message -> Error (Apply_failed message)
+     | Ok () ->
+       state.applied_server_t <- change.t;
+       Ok ())
 ;;
 
 let string_field name fields =
@@ -138,12 +242,12 @@ let import_snapshot_file
                   (fun _validated_db ->
                     bind (Store.activate ~active_path) (fun () ->
                   let checkpoint =
-                    Checkpoint.create
+                    create_checkpoint
                       ~graph_id
                       ~schema_version:metadata.schema_version
                       ~applied_server_t:metadata.baseline_t
                   in
-                  bind (Checkpoint.save_atomic checkpoint_path checkpoint) (fun () ->
+                  bind (save_checkpoint_atomic checkpoint_path checkpoint) (fun () ->
                     Ok completed)))))))))
   in
   try
@@ -165,7 +269,7 @@ let apply_change_set
       state
       change
   =
-  Logseq_chat_sync_state.apply_change_set
+  apply_validated_change_set
     state
     change
     ~apply:(fun change ->
@@ -173,14 +277,14 @@ let apply_change_set
         (Logseq_chat_entity_sync.apply_change_set ~decrypt_protected conn change)
         (fun () ->
         let checkpoint =
-          Checkpoint.create
+          create_checkpoint
             ~graph_id:change.Logseq_chat_sync_protocol.graph_id
             ~schema_version:change.schema_version
             ~applied_server_t:change.t
         in
-          Checkpoint.save_atomic checkpoint_path checkpoint))
+          save_checkpoint_atomic checkpoint_path checkpoint))
   |> Result.map_error (function
-    | Logseq_chat_sync_state.Unsupported_format -> "unsupported sync format"
+    | Unsupported_format -> "unsupported sync format"
     | Graph_mismatch -> "sync graph mismatch"
     | Schema_mismatch -> "sync schema mismatch"
     | Cursor_mismatch -> "sync cursor mismatch"

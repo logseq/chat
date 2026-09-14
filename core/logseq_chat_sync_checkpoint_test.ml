@@ -1,4 +1,4 @@
-module Checkpoint = Logseq_chat_sync_checkpoint
+module Checkpoint = Logseq_chat_sync_session
 
 let fail label message = failwith (label ^ ": " ^ message)
 
@@ -11,20 +11,20 @@ let () =
       let temporary = path ^ ".tmp" in
       if Sys.file_exists temporary then Sys.remove temporary)
     (fun () ->
-      (match Checkpoint.load path with
+      (match Checkpoint.load_checkpoint path with
        | Ok None -> ()
        | Ok (Some _) -> fail "missing checkpoint" "unexpected value"
        | Error message -> fail "missing checkpoint" message);
       let checkpoint =
-        Checkpoint.create
+        Checkpoint.create_checkpoint
           ~graph_id:"graph-1"
           ~schema_version:"65.33"
           ~applied_server_t:48192
       in
-      (match Checkpoint.save_atomic path checkpoint with
+      (match Checkpoint.save_checkpoint_atomic path checkpoint with
        | Ok () -> ()
        | Error message -> fail "save" message);
-      match Checkpoint.load path with
+      match Checkpoint.load_checkpoint path with
       | Ok (Some restored) ->
         if not (String.equal restored.graph_id "graph-1")
         then fail "graph id" "changed after persistence";

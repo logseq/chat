@@ -1,6 +1,6 @@
 module Transit = Transit_native.Transit.Json
 module Session = Logseq_chat_sync_session
-module Checkpoint = Logseq_chat_sync_checkpoint
+module Checkpoint = Logseq_chat_sync_session
 
 let fail label message = failwith (label ^ ": " ^ message)
 
@@ -123,7 +123,7 @@ let () =
       if result.applied_server_t <> 48192
       then fail "import cursor" "baseline cursor changed";
       ignore (expect_ok "restore active graph" (Logseq_chat_graph_store.restore_db ~path:active_path));
-      (match expect_ok "load checkpoint" (Checkpoint.load checkpoint_path) with
+      (match expect_ok "load checkpoint" (Checkpoint.load_checkpoint checkpoint_path) with
        | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
        | _ -> fail "checkpoint" "activated snapshot cursor was not saved");
 
@@ -147,13 +147,13 @@ let () =
       in
       if root_after_failure <> original_root
       then fail "atomic import" "failed import replaced the active graph";
-      (match expect_ok "checkpoint after failure" (Checkpoint.load checkpoint_path) with
+      (match expect_ok "checkpoint after failure" (Checkpoint.load_checkpoint checkpoint_path) with
        | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
        | _ -> fail "atomic checkpoint" "failed import changed the cursor");
 
       let conn = expect_ok "restore sync connection" (Logseq_chat_graph_store.restore_conn ~path:active_path) in
       let state =
-        Logseq_chat_sync_state.create
+        Logseq_chat_sync_session.create_state
           ~graph_id:"graph-1"
           ~schema_version:"65.33"
           ~applied_server_t:48192
@@ -172,9 +172,9 @@ let () =
       expect_ok
         "apply authoritative event"
         (Session.apply_change_set ~conn ~checkpoint_path state change);
-      if Logseq_chat_sync_state.applied_server_t state <> 48193
+      if Logseq_chat_sync_session.applied_server_t state <> 48193
       then fail "event cursor" "successful WebSocket event did not advance state";
-      match expect_ok "event checkpoint" (Checkpoint.load checkpoint_path) with
+      match expect_ok "event checkpoint" (Checkpoint.load_checkpoint checkpoint_path) with
       | Some checkpoint when checkpoint.applied_server_t = 48193 -> ()
       | _ -> fail "event checkpoint" "successful WebSocket event did not persist cursor")
 ;;
