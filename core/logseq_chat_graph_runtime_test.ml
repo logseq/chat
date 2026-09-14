@@ -244,7 +244,7 @@ let () =
         (Runtime.review_flashcard
            runtime
            ~uuid:"block"
-           ~rating:Logseq_chat_flashcards.Good
+           ~rating:Logseq_chat_lg_core_native.Good
            ~now
            ~operation_id:"review-card"
          = Ok ());

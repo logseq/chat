@@ -3,50 +3,11 @@ module LG = Logseq_chat_lg_core_native
 module Upstream = Fsrs
 module Upstream_models = Models
 
-type rating = LG.flashcard_rating =
-  | Again
-  | Hard
-  | Good
-  | Easy
-
-type state = LG.flashcard_state =
-  | New
-  | Learning
-  | Review
-  | Relearning
-
-type card = LG.fsrs_card =
-  { due : int
-  ; stability : float
-  ; difficulty : float
-  ; elapsed_days : int
-  ; scheduled_days : int
-  ; reps : int
-  ; lapses : int
-  ; state : state
-  ; last_repeat : int
-  ; last_rating : rating option
-  }
-
 type due_card =
   { block : Logseq_chat_model.block
   ; children : Logseq_chat_model.block list
-  ; card : card
+  ; card : LG.fsrs_card
   }
-
-let rating_keyword = function
-  | rating -> LG.logseq_chat_flashcards_rating_keyword rating
-;;
-
-let rating_of_keyword = LG.logseq_chat_flashcards_rating_of_keyword
-
-let state_keyword = function
-  | state -> LG.logseq_chat_flashcards_state_keyword state
-;;
-
-let state_of_keyword = LG.logseq_chat_flashcards_state_of_keyword
-
-let new_card ~now = LG.logseq_chat_flashcards_new_card now
 
 let timestamp milliseconds =
   Timedesc.Timestamp.of_float_s (Float.of_int milliseconds /. 1000.)
@@ -58,7 +19,7 @@ let milliseconds timestamp =
   |> fun seconds -> int_of_float (Float.round (seconds *. 1000.))
 ;;
 
-let upstream_card (card : card) : Upstream_models.card =
+let upstream_card (card : LG.fsrs_card) : Upstream_models.card =
   { due = timestamp card.due
   ; stability = card.stability
   ; difficulty = card.difficulty
@@ -68,10 +29,10 @@ let upstream_card (card : card) : Upstream_models.card =
   ; lapses = card.lapses
   ; state =
       (match card.state with
-       | New -> Upstream_models.New
-       | Learning -> Upstream_models.Learning
-       | Review -> Upstream_models.Review
-       | Relearning -> Upstream_models.Relearning)
+       | LG.New -> Upstream_models.New
+       | LG.Learning -> Upstream_models.Learning
+       | LG.Review -> Upstream_models.Review
+       | LG.Relearning -> Upstream_models.Relearning)
   ; last_review = timestamp card.last_repeat
   }
 ;;
@@ -79,41 +40,36 @@ let upstream_card (card : card) : Upstream_models.card =
 let scheduler = Upstream.create (Parameters.default ())
 
 let upstream_rating = function
-  | Again -> Upstream_models.Again
-  | Hard -> Upstream_models.Hard
-  | Good -> Upstream_models.Good
-  | Easy -> Upstream_models.Easy
+  | LG.Again -> Upstream_models.Again
+  | LG.Hard -> Upstream_models.Hard
+  | LG.Good -> Upstream_models.Good
+  | LG.Easy -> Upstream_models.Easy
 ;;
 
 let state_of_upstream = function
-  | Upstream_models.New -> New
-  | Upstream_models.Learning -> Learning
-  | Upstream_models.Review -> Review
-  | Upstream_models.Relearning -> Relearning
+  | Upstream_models.New -> LG.New
+  | Upstream_models.Learning -> LG.Learning
+  | Upstream_models.Review -> LG.Review
+  | Upstream_models.Relearning -> LG.Relearning
 ;;
 
-let repeat ~now card rating =
+let repeat ~now (card : LG.fsrs_card) (rating : LG.flashcard_rating) =
   let scheduled =
     Upstream.next scheduler (upstream_card card) (timestamp now) (upstream_rating rating)
   in
   let next = scheduled.Upstream_models.card in
+  LG.
   { due = milliseconds next.due
   ; stability = next.stability
   ; difficulty = next.difficulty
   ; elapsed_days = next.elapsed_days
   ; scheduled_days = next.scheduled_days
   ; reps = next.reps
-  ; lapses = card.lapses + if rating = Again then 1 else 0
+  ; lapses = card.lapses + if rating = LG.Again then 1 else 0
   ; state = state_of_upstream next.state
   ; last_repeat = milliseconds next.last_review
   ; last_rating = Some rating
   }
-;;
-
-let state_value = LG.logseq_chat_flashcards_state_value
-
-let card_of_values ~created_at ~due ~state =
-  LG.logseq_chat_flashcards_card_of_values created_at due state
 ;;
 
 let card_eid db eid =
@@ -158,10 +114,10 @@ let card_for_uuid
             (Logseq_chat_graph_read.value db eid "logseq.property.fsrs/due")
         in
         let card =
-          card_of_values
-            ~created_at
-            ~due
-            ~state:(Logseq_chat_graph_read.value db eid "logseq.property.fsrs/state")
+          LG.logseq_chat_flashcards_card_of_values
+            created_at
+            due
+            (Logseq_chat_graph_read.value db eid "logseq.property.fsrs/state")
         in
         { block; children = descendants uuid; card })
       (Logseq_chat_graph_read.block decrypt_title db eid)

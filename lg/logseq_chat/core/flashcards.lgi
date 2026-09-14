@@ -24,10 +24,12 @@
   (last-repeat :int)
   (last-rating :option<flashcard-rating>))
 
-(signature logseq-chat.flashcards/rating-keyword :fn<flashcard-rating;string>)
-(signature logseq-chat.flashcards/rating-of-keyword :fn<string;option<flashcard-rating>>)
-(signature logseq-chat.flashcards/state-keyword :fn<flashcard-state;string>)
-(signature logseq-chat.flashcards/state-of-keyword :fn<string;option<flashcard-state>>)
+(signature logseq-chat.flashcards/rating-keyword :fn<flashcard-rating;keyword>)
+(signature logseq-chat.flashcards/rating-name :fn<flashcard-rating;string>)
+(signature logseq-chat.flashcards/rating-of-keyword :fn<keyword;option<flashcard-rating>>)
+(signature logseq-chat.flashcards/state-keyword :fn<flashcard-state;keyword>)
+(signature logseq-chat.flashcards/state-name :fn<flashcard-state;string>)
+(signature logseq-chat.flashcards/state-of-keyword :fn<keyword;option<flashcard-state>>)
 (signature logseq-chat.flashcards/new-card :fn<int;fsrs-card>)
 (signature logseq-chat.flashcards/state-value :fn<fsrs-card;Datascript.value>)
 (signature logseq-chat.flashcards/card-of-values

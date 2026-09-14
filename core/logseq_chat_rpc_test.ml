@@ -4087,7 +4087,7 @@ let () =
     Logseq_chat_flashcards.
       { block = remote_block "flashcard" "Question {{cloze answer}}"
       ; children = []
-      ; card = new_card ~now
+      ; card = Logseq_chat_lg_core_native.logseq_chat_flashcards_new_card now
       }
   in
   let session =
@@ -4118,7 +4118,7 @@ let () =
      then failwith "reviewed card must immediately leave the due queue"
    | _ -> failwith "reviewFlashcard should return an RPC response");
   match !reviewed with
-  | Some ("flashcard", Logseq_chat_flashcards.Good, value, "review-op") when value = now -> ()
+  | Some ("flashcard", Logseq_chat_lg_core_native.Good, value, "review-op") when value = now -> ()
   | _ -> failwith "reviewFlashcard must preserve UUID, rating, time, and operation id"
 ;;
 

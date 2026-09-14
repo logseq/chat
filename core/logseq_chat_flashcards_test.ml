@@ -1,6 +1,7 @@
 open Datascript
 
 module Flashcards = Logseq_chat_flashcards
+module LG = Logseq_chat_lg_core_native
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
@@ -20,8 +21,8 @@ let day = 86_400_000
 
 let () =
   let now = 1_776_000_000_000 in
-  let repeated = Flashcards.repeat ~now (Flashcards.new_card ~now) Flashcards.Again in
-  assert_bool "again moves a new card to learning" (repeated.state = Flashcards.Learning);
+  let repeated = Flashcards.repeat ~now (LG.logseq_chat_flashcards_new_card now) LG.Again in
+  assert_bool "again moves a new card to learning" (repeated.state = LG.Learning);
   assert_int "again increments repetitions" 1 repeated.reps;
   assert_int "again increments lapses" 1 repeated.lapses;
   assert_int "again schedules one minute" (now + minute) repeated.due;
@@ -31,8 +32,8 @@ let () =
 
 let () =
   let now = 1_776_000_000_000 in
-  let repeated = Flashcards.repeat ~now (Flashcards.new_card ~now) Flashcards.Easy in
-  assert_bool "easy moves a new card directly to review" (repeated.state = Flashcards.Review);
+  let repeated = Flashcards.repeat ~now (LG.logseq_chat_flashcards_new_card now) LG.Easy in
+  assert_bool "easy moves a new card directly to review" (repeated.state = LG.Review);
   assert_int "easy does not add a lapse" 0 repeated.lapses;
   assert_int "easy uses the upstream FSRS v5 initial interval" 15 repeated.scheduled_days;
   assert_int "easy due date uses whole days" (now + (15 * day)) repeated.due
@@ -41,7 +42,7 @@ let () =
 let () =
   let now = 1_776_000_000_000 in
   let original =
-    Flashcards.
+    LG.
       { due = now - day
       ; stability = 4.2
       ; difficulty = 5.1
@@ -55,26 +56,24 @@ let () =
       }
   in
   let decoded =
-    Flashcards.card_of_values
-      ~created_at:(now - (10 * day))
-      ~due:(Some original.due)
-      ~state:(Some (Flashcards.state_value original))
+    LG.logseq_chat_flashcards_card_of_values
+      (now - (10 * day))
+      (Some original.due)
+      (Some (LG.logseq_chat_flashcards_state_value original))
   in
   assert_bool "FSRS state round-trips through the Logseq property map" (decoded = original);
-  let repeated = Flashcards.repeat ~now decoded Flashcards.Good in
-  assert_bool "a successful review remains in review" (repeated.state = Flashcards.Review);
+  let repeated = Flashcards.repeat ~now decoded LG.Good in
+  assert_bool "a successful review remains in review" (repeated.state = LG.Review);
   assert_int "review increments repetitions" 8 repeated.reps;
   assert_bool "review schedules a future due date" (repeated.due > now);
-  assert_bool "review records the selected rating" (repeated.last_rating = Some Flashcards.Good)
+  assert_bool "review records the selected rating" (repeated.last_rating = Some LG.Good)
 ;;
 
 let () =
   let started_at = 1_689_432_134_706 in
   let ratings =
-    [ Flashcards.Good; Flashcards.Good; Flashcards.Good; Flashcards.Good
-    ; Flashcards.Good; Flashcards.Good; Flashcards.Again; Flashcards.Again
-    ; Flashcards.Good; Flashcards.Good; Flashcards.Good; Flashcards.Good
-    ; Flashcards.Good
+    [ LG.Good; LG.Good; LG.Good; LG.Good; LG.Good; LG.Good; LG.Again; LG.Again
+    ; LG.Good; LG.Good; LG.Good; LG.Good; LG.Good
     ]
   in
   let intervals, repeated, _ =
@@ -82,7 +81,7 @@ let () =
       (fun (intervals, card, now) rating ->
         let next = Flashcards.repeat ~now card rating in
         next.scheduled_days :: intervals, next, next.due)
-      ([], Flashcards.new_card ~now:started_at, started_at)
+      ([], LG.logseq_chat_flashcards_new_card started_at, started_at)
       ratings
   in
   assert_bool
@@ -90,7 +89,7 @@ let () =
     (List.rev intervals = [ 0; 4; 15; 48; 136; 351; 0; 0; 7; 13; 24; 43; 77 ]);
   assert_int "upstream reference repetitions" 13 repeated.reps;
   assert_int "Logseq-compatible lapse tracking" 2 repeated.lapses;
-  assert_bool "upstream reference ends in review" (repeated.state = Flashcards.Review)
+  assert_bool "upstream reference ends in review" (repeated.state = LG.Review)
 ;;
 
 let one ?unique ?value_type ?(indexed = false) () =
@@ -122,8 +121,8 @@ let schema =
 let () =
   let now = 1_776_000_000_000 in
   let future_state =
-    Flashcards.state_value
-      { (Flashcards.new_card ~now:(now - day)) with due = now + day }
+    LG.logseq_chat_flashcards_state_value
+      { (LG.logseq_chat_flashcards_new_card (now - day)) with due = now + day }
   in
   let db =
     empty_db ~schema ()

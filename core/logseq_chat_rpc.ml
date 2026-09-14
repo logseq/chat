@@ -5,6 +5,7 @@ module Api = Logseq_chat_api
 module Http = Logseq_chat_http
 module Pending_ops = Logseq_chat_pending_ops
 module Flashcards = Logseq_chat_flashcards
+module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
 module Order = Logseq_chat_fractional_order
@@ -95,7 +96,7 @@ type t =
   ; graph_search : (string -> Logseq_chat_search_index.hit list) option
   ; graph_due_flashcards : (now:int -> Flashcards.due_card list) option
   ; graph_review_flashcard :
-      (uuid:string -> rating:Flashcards.rating -> now:int -> operation_id:string
+      (uuid:string -> rating:LG.flashcard_rating -> now:int -> operation_id:string
        -> (unit, string) result) option
   ; graph_set_page_favorite :
       (page_uuid:string -> favorite:bool -> operation_id:string -> now:int
@@ -345,7 +346,7 @@ let flashcard_json (due_card : Flashcards.due_card) =
     ; "due", `Int due_card.card.due
     ; "repetitions", `Int due_card.card.reps
     ; "lapses", `Int due_card.card.lapses
-    ; "state", `String (Flashcards.state_keyword due_card.card.state)
+    ; "state", `String (LG.logseq_chat_flashcards_state_name due_card.card.state)
     ]
 ;;
 
@@ -1429,10 +1430,10 @@ let reconcile_authoritative_blocks session =
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
 let flashcard_rating = function
-  | "again" -> Ok Flashcards.Again
-  | "hard" -> Ok Flashcards.Hard
-  | "good" -> Ok Flashcards.Good
-  | "easy" -> Ok Flashcards.Easy
+  | "again" -> Ok LG.Again
+  | "hard" -> Ok LG.Hard
+  | "good" -> Ok LG.Good
+  | "easy" -> Ok LG.Easy
   | _ -> Error "rating must be again, hard, good, or easy"
 ;;
 

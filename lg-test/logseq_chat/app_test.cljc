@@ -85,6 +85,18 @@
     (is false message)))
 
 (deftest flashcard-state-codec-is-lg-owned
+  (assert-equal :good
+                (flashcards/rating-keyword flashcards/Good)
+                "flashcard ratings should use LG keywords")
+  (assert-equal "good"
+                (flashcards/rating-name flashcards/Good)
+                "flashcard rating names should stay JSON-friendly")
+  (assert-equal (Some flashcards/Review)
+                (flashcards/state-of-keyword :review)
+                "flashcard state parsing should use LG keywords")
+  (assert-equal "review"
+                (flashcards/state-name flashcards/Review)
+                "flashcard state names should stay JSON-friendly")
   (let [now 1776000000000
         original (record flashcards/fsrs-card
                    (due (- now 86400000))

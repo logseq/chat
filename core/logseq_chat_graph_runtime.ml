@@ -610,7 +610,8 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
     in
     semantic_option (current "logseq.property.fsrs/state") >>= fun expected_state ->
     semantic_option (current "logseq.property.fsrs/due") >>= fun expected_due ->
-    semantic_value (Logseq_chat_flashcards.state_value repeated) >>= fun state ->
+    semantic_value (Logseq_chat_lg_core_native.logseq_chat_flashcards_state_value repeated)
+    >>= fun state ->
     stage
       runtime
       Ops.

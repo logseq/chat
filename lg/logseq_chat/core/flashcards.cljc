@@ -5,39 +5,39 @@
 
 (defn rating-keyword [rating]
   (match rating
-    Again "again"
-    Hard "hard"
-    Good "good"
-    Easy "easy"))
+    Again :again
+    Hard :hard
+    Good :good
+    Easy :easy))
+
+(defn rating-name [rating]
+  (name (rating-keyword rating)))
 
 (defn rating-of-keyword [value]
-  (if (= value "again")
-    (Some Again)
-    (if (= value "hard")
-      (Some Hard)
-      (if (= value "good")
-        (Some Good)
-        (if (= value "easy")
-          (Some Easy)
-          None)))))
+  (case value
+    :again (Some Again)
+    :hard (Some Hard)
+    :good (Some Good)
+    :easy (Some Easy)
+    None))
 
 (defn state-keyword [state]
   (match state
-    New "new"
-    Learning "learning"
-    Review "review"
-    Relearning "relearning"))
+    New :new
+    Learning :learning
+    Review :review
+    Relearning :relearning))
+
+(defn state-name [state]
+  (name (state-keyword state)))
 
 (defn state-of-keyword [value]
-  (if (= value "new")
-    (Some New)
-    (if (= value "learning")
-      (Some Learning)
-      (if (= value "review")
-        (Some Review)
-        (if (= value "relearning")
-          (Some Relearning)
-          None)))))
+  (case value
+    :new (Some New)
+    :learning (Some Learning)
+    :review (Some Review)
+    :relearning (Some Relearning)
+    None))
 
 (defn new-card [now]
   (record fsrs-card
@@ -59,14 +59,14 @@
                  (tuple (ds/Keyword "scheduled-days") (ds/Int (:scheduled-days card)))
                  (tuple (ds/Keyword "reps") (ds/Int (:reps card)))
                  (tuple (ds/Keyword "lapses") (ds/Int (:lapses card)))
-                 (tuple (ds/Keyword "state") (ds/Keyword (state-keyword (:state card))))
+                 (tuple (ds/Keyword "state") (ds/Keyword (state-name (:state card))))
                  (tuple (ds/Keyword "last-repeat") (ds/Int (:last-repeat card)))]
         entries (match (:last-rating card)
                   None entries
                   (Some rating)
                   (conj entries
                         (tuple (ds/Keyword "logseq/last-rating")
-                               (ds/Keyword (rating-keyword rating)))))]
+                               (ds/Keyword (rating-name rating)))))]
     (ds/Map (rrbvec/to-list entries))))
 
 (defn map-value [key entries]
@@ -95,56 +95,48 @@
 
 (defn keyword-value [value]
   (match value
-    (Some (ds/Keyword value)) (Some value)
+    (Some (ds/Keyword value)) (Some (keyword value))
+    _ None))
+
+(defn decoded-card [due entries]
+  (match (tuple
+          (float-value (map-value "stability" entries))
+          (float-value (map-value "difficulty" entries))
+          (int-value (map-value "elapsed-days" entries))
+          (int-value (map-value "scheduled-days" entries))
+          (int-value (map-value "reps" entries))
+          (int-value (map-value "lapses" entries))
+          (some-> (keyword-value (map-value "state" entries)) state-of-keyword)
+          (int-value (map-value "last-repeat" entries)))
+    (tuple
+     (Some stability)
+     (Some difficulty)
+     (Some elapsed-days)
+     (Some scheduled-days)
+     (Some reps)
+     (Some lapses)
+     (Some state)
+     (Some last-repeat))
+    (Some
+     (record fsrs-card
+       (due due)
+       (stability stability)
+       (difficulty difficulty)
+       (elapsed-days elapsed-days)
+       (scheduled-days scheduled-days)
+       (reps reps)
+       (lapses lapses)
+       (state state)
+       (last-repeat last-repeat)
+       (last-rating
+        (some-> (keyword-value (map-value "logseq/last-rating" entries))
+                rating-of-keyword))))
     _ None))
 
 (defn card-of-values [created-at due state]
-  (match due
-    (Some due)
-    (match state
-      (Some (ds/Map entries))
-      (match (float-value (map-value "stability" entries))
-        (Some stability)
-        (match (float-value (map-value "difficulty" entries))
-          (Some difficulty)
-          (match (int-value (map-value "elapsed-days" entries))
-            (Some elapsed-days)
-            (match (int-value (map-value "scheduled-days" entries))
-              (Some scheduled-days)
-              (match (int-value (map-value "reps" entries))
-                (Some reps)
-                (match (int-value (map-value "lapses" entries))
-                  (Some lapses)
-                  (match (keyword-value (map-value "state" entries))
-                    (Some state-keyword)
-                    (match (state-of-keyword state-keyword)
-                      (Some state)
-                      (match (int-value (map-value "last-repeat" entries))
-                        (Some last-repeat)
-                        (record fsrs-card
-                          (due due)
-                          (stability stability)
-                          (difficulty difficulty)
-                          (elapsed-days elapsed-days)
-                          (scheduled-days scheduled-days)
-                          (reps reps)
-                          (lapses lapses)
-                          (state state)
-                          (last-repeat last-repeat)
-                          (last-rating
-                           (match (keyword-value
-                                   (map-value "logseq/last-rating" entries))
-                             (Some rating-keyword)
-                             (rating-of-keyword rating-keyword)
-                             None None)))
-                        _ (new-card created-at))
-                      None (new-card created-at))
-                    None (new-card created-at))
-                  None (new-card created-at))
-                None (new-card created-at))
-              None (new-card created-at))
-            None (new-card created-at))
-          None (new-card created-at))
-        None (new-card created-at))
-      _ (new-card created-at))
-    None (new-card created-at)))
+  (match (tuple due state)
+    (tuple (Some due) (Some (ds/Map entries)))
+    (match (decoded-card due entries)
+      (Some card) card
+      None (new-card created-at))
+    _ (new-card created-at)))
