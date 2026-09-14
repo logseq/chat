@@ -1,5 +1,4 @@
-("logseq_chat_e2ee_keyring"
- "logseq_chat_graph_bootstrap_data"
+("logseq_chat_graph_bootstrap_data"
  "logseq_chat_graph_bootstrap"
  "logseq_chat_graph_runtime"
  "logseq_chat_http"

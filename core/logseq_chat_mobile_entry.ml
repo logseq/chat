@@ -1,5 +1,5 @@
 module Sync_session = Logseq_chat_lg_core_native
-module E2ee_keyring = Logseq_chat_e2ee_keyring
+module E2ee_keyring = Logseq_chat_lg_core_native
 
 let () =
   if not (Logseq_chat_lui_native.logseq_chat_native_bridge_linked ())
@@ -8,13 +8,13 @@ let () =
 let () = Logseq_chat_lui_projection.register_callbacks ()
 
 let e2ee_keyring =
-  Logseq_chat_e2ee_keyring.create
-    ~crypto:Logseq_chat_platform_crypto.crypto
-    ~load:Logseq_chat_platform_crypto.load_graph_key
-    ~save:Logseq_chat_platform_crypto.save_graph_key
-    ~load_password:Logseq_chat_platform_crypto.load_e2ee_password
-    ~save_password:Logseq_chat_platform_crypto.save_e2ee_password
-    ~fetch:Logseq_chat_http.send
+  E2ee_keyring.logseq_chat_e2ee_keyring_create
+    Logseq_chat_platform_crypto.crypto
+    (fun graph_id -> Logseq_chat_platform_crypto.load_graph_key ~graph_id)
+    (fun graph_id key -> Logseq_chat_platform_crypto.save_graph_key ~graph_id ~key)
+    Logseq_chat_platform_crypto.load_e2ee_password
+    (fun password -> Logseq_chat_platform_crypto.save_e2ee_password ~password)
+    Logseq_chat_http.send
 ;;
 
 type graph_runtime =
@@ -52,7 +52,7 @@ let graph_read_runtime ~graph_id ~active_path ~server_t ~e2ee conn =
   if e2ee
   then
     Logseq_chat_graph_runtime.create
-      ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring ~graph_id)
+      ~encrypt_title:(E2ee_keyring.logseq_chat_e2ee_keyring_encrypt_title e2ee_keyring graph_id)
       ~search_index_path
       ~auto_create_today:true
       ~path:active_path
@@ -89,7 +89,7 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
   report "connection_restored";
   let* () =
     if e2ee
-    then Result.map (fun _key -> ()) (E2ee_keyring.graph_key e2ee_keyring ~graph_id)
+    then Result.map (fun _key -> ()) (E2ee_keyring.logseq_chat_e2ee_keyring_graph_key e2ee_keyring graph_id)
     else Ok ()
   in
   report "encryption_ready";
@@ -143,7 +143,7 @@ let import_snapshot payload =
       let* _ =
         Logseq_chat_lg_core_native.logseq_chat_sync_session_import_snapshot_file
           (if e2ee
-           then Some (E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
+           then Some (E2ee_keyring.logseq_chat_e2ee_keyring_decrypt_title e2ee_keyring graph_id)
            else None)
           graph_id active_path checkpoint_path metadata download_path
       in
@@ -173,7 +173,7 @@ let apply_sync_event payload =
                bind
                  (Logseq_chat_lg_core_native.logseq_chat_sync_session_apply_change_set
                     (if runtime.e2ee
-                     then E2ee_keyring.decrypt_title e2ee_keyring ~graph_id:runtime.graph_id
+                     then E2ee_keyring.logseq_chat_e2ee_keyring_decrypt_title e2ee_keyring runtime.graph_id
                      else (fun value -> Ok value))
                     runtime.conn
                     runtime.checkpoint_path
@@ -396,7 +396,7 @@ let resolve_asset_path source_path =
 let encrypt_asset_file ~graph_id ~source_path =
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
   bind (read_file source_path) (fun bytes ->
-    bind (E2ee_keyring.encrypt_asset e2ee_keyring ~graph_id bytes) (fun encrypted ->
+    bind (E2ee_keyring.logseq_chat_e2ee_keyring_encrypt_asset e2ee_keyring graph_id bytes) (fun encrypted ->
       let path =
         Filename.temp_file
           ~temp_dir:(Filename.dirname source_path)
@@ -476,14 +476,15 @@ let create_session ?storage ?catalog_session () =
     ~load_cached_graph_key:(fun config ->
       Result.map
         (fun _key -> ())
-        (E2ee_keyring.load_cached e2ee_keyring config))
+        (E2ee_keyring.logseq_chat_e2ee_keyring_load_cached e2ee_keyring config))
     ~unlock_graph:(fun config ~password ->
-      Result.map (fun _key -> ()) (E2ee_keyring.unlock e2ee_keyring config ~password))
+      Result.map (fun _key -> ()) (E2ee_keyring.logseq_chat_e2ee_keyring_unlock e2ee_keyring config password))
     ~provision_graph_key:(fun config ->
-      Result.map (fun _key -> ()) (E2ee_keyring.provision e2ee_keyring config))
+      Result.map (fun _key -> ()) (E2ee_keyring.logseq_chat_e2ee_keyring_provision e2ee_keyring config))
     ~graph_unlocked:(fun ~graph_id ->
-      Result.is_ok (E2ee_keyring.graph_key e2ee_keyring ~graph_id))
-    ~encrypt_title:(E2ee_keyring.encrypt_title e2ee_keyring)
+      Result.is_ok (E2ee_keyring.logseq_chat_e2ee_keyring_graph_key e2ee_keyring graph_id))
+    ~encrypt_title:(fun ~graph_id title ->
+      E2ee_keyring.logseq_chat_e2ee_keyring_encrypt_title e2ee_keyring graph_id title)
     ~resolve_asset_path
     ~encrypt_asset_file
     ~journal_page_id

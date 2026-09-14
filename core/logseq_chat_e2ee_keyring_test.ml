@@ -1,7 +1,7 @@
 module Transit = Transit_core.Json
 module Codec = Transit_native.Transit.Json
 module E2ee = Logseq_chat_lg_core_native
-module Keyring = Logseq_chat_e2ee_keyring
+module Keyring = Logseq_chat_lg_core_native
 module Api = Logseq_chat_lg_core_native
 
 let expect_ok = function
@@ -57,17 +57,17 @@ let test_unlock_fetches_and_saves_graph_key () =
   let saved = ref [] in
   let saved_passwords = ref [] in
   let keyring =
-    Keyring.create
-      ~crypto:(crypto ())
-      ~load:(fun ~graph_id:_ -> Ok None)
-      ~save:(fun ~graph_id ~key ->
+    Keyring.logseq_chat_e2ee_keyring_create
+      (crypto ())
+      (fun _ -> Ok None)
+      (fun graph_id key ->
         saved := (graph_id, key) :: !saved;
         Ok ())
-      ~load_password:(fun () -> Ok None)
-      ~save_password:(fun ~password ->
+      (fun () -> Ok None)
+      (fun password ->
         saved_passwords := password :: !saved_passwords;
         Ok ())
-      ~fetch:(fun request ->
+      (fun request ->
         requests := request.Api.url :: !requests;
         if String.ends_with ~suffix:"/user-keys" request.url
         then
@@ -90,7 +90,7 @@ let test_unlock_fetches_and_saves_graph_key () =
                     (`Assoc [ "encrypted-aes-key", `String graph_package ])
               })
   in
-  let key = Keyring.unlock keyring config ~password:"e2etest" |> expect_ok in
+  let key = Keyring.logseq_chat_e2ee_keyring_unlock keyring config "e2etest" |> expect_ok in
   expect_equal "remote-graph-key" key;
   (match !saved with
    | [ "encrypted-graph", "remote-graph-key" ] -> ()
@@ -105,17 +105,17 @@ let test_account_password_unlocks_an_uncached_graph () =
   let password_load_count = ref 0 in
   let password_save_count = ref 0 in
   let keyring =
-    Keyring.create
-      ~crypto:(crypto ())
-      ~load:(fun ~graph_id:_ -> Ok None)
-      ~save:(fun ~graph_id:_ ~key:_ -> Ok ())
-      ~load_password:(fun () ->
+    Keyring.logseq_chat_e2ee_keyring_create
+      (crypto ())
+      (fun _ -> Ok None)
+      (fun _ _ -> Ok ())
+      (fun () ->
         incr password_load_count;
         Ok (Some "e2etest"))
-      ~save_password:(fun ~password:_ ->
+      (fun _ ->
         incr password_save_count;
         Ok ())
-      ~fetch:(fun request ->
+      (fun request ->
         if String.ends_with ~suffix:"/user-keys" request.Api.url
         then
           Ok
@@ -137,7 +137,7 @@ let test_account_password_unlocks_an_uncached_graph () =
                     (`Assoc [ "encrypted-aes-key", `String graph_package ])
               })
   in
-  expect_equal "remote-graph-key" (Keyring.load_cached keyring config |> expect_ok);
+  expect_equal "remote-graph-key" (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
   if !password_load_count <> 1 then failwith "uncached graph must load the account password once";
   if !password_save_count <> 0 then failwith "automatic unlock must not rewrite the account password"
 ;;
@@ -145,13 +145,13 @@ let test_account_password_unlocks_an_uncached_graph () =
 let test_account_private_key_is_decrypted_once_for_multiple_graphs () =
   let private_decrypt_count = ref 0 in
   let keyring =
-    Keyring.create
-      ~crypto:(crypto ~on_private:(fun () -> incr private_decrypt_count) ())
-      ~load:(fun ~graph_id:_ -> Ok None)
-      ~save:(fun ~graph_id:_ ~key:_ -> Ok ())
-      ~load_password:(fun () -> Ok (Some "e2etest"))
-      ~save_password:(fun ~password:_ -> Ok ())
-      ~fetch:(fun request ->
+    Keyring.logseq_chat_e2ee_keyring_create
+      (crypto ~on_private:(fun () -> incr private_decrypt_count) ())
+      (fun _ -> Ok None)
+      (fun _ _ -> Ok ())
+      (fun () -> Ok (Some "e2etest"))
+      (fun _ -> Ok ())
+      (fun request ->
         if String.ends_with ~suffix:"/user-keys" request.Api.url
         then
           Ok
@@ -173,9 +173,9 @@ let test_account_private_key_is_decrypted_once_for_multiple_graphs () =
                     (`Assoc [ "encrypted-aes-key", `String graph_package ])
               })
   in
-  ignore (Keyring.load_cached keyring config |> expect_ok);
+  ignore (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
   let second_config = Api.{ config with graph_id = "second-encrypted-graph" } in
-  ignore (Keyring.load_cached keyring second_config |> expect_ok);
+  ignore (Keyring.logseq_chat_e2ee_keyring_load_cached keyring second_config |> expect_ok);
   if !private_decrypt_count <> 1
   then failwith "the account private key must only be decrypted once per process"
 ;;
@@ -183,20 +183,20 @@ let test_account_private_key_is_decrypted_once_for_multiple_graphs () =
 let test_cached_key_opens_offline () =
   let fetch_count = ref 0 in
   let keyring =
-    Keyring.create
-      ~crypto:(crypto ())
-      ~load:(fun ~graph_id ->
+    Keyring.logseq_chat_e2ee_keyring_create
+      (crypto ())
+      (fun graph_id ->
         if String.equal graph_id "encrypted-graph" then Ok (Some "cached-key") else Ok None)
-      ~save:(fun ~graph_id:_ ~key:_ -> Ok ())
-      ~load_password:(fun () -> Ok None)
-      ~save_password:(fun ~password:_ -> Ok ())
-      ~fetch:(fun _ ->
+      (fun _ _ -> Ok ())
+      (fun () -> Ok None)
+      (fun _ -> Ok ())
+      (fun _ ->
         incr fetch_count;
         Error "offline")
   in
   expect_equal
     "cached-key"
-    (Keyring.load_cached keyring config |> expect_ok);
+    (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
   if !fetch_count <> 0 then failwith "offline cached-key restore must not fetch"
 ;;
 
@@ -204,17 +204,17 @@ let test_wrong_password_does_not_save_key () =
   let save_count = ref 0 in
   let password_save_count = ref 0 in
   let keyring =
-    Keyring.create
-      ~crypto:(crypto ~private_result:(Error "wrong password") ())
-      ~load:(fun ~graph_id:_ -> Ok None)
-      ~save:(fun ~graph_id:_ ~key:_ ->
+    Keyring.logseq_chat_e2ee_keyring_create
+      (crypto ~private_result:(Error "wrong password") ())
+      (fun _ -> Ok None)
+      (fun _ _ ->
         incr save_count;
         Ok ())
-      ~load_password:(fun () -> Ok None)
-      ~save_password:(fun ~password:_ ->
+      (fun () -> Ok None)
+      (fun _ ->
         incr password_save_count;
         Ok ())
-      ~fetch:(fun request ->
+      (fun request ->
         if String.ends_with ~suffix:"/user-keys" request.Api.url
         then
           Ok
@@ -230,7 +230,7 @@ let test_wrong_password_does_not_save_key () =
         else
           Ok Api.{ status = 200; body = Yojson.Basic.to_string (`Assoc [ "encrypted-aes-key", `String graph_package ]) })
   in
-  (match Keyring.unlock keyring config ~password:"wrong" with
+  (match Keyring.logseq_chat_e2ee_keyring_unlock keyring config "wrong" with
    | Error _ -> ()
    | Ok _ -> failwith "wrong E2EE password must fail closed");
   if !save_count <> 0 then failwith "failed unlock must not persist a graph key"
@@ -239,24 +239,24 @@ let test_wrong_password_does_not_save_key () =
 
 let test_title_codec_uses_loaded_graph_key () =
   let keyring =
-    Keyring.create
-      ~crypto:(crypto ())
-      ~load:(fun ~graph_id:_ -> Ok (Some "cached-key"))
-      ~save:(fun ~graph_id:_ ~key:_ -> Ok ())
-      ~load_password:(fun () -> Ok None)
-      ~save_password:(fun ~password:_ -> Ok ())
-      ~fetch:(fun _ -> Error "unused")
+    Keyring.logseq_chat_e2ee_keyring_create
+      (crypto ())
+      (fun _ -> Ok (Some "cached-key"))
+      (fun _ _ -> Ok ())
+      (fun () -> Ok None)
+      (fun _ -> Ok ())
+      (fun _ -> Error "unused")
   in
-  ignore (Keyring.load_cached keyring config |> expect_ok);
+  ignore (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
   let encrypted =
-    Keyring.encrypt_title keyring ~graph_id:"encrypted-graph" "plain title" |> expect_ok
+    Keyring.logseq_chat_e2ee_keyring_encrypt_title keyring "encrypted-graph" "plain title" |> expect_ok
   in
   (match Codec.of_string encrypted with
    | Transit.Array [ Transit.Binary "iv"; Transit.Binary "ciphertext" ] -> ()
    | _ -> failwith "title encryption does not match Logseq Transit");
   expect_equal
     "decrypted title"
-    (Keyring.decrypt_title keyring ~graph_id:"encrypted-graph" encrypted |> expect_ok)
+    (Keyring.logseq_chat_e2ee_keyring_decrypt_title keyring "encrypted-graph" encrypted |> expect_ok)
 ;;
 
 let test_asset_codec_encrypts_binary_transit () =
@@ -276,17 +276,17 @@ let test_asset_codec_encrypts_binary_transit () =
       }
   in
   let keyring =
-    Keyring.create
-      ~crypto:asset_crypto
-      ~load:(fun ~graph_id:_ -> Ok (Some "cached-key"))
-      ~save:(fun ~graph_id:_ ~key:_ -> Ok ())
-      ~load_password:(fun () -> Ok None)
-      ~save_password:(fun ~password:_ -> Ok ())
-      ~fetch:(fun _ -> Error "unused")
+    Keyring.logseq_chat_e2ee_keyring_create
+      asset_crypto
+      (fun _ -> Ok (Some "cached-key"))
+      (fun _ _ -> Ok ())
+      (fun () -> Ok None)
+      (fun _ -> Ok ())
+      (fun _ -> Error "unused")
   in
-  ignore (Keyring.load_cached keyring config |> expect_ok);
+  ignore (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
   let encrypted =
-    Keyring.encrypt_asset keyring ~graph_id:"encrypted-graph" "raw-image-bytes" |> expect_ok
+    Keyring.logseq_chat_e2ee_keyring_encrypt_asset keyring "encrypted-graph" "raw-image-bytes" |> expect_ok
   in
   (match Option.map Codec.of_string !encrypted_plaintext with
    | Some (Transit.Binary "raw-image-bytes") -> ()
@@ -311,13 +311,13 @@ let test_provision_graph_key_uploads_and_caches_key () =
   in
   let public_key = Codec.to_string (Transit.Binary "public") in
   let keyring =
-    Keyring.create
-      ~crypto
-      ~load:(fun ~graph_id:_ -> Ok None)
-      ~save:(fun ~graph_id:_ ~key -> saved := Some key; Ok ())
-      ~load_password:(fun () -> Ok None)
-      ~save_password:(fun ~password:_ -> Ok ())
-      ~fetch:(fun request ->
+    Keyring.logseq_chat_e2ee_keyring_create
+      crypto
+      (fun _ -> Ok None)
+      (fun _ key -> saved := Some key; Ok ())
+      (fun () -> Ok None)
+      (fun _ -> Ok ())
+      (fun request ->
         requests := request :: !requests;
         if String.ends_with ~suffix:"/user-keys" request.Api.url
         then
@@ -341,7 +341,7 @@ let test_provision_graph_key_uploads_and_caches_key () =
       ; token = "token"
       }
   in
-  let key = Keyring.provision keyring provision_config |> expect_ok in
+  let key = Keyring.logseq_chat_e2ee_keyring_provision keyring provision_config |> expect_ok in
   expect_equal (String.make 32 'a') key;
   (match !saved with
    | Some value -> expect_equal key value
@@ -356,6 +356,92 @@ let test_provision_graph_key_uploads_and_caches_key () =
    | None -> failwith "graph key upload body is missing")
 ;;
 
+let test_unlock_failures_do_not_cache_keys () =
+  List.iter (fun failure ->
+    let writes = ref [] in
+    let fetch (request : Api.api_request) =
+      let user = String.ends_with ~suffix:"/user-keys" request.Api.url in
+      if failure = "network" then Error "offline"
+      else if failure = "http" then Ok Api.{status = 403; body = "denied"}
+      else if failure = "json" then Ok Api.{status = 200; body = "{"}
+      else Ok Api.{status = 200; body = Yojson.Basic.to_string (`Assoc
+        (if user then ["public-key", `String "public";
+                       "encrypted-private-key", `String private_package]
+         else ["encrypted-aes-key", `String graph_package]))}
+    in
+    let keyring = Keyring.logseq_chat_e2ee_keyring_create (crypto ())
+      (fun _ -> Ok None)
+      (fun _ _ ->
+        writes := !writes @ ["key"];
+        if failure = "save-key" then Error "key storage failed" else Ok ())
+      (fun () -> Ok None)
+      (fun _ ->
+        writes := !writes @ ["password"];
+        if failure = "save-password" then Error "password storage failed" else Ok ())
+      fetch in
+    (match Keyring.logseq_chat_e2ee_keyring_unlock keyring config "password" with
+     | Error message when String.length message > 0 -> ()
+     | _ -> failwith ("unlock accepted " ^ failure));
+    (match Keyring.logseq_chat_e2ee_keyring_graph_key keyring config.graph_id with
+     | Error "encrypted graph is locked" -> ()
+     | _ -> failwith ("failed unlock cached a key: " ^ failure));
+    (match Keyring.logseq_chat_e2ee_keyring_load_cached keyring config with
+     | Error "E2EE password is not cached" -> ()
+     | _ -> failwith ("failed unlock cached the account private key: " ^ failure));
+    let expected = match failure with
+      | "save-password" -> ["password"]
+      | "save-key" -> ["password"; "key"]
+      | _ -> [] in
+    if !writes <> expected then failwith ("incorrect persistence order: " ^ failure))
+    ["network"; "http"; "json"; "save-password"; "save-key"]
+;;
+
+let test_cache_and_locked_operations () =
+  let loads = ref 0 in
+  let keyring = Keyring.logseq_chat_e2ee_keyring_create (crypto ())
+    (fun graph_id ->
+      incr loads;
+      if graph_id = config.graph_id then Ok (Some "cached-key") else Error "storage unavailable")
+    (fun _ _ -> failwith "unexpected save")
+    (fun () -> failwith "unexpected password load")
+    (fun _ -> failwith "unexpected password save")
+    (fun _ -> failwith "unexpected network request") in
+  List.iter (fun result -> match result with
+    | Error "encrypted graph is locked" -> ()
+    | _ -> failwith "locked operation must fail")
+    [Keyring.logseq_chat_e2ee_keyring_encrypt_title keyring "locked" "text";
+     Keyring.logseq_chat_e2ee_keyring_encrypt_asset keyring "locked" "bytes";
+     Keyring.logseq_chat_e2ee_keyring_decrypt_title keyring "locked" "ciphertext"];
+  expect_equal "cached-key" (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
+  expect_equal "cached-key" (Keyring.logseq_chat_e2ee_keyring_load_cached keyring config |> expect_ok);
+  if !loads <> 1 then failwith "memory cache must avoid repeated secure-storage reads";
+  (match Keyring.logseq_chat_e2ee_keyring_load_cached keyring Api.{config with graph_id = "other"} with
+   | Error "storage unavailable" -> ()
+   | _ -> failwith "secure-storage failure must be propagated")
+;;
+
+let test_provision_rejected_upload_does_not_save () =
+  let public_key = Codec.to_string (Transit.Binary "public") in
+  let keyring = Keyring.logseq_chat_e2ee_keyring_create
+    E2ee.{(crypto ()) with
+      random_bytes = (fun count -> Ok (String.make count 'a'));
+      encrypt_graph_key = (fun _ _ -> Ok "wrapped")}
+    (fun _ -> Ok None)
+    (fun _ _ -> failwith "rejected upload must not be saved")
+    (fun () -> Ok None)
+    (fun _ -> failwith "provision must not save a password")
+    (fun request ->
+      if request.Api.method_ = "POST" then Ok Api.{status = 503; body = "unavailable"}
+      else Ok Api.{status = 200; body = Yojson.Basic.to_string (`Assoc
+        ["public-key", `String public_key; "encrypted-private-key", `String "unused"])}) in
+  (match Keyring.logseq_chat_e2ee_keyring_provision keyring config with
+   | Error "upload graph E2EE key returned HTTP 503" -> ()
+   | _ -> failwith "provision must report the rejected upload");
+  (match Keyring.logseq_chat_e2ee_keyring_graph_key keyring config.graph_id with
+   | Error "encrypted graph is locked" -> ()
+   | _ -> failwith "rejected upload must not unlock the graph")
+;;
+
 let () =
   test_unlock_fetches_and_saves_graph_key ();
   test_account_password_unlocks_an_uncached_graph ();
@@ -364,5 +450,8 @@ let () =
   test_wrong_password_does_not_save_key ();
   test_title_codec_uses_loaded_graph_key ();
   test_asset_codec_encrypts_binary_transit ();
-  test_provision_graph_key_uploads_and_caches_key ()
+  test_provision_graph_key_uploads_and_caches_key ();
+  test_unlock_failures_do_not_cache_keys ();
+  test_cache_and_locked_operations ();
+  test_provision_rejected_upload_does_not_save ()
 ;;
