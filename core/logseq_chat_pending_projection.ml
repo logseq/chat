@@ -1,7 +1,7 @@
 open Datascript
 open Logseq_chat_pending_ops
 
-module Outliner = Logseq_chat_outliner
+module Outliner = Logseq_chat_lg_core_native
 
 module Ds_value = struct
   let ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_ref_eid
@@ -228,7 +228,7 @@ let outliner_block db uuid =
   | _ -> None
 ;;
 
-let insert_tx db (block : Outliner.block) created_at =
+let insert_tx db (block : Outliner.outliner_block) created_at =
   let many attr eids =
     match eids with
     | [] -> []
@@ -253,7 +253,7 @@ let insert_tx db (block : Outliner.block) created_at =
 
 let outliner_mutation_tx db = function
   | Outliner.Set_title { uuid; title } -> title_tx db uuid title
-  | Outliner.Insert { block; created_at } -> insert_tx db block created_at
+  | Outliner.Insert { insert_block; created_at } -> insert_tx db insert_block created_at
   | Outliner.Reparent { uuid; page_uuid; parent_uuid } ->
     [ Add (lookup uuid, "block/page", Ref_to (lookup page_uuid))
     ; Add (lookup uuid, "block/parent", Ref_to (lookup parent_uuid))
@@ -275,7 +275,7 @@ let compile_outliner db command =
       |> List.filter_map (fun datom -> uuid_for_eid db datom.e)
       |> List.filter_map find)
   in
-  match Outliner.plan ~find ~children command with
+  match Outliner.logseq_chat_outliner_plan find children command with
   | Error message -> Error message
   | Ok mutations -> Ok (List.concat_map (outliner_mutation_tx db) mutations)
 ;;

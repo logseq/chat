@@ -105,6 +105,37 @@
  :fn<chat-model;sidebar-page;bool>)
 (signature logseq-chat.view/favorites-empty? :fn<chat-model;bool>)
 (signature logseq-chat.view/recent-pages-empty? :fn<chat-model;bool>)
+(signature logseq-chat.view/sidebar-favorites
+ :fn<chat-model;vector<sidebar-page>>)
+(signature logseq-chat.view/sidebar-recent-pages
+ :fn<chat-model;vector<sidebar-page>>)
+(signature logseq-chat.view/model-task-statuses
+ :fn<chat-model;vector<task-status>>)
+(signature logseq-chat.view/model-outliner-autocomplete-candidates
+ :fn<chat-model;vector<outliner-autocomplete-candidate>>)
+(signature logseq-chat.view/model-composer-assets
+ :fn<chat-model;vector<composer-asset>>)
+(signature logseq-chat.view/model-language-choices
+ :fn<chat-model;vector<settings-language-choice>>)
+(signature logseq-chat.view/model-community-links
+ :fn<chat-model;vector<settings-community-link>>)
+(signature logseq-chat.view/model-graph-menu-open? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-task-status-picker-open? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-new-graph-name :fn<chat-model;string>)
+(signature logseq-chat.view/model-new-graph-encrypted? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-graph-password :fn<chat-model;string>)
+(signature logseq-chat.view/model-graphs :fn<chat-model;vector<graph>>)
+(signature logseq-chat.view/model-settings-language-menu-open?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/model-settings-appearance-menu-open?
+ :fn<chat-model;bool>)
+(signature logseq-chat.view/model-search-loading? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-search-query :fn<chat-model;string>)
+(signature logseq-chat.view/model-search-open? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-settings-open? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-create-graph-open? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-graph-password-open? :fn<chat-model;bool>)
+(signature logseq-chat.view/model-sync-details-open? :fn<chat-model;bool>)
 (signature logseq-chat.view/sidebar-tab-visible?
  :fn<chat-model;string;bool>)
 (signature logseq-chat.view/flashcards-tab-visible? :fn<chat-model;bool>)
@@ -118,6 +149,9 @@
 (signature logseq-chat.view/sidebar-view
  :fn<ui-context;signal<chat-model>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/composer-collapsed? :fn<chat-model;bool>)
+(signature logseq-chat.view/composer-expanded? :fn<chat-model;bool>)
+(signature logseq-chat.view/composer-draft :fn<chat-model;string>)
+(signature logseq-chat.view/composer-autofocus? :fn<chat-model;bool>)
 (signature logseq-chat.view/composer-send-disabled? :fn<chat-model;bool>)
 (signature logseq-chat.view/task-status-identifier :fn<task-status;string>)
 (signature logseq-chat.view/task-status-title :fn<task-status;string>)
@@ -142,6 +176,10 @@
 (signature logseq-chat.view/search-result-row
  :fn<ui-context;signal<search-hit>;fn<chat-action;bool>;int>)
 (signature logseq-chat.view/outliner-row-identifier :fn<outline-row;string>)
+(signature logseq-chat.view/outliner-row-breadcrumbs
+ :fn<outline-row;vector<sidebar-page>>)
+(signature logseq-chat.view/outliner-row-tags
+ :fn<outline-row;vector<sidebar-page>>)
 (signature logseq-chat.view/outliner-row-action-identifier :fn<outline-row;string>)
 (signature logseq-chat.view/retained-outliner-rows
  :fn<chat-model;vector<retained-outline-row>>)
@@ -149,6 +187,8 @@
  :fn<chat-model;outline-row;retained-outline-row>)
 (signature logseq-chat.view/retained-row-value
  :fn<retained-outline-row;outline-row>)
+(signature logseq-chat.view/retained-row-identifier
+ :fn<retained-outline-row;string>)
 (signature logseq-chat.view/retained-row-editing?
  :fn<retained-outline-row;bool>)
 (signature logseq-chat.view/retained-row-editing-title
@@ -231,6 +271,8 @@
  :fn<chat-model;bool>)
 (signature logseq-chat.view/active-node-projection
  :fn<chat-model;option<node-projection>>)
+(signature logseq-chat.view/node-projection-identifier
+ :fn<node-projection;string>)
 (signature logseq-chat.view/active-node-uuid :fn<chat-model;string>)
 (signature logseq-chat.view/active-node-title :fn<chat-model;string>)
 (signature logseq-chat.view/main-title :fn<chat-model;string>)
@@ -450,6 +492,8 @@
 (signature logseq-chat.view/runtime-log-empty? :fn<chat-model;bool>)
 (signature logseq-chat.view/runtime-log-records
  :fn<chat-model;vector<runtime-log-record>>)
+(signature logseq-chat.view/runtime-log-record-identifier
+ :fn<runtime-log-record;string>)
 (signature logseq-chat.view/runtime-log-errors-label :fn<chat-model;string>)
 (signature logseq-chat.view/runtime-log-order-label :fn<chat-model;string>)
 (signature logseq-chat.view/runtime-log-source-label :fn<chat-model;string>)

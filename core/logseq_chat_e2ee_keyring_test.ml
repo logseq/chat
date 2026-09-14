@@ -1,6 +1,6 @@
 module Transit = Transit_core.Json
 module Codec = Transit_native.Transit.Json
-module E2ee = Logseq_chat_e2ee
+module E2ee = Logseq_chat_lg_core_native
 module Keyring = Logseq_chat_e2ee_keyring
 module Api = Logseq_chat_api
 
@@ -17,16 +17,16 @@ let expect_equal expected actual =
 let crypto ?(private_result = Ok "private-key") ?(on_private = fun () -> ()) () =
   E2ee.
     { decrypt_private_key =
-        (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ ->
+        (fun _ _ _ _ _ ->
           on_private ();
           private_result)
-    ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Ok "remote-graph-key")
-    ; encrypt_graph_key = (fun ~public_key:_ ~plaintext:_ -> Error "unused")
+    ; decrypt_graph_key = (fun _ _ -> Ok "remote-graph-key")
+    ; encrypt_graph_key = (fun _ _ -> Error "unused")
     ; random_bytes = (fun _ -> Error "unused")
     ; encrypt_aes_gcm =
-        (fun ~key:_ ~plaintext:_ -> Ok ("iv", "ciphertext"))
+        (fun _ _ -> Ok ("iv", "ciphertext"))
     ; decrypt_aes_gcm =
-        (fun ~key:_ ~iv:_ ~ciphertext:_ ->
+        (fun _ _ _ ->
           Ok (Codec.to_string (Transit.String "decrypted title")))
     }
 ;;
@@ -263,16 +263,16 @@ let test_asset_codec_encrypts_binary_transit () =
   let encrypted_plaintext = ref None in
   let asset_crypto =
     E2ee.
-      { decrypt_private_key = (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ -> Error "unused")
-      ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Error "unused")
-      ; encrypt_graph_key = (fun ~public_key:_ ~plaintext:_ -> Error "unused")
+      { decrypt_private_key = (fun _ _ _ _ _ -> Error "unused")
+      ; decrypt_graph_key = (fun _ _ -> Error "unused")
+      ; encrypt_graph_key = (fun _ _ -> Error "unused")
       ; random_bytes = (fun _ -> Error "unused")
       ; encrypt_aes_gcm =
-          (fun ~key ~plaintext ->
+          (fun key plaintext ->
             expect_equal "cached-key" key;
             encrypted_plaintext := Some plaintext;
             Ok ("asset-iv", "asset-ciphertext"))
-      ; decrypt_aes_gcm = (fun ~key:_ ~iv:_ ~ciphertext:_ -> Error "unused")
+      ; decrypt_aes_gcm = (fun _ _ _ -> Error "unused")
       }
   in
   let keyring =
@@ -301,12 +301,12 @@ let test_provision_graph_key_uploads_and_caches_key () =
   let saved = ref None in
   let crypto =
     E2ee.
-      { decrypt_private_key = (fun ~password:_ ~iterations:_ ~salt:_ ~iv:_ ~ciphertext:_ -> Error "unused")
-      ; decrypt_graph_key = (fun ~private_key:_ ~ciphertext:_ -> Error "unused")
-      ; encrypt_graph_key = (fun ~public_key ~plaintext -> Ok (public_key ^ plaintext))
+      { decrypt_private_key = (fun _ _ _ _ _ -> Error "unused")
+      ; decrypt_graph_key = (fun _ _ -> Error "unused")
+      ; encrypt_graph_key = (fun public_key plaintext -> Ok (public_key ^ plaintext))
       ; random_bytes = (fun count -> Ok (String.make count 'a'))
-      ; encrypt_aes_gcm = (fun ~key:_ ~plaintext:_ -> Error "unused")
-      ; decrypt_aes_gcm = (fun ~key:_ ~iv:_ ~ciphertext:_ -> Error "unused")
+      ; encrypt_aes_gcm = (fun _ _ -> Error "unused")
+      ; decrypt_aes_gcm = (fun _ _ _ -> Error "unused")
       }
   in
   let public_key = Codec.to_string (Transit.Binary "public") in

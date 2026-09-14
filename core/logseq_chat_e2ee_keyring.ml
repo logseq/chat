@@ -1,9 +1,9 @@
 module Api = Logseq_chat_api
-module E2ee = Logseq_chat_e2ee
+module E2ee = Logseq_chat_lg_core_native
 module Transit = Transit_core.Json
 
 type t =
-  { crypto : E2ee.crypto
+  { crypto : E2ee.e2ee_crypto
   ; load : graph_id:string -> (string option, string) result
   ; save : graph_id:string -> key:string -> (unit, string) result
   ; load_password : unit -> (string option, string) result
@@ -63,7 +63,7 @@ let remember_graph_key t config key =
 let unlock_with_private_key t config ~private_key =
   bind (fetch_graph_key t config) (fun encrypted_graph_key ->
     bind
-      (E2ee.decrypt_graph_key ~crypto:t.crypto ~private_key ~encrypted_graph_key)
+      (E2ee.logseq_chat_e2ee_decrypt_graph_key t.crypto private_key encrypted_graph_key)
       (remember_graph_key t config))
 ;;
 
@@ -75,14 +75,12 @@ let unlock_with_password t config ~password ~persist_password =
         (protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body user_keys_body))
         (fun user_keys ->
           bind
-            (E2ee.decrypt_private_key
-               ~crypto:t.crypto
-               ~password
-               ~private_key_package:user_keys.Api.encrypted_private_key)
+            (E2ee.logseq_chat_e2ee_decrypt_private_key
+               t.crypto password user_keys.Api.encrypted_private_key)
             (fun private_key ->
               bind (fetch_graph_key t config) (fun encrypted_graph_key ->
                 bind
-                  (E2ee.decrypt_graph_key ~crypto:t.crypto ~private_key ~encrypted_graph_key)
+                  (E2ee.logseq_chat_e2ee_decrypt_graph_key t.crypto private_key encrypted_graph_key)
                   (fun key ->
                     let save_password =
                       if persist_password then t.save_password ~password else Ok ()
@@ -121,9 +119,7 @@ let provision t config =
         (protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body user_keys_body))
         (fun user_keys ->
           bind
-            (E2ee.prepare_graph_key
-               ~crypto:t.crypto
-               ~public_key_package:user_keys.Api.public_key)
+            (E2ee.logseq_chat_e2ee_prepare_graph_key t.crypto user_keys.Api.public_key)
             (fun (key, encrypted_key) ->
               bind
                 (response_body
@@ -142,15 +138,15 @@ let graph_key t ~graph_id =
 
 let encrypt_title t ~graph_id title =
   bind (graph_key t ~graph_id) (fun graph_key ->
-    E2ee.encrypt_value ~crypto:t.crypto ~graph_key (Transit.String title))
+    E2ee.logseq_chat_e2ee_encrypt_value t.crypto graph_key (Transit.String title))
 ;;
 
 let encrypt_asset t ~graph_id bytes =
   bind (graph_key t ~graph_id) (fun graph_key ->
-    E2ee.encrypt_value ~crypto:t.crypto ~graph_key (Transit.Binary bytes))
+    E2ee.logseq_chat_e2ee_encrypt_value t.crypto graph_key (Transit.Binary bytes))
 ;;
 
 let decrypt_title t ~graph_id ciphertext =
   bind (graph_key t ~graph_id) (fun graph_key ->
-    E2ee.decrypt_string ~crypto:t.crypto ~graph_key ciphertext)
+    E2ee.logseq_chat_e2ee_decrypt_string t.crypto graph_key ciphertext)
 ;;

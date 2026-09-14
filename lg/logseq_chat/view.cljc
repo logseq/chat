@@ -432,6 +432,72 @@
 (defn recent-pages-empty? [current]
   (empty? (:recent-pages current)))
 
+(defn sidebar-favorites [current]
+  (:favorites current))
+
+(defn sidebar-recent-pages [current]
+  (:recent-pages current))
+
+(defn model-task-statuses [current]
+  (:task-statuses current))
+
+(defn model-outliner-autocomplete-candidates [current]
+  (:outliner-autocomplete-candidates current))
+
+(defn model-composer-assets [current]
+  (:composer-assets current))
+
+(defn model-language-choices [current]
+  (:language-choices current))
+
+(defn model-community-links [current]
+  (:community-links current))
+
+(defn model-graph-menu-open? [current]
+  (:graph-menu-open current))
+
+(defn model-task-status-picker-open? [current]
+  (:task-status-picker-open current))
+
+(defn model-new-graph-name [current]
+  (:new-graph-name current))
+
+(defn model-new-graph-encrypted? [current]
+  (:new-graph-encrypted current))
+
+(defn model-graph-password [current]
+  (:graph-password current))
+
+(defn model-graphs [current]
+  (:graphs current))
+
+(defn model-settings-language-menu-open? [current]
+  (:settings-language-menu-open current))
+
+(defn model-settings-appearance-menu-open? [current]
+  (:settings-appearance-menu-open current))
+
+(defn model-search-loading? [current]
+  (:search-loading current))
+
+(defn model-search-query [current]
+  (:search-query current))
+
+(defn model-search-open? [current]
+  (:search-open current))
+
+(defn model-settings-open? [current]
+  (:settings-open current))
+
+(defn model-create-graph-open? [current]
+  (:create-graph-open current))
+
+(defn model-graph-password-open? [current]
+  (:graph-password-open current))
+
+(defn model-sync-details-open? [current]
+  (:sync-details-open current))
+
 (defn journals-sidebar-selected? [current]
   (and
    (= (:destination current) model/JournalsDestination)
@@ -614,7 +680,7 @@
          :on-press (fn [_event] (send model/ShowGraphs))}
         "Graphs"]))))
 
-(defui sidebar-view [model-source send]
+(defui sidebar-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:accessibility-identifier "sidebar.navigation"
     :grow 1.0
@@ -623,7 +689,7 @@
    [:box {:height (if (host? proto/FlutterHost) 8 48)}]
    [:stack
     [sidebar-graph-switch model-source send]
-    [:if {:test (reactive :graph-menu-open model-source)}
+    [:if {:test (reactive model-graph-menu-open? model-source)}
      [:dropdown-menu
       {:anchor "below"
        :anchor-alignment "start"
@@ -631,8 +697,8 @@
        :accessibility-identifier "menu.graph-switch"
        :on-dismiss (fn [_event] (send model/DismissGraphMenu))}
       [:keyed
-       {:source (reactive :graphs model-source)
-        :key :id
+       {:source (reactive (fn [^:chat-model current] (:graphs current)) model-source)
+        :key sidebar-graph-identifier
         :compare compare
         :as graph-source}
        [sidebar-graph-menu-item model-source graph-source send]]]]]
@@ -649,8 +715,8 @@
       [:if {:test (reactive favorites-empty? model-source)}
        [sidebar-empty-section-label "No favorites yet"]]
       [:keyed
-       {:source (reactive :favorites model-source)
-        :key :uuid
+       {:source (reactive sidebar-favorites model-source)
+        :key sidebar-page-identifier
         :compare compare
         :as page-source}
        [sidebar-page-row model-source page-source send]]]
@@ -659,8 +725,8 @@
       [:if {:test (reactive recent-pages-empty? model-source)}
        [sidebar-empty-section-label "No recent pages"]]
       [:keyed
-       {:source (reactive :recent-pages model-source)
-        :key :uuid
+       {:source (reactive sidebar-recent-pages model-source)
+        :key sidebar-page-identifier
         :compare compare
         :as page-source}
        [sidebar-page-row model-source page-source send]]]]]])
@@ -796,6 +862,12 @@
 (defn outliner-row-identifier [row]
   (let [_depth (:depth row)]
     (str "outliner.block." (:uuid row))))
+
+(defn outliner-row-breadcrumbs [row]
+  (:breadcrumbs row))
+
+(defn outliner-row-tags [row]
+  (:tags row))
 
 (defn outliner-row-action-identifier [row]
   (let [_depth (:depth row)]
@@ -1115,6 +1187,9 @@
 (defn active-node-projection [current]
   (last (:node-routes current)))
 
+(defn node-projection-identifier [route]
+  (:uuid route))
+
 (defn active-node-uuid [current]
   (match (active-node-projection current)
     (Some route) (:uuid route)
@@ -1268,12 +1343,12 @@
   (let [search-open (:search-open (signal/sample model-source))]
     (breadcrumb-button ui-context breadcrumb-source search-open send)))
 
-(defui node-breadcrumbs [model-source send]
+(defui node-breadcrumbs [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:breadcrumb {:gap 5 :main "start"
                 :accessibility-identifier "breadcrumb.node"}
    [:keyed
     {:source (reactive active-node-breadcrumbs model-source)
-     :key :uuid
+     :key breadcrumb-identifier
      :compare compare
      :as breadcrumb-source}
     [node-breadcrumb-button model-source breadcrumb-source send]]])
@@ -1282,8 +1357,8 @@
   [:breadcrumb {:gap 5 :main "start"
                 :accessibility-identifier "breadcrumb.related-blocks"}
    [:keyed
-    {:source (reactive :breadcrumbs row-source)
-     :key :uuid
+    {:source (reactive outliner-row-breadcrumbs row-source)
+     :key breadcrumb-identifier
      :compare compare
      :as breadcrumb-source}
     [breadcrumb-button breadcrumb-source false send]]])
@@ -1424,6 +1499,7 @@
     (retained-outliner-rows current)))
 
 (defn retained-row-value [retained] (:value retained))
+(defn retained-row-identifier [retained] (:render-key retained))
 (defn retained-row-editing? [retained] (:is-editing retained))
 (defn retained-row-editing-title [retained] (:editing-title retained))
 (defn retained-row-editing-caret [retained] (:editing-caret retained))
@@ -1577,8 +1653,8 @@
           :accessibility-identifier "button.block-task-status"}
          [:context-menu
           [:keyed
-           {:source (reactive :task-statuses model-source)
-            :key :uuid
+           {:source (reactive model-task-statuses model-source)
+            :key task-status-identifier
             :compare compare
             :as status-source}
            [outliner-task-status-row (outliner-row-uuid row) status-source send]]]]])
@@ -1596,8 +1672,8 @@
          :accessibility-identifier "button.block-task-status"}
         [:context-menu
          [:keyed
-          {:source (reactive :task-statuses model-source)
-           :key :uuid
+          {:source (reactive model-task-statuses model-source)
+           :key task-status-identifier
            :compare compare
            :as status-source}
           [outliner-task-status-row (outliner-row-uuid row) status-source send]]]]))))
@@ -1641,8 +1717,8 @@
        [:if {:test has-tags-source}
         [:row {:gap 6}
          [:keyed
-          {:source (reactive :tags row-source)
-           :key :uuid
+          {:source (reactive outliner-row-tags row-source)
+           :key outliner-tag-identifier
            :compare compare
            :as tag-source}
           [outliner-tag tag-source send]]]]
@@ -1751,7 +1827,7 @@
        (first-journal-section-identifier (signal/sample model-source))}
       [:keyed
        {:source (reactive first-journal-retained-rows model-source)
-        :key :render-key
+        :key retained-row-identifier
         :compare compare
         :as retained-row-source}
        [outliner-entry model-source retained-row-source
@@ -1765,7 +1841,7 @@
        (first-journal-section-identifier (signal/sample model-source))}
       [:keyed
        {:source (reactive first-journal-retained-rows model-source)
-        :key :render-key
+        :key retained-row-identifier
         :compare compare
         :as retained-row-source}
        [outliner-entry model-source retained-row-source
@@ -1923,7 +1999,7 @@
                (model/ChooseOutlinerAutocomplete
                 (:value current-candidate))))}])))
 
-(defui outliner-autocomplete-bar [model-source send]
+(defui outliner-autocomplete-bar [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:scroll
    {:max-height 220
     :accessibility-identifier "toolbar.outliner.autocomplete"
@@ -1934,8 +2010,8 @@
      :cross (if (host? proto/FlutterHost) "stretch" "center")
      :grow (if (host? proto/FlutterHost) 0.0 1.0)}
     [:keyed
-     {:source (reactive :outliner-autocomplete-candidates model-source)
-      :key :index
+     {:source (reactive model-outliner-autocomplete-candidates model-source)
+      :key outliner-autocomplete-identifier
       :compare compare
       :as candidate-source}
      [outliner-autocomplete-row candidate-source send]]]])
@@ -2170,7 +2246,7 @@
            :accessibility-identifier "title.related-section"}
     title]])
 
-(defui node-related-section [model-source send]
+(defui node-related-section [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:gap 0
     :accessibility-identifier "section.node.linked-references"}
@@ -2180,12 +2256,12 @@
    [:column {:accessibility-identifier "list.node.related"}
     [:keyed
      {:source (reactive active-node-related-rows model-source)
-      :key :uuid
+      :key outliner-row-identifier
       :compare compare
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
-(defui node-tagged-section [model-source send]
+(defui node-tagged-section [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:gap 0
     :accessibility-identifier "section.tag.tagged-nodes"}
@@ -2198,12 +2274,12 @@
    [:column {:accessibility-identifier "list.node.tagged"}
     [:keyed
      {:source (reactive active-node-related-rows model-source)
-      :key :uuid
+      :key outliner-row-identifier
       :compare compare
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
-(defui node-linked-reference-section [model-source send]
+(defui node-linked-reference-section [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:gap 0
     :accessibility-identifier "section.node.linked-references"}
@@ -2213,12 +2289,12 @@
    [:column {:accessibility-identifier "list.node.linked-references"}
     [:keyed
      {:source (reactive active-node-linked-reference-rows model-source)
-      :key :uuid
+      :key outliner-row-identifier
       :compare compare
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
-(defui add-first-block-button [model-source send]
+(defui add-first-block-button [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:box {:padding-horizontal 8}
    [:button
     {:label "Add first block"
@@ -2228,7 +2304,7 @@
             (send (model/AddRootBlock (active-node-page-uuid current))))}
     "Add first block"]])
 
-(defui node-screen [model-source send]
+(defui node-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:accessibility-identifier "screen.node"
     :grow (if (host? proto/FlutterHost) 1.0 0.0)}
@@ -2253,7 +2329,7 @@
       [:column {:accessibility-identifier "list.outliner"}
        [:keyed
         {:source (reactive retained-outliner-rows model-source)
-         :key :render-key
+         :key retained-row-identifier
          :compare compare
          :as retained-row-source}
         [outliner-row model-source retained-row-source
@@ -2473,12 +2549,21 @@
 (defn composer-assets-present? [current]
   (not (empty? (:composer-assets current))))
 
-(defui composer-view [model-source send]
+(defn composer-expanded? [current]
+  (:composer-expanded current))
+
+(defn composer-draft [current]
+  (:composer-draft current))
+
+(defn composer-autofocus? [current]
+  (:composer-autofocus current))
+
+(defui composer-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:box
    {:accessibility-identifier "surface.composer.root"
     :grow 1.0
     :min-height 58}
-   [:if {:test (reactive :composer-expanded model-source)}
+   [:if {:test (reactive composer-expanded? model-source)}
     [:column
      {:ios [[:liquid-glass {:shape "rounded-rectangle"}]]
       :grow 1.0
@@ -2497,12 +2582,12 @@
      [:if {:test (reactive composer-assets-present? model-source)}
       [:scroll {:orientation "horizontal" :height 140}
        [:row {:gap 8}
-        [:keyed {:source (reactive :composer-assets model-source)
-                 :key :uuid :compare compare :as asset-source}
+        [:keyed {:source (reactive model-composer-assets model-source)
+                 :key composer-asset-identifier :compare compare :as asset-source}
          [composer-asset-view asset-source send]]]]]
      [:textarea
-      {:text (reactive :composer-draft model-source)
-       :autofocus (reactive :composer-autofocus model-source)
+      {:text (reactive composer-draft model-source)
+       :autofocus (reactive composer-autofocus? model-source)
        :min-height 36
        :class "composer-input"
        :placeholder "Capture"
@@ -2526,7 +2611,7 @@
       [composer-attachment-button send]
       [:stack
        [composer-task-status-button send]
-       [:if {:test (reactive :task-status-picker-open model-source)}
+       [:if {:test (reactive model-task-status-picker-open? model-source)}
         [task-status-picker-dialog model-source send]]]
       [:spacer
        {:grow 1.0
@@ -2549,15 +2634,15 @@
        (event [current-status status-source]
               (send (model/ChooseTaskStatus (:uuid current-status))))}])))
 
-(defui task-status-picker-dialog [model-source send]
+(defui task-status-picker-dialog [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:dropdown-menu
    {:anchor "above"
     :anchor-alignment "start"
     :min-width 220
     :on-dismiss (fn [_event] (send model/CloseTaskStatusPicker))}
    [:keyed
-    {:source (reactive :task-statuses model-source)
-     :key :uuid
+    {:source (reactive model-task-statuses model-source)
+     :key task-status-identifier
      :compare compare
      :as status-source}
     [task-status-row status-source send]]
@@ -2671,7 +2756,7 @@
     :on-press (fn [_event] (send (model/ReviewFlashcard rating)))}
    title])
 
-(defui flashcard-review-content [model-source send]
+(defui flashcard-review-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:accessibility-identifier "layout.flashcards.review"
     :grow 1.0
@@ -2712,7 +2797,7 @@
         {:gap 12}
         [:keyed
          {:source (reactive visible-flashcard-answer-rows model-source)
-          :key :uuid
+          :key flashcard-answer-identifier
           :compare compare
           :as answer-source}
          [flashcard-answer-row answer-source]]]]]]]
@@ -2763,7 +2848,7 @@
     {:height 24
      :accessibility-identifier "spacer.flashcards.bottom"}]])
 
-(defui flashcard-screen [model-source send]
+(defui flashcard-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:accessibility-identifier "screen.flashcards"
     :grow 1.0
@@ -2989,7 +3074,7 @@
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
 
-(defui graph-create-sheet [model-source send]
+(defui graph-create-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3008,7 +3093,7 @@
          :class "form"
          :accessibility-identifier "form.graph-create"}
         [:text-field
-         {:text (reactive :new-graph-name model-source)
+         {:text (reactive model-new-graph-name model-source)
           :placeholder "Graph name"
           :label "Graph name"
           :accessibility-identifier "field.graph-name"
@@ -3018,7 +3103,7 @@
               (TextChanged _node text) (send (model/ChangeNewGraphName text))
               _ true))}]
         [:switch
-         {:checked (reactive :new-graph-encrypted model-source)
+         {:checked (reactive model-new-graph-encrypted? model-source)
           :label "End-to-end encryption"
           :accessibility-identifier "toggle.graph-encryption"
           :on-toggle
@@ -3068,7 +3153,7 @@
        {:class "form"
         :accessibility-identifier "form.graph-create"}
        [:text-field
-        {:text (reactive :new-graph-name model-source)
+        {:text (reactive model-new-graph-name model-source)
          :placeholder "Graph name"
          :label "Graph name"
          :accessibility-identifier "field.graph-name"
@@ -3078,7 +3163,7 @@
              (TextChanged _node text) (send (model/ChangeNewGraphName text))
              _ true))}]
        [:toggle
-        {:checked (reactive :new-graph-encrypted model-source)
+        {:checked (reactive model-new-graph-encrypted? model-source)
          :label "End-to-end encryption"
          :accessibility-identifier "toggle.graph-encryption"
          :on-toggle
@@ -3115,7 +3200,7 @@
          :on-press (fn [_event] (send model/SubmitCreateGraph))}
         "Add"]]])))
 
-(defui graph-delete-dialog [model-source send]
+(defui graph-delete-dialog [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3245,14 +3330,14 @@
      {:value (reactive graph-picker-error-message model-source)
       :accessibility-identifier "error.banner.message"}]]])
 
-(defui graph-password-sheet [model-source send]
+(defui graph-password-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:sheet
    {:text "Unlock encrypted graphs"
     :on-dismiss (fn [_event] (send model/CancelGraphUnlock))}
    [:column
     [:text "Unlock encrypted graphs"]
     [:secure-field
-     {:text (reactive :graph-password model-source)
+     {:text (reactive model-graph-password model-source)
       :placeholder "E2EE password"
       :label "E2EE password"
       :accessibility-identifier "field.graph-password"
@@ -3275,7 +3360,7 @@
       :on-press (fn [_event] (send model/SubmitGraphPassword))}
      "Unlock"]]])
 
-(defui graphs-screen [model-source send]
+(defui graphs-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3310,7 +3395,7 @@
         [:text {:foreground "muted-foreground"} "No local graphs"]]]
       [:keyed
        {:source (reactive local-graphs model-source)
-        :key :id
+        :key graph-identifier
         :compare compare
         :as graph-source}
        [graph-list-row model-source graph-source true send]]
@@ -3319,7 +3404,7 @@
         [:heading {:level 5} "Remote graphs"]]]
       [:keyed
        {:source (reactive remote-graphs model-source)
-        :key :id
+        :key graph-identifier
         :compare compare
         :as graph-source}
        [graph-list-row model-source graph-source false send]]])
@@ -3347,7 +3432,7 @@
        [:text {:foreground "secondary"} "No local graphs"]]
       [:keyed
        {:source (reactive local-graphs model-source)
-        :key :id
+        :key graph-identifier
         :compare compare
         :as graph-source}
        [graph-list-row model-source graph-source true send]]
@@ -3356,7 +3441,7 @@
         "Remote graphs:"]]
       [:keyed
        {:source (reactive remote-graphs model-source)
-        :key :id
+        :key graph-identifier
         :compare compare
         :as graph-source}
        [graph-list-row model-source graph-source false send]]])))
@@ -3406,7 +3491,7 @@
       :on-press (fn [_event] (send model/RefreshGraphs))}
      "Refresh"]]])
 
-(defui flutter-graph-picker-catalog [model-source send]
+(defui flutter-graph-picker-catalog [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:grow 1.0
     :gap 16}
@@ -3419,13 +3504,13 @@
    [:scroll {:grow 1.0}
     [:column {:gap 12}
      [:keyed
-      {:source (reactive :graphs model-source)
-       :key :id
+      {:source (reactive model-graphs model-source)
+       :key graph-identifier
        :compare compare
        :as graph-source}
       [graph-row model-source graph-source false send]]]]])
 
-(defui graph-picker-screen [model-source send]
+(defui graph-picker-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3488,8 +3573,8 @@
       [:scroll {:grow 1.0}
        [:column {:gap 12}
         [:keyed
-         {:source (reactive :graphs model-source)
-          :key :id
+         {:source (reactive model-graphs model-source)
+          :key graph-identifier
           :compare compare
           :as graph-source}
          [graph-row model-source graph-source false send]]]]])))
@@ -3561,7 +3646,7 @@
        :on-press
        (fn [_event] (send (model/ChooseSettingsLanguage (:id choice))))}])))
 
-(defui settings-language-control [model-source send]
+(defui settings-language-control [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3572,15 +3657,15 @@
         :label "Language"
         :accessibility-identifier "picker.settings.language"
         :on-press (fn [_event] (send model/OpenSettingsLanguageMenu))}]
-      [:if {:test (reactive :settings-language-menu-open model-source)}
+      [:if {:test (reactive model-settings-language-menu-open? model-source)}
        [:dropdown-menu
         {:anchor "below"
          :anchor-alignment "end"
          :min-width 220
          :on-dismiss (fn [_event] (send model/CloseSettingsLanguageMenu))}
         [:keyed
-         {:source (reactive :language-choices model-source)
-          :key :id
+         {:source (reactive model-language-choices model-source)
+          :key settings-language-choice-identifier
           :compare compare
           :as choice-source}
          [settings-language-choice-menu-item choice-source send]]]]])
@@ -3591,13 +3676,13 @@
        :class "menu"
        :accessibility-identifier "picker.settings.language"}
       [:keyed
-       {:source (reactive :language-choices model-source)
-        :key :id
+       {:source (reactive model-language-choices model-source)
+        :key settings-language-choice-identifier
         :compare compare
         :as choice-source}
        [settings-language-choice-radio model-source choice-source send]]])))
 
-(defui settings-appearance-control [model-source send]
+(defui settings-appearance-control [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3608,7 +3693,7 @@
         :label "Theme"
         :accessibility-identifier "picker.settings.appearance"
         :on-press (fn [_event] (send model/OpenSettingsAppearanceMenu))}]
-      [:if {:test (reactive :settings-appearance-menu-open model-source)}
+      [:if {:test (reactive model-settings-appearance-menu-open? model-source)}
        [:dropdown-menu
         {:anchor "below"
          :anchor-alignment "end"
@@ -3630,7 +3715,7 @@
        {:text (reactive settings-appearance-title model-source)
         :label "Theme"
         :on-press (fn [_event] (send model/OpenSettingsAppearanceMenu))}]
-      [:if {:test (reactive :settings-appearance-menu-open model-source)}
+      [:if {:test (reactive model-settings-appearance-menu-open? model-source)}
        [:dropdown-menu
         {:anchor "below"
          :anchor-alignment "end"
@@ -3793,6 +3878,9 @@
 (defn runtime-log-records [current]
   (:runtime-log-records current))
 
+(defn runtime-log-record-identifier [record]
+  (:id record))
+
 (defn runtime-log-errors-label [current]
   (if (:runtime-log-errors-only current) "All" "Errors only"))
 
@@ -3823,21 +3911,21 @@
             :class "caption"}]
     [:separator]]))
 
-(defn settings-tab-row [ui-context model-source tab title send]
+(defn settings-tab-row [ui-context ^:signal<chat-model> model-source tab title send]
   (let [label-source
-        (reactive (fn [current] (tab-toggle-label current tab)) model-source)
+        (reactive (fn [^:chat-model current] (tab-toggle-label current tab)) model-source)
         toggle-disabled-source
-        (reactive (fn [_current] (model/required-sidebar-tab? tab)) model-source)
+        (reactive (fn [^:chat-model _current] (model/required-sidebar-tab? tab)) model-source)
         movement-visible-source
-        (reactive (fn [current] (tab-movement-visible? current tab)) model-source)
+        (reactive (fn [^:chat-model current] (tab-movement-visible? current tab)) model-source)
         up-disabled-source
-        (reactive (fn [current] (tab-move-up-disabled? current tab)) model-source)
+        (reactive (fn [^:chat-model current] (tab-move-up-disabled? current tab)) model-source)
         down-disabled-source
-        (reactive (fn [current] (tab-move-down-disabled? current tab)) model-source)
+        (reactive (fn [^:chat-model current] (tab-move-down-disabled? current tab)) model-source)
         selection-glyph-source
-        (reactive (fn [current] (tab-selection-glyph current tab)) model-source)
+        (reactive (fn [^:chat-model current] (tab-selection-glyph current tab)) model-source)
         selection-icon-source
-        (reactive (fn [current] (tab-selection-icon-name current tab)) model-source)]
+        (reactive (fn [^:chat-model current] (tab-selection-icon-name current tab)) model-source)]
     (if (= (ui/host ui-context) proto/FlutterHost)
       (elements/element
        ui-context nil
@@ -3912,7 +4000,7 @@
             (fn [_event] (send (model/MoveSidebarTab tab 1)))}
            "↓"]]]]))))
 
-(defui settings-tabs-screen [model-source send]
+(defui settings-tabs-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3965,7 +4053,7 @@
       [:if {:test (reactive settings-available-tabs-present? model-source)}
        [settings-tab-row model-source "flashcards" "Flashcards" send]]])))
 
-(defui runtime-log-toolbar [model-source send]
+(defui runtime-log-toolbar [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
      (elements/element
       ui-context nil
@@ -4040,7 +4128,7 @@
          :on-press (fn [_event] (send model/CopyRuntimeLog))}
         "Copy"]])))
 
-(defui runtime-log-screen [model-source send]
+(defui runtime-log-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column {:gap 12
             :padding 16
             :grow 1.0
@@ -4053,7 +4141,7 @@
       [:text {:foreground "secondary"} "No log entries"]]
      [:keyed
       {:source (reactive runtime-log-records model-source)
-       :key :id
+       :key runtime-log-record-identifier
        :compare compare
        :as record-source}
       [runtime-log-row record-source]]]]])
@@ -4070,7 +4158,7 @@
     (send (model/ToggleAutoCorrection enabled))
     _ true))
 
-(defui settings-general-card [model-source send]
+(defui settings-general-card [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4232,7 +4320,7 @@
        :on-press (fn [_event] (send model/SignOut))}
       "Sign Out"])))
 
-(defui settings-screen [model-source send]
+(defui settings-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:gap 18
     :padding 20
@@ -4335,8 +4423,8 @@
       :corner-radius 14
       :padding 16}
      [:keyed
-      {:source (reactive :community-links model-source)
-       :key :id
+      {:source (reactive model-community-links model-source)
+       :key settings-community-link-identifier
        :compare compare
        :as link-source}
       [settings-community-link-row model-source link-source send]]]]
@@ -4348,7 +4436,7 @@
      :corner-radius 14}
     [settings-sign-out-row send]]])
 
-(defui settings-main-sheet [model-source send]
+(defui settings-main-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4411,7 +4499,7 @@
          :on-press (fn [_event] (send model/ApplySettings))}
         "Apply"]]])))
 
-(defui settings-tabs-sheet [model-source send]
+(defui settings-tabs-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4494,7 +4582,7 @@
         :on-press (fn [_event] (send model/DismissRuntimeLog))}
        "Done"]])))
 
-(defui runtime-log-sheet [model-source send]
+(defui runtime-log-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4519,7 +4607,7 @@
       [runtime-log-screen model-source send]
       [runtime-log-actions send]])))
 
-(defui settings-sheet [model-source send]
+(defui settings-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element ui-context nil
      [:stack
@@ -4558,7 +4646,7 @@
     (FailedState reason) reason
     _ ""))
 
-(defui sync-status-sheet [model-source send]
+(defui sync-status-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:sheet
    {:text "Sync status"
     :class "navigation-form"
@@ -4624,12 +4712,12 @@
       :on-press (fn [_event] (send model/CloseSyncDetails))}
      "Done"]]])
 
-(defui search-screen [model-source send]
+(defui search-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:column
    {:grow 1.0
     :accessibility-identifier "screen.search"}
    [:row {:height 24 :gap 6 :cross "center" :padding-horizontal 20}
-    [:if {:test (reactive :search-loading model-source)}
+    [:if {:test (reactive model-search-loading? model-source)}
      [:spinner {:width 12 :height 12 :accessibility-identifier "search.loading"}]]
     [:text {:value (reactive search-result-status model-source)
             :class "caption"
@@ -4651,7 +4739,7 @@
              :text-alignment "center"
              :accessibility-identifier "search.empty"}]
      [:text {:value (reactive search-empty-supporting-message
-                              (reactive :search-query model-source))
+                              (reactive model-search-query model-source))
              :foreground "muted-foreground"
              :text-alignment "center"
              :accessibility-identifier "search.empty.supporting"}]]]
@@ -4664,7 +4752,7 @@
        "Pages"]]
      [:keyed
       {:source (reactive page-search-results model-source)
-       :key :uuid
+       :key search-result-identifier
        :compare compare
        :as hit-source}
       [search-result-row hit-source send]]
@@ -4674,12 +4762,12 @@
        "Blocks"]]
      [:keyed
       {:source (reactive block-search-results model-source)
-       :key :uuid
+       :key search-result-identifier
        :compare compare
        :as hit-source}
       [search-result-row hit-source send]]]]])
 
-(defui capture-and-search-row [model-source send]
+(defui capture-and-search-row [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
     (elements/element
      ui-context nil
@@ -4716,7 +4804,7 @@
         :accessibility-identifier "button.search"
         :on-press (fn [_event] (send model/OpenSearch))}]])))
 
-(defui main-bottom-chrome [model-source send]
+(defui main-bottom-chrome [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4829,7 +4917,7 @@
       [outliner-first-journal-section model-source send]]
      [:keyed
       {:source (reactive remaining-retained-outliner-rows model-source)
-       :key :render-key
+       :key retained-row-identifier
        :compare compare
        :as retained-row-source}
       [outliner-entry model-source retained-row-source
@@ -4854,7 +4942,7 @@
        [node-linked-reference-section model-source send]]]
      [:box {:height 120}]]])
 
-(defui retained-journal-pane [model-source send]
+(defui retained-journal-pane [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4878,7 +4966,7 @@
         model-source)
        send]])))
 
-(defui journal-tree-panes [model-source send]
+(defui journal-tree-panes [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4958,7 +5046,7 @@
      [:column {:accessibility-identifier "journals.loading"}
       [:text {:value (reactive graph-loading-message model-source)}]])))
 
-(defui chat-main-view [model-source send]
+(defui chat-main-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:stack {:grow 1.0}
    [:if {:test (reactive journal-tree-retained? model-source)}
     ;; Keep the journal home mounted while the drawer replaces the detail pane.
@@ -4977,7 +5065,7 @@
       :accessibility-identifier "journals.graph-loaded"}
      ""]]])
 
-(defui main-header-leading [model-source send]
+(defui main-header-leading [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:stack
    [:if {:test (reactive
                  (fn [current]
@@ -5001,7 +5089,7 @@
       :disabled (reactive sidebar-drag-disabled? model-source)
       :on-press (fn [_event] (send model/OpenSidebar))}]]])
 
-(defui main-header-title [model-source]
+(defui main-header-title [^:signal<chat-model> model-source]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -5016,13 +5104,13 @@
        :class "headline"
        :accessibility-identifier "title.main"}])))
 
-(defui main-header-sync [model-source send]
+(defui main-header-sync [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:stack
    [:if {:test (reactive connection-control-visible? model-source)}
     [:button
      {:icon (if (host? proto/FlutterHost)
-              (reactive (fn [_current] "app:sync-status") model-source)
-              (reactive (fn [_current] "app:status-dot") model-source))
+              (reactive (fn [^:chat-model _current] "app:sync-status") model-source)
+              (reactive (fn [^:chat-model _current] "app:status-dot") model-source))
       :variant "ghost"
       :size "icon"
       :foreground-signal (reactive sync-indicator-foreground model-source)
@@ -5031,7 +5119,7 @@
       (reactive sync-accessibility-identifier model-source)
       :on-press (fn [_event] (send model/OpenSyncDetails))}]]])
 
-(defui active-overflow-menu [model-source send]
+(defui active-overflow-menu [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (let [node (ui/extension! ui-context "native-overflow-menu")
         page-actions-source
         (reactive active-page-actions-visible? model-source)
@@ -5057,7 +5145,7 @@
        (handle-native-overflow-menu-event input-event send)))
     node))
 
-(defui main-header-connection [model-source send]
+(defui main-header-connection [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   [:stack
    [:if {:test (reactive connection-control-visible? model-source)}
     [active-overflow-menu model-source send]]])
@@ -5143,11 +5231,11 @@
        ui-context nil
        [node-screen route-model-source send]))))
 
-(defui native-search-view [model-source send]
+(defui native-search-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (let [node (ui/extension! ui-context "native-search-presentation")
-        presented-source (reactive :search-open model-source)
+        presented-source (reactive model-search-open? model-source)
         depth-source (reactive search-navigation-depth model-source)
-        query-source (reactive :search-query model-source)
+        query-source (reactive model-search-query model-source)
         presented-value-source (reactive bool-wire-value presented-source)
         depth-value-source (reactive int-wire-value depth-source)
         query-value-source (reactive string-wire-value query-source)]
@@ -5172,7 +5260,7 @@
            [chat-main-view model-source send]]
           [:keyed
            {:source (reactive active-app-node-routes model-source)
-            :key :uuid
+            :key node-projection-identifier
             :compare compare
             :as route-source}
            [native-node-screen model-source route-source send]]
@@ -5181,7 +5269,7 @@
             [search-screen model-source send]]]
           [:keyed
            {:source (reactive active-search-node-routes model-source)
-            :key :uuid
+            :key node-projection-identifier
             :compare compare
             :as route-source}
            [native-node-screen model-source route-source send]]])
@@ -5198,14 +5286,14 @@
          ui-context node
          [:keyed
           {:source (reactive search-node-routes model-source)
-           :key :uuid
+           :key node-projection-identifier
            :compare compare
            :as route-source}
           [native-node-screen model-source route-source send]])
         node))
     node))
 
-(defui native-navigation-view [model-source send]
+(defui native-navigation-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (let [node (ui/extension! ui-context "native-navigation-stack")
         depth-source (reactive app-navigation-depth model-source)
         depth-value-source (reactive int-wire-value depth-source)
@@ -5265,7 +5353,7 @@
          ui-context node
          [:keyed
           {:source (reactive model/app-node-routes model-source)
-           :key :uuid
+           :key node-projection-identifier
            :compare compare
            :as route-source}
           [native-node-screen model-source route-source send]])
@@ -5313,7 +5401,7 @@
       (authentication-screen-visible? current)
       (sidebar-drag-disabled? current)))
 
-(defui authentication-screen [model-source send]
+(defui authentication-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -5361,7 +5449,7 @@
         {:value (reactive authentication-error-message model-source)
          :accessibility-identifier "text.authentication-error"}]]])))
 
-(defui application-main-content [model-source send]
+(defui application-main-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
     (if (host? proto/FlutterHost)
       (elements/element
@@ -5372,17 +5460,17 @@
          [native-navigation-view model-source send]]
         [:if {:test (reactive graph-picker-screen-visible? model-source)}
          [graph-picker-screen model-source send]]
-        [:if {:test (reactive :settings-open model-source)}
+        [:if {:test (reactive model-settings-open? model-source)}
          [settings-sheet model-source send]]
-        [:if {:test (reactive :create-graph-open model-source)}
+        [:if {:test (reactive model-create-graph-open? model-source)}
          [graph-create-sheet model-source send]]
         [:if {:test (reactive graph-deletion-pending? model-source)}
          [graph-delete-dialog model-source send]]
-        [:if {:test (reactive :graph-password-open model-source)}
+        [:if {:test (reactive model-graph-password-open? model-source)}
          [graph-password-sheet model-source send]]
         [:if {:test (reactive page-deletion-pending? model-source)}
          [page-delete-dialog send]]
-        [:if {:test (reactive :sync-details-open model-source)}
+        [:if {:test (reactive model-sync-details-open? model-source)}
          [sync-status-sheet model-source send]]])
       (elements/element
        ui-context nil
@@ -5393,17 +5481,17 @@
          [native-navigation-view model-source send]]
         [:if {:test (reactive graph-picker-screen-visible? model-source)}
          [graph-picker-screen model-source send]]
-        [:if {:test (reactive :settings-open model-source)}
+        [:if {:test (reactive model-settings-open? model-source)}
          [settings-sheet model-source send]]
-        [:if {:test (reactive :create-graph-open model-source)}
+        [:if {:test (reactive model-create-graph-open? model-source)}
          [graph-create-sheet model-source send]]
         [:if {:test (reactive graph-deletion-pending? model-source)}
          [graph-delete-dialog model-source send]]
-        [:if {:test (reactive :graph-password-open model-source)}
+        [:if {:test (reactive model-graph-password-open? model-source)}
          [graph-password-sheet model-source send]]
         [:if {:test (reactive page-deletion-pending? model-source)}
          [page-delete-dialog send]]
-        [:if {:test (reactive :sync-details-open model-source)}
+        [:if {:test (reactive model-sync-details-open? model-source)}
          [sync-status-sheet model-source send]]]))
     (elements/element
      ui-context nil
@@ -5414,20 +5502,20 @@
        [graph-picker-screen model-source send]]
       [:if {:test (reactive authentication-screen-visible? model-source)}
        [authentication-screen model-source send]]
-      [:if {:test (reactive :settings-open model-source)}
+      [:if {:test (reactive model-settings-open? model-source)}
        [settings-sheet model-source send]]
-      [:if {:test (reactive :create-graph-open model-source)}
+      [:if {:test (reactive model-create-graph-open? model-source)}
        [graph-create-sheet model-source send]]
       [:if {:test (reactive graph-deletion-pending? model-source)}
        [graph-delete-dialog model-source send]]
-      [:if {:test (reactive :graph-password-open model-source)}
+      [:if {:test (reactive model-graph-password-open? model-source)}
        [graph-password-sheet model-source send]]
       [:if {:test (reactive page-deletion-pending? model-source)}
        [page-delete-dialog send]]
-      [:if {:test (reactive :sync-details-open model-source)}
+      [:if {:test (reactive model-sync-details-open? model-source)}
        [sync-status-sheet model-source send]]])))
 
-(defui chat-view [model-source send]
+(defui chat-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
     (if (host? proto/FlutterHost)
       (elements/element

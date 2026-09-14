@@ -3,7 +3,7 @@ open Datascript
 module Bootstrap = Logseq_chat_graph_bootstrap
 module Ops = Logseq_chat_pending_ops
 module Projection = Logseq_chat_pending_projection
-module Snapshot = Logseq_chat_snapshot
+module Snapshot = Logseq_chat_lg_core_native
 module Transit = Transit_native.Transit.Json
 
 let fail label message = failwith (label ^ ": " ^ message)
@@ -212,9 +212,9 @@ let () =
   assert_bool "snapshot aevt metadata shift" (aevt_shift > 0);
   assert_bool "snapshot avet metadata shift" (avet_shift >= 0);
   let wire = Bootstrap.frame_rows rows in
-  let parser = Snapshot.create_parser ~max_frame_bytes:(2 * 1024 * 1024) in
-  let decoded = Snapshot.feed parser wire |> expect_ok "framed snapshot" in
-  Snapshot.finish_parser parser |> expect_ok "complete framed snapshot";
+  let parser = Snapshot.logseq_chat_snapshot_create_parser (2 * 1024 * 1024) in
+  let decoded = Snapshot.logseq_chat_snapshot_feed parser wire |> expect_ok "framed snapshot" in
+  Snapshot.logseq_chat_snapshot_finish_parser parser |> expect_ok "complete framed snapshot";
   if List.length decoded <> List.length rows
   then fail "snapshot row count" "framing did not preserve every KVS row"
 ;;

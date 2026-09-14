@@ -10,15 +10,15 @@
   (digit-run-value :string)
   (digit-run-carried :bool))
 
-(defn char-at [^:string value ^:int index]
+(defn char-at [value index]
   (subs value index (inc index)))
 
-(defn suffix [^:string value ^:int offset]
+(defn suffix [value offset]
   (if (>= offset (count value))
     ""
     (subs value offset)))
 
-(defn repeat-string [^:string value ^:int times]
+(defn repeat-string [value times]
   (loop [index 0
          result ""]
     (if (= index times)
@@ -27,7 +27,7 @@
 
 (def minimum "A00000000000000000000000000")
 
-(defn index-of-in [^:string values ^:string target]
+(defn index-of-in [values target]
   (loop [index 0]
     (if (= index (count values))
       None
@@ -35,13 +35,13 @@
         (Some index)
         (recur (inc index))))))
 
-(defn index-of [^:string character]
+(defn index-of [character]
   (index-of-in digits character))
 
-(defn digit-at [^:int index]
+(defn digit-at [index]
   (char-at digits index))
 
-(defn adjacent-head [^:string head ^:int offset]
+(defn adjacent-head [head offset]
   (match (index-of head)
     (Some index)
     (let [next (+ index offset)]
@@ -50,7 +50,7 @@
         (Some (digit-at next))))
     None None))
 
-(defn integer-length [^:string head]
+(defn integer-length [head]
   (match (index-of-in lowercase head)
     (Some index)
     (Ok (+ index 2))
@@ -60,7 +60,7 @@
       (Ok (+ (- (dec (count uppercase)) index) 2))
       None (Error "invalid order key head"))))
 
-(defn integer-part [^:string key]
+(defn integer-part [key]
   (if (= key "")
     (Error "empty order key")
     (match (integer-length (char-at key 0))
@@ -70,14 +70,14 @@
         (Ok (subs key 0 length)))
       (Error message) (Error message))))
 
-(defn validate-integer-error [^:string value]
+(defn validate-integer-error [value]
   (match (integer-part value)
     (Ok integer)
     (let [digits-are-valid
           (loop [index 1]
             (if (= index (count integer))
               true
-              (let [valid-digit (not (= (index-of (char-at integer index)) None))]
+              (let [valid-digit (not= (index-of (char-at integer index)) None)]
                 (if valid-digit
                   (recur (inc index))
                   false))))]
@@ -86,26 +86,26 @@
         (Some "invalid integer part of order key")))
     (Error message) (Some message)))
 
-(defn validate-error [^:string key]
+(defn validate-error [key]
   (match (integer-part key)
     (Ok integer)
     (let [fraction (suffix key (count integer))]
       (if (or (= key minimum)
-              (and (not (= fraction ""))
+              (and (not= fraction "")
                    (= (char-at fraction (dec (count fraction))) zero)))
         (Some "invalid order key")
         None))
     (Error message) (Some message)))
 
-(defn set-char [^:string value ^:int index ^:string character]
+(defn set-char [value index character]
   (str (subs value 0 index) character (suffix value (inc index))))
 
-(defn digit-run [^:string value ^:bool carried]
+(defn digit-run [value carried]
   (record digit-run
           (digit-run-value value)
           (digit-run-carried carried)))
 
-(defn increment-digit-run [^:string value ^:int index]
+(defn increment-digit-run [value index]
   (if (= index 0)
     (digit-run value true)
     (match (index-of (char-at value index))
@@ -115,7 +115,7 @@
         (digit-run (set-char value index (digit-at (inc digit))) false))
       None (digit-run value true))))
 
-(defn increment [^:string value]
+(defn increment [value]
   (match (validate-integer-error value)
     (Some message) (Error message)
     None
@@ -137,7 +137,7 @@
                 (Ok (Some (str next new-tail))))
               None (Error "invalid order key head")))))))))
 
-(defn decrement-digit-run [^:string value ^:int index]
+(defn decrement-digit-run [value index]
   (if (= index 0)
     (digit-run value true)
     (match (index-of (char-at value index))
@@ -148,7 +148,7 @@
         (digit-run (set-char value index (digit-at (dec digit))) false))
       None (digit-run value true))))
 
-(defn decrement [^:string value]
+(defn decrement [value]
   (match (validate-integer-error value)
     (Some message) (Error message)
     None
@@ -170,16 +170,16 @@
                 (Ok (Some (str previous new-tail))))
               None (Error "invalid order key head")))))))))
 
-(defn invalid-lower-upper? [^:string lower upper]
+(defn invalid-lower-upper? [lower upper]
   (match upper
     (Some value) (not (< (String.compare lower value) 0))
     None false))
 
-(defn trailing-zero? [^:string value]
-  (and (not (= value ""))
+(defn trailing-zero? [value]
+  (and (not= value "")
        (= (char-at value (dec (count value))) zero)))
 
-(defn midpoint-shared-prefix [^:string lower ^:string upper]
+(defn midpoint-shared-prefix [lower upper]
   (loop [index 0]
     (if (= index (count upper))
       index
@@ -189,10 +189,10 @@
           (recur (inc index))
           index)))))
 
-(defn string-less? [^:string lower ^:string upper]
+(defn string-less? [lower upper]
   (< (String.compare lower upper) 0))
 
-(defn ^:result<string;string> midpoint [^:string lower ^:option<string> upper]
+(defn ^:result<string;string> midpoint [lower upper]
   (if (invalid-lower-upper? lower upper)
     (Error "invalid midpoint bounds")
     (if (or (trailing-zero? lower)
@@ -246,17 +246,17 @@
     (Some key) (validate-error key)
     None None))
 
-(defn optional-lower-fails? [lower ^:string value]
+(defn optional-lower-fails? [lower value]
   (match lower
     (Some lower-value) (not (string-less? lower-value value))
     None false))
 
-(defn optional-upper-fails? [^:string value upper]
+(defn optional-upper-fails? [value upper]
   (match upper
     (Some upper-value) (not (string-less? value upper-value))
     None false))
 
-(defn optional-string-or-error [^:result<option<string>;string> value ^:string fallback]
+(defn optional-string-or-error [value fallback]
   (match value
     (Ok maybe-value)
     (match maybe-value
@@ -265,7 +265,7 @@
     (Error message) (Error message)))
 
 (defn optional-string-or-midpoint
-  [^:result<option<string>;string> value ^:string integer ^:string fraction]
+  [value integer fraction]
   (match value
     (Ok maybe-value)
     (match maybe-value
@@ -276,16 +276,16 @@
         (Error message) (Error message)))
     (Error message) (Error message)))
 
-(defn prepend-string-result [^:string prefix ^:result<string;string> result]
+(defn prepend-string-result [prefix ^:result<string;string> result]
   (match result
     (Ok value) (Ok (str prefix value))
     (Error message) (Error message)))
 
 (defn before-upper-or-midpoint
-  [^:result<option<string>;string> value
-   ^:string upper-value
-   ^:string lower-integer
-   ^:string lower-fraction]
+  [value
+   upper-value
+   lower-integer
+   lower-fraction]
   (match value
     (Ok maybe-value)
     (match maybe-value
@@ -296,7 +296,7 @@
       None (prepend-string-result lower-integer (midpoint lower-fraction None)))
     (Error message) (Error message)))
 
-(defn between-before-upper [^:string upper-value ^:string integer]
+(defn between-before-upper [upper-value integer]
   (let [fraction (suffix upper-value (count integer))]
     (if (= integer minimum)
       (prepend-string-result integer (midpoint "" (Some fraction)))
@@ -304,20 +304,20 @@
         (prepend-string-result integer (midpoint "" (Some fraction)))
         (optional-string-or-error (decrement integer) "cannot decrement order key")))))
 
-(defn between-after-lower [^:string lower-value ^:string integer]
+(defn between-after-lower [lower-value integer]
   (let [fraction (suffix lower-value (count integer))]
     (optional-string-or-midpoint (increment integer) integer fraction)))
 
 (defn between-shared-integers
-  [^:string lower-integer ^:string lower-fraction ^:string upper-fraction]
+  [lower-integer lower-fraction upper-fraction]
   (prepend-string-result lower-integer (midpoint lower-fraction (Some upper-fraction))))
 
 (defn between-different-integers
-  [^:string upper-value ^:string lower-integer ^:string lower-fraction]
+  [upper-value lower-integer lower-fraction]
   (before-upper-or-midpoint
    (increment lower-integer) upper-value lower-integer lower-fraction))
 
-(defn ^:result<string;string> between-core [^:option<string> lower ^:option<string> upper]
+(defn ^:result<string;string> between-core [lower upper]
   (match lower
     None
     (match upper
@@ -345,7 +345,7 @@
           (Error message) (Error message))
         (Error message) (Error message)))))
 
-(defn ^:result<string;string> between [^:option<string> lower ^:option<string> upper]
+(defn ^:result<string;string> between [lower upper]
   (match (validate-optional-error lower)
     (Some message) (Error message)
     None
@@ -384,7 +384,7 @@
 
 (def ^:vector<string> empty-string-vector (subvec [""] 0 0))
 
-(defn ^:result<vector<string>;string> n-after [^:option<string> lower ^:int count ^:vector<string> result]
+(defn ^:result<vector<string>;string> n-after [lower count ^:vector<string> result]
   (if (= count 0)
     (Ok result)
     (match (between lower None)
@@ -392,7 +392,7 @@
       (n-after (Some value) (dec count) (conj result value))
       (Error message) (Error message))))
 
-(defn ^:result<vector<string>;string> n-before [^:option<string> upper ^:int count ^:vector<string> result]
+(defn ^:result<vector<string>;string> n-before [upper count ^:vector<string> result]
   (if (= count 0)
     (Ok result)
     (match (between None upper)
@@ -400,7 +400,7 @@
       (n-before (Some value) (dec count) (into [value] result))
       (Error message) (Error message))))
 
-(defn ^:result<vector<string>;string> n-between [^:option<string> lower ^:option<string> upper ^:int count]
+(defn ^:result<vector<string>;string> n-between [lower upper count]
   (if (< count 0)
     (Error "order key count must not be negative")
     (if (= count 0)

@@ -74,7 +74,7 @@ let with_runtime f =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let conn = conn_from_db (base_db "Old") in
       f path conn (Runtime.create ~path ~server_t:42 conn))
 ;;
@@ -93,7 +93,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let db =
         base_db "Old"
         |> db_with
@@ -146,7 +146,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let db =
         base_db "Old"
         |> db_with
@@ -227,7 +227,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let db =
         base_db "Remember this"
         |> db_with
@@ -361,7 +361,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       Ops.save
         ~path
         { (save_title "retry-after-reopen" "Old" "New") with
@@ -385,7 +385,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       Ops.save
         ~path
         Ops.
@@ -406,7 +406,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let tx =
         List.init 8 (fun index ->
           let page_eid = index + 1 in
@@ -533,7 +533,7 @@ let () =
       cleanup (search_path ^ "-shm");
       cleanup (search_path ^ "-wal"))
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging graph_path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging graph_path;
       let runtime =
         Runtime.create
           ~path:graph_path
@@ -589,7 +589,7 @@ let () =
       cleanup (search_path ^ "-shm");
       cleanup (search_path ^ "-wal"))
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging graph_path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging graph_path;
       let conn = conn_from_db (base_db "Old") in
       let runtime =
         Runtime.create
@@ -634,7 +634,7 @@ let () =
       cleanup (search_path ^ "-shm");
       cleanup (search_path ^ "-wal"))
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging graph_path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging graph_path;
       let db =
         base_db "[[target]]"
         |> db_with
@@ -971,7 +971,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       Ops.save ~path (save_title "stale" "Remote title" "Stale local edit");
       Ops.save ~path (save_title "valid" "Old" "Valid local edit");
       let runtime =
@@ -1031,7 +1031,7 @@ let with_reopened_split ?(server_t = 43) state f =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       Ops.save ~path (split_operation ~state);
       ignore (Runtime.create ~path ~server_t (conn_from_db (edited_split_authoritative ())));
       f path)
@@ -1220,7 +1220,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let db =
         base_db "Task"
         |> db_with
@@ -1294,7 +1294,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let conn = conn_from_db (base_db "Old") in
       let runtime =
         Runtime.create
@@ -1334,7 +1334,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let db =
         base_db "Old"
         |> db_with
@@ -1399,7 +1399,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let conn = conn_from_db (empty_db ~schema ()) in
       let now = int_of_float (Unix.gettimeofday () *. 1000.0) in
       let today = Logseq_chat_model.journal_day_for_ms now in
@@ -1434,7 +1434,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let now = int_of_float (Unix.gettimeofday () *. 1000.0) in
       let today = Logseq_chat_model.journal_day_for_ms now in
       let db =
@@ -1457,7 +1457,7 @@ let () =
   Fun.protect
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
-      Logseq_chat_graph_store.prepare_staging path;
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let conn = conn_from_db (empty_db ~schema ()) in
       let runtime = Runtime.create ~auto_create_today:true ~path ~server_t:42 conn in
       let operation, page_uuid, block_uuid, title, journal_day =

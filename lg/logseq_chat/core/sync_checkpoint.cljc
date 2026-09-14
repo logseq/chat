@@ -11,13 +11,13 @@
   (schema-version :string)
   (applied-server-t :int))
 
-(defn ^sync-checkpoint create [^string graph-id ^string schema-version ^int applied-server-t]
+(defn create [graph-id schema-version applied-server-t]
   (record sync-checkpoint
     (graph-id graph-id)
     (schema-version schema-version)
     (applied-server-t applied-server-t)))
 
-(defn ^string encode [^sync-checkpoint checkpoint]
+(defn encode [^:sync-checkpoint checkpoint]
   (let [entries [(tuple (value/Keyword "format-version") (value/Int 1))
                  (tuple (value/Keyword "graph-id") (value/String (:graph-id checkpoint)))
                  (tuple (value/Keyword "schema-version") (value/String (:schema-version checkpoint)))
@@ -26,19 +26,19 @@
     (codec/to-string
      (value/Map (rrbvec/to-list entries)))))
 
-(defn field [key entries]
+(defn field [key ^:list<tuple<Transit_core.Json.value;Transit_core.Json.value>> entries]
   (let [entries (rrbvec/of-list entries)
         wanted (value/Keyword key)
         total (count entries)]
     (loop [index 0]
       (if (= index total)
         None
-        (let [entry (nth entries index)]
-          (if (= (Stdlib/fst entry) wanted)
-            (Some (Stdlib/snd entry))
+        (let [[key value] (nth entries index)]
+          (if (= key wanted)
+            (Some value)
             (recur (inc index))))))))
 
-(defn int-value [^:Transit_core.Json.value value]
+(defn int-value [value]
   (match value
     (value/Int value)
     (Some value)
@@ -74,7 +74,7 @@
     _
     (Error "invalid graph sync checkpoint")))
 
-(defn ^:result<sync-checkpoint;string> decode [^string source]
+(defn decode [source]
   (try
     (match (codec/of-string source)
       (value/Map entries) (decode-map entries)

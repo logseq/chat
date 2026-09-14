@@ -442,8 +442,8 @@ let prepare_sync runtime operation =
     >>= fun normalized ->
     Projection.compile db normalized.intent
     >>= fun tx ->
-    Logseq_chat_sync_tx.encode
-      ~encrypt_protected:runtime.encrypt_title
+    Logseq_chat_lg_core_native.logseq_chat_sync_tx_encode
+      runtime.encrypt_title
       db
       tx
     >>| fun wire ->

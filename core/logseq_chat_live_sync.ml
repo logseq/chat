@@ -5,7 +5,7 @@ module Api = Logseq_chat_api
 module Http = Logseq_chat_http
 module Bootstrap = Logseq_chat_graph_bootstrap
 module Session = Logseq_chat_sync_session
-module Store = Logseq_chat_graph_store
+module Store = Logseq_chat_lg_core_native
 module Runtime = Logseq_chat_graph_runtime
 module Ops = Logseq_chat_pending_ops
 module LG = Logseq_chat_lg_core_native
@@ -408,7 +408,7 @@ let run_mode ~base_url ~token ~e2ee =
             metadata
             download_path
         in
-        let conn = require "restore graph" (Store.restore_conn ~path:active_path) in
+        let conn = require "restore graph" (Store.logseq_chat_graph_store_restore_conn active_path) in
         let runtime =
           Runtime.create
             ~encrypt_title:encrypt_text
@@ -471,7 +471,7 @@ let run_mode ~base_url ~token ~e2ee =
                   metadata
                   second_path
               in
-              let verify_db = require "restore verified graph" (Store.restore_db ~path:verify_path) in
+              let verify_db = require "restore verified graph" (Store.logseq_chat_graph_store_restore_db verify_path) in
               if not (has_title verify_db ~decrypt block_title)
               then fail "verify outliner sync" ("missing block title after re-download: " ^ block_title);
               if not (has_title verify_db ~decrypt asset_title)

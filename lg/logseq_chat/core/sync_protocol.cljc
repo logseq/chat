@@ -28,7 +28,7 @@
   (Graph_changes :sync-change-set)
   (Reset :sync-reset))
 
-(defn contains-uuid? [^:vector<string> uuids ^:string uuid]
+(defn contains-uuid? [uuids uuid]
   (let [total (count uuids)]
     (loop [index 0]
       (if (= index total)
@@ -37,7 +37,7 @@
           true
           (recur (inc index)))))))
 
-(defn collect-identity [^:vector<string> uuids ^:Transit_core.Json.value identity]
+(defn collect-identity [^:vector<string> uuids identity]
   (match identity
     (value/Array [(value/Keyword "block/uuid") (value/Uuid uuid)])
     (if (contains-uuid? uuids uuid)
@@ -45,7 +45,7 @@
       (conj uuids uuid))
     _ uuids))
 
-(defn ^:vector<string> changed-block-uuids [^sync-change-set change]
+(defn changed-block-uuids [change]
   (let [upserts (rrbvec/of-list (:upserts change))
         deleted (rrbvec/of-list (:deleted change))
         upsert-count (count upserts)
@@ -64,29 +64,24 @@
         (recur (inc index)
                (collect-identity uuids (nth deleted index)))))))
 
-(defn field [key fields]
+(defn field [key ^:list<tuple<Transit_core.Json.value;Transit_core.Json.value>> fields]
   (let [fields (rrbvec/of-list fields)
         wanted (value/Keyword key)
         total (count fields)]
     (loop [index 0]
       (if (= index total)
         None
-        (let [entry (nth fields index)]
-          (if (= (Stdlib/fst entry) wanted)
-            (Some (Stdlib/snd entry))
+        (let [[key value] (nth fields index)]
+          (if (= key wanted)
+            (Some value)
             (recur (inc index))))))))
-
-(defn bind [result f]
-  (match result
-    (Ok value) (f value)
-    (Error message) (Error message)))
 
 (defn required [key decode fields]
   (match (field key fields)
     (Some value) (decode value)
     None (Error (str "missing Transit field: " key))))
 
-(defn as-int [^:Transit_core.Json.value input]
+(defn as-int [input]
   (match input
     (value/Int number) (Ok number)
     (value/Int64 number)
@@ -96,27 +91,27 @@
       (Error "expected Transit integer"))
     _ (Error "expected Transit integer")))
 
-(defn as-string [^:Transit_core.Json.value input]
+(defn as-string [input]
   (match input
     (value/String text) (Ok text)
     _ (Error "expected Transit string")))
 
-(defn as-bool [^:Transit_core.Json.value input]
+(defn as-bool [input]
   (match input
     (value/Bool value) (Ok value)
     _ (Error "expected Transit boolean")))
 
-(defn as-array [^:Transit_core.Json.value input]
+(defn as-array [input]
   (match input
     (value/Array values) (Ok values)
     _ (Error "expected Transit array")))
 
-(defn as-map [^:Transit_core.Json.value input]
+(defn as-map [input]
   (match input
     (value/Map fields) (Ok fields)
     _ (Error "expected Transit map")))
 
-(defn as-identity [^:Transit_core.Json.value input]
+(defn as-identity [input]
   (match input
     (value/Array [(value/Keyword "block/uuid") (value/Uuid uuid)])
     (Ok (value/Array (list (value/Keyword "block/uuid") (value/Uuid uuid))))
@@ -126,12 +121,12 @@
     (Ok (value/Array (list (value/Keyword "file/path") (value/String path))))
     _ (Error "expected stable Transit lookup identity")))
 
-(defn keyword-key? [entry]
-  (match (Stdlib/fst entry)
+(defn keyword-key? [^:tuple<Transit_core.Json.value;Transit_core.Json.value> entry]
+  (match (first entry)
     (value/Keyword _) true
     _ false))
 
-(defn all-keyword-keys? [fields]
+(defn all-keyword-keys? [^:list<tuple<Transit_core.Json.value;Transit_core.Json.value>> fields]
   (let [fields (rrbvec/of-list fields)
         total (count fields)]
     (loop [index 0]
@@ -141,7 +136,7 @@
           (recur (inc index))
           false)))))
 
-(defn as-attrs [^:Transit_core.Json.value input]
+(defn as-attrs [input]
   (match input
     (value/Map fields)
     (if (all-keyword-keys? fields)
@@ -150,15 +145,17 @@
     _ (Error "expected Transit attribute map")))
 
 (defn decode-entity [input]
-  (bind (as-map input)
-        (fn [fields]
-          (bind (required "id" as-identity fields)
-                (fn [id]
-                  (bind (required "attrs" as-attrs fields)
-                        (fn [attrs]
-                          (Ok (record sync-entity
-                                      (id id)
-                                      (attrs attrs))))))))))
+  (match (as-map input)
+    (Ok fields)
+    (match (tuple (required "id" as-identity fields)
+                  (required "attrs" as-attrs fields))
+      (tuple (Ok id) (Ok attrs))
+      (Ok (record sync-entity
+                  (id id)
+                  (attrs attrs)))
+      (tuple (Error message) _) (Error message)
+      (tuple _ (Error message)) (Error message))
+    (Error message) (Error message)))
 
 (defn decode-entity-list-loop [values total index decoded]
   (if (= index total)
@@ -200,66 +197,69 @@
   (match (field key fields)
     None (Ok (list))
     (Some input)
-    (bind (as-array input) decode-string-list)))
+    (match (as-array input)
+      (Ok values) (decode-string-list values)
+      (Error message) (Error message))))
+
+(defn required-entity-list [key fields]
+  (match (required key as-array fields)
+    (Ok values) (decode-entity-list values)
+    (Error message) (Error message)))
+
+(defn required-identity-list [key fields]
+  (match (required key as-array fields)
+    (Ok values) (decode-identity-list values)
+    (Error message) (Error message)))
 
 (defn decode-change-value [input]
-  (bind (as-map input)
-        (fn [fields]
-          (bind (required "format-version" as-int fields)
-                (fn [format-version]
-                  (bind (required "graph-id" as-string fields)
-                        (fn [graph-id]
-                          (bind (required "schema-version" as-string fields)
-                                (fn [schema-version]
-                                  (bind (required "t-before" as-int fields)
-                                        (fn [t-before]
-                                          (bind (required "t" as-int fields)
-                                                (fn [t]
-                                                  (bind (required "upserts" as-array fields)
-                                                        (fn [upsert-values]
-                                                          (bind (decode-entity-list upsert-values)
-                                                                (fn [upserts]
-                                                                  (bind (required "deleted" as-array fields)
-                                                                        (fn [deleted-values]
-                                                                          (bind (decode-identity-list deleted-values)
-                                                                                (fn [deleted]
-                                                                                  (bind (optional-string-list "operation-ids" fields)
-                                                                                        (fn [operation-ids]
-                                                                                          (Ok (record sync-change-set
-                                                                                                      (format-version format-version)
-                                                                                                      (graph-id graph-id)
-                                                                                                      (schema-version schema-version)
-                                                                                                      (t-before t-before)
-                                                                                                      (t t)
-                                                                                                      (upserts upserts)
-                                                                                                      (deleted deleted)
-                                                                                                      (operation-ids operation-ids))))))))))))))))))))))))))
+  (let* [fields (as-map input)
+         format-version (required "format-version" as-int fields)
+         graph-id (required "graph-id" as-string fields)
+         schema-version (required "schema-version" as-string fields)
+         t-before (required "t-before" as-int fields)
+         t (required "t" as-int fields)
+         upserts (required-entity-list "upserts" fields)
+         deleted (required-identity-list "deleted" fields)
+         operation-ids (optional-string-list "operation-ids" fields)]
+    (Ok (record sync-change-set
+                (format-version format-version)
+                (graph-id graph-id)
+                (schema-version schema-version)
+                (t-before t-before)
+                (t t)
+                (upserts upserts)
+                (deleted deleted)
+                (operation-ids operation-ids)))))
 
-(defn ^:result<sync-change-set;string> decode-change-set [^string wire]
+(defn decode-change-set [wire]
   (try
     (decode-change-value (codec/of-string wire))
     (catch error
            (Error (Printexc/to-string error)))))
 
 (defn decode-reset-value [input]
-  (bind (as-map input)
-        (fn [fields]
-          (bind (required "reason" as-string fields)
-                (fn [reason]
-                  (bind (required "snapshot-required" as-bool fields)
-                        (fn [snapshot-required]
-                          (Ok (record sync-reset
-                                      (reason reason)
-                                      (snapshot-required snapshot-required))))))))))
+  (match (as-map input)
+    (Ok fields)
+    (match (tuple (required "reason" as-string fields)
+                  (required "snapshot-required" as-bool fields))
+      (tuple (Ok reason) (Ok snapshot-required))
+      (Ok (record sync-reset
+                  (reason reason)
+                  (snapshot-required snapshot-required)))
+      (tuple (Error message) _) (Error message)
+      (tuple _ (Error message)) (Error message))
+    (Error message) (Error message)))
 
-(defn ^:result<sync-event;string> decode-event [^string event-name ^string wire]
+(defn decode-event [event-name wire]
   (if (= event-name "graph-changes")
-    (bind (decode-change-set wire)
-          (fn [change] (Ok (Graph_changes change))))
+    (match (decode-change-set wire)
+      (Ok change) (Ok (Graph_changes change))
+      (Error message) (Error message))
     (if (= event-name "reset")
       (try
-        (bind (decode-reset-value (codec/of-string wire))
-              (fn [reset] (Ok (Reset reset))))
+        (match (decode-reset-value (codec/of-string wire))
+          (Ok reset) (Ok (Reset reset))
+          (Error message) (Error message))
         (catch error
                (Error (Printexc/to-string error))))
       (Error (str "unsupported sync event: " event-name)))))

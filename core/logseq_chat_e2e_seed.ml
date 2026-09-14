@@ -32,14 +32,14 @@ let () =
         exit 2
     else Logseq_chat_e2e_seed_data.seed
   in
-  match Logseq_chat_graph_store.restore_conn ~path with
+  match Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_conn path with
   | Error message ->
     prerr_endline message;
     exit 1
   | Ok conn ->
     (match seed conn with
      | Ok () ->
-       (match Logseq_chat_graph_store.restore_db ~path with
+       (match Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_db path with
         | Error message ->
           prerr_endline message;
           exit 1

@@ -1128,7 +1128,7 @@ let with_temp_db f =
 
 let () =
   with_temp_db (fun path ->
-    Logseq_chat_graph_store.prepare_staging path;
+    Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
     let first = operation "op-persisted" 42
         (Save_title { uuid = "block"; expected_title = "Old"; title = "Offline" }) in
     Ops.save ~path first;
@@ -1142,7 +1142,7 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    Logseq_chat_graph_store.prepare_staging path;
+    Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
     let operations =
       [ operation "01-save" 42
           (Save_title { uuid = "block"; expected_title = "Old"; title = "你好 [[Project]]" })
@@ -1189,7 +1189,7 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    Logseq_chat_graph_store.prepare_staging path;
+    Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
     let first = operation "op-first" 42
         (Save_title { uuid = "block"; expected_title = "Old"; title = "First" }) in
     let second = operation "op-second" 42
@@ -1206,12 +1206,12 @@ let () =
 
 let () =
   with_temp_db (fun active_path ->
-    Logseq_chat_graph_store.prepare_staging active_path;
+    Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging active_path;
     let op = operation "op-survives-snapshot" 42
         (Save_title { uuid = "block"; expected_title = "Old"; title = "Offline" }) in
     Ops.save ~path:active_path op;
-    (match Logseq_chat_graph_store.begin_import ~active_path with Ok () -> () | Error message -> fail "begin import" message);
-    (match Logseq_chat_graph_store.activate ~active_path with Ok () -> () | Error message -> fail "activate import" message);
+    (match Logseq_chat_lg_core_native.logseq_chat_graph_store_begin_import active_path with Ok () -> () | Error message -> fail "begin import" message);
+    (match Logseq_chat_lg_core_native.logseq_chat_graph_store_activate active_path with Ok () -> () | Error message -> fail "activate import" message);
     assert_bool "snapshot replacement preserves pending ops" (Ops.list ~path:active_path = [ op ]))
 ;;
 
@@ -1227,7 +1227,7 @@ let () =
   assert_bool "created page appears in page search"
     (List.exists (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.uuid = "new-page") (Logseq_chat_graph_read.sidebar_pages projected.db).recent_pages);
   with_temp_db (fun path ->
-    Logseq_chat_graph_store.prepare_staging path;
+    Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
     Ops.save ~path operation;
     assert_bool "page creation survives restart" (Ops.list ~path = [operation]))
 ;;

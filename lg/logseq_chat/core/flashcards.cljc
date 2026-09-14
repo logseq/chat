@@ -167,16 +167,16 @@
                                (ds/Keyword (rating-name rating)))))]
     (ds/Map (rrbvec/to-list entries))))
 
-(defn map-value [key entries]
+(defn map-value [key ^:list<tuple<Datascript.value;Datascript.value>> entries]
   (let [entries (rrbvec/of-list entries)
         wanted (ds/Keyword key)
         total (count entries)]
     (loop [index 0]
       (if (= index total)
         None
-        (let [entry (nth entries index)]
-          (if (= (Stdlib/fst entry) wanted)
-            (Some (Stdlib/snd entry))
+        (let [[key value] (nth entries index)]
+          (if (= key wanted)
+            (Some value)
             (recur (inc index))))))))
 
 (defn float-value [value]
@@ -242,23 +242,27 @@
 (defn decrypt-title [value]
   (Ok value))
 
-(defn card-eid [^:Datascript.db db ^int eid]
+(defn contains-class-eid? [class-eids tag-eids]
+  (some
+   (fn [class-eid] (int-set/mem class-eid class-eids))
+   tag-eids))
+
+(defn card-eid [db eid]
   (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
     None false
     (Some card-class-eid)
     (let [classes (graph-read/class_descendants db card-class-eid)]
-      (list/exists
-       (fn [^int class-eid] (int-set/mem class-eid classes))
-       (graph-read/ref_eids db eid "block/tags")))))
+      (contains-class-eid? classes (graph-read/ref_eids db eid "block/tags")))))
 
-(defn ^:list<Logseq_chat_model.block> descendants [^:list<Logseq_chat_model.block> page-blocks ^string parent-uuid]
-  (list/concat_map
-   (fn [^:Logseq_chat_model.block child]
-     (list* child (descendants page-blocks (:uuid child))))
-   (list/filter
-    (fn [^:Logseq_chat_model.block candidate]
-      (= (:parent-id candidate) (Some parent-uuid)))
-    page-blocks)))
+(defn ^:list<Logseq_chat_model.block> descendants [^:list<Logseq_chat_model.block> page-blocks parent-uuid]
+  (list/of-seq
+   (mapcat
+    (fn [child]
+      (list* child (descendants page-blocks (:uuid child))))
+    (filter
+     (fn [candidate]
+       (= (:parent-id candidate) (Some parent-uuid)))
+     page-blocks))))
 
 (defn page-blocks-for-page [page-blocks-cache db page-uuid]
   (match (hashtbl/find_opt page-blocks-cache page-uuid)
@@ -288,13 +292,13 @@
       None None)
     None))
 
-(defn card-for-uuid [^:Datascript.db db ^int now ^string uuid]
+(defn card-for-uuid [db now uuid]
   (match (ds/entid db "block/uuid" (ds/Uuid uuid))
     (Some eid)
     (card-for-eid (hashtbl/create 8) db now uuid eid)
     None None))
 
-(defn int-compare [^int left ^int right]
+(defn int-compare [left right]
   (if (< left right)
     -1
     (if (> left right) 1 0)))
@@ -316,19 +320,20 @@
         None
         (Some due-card)))))
 
-(defn due-cards [^:Datascript.db db ^int now]
+(defn due-cards [db now]
   (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
     None (list)
     (Some card-class-eid)
     (let [page-blocks-cache (hashtbl/create 8)
           class-eids (int-set/to_seq (graph-read/class_descendants db card-class-eid))
           tagged-datoms (seq/flat_map
-                         (fn [^int class-eid]
+                         (fn [class-eid]
                            (ds-value/datoms-by-ref db (ds/Aevt) "block/tags" class-eid))
                          class-eids)
-          tagged-eids (seq/map (fn [^:Datascript.datom datom] (:e datom)) tagged-datoms)
+          tagged-eids (map (fn [datom] (:e datom)) tagged-datoms)
           unique-eids (list/sort_uniq int-compare (list/of_seq tagged-eids))
-          due (list/filter_map
-               (fn [^int eid] (due-card-for-eid page-blocks-cache db now eid))
-               unique-eids)]
+          due (list/of-seq
+               (keep
+                (fn [eid] (due-card-for-eid page-blocks-cache db now eid))
+                unique-eids))]
       (list/sort due-card-compare due))))

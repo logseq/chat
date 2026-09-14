@@ -1,5 +1,15 @@
-module Snapshot = Logseq_chat_snapshot
-module Store = Logseq_chat_graph_store
+module Snapshot = Logseq_chat_lg_core_native
+module Store = struct
+  include Logseq_chat_lg_core_native
+  let staging_path = logseq_chat_graph_store_staging_path
+  let begin_import ~active_path = logseq_chat_graph_store_begin_import active_path
+  let append_rows ~active_path rows = logseq_chat_graph_store_append_rows active_path rows
+  let activate ~active_path = logseq_chat_graph_store_activate active_path
+  let read_row ~path ~addr = logseq_chat_graph_store_read_row path addr
+  let restore_db ~path = logseq_chat_graph_store_restore_db path
+  let restore_conn ~path = logseq_chat_graph_store_restore_conn path
+  let storage ~path = logseq_chat_graph_store_storage path
+end
 module Transit = Transit_native.Transit.Json
 open Datascript
 
@@ -29,7 +39,7 @@ let datom e attr value tx =
   Transit.Array [ Transit.Int e; Transit.Keyword attr; value; Transit.Int tx ]
 ;;
 
-let fixture_rows () : Snapshot.row list =
+let fixture_rows () : Snapshot.snapshot_row list =
   let schema =
     transit_map
       [ Transit.Keyword "block/uuid", schema_attr ~value_type:"db.type/uuid" ()
@@ -105,8 +115,14 @@ let () =
         (fun path -> if Sys.file_exists path then Sys.remove path)
         [ active_path; staging_path ])
     (fun () ->
+      ignore (Store.storage ~path:active_path);
+      expect_ok "empty append" (Store.append_rows ~active_path []);
+      if Sys.file_exists staging_path then fail "empty append" "created a staging database";
+      (match Store.activate ~active_path with
+       | Error _ -> ()
+       | Ok () -> fail "activate missing staging" "activation succeeded without staging");
       expect_ok "begin import" (Store.begin_import ~active_path);
-      let rows : Snapshot.row list =
+      let rows : Snapshot.snapshot_row list =
         [ { addr = 0
           ; content = {|["^ ","~:schema",["^ ","~:block/title",["^ ","~:db/valueType","~:db.type/string"]]]|}
           ; addresses = None
@@ -213,7 +229,7 @@ let () =
           else (Buffer.add_char buffer source.[i]; loop (i + 1))
         in loop 0
       in
-      activate (List.map (fun (row : Snapshot.row) -> {row with content = replace row.content}) rows);
+      activate (List.map (fun (row : Snapshot.snapshot_row) -> {row with content = replace row.content}) rows);
       let current = Store.storage ~path in
       let replaced = current.storage_restore "2" in
       if original = replaced then fail "fixture" "replacement must change the node";

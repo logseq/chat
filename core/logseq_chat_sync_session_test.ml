@@ -122,13 +122,13 @@ let () =
       in
       if result.applied_server_t <> 48192
       then fail "import cursor" "baseline cursor changed";
-      ignore (expect_ok "restore active graph" (Logseq_chat_graph_store.restore_db ~path:active_path));
+      ignore (expect_ok "restore active graph" (Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_db active_path));
       (match expect_ok "load checkpoint" (Checkpoint.load_checkpoint checkpoint_path) with
        | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
        | _ -> fail "checkpoint" "activated snapshot cursor was not saved");
 
       let original_root =
-        expect_ok "read original root" (Logseq_chat_graph_store.read_row ~path:active_path ~addr:0)
+        expect_ok "read original root" (Logseq_chat_lg_core_native.logseq_chat_graph_store_read_row active_path 0)
       in
       write_file download_path "\000\000\000\010broken";
       (match
@@ -143,7 +143,7 @@ let () =
        | Error _ -> ()
        | Ok _ -> fail "corrupt snapshot" "invalid stream was activated");
       let root_after_failure =
-        expect_ok "read root after failure" (Logseq_chat_graph_store.read_row ~path:active_path ~addr:0)
+        expect_ok "read root after failure" (Logseq_chat_lg_core_native.logseq_chat_graph_store_read_row active_path 0)
       in
       if root_after_failure <> original_root
       then fail "atomic import" "failed import replaced the active graph";
@@ -151,7 +151,7 @@ let () =
        | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
        | _ -> fail "atomic checkpoint" "failed import changed the cursor");
 
-      let conn = expect_ok "restore sync connection" (Logseq_chat_graph_store.restore_conn ~path:active_path) in
+      let conn = expect_ok "restore sync connection" (Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_conn active_path) in
       let state =
         Logseq_chat_sync_session.create_state
           ~graph_id:"graph-1"
@@ -216,13 +216,13 @@ let () =
               ~metadata
               ~download_path
               ()));
-      let db = expect_ok "restore local plaintext snapshot" (Logseq_chat_graph_store.restore_db ~path:active_path) in
+      let db = expect_ok "restore local plaintext snapshot" (Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_db active_path) in
       (match Datascript.datoms db Datascript.Aevt ~a:"block/title" () |> List.of_seq with
       | [ { Datascript.v = Datascript.String "Private title"; _ } ] -> ()
       | _ -> fail "encrypted snapshot" "ciphertext was persisted in local DataScript");
-      Logseq_chat_graph_store.list_stored_addresses active_path
+      Logseq_chat_lg_core_native.logseq_chat_graph_store_list_stored_addresses active_path
       |> List.iter (fun addr ->
-        match expect_ok "read local snapshot row" (Logseq_chat_graph_store.read_row ~path:active_path ~addr) with
+        match expect_ok "read local snapshot row" (Logseq_chat_lg_core_native.logseq_chat_graph_store_read_row active_path addr) with
         | Some (content, _) when contains content "cipher:Private title" ->
           fail "encrypted snapshot" "obsolete ciphertext row remained in local SQLite"
         | _ -> ()))

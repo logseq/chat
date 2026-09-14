@@ -1,6 +1,6 @@
 open Yojson.Basic
 
-module E2ee = Logseq_chat_e2ee
+module E2ee = Logseq_chat_lg_core_native
 
 external call_raw : string -> string = "logseq_chat_crypto_call"
 
@@ -46,10 +46,10 @@ let binary_field name fields =
 
 let bind result f = match result with Ok value -> f value | Error _ as error -> error
 
-let crypto : Logseq_chat_e2ee.crypto =
+let crypto : E2ee.e2ee_crypto =
   E2ee.
     { decrypt_private_key =
-        (fun ~password ~iterations ~salt ~iv ~ciphertext ->
+        (fun password iterations salt iv ciphertext ->
           bind
             (invoke
                "decryptPrivateKey"
@@ -61,7 +61,7 @@ let crypto : Logseq_chat_e2ee.crypto =
                ])
             (binary_field "value"))
     ; decrypt_graph_key =
-        (fun ~private_key ~ciphertext ->
+        (fun private_key ciphertext ->
           bind
             (invoke
                "decryptGraphKey"
@@ -70,7 +70,7 @@ let crypto : Logseq_chat_e2ee.crypto =
                ])
             (binary_field "value"))
     ; encrypt_graph_key =
-        (fun ~public_key ~plaintext ->
+        (fun public_key plaintext ->
           bind
             (invoke
                "encryptGraphKey"
@@ -82,7 +82,7 @@ let crypto : Logseq_chat_e2ee.crypto =
         (fun count ->
           bind (invoke "randomBytes" [ "count", `Int count ]) (binary_field "value"))
     ; encrypt_aes_gcm =
-        (fun ~key ~plaintext ->
+        (fun key plaintext ->
           bind
             (invoke
                "encryptAES"
@@ -92,7 +92,7 @@ let crypto : Logseq_chat_e2ee.crypto =
                 bind (binary_field "ciphertext" fields) (fun ciphertext ->
                   Ok (iv, ciphertext)))))
     ; decrypt_aes_gcm =
-        (fun ~key ~iv ~ciphertext ->
+        (fun key iv ciphertext ->
           bind
             (invoke
                "decryptAES"

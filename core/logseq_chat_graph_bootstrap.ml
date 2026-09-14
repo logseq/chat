@@ -1,8 +1,8 @@
 open Datascript
 
 module Data = Logseq_chat_graph_bootstrap_data
-module Codec = Logseq_chat_logseq_storage_codec
-module Snapshot = Logseq_chat_snapshot
+module Codec = Logseq_chat_lg_core_native
+module Snapshot = Logseq_chat_lg_core_native
 module Transit = Transit_native.Transit.Json
 
 type prepared_snapshot =
@@ -328,8 +328,8 @@ let snapshot_rows db =
           | Some payload ->
             let content, addresses =
               match payload with
-              | Storage_root root -> Codec.encode ~root_index_metadata:(root_index_metadata root) payload
-              | Storage_node _ | Storage_tail _ -> Codec.encode payload
+              | Storage_root root -> Codec.logseq_chat_storage_codec_encode (Some (root_index_metadata root)) payload
+              | Storage_node _ | Storage_tail _ -> Codec.logseq_chat_storage_codec_encode None payload
             in
             Snapshot.{ addr; content; addresses })
         |> List.sort (fun left right -> Int.compare left.Snapshot.addr right.Snapshot.addr)
@@ -340,7 +340,7 @@ let snapshot_rows db =
 ;;
 
 let frame_rows rows =
-  let row (row : Snapshot.row) =
+  let row (row : Snapshot.snapshot_row) =
     Transit.Array
       [ Transit.Int row.addr
       ; Transit.String row.content

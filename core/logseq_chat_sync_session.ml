@@ -1,5 +1,5 @@
-module Snapshot = Logseq_chat_snapshot
-module Store = Logseq_chat_graph_store
+module Snapshot = Logseq_chat_lg_core_native
+module Store = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 module Protocol = Logseq_chat_lg_core_native
 
@@ -158,7 +158,7 @@ let decode_snapshot_metadata body =
 ;;
 
 let cleanup_staging active_path =
-  let staging_path = Store.staging_path active_path in
+  let staging_path = Store.logseq_chat_graph_store_staging_path active_path in
   try if Sys.file_exists staging_path then Sys.remove staging_path with
   | _ -> ()
 ;;
@@ -184,7 +184,7 @@ let plaintext_snapshot_db decrypt db =
 let materialize_plaintext_snapshot ~active_path decrypt encrypted_db =
   bind (plaintext_snapshot_db decrypt encrypted_db) (fun plaintext_db ->
     try
-      let storage = Store.import_storage ~active_path in
+      let storage = Store.logseq_chat_graph_store_import_storage active_path in
       Datascript.store ~storage plaintext_db;
       Datascript.collect_garbage storage;
       Ok ()
@@ -201,19 +201,16 @@ let import_snapshot_file
       ~download_path
       ()
   =
-  let parser = Snapshot.create_parser ~max_frame_bytes:(64 * 1024 * 1024) in
+  let parser = Snapshot.logseq_chat_snapshot_create_parser (64 * 1024 * 1024) in
   let import =
-    Snapshot.create_import
-      ~graph_id
-      ~schema_version:metadata.schema_version
-      ~baseline_t:metadata.baseline_t
-      ~expected_rows:metadata.row_count
+    Snapshot.logseq_chat_snapshot_create_import
+      graph_id metadata.schema_version metadata.baseline_t metadata.row_count
   in
   let import_rows rows =
-    bind (Snapshot.accept_rows import rows) (fun () -> Store.append_rows ~active_path rows)
+    bind (Snapshot.logseq_chat_snapshot_accept_rows import rows) (fun () -> Store.logseq_chat_graph_store_append_rows active_path rows)
   in
   let run () =
-    bind (Store.begin_import ~active_path) (fun () ->
+    bind (Store.logseq_chat_graph_store_begin_import active_path) (fun () ->
       let channel = open_in_bin download_path in
       let buffer = Bytes.create (256 * 1024) in
       let rec read () =
@@ -221,15 +218,15 @@ let import_snapshot_file
         | 0 -> Ok ()
         | count ->
           let chunk = Bytes.sub_string buffer 0 count in
-          bind (Snapshot.feed parser chunk) (fun rows -> bind (import_rows rows) read)
+          bind (Snapshot.logseq_chat_snapshot_feed parser chunk) (fun rows -> bind (import_rows rows) read)
       in
       let streamed =
         Fun.protect ~finally:(fun () -> close_in_noerr channel) read
       in
       bind streamed (fun () ->
-        bind (Snapshot.finish_parser parser) (fun () ->
-          bind (Snapshot.finish_import import) (fun completed ->
-            bind (Store.restore_db ~path:(Store.staging_path active_path)) (fun imported_db ->
+        bind (Snapshot.logseq_chat_snapshot_finish_parser parser) (fun () ->
+          bind (Snapshot.logseq_chat_snapshot_finish_import import) (fun completed ->
+            bind (Store.logseq_chat_graph_store_restore_db (Store.logseq_chat_graph_store_staging_path active_path)) (fun imported_db ->
               let materialized =
                 match decrypt_protected with
                 | None -> Ok ()
@@ -238,9 +235,9 @@ let import_snapshot_file
               in
               bind materialized (fun () ->
                 bind
-                  (Store.restore_db ~path:(Store.staging_path active_path))
+                  (Store.logseq_chat_graph_store_restore_db (Store.logseq_chat_graph_store_staging_path active_path))
                   (fun _validated_db ->
-                    bind (Store.activate ~active_path) (fun () ->
+                    bind (Store.logseq_chat_graph_store_activate active_path) (fun () ->
                   let checkpoint =
                     create_checkpoint
                       ~graph_id
@@ -274,7 +271,10 @@ let apply_change_set
     change
     ~apply:(fun change ->
       bind
-        (Logseq_chat_entity_sync.apply_change_set ~decrypt_protected conn change)
+        (Logseq_chat_lg_core_native.logseq_chat_entity_sync_apply_change_set
+           decrypt_protected
+           conn
+           change)
         (fun () ->
         let checkpoint =
           create_checkpoint

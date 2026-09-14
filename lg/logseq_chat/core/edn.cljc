@@ -2,7 +2,7 @@
   (:require [ocaml.package/melange-edn-native]
             [ocaml.Melange_edn_native :as edn]))
 
-(defn ^:result<Melange_edn_native.any;string> decode [^string source]
+(defn decode [source]
   (try
     (Ok (edn/of-edn-string source))
     (catch (edn/Parse_error message)
@@ -12,5 +12,5 @@
     (catch (Invalid_argument message)
       (Error message))))
 
-(defn ^string encode [^:Melange_edn_native.any value]
+(defn encode [value]
   (edn/to-edn-string value))

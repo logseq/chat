@@ -3,8 +3,7 @@
             [ocaml.Datascript :as ds]
             [ocaml.Datascript.Db :as db-api]
             [ocaml.Datascript.Schema :as schema]
-            [ocaml.Hashtbl :as hashtbl]
-            [ocaml.Seq :as seq]))
+            [ocaml.Hashtbl :as hashtbl]))
 
 (defn built-in-ref-attr? [attr]
   (or (= attr "block/parent")
@@ -15,51 +14,54 @@
       (= attr "block/alias")
       (= attr "block/closed-value-property")))
 
-(defn value-type-is-ref [^:Datascript.db db ^:Datascript.value value]
+(defn value-type-is-ref [db value]
   (match value
     (ds/Keyword "db.type/ref") true
     (ds/Ref eid)
-     (seq/exists
-     (fn [^:Datascript.datom datom] (= (:v datom) (ds/Keyword "db.type/ref")))
-     (db-api/datoms db (ds/Eavt) :e eid :a "db/ident" (run! (fn [_] nil) [])))
+    (some
+     (fn [datom]
+       (= (:v datom) (ds/Keyword "db.type/ref")))
+     (db-api/datoms db (ds/Eavt) :e eid :a "db/ident"))
     (ds/Int eid)
-    (seq/exists
-     (fn [^:Datascript.datom datom] (= (:v datom) (ds/Keyword "db.type/ref")))
-     (db-api/datoms db (ds/Eavt) :e eid :a "db/ident" (run! (fn [_] nil) [])))
+    (some
+     (fn [datom]
+       (= (:v datom) (ds/Keyword "db.type/ref")))
+     (db-api/datoms db (ds/Eavt) :e eid :a "db/ident"))
     _ false))
 
-(defn entity-declares-ref [^:Datascript.db db attr]
+(defn entity-declares-ref [db attr]
   (match (ds/entid db "db/ident" (ds/Keyword attr))
     (Some eid)
-    (seq/exists
-     (fn [^:Datascript.datom datom] (value-type-is-ref db (:v datom)))
-     (db-api/datoms db (ds/Eavt) :e eid :a "db/valueType" (run! (fn [_] nil) [])))
+    (some
+     (fn [datom]
+       (value-type-is-ref db (:v datom)))
+     (db-api/datoms db (ds/Eavt) :e eid :a "db/valueType"))
     None false))
 
-(defn is-ref-attr [^:Datascript.db db attr]
+(defn is-ref-attr [db attr]
   (or (built-in-ref-attr? attr)
       (schema/schema_attr_is_ref (:schema db) attr)
       (entity-declares-ref db attr)))
 
-(defn ref-eid [^:Datascript.db db attr ^:Datascript.value value]
+(defn ref-eid [db attr value]
   (match value
     (ds/Ref eid) (Some eid)
     (ds/Int eid) (if (is-ref-attr db attr) (Some eid) None)
     _ None))
 
-(defn optional-ref-eid [^:Datascript.db db attr value]
+(defn optional-ref-eid [db attr value]
   (match value
     (Some value) (ref-eid db attr value)
     None None))
 
-(defn datoms-by-ref [^:Datascript.db db ^:Datascript.index index ^string attr ^int eid]
+(defn datoms-by-ref [db index attr eid]
   (let [seen-entities (hashtbl/create 8)
         candidates
-        (seq/append
-         (db-api/datoms db index :a attr :v (ds/Ref eid) (run! (fn [_] nil) []))
-         (db-api/datoms db index :a attr :v (ds/Int eid) (run! (fn [_] nil) [])))]
-    (seq/filter
-     (fn [^:Datascript.datom datom]
+        (concat
+         (db-api/datoms db index :a attr :v (ds/Ref eid))
+         (db-api/datoms db index :a attr :v (ds/Int eid)))]
+    (filter
+     (fn [datom]
        (and (= (ref-eid db attr (:v datom)) (Some eid))
             (not (hashtbl/mem seen-entities (:e datom)))
             (do

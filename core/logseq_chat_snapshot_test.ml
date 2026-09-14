@@ -1,6 +1,15 @@
 module Value = Transit_core.Json
 module Codec = Transit_native.Transit.Json
-module Snapshot = Logseq_chat_snapshot
+module Snapshot = struct
+  include Logseq_chat_lg_core_native
+  let create_parser ~max_frame_bytes = logseq_chat_snapshot_create_parser max_frame_bytes
+  let feed = logseq_chat_snapshot_feed
+  let finish_parser = logseq_chat_snapshot_finish_parser
+  let create_import ~graph_id ~schema_version ~baseline_t ~expected_rows =
+    logseq_chat_snapshot_create_import graph_id schema_version baseline_t expected_rows
+  let accept_rows = logseq_chat_snapshot_accept_rows
+  let finish_import = logseq_chat_snapshot_finish_import
+end
 
 let fail label message = failwith (label ^ ": " ^ message)
 
@@ -92,5 +101,30 @@ let () =
   let oversized = Snapshot.create_parser ~max_frame_bytes:2 in
   (match Snapshot.feed oversized wire with
    | Error _ -> ()
-   | Ok _ -> fail "frame bound" "accepted oversized frame")
+   | Ok _ -> fail "frame bound" "accepted oversized frame");
+
+  let multi = Snapshot.create_parser ~max_frame_bytes:4096 in
+  let combined = frame (Value.Array []) ^ wire ^ frame (Value.Array [row 9 "last" None]) in
+  let decoded = expect_ok "multiple frames" (Snapshot.feed multi combined) in
+  if List.map (fun (row : Snapshot.snapshot_row) -> row.addr) decoded <> [0; 1; 7; 9]
+  then fail "multiple frames" "row order changed";
+  expect_ok "multiple frames complete" (Snapshot.finish_parser multi);
+  let unsigned = Snapshot.create_parser ~max_frame_bytes:4096 in
+  (match Snapshot.feed unsigned "\128\000\000\000" with
+   | Error "snapshot frame exceeds configured size limit" -> ()
+   | _ -> fail "unsigned length" "high-bit length was not rejected");
+  expect_ok "invalid batch did not mutate" (Snapshot.accept_rows unordered [List.hd rows; List.nth rows 1]);
+  ignore (expect_ok "retry unordered batch" (Snapshot.finish_import unordered));
+  let bounded = Snapshot.create_import ~graph_id:"g" ~schema_version:"s" ~baseline_t:0 ~expected_rows:2 in
+  (match Snapshot.accept_rows bounded rows with
+   | Error "snapshot contains more rows than advertised" -> ()
+   | _ -> fail "row limit" "accepted excess rows");
+  expect_ok "excess batch did not mutate" (Snapshot.accept_rows bounded [List.hd rows; List.nth rows 1]);
+  ignore (expect_ok "retry excess batch" (Snapshot.finish_import bounded));
+  List.iter (fun payload ->
+    let malformed = Snapshot.create_parser ~max_frame_bytes:4096 in
+    match Snapshot.feed malformed (frame payload) with
+    | Error _ -> ()
+    | Ok _ -> fail "invalid row" "accepted malformed snapshot")
+    [Value.Null; Value.Array [Value.Int 0]; Value.Array [Value.Array [Value.Int 0; Value.String "x"; Value.Bool true]]]
 ;;

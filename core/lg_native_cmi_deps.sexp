@@ -6,6 +6,7 @@
 ../duniverse/datascript-ocaml/type/.datascript_types.objs/byte/datascript_types.cmi
 ../duniverse/datascript-ocaml/impl/.datascript.objs/byte/datascript.cmi
 ../duniverse/datascript-ocaml/lg/.datascript_lg.objs/byte/datascript_lg.cmi
+../duniverse/persistent-sorted-set-ocaml/lib/.persistent_sorted_set.objs/byte/persistent_sorted_set.cmi
 ../duniverse/melange-edn/lib_native/.melange_edn_native.objs/byte/melange_edn_native.cmi
 ../duniverse/melange-transit/lib/common/.transit_core.objs/byte/transit_core.cmi
 ../duniverse/melange-transit/lib/native/.transit_native.objs/byte/transit_native.cmi

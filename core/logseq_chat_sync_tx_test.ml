@@ -2,6 +2,16 @@ open Datascript
 
 module Transit = Transit_native.Transit.Json
 
+module Sync = struct
+  let lookup_value = Logseq_chat_lg_core_native.logseq_chat_sync_tx_lookup_value
+  let transit_of_entity_ref = Logseq_chat_lg_core_native.logseq_chat_sync_tx_transit_of_entity_ref
+  let transit_of_value = Logseq_chat_lg_core_native.logseq_chat_sync_tx_transit_of_value
+  let transit_of_entity = Logseq_chat_lg_core_native.logseq_chat_sync_tx_transit_of_entity
+  let transit_of_tx_op = Logseq_chat_lg_core_native.logseq_chat_sync_tx_transit_of_tx_op
+  let encrypt_tx_op = Logseq_chat_lg_core_native.logseq_chat_sync_tx_encrypt_tx_op
+  let encode db tx = Logseq_chat_lg_core_native.logseq_chat_sync_tx_encode (fun value -> Ok value) db tx
+end
+
 let fail label = failwith label
 
 let one ?unique ?value_type () =
@@ -52,7 +62,7 @@ let () =
     ]
   in
   let wire =
-    match Logseq_chat_sync_tx.encode db tx with
+    match Sync.encode db tx with
     | Ok wire -> wire
     | Error message -> fail message
   in
@@ -80,7 +90,7 @@ let () =
     empty_db ~schema ()
     |> db_with [ Add (Entity_id 99, "block/title", String "Opaque") ]
   in
-  if Logseq_chat_sync_tx.transit_of_entity_ref db (Entity_id 99) <> Transit.Int 99
+  if Sync.transit_of_entity_ref db (Entity_id 99) <> Transit.Int 99
   then fail "numeric entity refs without a stable identity must remain numeric"
 ;;
 
@@ -110,14 +120,13 @@ let assert_transit label expected actual =
 ;;
 
 let encoded_op db operation =
-  match Logseq_chat_sync_tx.transit_of_tx_op db operation with
+  match Sync.transit_of_tx_op db operation with
   | Ok value -> value
   | Error message -> fail message
 ;;
 
 let () =
   let db = reference_db () in
-  let module Sync = Logseq_chat_sync_tx in
   assert_transit
     "entity id prefers a UUID lookup ref"
     (Transit.Array [ Transit.Keyword "block/uuid"; Transit.Uuid "stable-uuid" ])
@@ -149,7 +158,6 @@ let () =
 
 let () =
   let db = reference_db () in
-  let module Sync = Logseq_chat_sync_tx in
   let cases =
     [ Nil, Transit.Null
     ; Int 7, Transit.Int 7
@@ -182,7 +190,6 @@ let () =
 
 let () =
   let db = reference_db () in
-  let module Sync = Logseq_chat_sync_tx in
   let child =
     { db_id = None
     ; attrs = [ "block/title", One_value (String "Child") ]
@@ -215,7 +222,6 @@ let () =
 
 let () =
   let db = reference_db () in
-  let module Sync = Logseq_chat_sync_tx in
   let entity_ref = Lookup_ref ("block/uuid", Uuid "stable-uuid") in
   let ref_wire = Transit.Array [ Transit.Keyword "block/uuid"; Transit.Uuid "stable-uuid" ] in
   assert_transit
@@ -290,7 +296,6 @@ let () =
 ;;
 
 let () =
-  let module Sync = Logseq_chat_sync_tx in
   let encrypt value = Ok ("cipher:" ^ value) in
   let expect label expected operation =
     match Sync.encrypt_tx_op encrypt operation with

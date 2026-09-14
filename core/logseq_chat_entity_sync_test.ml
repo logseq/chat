@@ -83,7 +83,12 @@ let () =
     ; operation_ids = []
     }
   in
-  (match Logseq_chat_entity_sync.apply_change_set conn changes with
+  (match
+     Logseq_chat_lg_core_native.logseq_chat_entity_sync_apply_change_set
+       (fun value -> Ok value)
+       conn
+       changes
+   with
    | Ok () -> ()
    | Error message -> fail message);
   let db = conn_db conn in
@@ -152,7 +157,12 @@ let () =
     | true -> Ok (String.sub value 7 (String.length value - 7))
     | false -> Error "expected ciphertext"
   in
-  (match Logseq_chat_entity_sync.apply_change_set ~decrypt_protected:decrypt conn change with
+  (match
+     Logseq_chat_lg_core_native.logseq_chat_entity_sync_apply_change_set
+       decrypt
+       conn
+       change
+   with
    | Ok () -> ()
    | Error message -> fail message);
   let db = conn_db conn in
@@ -165,4 +175,53 @@ let () =
   if value "block/title" <> [ String "Title" ]
      || value "block/name" <> [ String "title" ]
   then fail "encrypted server attributes must be plaintext in local DataScript"
+;;
+
+let () =
+  let schema =
+    [ "block/uuid", one ~value_type:UuidType ~unique:(Some Identity) ()
+    ; "block/title", one ~value_type:StringType ()
+    ]
+  in
+  let conn = create_conn ~schema () in
+  ignore
+    (transact_conn conn
+       [ Entity
+           { db_id = None
+           ; attrs =
+               [ "block/uuid", One_value (Uuid "existing")
+               ; "block/title", One_value (String "Original")
+               ]
+           }
+       ]);
+  let before = conn_db conn in
+  let calls = ref [] in
+  let decrypt ciphertext =
+    calls := ciphertext :: !calls;
+    if ciphertext = "broken" then Error "decryption failed"
+    else Ok ciphertext
+  in
+  let change : Protocol.sync_change_set =
+    { format_version = 1
+    ; graph_id = "encrypted-graph"
+    ; schema_version = "65.33"
+    ; t_before = 0
+    ; t = 1
+    ; upserts =
+        [ entity "existing" (block "existing" "Updated")
+        ; entity "broken-block" (block "broken-block" "broken")
+        ; entity "later-block" (block "later-block" "must not decrypt")
+        ]
+    ; deleted = [ identity "existing" ]
+    ; operation_ids = []
+    }
+  in
+  (match Protocol.logseq_chat_entity_sync_apply_change_set decrypt conn change with
+   | Error "decryption failed" -> ()
+   | Error message -> fail ("unexpected sync error: " ^ message)
+   | Ok () -> fail "failed decryption must reject the change set");
+  if List.rev !calls <> [ "Updated"; "broken" ]
+  then fail "sync must stop decrypting at the first error";
+  if conn_db conn != before
+  then fail "failed sync must not commit earlier upserts or deletions"
 ;;

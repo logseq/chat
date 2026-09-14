@@ -1,5 +1,5 @@
 module LG = Logseq_chat_lui_native
-module Host_update = Logseq_chat_lui_host_update
+module Host_update = Logseq_chat_lg_core_native
 module Snapshot = Logseq_chat_lui_snapshot
 
 let sidebar_page (page : Snapshot.sidebar_page) : LG.sidebar_page =
@@ -204,7 +204,7 @@ let apply_response encoded =
   LG.logseq_chat_native_bridge_flush_action_bang action
 ;;
 
-let runtime_log_record (record : Host_update.runtime_log_record) : LG.runtime_log_record =
+let runtime_log_record (record : Host_update.host_runtime_log_record) : LG.runtime_log_record =
   { id = record.id
   ; level = record.level
   ; source = record.source
@@ -215,22 +215,22 @@ let runtime_log_record (record : Host_update.runtime_log_record) : LG.runtime_lo
 
 let apply_host_update kind payload =
   let action =
-    match Host_update.decode kind payload with
+    match Host_update.logseq_chat_host_update_decode kind payload with
     | Ok (Settings settings) ->
       LG.ApplySettingsSnapshot
         { appearance = settings.appearance
         ; language = settings.language
         ; spell_check = settings.spell_check
         ; auto_correction = settings.auto_correction
-        ; sidebar_tabs = Rrbvec.of_list settings.sidebar_tabs
+        ; sidebar_tabs = settings.sidebar_tabs
         ; base_url = settings.base_url
         ; version = settings.version
         ; revision = settings.revision
         }
     | Ok (Runtime_log records) ->
-      LG.ApplyRuntimeLog (Rrbvec.of_list (List.map runtime_log_record records))
+      LG.ApplyRuntimeLog (Rrbvec.map runtime_log_record records)
     | Ok (Local_graph_ids graph_ids) ->
-      LG.ApplyLocalGraphIds (Rrbvec.of_list graph_ids)
+      LG.ApplyLocalGraphIds graph_ids
     | Ok (Composer_asset asset) ->
       LG.StageComposerAsset { uuid = asset.uuid; title = asset.title;
                               local_path = asset.local_path; payload = asset.payload }
@@ -243,13 +243,13 @@ let apply_host_update kind payload =
             | "graphs" -> LG.GraphsDestination
             | _ -> LG.JournalsDestination)
         ; draft = session.draft
-        ; assets = Rrbvec.of_list (List.map (fun (asset : Host_update.composer_asset) : LG.composer_asset ->
-            { uuid = asset.uuid; title = asset.title; local_path = asset.local_path; payload = asset.payload }) session.assets)
+        ; assets = Rrbvec.map (fun (asset : Host_update.host_composer_asset) : LG.composer_asset ->
+            { uuid = asset.uuid; title = asset.title; local_path = asset.local_path; payload = asset.payload }) session.assets
         ; composer_expanded = session.composer_expanded
         ; search_open = session.search_open
         ; query = session.query
-        ; app_path = Rrbvec.of_list (List.map (fun uuid -> LG.NodeRoute uuid) session.app_path)
-        ; search_path = Rrbvec.of_list (List.map (fun uuid -> LG.NodeRoute uuid) session.search_path)
+        ; app_path = Rrbvec.map (fun uuid -> LG.NodeRoute uuid) session.app_path
+        ; search_path = Rrbvec.map (fun uuid -> LG.NodeRoute uuid) session.search_path
         ; selected_page_id = session.selected_page_id
         ; settings_open = session.settings_open
         }

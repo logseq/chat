@@ -51,7 +51,7 @@
  (modules logseq_chat_lui_test)
  (flags (:standard -w -27-32-37-39-69))
  (libraries
-  logseq_chat_graph_support
+  logseq_chat_core
   datascript-ocaml-native
   lg.edn-backend.native
   lg.runtime

@@ -94,13 +94,23 @@ let () =
            }
        ]);
   let decrypted_titles = ref 0 in
+  let fail_decryption = ref false in
   let decrypt_title title =
+    if !fail_decryption then failwith "projection decryption failed";
     incr decrypted_titles;
     Ok title
   in
   let projection =
-    Logseq_chat_graph_projection.create ~decrypt_title (conn_db conn)
+    Logseq_chat_lg_core_native.logseq_chat_graph_projection_create decrypt_title (conn_db conn)
   in
+  fail_decryption := true;
+  (match Logseq_chat_lg_core_native.logseq_chat_graph_projection_rebuild projection (conn_db conn) with
+   | () -> failwith "projection rebuild swallowed a decryption exception"
+   | exception Failure message when message = "projection decryption failed" -> ());
+  if Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection <> []
+  then failwith "failed projection rebuild retained stale blocks";
+  fail_decryption := false;
+  Logseq_chat_lg_core_native.logseq_chat_graph_projection_rebuild projection (conn_db conn);
   decrypted_titles := 0;
   ignore
     (transact_conn
@@ -119,10 +129,10 @@ let () =
         ]
       2
   in
-  Logseq_chat_graph_projection.update projection (conn_db conn) first_change;
+  Logseq_chat_lg_core_native.logseq_chat_graph_projection_update projection (conn_db conn) first_change;
   if !decrypted_titles > 2
   then failwith "a block update rebuilt unrelated journal blocks";
-  (match Logseq_chat_graph_projection.blocks projection with
+  (match Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection with
    | [ first; second ] ->
      if first.title <> "First updated" || second.title <> "Second"
      then failwith "incremental block projection returned stale titles"
@@ -136,7 +146,7 @@ let () =
            , "block/title"
            , String "Journal updated" )
        ]);
-  Logseq_chat_graph_projection.update
+  Logseq_chat_lg_core_native.logseq_chat_graph_projection_update
     projection
     (conn_db conn)
     (change
@@ -148,7 +158,7 @@ let () =
        3);
   if !decrypted_titles > 4
   then failwith "a page title update rebuilt the journal projection";
-  (match Logseq_chat_graph_projection.blocks projection with
+  (match Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection with
    | [ first; second ] ->
      if first.journal <> Some ("Journal updated", 20260816)
         || second.journal <> Some ("Journal updated", 20260816)
@@ -156,11 +166,11 @@ let () =
    | _ -> failwith "page metadata refresh lost a journal block");
   let first_eid = Option.get (entid (conn_db conn) "block/uuid" (Uuid first_uuid)) in
   ignore (transact_conn conn [ RetractEntity (Entity_id first_eid) ]);
-  Logseq_chat_graph_projection.update
+  Logseq_chat_lg_core_native.logseq_chat_graph_projection_update
     projection
     (conn_db conn)
     (change ~deleted:[ identity first_uuid ] 4);
-  (match Logseq_chat_graph_projection.blocks projection with
+  (match Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection with
    | [ remaining ] when remaining.uuid = second_uuid -> ()
    | _ -> failwith "incremental projection did not remove a deleted block");
   let next_page_uuid = "028f7850-c6aa-7da0-8b3f-6dbb64aa4ecb" in
@@ -188,7 +198,7 @@ let () =
                ]
            }
        ]);
-  Logseq_chat_graph_projection.update
+  Logseq_chat_lg_core_native.logseq_chat_graph_projection_update
     projection
     (conn_db conn)
     (change
@@ -224,7 +234,7 @@ let () =
   then failwith "recycled journals must not count toward pagination";
   if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260817 <> None
   then failwith "recycled journals must not resolve as today's journal";
-  Logseq_chat_graph_projection.update
+  Logseq_chat_lg_core_native.logseq_chat_graph_projection_update
     projection
     (conn_db conn)
     (change
@@ -235,7 +245,7 @@ let () =
            }
          ]
        6);
-  match Logseq_chat_graph_projection.blocks projection with
+  match Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection with
   | [ old_block ] when old_block.uuid = second_uuid -> ()
   | _ -> failwith "recycling a journal did not evict its blocks from the projection"
 ;;
@@ -835,7 +845,7 @@ let () =
     then
       failwith
         "visible tags must include public built-ins and hide internal tags";
-    let projection = Logseq_chat_graph_projection.create (conn_db conn) in
+    let projection = Logseq_chat_lg_core_native.logseq_chat_graph_projection_create (fun value -> Ok value) (conn_db conn) in
     ignore
       (transact_conn
          conn
@@ -844,7 +854,7 @@ let () =
              , "block/title"
              , String "Renamed page" )
          ]);
-    Logseq_chat_graph_projection.update
+    Logseq_chat_lg_core_native.logseq_chat_graph_projection_update
       projection
       (conn_db conn)
       (change
@@ -855,7 +865,7 @@ let () =
            ]
          2);
     (match
-       Logseq_chat_graph_projection.blocks projection
+       Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection
        |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
      with
      | Some source

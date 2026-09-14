@@ -85,7 +85,7 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
     | Some _ -> Error "graph checkpoint belongs to another graph"
     | None -> Error "graph checkpoint is missing"
   in
-  let* conn = Logseq_chat_graph_store.restore_conn ~path:active_path in
+  let* conn = Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_conn active_path in
   report "connection_restored";
   let* () =
     if e2ee

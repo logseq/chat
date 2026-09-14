@@ -5,13 +5,13 @@
   (step-index :int)
   (step-result :string))
 
-(defn char-at [^:string value ^:int index]
+(defn char-at [value index]
   (subs value index (inc index)))
 
-(defn hex-character? [^:string value]
+(defn hex-character? [value]
   (string/includes? "0123456789abcdefABCDEF" value))
 
-(defn is-uuid? [^:string value]
+(defn is-uuid? [value]
   (and
    (= (count value) 36)
    (loop [index 0]
@@ -24,7 +24,7 @@
            (recur (inc index))
            false))))))
 
-(defn tag-terminator? [^:string value]
+(defn tag-terminator? [value]
   (or (= value " ")
       (= value (str (char 9)))
       (= value "\n")
@@ -36,9 +36,9 @@
       (= value "]")
       (= value "#")))
 
-(defn plain-tag-label? [^:string label]
+(defn plain-tag-label? [label]
   (and
-   (not (= label ""))
+   (not= label "")
    (loop [index 0]
      (if (= index (count label))
        true
@@ -46,7 +46,7 @@
          false
          (recur (inc index)))))))
 
-(defn close-index [^:string title ^:int start]
+(defn close-index [title start]
   (let [length (count title)]
     (loop [index start]
       (if (>= (inc index) length)
@@ -56,10 +56,10 @@
           (Some index)
           (recur (inc index)))))))
 
-(defn slice-through-close [^:string title ^:int index ^:int close]
+(defn slice-through-close [title index close]
   (subs title index (+ close 2)))
 
-(defn text-step [^:int index ^:string result]
+(defn text-step [index result]
   (record text-step
           (step-index index)
           (step-result result)))
@@ -118,7 +118,7 @@
         (let [step (to-text-step tag-title ref-title title length index result)]
           (recur (:step-index step) (:step-result step)))))))
 
-(defn hashtag-start? [^:string title ^:int index]
+(defn hashtag-start? [title index]
   (or (= index 0)
       (let [previous (char-at title (dec index))]
         (or (= previous " ")
@@ -126,7 +126,7 @@
             (= previous "\n")
             (= previous "(")))))
 
-(defn hashtag-end [^:string title ^:int start]
+(defn hashtag-end [title start]
   (let [length (count title)]
     (loop [index start]
       (if (and (< index length)

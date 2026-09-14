@@ -4231,7 +4231,10 @@ let () =
             deleted = []; operation_ids = [] } in
           Logseq_chat_sync_session.apply_validated_change_set state change
             ~apply:(fun change ->
-              Logseq_chat_entity_sync.apply_change_set conn change
+              Logseq_chat_lg_core_native.logseq_chat_entity_sync_apply_change_set
+                (fun value -> Ok value)
+                conn
+                change
               |> Result.map (fun () -> incr applied_count))
           |> Result.map_error (fun _ -> "sync cursor mismatch")) () in
     let dispatch action payload =
