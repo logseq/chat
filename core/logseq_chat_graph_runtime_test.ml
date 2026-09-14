@@ -238,7 +238,7 @@ let () =
       let runtime = Runtime.create ~path ~server_t:42 (conn_from_db db) in
       assert_bool "new Card blocks are initially due"
         (match Runtime.due_flashcards runtime ~now with
-         | [ card ] -> String.equal card.Logseq_chat_flashcards.block.uuid "block"
+         | [ card ] -> String.equal card.Logseq_chat_lg_core_native.block.uuid "block"
          | _ -> false);
       assert_bool "rating a flashcard stages one atomic optimistic operation"
         (Runtime.review_flashcard

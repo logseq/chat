@@ -4,11 +4,30 @@
    (:standard -runtime-variant _pic))))
 
 (library
+ (name logseq_chat_graph_support)
+ (wrapped false)
+ (modules
+  logseq_chat_datascript_value
+  logseq_chat_graph_read
+  logseq_chat_model
+  logseq_chat_ref_text)
+ (libraries
+  datascript-ocaml-native
+  datascript-ocaml-lg
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  yojson
+  unix)
+ (flags (:standard -w -27-32-37-39-69))
+ (instrumentation
+  (backend bisect_ppx)))
+
+(library
  (name logseq_chat_core)
  (wrapped false)
  (modules
   logseq_chat_api
-  logseq_chat_datascript_value
   logseq_chat_edn
   logseq_chat_e2ee
   logseq_chat_e2ee_keyring
@@ -17,8 +36,7 @@
   logseq_chat_graph_store
   logseq_chat_graph_bootstrap_data
   logseq_chat_graph_bootstrap
-  logseq_chat_graph_read
-  logseq_chat_flashcards
+  logseq_chat_graph_projection
   logseq_chat_graph_runtime
   logseq_chat_http
   logseq_chat_lg_core_native
@@ -26,13 +44,11 @@
   logseq_chat_lui_snapshot
   logseq_chat_logseq_storage_codec
   logseq_chat_markup
-  logseq_chat_model
   logseq_chat_outliner
   logseq_chat_outliner_state
   logseq_chat_outliner_effects
   logseq_chat_pending_ops
   logseq_chat_pending_projection
-  logseq_chat_ref_text
   logseq_chat_rpc
   logseq_chat_search_index
   logseq_chat_snapshot
@@ -42,6 +58,7 @@
   logseq_chat_sync_session
   logseq_chat_sync_state)
  (libraries
+  logseq_chat_graph_support
   datascript-ocaml-native
   datascript-ocaml-lg
   lg.edn-backend.native
@@ -68,28 +85,33 @@
  (target logseq_chat_lg_core_native.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
-  %{lib:ocaml-fsrs:fsrs.cmi}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
   (source_tree ../lg/logseq_chat/core)
   %{bin:lg})
- (action
+(action
   (setenv
-   LG_OCAML_INCLUDE_PATH
-   "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
    (setenv
-    OCAMLPATH
-    "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
-    (run
-     %{bin:lg}
-     --target native
-     --compile-files-from %{lib:signal-lg.states:signal_native.state}
-     ../lg/logseq_chat/core
-     -o %{target})))))
+    LG_OCAML_INCLUDE_PATH
+    %{read:lg_native_include_path}
+    (setenv
+     OCAMLPATH
+     %{read:lg_native_include_path}
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      ../lg/logseq_chat/core
+      -o %{target}))))))
 
 (rule
  (target logseq_chat_lui_native.ml)
  (deps
   %{lib:lui.states:lui_native_backends.state}
-  %{lib:ocaml-fsrs:fsrs.cmi}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
   (source_tree ../lg/logseq_chat/core)
   ../lg/logseq_chat/model.lgi
   ../lg/logseq_chat/model.cljc
@@ -100,27 +122,30 @@
   ../lg/logseq_chat/native_bridge.lgi
   ../lg/logseq_chat/native_bridge.cljc
   %{bin:lg})
- (action
+(action
   (setenv
-   LG_OCAML_INCLUDE_PATH
-   "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
    (setenv
-    OCAMLPATH
-    "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
-    (run
-     %{bin:lg}
-     --target native
-     --compile-files-from %{lib:lui.states:lui_native_backends.state}
-     ../lg/logseq_chat/core
-     ../lg/logseq_chat/model.lgi
-     ../lg/logseq_chat/model.cljc
-     ../lg/logseq_chat/view.lgi
-     ../lg/logseq_chat/view.cljc
-     ../lg/logseq_chat/app.lgi
-     ../lg/logseq_chat/app.cljc
-     ../lg/logseq_chat/native_bridge.lgi
-     ../lg/logseq_chat/native_bridge.cljc
-     -o %{target})))))
+    LG_OCAML_INCLUDE_PATH
+    %{read:lg_native_include_path}
+    (setenv
+     OCAMLPATH
+     %{read:lg_native_include_path}
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:lui.states:lui_native_backends.state}
+      ../lg/logseq_chat/core
+      ../lg/logseq_chat/model.lgi
+      ../lg/logseq_chat/model.cljc
+      ../lg/logseq_chat/view.lgi
+      ../lg/logseq_chat/view.cljc
+      ../lg/logseq_chat/app.lgi
+      ../lg/logseq_chat/app.cljc
+      ../lg/logseq_chat/native_bridge.lgi
+      ../lg/logseq_chat/native_bridge.cljc
+      -o %{target}))))))
 
 (executable
  (name logseq_chat_mobile_entry)

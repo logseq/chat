@@ -2,7 +2,6 @@
  (target logseq_chat_lui_test.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
-  %{lib:ocaml-fsrs:fsrs.cmi}
   (source_tree ../lg/logseq_chat)
   (source_tree logseq_chat)
   %{lib:lg-test.sources:test.cljc}
@@ -10,43 +9,49 @@
   %{lib:lg-test.sources:run.cljc}
   %{lib:lg-test.runtime:lg_test_runtime.cmi}
   %{lib:lg-test.alcotest:lg_test_alcotest.cmi}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
   (source_tree ../lg/logseq_chat/core)
   %{bin:lg})
  (action
   (setenv
-   LG_OCAML_INCLUDE_PATH
-   "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
    (setenv
-    OCAMLPATH
-    "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
-    (run
-     %{bin:lg}
-     --target native
-     --compile-files-from %{lib:signal-lg.states:signal_native.state}
-     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
-     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
-     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
-     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/flutter
-     ../lg/logseq_chat/core
-     ../lg/logseq_chat/model.lgi
-     ../lg/logseq_chat/model.cljc
-     ../lg/logseq_chat/view.lgi
-     ../lg/logseq_chat/view.cljc
-     ../lg/logseq_chat/app.lgi
-     ../lg/logseq_chat/app.cljc
-     ../lg/logseq_chat/native_bridge.lgi
-     ../lg/logseq_chat/native_bridge.cljc
-     %{lib:lg-test.sources:test.cljc}
-     %{lib:lg-test.sources:test_native.cljc}
-     logseq_chat
-     %{lib:lg-test.sources:run.cljc}
-     -o %{target})))))
+    LG_OCAML_INCLUDE_PATH
+    "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read:lg_native_include_path}"
+    (setenv
+     OCAMLPATH
+     "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read:lg_native_include_path}"
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
+      %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
+      %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
+      %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/flutter
+      ../lg/logseq_chat/core
+      ../lg/logseq_chat/model.lgi
+      ../lg/logseq_chat/model.cljc
+      ../lg/logseq_chat/view.lgi
+      ../lg/logseq_chat/view.cljc
+      ../lg/logseq_chat/app.lgi
+      ../lg/logseq_chat/app.cljc
+      ../lg/logseq_chat/native_bridge.lgi
+      ../lg/logseq_chat/native_bridge.cljc
+      %{lib:lg-test.sources:test.cljc}
+      %{lib:lg-test.sources:test_native.cljc}
+      logseq_chat
+      %{lib:lg-test.sources:run.cljc}
+      -o %{target}))))))
 
 (executable
  (name logseq_chat_lui_test)
  (modules logseq_chat_lui_test)
  (flags (:standard -w -27-32-37-39-69))
  (libraries
+  logseq_chat_graph_support
   datascript-ocaml-native
   lg.edn-backend.native
   lg.runtime

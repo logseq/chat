@@ -48,7 +48,9 @@ let () =
           let tag_pages = Logseq_chat_graph_read.tag_pages db in
           let favorites = (Logseq_chat_graph_read.sidebar_pages db).favorites in
           let due_flashcards =
-            Logseq_chat_flashcards.due_cards db ~now:(Int64.to_int (Int64.of_float (Unix.gettimeofday () *. 1000.)))
+            Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards
+              db
+              (Int64.to_int (Int64.of_float (Unix.gettimeofday () *. 1000.)))
           in
           let projected_due_flashcards =
             if Array.length Sys.argv = 3 && String.equal Sys.argv.(2) "--inspect"
@@ -59,9 +61,9 @@ let () =
                   db
                   (Logseq_chat_pending_ops.list ~path)
               in
-              Logseq_chat_flashcards.due_cards
+              Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards
                 snapshot.db
-                ~now:(Int64.to_int (Int64.of_float (Unix.gettimeofday () *. 1000.)))
+                (Int64.to_int (Int64.of_float (Unix.gettimeofday () *. 1000.)))
             else due_flashcards
           in
           Printf.printf

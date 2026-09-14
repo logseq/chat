@@ -1,12 +1,19 @@
 (ns logseq-chat.flashcards
   (:require [ocaml.package/datascript-ocaml-native]
             [ocaml.package/ocaml-fsrs]
+            [logseq-chat.datascript-value :as ds-value]
             [ocaml.Datascript :as ds]
             [ocaml.Float :as float]
             [ocaml.Fsrs :as fsrs]
+            [ocaml.Hashtbl :as hashtbl]
+            [ocaml.List :as list]
+            [ocaml.Logseq_chat_graph_read :as graph-read]
+            [ocaml.Logseq_chat_graph_read.Int_set :as int-set]
             [ocaml.Models :as models]
             [ocaml.Parameters :as parameters]
             [ocaml.Rrbvec :as rrbvec]
+            [ocaml.Seq :as seq]
+            [ocaml.String :as string]
             [ocaml.Stdlib :as stdlib]))
 
 (defn rating-keyword [rating]
@@ -202,3 +209,97 @@
       (Some card) card
       None (new-card created-at))
     _ (new-card created-at)))
+
+(defn decrypt-title [value]
+  (Ok value))
+
+(defn card-eid [^:Datascript.db db ^int eid]
+  (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
+    None false
+    (Some card-class-eid)
+    (let [classes (graph-read/class_descendants db card-class-eid)]
+      (list/exists
+       (fn [^int class-eid] (int-set/mem class-eid classes))
+       (graph-read/ref_eids db eid "block/tags")))))
+
+(defn descendants [^:list<Logseq_chat_model.block> page-blocks ^string parent-uuid]
+  (list/concat_map
+   (fn [^:Logseq_chat_model.block child]
+     (list* child (descendants page-blocks (:uuid child))))
+   (list/filter
+    (fn [^:Logseq_chat_model.block candidate]
+      (= (:parent-id candidate) (Some parent-uuid)))
+    page-blocks)))
+
+(defn page-blocks-for-page [page-blocks-cache db page-uuid]
+  (match (hashtbl/find_opt page-blocks-cache page-uuid)
+    (Some blocks) blocks
+    None
+    (let [blocks (graph-read/blocks_for_page db page-uuid)]
+      (hashtbl/add page-blocks-cache page-uuid blocks)
+      blocks)))
+
+(defn card-for-eid [page-blocks-cache db now uuid eid]
+  (if (card-eid db eid)
+    (match (graph-read/block decrypt-title db eid)
+      (Some block)
+      (let [page-blocks (page-blocks-for-page page-blocks-cache db (:page-id block))
+            created-at (if (> (:created-at block) 0) (:created-at block) now)
+            due (graph-read/int_value
+                 (graph-read/value db eid "logseq.property.fsrs/due"))
+            card (card-of-values
+                  created-at
+                  due
+                  (graph-read/value db eid "logseq.property.fsrs/state"))]
+        (Some
+         (record due-card
+           (block block)
+           (children (descendants page-blocks uuid))
+           (card card))))
+      None None)
+    None))
+
+(defn card-for-uuid [^:Datascript.db db ^int now ^string uuid]
+  (match (ds/entid db "block/uuid" (ds/Uuid uuid))
+    (Some eid)
+    (card-for-eid (hashtbl/create 8) db now uuid eid)
+    None None))
+
+(defn int-compare [^int left ^int right]
+  (if (< left right)
+    -1
+    (if (> left right) 1 0)))
+
+(defn due-card-compare [^:due-card left ^:due-card right]
+  (let [order (int-compare (:due (:card left)) (:due (:card right)))]
+    (if (= order 0)
+      (string/compare (:uuid (:block left)) (:uuid (:block right)))
+      order)))
+
+(defn due-card-for-eid [page-blocks-cache db now eid]
+  (match (graph-read/uuid_for_eid db eid)
+    None None
+    (Some uuid)
+    (match (card-for-eid page-blocks-cache db now uuid eid)
+      None None
+      (Some due-card)
+      (if (> (:due (:card due-card)) now)
+        None
+        (Some due-card)))))
+
+(defn due-cards [^:Datascript.db db ^int now]
+  (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
+    None (list)
+    (Some card-class-eid)
+    (let [page-blocks-cache (hashtbl/create 8)
+          class-eids (int-set/to_seq (graph-read/class_descendants db card-class-eid))
+          tagged-datoms (seq/flat_map
+                         (fn [^int class-eid]
+                           (ds-value/datoms-by-ref db (ds/Aevt) "block/tags" class-eid))
+                         class-eids)
+          tagged-eids (seq/map (fn [^:Datascript.datom datom] (:e datom)) tagged-datoms)
+          unique-eids (list/sort_uniq int-compare (list/of_seq tagged-eids))
+          due (list/filter_map
+               (fn [^int eid] (due-card-for-eid page-blocks-cache db now eid))
+               unique-eids)]
+      (list/sort due-card-compare due))))

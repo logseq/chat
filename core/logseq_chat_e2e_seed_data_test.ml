@@ -82,7 +82,7 @@ let () =
     |> not
   then failwith "parent tagged nodes must include objects of extending tags"
   else
-    match Logseq_chat_flashcards.due_cards db ~now:2_000_000_100_000 with
+    match Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards db 2_000_000_100_000 with
     | [ card ]
       when String.equal card.block.uuid "e2e00000-0000-4000-8000-000000000020"
            && String.equal card.block.title "The capital of France is {{cloze Paris}}"

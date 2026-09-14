@@ -590,12 +590,12 @@ let blocks runtime =
 ;;
 
 let due_flashcards runtime ~now =
-  Logseq_chat_flashcards.due_cards runtime.snapshot.db ~now
+  Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards runtime.snapshot.db now
 ;;
 
 let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
   let db = runtime.snapshot.db in
-  match Logseq_chat_flashcards.card_for_uuid db ~now uuid with
+  match Logseq_chat_lg_core_native.logseq_chat_flashcards_card_for_uuid db now uuid with
   | None -> Error "block is not a flashcard"
   | Some due_card ->
     let repeated = Logseq_chat_lg_core_native.logseq_chat_flashcards_repeat now due_card.card rating in

@@ -1,7 +1,6 @@
 open Datascript
 
 module LG = Logseq_chat_lg_core_native
-module Flashcards = Logseq_chat_flashcards
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
@@ -173,13 +172,13 @@ let () =
          ; Add (Entity_id 14, "block/updated-at", Int now)
          ]
   in
-  let due = Flashcards.due_cards db ~now in
-  let uuids = List.map (fun card -> card.Flashcards.block.Logseq_chat_model.uuid) due in
+  let due = LG.logseq_chat_flashcards_due_cards db now in
+  let uuids = List.map (fun card -> card.LG.block.Logseq_chat_model.uuid) due in
   assert_bool "new cards without FSRS properties are immediately due" (List.mem "new-card" uuids);
   assert_bool "Card subclasses participate in reviews" (List.mem "due-subclass" uuids);
   assert_bool "future cards are excluded" (not (List.mem "future-card" uuids));
   assert_bool "a card includes its child answer blocks"
-    (match List.find_opt (fun card -> String.equal card.Flashcards.block.uuid "new-card") due with
+    (match List.find_opt (fun card -> String.equal card.LG.block.uuid "new-card") due with
      | Some card -> List.map (fun block -> block.Logseq_chat_model.title) card.children = [ "The answer" ]
      | None -> false);
   assert_int "only due cards are returned" 2 (List.length due)

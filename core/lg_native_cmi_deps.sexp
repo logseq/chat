@@ -1,0 +1,12 @@
+%{lib:ocaml-fsrs:fsrs.cmi}
+../duniverse/lg/runtime/.lg_runtime.objs/byte/lg_runtime.cmi
+../duniverse/lg/runtime_edn_backend_native/.lg_edn_backend_native.objs/byte/lg_edn_backend.cmi
+../duniverse/lg/vendor/rrbvec/.rrbvec.objs/byte/rrbvec.cmi
+../duniverse/yojson/lib/.yojson.objs/byte/yojson__T.cmi
+../duniverse/datascript-ocaml/type/.datascript_types.objs/byte/datascript_types.cmi
+../duniverse/datascript-ocaml/impl/.datascript.objs/byte/datascript.cmi
+../duniverse/datascript-ocaml/lg/.datascript_lg.objs/byte/datascript_lg.cmi
+../duniverse/melange-edn/lib_native/.melange_edn_native.objs/byte/melange_edn_native.cmi
+../duniverse/melange-transit/lib/common/.transit_core.objs/byte/transit_core.cmi
+../duniverse/melange-transit/lib/native/.transit_native.objs/byte/transit_native.cmi
+.logseq_chat_graph_support.objs/byte/logseq_chat_graph_read.cmi

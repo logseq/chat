@@ -4084,7 +4084,7 @@ let () =
   let now = 1_776_000_000_000 in
   let reviewed = ref None in
   let due_card =
-    Logseq_chat_flashcards.
+    Logseq_chat_lg_core_native.
       { block = remote_block "flashcard" "Question {{cloze answer}}"
       ; children = []
       ; card = Logseq_chat_lg_core_native.logseq_chat_flashcards_new_card now

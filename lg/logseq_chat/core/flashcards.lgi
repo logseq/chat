@@ -24,6 +24,11 @@
   (last-repeat :int)
   (last-rating :option<flashcard-rating>))
 
+(type-record due-card
+  (block :Logseq_chat_model.block)
+  (children :list<Logseq_chat_model.block>)
+  (card :fsrs-card))
+
 (signature logseq-chat.flashcards/rating-keyword :fn<flashcard-rating;keyword>)
 (signature logseq-chat.flashcards/rating-name :fn<flashcard-rating;string>)
 (signature logseq-chat.flashcards/rating-of-keyword :fn<keyword;option<flashcard-rating>>)
@@ -35,3 +40,11 @@
 (signature logseq-chat.flashcards/state-value :fn<fsrs-card;Datascript.value>)
 (signature logseq-chat.flashcards/card-of-values
  :fn<int;option<int>;option<Datascript.value>;fsrs-card>)
+(signature logseq-chat.flashcards/descendants
+ :fn<list<Logseq_chat_model.block>;string;list<Logseq_chat_model.block>>)
+(signature logseq-chat.flashcards/card-eid :fn<Datascript.db;int;bool>)
+(signature logseq-chat.flashcards/int-compare :fn<int;int;int>)
+(signature logseq-chat.flashcards/due-card-compare :fn<due-card;due-card;int>)
+(signature logseq-chat.flashcards/card-for-uuid
+ :fn<Datascript.db;int;string;option<due-card>>)
+(signature logseq-chat.flashcards/due-cards :fn<Datascript.db;int;list<due-card>>)

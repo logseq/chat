@@ -4,7 +4,6 @@ module Model = Logseq_chat_model
 module Api = Logseq_chat_api
 module Http = Logseq_chat_http
 module Pending_ops = Logseq_chat_pending_ops
-module Flashcards = Logseq_chat_flashcards
 module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
@@ -94,7 +93,7 @@ type t =
   ; graph_normalize_titles :
       (uuid:string -> string list -> string list * (string * string) list) option
   ; graph_search : (string -> Logseq_chat_search_index.hit list) option
-  ; graph_due_flashcards : (now:int -> Flashcards.due_card list) option
+  ; graph_due_flashcards : (now:int -> LG.due_card list) option
   ; graph_review_flashcard :
       (uuid:string -> rating:LG.flashcard_rating -> now:int -> operation_id:string
        -> (unit, string) result) option
@@ -103,7 +102,7 @@ type t =
        -> (unit, string) result) option
   ; graph_delete_page :
       (page_uuid:string -> operation_id:string -> now:int -> (unit, string) result) option
-  ; mutable flashcards : Flashcards.due_card list
+  ; mutable flashcards : LG.due_card list
   ; mutable search_results : Logseq_chat_search_index.hit list
   ; mutable search_query : string
   ; load_older_journals : (unit -> unit) option
@@ -339,7 +338,7 @@ let block_json (block : Model.block) =
      | None -> [])
 ;;
 
-let flashcard_json (due_card : Flashcards.due_card) =
+let flashcard_json (due_card : LG.due_card) =
   `Assoc
     [ "block", block_json due_card.block
     ; "children", `List (List.map block_json due_card.children)
