@@ -10,6 +10,7 @@
             [logseq-chat.model :as model]
             [logseq-chat.fractional-order :as order]
             [logseq-chat.ref-text :as ref-text]
+            [logseq-chat.sync-checkpoint :as sync-checkpoint]
             [logseq-chat.sync-state :as sync-state]
             [logseq-chat.view :as view]))
 
@@ -49,6 +50,22 @@
      (sync-state/apply-change-set-error
       "graph-1" "65.33" 10 1 "graph-1" "65.33" 10 9)
      "rewound cursors should be rejected")))
+
+(deftest sync-checkpoint-encoding-is-lg-owned
+  (let [checkpoint (sync-checkpoint/create "graph-1" "65.33" 48192)
+        restored (sync-checkpoint/decode (sync-checkpoint/encode checkpoint))]
+    (assert-equal (Ok checkpoint) restored
+                  "LG sync checkpoint codec should round-trip"))
+  (assert-equal
+   (Error "invalid graph sync checkpoint")
+   (sync-checkpoint/decode
+    (sync-checkpoint/encode
+     (sync-checkpoint/create "graph-1" "65.33" -1)))
+   "LG sync checkpoint codec should reject negative cursors")
+  (assert-equal
+   (Error "graph sync checkpoint must be a Transit map")
+   (sync-checkpoint/decode "[]")
+   "LG sync checkpoint codec should reject non-map payloads"))
 
 (deftest ref-text-converts-between-editor-and-storage-forms
   (let [page-uuid "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"

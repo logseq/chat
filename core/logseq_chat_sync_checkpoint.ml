@@ -1,64 +1,18 @@
-module Value = Transit_core.Json
-module Codec = Transit_native.Transit.Json
+module LG = Logseq_chat_lg_core_native
 
-type t =
+type t = LG.sync_checkpoint =
   { graph_id : string
   ; schema_version : string
   ; applied_server_t : int
   }
 
 let create ~graph_id ~schema_version ~applied_server_t =
-  { graph_id; schema_version; applied_server_t }
+  LG.logseq_chat_sync_checkpoint_create graph_id schema_version applied_server_t
 ;;
 
-let encode checkpoint =
-  Codec.to_string
-    (Value.Map
-       [ Value.Keyword "format-version", Value.Int 1
-       ; Value.Keyword "graph-id", Value.String checkpoint.graph_id
-       ; Value.Keyword "schema-version", Value.String checkpoint.schema_version
-       ; Value.Keyword "applied-server-t", Value.Int checkpoint.applied_server_t
-       ])
-;;
+let encode = LG.logseq_chat_sync_checkpoint_encode
 
-let field key entries = List.assoc_opt (Value.Keyword key) entries
-
-let decode source =
-  let decoded =
-    try Ok (Codec.of_string source) with
-    | Value.Decode_error message -> Error message
-    | Yojson.Json_error message -> Error message
-    | Failure message -> Error message
-    | Invalid_argument message -> Error message
-  in
-  match decoded with
-  | Error _ as error -> error
-  | Ok (Value.Map entries) ->
-    (match
-       field "format-version" entries,
-       field "graph-id" entries,
-       field "schema-version" entries,
-       field "applied-server-t" entries
-     with
-     | Some (Value.Int 1),
-       Some (Value.String graph_id),
-       Some (Value.String schema_version),
-       Some (Value.Int applied_server_t)
-       when applied_server_t >= 0 ->
-       Ok { graph_id; schema_version; applied_server_t }
-     | Some (Value.Int 1),
-       Some (Value.String graph_id),
-       Some (Value.String schema_version),
-       Some (Value.Int64 applied_server_t)
-       when applied_server_t >= 0L && applied_server_t <= Int64.of_int max_int ->
-       Ok
-         { graph_id
-         ; schema_version
-         ; applied_server_t = Int64.to_int applied_server_t
-         }
-     | _ -> Error "invalid graph sync checkpoint")
-  | Ok _ -> Error "graph sync checkpoint must be a Transit map"
-;;
+let decode = LG.logseq_chat_sync_checkpoint_decode
 
 let error_message operation path error =
   Printf.sprintf "%s %s: %s" operation path (Printexc.to_string error)

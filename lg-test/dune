@@ -44,7 +44,9 @@
   lg.runtime
   lg.rrbvec
   lg-test.runtime
-  lg-test.alcotest))
+  lg-test.alcotest
+  melange-transit-core
+  melange-transit-native))
 
 (rule
  (alias runtest)

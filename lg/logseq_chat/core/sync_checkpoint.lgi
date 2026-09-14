@@ -1,0 +1,11 @@
+(ns logseq-chat.sync-checkpoint)
+
+(type-record sync-checkpoint
+  (graph-id :string)
+  (schema-version :string)
+  (applied-server-t :int))
+
+(signature logseq-chat.sync-checkpoint/create
+ :fn<string;string;int;sync-checkpoint>)
+(signature logseq-chat.sync-checkpoint/encode :fn<sync-checkpoint;string>)
+(signature logseq-chat.sync-checkpoint/decode :fn<string;result<sync-checkpoint;string>>)
