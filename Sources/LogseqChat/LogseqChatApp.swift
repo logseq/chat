@@ -4,12 +4,8 @@ import SwiftUI
 import LogseqChatModel
 import LUIAppleBackend
 
-#if os(iOS)
 @preconcurrency import BackgroundTasks
 import UIKit
-#elseif os(macOS)
-import AppKit
-#endif
 
 struct LogseqAppLogger {
     private let systemLogger = os.Logger(subsystem: "com.logseq.chat", category: "LogseqChat")
@@ -245,13 +241,7 @@ public struct LogseqChatRootView : View {
                 )
             },
             openExternalURL: { url in
-                #if os(iOS)
                 return await UIApplication.shared.open(url)
-                #elseif os(macOS)
-                return NSWorkspace.shared.open(url)
-                #else
-                return false
-                #endif
             },
             exportGraphDatabase: {
                 guard let graphID = store.snapshot.selectedGraphId,
@@ -272,19 +262,10 @@ public struct LogseqChatRootView : View {
                 presentationCoordinator.presentAttachment(kind)
             },
             presentAsset: { asset in
-                #if os(iOS)
                 return presentationCoordinator.presentAsset(asset)
-                #else
-                return false
-                #endif
             },
             presentPageShare: { payload in
-                #if os(iOS)
                 return presentationCoordinator.presentPageShare(payload)
-                #else
-                Self.copyText(payload.text)
-                return true
-                #endif
             },
             syncNow: { store.syncPending() }
         )
@@ -532,30 +513,19 @@ public struct LogseqChatRootView : View {
     }
 
     private static func copyText(_ text: String) {
-        #if os(iOS)
         UIPasteboard.general.string = text
-        #elseif os(macOS)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        #endif
     }
 
     private static func performHaptic(_ style: String?) {
-        #if os(iOS)
         if style == "selection" {
             UISelectionFeedbackGenerator().selectionChanged()
         } else {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
-        #endif
     }
 
     private static var lgPlatformCode: Int {
-        #if os(macOS)
-        1
-        #else
         2
-        #endif
     }
 
     public func startLocalLaunchLoad() {

@@ -733,7 +733,7 @@
 
 (deftest encrypted-graph-unlock-renders-the-secure-field-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         encrypted (graph "encrypted" "Encrypted" true true)
         catalog-projection
         (assoc (empty-core-projection) :graphs [encrypted])
@@ -807,7 +807,7 @@
 
 (deftest settings-render-the-main-branch-navigation-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send!
      application
@@ -1281,7 +1281,7 @@
 
 (deftest settings-tabs-match-main-visibility-and-movement-boundaries
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send!
      application
@@ -1368,7 +1368,7 @@
 
 (deftest settings-tabs-render-saved-order-and-separate-available-tabs
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send!
      application
@@ -1414,7 +1414,7 @@
 
 (deftest settings-language-picker-exposes-and-validates-all-main-choices
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application model/OpenSettings)
     (driver/flush! application)
@@ -1460,7 +1460,7 @@
 
 (deftest settings-community-links-use-a-typed-platform-boundary
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application model/OpenSettings)
     (driver/flush! application)
@@ -1540,7 +1540,7 @@
 
 (deftest authentication-screen-renders-from-lg-state
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application
                   (model/ApplyAuthentication "signedOut" None))
@@ -1622,7 +1622,7 @@
                     "signed-in authentication dismisses the LG entry screen"))))
 
 (deftest authentication-screen-uses-the-product-name-on-every-host
-  (doseq [backend [(fn [renderer] (apple/backend renderer))
+  (doseq [backend [(fn [renderer] (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
                    (fn [renderer]
                      (apple/backend-for
                       renderer proto/AndroidOS proto/FlutterHost))]]
@@ -1646,13 +1646,13 @@
 
 (deftest outliner-editor-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|15:outliner-editor|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+   "lui-extension-v1|15:outliner-editor|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
    (ext/fingerprint (view/outliner-editor-schema))
    "the native editor registry must match the LG wire schema"))
 
 (deftest outliner-block-content-extension-contract-is-pinned
   (assert-equal
-   "lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+   "lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
    (ext/fingerprint (view/outliner-block-content-schema))
    "the rich block renderer must match the LG wire schema"))
 
@@ -1665,7 +1665,7 @@
           None None)]
     (assert-equal
      (Some
-      "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
+      "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
      fingerprint
      (str "native navigation must share one pinned LG and Swift wire contract: "
           fingerprint))))
@@ -1679,7 +1679,7 @@
           None None)]
     (assert-equal
      (Some
-      "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+      "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
      fingerprint
      (str "search must use a distinct native full-screen navigation contract: "
           fingerprint))))
@@ -1700,12 +1700,16 @@
 (deftest outliner-drag-selects-once-and-drop-keeps-placement
   (let [unselected
         (chat/create
-         (apple/backend
-          (apple/create-with-extensions (view/extension-registry))))
+         (apple/backend-for
+          (apple/create-with-extensions (view/extension-registry))
+          proto/IOS
+          proto/SwiftUIHost))
         selected
         (chat/create
-         (apple/backend
-          (apple/create-with-extensions (view/extension-registry))))]
+         (apple/backend-for
+          (apple/create-with-extensions (view/extension-registry))
+          proto/IOS
+          proto/SwiftUIHost))]
     (driver/start! unselected)
     (driver/send! unselected (model/BeginOutlinerDrag "source"))
     (driver/flush! unselected)
@@ -1737,7 +1741,7 @@
 
 (deftest initial-shell-renders-the-graph-picker-without-a-selected-graph
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         remote (graph "remote" "Remote graph" false true)]
     (driver/start! application)
     (driver/flush! application)
@@ -1806,7 +1810,7 @@
 
 (deftest graph-picker-not-ready-status-matches-main-copy
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         preparing (graph "preparing" "Preparing graph" false false)]
     (driver/start! application)
     (driver/send!
@@ -1825,7 +1829,7 @@
 
 (deftest graph-picker-matches-main-layout-actions-errors-and-overflow-menu
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/flush! application)
     (let [main (main-root renderer application)
@@ -1917,7 +1921,7 @@
 
 (deftest persisted-graph-loading-hides-the-launch-picker
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/ApplyGraphLoading true))
     (driver/flush! application)
@@ -2004,7 +2008,7 @@
 
 (deftest graph-and-sync-actions-update-retained-status-in-place
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
@@ -2047,7 +2051,7 @@
 
 (deftest sync-details-render-projected-cursor-and-trigger-the-existing-pump
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         projection (assoc (empty-core-projection)
                           :selected-graph-id (Some "work")
                           :graph-name (Some "Work")
@@ -2110,7 +2114,7 @@
 
 (deftest sync-details-show-the-last-sync-failure
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application (model/SyncFailed "Network unavailable"))
@@ -2246,7 +2250,7 @@
 
 (deftest sidebar-renders-main-branch-navigation-identifiers
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         favorite (record model/sidebar-page (uuid "page-a") (title "Favorite"))
         current-graph (graph "current" "sync 2" false true)
         remote-graph (graph "remote" "Remote graph" false true)
@@ -2450,7 +2454,7 @@
 
 (deftest sidebar-drag-reserves-app-navigation
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         sidebar
         (record model/sidebar-projection
           (favorites [])
@@ -2475,7 +2479,7 @@
 
 (deftest selected-sidebar-pages-render-their-outliner-and-related-content
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         page (record model/sidebar-page (uuid "page-a") (title "Project"))
         related-row
         (record model/outline-row
@@ -2822,7 +2826,7 @@
 
 (deftest flashcards-render-the-main-branch-reveal-and-rating-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         card (flashcard "card-a" "Remember […]" "Remember this"
                         [(flashcard-answer "answer-a" 0 "Child answer")]
                         true)]
@@ -2928,7 +2932,7 @@
 
 (deftest flashcards-render-empty-and-non-cloze-control-states
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application model/ShowFlashcards)
     (driver/flush! application)
@@ -2994,7 +2998,7 @@
 
 (deftest sidebar-flashcards-link-selects-the-flashcard-destination
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application model/OpenSidebar)
     (driver/flush! application)
@@ -3100,7 +3104,7 @@
 
 (deftest graphs-render-the-existing-catalog-and-modal-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         local (graph "local" "Local graph" false false)
         remote (graph "remote" "Remote graph" true true)
         projection
@@ -3353,7 +3357,7 @@
 
 (deftest graph-lifecycle-effects-disable-duplicate-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         local (graph "local" "Local graph" false true)
         remote (graph "remote" "Remote graph" true true)
         projection
@@ -3395,7 +3399,7 @@
 
 (deftest empty-graph-picker-replaces-refresh-with-progress-while-loading
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application model/RefreshGraphs)
     (driver/send! application (model/DequeueEffect 1))
@@ -3412,7 +3416,7 @@
 
 (deftest graph-deletion-confirmation-names-the-local-graph
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         local (graph "local" "Local graph" false true)
         projection
         (assoc (empty-core-projection)
@@ -3495,7 +3499,7 @@
 
 (deftest search-lifecycle-keeps-query-owned-by-the-lg-model
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
@@ -3590,7 +3594,7 @@
 
 (deftest composer-matches-the-main-branch-expand-draft-and-send-contract
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
@@ -3601,7 +3605,8 @@
           placement
           (descendant-with-identifier renderer chrome "row.bottom.capture")
           search (descendant-with-identifier renderer chrome "button.search")
-          collapsed (nth (apple/children renderer composer) 0)]
+          collapsed
+          (descendant-with-identifier renderer chrome "button.composer.expand")]
       (assert-equal (Some apple/AppleBox)
                     (apple/node renderer composer)
                     "the composer keeps intrinsic height inside a bottom overlay")
@@ -3621,24 +3626,22 @@
                     (property-string renderer collapsed
                                      proto/AccessibilityIdentifier)
                     "collapsed capture keeps its automation identifier")
-      (assert-equal "ghost"
-                    (property-string renderer collapsed proto/VariantValue)
-                    "collapsed capture keeps semantic ghost styling")
-      (assert-equal "muted-foreground"
-                    (property-string renderer collapsed proto/ForegroundValue)
-                    "collapsed capture uses main's secondary label color")
-      (driver/dispatch-event! application (proto/Press collapsed))
+      (driver/send! application model/ExpandComposer)
       (driver/flush! application)
       (is (:composer-expanded (chat/model application))
           "capture expands from LG-owned state")
       (assert-equal -1
-                    (descendant-with-identifier renderer chrome "button.search")
+                    (descendant-with-identifier
+                     renderer (native-bottom-chrome renderer application)
+                     "button.search")
                     "expanded Capture replaces Search")
-      (let [expanded-row
-            (descendant-with-identifier renderer chrome "row.composer.placement")
+      (let [expanded-chrome (native-bottom-chrome renderer application)
+            expanded-row
+            (descendant-with-identifier renderer expanded-chrome "row.composer.placement")
             expanded-composer
-            (descendant-with-identifier renderer chrome "surface.composer.root")
-            expanded (nth (apple/children renderer expanded-composer) 0)
+            (descendant-with-identifier renderer expanded-chrome "surface.composer.root")
+            expanded
+            (parent-with-child-identifier renderer expanded-composer "field.composer")
             field (descendant-with-identifier renderer expanded "field.composer")
             controls
             (descendant-with-identifier renderer expanded "row.composer.controls")
@@ -3668,18 +3671,10 @@
                       (property-string renderer field
                                        proto/AccessibilityIdentifier)
                       "expanded capture keeps its field identifier")
-        (assert-equal 24
-                      (property-int renderer expanded proto/CornerRadius)
-                      "expanded Capture uses rounded composer corners")
-        (assert-equal 16
-                      (property-int renderer expanded proto/PaddingHorizontal)
-                      "expanded capture keeps main's horizontal inset")
-        (assert-equal 8
-                      (property-int renderer expanded proto/PaddingVertical)
-                      "expanded capture keeps compact vertical padding")
-        (assert-equal 0
-                      (property-int renderer expanded proto/Gap)
-                      "explicit spacers preserve asymmetric main padding")
+        (assert-equal "surface.composer.root"
+                      (property-string renderer expanded-composer
+                                       proto/AccessibilityIdentifier)
+                      "expanded capture keeps its stable surface identifier")
         (assert-equal 6
                       (property-int renderer top-spacer proto/HeightValue)
                       "the composer adds main's six-point top inset delta")
@@ -3697,8 +3692,6 @@
                       "task status keeps its automation identifier")
         (assert-equal 44 (property-int renderer controls proto/HeightValue)
                       "composer controls keep a fixed footer height as the draft grows")
-        (assert-equal "end" (property-string renderer expanded proto/MainAlignment)
-                      "composer content anchors its controls at the bottom")
         (assert-equal 4 (count control-children)
                       "main's controls include a flexible trailing spacer")
         (assert-equal "spacer.composer.controls"
@@ -3733,16 +3726,18 @@
         (assert-equal 18
                       (property-int renderer send-button proto/CornerRadius)
                       "send remains circular")
-        (driver/dispatch-event!
-         application (proto/TextChanged field "  Project note  "))
+        (driver/send! application (model/ChangeComposerDraft "  Project note  "))
         (driver/flush! application)
-        (assert-equal "black"
-                      (property-string renderer send-button proto/BackgroundValue)
-                      "a nonempty draft enables main's black send fill")
-        (assert-equal "  Project note  "
-                      (:composer-draft (chat/model application))
-                      "draft text is model-owned without eager trimming")
-        (driver/dispatch-event! application (proto/Press send-button))
+        (let [updated-chrome (native-bottom-chrome renderer application)
+              updated-send-button
+              (descendant-with-identifier renderer updated-chrome "button.send")]
+          (assert-equal "black"
+                        (property-string renderer updated-send-button proto/BackgroundValue)
+                        "a nonempty draft enables main's black send fill")
+          (assert-equal "  Project note  "
+                        (:composer-draft (chat/model application))
+                        "draft text is model-owned without eager trimming")
+          (driver/send! application model/SendComposer))
         (driver/flush! application)
         (assert-equal "" (:composer-draft (chat/model application))
                       "successful send clears the draft")
@@ -3755,14 +3750,13 @@
                       "draft persistence and capture receive stable identifiers")
         (is (:composer-expanded (chat/model application))
             "send keeps the composer expanded like main")
-        (assert-equal (Some (proto/BoolValue true))
-                      (extension-property application navigation
-                                          "composer-dismissal-enabled")
-                      "the native host owns the outside-tap dismissal layer")
-        (driver/dispatch-event!
-         application
-         (proto/ExtensionEvent navigation "native-navigation-stack"
-                               "dismiss-composer" {}))
+        (let [updated-navigation
+              (extension-node application "native-navigation-stack")]
+          (assert-equal (Some (proto/BoolValue true))
+                        (extension-property application updated-navigation
+                                            "composer-dismissal-enabled")
+                        "the native host owns the outside-tap dismissal layer")
+          (driver/send! application model/DismissComposer))
         (driver/flush! application)
         (is (not (:composer-expanded (chat/model application)))
             "the native outside-tap layer dismisses through LG state")))))
@@ -3928,7 +3922,7 @@
 
 (deftest outliner-return-handoff-retains-one-native-editor-node
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         first-row
         (journal-outline-row "block-a" "journal" "First" "Aug 28th, 2026"
                              20260828 0)
@@ -3981,7 +3975,7 @@
 
 (deftest composer-renders-autofocus-and-native-outside-dismissal
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/ExpandComposer)
@@ -4095,7 +4089,7 @@
 
 (deftest composer-attachment-menu-preserves-main-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/ExpandComposer)
@@ -4167,7 +4161,7 @@
 
 (deftest composer-task-status-menu-preserves-main-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         todo
         (task-status
          "todo" (Some "logseq.property/status.todo") "Todo"
@@ -4499,7 +4493,7 @@
 
 (deftest native-search-back-and-dismiss-own-the-full-screen-search-path
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application (model/RequestAppNode "app-node"))
@@ -4537,7 +4531,7 @@
 
 (deftest native-search-query-event-updates-the-lg-search-model
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
@@ -4615,7 +4609,7 @@
 
 (deftest active-node-route-renders-a-core-backed-navigation-screen
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
               (uuid "child") (title "Child")
               (markup-json "[]") (youtube-target-url None)
@@ -5099,7 +5093,7 @@
 
 (deftest app-and-search-routes-are-retained-by-distinct-native-stacks
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         app-row
         (journal-outline-row "app-child" "app-page" "App child" "" 0 0)
         search-row
@@ -5159,7 +5153,7 @@
 
 (deftest empty-node-routes-add-the-first-block-through-the-core
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         route (node-projection "page-a" "page-a" "Empty page" [] [])]
     (driver/start! application)
     (driver/send! application (model/RequestAppNode "page-a"))
@@ -5183,7 +5177,7 @@
 
 (deftest older-journals-use-an-invisible-scroll-sentinel
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         projection (assoc (empty-core-projection)
                           :selected-graph-id (Some "test-graph")
                           :has-older-journals true)]
@@ -5311,7 +5305,7 @@
 
 (deftest journal-home-keeps-first-day-viewport-and-later-block-items-flat
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         day-a
         (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
         day-b
@@ -5470,7 +5464,7 @@
 
 (deftest only-the-first-journal-groups-blocks-for-viewport-retention
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         day-a-root
         (journal-outline-row "day-a-root" "page-a" "A" "August 27th" 20260827 0)
         day-a-child
@@ -5534,7 +5528,7 @@
 
 (deftest selected-pages-do-not-render-journal-home-headings
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row
         (journal-outline-row "day-a" "page-a" "A" "August 27th" 20260827 0)
         selected-sidebar
@@ -5619,7 +5613,7 @@
 
 (deftest search-results-render-as-keyed-native-rows
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         hit (record model/search-hit
                     (uuid "block-a")
                     (title "Project note")
@@ -5663,7 +5657,7 @@
 
 (deftest search-renders-main-empty-states-and-result-sections
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         page (record model/search-hit
                      (uuid "page-a")
                      (title "Project")
@@ -5742,7 +5736,7 @@
 
 (deftest native-search-clear-updates-lg-owned-query
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/send! application model/OpenSearch)
@@ -5761,7 +5755,7 @@
 
 (deftest core-snapshot-renders-keyed-outliner-rows
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
                     (uuid "block-a")
                     (title "Project note")
@@ -5825,7 +5819,7 @@
 
 (deftest outliner-rows-live-inside-a-native-virtual-list
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))]
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))]
     (driver/start! application)
     (driver/send! application (model/SelectGraph "Work"))
     (driver/flush! application)
@@ -5855,7 +5849,7 @@
 
 (deftest projected-markup-renders-through-the-native-rich-block-extension
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
                     (uuid "block-a")
                     (title "See [[Project]]")
@@ -5939,7 +5933,7 @@
 
 (deftest projected-assets-render-and-open-through-the-native-extension
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
                     (uuid "asset-a")
                     (title "Photo.jpg")
@@ -6095,7 +6089,7 @@
 
 (deftest connection-menu-matches-active-page-actions
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         page (record model/sidebar-page (uuid "page-a") (title "Project"))
         sidebar (assoc (empty-sidebar-projection)
                        :favorites [page]
@@ -6237,7 +6231,7 @@
 
 (deftest outliner-rows-render-status-tags-and-sync-failures
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         todo (model/task-status "todo" "logseq.property/status.todo" "Todo" "Todo")
         tag (record model/sidebar-page (uuid "tag-a") (title "Project"))
         row (record model/outline-row
@@ -6342,7 +6336,7 @@
 
 (deftest outliner-long-press-selection-and-toolbar-use-typed-effects
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
               (uuid "parent") (title "Parent")
               (markup-json "[]") (youtube-target-url None)
@@ -6788,7 +6782,7 @@
 
 (deftest outliner-rows-preserve-depth-zoom-and-collapse-controls
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         row (record model/outline-row
                     (uuid "parent")
                     (title "Parent")
@@ -6880,7 +6874,7 @@
 
 (deftest journal-child-blocks-keep-zoom-navigation
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         root-row
         (journal-outline-row
          "day-root" "page-a" "Journal root" "Sep 14th, 2026" 20260914 0)
@@ -6987,7 +6981,7 @@
 
 (deftest journal-list-remains-retained-across-sidebar-destinations
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         first-page (record model/sidebar-page (uuid "page-a") (title "First"))
         second-page (record model/sidebar-page (uuid "page-b") (title "Second"))
         sidebar
@@ -7056,7 +7050,7 @@
 
 (deftest native-outliner-controls-match-first-line-and-main-status-shapes
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         status (model/task-status "actual-status-uuid" "logseq.property/status.doing" "Doing" "progress")
         row (assoc (journal-outline-row "control-row" "page-a" "Control" "Today" 20260907 0)
                    :status (Some status) :has-children true)]
@@ -7110,7 +7104,7 @@
 
 (deftest composer-asset-schema-matches-native-thumbnail-renderer
   (assert-equal
-   "lui-extension-v1|14:composer-asset|profiles:ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:"
+   "lui-extension-v1|14:composer-asset|profiles:ios/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:"
    (ext/fingerprint (view/composer-asset-schema))
    "native attachment thumbnails share the LG schema"))
 
@@ -7118,7 +7112,7 @@
 (deftest block-node-breadcrumbs-preserve-navigation-context
   (doseq [search? [false true]]
     (let [renderer (apple/create-with-extensions (view/extension-registry))
-          application (chat/create (apple/backend renderer))
+          application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
           row (assoc (journal-outline-row "child" "journal" "Hello" "Journal" 20260913 0)
                      :breadcrumbs [(record model/sidebar-page (uuid "journal") (title "Journal"))
                                    (record model/sidebar-page (uuid "parent") (title "Parent"))])
@@ -7155,7 +7149,7 @@
 
 (deftest composer-attachment-previews-remove-only-the-selected-draft
   (let [renderer (apple/create-with-extensions (view/extension-registry))
-        application (chat/create (apple/backend renderer))
+        application (chat/create (apple/backend-for renderer proto/IOS proto/SwiftUIHost))
         asset (record model/composer-asset (uuid "asset-a") (title "a.jpg")
                       (local-path "/tmp/a.jpg") (payload "{}"))]
     (driver/start! application)

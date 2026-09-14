@@ -10,8 +10,7 @@
 
 (defn composer-asset-schema []
   (ext/component "composer-asset"
-   [(proto/profile proto/MacOS proto/SwiftUIHost)
-    (proto/profile proto/IOS proto/SwiftUIHost)]
+   [(proto/profile proto/IOS proto/SwiftUIHost)]
    false []
    [(ext/property "title" ext/StringScalar true None)
     (ext/property "local-path" ext/StringScalar true None)] []))
@@ -19,8 +18,7 @@
 (defn outliner-editor-schema []
   (ext/component
    "outliner-editor"
-   [(proto/profile proto/MacOS proto/SwiftUIHost)
-    (proto/profile proto/IOS proto/SwiftUIHost)
+   [(proto/profile proto/IOS proto/SwiftUIHost)
     (proto/profile proto/AndroidOS proto/FlutterHost)]
    false []
    [(ext/property "block-id" ext/StringScalar true None)
@@ -45,8 +43,7 @@
 (defn outliner-block-content-schema []
   (ext/component
    "outliner-block-content"
-   [(proto/profile proto/MacOS proto/SwiftUIHost)
-    (proto/profile proto/IOS proto/SwiftUIHost)
+   [(proto/profile proto/IOS proto/SwiftUIHost)
     (proto/profile proto/AndroidOS proto/FlutterHost)]
    false []
    [(ext/property "title" ext/StringScalar true None)
@@ -74,8 +71,7 @@
 (defn native-navigation-stack-schema []
   (ext/component
    "native-navigation-stack"
-   [(proto/profile proto/MacOS proto/SwiftUIHost)
-    (proto/profile proto/IOS proto/SwiftUIHost)
+   [(proto/profile proto/IOS proto/SwiftUIHost)
     (proto/profile proto/AndroidOS proto/FlutterHost)]
    true []
    [(ext/property "depth" ext/IntScalar true None)
@@ -88,8 +84,7 @@
 (defn native-search-presentation-schema []
   (ext/component
    "native-search-presentation"
-   [(proto/profile proto/MacOS proto/SwiftUIHost)
-    (proto/profile proto/IOS proto/SwiftUIHost)
+   [(proto/profile proto/IOS proto/SwiftUIHost)
     (proto/profile proto/AndroidOS proto/FlutterHost)]
    true []
    [(ext/property "presented" ext/BoolScalar true None)
@@ -105,8 +100,7 @@
 (defn native-overflow-menu-schema []
   (ext/component
    "native-overflow-menu"
-   [(proto/profile proto/MacOS proto/SwiftUIHost)
-    (proto/profile proto/IOS proto/SwiftUIHost)
+   [(proto/profile proto/IOS proto/SwiftUIHost)
     (proto/profile proto/AndroidOS proto/FlutterHost)]
    false []
    [(ext/property "page-actions-visible" ext/BoolScalar true None)

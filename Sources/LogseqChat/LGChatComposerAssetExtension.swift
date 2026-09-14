@@ -8,7 +8,7 @@ enum LGChatComposerAssetExtension {
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(LUIAppleExtension(
             identifier: "composer-asset",
-            fingerprint: "lui-extension-v1|14:composer-asset|profiles:ios/swiftui,macos/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:",
+            fingerprint: "lui-extension-v1|14:composer-asset|profiles:ios/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:",
             properties: [
                 .init(name: "title", kind: .string, isRequired: true),
                 .init(name: "local-path", kind: .string, isRequired: true),

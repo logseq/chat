@@ -27,7 +27,7 @@ enum LGChatNavigationSurfacePolicy {
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -97,7 +97,7 @@ private struct LGChatNavigationStack: View {
 @MainActor
 enum LGChatSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -132,11 +132,6 @@ private struct LGChatSearchPresentation: View {
     let context: LUIAppleExtensionViewContext
 
     var body: some View {
-        #if os(macOS)
-        baseContent.sheet(isPresented: presentedBinding) {
-            LGChatSearchSession(context: context)
-        }
-        #else
         baseContent
             .fullScreenCover(isPresented: presentedBinding) {
                 LGChatSearchSession(context: context)
@@ -144,7 +139,6 @@ private struct LGChatSearchPresentation: View {
                     .transaction { $0.disablesAnimations = false }
             }
             .transaction(value: presented) { $0.disablesAnimations = true }
-        #endif
     }
 
     private var baseContent: AnyView {
@@ -520,7 +514,7 @@ private struct LGChatNavigationContent: View {
                 }
                 .toolbar {
                     if let toolbarStartIndex {
-                        if #available(iOS 26.0, macOS 26.0, *) {
+                        if #available(iOS 26.0, *) {
                             ToolbarItem(placement: rootLeadingToolbarPlacement) {
                                 let childID = context.childIDs[toolbarStartIndex]
                                 context.content(for: childID)
@@ -745,7 +739,7 @@ private struct LGChatNavigationContent: View {
 private struct LGChatBottomChromeSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
+        if #available(iOS 26.0, *) {
             content.glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
         } else {
             content.background(

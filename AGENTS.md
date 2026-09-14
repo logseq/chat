@@ -1,6 +1,6 @@
 # Logseq Chat
 
-Logseq Chat uses native SwiftUI on Apple platforms and Flutter Material on Android, backed by an OCaml DataScript core. Canonical setup is in `README.md`.
+Logseq Chat uses native SwiftUI on iOS and Flutter Material on Android, backed by an OCaml DataScript core. Canonical setup is in `README.md`.
 
 ## Testing
 
@@ -18,13 +18,13 @@ Logseq Chat uses native SwiftUI on Apple platforms and Flutter Material on Andro
   because `logseq_chat_platform_crypto` is only compiled by the platform
   build scripts; this is expected. Use the `@core/runtest` target instead.
 - The platform build scripts (`scripts/build-mobile-ios-*.sh`,
-  `scripts/build-android-native.sh`, `scripts/build-macos-app.sh`) hardcode
+  `scripts/build-android-native.sh`) hardcode
   the OCaml module list. Adding a new module under `core/` requires updating
   `core/dune` and every one of those scripts (compile and link sections).
 
 ## Cursor Cloud specific instructions
 
-Cloud Agent VMs are Linux. They cannot run Xcode, the iOS simulator, the macOS `.app`, or `swift test`. Do not try to start those from this environment.
+Cloud Agent VMs are Linux. They cannot run Xcode, the iOS simulator, or `swift test`. Do not try to start those from this environment.
 
 The Linux-runnable surface is the OCaml core in `core/` (inbox capture, DataScript model, RPC, SQLite persistence). There is no in-repo HTTP server; the app’s default API (`http://127.0.0.1:8787`) lives in a separate Logseq product.
 
@@ -53,6 +53,6 @@ opam install . --deps-only --yes --with-test
 
 A representative core action is the Swift FFI RPC `dispatch` / `send`, which optimistic-captures a journal block (see `core/logseq_chat_rpc_test.ml` and `dune runtest`).
 
-### iOS / Android / macOS
+### iOS / Android
 
-On a Mac, follow `README.md`: open `Project.xcworkspace`, run the `LogseqChat App` scheme. Native core builds (`scripts/build-mobile-ios-*.sh`, `scripts/build-macos-app.sh`, `scripts/build-android-native.sh`) expect an `ocaml-demo` checkout via `LOGSEQ_CHAT_OCAML_DEMO_ROOT` (defaults to a machine-local path). Do not start Android emulators or Maestro from Cloud Agent unless that stack is explicitly in scope.
+On a Mac, follow `README.md`: open `Project.xcworkspace`, run the `LogseqChat App` scheme. Native core builds (`scripts/build-mobile-ios-*.sh`, `scripts/build-android-native.sh`) expect an `ocaml-demo` checkout via `LOGSEQ_CHAT_OCAML_DEMO_ROOT` (defaults to a machine-local path). Do not start Android emulators or Maestro from Cloud Agent unless that stack is explicitly in scope.

@@ -1,31 +1,19 @@
 # Logseq Chat
 
-Logseq Chat is a native SwiftUI app for Apple platforms and a Flutter Material
-app for Android. Both clients use the same LG application model and OCaml
+Logseq Chat is a native SwiftUI app for iOS and a Flutter Material app for
+Android. Both clients use the same LG application model and OCaml
 DataScript core.
 
-## Apple platforms
+## iOS
 
 Open `Project.xcworkspace` and run the `LogseqChat App` scheme in Xcode.
-The Swift package can be compile-checked without launching XCTest:
 
-```sh
-swift build --disable-sandbox
-```
-
-Build the native macOS Release app, including the OCaml 5.5 DataScript core:
-
-```sh
-./scripts/build-macos-app.sh
-open .build/macos/LogseqChat.app
-```
-
-The first Apple build creates a deployment-targeted OCaml 5.5 toolchain under
+The first iOS build creates a deployment-targeted OCaml 5.5 toolchain under
 `_build/apple-toolchains`. Native dependencies and core objects are keyed by
 compiler, target, and source fingerprints, so later builds reuse them. Set
 `LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT` to share the toolchain cache, or provide
-`LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX`/`LOGSEQ_CHAT_MACOS_TOOLCHAIN_PREFIX` to use
-an existing compatible compiler directly.
+`LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX` to use an existing compatible compiler
+directly.
 
 ## Android
 

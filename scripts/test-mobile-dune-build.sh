@@ -31,9 +31,13 @@ legacy_mldoc_patch="$repo_root/scripts/patches/mldoc-wrapped.patch"
 
 grep -Fq '(switch 5.5.0)' "$workspace"
 grep -Fq '(host mobile_host)' "$workspace"
-for context in ios_simulator ios_device android_arm64 android_x86_64 macos_arm64; do
+for context in ios_simulator ios_device android_arm64 android_x86_64; do
   grep -Fq "(name $context)" "$workspace"
 done
+if grep -Fq "(name macos_arm64)" "$workspace"; then
+  echo "error: desktop macOS Dune context must be removed" >&2
+  exit 1
+fi
 grep -Fq '"$dune" build' "$builder"
 grep -Fq 'target="_build/$context/core/logseq_chat_mobile_entry.exe.o"' "$builder"
 grep -Fq '(modes object)' "$core_dune"

@@ -1,8 +1,6 @@
 import SwiftUI
 import LogseqChat
-#if os(iOS)
 import AppIntents
-#endif
 
 private typealias AppRootView = LogseqChatRootView
 private typealias AppDelegate = LogseqChatAppDelegate
@@ -33,20 +31,13 @@ private typealias AppDelegate = LogseqChatAppDelegate
     }
 }
 
-#if canImport(UIKit)
 typealias AppDelegateAdaptor = UIApplicationDelegateAdaptor
 typealias AppMainDelegateBase = UIApplicationDelegate
 typealias AppType = UIApplication
-#elseif canImport(AppKit)
-typealias AppDelegateAdaptor = NSApplicationDelegateAdaptor
-typealias AppMainDelegateBase = NSApplicationDelegate
-typealias AppType = NSApplication
-#endif
 
 @MainActor final class AppMainDelegate: NSObject, AppMainDelegateBase {
     let application = AppType.shared
 
-    #if canImport(UIKit)
     func application(_ application: UIApplication, willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         AppDelegate.shared.onInit()
         return true
@@ -85,23 +76,9 @@ typealias AppType = NSApplication
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
         NotificationCenter.default.post(name: NSNotification.Name("didFailToRegisterForRemoteNotificationsWithError"), object: application, userInfo: ["error": error])
     }
-    #elseif canImport(AppKit)
-    func applicationWillFinishLaunching(_ notification: Notification) {
-        AppDelegate.shared.onInit()
-    }
-
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        AppDelegate.shared.onLaunch()
-    }
-
-    func applicationWillTerminate(_ application: Notification) {
-        AppDelegate.shared.onDestroy()
-    }
-    #endif
 
 }
 
-#if os(iOS)
 @MainActor final class QuickActionSceneDelegate: NSObject, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
                options connectionOptions: UIScene.ConnectionOptions) {
@@ -176,4 +153,3 @@ struct LogseqAppShortcuts: AppShortcutsProvider {
         )
     }
 }
-#endif

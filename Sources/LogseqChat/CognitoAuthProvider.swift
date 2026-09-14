@@ -6,8 +6,6 @@ import AuthenticationServices
 import Security
 #if os(iOS)
 import UIKit
-#elseif os(macOS)
-import AppKit
 #endif
 
 enum CognitoAuthProviderError: Error, LocalizedError {
@@ -121,12 +119,8 @@ private struct CognitoTokenStore: Sendable {
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        #if os(iOS)
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
-        #elseif os(macOS)
-        return NSApplication.shared.keyWindow ?? ASPresentationAnchor()
-        #endif
     }
 }
 

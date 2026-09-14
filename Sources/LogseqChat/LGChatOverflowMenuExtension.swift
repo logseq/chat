@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 enum LGChatOverflowMenuExtension {
     static let identifier = "native-overflow-menu"
-    static let fingerprint = "lui-extension-v1|20:native-overflow-menu|profiles:android/flutter,ios/swiftui,macos/swiftui|standard-children:0|children:|properties:14:favorite-label:string:required:none,16:settings-visible:bool:required:none,20:page-actions-visible:bool:required:none|events:5:share[],6:delete[],8:favorite[],8:settings[]"
+    static let fingerprint = "lui-extension-v1|20:native-overflow-menu|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:14:favorite-label:string:required:none,16:settings-visible:bool:required:none,20:page-actions-visible:bool:required:none|events:5:share[],6:delete[],8:favorite[],8:settings[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(

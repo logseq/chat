@@ -18,10 +18,9 @@ INFOPLIST_KEY_UIStatusBarStyle[sdk=iphone*] = UIStatusBarStyleDefault
 INFOPLIST_KEY_UISupportedInterfaceOrientations[sdk=iphone*] = UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown
 
 IPHONEOS_DEPLOYMENT_TARGET = 17.0
-MACOSX_DEPLOYMENT_TARGET = 14.0
 SUPPORTS_MACCATALYST = NO
 
-SUPPORTED_PLATFORMS = iphoneos iphonesimulator macosx
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
 
 // iPhone + iPad
 TARGETED_DEVICE_FAMILY = 1,2

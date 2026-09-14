@@ -24,8 +24,3 @@
  (default
   (name android_x86_64)
   (host mobile_host)))
-
-(context
- (default
-  (name macos_arm64)
-  (host mobile_host)))

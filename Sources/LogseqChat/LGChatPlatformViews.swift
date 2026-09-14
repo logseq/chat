@@ -128,13 +128,6 @@ struct IconImage: View {
     }
 
     private static let assetBundle: Bundle = {
-        #if os(macOS)
-        if let bundleURL = Bundle.main.resourceURL?
-            .appendingPathComponent("logseq-chat_LogseqChat.bundle"),
-           let bundle = Bundle(url: bundleURL) {
-            return bundle
-        }
-        #endif
         return Bundle.module
     }()
 

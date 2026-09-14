@@ -19,7 +19,6 @@
 
 (defn operating-system [platform-code]
   (match platform-code
-    1 proto/MacOS
     2 proto/IOS
     3 proto/AndroidOS
     _ proto/GenericOS))

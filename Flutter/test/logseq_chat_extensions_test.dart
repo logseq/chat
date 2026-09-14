@@ -1109,7 +1109,7 @@ void main() {
 
 const _editorFingerprint =
     'lui-extension-v1|15:outliner-editor|profiles:android/flutter,'
-    'ios/swiftui,macos/swiftui|standard-children:0|children:|'
+    'ios/swiftui|standard-children:0|children:|'
     'properties:18:caret-utf16-offset:int:required:none,5:title:string:'
     'required:none,8:block-id:string:required:none|events:11:text-change['
     '18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change['
@@ -1118,7 +1118,7 @@ const _editorFingerprint =
     'required,5:title:string:required]';
 const _richFingerprint =
     'lui-extension-v1|22:outliner-block-content|profiles:android/flutter,'
-    'ios/swiftui,macos/swiftui|standard-children:0|children:|'
+    'ios/swiftui|standard-children:0|children:|'
     'properties:10:asset-type:string:required:none,10:local-path:string:'
     'required:none,11:markup-json:string:required:none,12:is-completed:bool:'
     'required:none,18:youtube-target-url:string:required:none,5:title:string:'
@@ -1128,21 +1128,21 @@ const _richFingerprint =
     '4:uuid:string:required]';
 const _navigationFingerprint =
     'lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,'
-    'ios/swiftui,macos/swiftui|standard-children:1|children:|'
+    'ios/swiftui|standard-children:1|children:|'
     'properties:26:composer-dismissal-enabled:bool:required:none,'
     '28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,'
     '5:title:string:required:none|events:16:dismiss-composer[],4:back['
     '5:count:int:required]';
 const _searchFingerprint =
     'lui-extension-v1|26:native-search-presentation|profiles:android/flutter,'
-    'ios/swiftui,macos/swiftui|standard-children:1|children:|'
+    'ios/swiftui|standard-children:1|children:|'
     'properties:5:depth:int:required:none,5:query:string:required:none,'
     '5:title:string:required:none,9:presented:bool:required:none|events:'
     '13:query-changed[5:query:string:required],4:back[5:count:int:required],'
     '7:dismiss[]';
 const _overflowFingerprint =
     'lui-extension-v1|20:native-overflow-menu|profiles:android/flutter,'
-    'ios/swiftui,macos/swiftui|standard-children:0|children:|'
+    'ios/swiftui|standard-children:0|children:|'
     'properties:14:favorite-label:string:required:none,16:settings-visible:bool:'
     'required:none,20:page-actions-visible:bool:required:none|events:5:share[],'
     '6:delete[],8:favorite[],8:settings[]';

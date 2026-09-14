@@ -1,4 +1,4 @@
-#if LOGSEQ_CHAT_CORE && (os(iOS) || os(macOS))
+#if LOGSEQ_CHAT_CORE && os(iOS)
 import CryptoKit
 import Foundation
 import Security

@@ -26,7 +26,7 @@ let logseqChatShellLinkerSettings: [LinkerSetting] = logseqChatSimulatorEntitlem
 let package = Package(
     name: "logseq-chat",
     defaultLocalization: "en",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v17)],
     products: [
         .executable(name: "LogseqChatShell", targets: ["LogseqChatShell"]),
         .library(name: "LogseqChat", type: .static, targets: ["LogseqChat"]),
@@ -54,12 +54,12 @@ let package = Package(
             .product(
                 name: "SwiftUIMath",
                 package: "swiftui-math",
-                condition: .when(platforms: [.iOS, .macOS])
+                condition: .when(platforms: [.iOS])
             ),
             .product(
                 name: "HighlightSwift",
                 package: "highlightswift",
-                condition: .when(platforms: [.iOS, .macOS])
+                condition: .when(platforms: [.iOS])
             )
         ],
         resources: [.process("Resources")],

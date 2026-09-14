@@ -58,7 +58,7 @@ struct LGChatLiquidGlassSurface: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
+        if #available(iOS 26.0, *) {
             if shape == .circle {
                 content.glassEffect(.regular.interactive(), in: .circle)
             } else if shape == .roundedRectangle {

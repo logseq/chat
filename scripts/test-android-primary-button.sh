@@ -54,8 +54,9 @@ if (( button_center_y < minimum_center_y || button_center_y > maximum_center_y )
 fi
 
 swift -e '
-import AppKit
+import CoreGraphics
 import Foundation
+import ImageIO
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("error: \(message)\n".utf8))
@@ -63,17 +64,36 @@ func fail(_ message: String) -> Never {
 }
 
 guard CommandLine.arguments.count == 6,
-      let image = NSImage(contentsOfFile: CommandLine.arguments[1]),
-      let data = image.tiffRepresentation,
-      let bitmap = NSBitmapImageRep(data: data),
+      let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: CommandLine.arguments[1]) as CFURL, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
       let left = Int(CommandLine.arguments[2]),
       let top = Int(CommandLine.arguments[3]),
       let right = Int(CommandLine.arguments[4]),
       let bottom = Int(CommandLine.arguments[5])
 else { fail("could not load the Android screenshot or button bounds") }
 
-func colorAt(x: Int, yFromTop: Int) -> NSColor? {
-    bitmap.colorAt(x: x, y: yFromTop)?.usingColorSpace(.deviceRGB)
+let width = image.width
+let height = image.height
+var pixels = [UInt8](repeating: 0, count: width * height * 4)
+guard let context = CGContext(
+    data: &pixels,
+    width: width,
+    height: height,
+    bitsPerComponent: 8,
+    bytesPerRow: width * 4,
+    space: CGColorSpaceCreateDeviceRGB(),
+    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+) else { fail("could not allocate screenshot bitmap") }
+context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+func colorAt(x: Int, yFromTop: Int) -> (red: Double, green: Double, blue: Double)? {
+    guard x >= 0, x < width, yFromTop >= 0, yFromTop < height else { return nil }
+    let offset = (yFromTop * width + x) * 4
+    return (
+        red: Double(pixels[offset]) / 255.0,
+        green: Double(pixels[offset + 1]) / 255.0,
+        blue: Double(pixels[offset + 2]) / 255.0
+    )
 }
 
 guard let background = colorAt(x: max(1, left / 2), yFromTop: (top + bottom) / 2)
@@ -84,9 +104,9 @@ var sampled = 0
 for y in stride(from: top + 6, to: bottom - 6, by: 3) {
     for x in stride(from: left + 6, to: right - 6, by: 3) {
         guard let color = colorAt(x: x, yFromTop: y) else { continue }
-        let distance = abs(color.redComponent - background.redComponent)
-            + abs(color.greenComponent - background.greenComponent)
-            + abs(color.blueComponent - background.blueComponent)
+        let distance = abs(color.red - background.red)
+            + abs(color.green - background.green)
+            + abs(color.blue - background.blue)
         if distance > 0.20 { changed += 1 }
         sampled += 1
     }
