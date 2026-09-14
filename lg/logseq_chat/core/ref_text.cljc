@@ -1,6 +1,10 @@
 (ns logseq-chat.ref-text
   (:require [clojure.string :as string]))
 
+(type-record text-step
+  (step-index :int)
+  (step-result :string))
+
 (defn char-at [^:string value ^:int index]
   (subs value index (inc index)))
 
@@ -60,7 +64,13 @@
           (step-index index)
           (step-result result)))
 
-(defn to-text-step [tag-title ref-title ^:string title ^:int length ^:int index ^:string result]
+(defn to-text-step
+  [tag-title
+   ref-title
+   title
+   length
+   index
+   result]
   (if (and (< (+ index 2) length)
            (= (char-at title index) "#")
            (= (char-at title (inc index)) "[")
@@ -96,7 +106,10 @@
         (text-step (inc index) (str result (char-at title index))))
       (text-step (inc index) (str result (char-at title index))))))
 
-(defn to-text [tag-title ref-title ^:string title]
+(defn to-text
+  [tag-title
+   ref-title
+   title]
   (let [length (count title)]
     (loop [index 0
            result ""]
@@ -121,7 +134,13 @@
         (recur (inc index))
         index))))
 
-(defn to-ids-step [resolve-ref resolve-tag ^:string title ^:int length ^:int index ^:string result]
+(defn to-ids-step
+  [resolve-ref
+   resolve-tag
+   title
+   length
+   index
+   result]
   (if (and (< (+ index 2) length)
            (= (char-at title index) "#")
            (= (char-at title (inc index)) "[")
@@ -162,7 +181,10 @@
             (text-step (inc index) (str result (char-at title index)))))
         (text-step (inc index) (str result (char-at title index)))))))
 
-(defn to-ids [resolve-ref resolve-tag ^:string title]
+(defn to-ids
+  [resolve-ref
+   resolve-tag
+   title]
   (let [length (count title)]
     (loop [index 0
            result ""]
