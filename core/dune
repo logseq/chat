@@ -21,6 +21,7 @@
   logseq_chat_flashcards
   logseq_chat_graph_runtime
   logseq_chat_http
+  logseq_chat_lg_core_native
   logseq_chat_lui_host_update
   logseq_chat_lui_snapshot
   logseq_chat_logseq_storage_codec
@@ -44,6 +45,8 @@
   datascript-ocaml-native
   datascript-ocaml-lg
   lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
   melange-edn-native
   melange-transit-core
   melange-transit-native
@@ -52,6 +55,7 @@
   mldoc
   str
   unix)
+ (flags (:standard -w -27-32-37-39-69))
  (instrumentation
   (backend bisect_ppx))
  (foreign_stubs
@@ -61,11 +65,29 @@
   (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
 
 (rule
+ (target logseq_chat_lg_core_native.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  ../lg/logseq_chat/sync_state.lgi
+  ../lg/logseq_chat/sync_state.cljc
+  %{bin:lg})
+ (action
+  (run
+   %{bin:lg}
+   --target native
+   --compile-files-from %{lib:signal-lg.states:signal_native.state}
+   ../lg/logseq_chat/sync_state.lgi
+   ../lg/logseq_chat/sync_state.cljc
+   -o %{target})))
+
+(rule
  (target logseq_chat_lui_native.ml)
  (deps
   %{lib:lui.states:lui_native_backends.state}
   ../lg/logseq_chat/model.lgi
   ../lg/logseq_chat/model.cljc
+  ../lg/logseq_chat/sync_state.lgi
+  ../lg/logseq_chat/sync_state.cljc
   ../lg/logseq_chat/view.lgi
   ../lg/logseq_chat/view.cljc
   ../lg/logseq_chat/app.lgi
@@ -80,6 +102,8 @@
    --compile-files-from %{lib:lui.states:lui_native_backends.state}
    ../lg/logseq_chat/model.lgi
    ../lg/logseq_chat/model.cljc
+   ../lg/logseq_chat/sync_state.lgi
+   ../lg/logseq_chat/sync_state.cljc
    ../lg/logseq_chat/view.lgi
    ../lg/logseq_chat/view.cljc
    ../lg/logseq_chat/app.lgi

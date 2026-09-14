@@ -8,10 +8,45 @@
             [logseq-chat.app :as chat]
             [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]
+            [logseq-chat.sync-state :as sync-state]
             [logseq-chat.view :as view]))
 
 (defmacro assert-equal [expected actual message]
   `(is (= ~expected ~actual) ~message))
+
+(deftest sync-state-change-set-validation
+  (testing "valid changes are accepted by the shared LG core validation"
+    (assert-equal
+     None
+     (sync-state/apply-change-set-error
+      "graph-1" "65.33" 10 1 "graph-1" "65.33" 10 11)
+     "valid change sets should pass"))
+  (testing "invalid changes are rejected before OCaml applies them"
+    (assert-equal
+     (Some "unsupported-format")
+     (sync-state/apply-change-set-error
+      "graph-1" "65.33" 10 2 "graph-1" "65.33" 10 11)
+     "unsupported formats should be rejected")
+    (assert-equal
+     (Some "graph-mismatch")
+     (sync-state/apply-change-set-error
+      "graph-1" "65.33" 10 1 "graph-2" "65.33" 10 11)
+     "graph mismatches should be rejected")
+    (assert-equal
+     (Some "schema-mismatch")
+     (sync-state/apply-change-set-error
+      "graph-1" "65.33" 10 1 "graph-1" "66" 10 11)
+     "schema mismatches should be rejected")
+    (assert-equal
+     (Some "cursor-mismatch")
+     (sync-state/apply-change-set-error
+      "graph-1" "65.33" 10 1 "graph-1" "65.33" 9 11)
+     "stale cursors should be rejected")
+    (assert-equal
+     (Some "invalid-cursor")
+     (sync-state/apply-change-set-error
+      "graph-1" "65.33" 10 1 "graph-1" "65.33" 10 9)
+     "rewound cursors should be rejected")))
 
 (defn property-string [renderer node property]
   (match (apple/property renderer node property)

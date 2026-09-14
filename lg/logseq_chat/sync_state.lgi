@@ -1,0 +1,4 @@
+(ns logseq-chat.sync-state)
+
+(signature logseq-chat.sync-state/apply-change-set-error
+ :fn<string;string;int;int;string;string;int;int;option<string>>)
