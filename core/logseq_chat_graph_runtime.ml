@@ -598,7 +598,7 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
   match Logseq_chat_flashcards.card_for_uuid db ~now uuid with
   | None -> Error "block is not a flashcard"
   | Some due_card ->
-    let repeated = Logseq_chat_flashcards.repeat ~now due_card.card rating in
+    let repeated = Logseq_chat_lg_core_native.logseq_chat_flashcards_repeat now due_card.card rating in
     let eid = Datascript.entid db "block/uuid" (Datascript.Uuid uuid) in
     let current attr =
       Option.bind eid (fun eid -> Logseq_chat_graph_read.value db eid attr)

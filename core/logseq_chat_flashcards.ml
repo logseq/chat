@@ -1,76 +1,11 @@
 open Datascript
 module LG = Logseq_chat_lg_core_native
-module Upstream = Fsrs
-module Upstream_models = Models
 
 type due_card =
   { block : Logseq_chat_model.block
   ; children : Logseq_chat_model.block list
   ; card : LG.fsrs_card
   }
-
-let timestamp milliseconds =
-  Timedesc.Timestamp.of_float_s (Float.of_int milliseconds /. 1000.)
-;;
-
-let milliseconds timestamp =
-  timestamp
-  |> Timedesc.Timestamp.to_float_s
-  |> fun seconds -> int_of_float (Float.round (seconds *. 1000.))
-;;
-
-let upstream_card (card : LG.fsrs_card) : Upstream_models.card =
-  { due = timestamp card.due
-  ; stability = card.stability
-  ; difficulty = card.difficulty
-  ; elapsed_days = card.elapsed_days
-  ; scheduled_days = card.scheduled_days
-  ; reps = card.reps
-  ; lapses = card.lapses
-  ; state =
-      (match card.state with
-       | LG.New -> Upstream_models.New
-       | LG.Learning -> Upstream_models.Learning
-       | LG.Review -> Upstream_models.Review
-       | LG.Relearning -> Upstream_models.Relearning)
-  ; last_review = timestamp card.last_repeat
-  }
-;;
-
-let scheduler = Upstream.create (Parameters.default ())
-
-let upstream_rating = function
-  | LG.Again -> Upstream_models.Again
-  | LG.Hard -> Upstream_models.Hard
-  | LG.Good -> Upstream_models.Good
-  | LG.Easy -> Upstream_models.Easy
-;;
-
-let state_of_upstream = function
-  | Upstream_models.New -> LG.New
-  | Upstream_models.Learning -> LG.Learning
-  | Upstream_models.Review -> LG.Review
-  | Upstream_models.Relearning -> LG.Relearning
-;;
-
-let repeat ~now (card : LG.fsrs_card) (rating : LG.flashcard_rating) =
-  let scheduled =
-    Upstream.next scheduler (upstream_card card) (timestamp now) (upstream_rating rating)
-  in
-  let next = scheduled.Upstream_models.card in
-  LG.
-  { due = milliseconds next.due
-  ; stability = next.stability
-  ; difficulty = next.difficulty
-  ; elapsed_days = next.elapsed_days
-  ; scheduled_days = next.scheduled_days
-  ; reps = next.reps
-  ; lapses = card.lapses + if rating = LG.Again then 1 else 0
-  ; state = state_of_upstream next.state
-  ; last_repeat = milliseconds next.last_review
-  ; last_rating = Some rating
-  }
-;;
 
 let card_eid db eid =
   match Datascript.entid db "db/ident" (Keyword "logseq.class/Card") with

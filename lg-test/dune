@@ -2,6 +2,7 @@
  (target logseq_chat_lui_test.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
+  %{lib:ocaml-fsrs:fsrs.cmi}
   (source_tree ../lg/logseq_chat)
   (source_tree logseq_chat)
   %{lib:lg-test.sources:test.cljc}
@@ -12,28 +13,34 @@
   (source_tree ../lg/logseq_chat/core)
   %{bin:lg})
  (action
-  (run
-   %{bin:lg}
-   --target native
-   --compile-files-from %{lib:signal-lg.states:signal_native.state}
-   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
-   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
-   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
-   %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/flutter
-   ../lg/logseq_chat/core
-   ../lg/logseq_chat/model.lgi
-   ../lg/logseq_chat/model.cljc
-   ../lg/logseq_chat/view.lgi
-   ../lg/logseq_chat/view.cljc
-   ../lg/logseq_chat/app.lgi
-   ../lg/logseq_chat/app.cljc
-   ../lg/logseq_chat/native_bridge.lgi
-   ../lg/logseq_chat/native_bridge.cljc
-   %{lib:lg-test.sources:test.cljc}
-   %{lib:lg-test.sources:test_native.cljc}
-   logseq_chat
-   %{lib:lg-test.sources:run.cljc}
-   -o %{target})))
+  (setenv
+   LG_OCAML_INCLUDE_PATH
+   "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
+   (setenv
+    OCAMLPATH
+    "../duniverse/ocaml-fsrs/src/.fsrs.objs/byte:../duniverse/timere/timedesc/.timedesc.objs/byte:../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte:../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte"
+    (run
+     %{bin:lg}
+     --target native
+     --compile-files-from %{lib:signal-lg.states:signal_native.state}
+     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui
+     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/retained
+     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/apple
+     %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/flutter
+     ../lg/logseq_chat/core
+     ../lg/logseq_chat/model.lgi
+     ../lg/logseq_chat/model.cljc
+     ../lg/logseq_chat/view.lgi
+     ../lg/logseq_chat/view.cljc
+     ../lg/logseq_chat/app.lgi
+     ../lg/logseq_chat/app.cljc
+     ../lg/logseq_chat/native_bridge.lgi
+     ../lg/logseq_chat/native_bridge.cljc
+     %{lib:lg-test.sources:test.cljc}
+     %{lib:lg-test.sources:test_native.cljc}
+     logseq_chat
+     %{lib:lg-test.sources:run.cljc}
+     -o %{target})))))
 
 (executable
  (name logseq_chat_lui_test)
@@ -47,7 +54,8 @@
   lg-test.runtime
   lg-test.alcotest
   melange-transit-core
-  melange-transit-native))
+  melange-transit-native
+  ocaml-fsrs))
 
 (rule
  (alias runtest)

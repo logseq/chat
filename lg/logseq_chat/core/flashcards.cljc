@@ -1,7 +1,13 @@
 (ns logseq-chat.flashcards
   (:require [ocaml.package/datascript-ocaml-native]
+            [ocaml.package/ocaml-fsrs]
             [ocaml.Datascript :as ds]
-            [ocaml.Rrbvec :as rrbvec]))
+            [ocaml.Float :as float]
+            [ocaml.Fsrs :as fsrs]
+            [ocaml.Models :as models]
+            [ocaml.Parameters :as parameters]
+            [ocaml.Rrbvec :as rrbvec]
+            [ocaml.Stdlib :as stdlib]))
 
 (defn rating-keyword [rating]
   (match rating
@@ -51,6 +57,62 @@
     (state New)
     (last-repeat now)
     (last-rating None)))
+
+(defn timestamp [milliseconds]
+  (Timedesc.Timestamp.of_float_s (/ (stdlib/float_of_int milliseconds) 1000.0)))
+
+(defn milliseconds [value]
+  (stdlib/int_of_float (float/round (* (Timedesc.Timestamp.to_float_s value) 1000.0))))
+
+(defn upstream-state [state]
+  (match state
+    New (models/New)
+    Learning (models/Learning)
+    Review (models/Review)
+    Relearning (models/Relearning)))
+
+(defn upstream-rating [rating]
+  (match rating
+    Again (models/Again)
+    Hard (models/Hard)
+    Good (models/Good)
+    Easy (models/Easy)))
+
+(defn state-of-upstream [state]
+  (match state
+    (models/New) New
+    (models/Learning) Learning
+    (models/Review) Review
+    (models/Relearning) Relearning))
+
+(def scheduler (fsrs/create (parameters/default)))
+
+(defn upstream-card [card]
+  (record Models.card
+    (due (timestamp (:due card)))
+    (stability (:stability card))
+    (difficulty (:difficulty card))
+    (elapsed-days (:elapsed-days card))
+    (scheduled-days (:scheduled-days card))
+    (reps (:reps card))
+    (lapses (:lapses card))
+    (state (upstream-state (:state card)))
+    (last-review (timestamp (:last-repeat card)))))
+
+(defn repeat [now card rating]
+  (let [scheduled (fsrs/next scheduler (upstream-card card) (timestamp now) (upstream-rating rating))
+        next (:card scheduled)]
+    (record fsrs-card
+      (due (milliseconds (:due next)))
+      (stability (:stability next))
+      (difficulty (:difficulty next))
+      (elapsed-days (:elapsed-days next))
+      (scheduled-days (:scheduled-days next))
+      (reps (:reps next))
+      (lapses (+ (:lapses card) (if (= rating Again) 1 0)))
+      (state (state-of-upstream (:state next)))
+      (last-repeat (milliseconds (:last-review next)))
+      (last-rating (Some rating)))))
 
 (defn state-value [card]
   (let [entries [(tuple (ds/Keyword "stability") (ds/Float (:stability card)))

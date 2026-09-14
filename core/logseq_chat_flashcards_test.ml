@@ -1,7 +1,7 @@
 open Datascript
 
-module Flashcards = Logseq_chat_flashcards
 module LG = Logseq_chat_lg_core_native
+module Flashcards = Logseq_chat_flashcards
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
@@ -21,7 +21,9 @@ let day = 86_400_000
 
 let () =
   let now = 1_776_000_000_000 in
-  let repeated = Flashcards.repeat ~now (LG.logseq_chat_flashcards_new_card now) LG.Again in
+  let repeated =
+    LG.logseq_chat_flashcards_repeat now (LG.logseq_chat_flashcards_new_card now) LG.Again
+  in
   assert_bool "again moves a new card to learning" (repeated.state = LG.Learning);
   assert_int "again increments repetitions" 1 repeated.reps;
   assert_int "again increments lapses" 1 repeated.lapses;
@@ -32,7 +34,9 @@ let () =
 
 let () =
   let now = 1_776_000_000_000 in
-  let repeated = Flashcards.repeat ~now (LG.logseq_chat_flashcards_new_card now) LG.Easy in
+  let repeated =
+    LG.logseq_chat_flashcards_repeat now (LG.logseq_chat_flashcards_new_card now) LG.Easy
+  in
   assert_bool "easy moves a new card directly to review" (repeated.state = LG.Review);
   assert_int "easy does not add a lapse" 0 repeated.lapses;
   assert_int "easy uses the upstream FSRS v5 initial interval" 15 repeated.scheduled_days;
@@ -62,7 +66,7 @@ let () =
       (Some (LG.logseq_chat_flashcards_state_value original))
   in
   assert_bool "FSRS state round-trips through the Logseq property map" (decoded = original);
-  let repeated = Flashcards.repeat ~now decoded LG.Good in
+  let repeated = LG.logseq_chat_flashcards_repeat now decoded LG.Good in
   assert_bool "a successful review remains in review" (repeated.state = LG.Review);
   assert_int "review increments repetitions" 8 repeated.reps;
   assert_bool "review schedules a future due date" (repeated.due > now);
@@ -79,7 +83,7 @@ let () =
   let intervals, repeated, _ =
     List.fold_left
       (fun (intervals, card, now) rating ->
-        let next = Flashcards.repeat ~now card rating in
+        let next = LG.logseq_chat_flashcards_repeat now card rating in
         next.scheduled_days :: intervals, next, next.due)
       ([], LG.logseq_chat_flashcards_new_card started_at, started_at)
       ratings
