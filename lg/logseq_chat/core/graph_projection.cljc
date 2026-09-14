@@ -62,20 +62,19 @@
     (stdlib/ignore 0)))
 
 (defn changed-identities [change]
-  (let [^:set<string> empty-ids #{}]
-    (reduce (fn [[uuids idents] value]
-              (match (identity value)
-                (Some (tuple :uuid uuid)) (tuple (conj uuids uuid) idents)
-                (Some (tuple :ident ident)) (tuple uuids (conj idents ident))
-                _ (tuple uuids idents)))
-            (tuple empty-ids empty-ids)
-            (concat (map :id (:upserts change)) (:deleted change)))))
+  (reduce (fn [[uuids idents] value]
+            (match (identity value)
+              (Some (tuple :uuid uuid)) (tuple (conj uuids uuid) idents)
+              (Some (tuple :ident ident)) (tuple uuids (conj idents ident))
+              _ (tuple uuids idents)))
+          [#{} #{}]
+          (concat (map :id (:upserts change)) (:deleted change))))
 
-(defn related-entity-changed? [changed-uuids ^:Logseq_chat_model.block block]
+(defn related-entity-changed? [changed-uuids block]
   (or (some (fn [summary] (contains? changed-uuids (:uuid summary))) (:tags block))
       (some (fn [summary] (contains? changed-uuids (:uuid summary))) (:references block))))
 
-(defn status-changed? [changed-uuids changed-idents ^:Logseq_chat_model.block block]
+(defn status-changed? [changed-uuids changed-idents block]
   (match (:status block)
     None false
     (Some status)
@@ -88,7 +87,7 @@
   (if (not= @(:recent-pages projection) (recent-pages db))
     (rebuild projection db)
     (let [[changed-uuids changed-idents] (changed-identities change)
-          affected (reduce (fn [^:set<string> affected ^:Logseq_chat_model.block block]
+          affected (reduce (fn [affected block]
                              (if (or (contains? changed-uuids (:page-id block))
                                      (related-entity-changed? changed-uuids block)
                                      (status-changed? changed-uuids changed-idents block))

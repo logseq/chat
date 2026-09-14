@@ -4,6 +4,28 @@ let fail label = failwith label
 
 let uuid = "7b45785d-710c-47f8-9e7e-e9c4f5229830"
 
+let () =
+  let module LG = Logseq_chat_lg_core_native in
+  List.iter
+    (fun lookup ->
+      List.iter
+        (fun value ->
+          let entries = [ Keyword "key", value; Keyword "key", Int 42 ] in
+          if lookup "key" entries <> Some value then
+            fail "field lookup must preserve the first false/null value";
+          if lookup "missing" entries <> None then fail "missing field must stay absent")
+        [ Null; Bool false; Int 0; String "" ])
+    [ LG.logseq_chat_sync_protocol_field; LG.logseq_chat_sync_checkpoint_field ];
+  List.iter
+    (fun value ->
+      let entries = [ Datascript.Keyword "key", value; Datascript.Keyword "key", Datascript.Int 42 ] in
+      if LG.logseq_chat_flashcards_map_value "key" entries <> Some value then
+        fail "flashcard lookup must preserve the first false/nil value";
+      if LG.logseq_chat_flashcards_map_value "missing" entries <> None then
+        fail "missing flashcard field must stay absent")
+    [ Datascript.Nil; Datascript.Bool false; Datascript.Int 0; Datascript.String "" ]
+;;
+
 let payload =
   Map
     [ Keyword "format-version", Int 1
@@ -43,6 +65,19 @@ let () =
     then fail "operation identities were not preserved";
     if (Logseq_chat_lg_core_native.logseq_chat_sync_protocol_changed_block_uuids change |> Rrbvec.to_list) <> [ uuid ]
     then fail "changed block UUIDs were not extracted for incremental indexing";
+    let second_uuid = "7b45785d-710c-47f8-9e7e-e9c4f5229831" in
+    let repeated =
+      { change with
+        upserts = change.upserts @ change.upserts;
+        deleted =
+          [ Array [ Keyword "block/uuid"; Uuid uuid ]
+          ; Array [ Keyword "db/ident"; Keyword "logseq.class/Card" ]
+          ; Array [ Keyword "block/uuid"; Uuid second_uuid ]
+          ; Array [ Keyword "block/uuid"; Uuid second_uuid ] ] }
+    in
+    if (Logseq_chat_lg_core_native.logseq_chat_sync_protocol_changed_block_uuids repeated
+        |> Rrbvec.to_list) <> [ uuid; second_uuid ] then
+      fail "changed UUIDs must preserve first occurrence order across upserts and deletions";
     (match change.upserts with
      | [ entity ] ->
        (match entity.id with

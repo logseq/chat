@@ -13,7 +13,6 @@
             [ocaml.Parameters :as parameters]
             [ocaml.Rrbvec :as rrbvec]
             [ocaml.Seq :as seq]
-            [ocaml.String :as string]
             [ocaml.Stdlib :as stdlib]))
 
 (type-variant flashcard-rating
@@ -168,16 +167,9 @@
     (ds/Map (rrbvec/to-list entries))))
 
 (defn map-value [key ^:list<tuple<Datascript.value;Datascript.value>> entries]
-  (let [entries (rrbvec/of-list entries)
-        wanted (ds/Keyword key)
-        total (count entries)]
-    (loop [index 0]
-      (if (= index total)
-        None
-        (let [[key value] (nth entries index)]
-          (if (= key wanted)
-            (Some value)
-            (recur (inc index))))))))
+  (some (fn [entry]
+          (when (= (first entry) (ds/Keyword key)) (second entry)))
+        entries))
 
 (defn float-value [value]
   (match value
@@ -303,12 +295,6 @@
     -1
     (if (> left right) 1 0)))
 
-(defn due-card-compare [^:due-card left ^:due-card right]
-  (let [order (int-compare (:due (:card left)) (:due (:card right)))]
-    (if (= order 0)
-      (string/compare (:uuid (:block left)) (:uuid (:block right)))
-      order)))
-
 (defn due-card-for-eid [page-blocks-cache db now eid]
   (match (graph-read/uuid_for_eid db eid)
     None None
@@ -336,4 +322,6 @@
                (keep
                 (fn [eid] (due-card-for-eid page-blocks-cache db now eid))
                 unique-eids))]
-      (list/sort due-card-compare due))))
+      (sort-by (fn [due-card]
+                 (tuple (:due (:card due-card)) (:uuid (:block due-card))))
+               due))))

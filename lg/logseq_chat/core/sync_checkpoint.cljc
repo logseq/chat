@@ -27,16 +27,9 @@
      (value/Map (rrbvec/to-list entries)))))
 
 (defn field [key ^:list<tuple<Transit_core.Json.value;Transit_core.Json.value>> entries]
-  (let [entries (rrbvec/of-list entries)
-        wanted (value/Keyword key)
-        total (count entries)]
-    (loop [index 0]
-      (if (= index total)
-        None
-        (let [[key value] (nth entries index)]
-          (if (= key wanted)
-            (Some value)
-            (recur (inc index))))))))
+  (some (fn [entry]
+          (when (= (first entry) (value/Keyword key)) (second entry)))
+        entries))
 
 (defn int-value [value]
   (match value

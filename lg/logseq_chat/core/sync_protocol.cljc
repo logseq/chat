@@ -28,53 +28,22 @@
   (Graph_changes :sync-change-set)
   (Reset :sync-reset))
 
-(defn contains-uuid? [uuids uuid]
-  (let [total (count uuids)]
-    (loop [index 0]
-      (if (= index total)
-        false
-        (if (= (nth uuids index) uuid)
-          true
-          (recur (inc index)))))))
-
-(defn collect-identity [^:vector<string> uuids identity]
+(defn identity-uuid [identity]
   (match identity
     (value/Array [(value/Keyword "block/uuid") (value/Uuid uuid)])
-    (if (contains-uuid? uuids uuid)
-      uuids
-      (conj uuids uuid))
-    _ uuids))
+    (Some uuid)
+    _ None))
 
 (defn changed-block-uuids [change]
-  (let [upserts (rrbvec/of-list (:upserts change))
-        deleted (rrbvec/of-list (:deleted change))
-        upsert-count (count upserts)
-        deleted-count (count deleted)
-        uuids
-        (loop [index 0
-               uuids []]
-          (if (= index upsert-count)
-            uuids
-            (recur (inc index)
-                   (collect-identity uuids (:id (nth upserts index))))))]
-    (loop [index 0
-           uuids uuids]
-      (if (= index deleted-count)
-        uuids
-        (recur (inc index)
-               (collect-identity uuids (nth deleted index)))))))
+  (into []
+        (distinct
+         (keep identity-uuid
+               (concat (map :id (:upserts change)) (:deleted change))))))
 
 (defn field [key ^:list<tuple<Transit_core.Json.value;Transit_core.Json.value>> fields]
-  (let [fields (rrbvec/of-list fields)
-        wanted (value/Keyword key)
-        total (count fields)]
-    (loop [index 0]
-      (if (= index total)
-        None
-        (let [[key value] (nth fields index)]
-          (if (= key wanted)
-            (Some value)
-            (recur (inc index))))))))
+  (some (fn [entry]
+          (when (= (first entry) (value/Keyword key)) (second entry)))
+        fields))
 
 (defn required [key decode fields]
   (match (field key fields)
@@ -126,15 +95,8 @@
     (value/Keyword _) true
     _ false))
 
-(defn all-keyword-keys? [^:list<tuple<Transit_core.Json.value;Transit_core.Json.value>> fields]
-  (let [fields (rrbvec/of-list fields)
-        total (count fields)]
-    (loop [index 0]
-      (if (= index total)
-        true
-        (if (keyword-key? (nth fields index))
-          (recur (inc index))
-          false)))))
+(defn all-keyword-keys? [fields]
+  (every? keyword-key? fields))
 
 (defn as-attrs [input]
   (match input

@@ -192,7 +192,7 @@
 (defn string-less? [lower upper]
   (< (String.compare lower upper) 0))
 
-(defn ^:result<string;string> midpoint [lower upper]
+(defn midpoint [lower upper]
   (if (invalid-lower-upper? lower upper)
     (Error "invalid midpoint bounds")
     (if (or (trailing-zero? lower)
@@ -276,7 +276,7 @@
         (Error message) (Error message)))
     (Error message) (Error message)))
 
-(defn prepend-string-result [prefix ^:result<string;string> result]
+(defn prepend-string-result [prefix result]
   (match result
     (Ok value) (Ok (str prefix value))
     (Error message) (Error message)))
@@ -317,7 +317,7 @@
   (before-upper-or-midpoint
    (increment lower-integer) upper-value lower-integer lower-fraction))
 
-(defn ^:result<string;string> between-core [lower upper]
+(defn between-core [lower upper]
   (match lower
     None
     (match upper
@@ -345,7 +345,7 @@
           (Error message) (Error message))
         (Error message) (Error message)))))
 
-(defn ^:result<string;string> between [lower upper]
+(defn between [lower upper]
   (match (validate-optional-error lower)
     (Some message) (Error message)
     None
@@ -382,40 +382,38 @@
             (Ok value))
           (Error message) (Error message))))))
 
-(def ^:vector<string> empty-string-vector (subvec [""] 0 0))
+(defn n-after [lower count]
+  (loop [lower lower remaining count result []]
+    (if (= remaining 0)
+      (Ok result)
+      (match (between lower None)
+        (Ok value) (recur (Some value) (dec remaining) (conj result value))
+        (Error message) (Error message)))))
 
-(defn ^:result<vector<string>;string> n-after [lower count ^:vector<string> result]
-  (if (= count 0)
-    (Ok result)
-    (match (between lower None)
-      (Ok value)
-      (n-after (Some value) (dec count) (conj result value))
-      (Error message) (Error message))))
-
-(defn ^:result<vector<string>;string> n-before [upper count ^:vector<string> result]
-  (if (= count 0)
-    (Ok result)
-    (match (between None upper)
-      (Ok value)
-      (n-before (Some value) (dec count) (into [value] result))
-      (Error message) (Error message))))
+(defn n-before [upper count]
+  (loop [upper upper remaining count result []]
+    (if (= remaining 0)
+      (Ok result)
+      (match (between None upper)
+        (Ok value) (recur (Some value) (dec remaining) (into [value] result))
+        (Error message) (Error message)))))
 
 (defn ^:result<vector<string>;string> n-between [lower upper count]
   (if (< count 0)
     (Error "order key count must not be negative")
     (if (= count 0)
-      (Ok empty-string-vector)
+      (Ok [])
       (if (= count 1)
         (match (between lower upper)
           (Ok value) (Ok [value])
           (Error message) (Error message))
         (match upper
           None
-          (n-after lower count empty-string-vector)
+          (n-after lower count)
           (Some upper-value)
           (match lower
             None
-            (n-before (Some upper-value) count empty-string-vector)
+            (n-before (Some upper-value) count)
             (Some _)
             (let [left-count (quot count 2)]
               (match (between lower upper)

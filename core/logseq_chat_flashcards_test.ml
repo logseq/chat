@@ -181,5 +181,21 @@ let () =
     (match List.find_opt (fun card -> String.equal card.LG.block.uuid "new-card") due with
      | Some card -> List.map (fun block -> block.Logseq_chat_model.title) card.children = [ "The answer" ]
      | None -> false);
-  assert_int "only due cards are returned" 2 (List.length due)
+  assert_int "only due cards are returned" 2 (List.length due);
+  let ordered_uuids db =
+    LG.logseq_chat_flashcards_due_cards db now
+    |> List.map (fun card -> card.LG.block.Logseq_chat_model.uuid)
+  in
+  let tied =
+    db_with
+      [ Add (Entity_id 11, "logseq.property.fsrs/due", Instant now)
+      ; Add (Entity_id 11, "logseq.property.fsrs/state", future_state)
+      ; Add (Entity_id 12, "logseq.property.fsrs/state", future_state) ]
+      db
+  in
+  assert_bool "equal due times are ordered by UUID"
+    (ordered_uuids tied = [ "due-subclass"; "new-card" ]);
+  let earlier = db_with [ Add (Entity_id 11, "logseq.property.fsrs/due", Instant (now - 1)) ] tied in
+  assert_bool "due time takes precedence over UUID"
+    (ordered_uuids earlier = [ "new-card"; "due-subclass" ])
 ;;
