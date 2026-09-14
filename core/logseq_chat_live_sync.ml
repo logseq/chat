@@ -3,7 +3,7 @@
 
 module Api = Logseq_chat_lg_core_native
 module Http = Logseq_chat_http
-module Bootstrap = Logseq_chat_graph_bootstrap
+module Bootstrap = Logseq_chat_lg_core_native
 module Session = Logseq_chat_lg_core_native
 module Store = Logseq_chat_lg_core_native
 module Runtime = Logseq_chat_graph_runtime
@@ -293,7 +293,7 @@ let provision_graph_key cfg =
 ;;
 
 let create_and_upload cfg ~name ~e2ee ~encrypt_text =
-  let create = Api.logseq_chat_api_create_graph_request cfg name Bootstrap.schema_version e2ee in
+  let create = Api.logseq_chat_api_create_graph_request cfg name Bootstrap.logseq_chat_graph_bootstrap_schema_version e2ee in
   let response = expect "create graph" ~ok:[ 200; 201 ] create in
   let graph_id =
     match json_string "graph-id" (json_assoc response.body) with
@@ -302,7 +302,7 @@ let create_and_upload cfg ~name ~e2ee ~encrypt_text =
   in
   let graph_cfg = { cfg with graph_id } in
   if e2ee then provision_graph_key graph_cfg;
-  let prepared = require "prepare initial snapshot" (Bootstrap.prepare ~graph_id ~e2ee ~encrypt_text) in
+  let prepared = require "prepare initial snapshot" (Bootstrap.logseq_chat_graph_bootstrap_prepare graph_id e2ee encrypt_text) in
   let upload =
     Api.logseq_chat_api_initial_snapshot_upload_request graph_cfg prepared.file_path prepared.checksum
   in

@@ -1,6 +1,6 @@
 open Datascript
 
-module Bootstrap = Logseq_chat_graph_bootstrap
+module Bootstrap = Logseq_chat_lg_core_native
 module Ops = Logseq_chat_pending_ops
 module Projection = Logseq_chat_pending_projection
 module Snapshot = Logseq_chat_lg_core_native
@@ -60,11 +60,56 @@ let index_metadata label root =
 ;;
 
 let canonical_db ?(e2ee = false) () =
-  Bootstrap.database
-    ~graph_id:"625e5ba9-fa25-4385-ad8b-f47d0f844387"
-    ~e2ee
-    ~encrypt_text:(fun value -> Ok ("encrypted:" ^ value))
+  Bootstrap.logseq_chat_graph_bootstrap_database
+    "625e5ba9-fa25-4385-ad8b-f47d0f844387"
+    e2ee
+    (fun value -> Ok ("encrypted:" ^ value))
   |> expect_ok "canonical database"
+;;
+
+let () =
+  let calls = ref 0 in
+  let encrypt_text _ = incr calls; Error "encryption unavailable" in
+  (match Bootstrap.logseq_chat_graph_bootstrap_database "plain" false encrypt_text with
+   | Ok _ -> ()
+   | Error message -> fail "plain graph must not invoke encryption" message);
+  assert_bool "plain graph encryption callback was not called" (!calls = 0);
+  (match Bootstrap.logseq_chat_graph_bootstrap_database "encrypted" true encrypt_text with
+   | Error "encryption unavailable" -> ()
+   | _ -> fail "failed encryption" "error was not propagated");
+  assert_bool "encryption stops at the first failure" (!calls = 1)
+;;
+
+let () =
+  List.iter (fun e2ee ->
+    let db = canonical_db ~e2ee () in
+    let rows = Bootstrap.logseq_chat_graph_bootstrap_snapshot_rows db |> expect_ok "roundtrip rows" in
+    let storage = memory_storage () in
+    storage.storage_store (List.map (fun (row : Snapshot.snapshot_row) ->
+      string_of_int row.addr,
+      Snapshot.logseq_chat_storage_codec_decode row.addresses row.content) rows);
+    match restore storage with
+    | None -> fail "snapshot roundtrip" "database was not restored"
+    | Some restored ->
+      assert_bool "snapshot preserves installed schema" (schema db = schema restored);
+      assert_bool "snapshot preserves every datom"
+        (List.of_seq (datoms db Eavt ()) = List.of_seq (datoms restored Eavt ())))
+    [false; true]
+;;
+
+let () =
+  let prepared = Bootstrap.logseq_chat_graph_bootstrap_prepare "prepared" false
+    (fun _ -> failwith "plaintext snapshot must not encrypt")
+    |> expect_ok "prepared snapshot" in
+  Fun.protect ~finally:(fun () -> Sys.remove prepared.file_path) (fun () ->
+    let channel = open_in_bin prepared.file_path in
+    let wire = Fun.protect ~finally:(fun () -> close_in_noerr channel)
+      (fun () -> really_input_string channel (in_channel_length channel)) in
+    let parser = Snapshot.logseq_chat_snapshot_create_parser (2 * 1024 * 1024) in
+    let rows = Snapshot.logseq_chat_snapshot_feed parser wire |> expect_ok "prepared frame" in
+    Snapshot.logseq_chat_snapshot_finish_parser parser |> expect_ok "prepared frame end";
+    assert_bool "prepared file row count" (List.length rows = prepared.row_count);
+    assert_bool "prepared checksum" (prepared.checksum = "0000000000000000"))
 ;;
 
 let assert_many_ref_schema label db attr =
@@ -196,7 +241,7 @@ let () =
 
 let () =
   let db = canonical_db () in
-  let rows = db |> Bootstrap.snapshot_rows |> expect_ok "snapshot rows" in
+  let rows = db |> Bootstrap.logseq_chat_graph_bootstrap_snapshot_rows |> expect_ok "snapshot rows" in
   assert_bool "snapshot has root" (List.exists (fun row -> row.Snapshot.addr = 0) rows);
   assert_bool "snapshot has tail" (List.exists (fun row -> row.Snapshot.addr = 1) rows);
   let root_row = List.find (fun row -> row.Snapshot.addr = 0) rows in
@@ -211,7 +256,7 @@ let () =
   assert_bool "snapshot eavt metadata shift" (eavt_shift > 0);
   assert_bool "snapshot aevt metadata shift" (aevt_shift > 0);
   assert_bool "snapshot avet metadata shift" (avet_shift >= 0);
-  let wire = Bootstrap.frame_rows rows in
+  let wire = Bootstrap.logseq_chat_graph_bootstrap_frame_rows (List.to_seq, rows) in
   let parser = Snapshot.logseq_chat_snapshot_create_parser (2 * 1024 * 1024) in
   let decoded = Snapshot.logseq_chat_snapshot_feed parser wire |> expect_ok "framed snapshot" in
   Snapshot.logseq_chat_snapshot_finish_parser parser |> expect_ok "complete framed snapshot";
@@ -220,8 +265,8 @@ let () =
 ;;
 
 let () =
-  let empty = empty_db ~schema:Bootstrap.schema ~storage:(memory_storage ()) () in
-  let rows = Bootstrap.snapshot_rows empty |> expect_ok "empty snapshot rows" in
+  let empty = empty_db ~schema:Bootstrap.logseq_chat_graph_bootstrap_native_schema ~storage:(memory_storage ()) () in
+  let rows = Bootstrap.logseq_chat_graph_bootstrap_snapshot_rows empty |> expect_ok "empty snapshot rows" in
   let root_row = List.find (fun row -> row.Snapshot.addr = 0) rows in
   let root = Transit.of_string root_row.content in
   List.iter

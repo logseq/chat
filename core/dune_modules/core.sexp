@@ -1,6 +1,4 @@
-("logseq_chat_graph_bootstrap_data"
- "logseq_chat_graph_bootstrap"
- "logseq_chat_graph_runtime"
+("logseq_chat_graph_runtime"
  "logseq_chat_http"
  "logseq_chat_lg_core_native"
  "logseq_chat_lui_snapshot"

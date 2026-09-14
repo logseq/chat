@@ -7,7 +7,7 @@ module Pending_ops = Logseq_chat_pending_ops
 module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
-module Graph_bootstrap = Logseq_chat_graph_bootstrap
+module Graph_bootstrap = Logseq_chat_lg_core_native
 module Markup = Logseq_chat_markup
 
 type pending_transport =
@@ -1579,7 +1579,7 @@ let upload_initial_graph_snapshot session (config : Api.api_config) ~graph_id ~e
   match encrypt_text with
   | Error _ as error -> error
   | Ok encrypt_text ->
-    (match Graph_bootstrap.prepare ~graph_id ~e2ee ~encrypt_text with
+    (match Graph_bootstrap.logseq_chat_graph_bootstrap_prepare graph_id e2ee encrypt_text with
      | Error _ as error -> error
      | Ok prepared ->
        let upload =
