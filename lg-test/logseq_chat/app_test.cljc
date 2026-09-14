@@ -5801,10 +5801,7 @@
                                      proto/AccessibilityLabel)
                     "the LG row action keeps main's edit accessibility action")
       (assert-equal (Some apple/AppleRow)
-                    (apple/node renderer
-                                (nth (apple/children renderer
-                                                     (nth (apple/children renderer rendered-row) 0))
-                                     0))
+                    (apple/node renderer (nth (apple/children renderer rendered-row) 0))
                     "custom list-item content remains in the first native row")
       (let [editor
             (descendant-with-extension
@@ -5967,12 +5964,20 @@
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row
           (descendant-with-identifier renderer outliner "outliner.block.asset-a")
-          action-row
-          (descendant-with-identifier renderer rendered-row
-                                      "outliner.block-action.asset-a")
+          content-row (nth (apple/children renderer rendered-row) 0)
+          content-children (apple/children renderer content-row)
+          action-row (nth content-children 3)
+          action-content (nth (apple/children renderer action-row) 0)
+          content-column (nth (apple/children renderer action-content) 0)
           rich-content
           (descendant-with-extension
            renderer application rendered-row "outliner-block-content")]
+      (assert-equal "start"
+                    (property-string renderer content-row proto/CrossAlignment)
+                    "asset rows keep the bullet and preview in one top-aligned row")
+      (assert-equal "start"
+                    (property-string renderer content-column proto/CrossAlignment)
+                    "asset previews align to the leading edge of the block content")
       (assert-equal (Some (proto/BoolValue true))
                     (extension-property application rich-content "is-asset")
                     "asset identity reaches the native extension")
@@ -6259,9 +6264,7 @@
                         renderer rendered-row "button.block-tag.tag-a")
             tag-row (parent-with-child-identifier
                      renderer rendered-row "button.block-tag.tag-a")
-            content-row (nth (apple/children renderer
-                                            (nth (apple/children renderer rendered-row) 0))
-                             0)]
+            content-row (nth (apple/children renderer rendered-row) 0)]
         (assert-equal 0
                       (property-int renderer content-row proto/Gap)
                       "depth zero does not add spacing before main's bullet")
@@ -6662,8 +6665,7 @@
                (tuple 3 "app:toolbar-tag")
                (tuple 4 "app:toolbar-camera")
                (tuple 5 "app:toolbar-audio")
-               (tuple 6 "app:toolbar-attachment")
-               (tuple 7 "app:toolbar-hide-keyboard")]]
+               (tuple 6 "app:toolbar-attachment")]]
         (match button-contract
           (tuple index icon)
           (let [button (nth editor-buttons index)]
@@ -6673,10 +6675,11 @@
             (assert-equal "<missing>"
                           (property-string renderer button proto/TextValue)
                           "editor icon buttons do not render text labels")
-            (assert-equal (if (= index 7) 42 38)
+            (assert-equal 38
                           (property-int renderer button proto/WidthValue)
                           "editor actions retain main's fixed widths"))))
-      (let [page-reference-button (nth editor-buttons 8)]
+      (let [page-reference-button (nth editor-buttons 7)
+            hide-keyboard-button (nth editor-buttons 8)]
         (assert-equal "[[]]"
                       (property-string renderer page-reference-button
                                        proto/TextValue)
@@ -6687,7 +6690,14 @@
                       "page reference does not replace its main-branch symbol")
         (assert-equal 38
                       (property-int renderer page-reference-button proto/WidthValue)
-                      "page reference retains main's toolbar item width"))
+                      "page reference retains main's toolbar item width")
+        (assert-equal "app:toolbar-hide-keyboard"
+                      (property-string renderer hide-keyboard-button
+                                       proto/InlineIconName)
+                      "hide keyboard stays pinned as the trailing editor action")
+        (assert-equal 42
+                      (property-int renderer hide-keyboard-button proto/WidthValue)
+                      "hide keyboard keeps the wider trailing tap target"))
       (assert-equal -1
                     (descendant-with-identifier renderer chrome
                                                 "surface.composer.root")
@@ -6798,20 +6808,29 @@
           outliner (descendant-with-identifier renderer root "list.outliner")
           rendered-row
           (descendant-with-identifier renderer outliner "outliner.block.parent")
-          content (nth (apple/children renderer rendered-row) 0)
-          content-row (nth (apple/children renderer content) 0)
-          zoom-row (nth (apple/children renderer content) 1)
+          content-row (nth (apple/children renderer rendered-row) 0)
           content-children (apple/children renderer content-row)
-          zoom-children (apple/children renderer zoom-row)
           indent (nth content-children 0)
-          zoom (nth zoom-children 1)
-          action-row (nth content-children 2)
+          zoom (nth content-children 1)
+          spacer (nth content-children 2)
+          action-row (nth content-children 3)
           action-content (nth (apple/children renderer action-row) 0)
+          content-column (nth (apple/children renderer action-content) 0)
           collapse
           (descendant-with-identifier renderer content-row
                                       "button.outliner.collapse.parent")]
+      (assert-equal "start"
+                    (property-string renderer content-row proto/CrossAlignment)
+                    "bullet and block body are siblings in one top-aligned row")
       (assert-equal 44 (property-int renderer indent proto/WidthValue)
                     "depth uses main's 22-point indentation")
+      (assert-equal 2 (property-int renderer spacer proto/WidthValue)
+                    "the bullet-to-content gap matches main's compact spacing")
+      (assert-equal 1.0 (property-float renderer action-row proto/GrowValue)
+                    "the tappable row content fills the remaining outliner width")
+      (assert-equal "start"
+                    (property-string renderer content-column proto/CrossAlignment)
+                    "block content stays leading-aligned for rich previews")
       (assert-equal 2 (count (apple/children renderer action-content))
                     "a block without status must not reserve an empty status column and gap")
       (assert-equal "button.outliner.zoom.parent.Parent"

@@ -1636,7 +1636,7 @@
       [:if {:test has-status-source}
        [:column {:cross "start"}
         [outliner-status-control model-source row-source send]]]
-      [:column {:grow 1.0}
+      [:column {:grow 1.0 :cross "start"}
        [:if {:test editing-source}
         [outliner-editor-view block-id-source
          editing-title-source editing-caret-source send]]
@@ -1686,35 +1686,31 @@
          :padding 0
          :corner-radius 10
          :selected selected-source}
-        [:stack
-         [:row {:gap 0 :cross "start" :padding-vertical 5}
-          [outliner-indent-view (reactive outliner-row-indent row-source)]
-          [:box {:width 26 :height 24}]
-          [:list-item
-           {:accessibility-identifier-signal
-            (reactive outliner-row-action-identifier row-source)
-            :label (reactive outliner-row-action-label model-source row-source)
-            :padding 0
-            :grow 1.0
-            :selected selected-source
-            :on-press
-            (event [current-row row-source]
-                   (if (= (:is-asset current-row) true)
-                     (send (model/OpenOutlinerAsset (:uuid current-row)))
-                     (if (= (:opens-as-page current-row) true)
-                       (if search-open
-                         (send (model/RequestSearchNode (:uuid current-row)))
-                         (send (model/RequestAppNode (:uuid current-row))))
-                       (send (model/BeginOutlinerEdit (:uuid current-row))))))
-            :on-long-press
-            (event [current-row row-source]
-                   (send (model/LongPressOutlinerBlock (:uuid current-row))))}
-           [outliner-row-main-content model-source retained-row-source
-            row-source send]]]
-         [:row {:gap 0 :cross "start" :padding-vertical 5}
-          [outliner-indent-view (reactive outliner-row-indent row-source)]
-          [outliner-zoom-control model-source row-source send search-open]
-          [:box {:grow 1.0 :height 24}]]]])
+        [:row {:gap 0 :cross "start" :padding-vertical 5}
+         [outliner-indent-view (reactive outliner-row-indent row-source)]
+         [outliner-zoom-control model-source row-source send search-open]
+         [:box {:width 2}]
+         [:list-item
+          {:accessibility-identifier-signal
+           (reactive outliner-row-action-identifier row-source)
+           :label (reactive outliner-row-action-label model-source row-source)
+           :padding 0
+           :grow 1.0
+           :selected selected-source
+           :on-press
+           (event [current-row row-source]
+                  (if (= (:is-asset current-row) true)
+                    (send (model/OpenOutlinerAsset (:uuid current-row)))
+                    (if (= (:opens-as-page current-row) true)
+                      (if search-open
+                        (send (model/RequestSearchNode (:uuid current-row)))
+                        (send (model/RequestAppNode (:uuid current-row))))
+                      (send (model/BeginOutlinerEdit (:uuid current-row))))))
+           :on-long-press
+           (event [current-row row-source]
+                  (send (model/LongPressOutlinerBlock (:uuid current-row))))}
+          [outliner-row-main-content model-source retained-row-source
+           row-source send]]]])
       (elements/element
        ui-context nil
        [:box
@@ -2139,16 +2135,6 @@
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
       [:button
-       {:icon "app:toolbar-hide-keyboard"
-        :variant "ghost"
-        :width 42
-        :height 42
-        :label "Hide keyboard"
-        :accessibility-identifier "button.outliner.editor.hideKeyboard"
-        :on-press
-        (fn [_event]
-          (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]
-      [:button
        {:variant "ghost"
         :width 38
         :height 42
@@ -2157,7 +2143,17 @@
         :on-press
         (fn [_event]
           (send (model/PerformOutlinerToolbarAction "pageReference")))}
-       "[[]]"]])))
+       "[[]]"]
+      [:button
+       {:icon "app:toolbar-hide-keyboard"
+        :variant "ghost"
+        :width 42
+        :height 42
+        :label "Hide keyboard"
+        :accessibility-identifier "button.outliner.editor.hideKeyboard"
+        :on-press
+        (fn [_event]
+          (send (model/PerformOutlinerToolbarAction "hideKeyboard")))}]])))
 
 (defn node-related-row [ui-context model-source row-source send]
   (let [structured-breadcrumb-source
