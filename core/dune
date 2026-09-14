@@ -7,10 +7,7 @@
  (name logseq_chat_graph_support)
  (wrapped false)
  (modules
-  logseq_chat_datascript_value
-  logseq_chat_graph_read
-  logseq_chat_model
-  logseq_chat_ref_text)
+  (:include dune_modules/graph_support.sexp))
  (libraries
   datascript-ocaml-native
   datascript-ocaml-lg
@@ -27,34 +24,7 @@
  (name logseq_chat_core)
  (wrapped false)
  (modules
-  logseq_chat_api
-  logseq_chat_e2ee
-  logseq_chat_e2ee_keyring
-  logseq_chat_entity_sync
-  logseq_chat_graph_store
-  logseq_chat_graph_bootstrap_data
-  logseq_chat_graph_bootstrap
-  logseq_chat_graph_projection
-  logseq_chat_graph_runtime
-  logseq_chat_http
-  logseq_chat_lg_core_native
-  logseq_chat_lui_host_update
-  logseq_chat_lui_snapshot
-  logseq_chat_logseq_storage_codec
-  logseq_chat_markup
-  logseq_chat_outliner
-  logseq_chat_outliner_state
-  logseq_chat_outliner_effects
-  logseq_chat_pending_ops
-  logseq_chat_pending_projection
-  logseq_chat_rpc
-  logseq_chat_search_index
-  logseq_chat_snapshot
-  logseq_chat_sync_checkpoint
-  logseq_chat_sync_protocol
-  logseq_chat_sync_tx
-  logseq_chat_sync_session
-  logseq_chat_sync_state)
+  (:include dune_modules/core.sexp))
  (libraries
   logseq_chat_graph_support
   datascript-ocaml-native
@@ -148,11 +118,7 @@
 (executable
  (name logseq_chat_mobile_entry)
  (modules
-  logseq_chat_mobile_entry
-  logseq_chat_lui_native
-  logseq_chat_lui_projection
-  logseq_chat_platform_crypto
-  logseq_chat_sqlite)
+  (:include dune_modules/mobile_entry.sexp))
  (modes object)
  (flags (:standard -w -27-32-37-39-69))
  (libraries

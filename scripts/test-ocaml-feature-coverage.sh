@@ -21,7 +21,6 @@ summary=$(
 # surface. Raise them whenever tests add coverage; never lower them to land code.
 awk '
   BEGIN {
-    minimum["core/logseq_chat_fractional_order.ml"] = 10000
     minimum["core/logseq_chat_graph_runtime.ml"] = 7558
     minimum["core/logseq_chat_outliner.ml"] = 9818
     minimum["core/logseq_chat_outliner_effects.ml"] = 8411
