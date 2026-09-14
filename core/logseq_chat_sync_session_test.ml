@@ -1,6 +1,5 @@
 module Transit = Transit_native.Transit.Json
-module Session = Logseq_chat_sync_session
-module Checkpoint = Logseq_chat_sync_session
+module Session = Logseq_chat_lg_core_native
 
 let fail label message = failwith (label ^ ": " ^ message)
 
@@ -81,10 +80,34 @@ let write_file path content =
 ;;
 
 let () =
+  let invalid =
+    [ "[]"
+    ; {|{"ok":false}|}
+    ; {|{"url":"snapshot"}|}
+    ; {|{"ok":true,"url":"","t":0,"schema-version":"1","row-count":0}|}
+    ; {|{"ok":true,"url":"snapshot","t":-1,"schema-version":"1","row-count":0}|}
+    ; {|{"ok":true,"url":"snapshot","t":0,"schema-version":"1","row-count":-1}|}
+    ; {|{"ok":true,"url":"snapshot","t":0,"schema-version":"1","row-count":0,"content-encoding":false}|}
+    ; {|{"ok":true,"url":"snapshot","t":0,"schema-version":"1","row-count":0,"content-encoding":""}|}
+    ]
+  in
+  List.iter (fun source ->
+    match Logseq_chat_lg_core_native.logseq_chat_sync_session_decode_snapshot_metadata source with
+    | Error _ -> ()
+    | Ok _ -> fail "metadata validation" source) invalid;
+  List.iter (fun suffix ->
+    let metadata = expect_ok "optional encoding"
+      (Logseq_chat_lg_core_native.logseq_chat_sync_session_decode_snapshot_metadata
+         ("{\"ok\":true,\"url\":\"snapshot\",\"t\":0,\"schema-version\":\"1\",\"row-count\":0" ^ suffix ^ "}")) in
+    if metadata.content_encoding <> None then fail "optional encoding" "expected none")
+    [ ""; ",\"content-encoding\":null" ]
+;;
+
+let () =
   let metadata =
     expect_ok
       "decode metadata"
-      (Session.decode_snapshot_metadata
+      (Logseq_chat_lg_core_native.logseq_chat_sync_session_decode_snapshot_metadata
          {|{"ok":true,"key":"stream/graph-1.snapshot","url":"https://sync.example/sync/graph-1/snapshot/stream","content-encoding":"gzip","t":48192,"schema-version":"65.33","row-count":5}|})
   in
   if metadata.baseline_t <> 48192 || metadata.row_count <> 5
@@ -112,18 +135,13 @@ let () =
       let result =
         expect_ok
           "import snapshot"
-          (Session.import_snapshot_file
-             ~graph_id:"graph-1"
-             ~active_path
-             ~checkpoint_path
-             ~metadata
-             ~download_path
-             ())
+          (Logseq_chat_lg_core_native.logseq_chat_sync_session_import_snapshot_file
+             None "graph-1" active_path checkpoint_path metadata download_path)
       in
       if result.applied_server_t <> 48192
       then fail "import cursor" "baseline cursor changed";
       ignore (expect_ok "restore active graph" (Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_db active_path));
-      (match expect_ok "load checkpoint" (Checkpoint.load_checkpoint checkpoint_path) with
+      (match expect_ok "load checkpoint" (Logseq_chat_lg_core_native.logseq_chat_sync_checkpoint_load_checkpoint checkpoint_path) with
        | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
        | _ -> fail "checkpoint" "activated snapshot cursor was not saved");
 
@@ -132,13 +150,8 @@ let () =
       in
       write_file download_path "\000\000\000\010broken";
       (match
-         Session.import_snapshot_file
-           ~graph_id:"graph-1"
-           ~active_path
-           ~checkpoint_path
-           ~metadata
-           ~download_path
-           ()
+         Logseq_chat_lg_core_native.logseq_chat_sync_session_import_snapshot_file
+           None "graph-1" active_path checkpoint_path metadata download_path
        with
        | Error _ -> ()
        | Ok _ -> fail "corrupt snapshot" "invalid stream was activated");
@@ -147,16 +160,14 @@ let () =
       in
       if root_after_failure <> original_root
       then fail "atomic import" "failed import replaced the active graph";
-      (match expect_ok "checkpoint after failure" (Checkpoint.load_checkpoint checkpoint_path) with
+      (match expect_ok "checkpoint after failure" (Logseq_chat_lg_core_native.logseq_chat_sync_checkpoint_load_checkpoint checkpoint_path) with
        | Some checkpoint when checkpoint.applied_server_t = 48192 -> ()
        | _ -> fail "atomic checkpoint" "failed import changed the cursor");
 
       let conn = expect_ok "restore sync connection" (Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_conn active_path) in
       let state =
-        Logseq_chat_sync_session.create_state
-          ~graph_id:"graph-1"
-          ~schema_version:"65.33"
-          ~applied_server_t:48192
+        Logseq_chat_lg_core_native.logseq_chat_sync_session_create_state
+          "graph-1" "65.33" 48192
       in
       let change : Logseq_chat_lg_core_native.sync_change_set =
         { format_version = 1
@@ -171,10 +182,11 @@ let () =
       in
       expect_ok
         "apply authoritative event"
-        (Session.apply_change_set ~conn ~checkpoint_path state change);
-      if Logseq_chat_sync_session.applied_server_t state <> 48193
+        (Logseq_chat_lg_core_native.logseq_chat_sync_session_apply_change_set
+           (fun value -> Ok value) conn checkpoint_path state change);
+      if Logseq_chat_lg_core_native.logseq_chat_sync_session_applied_server_t state <> 48193
       then fail "event cursor" "successful WebSocket event did not advance state";
-      match expect_ok "event checkpoint" (Checkpoint.load_checkpoint checkpoint_path) with
+      match expect_ok "event checkpoint" (Logseq_chat_lg_core_native.logseq_chat_sync_checkpoint_load_checkpoint checkpoint_path) with
       | Some checkpoint when checkpoint.applied_server_t = 48193 -> ()
       | _ -> fail "event checkpoint" "successful WebSocket event did not persist cursor")
 ;;
@@ -208,14 +220,8 @@ let () =
       ignore
         (expect_ok
            "import encrypted snapshot as local plaintext"
-           (Session.import_snapshot_file
-              ~decrypt_protected:decrypt
-              ~graph_id:"encrypted-graph"
-              ~active_path
-              ~checkpoint_path
-              ~metadata
-              ~download_path
-              ()));
+           (Logseq_chat_lg_core_native.logseq_chat_sync_session_import_snapshot_file
+              (Some decrypt) "encrypted-graph" active_path checkpoint_path metadata download_path));
       let db = expect_ok "restore local plaintext snapshot" (Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_db active_path) in
       (match Datascript.datoms db Datascript.Aevt ~a:"block/title" () |> List.of_seq with
       | [ { Datascript.v = Datascript.String "Private title"; _ } ] -> ()
@@ -267,7 +273,7 @@ let () =
   let plaintext =
     expect_ok
       "preserve canonical built-in titles in encrypted snapshots"
-      (Session.plaintext_snapshot_db decrypt db)
+      (Logseq_chat_lg_core_native.logseq_chat_sync_session_plaintext_snapshot_db decrypt db)
   in
   let title eid =
     Datascript.datoms plaintext Datascript.Eavt ~e:eid ~a:"block/title" ()

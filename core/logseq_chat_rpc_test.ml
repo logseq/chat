@@ -4200,8 +4200,8 @@ let () =
   List.iter (fun timing ->
     let replay_first = timing = 1 in
     let deferred_replay = timing = 2 in
-    let state = Logseq_chat_sync_session.create_state
-        ~graph_id:"plain-1" ~schema_version:"65.33" ~applied_server_t:42 in
+    let state = Logseq_chat_lg_core_native.logseq_chat_sync_session_create_state
+        "plain-1" "65.33" 42 in
     let attribute =
       { Datascript.cardinality = One; unique = Some Identity; indexed = true;
         is_component = false; no_history = false; doc = None;
@@ -4210,7 +4210,7 @@ let () =
     let applied_count = ref 0 in
     let session = Logseq_chat_rpc.create
         ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
-        ~sync_cursor:(fun () -> Some (Logseq_chat_sync_session.applied_server_t state))
+        ~sync_cursor:(fun () -> Some (Logseq_chat_lg_core_native.logseq_chat_sync_session_applied_server_t state))
         ~graph_blocks:(fun () -> Some [])
         ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
         ~stage_operation:(fun _ -> Ok ())
@@ -4229,8 +4229,8 @@ let () =
                   attrs = [V.Keyword "block/uuid", V.Uuid uuid;
                            V.Keyword "block/title", V.String "photo.jpg"] });
             deleted = []; operation_ids = [] } in
-          Logseq_chat_sync_session.apply_validated_change_set state change
-            ~apply:(fun change ->
+          Logseq_chat_lg_core_native.logseq_chat_sync_session_apply_validated_change_set state change
+            (fun change ->
               Logseq_chat_lg_core_native.logseq_chat_entity_sync_apply_change_set
                 (fun value -> Ok value)
                 conn
@@ -4261,14 +4261,14 @@ let () =
     for index = 1 to 3 do
       assert_equal "each asset uploads bytes first" "PUT" (required_string "method" !next);
       let tx = complete !next (`Assoc ["ok", `Bool true]) |> pending_request |> Option.get in
-      let before = Logseq_chat_sync_session.applied_server_t state in
+      let before = Logseq_chat_lg_core_native.logseq_chat_sync_session_applied_server_t state in
       let accepted = 42 + index in
       if replay_first then ignore (dispatch "applySyncEvent"
         (Some (`Assoc ["before", `Int before; "t", `Int accepted])) |> result);
       let completion = complete tx (`Assoc ["type", `String "tx/batch/ok"; "t", `Int accepted]) in
       let visible = completion |> result |> required_int "appliedServerT" in
       assert_int_equal "asset completion reports only the applied cursor"
-        (Logseq_chat_sync_session.applied_server_t state) visible;
+        (Logseq_chat_lg_core_native.logseq_chat_sync_session_applied_server_t state) visible;
       let snapshot_cursor = dispatch "startWebSocket" None |> result |> required_int "appliedServerT" in
       assert_int_equal "full snapshots preserve the same applied cursor" visible snapshot_cursor;
       if not replay_first && not deferred_replay then ignore (dispatch "applySyncEvent"
@@ -4278,7 +4278,7 @@ let () =
     if deferred_replay then ignore (dispatch "applySyncEvent"
       (Some (`Assoc ["before", `Int 42; "t", `Int 45])) |> result);
     assert_int_equal "all asset replays applied" (if deferred_replay then 1 else 3) !applied_count;
-    assert_int_equal "final applied cursor" 45 (Logseq_chat_sync_session.applied_server_t state);
+    assert_int_equal "final applied cursor" 45 (Logseq_chat_lg_core_native.logseq_chat_sync_session_applied_server_t state);
     let asset_count = Datascript.datoms (Datascript.conn_db conn) Datascript.Aevt
       ~a:"block/uuid" () |> List.of_seq |> List.length in
     assert_int_equal "replay materializes every asset exactly once" 3 asset_count

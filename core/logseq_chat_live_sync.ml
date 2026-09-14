@@ -4,7 +4,7 @@
 module Api = Logseq_chat_api
 module Http = Logseq_chat_http
 module Bootstrap = Logseq_chat_graph_bootstrap
-module Session = Logseq_chat_sync_session
+module Session = Logseq_chat_lg_core_native
 module Store = Logseq_chat_lg_core_native
 module Runtime = Logseq_chat_graph_runtime
 module Ops = Logseq_chat_pending_ops
@@ -141,7 +141,7 @@ let download_snapshot cfg =
       ; token = graph_config.token
       }
   in
-  let metadata = require "decode snapshot metadata" (Session.decode_snapshot_metadata metadata_response.body) in
+  let metadata = require "decode snapshot metadata" (Logseq_chat_lg_core_native.logseq_chat_sync_session_decode_snapshot_metadata metadata_response.body) in
   let pull_response =
     expect
       "snapshot pull"
@@ -172,14 +172,8 @@ let import_downloaded ~graph_id ~decrypt ~dir metadata download_path =
   let completed =
     require
       "import snapshot"
-      (Session.import_snapshot_file
-         ?decrypt_protected:decrypt
-         ~graph_id
-         ~active_path
-         ~checkpoint_path
-         ~metadata
-         ~download_path
-         ())
+      (Logseq_chat_lg_core_native.logseq_chat_sync_session_import_snapshot_file
+         decrypt graph_id active_path checkpoint_path metadata download_path)
   in
   ignore completed;
   active_path

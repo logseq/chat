@@ -1,7 +1,11 @@
 (ns logseq-chat.sync-checkpoint
   (:require [ocaml.package/melange-transit-core]
             [ocaml.package/melange-transit-native]
+            [ocaml.package/unix]
             [ocaml.Int64 :as int64]
+            [ocaml.Stdlib :as stdlib]
+            [ocaml.Sys :as sys]
+            [ocaml.Unix :as unix]
             [ocaml.Rrbvec :as rrbvec]
             [ocaml.Transit_core.Json :as value]
             [ocaml.Transit_native.Transit.Json :as codec]))
@@ -74,3 +78,32 @@
       _ (Error "graph sync checkpoint must be a Transit map"))
     (catch error
       (Error (Printexc/to-string error)))))
+
+(defn load-checkpoint [path]
+  (if (not (sys/file-exists path))
+    (Ok None)
+    (try
+      (let [channel (stdlib/open-in-bin path)
+            source (try
+                     (stdlib/really-input-string channel (stdlib/in-channel-length channel))
+                     (finally (stdlib/close-in-noerr channel)))]
+        (let* [checkpoint (decode source)] (Ok (Some checkpoint))))
+      (catch error (Error (str "read checkpoint " path ": " (Printexc/to-string error)))))))
+
+(defn save-checkpoint-atomic [path checkpoint]
+  (let [temporary (str path ".tmp")]
+    (try
+      (let [channel (stdlib/open-out-gen
+                     (list (stdlib/Open_wronly) (stdlib/Open_creat) (stdlib/Open_trunc) (stdlib/Open_binary))
+                     384 temporary)]
+        (try
+          (stdlib/output-string channel (encode checkpoint))
+          (stdlib/flush channel)
+          (unix/fsync (unix/descr-of-out-channel channel))
+          (finally (stdlib/close-out-noerr channel))))
+      (unix/rename temporary path)
+      (Ok (stdlib/ignore 0))
+      (catch error
+        (try (when (sys/file-exists temporary) (sys/remove temporary))
+             (catch _ nil))
+        (Error (str "write checkpoint " path ": " (Printexc/to-string error)))))))

@@ -13,5 +13,4 @@
  "logseq_chat_pending_projection"
  "logseq_chat_rpc"
  "logseq_chat_search_index"
- "logseq_chat_sync_session"
 )

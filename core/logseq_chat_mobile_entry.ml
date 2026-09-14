@@ -1,4 +1,4 @@
-module Sync_session = Logseq_chat_sync_session
+module Sync_session = Logseq_chat_lg_core_native
 module E2ee_keyring = Logseq_chat_e2ee_keyring
 
 let () =
@@ -19,7 +19,7 @@ let e2ee_keyring =
 
 type graph_runtime =
   { conn : Datascript.conn
-  ; state : Sync_session.state
+  ; state : Sync_session.sync_session_state
   ; checkpoint_path : string
   ; graph_id : string
   ; e2ee : bool
@@ -77,7 +77,7 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
   in
   let bind result f = match result with Ok value -> f value | Error _ as error -> error in
   let ( let* ) = bind in
-  let* checkpoint = Sync_session.load_checkpoint checkpoint_path in
+  let* checkpoint = Logseq_chat_lg_core_native.logseq_chat_sync_checkpoint_load_checkpoint checkpoint_path in
   report "checkpoint_loaded";
   let* checkpoint =
     match checkpoint with
@@ -94,10 +94,8 @@ let open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee =
   in
   report "encryption_ready";
   let state =
-    Sync_session.create_state
-      ~graph_id
-      ~schema_version:checkpoint.schema_version
-      ~applied_server_t:checkpoint.applied_server_t
+    Logseq_chat_lg_core_native.logseq_chat_sync_session_create_state
+      graph_id checkpoint.schema_version checkpoint.applied_server_t
   in
   let read_runtime =
     graph_read_runtime
@@ -141,20 +139,13 @@ let import_snapshot payload =
       let* metadata_body = required_string fields "metadataBody" in
       let* download_path = required_string fields "downloadPath" in
       let* e2ee = optional_bool fields "isEncrypted" in
-      let* metadata = Sync_session.decode_snapshot_metadata metadata_body in
+      let* metadata = Logseq_chat_lg_core_native.logseq_chat_sync_session_decode_snapshot_metadata metadata_body in
       let* _ =
-        Sync_session.import_snapshot_file
-          ?decrypt_protected:
-            (if e2ee
-             then
-               Some (E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
-             else None)
-          ~graph_id
-          ~active_path
-          ~checkpoint_path
-          ~metadata
-          ~download_path
-          ()
+        Logseq_chat_lg_core_native.logseq_chat_sync_session_import_snapshot_file
+          (if e2ee
+           then Some (E2ee_keyring.decrypt_title e2ee_keyring ~graph_id)
+           else None)
+          graph_id active_path checkpoint_path metadata download_path
       in
       open_graph_paths ~graph_id ~active_path ~checkpoint_path ~e2ee
     | _ -> Error "importSnapshot payload must be an object"
@@ -180,17 +171,12 @@ let apply_sync_event payload =
              | None -> Error "graph runtime is not open"
              | Some runtime ->
                bind
-                 (Sync_session.apply_change_set
-                    ?decrypt_protected:
-                      (if runtime.e2ee
-                       then
-                         Some
-                           (E2ee_keyring.decrypt_title
-                              e2ee_keyring
-                              ~graph_id:runtime.graph_id)
-                       else None)
-                    ~conn:runtime.conn
-                    ~checkpoint_path:runtime.checkpoint_path
+                 (Logseq_chat_lg_core_native.logseq_chat_sync_session_apply_change_set
+                    (if runtime.e2ee
+                     then E2ee_keyring.decrypt_title e2ee_keyring ~graph_id:runtime.graph_id
+                     else (fun value -> Ok value))
+                    runtime.conn
+                    runtime.checkpoint_path
                     runtime.state
                     change)
                  (fun () ->
@@ -209,7 +195,7 @@ let apply_sync_event payload =
 
 let sync_cursor () =
   match !graph_runtime with
-  | Some runtime -> Some (Sync_session.applied_server_t runtime.state)
+  | Some runtime -> Some (Logseq_chat_lg_core_native.logseq_chat_sync_session_applied_server_t runtime.state)
   | None -> None
 ;;
 
