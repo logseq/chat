@@ -2,7 +2,7 @@ module Transit = Transit_core.Json
 module Codec = Transit_native.Transit.Json
 module E2ee = Logseq_chat_lg_core_native
 module Keyring = Logseq_chat_e2ee_keyring
-module Api = Logseq_chat_api
+module Api = Logseq_chat_lg_core_native
 
 let expect_ok = function
   | Ok value -> value
@@ -349,7 +349,7 @@ let test_provision_graph_key_uploads_and_caches_key () =
   let post = List.find (fun request -> String.equal request.Api.method_ "POST") !requests in
   (match post.body with
    | Some body ->
-     let encrypted = Api.graph_key_from_body body in
+     let encrypted = Api.logseq_chat_api_graph_key_from_body body in
      (match Codec.of_string encrypted with
       | Transit.Binary value -> expect_equal ("public" ^ key) value
       | _ -> failwith "uploaded graph key envelope is invalid")

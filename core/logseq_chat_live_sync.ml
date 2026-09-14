@@ -1,7 +1,7 @@
 (* Live verification of graph create/download, outliner tx/batch, and asset
    upload against a local db-sync server. Not part of the default test alias. *)
 
-module Api = Logseq_chat_api
+module Api = Logseq_chat_lg_core_native
 module Http = Logseq_chat_http
 module Bootstrap = Logseq_chat_graph_bootstrap
 module Session = Logseq_chat_lg_core_native
@@ -110,7 +110,7 @@ let absolute_url ~base_url url =
          || (String.length url >= 8 && String.equal (String.sub url 0 8) "https://"))
   then url
   else if String.length url > 0 && url.[0] = '/'
-  then Api.api_root { Api.base_url; graph_id = ""; graph_name = None; token = "" } ^ url
+  then Api.logseq_chat_api_api_root { Api.base_url; graph_id = ""; graph_name = None; token = "" } ^ url
   else url
 ;;
 
@@ -135,8 +135,8 @@ let download_snapshot cfg =
       ; url =
           Printf.sprintf
             "%s/sync/%s/snapshot/download"
-            (Api.api_root graph_config)
-            (Api.url_encode graph_config.graph_id)
+            (Api.logseq_chat_api_api_root graph_config)
+            (Api.logseq_chat_api_url_encode graph_config.graph_id)
       ; body = None
       ; token = graph_config.token
       }
@@ -149,8 +149,8 @@ let download_snapshot cfg =
       ; url =
           Printf.sprintf
             "%s/sync/%s/pull"
-            (Api.api_root graph_config)
-            (Api.url_encode graph_config.graph_id)
+            (Api.logseq_chat_api_api_root graph_config)
+            (Api.logseq_chat_api_url_encode graph_config.graph_id)
       ; body = None
       ; token = graph_config.token
       }
@@ -201,12 +201,9 @@ let rec submit_tx ~cfg runtime operation attempts =
   | Error message -> fail "prepare outliner op" message
   | Ok (outliner_op, tx) ->
     let request =
-      Api.tx_batch_request
+      Api.logseq_chat_api_tx_batch_request
         cfg
-        ~t_before:runtime.Runtime.server_t
-        ~tx_id:operation.Ops.operation_id
-        ~outliner_op
-        ~tx
+        runtime.Runtime.server_t operation.Ops.operation_id outliner_op tx
     in
     let response = expect "tx/batch" ~ok:[ 200; 409 ] request in
     let fields = json_assoc response.body in
@@ -224,7 +221,7 @@ let rec submit_tx ~cfg runtime operation attempts =
 ;;
 
 let stage_insert runtime ~page_uuid ~title =
-  let created_at = Api.epoch_ms () in
+  let created_at = Api.logseq_chat_api_epoch_ms () in
   let order = require "fractional order" (LG.logseq_chat_fractional_order_between None None) in
   let operation =
     Ops.
@@ -247,7 +244,7 @@ let stage_insert runtime ~page_uuid ~title =
 ;;
 
 let stage_asset runtime ~page_uuid ~title ~asset_type ~asset_size ~asset_checksum =
-  let created_at = Api.epoch_ms () in
+  let created_at = Api.logseq_chat_api_epoch_ms () in
   let order = require "asset order" (LG.logseq_chat_fractional_order_between (Some "a0") None) in
   let uuid = fresh_uuid () in
   let operation =
@@ -276,7 +273,7 @@ let stage_asset runtime ~page_uuid ~title ~asset_type ~asset_size ~asset_checksu
 let ensure_user_keys cfg =
   let request =
     { Api.method_ = "POST"
-    ; url = Printf.sprintf "%s/e2ee/user-keys" (Api.api_root cfg)
+    ; url = Printf.sprintf "%s/e2ee/user-keys" (Api.logseq_chat_api_api_root cfg)
     ; body =
         Some
           (Yojson.Basic.to_string
@@ -291,12 +288,12 @@ let ensure_user_keys cfg =
 ;;
 
 let provision_graph_key cfg =
-  let request = Api.upsert_graph_key_request cfg ~encrypted_key:"live-sync-encrypted-aes-key" in
+  let request = Api.logseq_chat_api_upsert_graph_key_request cfg "live-sync-encrypted-aes-key" in
   ignore (expect "e2ee graph aes key" ~ok:[ 200; 201 ] request)
 ;;
 
 let create_and_upload cfg ~name ~e2ee ~encrypt_text =
-  let create = Api.create_graph_request cfg ~name ~schema_version:Bootstrap.schema_version ~e2ee in
+  let create = Api.logseq_chat_api_create_graph_request cfg name Bootstrap.schema_version e2ee in
   let response = expect "create graph" ~ok:[ 200; 201 ] create in
   let graph_id =
     match json_string "graph-id" (json_assoc response.body) with
@@ -307,7 +304,7 @@ let create_and_upload cfg ~name ~e2ee ~encrypt_text =
   if e2ee then provision_graph_key graph_cfg;
   let prepared = require "prepare initial snapshot" (Bootstrap.prepare ~graph_id ~e2ee ~encrypt_text) in
   let upload =
-    Api.initial_snapshot_upload_request graph_cfg ~file_path:prepared.file_path ~checksum:prepared.checksum
+    Api.logseq_chat_api_initial_snapshot_upload_request graph_cfg prepared.file_path prepared.checksum
   in
   Fun.protect
     ~finally:(fun () -> try Sys.remove prepared.file_path with _ -> ())
@@ -319,9 +316,9 @@ let create_and_upload cfg ~name ~e2ee ~encrypt_text =
         fail
           "initial snapshot upload"
           (Printf.sprintf "HTTP %d %s" response.status response.body));
-  let listed = expect "list graphs" (Api.graphs_request graph_cfg) in
-  let graphs = Api.graphs_from_graphs_body listed.body in
-  (match List.find_opt (fun (graph : Api.graph) -> String.equal graph.id graph_id) graphs with
+  let listed = expect "list graphs" (Api.logseq_chat_api_graphs_request graph_cfg) in
+  let graphs = Api.logseq_chat_api_graphs_from_graphs_body listed.body in
+  (match List.find_opt (fun (graph : Api.api_graph) -> String.equal graph.id graph_id) graphs with
    | None -> fail "list graphs" ("created graph is missing from GET /graphs: " ^ listed.body)
    | Some graph ->
      if graph.e2ee <> e2ee then fail "list graphs" "created graph encryption flag mismatch";
@@ -335,13 +332,9 @@ let upload_asset_file cfg ~uuid ~asset_type ~checksum ~bytes ~content_type =
     ~finally:(fun () -> try Sys.remove path with _ -> ())
     (fun () ->
       let upload =
-        Api.raw_asset_upload_request
+        Api.logseq_chat_api_raw_asset_upload_request
           cfg
-          ~uuid
-          ~asset_type
-          ~checksum
-          ~file_path:path
-          ~content_type
+          uuid asset_type checksum path content_type
       in
       match Http.upload_file upload with
       | Error message -> fail "asset upload" message
@@ -357,10 +350,10 @@ let download_asset cfg ~uuid ~asset_type =
     ; url =
         Printf.sprintf
           "%s/assets/%s/%s.%s"
-          (Api.api_root cfg)
-          (Api.url_encode cfg.graph_id)
-          (Api.url_encode uuid)
-          (Api.url_encode asset_type)
+          (Api.logseq_chat_api_api_root cfg)
+          (Api.logseq_chat_api_url_encode cfg.graph_id)
+          (Api.logseq_chat_api_url_encode uuid)
+          (Api.logseq_chat_api_url_encode asset_type)
     ; body = None
     ; token = cfg.token
     }
@@ -435,7 +428,7 @@ let run_mode ~base_url ~token ~e2ee =
           ~asset_type
           ~checksum
           ~bytes:asset_bytes
-          ~content_type:(if e2ee then "text/plain" else Api.content_type_for_asset_type asset_type);
+          ~content_type:(if e2ee then "text/plain" else Api.logseq_chat_api_content_type_for_asset_type asset_type);
         ignore (submit_tx ~cfg runtime asset_op 4);
         let downloaded = download_asset cfg ~uuid:asset_uuid ~asset_type in
         if not (String.equal downloaded.body asset_bytes)
@@ -445,10 +438,10 @@ let run_mode ~base_url ~token ~e2ee =
             (Printf.sprintf "expected %S, got %S" asset_bytes downloaded.body);
         let capture_title = "live-capture-" ^ label in
         let capture =
-          Api.capture_request
-            ~page_id:contents_page_uuid
+          Api.logseq_chat_api_capture_request
+            (Some contents_page_uuid)
             cfg
-            ~uuid:(fresh_uuid ())
+            (fresh_uuid ())
             (if e2ee then require "encrypt capture" (encrypt_text capture_title) else capture_title)
         in
         ignore (expect "semantic capture" ~ok:[ 200; 201 ] capture);

@@ -1,4 +1,4 @@
-module Api = Logseq_chat_api
+module Api = Logseq_chat_lg_core_native
 
 type endpoint =
   { scheme : string
@@ -355,7 +355,7 @@ let connect endpoint =
   try_addresses addresses
 ;;
 
-let send_http (request : Api.request) endpoint extra_headers body =
+let send_http (request : Api.api_request) endpoint extra_headers body =
   match connect endpoint with
   | Error message -> Error message
   | Ok fd ->
@@ -384,24 +384,24 @@ let send_http (request : Api.request) endpoint extra_headers body =
           | Error message -> Error message
           | Ok (headers, body) ->
             (match status_of_headers headers with
-             | Ok status -> Ok { Api.status; body }
+             | Ok status -> Ok (Api.logseq_chat_api_response status body)
              | Error message -> Error message)
         with
         | exn -> Error (unix_error_message exn))
 ;;
 
-let send_https (request : Api.request) =
+let send_https (request : Api.api_request) =
   let body = Option.value request.Api.body ~default:"" in
   let response = https_send_raw request.Api.method_ request.Api.url body request.Api.token in
   match split_first_line response with
   | "ERROR", message -> Error message
   | status, body ->
     (match int_of_string status with
-     | status -> Ok { Api.status; body }
+     | status -> Ok (Api.logseq_chat_api_response status body)
      | exception _ -> Error ("invalid HTTPS status: " ^ status))
 ;;
 
-let send request =
+let send (request : Api.api_request) =
   match parse_url request.Api.url with
   | Error message -> Error message
   | Ok endpoint ->
@@ -420,7 +420,7 @@ let read_file_bytes path =
   | exn -> Error ("could not read upload file: " ^ unix_error_message exn)
 ;;
 
-let upload_http (upload : Api.file_upload) endpoint =
+let upload_http (upload : Api.api_file_upload) endpoint =
   match read_file_bytes upload.file_path with
   | Error _ as error -> error
   | Ok body ->
@@ -452,13 +452,13 @@ let upload_http (upload : Api.file_upload) endpoint =
             | Error message -> Error message
             | Ok (response_headers, response_body) ->
               (match status_of_headers response_headers with
-               | Ok status -> Ok { Api.status; body = response_body }
+               | Ok status -> Ok (Api.logseq_chat_api_response status response_body)
                | Error message -> Error message)
           with
           | exn -> Error (unix_error_message exn))
 ;;
 
-let upload_file (upload : Api.file_upload) =
+let upload_file (upload : Api.api_file_upload) =
   match parse_url upload.request.Api.url with
   | Error message -> Error message
   | Ok endpoint ->

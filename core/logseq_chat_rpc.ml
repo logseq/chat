@@ -1,7 +1,7 @@
 open Yojson.Basic
 
 module Model = Logseq_chat_model
-module Api = Logseq_chat_api
+module Api = Logseq_chat_lg_core_native
 module Http = Logseq_chat_http
 module Pending_ops = Logseq_chat_pending_ops
 module LG = Logseq_chat_lg_core_native
@@ -11,8 +11,8 @@ module Graph_bootstrap = Logseq_chat_graph_bootstrap
 module Markup = Logseq_chat_markup
 
 type pending_transport =
-  | Json_request of Api.request
-  | File_upload of Api.file_upload
+  | Json_request of Api.api_request
+  | File_upload of Api.api_file_upload
 
 type pending_operation =
   | Create_block of Model.block
@@ -38,7 +38,7 @@ type pending_active =
   }
 
 type pending_sync =
-  { config : Api.config
+  { config : Api.api_config
   ; mutable remaining : Model.block list
   ; authoritative : (string, unit) Hashtbl.t
   ; resolved_journal_pages : (int, string) Hashtbl.t
@@ -51,7 +51,7 @@ type semantic_pending =
 type semantic_active =
   { id : int
   ; pending : semantic_pending
-  ; request : Api.request
+  ; request : Api.api_request
   }
 
 type node_route =
@@ -66,8 +66,8 @@ type node_route =
 
 type t =
   { mutable model : Model.t
-  ; mutable config : Api.config option
-  ; mutable available_graphs : Api.graph list
+  ; mutable config : Api.api_config option
+  ; mutable available_graphs : Api.api_graph list
   ; mutable related_blocks : Model.block list
   ; mutable selected_sidebar_page : Logseq_chat_graph_read.sidebar_page option
   ; mutable node_routes : node_route list
@@ -106,16 +106,16 @@ type t =
   ; mutable search_query : string
   ; load_older_journals : (unit -> unit) option
   ; has_older_journals : (unit -> bool) option
-  ; load_cached_graph_key : (Api.config -> (unit, string) result) option
-  ; unlock_graph : (Api.config -> password:string -> (unit, string) result) option
-  ; provision_graph_key : (Api.config -> (unit, string) result) option
+  ; load_cached_graph_key : (Api.api_config -> (unit, string) result) option
+  ; unlock_graph : (Api.api_config -> password:string -> (unit, string) result) option
+  ; provision_graph_key : (Api.api_config -> (unit, string) result) option
   ; graph_unlocked : (graph_id:string -> bool) option
   ; encrypt_title : (graph_id:string -> string -> (string, string) result) option
   ; resolve_asset_path : string -> string
   ; encrypt_asset_file : (graph_id:string -> source_path:string -> (string * int, string) result) option
   ; journal_page_id : (journal_day:int -> string option) option
-  ; send : Api.request -> (Api.response, string) result
-  ; upload_file : Api.file_upload -> (Api.response, string) result
+  ; send : Api.api_request -> (Api.api_response, string) result
+  ; upload_file : Api.api_file_upload -> (Api.api_response, string) result
   ; cleanup_file : string -> unit
   ; mutable sync_connected : bool
   ; mutable pending_sync : pending_sync option
@@ -361,7 +361,7 @@ let visible_block_json _model (block : Model.block) =
   | None -> block_json block
 ;;
 
-let graph_json (graph : Api.graph) =
+let graph_json (graph : Api.api_graph) =
   `Assoc
     [ "id", `String graph.id
     ; "name", `String graph.name
@@ -394,7 +394,7 @@ let search_hit_json (hit : Logseq_chat_search_index.hit) =
 ;;
 
 let pending_request_json session =
-  let request_json id (request : Api.request) file_path content_type headers =
+  let request_json id (request : Api.api_request) file_path content_type headers =
     let body_fields =
       match request.body with
       | Some body ->
@@ -1017,13 +1017,13 @@ let selected_graph session =
   match session.config with
   | Some config ->
     List.find_opt
-      (fun (graph : Api.graph) -> String.equal graph.id config.graph_id)
+      (fun (graph : Api.api_graph) -> String.equal graph.id config.graph_id)
       session.available_graphs
   | None -> None
 ;;
 
 let selected_graph_is_encrypted session =
-  Option.fold ~none:false ~some:(fun (graph : Api.graph) -> graph.e2ee) (selected_graph session)
+  Option.fold ~none:false ~some:(fun (graph : Api.api_graph) -> graph.e2ee) (selected_graph session)
 ;;
 
 let selected_graph_is_unlocked session =
@@ -1482,7 +1482,7 @@ let create
   let available_graphs =
     match Option.bind load_graph_catalog (fun load -> load ()) with
     | Some body ->
-      (try Api.graphs_from_graphs_body body with
+      (try Api.logseq_chat_api_graphs_from_graphs_body body with
        | _ -> [])
     | None -> []
   in
@@ -1550,7 +1550,7 @@ let create
 
 let discover_graphs session config =
   debug "graph discovery started";
-  match session.send (Api.graphs_request config) with
+  match session.send (Api.logseq_chat_api_graphs_request config) with
   | Error message -> Error message
   | Ok response when response.Api.status < 200 || response.Api.status >= 300 ->
     debug
@@ -1560,13 +1560,13 @@ let discover_graphs session config =
     Error ("Logseq graphs API returned HTTP " ^ string_of_int response.Api.status)
   | Ok response ->
     (try
-       session.available_graphs <- Api.graphs_from_graphs_body response.body;
+       session.available_graphs <- Api.logseq_chat_api_graphs_from_graphs_body response.body;
        Option.iter (fun save -> save response.body) session.save_graph_catalog;
        Ok ()
      with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
 ;;
 
-let upload_initial_graph_snapshot session config ~graph_id ~e2ee =
+let upload_initial_graph_snapshot session (config : Api.api_config) ~graph_id ~e2ee =
   let graph_config = { config with Api.graph_id = graph_id } in
   let encrypt_text =
     if not e2ee
@@ -1583,10 +1583,9 @@ let upload_initial_graph_snapshot session config ~graph_id ~e2ee =
      | Error _ as error -> error
      | Ok prepared ->
        let upload =
-         Api.initial_snapshot_upload_request
+         Api.logseq_chat_api_initial_snapshot_upload_request
            graph_config
-           ~file_path:prepared.file_path
-           ~checksum:prepared.checksum
+           prepared.file_path prepared.checksum
        in
        Fun.protect
          ~finally:(fun () -> session.cleanup_file prepared.file_path)
@@ -1606,11 +1605,11 @@ let upload_initial_graph_snapshot session config ~graph_id ~e2ee =
            | Error message -> Error message))
 ;;
 
-let cache_remote_blocks session response ~now =
+let cache_remote_blocks session (response : Api.api_response) ~now =
   if response.Api.status >= 200 && response.Api.status < 300
   then (
     let blocks, journals =
-      match Api.feed_from_body response.body with
+      match Api.logseq_chat_api_feed_from_body response.body with
       | feed -> feed
       | exception exn ->
         let message = Printexc.to_string exn in
@@ -1618,7 +1617,7 @@ let cache_remote_blocks session response ~now =
         raise (Failure ("Could not parse Logseq search response: " ^ message))
     in
     List.iter
-      (fun (journal : Api.journal) ->
+      (fun (journal : Api.api_journal) ->
         Model.upsert_journal_page
           ~title:journal.title
           session.model
@@ -1633,25 +1632,25 @@ let cache_remote_blocks session response ~now =
     Error ("Logseq API returned HTTP " ^ string_of_int response.Api.status))
 ;;
 
-let cache_task_statuses session response =
+let cache_task_statuses session (response : Api.api_response) =
   if response.Api.status >= 200 && response.Api.status < 300
   then (
-    let statuses = Api.statuses_from_property_body response.body in
+    let statuses = Api.logseq_chat_api_statuses_from_property_body response.body in
     debug "remote task statuses parsed count=%d" (List.length statuses);
     Model.upsert_statuses session.model statuses;
     Ok ())
   else Error ("Logseq status property returned HTTP " ^ string_of_int response.Api.status)
 ;;
 
-let refresh_from_remote session config =
+let refresh_from_remote session (config : Api.api_config) =
   let now = now_ms () in
   debug "remote refresh started graph=%s" config.Api.graph_id;
   let journal_day = Model.journal_day_for_ms now in
-  match session.send (Api.recent_blocks_request config ~journal_day) with
+  match session.send (Api.logseq_chat_api_recent_blocks_request config journal_day) with
   | Ok response ->
     (match cache_remote_blocks session response ~now with
      | Ok () ->
-       (match session.send (Api.task_statuses_request config) with
+       (match session.send (Api.logseq_chat_api_task_statuses_request config) with
         | Ok status_response ->
           (match cache_task_statuses session status_response with
            | Ok () -> snapshot_visible session
@@ -1663,7 +1662,7 @@ let refresh_from_remote session config =
     failure ~code:"remote_refresh_failed" ~message
 ;;
 
-let resolve_graph _session config =
+let resolve_graph _session (config : Api.api_config) =
   if not (String.equal (String.trim config.Api.graph_id) "")
   then (
     debug "graph discovery skipped graph=%s" config.Api.graph_id;
@@ -1745,7 +1744,7 @@ let set_pending_active session pump ~transport ~operation ?cleanup_path () =
       }
 ;;
 
-let encrypted_title session config title =
+let encrypted_title session (config : Api.api_config) title =
   match session.encrypt_title with
   | Some encrypt -> encrypt ~graph_id:config.Api.graph_id title
   | None -> Error "encrypted graph title encryption is unavailable"
@@ -1778,7 +1777,7 @@ and prepare_pending_block session pump (block : Model.block) =
         set_pending_active
           session
           pump
-          ~transport:(Json_request (Api.update_block_request pump.config ~uuid:block.uuid ~title))
+          ~transport:(Json_request (Api.logseq_chat_api_update_block_request pump.config block.uuid title))
           ~operation:(Update_title block)
           ())
       title
@@ -1810,12 +1809,9 @@ and prepare_pending_creation session pump (block : Model.block) =
           | Error message, _ | _, Error message -> Error message
           | Ok encrypted_journal_title, Ok encrypted_name ->
             let request =
-              Api.encrypted_journal_page_request
+              Api.logseq_chat_api_encrypted_journal_page_request
                 pump.config
-                ~uuid:page_id
-                ~title:encrypted_journal_title
-                ~name:encrypted_name
-                ~journal_day
+                page_id encrypted_journal_title encrypted_name journal_day
             in
             set_pending_active
               session
@@ -1834,7 +1830,7 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
     set_pending_active
       session
       pump
-      ~transport:(Json_request (Api.task_request ?page_id pump.config ~uuid:block.uuid ~status:status.uuid title))
+      ~transport:(Json_request (Api.logseq_chat_api_task_request page_id pump.config block.uuid status.uuid title))
       ~operation:(Create_block block)
       ();
     Ok ()
@@ -1849,13 +1845,9 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
           | Error _ as error -> error
           | Ok (file_path, _upload_size) ->
             let upload =
-              Api.raw_asset_upload_request
+              Api.logseq_chat_api_raw_asset_upload_request
                 pump.config
-                ~uuid:block.uuid
-                ~asset_type
-                ~checksum
-                ~file_path
-                ~content_type:"text/plain"
+                block.uuid asset_type checksum file_path "text/plain"
             in
             set_pending_active
               session
@@ -1867,13 +1859,10 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
             Ok ()))
     else (
       let upload =
-        Api.raw_asset_upload_request
+        Api.logseq_chat_api_raw_asset_upload_request
           pump.config
-          ~uuid:block.uuid
-          ~asset_type
-          ~checksum
-          ~file_path:source_path
-          ~content_type:(Api.content_type_for_asset_type asset_type)
+          block.uuid asset_type checksum source_path
+          (Api.logseq_chat_api_content_type_for_asset_type asset_type)
       in
       set_pending_active
         session
@@ -1886,8 +1875,8 @@ and prepare_pending_create_request session pump (block : Model.block) ~title ~pa
     let request =
       match block.parent_id with
       | Some parent_uuid when not (String.equal parent_uuid block.page_id) ->
-        Api.child_block_request pump.config ~parent_uuid ~uuid:block.uuid title
-      | _ -> Api.capture_request ?page_id pump.config ~uuid:block.uuid title
+        Api.logseq_chat_api_child_block_request pump.config parent_uuid block.uuid title
+      | _ -> Api.logseq_chat_api_capture_request page_id pump.config block.uuid title
     in
     set_pending_active
       session
@@ -1921,12 +1910,9 @@ let activate_semantic_request ?t_before session config =
            | Pending_ops.Create_asset { uuid; _ } -> uuid
            | _ -> pending.operation.operation_id
          in
-         Api.tx_batch_request
+         Api.logseq_chat_api_tx_batch_request
            config
-           ~t_before
-           ~tx_id
-           ~outliner_op
-           ~tx
+           t_before tx_id outliner_op tx
        in
        session.next_pending_request_id <- session.next_pending_request_id + 1;
        session.semantic_queue <- rest;
@@ -2104,7 +2090,7 @@ let restore_semantic_queue session _config =
   | None -> ()
 ;;
 
-let begin_pending_sync session (config : Api.config) =
+let begin_pending_sync session (config : Api.api_config) =
   if String.equal (String.trim config.token) ""
   then ()
   else (
@@ -2232,7 +2218,7 @@ let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.
     | _ -> Error "asset metadata is incomplete")
 ;;
 
-let complete_pending_active session pump (active : pending_active) response =
+let complete_pending_active session pump (active : pending_active) (response : Api.api_response) =
   let succeeded = response.Api.status >= 200 && response.status < 300 in
   match active.operation with
   | Update_title block when succeeded ->
@@ -2241,7 +2227,7 @@ let complete_pending_active session pump (active : pending_active) response =
        set_pending_active
          session
          pump
-         ~transport:(Json_request (Api.update_block_status_request pump.config ~uuid:block.uuid ~status:status.uuid))
+         ~transport:(Json_request (Api.logseq_chat_api_update_block_status_request pump.config block.uuid status.uuid))
          ~operation:(Update_status block)
          ()
      | None -> finish_pending_block session pump block ~succeeded:true)
@@ -2277,7 +2263,7 @@ let complete_pending_active session pump (active : pending_active) response =
   | Upload_asset block -> finish_pending_block session pump block ~succeeded:false
   | Create_block block when succeeded ->
     let remote_uuid =
-      try Ok (Api.created_block_uuid_from_body response.body)
+      try Ok (Api.logseq_chat_api_created_block_uuid_from_body response.body)
       with error -> Error (Printexc.to_string error)
     in
     (match remote_uuid with
@@ -2290,7 +2276,7 @@ let complete_pending_active session pump (active : pending_active) response =
           set_pending_active
             session
             pump
-            ~transport:(Json_request (Api.move_block_request pump.config ~uuid:remote_uuid ~target_uuid:parent_uuid))
+            ~transport:(Json_request (Api.logseq_chat_api_move_block_request pump.config remote_uuid parent_uuid))
             ~operation:(Move_created_asset { block; remote_uuid })
             ()
         | _ ->
@@ -2438,7 +2424,7 @@ let cancel_pending_sync session =
 let load_related session request key =
   match session.send request with
   | Ok response when response.Api.status >= 200 && response.Api.status < 300 ->
-    session.related_blocks <- Api.blocks_from_list_body key response.body;
+    session.related_blocks <- Api.logseq_chat_api_blocks_from_list_body key response.body;
     snapshot_visible session
   | Ok response ->
     debug "related blocks HTTP failed status=%d" response.Api.status;
@@ -2812,15 +2798,15 @@ let dispatch session action payload =
                | Some value when not (String.equal value "") -> Some value
                | Some _ | None ->
                  List.find_opt
-                   (fun (graph : Api.graph) -> String.equal graph.id graph_id)
+                   (fun (graph : Api.api_graph) -> String.equal graph.id graph_id)
                    session.available_graphs
-                 |> Option.map (fun (graph : Api.graph) -> graph.name)
+                 |> Option.map (fun (graph : Api.api_graph) -> graph.name)
              in
              session.accepted_server_t <- None;
              session.config <- Some { Api.base_url; graph_id; graph_name; token };
              (match
                 List.find_opt
-                  (fun (graph : Api.graph) -> String.equal graph.id graph_id && graph.e2ee)
+                  (fun (graph : Api.api_graph) -> String.equal graph.id graph_id && graph.e2ee)
                   session.available_graphs,
                 session.load_cached_graph_key
               with
@@ -2854,9 +2840,9 @@ let dispatch session action payload =
         | Ok () ->
           let graph_name =
             List.find_opt
-              (fun (graph : Api.graph) -> String.equal graph.id config.graph_id)
+              (fun (graph : Api.api_graph) -> String.equal graph.id config.graph_id)
               session.available_graphs
-            |> Option.map (fun (graph : Api.graph) -> graph.name)
+            |> Option.map (fun (graph : Api.api_graph) -> graph.name)
           in
           session.config <- Some { config with graph_name };
           graph_catalog_snapshot session
@@ -2874,11 +2860,9 @@ let dispatch session action payload =
              | Ok name, Some (`Bool is_encrypted)
                when not (String.equal (String.trim name) "") ->
                let request =
-                 Api.create_graph_request
+                 Api.logseq_chat_api_create_graph_request
                    config
-                   ~name:(String.trim name)
-                   ~schema_version:"65.33"
-                   ~e2ee:is_encrypted
+                   (String.trim name) "65.33" is_encrypted
                in
                (match session.send request with
                 | Ok response when response.status >= 200 && response.status < 300 ->
@@ -2937,7 +2921,7 @@ let dispatch session action payload =
   | "selectGraph" ->
     (match session.config, payload with
      | Some config, Some graph_id ->
-       (match List.find_opt (fun (graph : Api.graph) -> String.equal graph.id graph_id) session.available_graphs with
+       (match List.find_opt (fun (graph : Api.api_graph) -> String.equal graph.id graph_id) session.available_graphs with
         | None -> failure ~code:"unknown_graph" ~message:"The selected graph is not available"
         | Some graph when not graph.ready ->
           failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
@@ -3243,7 +3227,7 @@ let dispatch session action payload =
            | Ok uuid, Ok title, Ok now, Ok asset_type, Ok (Some asset_size),
              Ok asset_checksum, Ok local_path, Ok target_block_id ->
              let now = Option.value now ~default:(now_ms ()) in
-             let asset_type = Api.normalize_asset_type asset_type in
+             let asset_type = Api.logseq_chat_api_normalize_asset_type asset_type in
              let before_context = outliner_context session in
              let before_state = session.outliner_state in
              Option.iter
@@ -3376,14 +3360,14 @@ let dispatch session action payload =
     (match session.config, payload with
      | Some config, Some uuid ->
        (match resolve_graph session config with
-        | Ok config -> load_related session (Api.block_references_request config uuid) "references"
+        | Ok config -> load_related session (Api.logseq_chat_api_block_references_request config uuid) "references"
         | Error _ -> snapshot_visible session)
      | _ -> snapshot_visible session)
   | "loadPageReferences" ->
     (match session.config, payload with
      | Some config, Some uuid ->
        (match resolve_graph session config with
-        | Ok config -> load_related session (Api.page_references_request config uuid) "references"
+        | Ok config -> load_related session (Api.logseq_chat_api_page_references_request config uuid) "references"
         | Error _ -> snapshot_visible session)
      | _ -> snapshot_visible session)
   | "loadTagObjects" ->
@@ -3396,7 +3380,7 @@ let dispatch session action payload =
        (match session.config with
         | Some config ->
           (match resolve_graph session config with
-           | Ok config -> load_related session (Api.tag_objects_request config uuid) "objects"
+           | Ok config -> load_related session (Api.logseq_chat_api_tag_objects_request config uuid) "objects"
            | Error _ -> snapshot_visible session)
         | None -> snapshot_visible session)
      | None, None -> snapshot_visible session)

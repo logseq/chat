@@ -1,4 +1,4 @@
-module Api = Logseq_chat_api
+module Api = Logseq_chat_lg_core_native
 module E2ee = Logseq_chat_lg_core_native
 module Transit = Transit_core.Json
 
@@ -8,7 +8,7 @@ type t =
   ; save : graph_id:string -> key:string -> (unit, string) result
   ; load_password : unit -> (string option, string) result
   ; save_password : password:string -> (unit, string) result
-  ; fetch : Api.request -> (Api.response, string) result
+  ; fetch : Api.api_request -> (Api.api_response, string) result
   ; keys : (string, string) Hashtbl.t
   ; mutable private_key : string option
   }
@@ -33,7 +33,7 @@ let bind result f =
 
 let response_body operation = function
   | Error message -> Error message
-  | Ok response when response.Api.status >= 200 && response.status < 300 -> Ok response.body
+  | Ok (response : Api.api_response) when response.status >= 200 && response.status < 300 -> Ok response.body
   | Ok response -> Error (operation ^ " returned HTTP " ^ string_of_int response.status)
 ;;
 
@@ -51,11 +51,11 @@ let remember t ~graph_id key =
 
 let fetch_graph_key t config =
   bind
-    (response_body "fetch graph E2EE key" (t.fetch (Api.graph_key_request config)))
-    (fun body -> protect "decode graph E2EE key" (fun () -> Api.graph_key_from_body body))
+    (response_body "fetch graph E2EE key" (t.fetch (Api.logseq_chat_api_graph_key_request config)))
+    (fun body -> protect "decode graph E2EE key" (fun () -> Api.logseq_chat_api_graph_key_from_body body))
 ;;
 
-let remember_graph_key t config key =
+let remember_graph_key t (config : Api.api_config) key =
   bind (t.save ~graph_id:config.Api.graph_id ~key) (fun () ->
     Ok (remember t ~graph_id:config.graph_id key))
 ;;
@@ -69,10 +69,10 @@ let unlock_with_private_key t config ~private_key =
 
 let unlock_with_password t config ~password ~persist_password =
   bind
-    (response_body "fetch user E2EE keys" (t.fetch (Api.user_keys_request config)))
+    (response_body "fetch user E2EE keys" (t.fetch (Api.logseq_chat_api_user_keys_request config)))
     (fun user_keys_body ->
       bind
-        (protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body user_keys_body))
+        (protect "decode user E2EE keys" (fun () -> Api.logseq_chat_api_user_keys_from_body user_keys_body))
         (fun user_keys ->
           bind
             (E2ee.logseq_chat_e2ee_decrypt_private_key
@@ -91,7 +91,7 @@ let unlock_with_password t config ~password ~persist_password =
                         Ok key)))))))
 ;;
 
-let load_cached t config =
+let load_cached t (config : Api.api_config) =
   let graph_id = config.Api.graph_id in
   match Hashtbl.find_opt t.keys graph_id with
   | Some key -> Ok key
@@ -113,10 +113,10 @@ let unlock t config ~password =
 
 let provision t config =
   bind
-    (response_body "fetch user E2EE keys" (t.fetch (Api.user_keys_request config)))
+    (response_body "fetch user E2EE keys" (t.fetch (Api.logseq_chat_api_user_keys_request config)))
     (fun user_keys_body ->
       bind
-        (protect "decode user E2EE keys" (fun () -> Api.user_keys_from_body user_keys_body))
+        (protect "decode user E2EE keys" (fun () -> Api.logseq_chat_api_user_keys_from_body user_keys_body))
         (fun user_keys ->
           bind
             (E2ee.logseq_chat_e2ee_prepare_graph_key t.crypto user_keys.Api.public_key)
@@ -124,7 +124,7 @@ let provision t config =
               bind
                 (response_body
                    "upload graph E2EE key"
-                   (t.fetch (Api.upsert_graph_key_request config ~encrypted_key)))
+                   (t.fetch (Api.logseq_chat_api_upsert_graph_key_request config encrypted_key)))
                 (fun _ ->
                   bind (t.save ~graph_id:config.Api.graph_id ~key) (fun () ->
                     Ok (remember t ~graph_id:config.graph_id key))))))

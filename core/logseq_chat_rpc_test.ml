@@ -180,17 +180,17 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~send:(fun request ->
-        if String.equal request.Logseq_chat_api.method_ "POST"
+        if String.equal request.Logseq_chat_lg_core_native.method_ "POST"
            && String.ends_with ~suffix:"/graphs" request.url
         then (
           events := !events @ [ "create" ];
           created := true;
-          Ok Logseq_chat_api.{ status = 201; body = {|{"graph-id":"new-private"}|} })
+          Ok Logseq_chat_lg_core_native.{ status = 201; body = {|{"graph-id":"new-private"}|} })
         else if String.ends_with ~suffix:"/graphs" request.url
         then (
           events := !events @ [ "discover" ];
           Ok
-            Logseq_chat_api.
+            Logseq_chat_lg_core_native.
               { status = 200
               ; body =
                   (if !created
@@ -201,12 +201,12 @@ let () =
         else Error ("unexpected request: " ^ request.url))
       ~provision_graph_key:(fun config ->
         events := !events @ [ "provision" ];
-        provisioned := Some config.Logseq_chat_api.graph_id;
+        provisioned := Some config.Logseq_chat_lg_core_native.graph_id;
         Ok ())
       ~encrypt_title:(fun ~graph_id:_ value -> Ok ("encrypted:" ^ value))
       ~upload_file:(fun upload ->
         events := !events @ [ "upload" ];
-        uploaded_path := Some upload.Logseq_chat_api.file_path;
+        uploaded_path := Some upload.Logseq_chat_lg_core_native.file_path;
         if not (Sys.file_exists upload.file_path)
         then failwith "initial snapshot must exist while it uploads";
         if not (String.contains upload.request.url '?')
@@ -214,7 +214,7 @@ let () =
         then failwith "initial snapshot upload must finish the reset with its checksum";
         if not (String.equal upload.content_type "application/transit+json")
         then failwith "initial snapshot upload must use Transit";
-        Ok Logseq_chat_api.{ status = 200; body = {|{"ok":true,"count":8}|} })
+        Ok Logseq_chat_lg_core_native.{ status = 200; body = {|{"ok":true,"count":8}|} })
       ()
   in
   ignore
@@ -250,13 +250,13 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~send:(fun request ->
-        if String.equal request.Logseq_chat_api.method_ "POST"
+        if String.equal request.Logseq_chat_lg_core_native.method_ "POST"
            && String.ends_with ~suffix:"/graphs" request.url
-        then Ok Logseq_chat_api.{ status = 201; body = {|{"graph-id":"upload-fails"}|} }
+        then Ok Logseq_chat_lg_core_native.{ status = 201; body = {|{"graph-id":"upload-fails"}|} }
         else if String.ends_with ~suffix:"/graphs" request.url
         then (
           discovered := true;
-          Ok Logseq_chat_api.{ status = 200; body = {|{"graphs":[]}|} })
+          Ok Logseq_chat_lg_core_native.{ status = 200; body = {|{"graphs":[]}|} })
         else Error ("unexpected request: " ^ request.url))
       ~upload_file:(fun _ -> Error "offline during initial snapshot upload")
       ()
@@ -690,7 +690,7 @@ let () =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some encrypted_graph_catalog)
       ~load_cached_graph_key:(fun config ->
-        loaded := config.Logseq_chat_api.graph_id :: !loaded;
+        loaded := config.Logseq_chat_lg_core_native.graph_id :: !loaded;
         Error "not cached")
       ~graph_unlocked:(fun ~graph_id:_ -> !unlocked)
       ()

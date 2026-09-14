@@ -4,13 +4,13 @@ let assert_int_equal label expected actual =
 ;;
 
 let required_single_block body =
-  match Logseq_chat_api.blocks_from_list_body "results" body with
+  match Logseq_chat_lg_core_native.logseq_chat_api_blocks_from_list_body "results" body with
   | [ block ] -> block
   | blocks -> failwith (Printf.sprintf "expected one block, got %d" (List.length blocks))
 ;;
 
 let required_feed body =
-  match Logseq_chat_api.feed_from_body body with
+  match Logseq_chat_lg_core_native.logseq_chat_api_feed_from_body body with
   | [ block ], [ journal ] -> block, journal
   | blocks, journals ->
     failwith
@@ -28,6 +28,23 @@ let assert_equal label expected actual =
 let assert_some_string label expected = function
   | Some actual -> assert_equal label expected actual
   | None -> failwith (label ^ ": expected a value")
+;;
+
+let () =
+  assert_equal "URL encoding preserves only unreserved bytes"
+    "a%20b%2F%3F%23%25%2B%C3%A9-_.~"
+    (Logseq_chat_lg_core_native.logseq_chat_api_url_encode "a b/?#%+\195\169-_.~");
+  let graphs = Logseq_chat_lg_core_native.logseq_chat_api_graphs_from_graphs_body
+    {|{"graphs":[null,{}, {"graph-id":""},{"graph-id":"safe","graph-name":"","schema-version":"","graph-e2ee?":"false","graph-ready-for-use?":1}]}|} in
+  (match graphs with
+   | [graph] when graph.id = "safe" && graph.name = "safe"
+                  && graph.schema_version = None && graph.e2ee && not graph.ready -> ()
+   | _ -> failwith "malformed graph metadata must retain secure defaults");
+  List.iter (fun body ->
+    match Logseq_chat_lg_core_native.logseq_chat_api_created_block_uuid_from_body body with
+    | exception Failure _ -> ()
+    | _ -> failwith "creation response without a usable UUID was accepted")
+    ["[]"; {|{"uuid":" ","blocks":[]}|}; {|{"blocks":[{"uuid":""}]}|}]
 ;;
 
 let () =
@@ -55,7 +72,7 @@ let () =
   assert_some_string "status icon" "circle"
     (Option.bind semantic.status (fun (status : Logseq_chat_model.status) -> status.icon_id));
   let statuses =
-    Logseq_chat_api.statuses_from_property_body
+    Logseq_chat_lg_core_native.logseq_chat_api_statuses_from_property_body
       {|{"results":[{"uuid":"property-status","ident":"logseq.property/status","title":"Status","choices":[{"uuid":"status-waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}]}]}|}
   in
   assert_int_equal "status choice count" 1 (List.length statuses);
@@ -65,14 +82,14 @@ let () =
   assert_some_string "asset type" "jpg" semantic.asset_type;
   assert_int_equal "asset size" 2048 (Option.value semantic.asset_size ~default:0);
   let config =
-    Logseq_chat_api.
+    Logseq_chat_lg_core_native.
       { base_url = "https://api.example"
       ; graph_id = "graph-1"
       ; graph_name = None
       ; token = "token"
       }
   in
-  let feed_request = Logseq_chat_api.recent_blocks_request config ~journal_day:20260813 in
+  let feed_request = Logseq_chat_lg_core_native.logseq_chat_api_recent_blocks_request config 20260813 in
   assert_equal "recent blocks method" "GET" feed_request.method_;
   assert_equal
     "recent blocks URL"
@@ -81,35 +98,35 @@ let () =
   assert_equal
     "task statuses URL"
     "https://api.example/api/v1/graphs/graph-1/search?q=Status&types=properties&limit=100"
-    (Logseq_chat_api.task_statuses_request config).url;
+    (Logseq_chat_lg_core_native.logseq_chat_api_task_statuses_request config).url;
   assert_equal
     "graph discovery uses the authenticated db-sync graph index"
     "https://api.example/graphs"
-    (Logseq_chat_api.graphs_request config).url;
+    (Logseq_chat_lg_core_native.logseq_chat_api_graphs_request config).url;
   assert_equal "block references URL"
     "https://api.example/api/v1/graphs/graph-1/blocks/block-1/references?limit=100"
-    (Logseq_chat_api.block_references_request config "block-1").url;
+    (Logseq_chat_lg_core_native.logseq_chat_api_block_references_request config "block-1").url;
   assert_equal "tag objects URL"
     "https://api.example/api/v1/graphs/graph-1/tags/tag-1/objects?limit=100"
-    (Logseq_chat_api.tag_objects_request config "tag-1").url;
+    (Logseq_chat_lg_core_native.logseq_chat_api_tag_objects_request config "tag-1").url;
   assert_equal "page references URL"
     "https://api.example/api/v1/graphs/graph-1/pages/page-1/references?limit=100"
-    (Logseq_chat_api.page_references_request config "page-1").url;
+    (Logseq_chat_lg_core_native.logseq_chat_api_page_references_request config "page-1").url;
   let related =
-    Logseq_chat_api.blocks_from_list_body "references"
+    Logseq_chat_lg_core_native.logseq_chat_api_blocks_from_list_body "references"
       {|{"references":[{"uuid":"backlink","title":"Uses Project"}]}|}
   in
   assert_equal "related block" "backlink" (List.hd related).uuid;
-  let capture = Logseq_chat_api.capture_request config ~uuid:"client-block" "Offline" in
+  let capture = Logseq_chat_lg_core_native.logseq_chat_api_capture_request None config "client-block" "Offline" in
   assert_equal
     "capture preserves client uuid"
     {|{"blocks":[{"uuid":"client-block","title":"Offline"}]}|}
     (Option.value capture.body ~default:"");
   let encrypted_capture =
-    Logseq_chat_api.capture_request
+    Logseq_chat_lg_core_native.logseq_chat_api_capture_request
+      (Some "journal-1")
       config
-      ~page_id:"journal-1"
-      ~uuid:"encrypted-block"
+      "encrypted-block"
       "encrypted-title"
   in
   assert_equal
@@ -117,7 +134,7 @@ let () =
     {|{"page-id":"journal-1","blocks":[{"uuid":"encrypted-block","title":"encrypted-title"}]}|}
     (Option.value encrypted_capture.body ~default:"");
   let task =
-    Logseq_chat_api.task_request config ~uuid:"client-task" ~status:"waiting" "Follow up"
+    Logseq_chat_lg_core_native.logseq_chat_api_task_request None config "client-task" "waiting" "Follow up"
   in
   assert_equal "task method" "POST" task.method_;
   assert_equal
@@ -125,11 +142,11 @@ let () =
     {|{"uuid":"client-task","title":"Follow up","status":"waiting"}|}
     (Option.value task.body ~default:"");
   let encrypted_task =
-    Logseq_chat_api.task_request
+    Logseq_chat_lg_core_native.logseq_chat_api_task_request
+      (Some "journal-1")
       config
-      ~page_id:"journal-1"
-      ~uuid:"encrypted-task"
-      ~status:"waiting"
+      "encrypted-task"
+      "waiting"
       "encrypted-title"
   in
   assert_equal
@@ -137,10 +154,10 @@ let () =
     {|{"uuid":"encrypted-task","title":"encrypted-title","status":"waiting","page-id":"journal-1"}|}
     (Option.value encrypted_task.body ~default:"");
   let status_update =
-    Logseq_chat_api.update_block_status_request
+    Logseq_chat_lg_core_native.logseq_chat_api_update_block_status_request
       config
-      ~uuid:"task-1"
-      ~status:"custom-waiting"
+      "task-1"
+      "custom-waiting"
   in
   assert_equal "status update method" "PUT" status_update.method_;
   assert_equal
@@ -152,12 +169,12 @@ let () =
     {|{"value":"custom-waiting"}|}
     (Option.value status_update.body ~default:"");
   let tx_batch =
-    Logseq_chat_api.tx_batch_request
+    Logseq_chat_lg_core_native.logseq_chat_api_tx_batch_request
       config
-      ~t_before:42
-      ~tx_id:"018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
-      ~outliner_op:"split-block"
-      ~tx:"[\"~:db/add\"]"
+      42
+      "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
+      "split-block"
+      "[\"~:db/add\"]"
   in
   assert_equal "outliner tx batch method" "POST" tx_batch.method_;
   assert_equal
@@ -169,28 +186,28 @@ let () =
     {|{"t-before":42,"txs":[{"tx-id":"018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8","tx":"[\"~:db/add\"]","outliner-op":"split-block"}]}|}
     (Option.value tx_batch.body ~default:"");
   let upload =
-    Logseq_chat_api.raw_asset_upload_request
+    Logseq_chat_lg_core_native.logseq_chat_api_raw_asset_upload_request
       config
-      ~uuid:"client-asset"
-      ~asset_type:"jpg"
-      ~checksum:"abc123"
-      ~file_path:"/documents/photo.jpg"
-      ~content_type:"image/jpeg"
+      "client-asset"
+      "jpg"
+      "abc123"
+      "/documents/photo.jpg"
+      "image/jpeg"
   in
   assert_equal "asset upload path" "/documents/photo.jpg" upload.file_path;
   assert_equal "asset content type" "image/jpeg" upload.content_type;
   assert_equal
     "shared image MIME normalizes to an asset extension"
     "jpeg"
-    (Logseq_chat_api.normalize_asset_type "image/jpeg");
+    (Logseq_chat_lg_core_native.logseq_chat_api_normalize_asset_type "image/jpeg");
   assert_equal
     "shared image title gains the normalized extension"
     "IMG_0002.jpeg"
-    (Logseq_chat_api.asset_file_name ~file_name:"IMG_0002" ~asset_type:"image/jpeg");
+    (Logseq_chat_lg_core_native.logseq_chat_api_asset_file_name "IMG_0002" "image/jpeg");
   assert_equal
     "shared image MIME remains a valid upload content type"
     "image/jpeg"
-    (Logseq_chat_api.content_type_for_asset_type "image/jpeg");
+    (Logseq_chat_lg_core_native.logseq_chat_api_content_type_for_asset_type "image/jpeg");
   assert_equal "raw asset upload method" "PUT" upload.request.method_;
   assert_equal
     "raw asset upload URL"
@@ -202,13 +219,13 @@ let () =
   if List.assoc_opt "x-amz-meta-type" upload.headers <> Some "jpg"
   then failwith "raw asset upload must preserve the normalized type header";
   let encrypted_upload =
-    Logseq_chat_api.raw_asset_upload_request
+    Logseq_chat_lg_core_native.logseq_chat_api_raw_asset_upload_request
       config
-      ~uuid:"encrypted-asset"
-      ~asset_type:"jpg"
-      ~checksum:"abc123"
-      ~file_path:"/documents/encrypted-photo.transit"
-      ~content_type:"text/plain"
+      "encrypted-asset"
+      "jpg"
+      "abc123"
+      "/documents/encrypted-photo.transit"
+      "text/plain"
   in
   assert_equal
     "encrypted raw asset URL keeps the logical extension"
@@ -218,17 +235,17 @@ let () =
   assert_equal
     "asset upload response uuid"
     "server-asset"
-    (Logseq_chat_api.created_block_uuid_from_body
+    (Logseq_chat_lg_core_native.logseq_chat_api_created_block_uuid_from_body
        {|{"uuid":"server-asset","title":"photo.jpg","type":"jpg","size":2048,"checksum":"abc123"}|});
   assert_equal
     "task response uuid"
     "server-task"
-    (Logseq_chat_api.created_block_uuid_from_body
+    (Logseq_chat_lg_core_native.logseq_chat_api_created_block_uuid_from_body
        {|{"uuid":"server-task","title":"Follow up","status":{"title":"Todo"}}|});
   assert_equal
     "capture response uuid"
     "server-block"
-    (Logseq_chat_api.created_block_uuid_from_body
+    (Logseq_chat_lg_core_native.logseq_chat_api_created_block_uuid_from_body
        {|{"page-id":"journal","blocks":[{"uuid":"server-block","title":"Offline"}]}|});
   let block, journal =
     required_feed
@@ -241,12 +258,12 @@ let () =
   assert_equal
     "user key endpoint"
     "https://api.example/e2ee/user-keys"
-    (Logseq_chat_api.user_keys_request config).url;
+    (Logseq_chat_lg_core_native.logseq_chat_api_user_keys_request config).url;
   assert_equal
     "graph key endpoint"
     "https://api.example/e2ee/graphs/graph-1/aes-key"
-    (Logseq_chat_api.graph_key_request config).url;
-  let upsert = Logseq_chat_api.upsert_graph_key_request config ~encrypted_key:"wrapped" in
+    (Logseq_chat_lg_core_native.logseq_chat_api_graph_key_request config).url;
+  let upsert = Logseq_chat_lg_core_native.logseq_chat_api_upsert_graph_key_request config "wrapped" in
   assert_equal "upsert graph key method" "POST" upsert.method_;
   (match upsert.body with
    | Some body ->
@@ -261,19 +278,19 @@ let () =
       | _ -> failwith "upsert graph key body must be an object")
    | None -> failwith "upsert graph key body is missing");
   let key_pair =
-    Logseq_chat_api.user_keys_from_body
+    Logseq_chat_lg_core_native.logseq_chat_api_user_keys_from_body
       {|{"public-key":"public","encrypted-private-key":"private-package"}|}
   in
   assert_equal "encrypted private key package" "private-package" key_pair.encrypted_private_key;
   assert_equal
     "encrypted graph key package"
     "graph-package"
-    (Logseq_chat_api.graph_key_from_body {|{"encrypted-aes-key":"graph-package"}|})
+    (Logseq_chat_lg_core_native.logseq_chat_api_graph_key_from_body {|{"encrypted-aes-key":"graph-package"}|})
 ;;
 
 let () =
   let config =
-    Logseq_chat_api.
+    Logseq_chat_lg_core_native.
       { base_url = "https://api.example.com/api"
       ; graph_id = ""
       ; graph_name = None
@@ -281,11 +298,11 @@ let () =
       }
   in
   let request =
-    Logseq_chat_api.create_graph_request
+    Logseq_chat_lg_core_native.logseq_chat_api_create_graph_request
       config
-      ~name:"Private notes"
-      ~schema_version:"65.33"
-      ~e2ee:true
+      "Private notes"
+      "65.33"
+      true
   in
   assert_equal "create graph method" "POST" request.method_;
   assert_equal "create graph url" "https://api.example.com/graphs" request.url;
@@ -309,13 +326,13 @@ let () =
 
 let () =
   let graphs =
-    Logseq_chat_api.graphs_from_graphs_body
+    Logseq_chat_lg_core_native.logseq_chat_api_graphs_from_graphs_body
       {|{"graphs":[{"graph-id":"plain-1","graph-name":"Plain","schema-version":"65.33","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"encrypted-1","graph-name":"Encrypted","graph-e2ee?":true,"graph-ready-for-use?":false}]}|}
   in
   assert_equal "graph schema version" "65.33" (Option.get (List.hd graphs).schema_version);
   match graphs with
   | [ plain; encrypted ] ->
-    assert_equal "plain graph id" "plain-1" plain.Logseq_chat_api.id;
+    assert_equal "plain graph id" "plain-1" plain.Logseq_chat_lg_core_native.id;
     assert_equal "plain graph name" "Plain" plain.name;
     if plain.e2ee then failwith "plain graph must remain unencrypted";
     if not plain.ready then failwith "plain graph must remain ready";
@@ -327,7 +344,7 @@ let () =
 
 let () =
   let config =
-    Logseq_chat_api.
+    Logseq_chat_lg_core_native.
       { base_url = "https://api.example.com/api"
       ; graph_id = "graph id"
       ; graph_name = Some "Fresh graph"
@@ -335,10 +352,10 @@ let () =
       }
   in
   let upload =
-    Logseq_chat_api.initial_snapshot_upload_request
+    Logseq_chat_lg_core_native.logseq_chat_api_initial_snapshot_upload_request
       config
-      ~file_path:"/tmp/initial.snapshot"
-      ~checksum:"0000000000000000"
+      "/tmp/initial.snapshot"
+      "0000000000000000"
   in
   assert_equal "initial snapshot method" "POST" upload.request.method_;
   assert_equal

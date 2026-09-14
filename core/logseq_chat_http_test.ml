@@ -68,7 +68,7 @@ let find_sub needle value =
 let () =
   match
     Logseq_chat_http.send
-      { Logseq_chat_api.method_ = "GET"
+      { Logseq_chat_lg_core_native.method_ = "GET"
       ; url = "https://api-staging.logseq.io/api/v1/graphs"
       ; body = None
       ; token = "token"
