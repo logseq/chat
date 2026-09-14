@@ -6647,9 +6647,9 @@
       (assert-equal "start"
                     (property-string renderer candidate-button proto/TextAlignment)
                     "autocomplete labels align like main")
-      (assert-equal "scroll leading-inset-8"
+      (assert-equal "scroll-leading leading-inset-8"
                     (property-string renderer editor-toolbar proto/StyleClass)
-                    "the editor allows trailing controls to scroll without overlap")
+                    "the editor scrolls leading controls while pinning the trailing action")
       (assert-equal "button.outliner.editor.task"
                     (property-string renderer task-button
                                      proto/AccessibilityIdentifier)
@@ -6664,8 +6664,7 @@
                (tuple 2 "app:toolbar-indent")
                (tuple 3 "app:toolbar-tag")
                (tuple 4 "app:toolbar-camera")
-               (tuple 5 "app:toolbar-audio")
-               (tuple 6 "app:toolbar-attachment")]]
+               (tuple 5 "app:toolbar-audio")]]
         (match button-contract
           (tuple index icon)
           (let [button (nth editor-buttons index)]
@@ -6678,8 +6677,12 @@
             (assert-equal 38
                           (property-int renderer button proto/WidthValue)
                           "editor actions retain main's fixed widths"))))
-      (let [page-reference-button (nth editor-buttons 7)
-            hide-keyboard-button (nth editor-buttons 8)]
+      (assert-equal -1
+                    (descendant-with-identifier
+                     renderer editor-toolbar "button.outliner.editor.attachment")
+                    "the iOS editor toolbar omits the file picker")
+      (let [page-reference-button (nth editor-buttons 6)
+            hide-keyboard-button (nth editor-buttons 7)]
         (assert-equal "[[]]"
                       (property-string renderer page-reference-button
                                        proto/TextValue)

@@ -35,8 +35,6 @@ appId: com.logseq.chat
 - assertVisible:
     id: "button.outliner.editor.audio"
 - assertVisible:
-    id: "button.outliner.editor.attachment"
-- assertVisible:
     id: "button.outliner.editor.pageReference"
 - assertVisible: "Hide keyboard"
 - pressKey: ENTER

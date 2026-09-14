@@ -2068,7 +2068,7 @@
       {:orientation "horizontal"
        :label "Outliner editor"
        :accessibility-identifier "toolbar.outliner.editor"
-       :class "scroll leading-inset-8"
+       :class "scroll-leading leading-inset-8"
        :height 50
        :gap 4}
       [:button
@@ -2125,15 +2125,6 @@
         :accessibility-identifier "button.outliner.editor.audio"
         :on-press
         (fn [_event] (send (model/PerformOutlinerToolbarAction "audio")))}]
-      [:button
-       {:icon "app:toolbar-attachment"
-        :variant "ghost"
-        :width 38
-        :height 42
-        :label "Upload asset"
-        :accessibility-identifier "button.outliner.editor.attachment"
-        :on-press
-        (fn [_event] (send (model/PerformOutlinerToolbarAction "attachment")))}]
       [:button
        {:variant "ghost"
         :width 38

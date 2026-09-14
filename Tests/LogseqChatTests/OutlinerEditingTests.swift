@@ -170,14 +170,13 @@ import Testing
 
     @Test func editorToolbarMatchesCurrentLogseqMobileOrderAndSymbols() {
         let expected: [OutlinerToolbarAction] = [
-            .task, .outdent, .indent, .tag, .camera, .audio, .attachment,
-            .pageReference,
+            .task, .outdent, .indent, .tag, .camera, .audio, .pageReference,
         ]
         #expect(OutlinerToolbarPolicy.editorActions == expected)
         #expect(OutlinerToolbarPolicy.trailingEditorAction == .hideKeyboard)
         #expect(OutlinerToolbarPolicy.editorActions.map(\.systemImageName) == [
             "checkmark.square", "arrow.left", "arrow.right", "number", "camera",
-            "mic", "paperclip", "parentheses",
+            "mic", "parentheses",
         ])
         #expect(OutlinerToolbarPolicy.trailingEditorAction.systemImageName == "keyboard.chevron.compact.down")
     }
@@ -707,7 +706,6 @@ import Testing
             .pageReference: ("pageReference", "parentheses", "Page reference", true),
             .camera: ("camera", "camera", "Photo", false),
             .audio: ("audio", "mic", "Record audio", false),
-            .attachment: ("attachment", "paperclip", "Upload asset", false),
             .hideKeyboard: ("hideKeyboard", "keyboard.chevron.compact.down", "Hide keyboard", false),
             .copy: ("copy", "doc.on.doc", "Copy", false),
             .delete: ("delete", "trash", "Delete", false),

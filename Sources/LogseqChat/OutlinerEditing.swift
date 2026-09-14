@@ -553,8 +553,7 @@ enum OutlinerToolbarPolicy {
     static let captionHeight: CGFloat = 14
 
     static let editorActions: [OutlinerToolbarAction] = [
-        .task, .outdent, .indent, .tag, .camera, .audio, .attachment,
-        .pageReference,
+        .task, .outdent, .indent, .tag, .camera, .audio, .pageReference,
     ]
 
     static let trailingEditorAction = OutlinerToolbarAction.hideKeyboard
