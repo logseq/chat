@@ -14,6 +14,7 @@
             [logseq-chat.fractional-order :as order]
             [logseq-chat.ref-text :as ref-text]
             [logseq-chat.sync-checkpoint :as sync-checkpoint]
+            [logseq-chat.sync-protocol :as sync-protocol]
             [logseq-chat.sync-state :as sync-state]
             [logseq-chat.view :as view]))
 
@@ -69,6 +70,19 @@
    (Error "graph sync checkpoint must be a Transit map")
    (sync-checkpoint/decode "[]")
    "LG sync checkpoint codec should reject non-map payloads"))
+
+(deftest sync-protocol-decoding-is-lg-owned
+  (match (sync-protocol/decode-change-set
+          "[\"^ \",\"~:format-version\",1,\"~:graph-id\",\"graph-1\",\"~:schema-version\",\"65.33\",\"~:t-before\",41,\"~:t\",42,\"~:upserts\",[[\"^ \",\"~:id\",[\"~:block/uuid\",\"~u7b45785d-710c-47f8-9e7e-e9c4f5229830\"],\"~:attrs\",[\"^ \",\"~:block/title\",\"Hello\"]]],\"~:deleted\",[],\"~:operation-ids\",[\"op-title\"]]")
+    (Ok change)
+    (do
+      (assert-equal "graph-1" (:graph-id change)
+                    "LG sync protocol should decode graph ids")
+      (assert-equal ["7b45785d-710c-47f8-9e7e-e9c4f5229830"]
+                    (sync-protocol/changed-block-uuids change)
+                    "LG sync protocol should extract changed UUIDs"))
+    (Error message)
+    (is false message)))
 
 (deftest flashcard-state-codec-is-lg-owned
   (let [now 1776000000000
