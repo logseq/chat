@@ -1,8 +1,12 @@
-module Markup = Logseq_chat_markup
+module Markup = Logseq_chat_lg_core_native
 module Model = Logseq_chat_model
 
 let summary uuid title = Model.{ uuid; title }
 let assert_bool label value = if not value then failwith label
+let parse ~references ~tags source =
+  Markup.logseq_chat_markup_parse references tags source |> Rrbvec.to_list
+let to_yojson nodes = Markup.logseq_chat_markup_to_yojson (List.to_seq, nodes)
+let debug_string = Markup.logseq_chat_markup_debug_string
 
 let () =
   let references =
@@ -12,78 +16,76 @@ let () =
   in
   let tags = [ summary "tag-uuid" "Project" ] in
   let actual =
-    Markup.parse
+    parse
       ~references
       ~tags
       "Hello **bold** `code` [[page-uuid]] [[Block target]] #[[tag-uuid]]"
   in
   let expected =
-    [ Markup.Text "Hello "
-    ; Markup.Emphasis (Markup.Bold, [ Markup.Text "bold" ])
-    ; Markup.Text " "
-    ; Markup.Code "code"
-    ; Markup.Text " "
-    ; Markup.Node_ref
-        { uuid = "page-uuid"; title = "Page target" }
-    ; Markup.Text " "
-    ; Markup.Node_ref
-        { uuid = "block-uuid"; title = "Block target" }
-    ; Markup.Text " "
-    ; Markup.Tag_ref { uuid = "tag-uuid"; title = "Project" }
+    [ Markup.Markup_text "Hello "
+    ; Markup.Markup_emphasis (":bold", Rrbvec.of_list [ Markup.Markup_text "bold" ])
+    ; Markup.Markup_text " "
+    ; Markup.Markup_code "code"
+    ; Markup.Markup_text " "
+    ; Markup.Markup_node_ref ("page-uuid", "Page target")
+    ; Markup.Markup_text " "
+    ; Markup.Markup_node_ref ("block-uuid", "Block target")
+    ; Markup.Markup_text " "
+    ; Markup.Markup_tag_ref ("tag-uuid", "Project")
     ]
   in
   if actual <> expected
   then
     failwith
       ("mldoc inline AST did not preserve rich node semantics: "
-       ^ String.concat "; " (List.map Markup.debug_string actual))
+       ^ String.concat "; " (List.map debug_string actual))
 ;;
 
 let () =
-  match Markup.parse ~references:[] ~tags:[] "Legacy ((block-uuid)) stays text" with
-  | [ Markup.Text "Legacy ((block-uuid)) stays text" ] -> ()
+  match parse ~references:[] ~tags:[] "Legacy ((block-uuid)) stays text" with
+  | [ Markup.Markup_text "Legacy ((block-uuid)) stays text" ] -> ()
   | _ -> failwith "removed block-reference syntax must not create a typed node reference"
 ;;
 
 let () =
-  let actual = Markup.parse ~references:[] ~tags:[] "Unknown [[missing]]" in
+  let actual = parse ~references:[] ~tags:[] "Unknown [[missing]]" in
   match actual with
-  | [ Markup.Text "Unknown [[missing]]" ] -> ()
+  | [ Markup.Markup_text "Unknown [[missing]]" ] -> ()
   | _ ->
     failwith
       ("an unresolved node reference must preserve its raw source: "
-       ^ String.concat "; " (List.map Markup.debug_string actual))
+       ^ String.concat "; " (List.map debug_string actual))
 ;;
 
 let () =
-  let actual = Markup.parse ~references:[] ~tags:[] "Unknown #[[missing]]" in
+  let actual = parse ~references:[] ~tags:[] "Unknown #[[missing]]" in
   match actual with
-  | [ Markup.Text "Unknown #[[missing]]" ] -> ()
+  | [ Markup.Markup_text "Unknown #[[missing]]" ] -> ()
   | _ ->
     failwith
       ("an unresolved inline tag must preserve its raw source: "
-       ^ String.concat "; " (List.map Markup.debug_string actual))
+       ^ String.concat "; " (List.map debug_string actual))
 ;;
 
 let () =
   let tags = [ summary "tag-uuid" "Project" ] in
-  match Markup.parse ~references:[] ~tags "Inline #[[Project]] tag" with
-  | [ Markup.Text "Inline "
-    ; Markup.Tag_ref { uuid = "tag-uuid"; title = "Project" }
-    ; Markup.Text " tag"
+  match parse ~references:[] ~tags "Inline #[[Project]] tag" with
+  | [ Markup.Markup_text "Inline "
+    ; Markup.Markup_tag_ref ("tag-uuid", "Project")
+    ; Markup.Markup_text " tag"
     ] -> ()
   | actual ->
     failwith
       ("an inline tag title must resolve to its canonical tag entity: "
-       ^ String.concat "; " (List.map Markup.debug_string actual))
+       ^ String.concat "; " (List.map debug_string actual))
 ;;
 
 let () =
   let json =
-    Markup.to_yojson
-      [ Markup.Text "Open "
-      ; Markup.Node_ref { uuid = "block-uuid"; title = "Target" }
-      ; Markup.Tag_ref { uuid = "tag-uuid"; title = "Project" }
+    to_yojson
+      [ Markup.Markup_text "Open "
+      ; Markup.Markup_node_ref ("block-uuid", "Target")
+      ; Markup.Markup_tag_ref ("tag-uuid", "Project")
       ]
   in
   match json with
@@ -103,7 +105,76 @@ let () =
   | _ -> failwith "typed mldoc nodes must have a stable Swift-facing JSON contract"
 ;;
 
-let markup_json source = Markup.parse ~references:[] ~tags:[] source |> Markup.to_yojson
+let markup_json source =
+  let nodes = Markup.logseq_chat_markup_parse [] [] source in
+  Markup.logseq_chat_markup_to_yojson (Rrbvec.to_seq, nodes)
+
+let () =
+  assert_bool "inline math retains surrounding text"
+    (parse ~references:[] ~tags:[] "Inline $x^2$ math"
+     = [Markup.Markup_text "Inline "; Markup.Markup_math ("x^2", false); Markup.Markup_text " math"]);
+  assert_bool "unknown macros preserve their raw source"
+    (parse ~references:[] ~tags:[] "{{unknown value}}" = [Markup.Markup_text "{{unknown value}}"]);
+  assert_bool "cloze joins its arguments"
+    (parse ~references:[] ~tags:[] "{{cloze first, second}}" = [Markup.Markup_cloze "first, second"]);
+  assert_bool "cloze permits empty content"
+    (parse ~references:[] ~tags:[] "{{cloze}}" = [Markup.Markup_cloze ""])
+;;
+
+let () =
+  let module LG = Logseq_chat_lg_core_native in
+  List.iter (fun source ->
+    assert_bool "non-fenced input must not create a code block"
+      (LG.logseq_chat_markup_fenced_code source = None)) ["```"; "plain"];
+  let nodes = LG.logseq_chat_markup_append_node
+    (Rrbvec.of_list [LG.Markup_text "first"])
+    (LG.Markup_text " second") |> Rrbvec.to_list in
+  assert_bool "LG coalesces adjacent text in forward order"
+    (nodes = [LG.Markup_text "first second"])
+;;
+
+let () =
+  List.iter (fun (source, seconds, label) ->
+    match Markup.logseq_chat_markup_youtube_timestamp source with
+    | Some (Markup.Markup_youtube_timestamp (actual_seconds, actual_label)) ->
+      assert_bool ("timestamp seconds: " ^ source) (actual_seconds = seconds);
+      assert_bool ("timestamp label: " ^ source) (actual_label = label)
+    | _ -> failwith ("valid timestamp was rejected: " ^ source))
+    [ "0", 0, "00:00"
+    ; " 83 ", 83, "01:23"
+    ; "59:59", 3599, "59:59"
+    ; "25:01:02", 90062, "25:01:02"
+    ];
+  List.iter (fun source ->
+    assert_bool ("invalid timestamp: " ^ source) (Markup.logseq_chat_markup_youtube_timestamp source = None))
+    [ ""; "-1"; "60:00"; "00:60"; "1:60:00"; "1:00:60"
+    ; "1:2:3:4"; "words"; "999999999999999999999999999999"
+    ];
+  assert_bool "invalid timestamp emits no node"
+    (markup_json "{{youtube-timestamp 60:00}}" = `List [])
+;;
+
+let () =
+  let refs = [ summary "target-id" "Canonical Title" ] in
+  assert_bool "reference titles match case-insensitively"
+    (parse ~references:refs ~tags:[] "[[canonical title]]"
+     = [Markup.Markup_node_ref ("target-id", "Canonical Title")]);
+  let source = "\240\159\152\128 Unknown [[missing]] and #[[missing]]" in
+  assert_bool "unknown references preserve UTF-8 source and merge adjacent text"
+    (parse ~references:[] ~tags:[] source = [Markup.Markup_text source]);
+  assert_bool "empty source emits no nodes" (markup_json "" = `List []);
+  assert_bool "fenced code preserves content and an empty language"
+    (markup_json "```\nline 1\nline 2\n```"
+     = `List [`Assoc ["type", `String "codeBlock";
+                     "text", `String "line 1\nline 2\n";
+                     "style", `String ""]]);
+  assert_bool "empty display math remains display math"
+    (markup_json "$$$$"
+     = `List [`Assoc ["type", `String "math"; "text", `String "";
+                     "style", `String "display"]]);
+  assert_bool "tweet URLs lose query strings before extracting ids"
+    (Markup.logseq_chat_markup_tweet_id " https://x.com/logseq/status/123/?tracking=true " = "123")
+;;
 
 let () =
   assert_bool "markdown quote is exposed as a quote node"

@@ -1,6 +1,8 @@
 %{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime/lg_test_runtime.cmi
 %{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest/lg_test_alcotest.cmi
 %{lib:ocaml-fsrs:fsrs.cmi}
+%{lib:mldoc:mldoc.cma}
+%{lib:angstrom:angstrom.cma}
 ../duniverse/lg/runtime/.lg_runtime.objs/byte/lg_runtime.cmi
 ../duniverse/lg/runtime_edn_backend_native/.lg_edn_backend_native.objs/byte/lg_edn_backend.cmi
 ../duniverse/lg/vendor/rrbvec/.rrbvec.objs/byte/rrbvec.cmi

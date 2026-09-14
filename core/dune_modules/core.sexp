@@ -2,7 +2,6 @@
  "logseq_chat_http"
  "logseq_chat_lg_core_native"
  "logseq_chat_lui_snapshot"
- "logseq_chat_markup"
  "logseq_chat_outliner_state"
  "logseq_chat_outliner_effects"
  "logseq_chat_pending_ops"

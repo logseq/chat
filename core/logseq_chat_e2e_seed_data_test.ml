@@ -61,16 +61,18 @@ let () =
        <> [ Seed.tag_uuid, "E2E Project"; Seed.trailing_tag_uuid, "E2E Trailing" ]
      then failwith "the E2E source must cover inline and non-inline tag navigation";
      let rendered =
-       Logseq_chat_markup.parse ~references:source.references ~tags:source.tags source.title
-       |> List.map Logseq_chat_markup.debug_string
+       Logseq_chat_lg_core_native.logseq_chat_markup_parse source.references source.tags source.title
+       |> Rrbvec.to_list
+       |> List.map Logseq_chat_lg_core_native.logseq_chat_markup_debug_string
        |> String.concat " "
      in
      if not (String.contains rendered '(')
      then failwith "legacy parentheses must remain ordinary rendered text";
      let inline_tags =
-       Logseq_chat_markup.parse ~references:source.references ~tags:source.tags source.title
+       Logseq_chat_lg_core_native.logseq_chat_markup_parse source.references source.tags source.title
+       |> Rrbvec.to_list
        |> List.filter_map (function
-         | Logseq_chat_markup.Tag_ref tag -> Some tag.uuid
+         | Logseq_chat_lg_core_native.Markup_tag_ref (uuid, _) -> Some uuid
          | _ -> None)
      in
      if inline_tags <> [ Seed.tag_uuid ]

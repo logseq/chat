@@ -8,7 +8,6 @@ module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
 module Graph_bootstrap = Logseq_chat_lg_core_native
-module Markup = Logseq_chat_markup
 
 type pending_transport =
   | Json_request of Api.api_request
@@ -319,11 +318,11 @@ let block_json (block : Model.block) =
      ; "references", `List (List.map summary_json block.references)
      ; "breadcrumbs", `List (List.map summary_json block.breadcrumbs)
      ; ( "markup"
-       , Logseq_chat_markup.parse
-           ~references:block.references
-           ~tags:block.tags
+       , LG.logseq_chat_markup_parse
+           block.references
+           block.tags
            block.title
-         |> Logseq_chat_markup.to_yojson )
+         |> fun nodes -> LG.logseq_chat_markup_to_yojson (Rrbvec.to_seq, nodes) )
      ]
      @ (match block.order with Some value -> [ "order", `String value ] | None -> [])
      @ status_fields
@@ -889,18 +888,18 @@ let youtube_target_urls (blocks : Model.block list) =
   let _, targets =
     List.fold_left
       (fun (current_url, targets) (block : Model.block) ->
-        let nodes = Markup.parse ~references:block.references ~tags:block.tags block.title in
+        let nodes = LG.logseq_chat_markup_parse block.references block.tags block.title in
         let current_url, target_url =
-          List.fold_left
+          Seq.fold_left
             (fun (current_url, target_url) node ->
               match node with
-              | Markup.Video url when is_youtube_url url -> Some url, target_url
-              | Markup.Youtube_timestamp _ ->
+              | LG.Markup_video url when is_youtube_url url -> Some url, target_url
+              | LG.Markup_youtube_timestamp _ ->
                 current_url,
                 (match current_url with Some _ -> current_url | None -> target_url)
               | _ -> current_url, target_url)
             (current_url, None)
-            nodes
+            (Rrbvec.to_seq nodes)
         in
         let targets =
           match target_url with
