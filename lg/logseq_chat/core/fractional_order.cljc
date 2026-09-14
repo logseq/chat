@@ -6,6 +6,10 @@
 (def lowercase "abcdefghijklmnopqrstuvwxyz")
 (def uppercase "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
+(type-record digit-run
+  (digit-run-value :string)
+  (digit-run-carried :bool))
+
 (defn char-at [^:string value ^:int index]
   (subs value index (inc index)))
 
@@ -188,7 +192,7 @@
 (defn string-less? [^:string lower ^:string upper]
   (< (String.compare lower upper) 0))
 
-(defn midpoint [^:string lower upper]
+(defn ^:result<string;string> midpoint [^:string lower ^:option<string> upper]
   (if (invalid-lower-upper? lower upper)
     (Error "invalid midpoint bounds")
     (if (or (trailing-zero? lower)
@@ -313,7 +317,7 @@
   (before-upper-or-midpoint
    (increment lower-integer) upper-value lower-integer lower-fraction))
 
-(defn between-core [lower upper]
+(defn ^:result<string;string> between-core [^:option<string> lower ^:option<string> upper]
   (match lower
     None
     (match upper
@@ -341,7 +345,7 @@
           (Error message) (Error message))
         (Error message) (Error message)))))
 
-(defn between [lower upper]
+(defn ^:result<string;string> between [^:option<string> lower ^:option<string> upper]
   (match (validate-optional-error lower)
     (Some message) (Error message)
     None
@@ -378,9 +382,9 @@
             (Ok value))
           (Error message) (Error message))))))
 
-(def empty-string-vector (subvec [""] 0 0))
+(def ^:vector<string> empty-string-vector (subvec [""] 0 0))
 
-(defn n-after [lower ^:int count ^:vector<string> result]
+(defn ^:result<vector<string>;string> n-after [^:option<string> lower ^:int count ^:vector<string> result]
   (if (= count 0)
     (Ok result)
     (match (between lower None)
@@ -388,7 +392,7 @@
       (n-after (Some value) (dec count) (conj result value))
       (Error message) (Error message))))
 
-(defn n-before [upper ^:int count ^:vector<string> result]
+(defn ^:result<vector<string>;string> n-before [^:option<string> upper ^:int count ^:vector<string> result]
   (if (= count 0)
     (Ok result)
     (match (between None upper)
@@ -396,7 +400,7 @@
       (n-before (Some value) (dec count) (into [value] result))
       (Error message) (Error message))))
 
-(defn n-between [lower upper ^:int count]
+(defn ^:result<vector<string>;string> n-between [^:option<string> lower ^:option<string> upper ^:int count]
   (if (< count 0)
     (Error "order key count must not be negative")
     (if (= count 0)

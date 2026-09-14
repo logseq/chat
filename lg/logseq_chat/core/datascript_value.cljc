@@ -52,7 +52,7 @@
     (Some value) (ref-eid db attr value)
     None None))
 
-(defn datoms-by-ref [^:Datascript.db db ^:Datascript.index index attr eid]
+(defn datoms-by-ref [^:Datascript.db db ^:Datascript.index index ^string attr ^int eid]
   (let [seen-entities (hashtbl/create 8)
         candidates
         (seq/append

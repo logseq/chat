@@ -4,13 +4,8 @@
   (step-index :int)
   (step-result :string))
 
-(signature logseq-chat.ref-text/is-uuid? :fn<string;bool>)
-(signature logseq-chat.ref-text/plain-tag-label? :fn<string;bool>)
+(signature logseq-chat.ref-text/text-step :fn<int;string;text-step>)
 (signature logseq-chat.ref-text/to-text-step
  :fn<fn<string;option<string>>;fn<string;option<string>>;string;int;int;string;text-step>)
-(signature logseq-chat.ref-text/to-text
- :fn<fn<string;option<string>>;fn<string;option<string>>;string;string>)
 (signature logseq-chat.ref-text/to-ids-step
  :fn<fn<string;option<string>>;fn<string;option<string>>;string;int;int;string;text-step>)
-(signature logseq-chat.ref-text/to-ids
- :fn<fn<string;option<string>>;fn<string;option<string>>;string;string>)

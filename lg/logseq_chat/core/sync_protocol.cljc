@@ -6,6 +6,28 @@
             [ocaml.Transit_core.Json :as value]
             [ocaml.Transit_native.Transit.Json :as codec]))
 
+(type-record sync-entity
+  (id :Transit_core.Json.value)
+  (attrs :list<tuple<Transit_core.Json.value;Transit_core.Json.value>>))
+
+(type-record sync-change-set
+  (format-version :int)
+  (graph-id :string)
+  (schema-version :string)
+  (t-before :int)
+  (t :int)
+  (upserts :list<sync-entity>)
+  (deleted :list<Transit_core.Json.value>)
+  (operation-ids :list<string>))
+
+(type-record sync-reset
+  (reason :string)
+  (snapshot-required :bool))
+
+(type-variant sync-event
+  (Graph_changes :sync-change-set)
+  (Reset :sync-reset))
+
 (defn contains-uuid? [^:vector<string> uuids ^:string uuid]
   (let [total (count uuids)]
     (loop [index 0]
@@ -23,7 +45,7 @@
       (conj uuids uuid))
     _ uuids))
 
-(defn changed-block-uuids [^sync-change-set change]
+(defn ^:vector<string> changed-block-uuids [^sync-change-set change]
   (let [upserts (rrbvec/of-list (:upserts change))
         deleted (rrbvec/of-list (:deleted change))
         upsert-count (count upserts)
@@ -213,7 +235,7 @@
                                                                                                       (deleted deleted)
                                                                                                       (operation-ids operation-ids))))))))))))))))))))))))))
 
-(defn decode-change-set [wire]
+(defn ^:result<sync-change-set;string> decode-change-set [^string wire]
   (try
     (decode-change-value (codec/of-string wire))
     (catch error
@@ -230,7 +252,7 @@
                                       (reason reason)
                                       (snapshot-required snapshot-required))))))))))
 
-(defn decode-event [event-name wire]
+(defn ^:result<sync-event;string> decode-event [^string event-name ^string wire]
   (if (= event-name "graph-changes")
     (bind (decode-change-set wire)
           (fn [change] (Ok (Graph_changes change))))
