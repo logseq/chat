@@ -42,7 +42,7 @@ let reset_user_page_entities conn =
 ;;
 
 let seed_current_journal conn ~now ~page_uuid ~block_uuid ~block_title =
-  let journal_day = Logseq_chat_model.journal_day_for_ms now in
+  let journal_day = Logseq_chat_lg_core_native.logseq_chat_cache_model_journal_day_for_ms now in
   let journal_title = Logseq_chat_graph_runtime.journal_day_title journal_day in
   ignore
     (transact_conn
@@ -424,7 +424,7 @@ let seed_performance conn ~now =
       List.init 100 (fun page_index ->
         let page_temp_id = "performance-page-" ^ string_of_int page_index in
         let page_time = now - (page_index * 86_400_000) in
-        let journal_day = Logseq_chat_model.journal_day_for_ms page_time in
+        let journal_day = Logseq_chat_lg_core_native.logseq_chat_cache_model_journal_day_for_ms page_time in
         let journal_title = Logseq_chat_graph_runtime.journal_day_title journal_day in
         let page =
           Entity

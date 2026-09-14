@@ -208,8 +208,8 @@ let graph_blocks () =
 let authoritative_graph_blocks () =
   match !graph_runtime with
   | Some runtime ->
-    Some (Logseq_chat_graph_read.blocks
-            (Datascript.conn_db runtime.read_runtime.conn))
+    Some (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks
+            (fun value -> Ok value) 7 (Datascript.conn_db runtime.read_runtime.conn)))
   | None -> None
 ;;
 
@@ -430,8 +430,8 @@ let model_for_graph ~graph_id =
             ~destination:projection)
         !sqlite_session;
     projection_session := Some projection;
-    Logseq_chat_model.create ~storage:projection_storage ()
-  | _ -> Logseq_chat_model.create ()
+    Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some projection_storage)
+  | _ -> Logseq_chat_lg_core_native.logseq_chat_cache_model_create None
 ;;
 
 let create_session ?storage ?catalog_session () =

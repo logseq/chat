@@ -87,7 +87,7 @@ let assert_int_equal label expected actual =
 
 let () =
   let block =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "source"
       ; title = "See [[target]]"
       ; page_id = "page"
@@ -124,7 +124,7 @@ let () =
 
 let () =
   let rich_block uuid title =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid; title; page_id = "page"; parent_id = None; order = None
       ; created_at = 0; updated_at = 0; sync_status = "synced"; tags = []
       ; references = []; breadcrumbs = []; status = None; is_asset = false
@@ -387,7 +387,7 @@ let () =
 
 let () =
   let authoritative =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "remote-task"
       ; title = "Old title"
       ; page_id = "journal-page"
@@ -415,7 +415,7 @@ let () =
       ()
   in
   configure_plain_graph session;
-  Logseq_chat_model.upsert_blocks session.model [ authoritative ] ~refresh_time:authoritative.updated_at;
+  (Logseq_chat_lg_core_native.logseq_chat_cache_model_upsert_blocks (session.model) (List.to_seq, ([ authoritative ])) (authoritative.updated_at));
   ignore
     (Logseq_chat_rpc.call
        session
@@ -444,7 +444,7 @@ let () =
       {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":2,\"status\":200,\"body\":\"{}\",\"error\":null}"}}|}
   in
   if Option.is_some (pending_request finished) then failwith "task update pump did not finish";
-  match Logseq_chat_model.read_block session.model "remote-task" with
+  match Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block session.model "remote-task" with
   | Some block -> assert_equal "updated task submitted" "submitted" block.sync_status
   | None -> failwith "updated task disappeared"
 ;;
@@ -627,7 +627,7 @@ let () =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|});
-  match Logseq_chat_model.read_block session.model "failed-async" with
+  match Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block session.model "failed-async" with
   | Some block -> assert_equal "transport failure status" "failed" block.sync_status
   | None -> failwith "failed pending block disappeared"
 ;;
@@ -777,7 +777,7 @@ let () =
 
 let () =
   let parent =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "page-parent"; title = "Parent"; page_id = "selected-page"
       ; parent_id = Some "selected-page"; order = Some "a0"; created_at = 1; updated_at = 1
       ; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
@@ -793,7 +793,7 @@ let () =
            asset_size; asset_checksum } ->
        projected :=
          !projected
-         @ [ Logseq_chat_model.
+         @ [ Logseq_chat_lg_core_native.
                { uuid; title; page_id = page_uuid; parent_id = Some parent_uuid
                ; order = Some order; created_at; updated_at = created_at
                ; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
@@ -820,7 +820,7 @@ let () =
   in
   configure_plain_graph session;
   session.selected_sidebar_page <-
-    Some Logseq_chat_graph_read.{ uuid = "selected-page"; title = "Selected page" };
+    Some Logseq_chat_lg_core_native.{ uuid = "selected-page"; title = "Selected page" };
   let response =
     Logseq_chat_rpc.call
       session
@@ -873,9 +873,9 @@ let () =
 ;;
 
 let () =
-  let page = Logseq_chat_graph_read.{ uuid = "page-1"; title = "Page one" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" } in
   let block =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "block-1"
       ; title = "Referenced block"
       ; page_id = page.uuid
@@ -904,7 +904,7 @@ let () =
         | "tag-1" -> Some (page, false)
         | _ -> None)
       ~graph_page_blocks:(fun uuid -> if uuid = page.uuid then Some [ block ] else None)
-      ~graph_tag_pages:(fun () -> Some [ Logseq_chat_graph_read.{ uuid = "tag-1"; title = "Tag one" } ])
+      ~graph_tag_pages:(fun () -> Some [ Logseq_chat_lg_core_native.{ uuid = "tag-1"; title = "Tag one" } ])
       ~graph_node_is_tag:(String.equal "tag-1")
       ~graph_node_references:(fun uuid -> if uuid = "block-1" then Some [ block ] else None)
       ~graph_tag_objects:(fun uuid -> if uuid = "tag-1" then Some [ block ] else None)
@@ -978,9 +978,9 @@ let () =
 let () =
   (* Selecting a tag (class) page from the sidebar must project its tagged
      objects without a separate loadTagObjects round trip. *)
-  let tag_page = Logseq_chat_graph_read.{ uuid = "tag-1"; title = "Task" } in
+  let tag_page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "tag-1"; title = "Task" } in
   let tagged =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "task-1"
       ; title = "Do the thing"
       ; page_id = "page-1"
@@ -1005,7 +1005,7 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~graph_sidebar_pages:(fun () ->
-        Some Logseq_chat_graph_read.{ favorites = [ tag_page ]; recent_pages = [] })
+        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list [ tag_page ]; recent_pages = Rrbvec.of_list [] })
       ~graph_page_blocks:(fun _ -> Some [])
       ~graph_node_is_tag:(String.equal tag_page.uuid)
       ~graph_tag_objects:(fun uuid ->
@@ -1037,9 +1037,9 @@ let () =
 let () =
   (* Sidebar page selection keeps the original non-route interaction while
      projecting the same linked references as a node view. *)
-  let page = Logseq_chat_graph_read.{ uuid = "page-1"; title = "Page one" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" } in
   let reference =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "reference-1"
       ; title = "Links Page one"
       ; page_id = "journal-1"
@@ -1063,7 +1063,7 @@ let () =
   let session =
     Logseq_chat_rpc.create
       ~graph_sidebar_pages:(fun () ->
-        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list [ page ]; recent_pages = Rrbvec.of_list [] })
       ~graph_page_blocks:(fun _ -> Some [])
       ~graph_node_references:(fun uuid ->
         if String.equal uuid page.uuid then Some [ reference ] else None)
@@ -1094,8 +1094,8 @@ let () =
       { uuid = "block-1"
       ; title = "Search me"
       ; is_page = false
-      ; page = Some Logseq_chat_graph_read.{ uuid = "page-1"; title = "Page one" }
-      ; breadcrumbs = [ Logseq_chat_model.{ uuid = "page-1"; title = "Page one" } ]
+      ; page = Some Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" }
+      ; breadcrumbs = [ Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" } ]
       }
   in
   let session =
@@ -1142,7 +1142,7 @@ let () =
      lookup has no result. It must not depend on a separate UI cache. *)
   let page_uuid = "projected-page" in
   let projected =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "projected-block"
       ; title = "Projected block"
       ; page_id = page_uuid
@@ -1210,7 +1210,7 @@ let () =
   (* An offline block opens from the pending projection, without consulting
      the legacy chat cache. *)
   let cached =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "cached-block"
       ; title = "Cached offline block"
       ; page_id = "journal/2026-08-15"
@@ -1331,7 +1331,7 @@ let () =
 
 let () =
   let authoritative =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "restored-journal-block"
       ; title = "Restored from the graph snapshot"
       ; page_id = "journal-page"
@@ -1362,7 +1362,7 @@ let () =
         Some [ authoritative ])
       ~graph_sidebar_pages:(fun () ->
         incr graph_sidebar_pages_calls;
-        Some Logseq_chat_graph_read.{ favorites = []; recent_pages = [] })
+        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list []; recent_pages = Rrbvec.of_list [] })
       ()
   in
   let response =
@@ -1426,29 +1426,26 @@ let () =
 
 let () =
   let session = Logseq_chat_rpc.create () in
-  Logseq_chat_model.upsert_blocks
-    session.model
-    [ Logseq_chat_model.
+  (Logseq_chat_lg_core_native.logseq_chat_cache_model_upsert_blocks (session.model) (List.to_seq, ([ Logseq_chat_lg_core_native.
         { uuid = "editing-block"; title = "Editing"; page_id = "target-page"
         ; parent_id = Some "target-page"; order = None; created_at = 1; updated_at = 1
         ; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
         ; status = None; is_asset = false; asset_type = None; asset_size = None
         ; asset_checksum = None; local_path = None; journal = None
         }
-    ]
-    ~refresh_time:1;
+    ])) (1));
   ignore
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"targeted-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
-  let asset = Option.get (Logseq_chat_model.read_block session.model "targeted-asset") in
+  let asset = Option.get (Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block session.model "targeted-asset") in
   assert_equal "RPC targeted asset page" "target-page" asset.page_id;
   assert_equal "RPC targeted asset parent" "editing-block" (Option.get asset.parent_id)
 ;;
 
 let () =
   let target =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "editing-block"; title = "Editing"; page_id = "local-page"
       ; parent_id = Some "local-page"; order = None; created_at = 1; updated_at = 1
       ; sync_status = "synced"; tags = []; references = []; breadcrumbs = []
@@ -1508,7 +1505,7 @@ let () =
          | _ -> failwith "shared asset patch must insert one visible row")
       | _ -> failwith "shared asset patch must contain one bounded row splice")
    | _ -> failwith "shared asset should return an RPC response");
-  let asset = Option.get (Logseq_chat_model.read_block session.model "shared-image") in
+  let asset = Option.get (Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block session.model "shared-image") in
   assert_equal "shared asset stores normalized type" "jpeg" (Option.get asset.asset_type);
   let request =
     Logseq_chat_rpc.call
@@ -1604,7 +1601,7 @@ let () =
     Logseq_chat_rpc.create
       ~apply_sync_event:(fun _event ->
         authoritative_blocks :=
-          [ Logseq_chat_model.
+          [ Logseq_chat_lg_core_native.
               { uuid = "local-self-echo"
               ; title = "Synced capture"
               ; page_id = "journal/2026-08-15"
@@ -1633,13 +1630,13 @@ let () =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Synced capture\",\"uuid\":\"local-self-echo\",\"now\":1776000000000}"}}|});
-  if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
+  if List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (session.model))) <> 1
   then failwith "local capture should start pending";
   ignore
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"self-echo"}}|});
-  if Logseq_chat_model.pending_blocks session.model <> []
+  if (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (session.model))) <> []
   then failwith "authoritative WebSocket self-echo should clear local pending state"
 ;;
 
@@ -1654,9 +1651,9 @@ let () =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"synced-asset\",\"title\":\"photo.png\",\"now\":1776000000001,\"assetType\":\"png\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/photo.png\"}"}}|});
-  ignore (Logseq_chat_model.mark_block_synced session.model ~uuid:"synced-asset");
+  ignore (Logseq_chat_lg_core_native.logseq_chat_cache_model_mark_block_synced (session.model) ("synced-asset"));
   authoritative_blocks :=
-    [ Logseq_chat_model.
+    [ Logseq_chat_lg_core_native.
         { uuid = "synced-asset"
         ; title = "photo.png"
         ; page_id = "journal/2026-08-15"
@@ -1722,7 +1719,7 @@ let () =
 ;;
 
 let remote_block uuid title =
-  Logseq_chat_model.
+  Logseq_chat_lg_core_native.
     { uuid
     ; title
     ; page_id = "page"
@@ -1817,11 +1814,11 @@ let prepare_test_operation operation =
 let () =
   (* A local capture must enter the projected graph before any network work.
      Journal home, node views, and inline editing must query that same state. *)
-  let page = Logseq_chat_graph_read.{ uuid = "journal-page"; title = "Aug 23rd, 2026" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "journal-page"; title = "Aug 23rd, 2026" } in
   let projected =
     ref
       [ { (remote_block "world" "World") with
-          Logseq_chat_model.page_id = page.uuid
+          Logseq_chat_lg_core_native.page_id = page.uuid
         ; parent_id = Some page.uuid
         ; journal = Some (page.title, 20260823)
         }
@@ -1834,7 +1831,7 @@ let () =
      | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
        projected :=
          !projected
-         @ [ Logseq_chat_model.
+         @ [ Logseq_chat_lg_core_native.
                { uuid; title; page_id = page_uuid; parent_id = Some parent_uuid
                ; order = Some order; created_at; updated_at = created_at
                ; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
@@ -1853,7 +1850,7 @@ let () =
       ~journal_page_id:(fun ~journal_day:_ -> Some page.uuid)
       ~graph_blocks:(fun () -> Some !projected)
       ~graph_page_blocks:(fun uuid ->
-        Some (List.filter (fun block -> String.equal block.Logseq_chat_model.page_id uuid) !projected))
+        Some (List.filter (fun block -> String.equal block.Logseq_chat_lg_core_native.page_id uuid) !projected))
       ~graph_node_destination:(fun uuid ->
         if String.equal uuid page.uuid then Some (page, false) else None)
       ~stage_operation:stage
@@ -1907,10 +1904,10 @@ let () =
 let () =
   (* Child insertion has the same local-first contract as capture: the staged
      projection is the only source read by the returned snapshot and editor. *)
-  let page = Logseq_chat_graph_read.{ uuid = "child-page"; title = "Child page" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "child-page"; title = "Child page" } in
   let parent =
     { (remote_block "child-parent" "Parent") with
-      Logseq_chat_model.page_id = page.uuid
+      Logseq_chat_lg_core_native.page_id = page.uuid
     ; parent_id = Some page.uuid
     ; order = Some "a0"
     }
@@ -1923,7 +1920,7 @@ let () =
      | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
        projected :=
          !projected
-         @ [ Logseq_chat_model.
+         @ [ Logseq_chat_lg_core_native.
                { uuid; title; page_id = page_uuid; parent_id = Some parent_uuid
                ; order = Some order; created_at; updated_at = created_at
                ; sync_status = "pending"; tags = []; references = []; breadcrumbs = []
@@ -1940,7 +1937,7 @@ let () =
       ~sync_cursor:(fun () -> Some 5)
       ~graph_blocks:(fun () -> Some !projected)
       ~graph_page_blocks:(fun uuid ->
-        Some (List.filter (fun block -> String.equal block.Logseq_chat_model.page_id uuid) !projected))
+        Some (List.filter (fun block -> String.equal block.Logseq_chat_lg_core_native.page_id uuid) !projected))
       ~stage_operation:stage
       ~prepare_operation:prepare_test_operation
       ()
@@ -1977,11 +1974,7 @@ let () =
       ~graph_blocks:(fun () -> Some [ projected ])
       ()
   in
-  Logseq_chat_model.cache_local_message
-    session.model
-    ~uuid:"legacy-only"
-    ~title:"Must not leak"
-    ~now:10;
+  (Logseq_chat_lg_core_native.logseq_chat_cache_model_cache_local_message (session.model) ("legacy-only") ("Must not leak") (10));
   configure_plain_graph session;
   let snapshot =
     Logseq_chat_rpc.call session
@@ -2002,7 +1995,7 @@ let () =
   let staged = ref [] in
   let target =
     { (remote_block "editing-block" "Editing") with
-      Logseq_chat_model.page_id = "target-page"
+      Logseq_chat_lg_core_native.page_id = "target-page"
     ; parent_id = Some "target-page"
     ; order = Some "a0"
     }
@@ -2121,7 +2114,7 @@ let () =
   let staged = ref [] in
   let existing =
     { (remote_block "existing-journal-block" "Existing") with
-      Logseq_chat_model.page_id = "journal-page"
+      Logseq_chat_lg_core_native.page_id = "journal-page"
     ; parent_id = Some "journal-page"
     ; order = Some "a0"
     }
@@ -2200,7 +2193,7 @@ let () =
   let parent = remote_block "parent-window" "Parent" in
   let child =
     { (remote_block "child-window" "Child") with
-      Logseq_chat_model.parent_id = Some parent.uuid
+      Logseq_chat_lg_core_native.parent_id = Some parent.uuid
     }
   in
   let assert_state_preserved label event =
@@ -2266,7 +2259,7 @@ let () =
 ;;
 
 let () =
-  let tag = Logseq_chat_graph_read.{ uuid = "tag-uuid"; title = "Project" } in
+  let tag : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "tag-uuid"; title = "Project" } in
   let session =
     Logseq_chat_rpc.create
       ~graph_blocks:(fun () -> Some [ remote_block "tag-editable" "Hello" ])
@@ -2303,7 +2296,7 @@ let () =
          | Save_title { uuid; title; _ } ->
            projected :=
              List.map
-               (fun (block : Logseq_chat_model.block) ->
+               (fun (block : Logseq_chat_lg_core_native.block) ->
                  if String.equal block.uuid uuid then { block with title } else block)
                !projected
          | _ -> ());
@@ -2360,7 +2353,7 @@ let () =
       List.mapi
         (fun index order ->
           { (remote_block ("delete-tail-" ^ string_of_int index) "Unrelated") with
-            Logseq_chat_model.order = Some order
+            Logseq_chat_lg_core_native.order = Some order
           })
         (Rrbvec.to_list orders)
   in
@@ -2376,7 +2369,7 @@ let () =
          | Delete_blocks { uuids } ->
            projected :=
              List.filter
-               (fun (block : Logseq_chat_model.block) ->
+               (fun (block : Logseq_chat_lg_core_native.block) ->
                  not (List.exists (String.equal block.uuid) uuids))
                !projected
          | _ -> ());
@@ -2459,12 +2452,12 @@ let () =
   let parent = remote_block "parent" "Parent" in
   let child =
     { (remote_block "child" "Child") with
-      Logseq_chat_model.parent_id = Some "parent"
+      Logseq_chat_lg_core_native.parent_id = Some "parent"
     }
   in
   let sibling =
     { (remote_block "sibling" "Sibling") with
-      Logseq_chat_model.order = Some "a1"
+      Logseq_chat_lg_core_native.order = Some "a1"
     }
   in
   let session =
@@ -3226,7 +3219,7 @@ let () =
 
 let () =
   let authoritative =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "offline-edit"
       ; title = "Server title"
       ; page_id = "journal/2026-08-15"
@@ -3258,7 +3251,7 @@ let () =
          | Save_title { uuid; title; _ } ->
            projected :=
              List.map
-               (fun (block : Logseq_chat_model.block) ->
+               (fun (block : Logseq_chat_lg_core_native.block) ->
                  if String.equal block.uuid uuid
                  then { block with title; sync_status = "pending" }
                  else block)
@@ -3295,7 +3288,7 @@ let () =
       List.mapi
         (fun index order ->
           { (remote_block ("unrelated-" ^ string_of_int index) "Unrelated") with
-            Logseq_chat_model.order = Some order
+            Logseq_chat_lg_core_native.order = Some order
           })
         (Rrbvec.to_list orders)
   in
@@ -3306,13 +3299,13 @@ let () =
   Hashtbl.add authoritative "source" ();
   let find_projected uuid =
     List.find_opt
-      (fun (block : Logseq_chat_model.block) -> String.equal block.uuid uuid)
+      (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.uuid uuid)
       !projected
   in
   let replace_projected uuid update =
     projected :=
       List.map
-        (fun (block : Logseq_chat_model.block) ->
+        (fun (block : Logseq_chat_lg_core_native.block) ->
           if String.equal block.uuid uuid then update block else block)
         !projected
   in
@@ -3335,7 +3328,7 @@ let () =
        replace_projected previous_uuid (fun block -> { block with title = previous.title ^ title });
        projected :=
          List.filter
-           (fun (block : Logseq_chat_model.block) -> not (String.equal block.uuid uuid))
+           (fun (block : Logseq_chat_lg_core_native.block) -> not (String.equal block.uuid uuid))
            !projected
      | _ -> ());
     Ok ()
@@ -3515,17 +3508,17 @@ let () =
 let () =
   (* Page-scoped structural editing must keep using the optimistic projection
      when the page reader has not observed newly staged blocks yet. *)
-  let page = Logseq_chat_graph_read.{ uuid = "page-lag"; title = "Lagging page" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "page-lag"; title = "Lagging page" } in
   let source =
     { (remote_block "page-source" "Hello") with
-      Logseq_chat_model.page_id = page.uuid
+      Logseq_chat_lg_core_native.page_id = page.uuid
     ; parent_id = Some page.uuid
     ; order = Some "a0"
     }
   in
   let interleaved_reference =
     { (remote_block "other-page-reference" "Links lagging page") with
-      Logseq_chat_model.page_id = "other-page"
+      Logseq_chat_lg_core_native.page_id = "other-page"
     ; parent_id = Some "other-page"
     ; order = Some "a1"
     }
@@ -3535,7 +3528,7 @@ let () =
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~sync_cursor:(fun () -> Some 42)
       ~graph_sidebar_pages:(fun () ->
-        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list [ page ]; recent_pages = Rrbvec.of_list [] })
       ~graph_page_blocks:(fun uuid ->
         if String.equal uuid page.uuid then Some [ source ] else None)
       ~graph_node_references:(fun uuid ->
@@ -3591,10 +3584,10 @@ let () =
 let () =
   (* Node routes must use the optimistic projection while the page reader is
      still behind, just like sidebar page editing does. *)
-  let page = Logseq_chat_graph_read.{ uuid = "node-lag-page"; title = "Node lag page" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "node-lag-page"; title = "Node lag page" } in
   let source =
     { (remote_block "node-lag-source" "Hello") with
-      Logseq_chat_model.page_id = page.uuid
+      Logseq_chat_lg_core_native.page_id = page.uuid
     ; parent_id = Some page.uuid
     ; order = Some "a0"
     }
@@ -3678,7 +3671,7 @@ let () =
          })
   in
   match projected with
-  | [ { Logseq_chat_model.status = Some status; sync_status = "pending"; _ } ]
+  | [ { Logseq_chat_lg_core_native.status = Some status; sync_status = "pending"; _ } ]
     when status.ident = Some "logseq.property/status.todo" && status.title = "Todo" -> ()
   | _ -> failwith "task status operations must update the optimistic outliner row"
 ;;
@@ -3686,16 +3679,16 @@ let () =
 let () =
   (* Editing keeps local structure, but live properties must replace stale
      metadata in the optimistic overlay before staging another property edit. *)
-  let page = Logseq_chat_graph_read.{ uuid = "status-page"; title = "Status page" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "status-page"; title = "Status page" } in
   let source =
     { (remote_block "status-source" "Task") with
-      Logseq_chat_model.page_id = page.uuid
+      Logseq_chat_lg_core_native.page_id = page.uuid
     ; parent_id = Some page.uuid
     ; order = Some "a0"
     }
   in
   let todo =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "status-todo"
       ; ident = Some "logseq.property/status.todo"
       ; title = "Todo"
@@ -3711,7 +3704,7 @@ let () =
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~sync_cursor:(fun () -> Some 42)
       ~graph_sidebar_pages:(fun () ->
-        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list [ page ]; recent_pages = Rrbvec.of_list [] })
       ~graph_page_blocks:(fun uuid ->
         if String.equal uuid page.uuid then Some !live_blocks else None)
       ~stage_operation:(fun operation -> staged := !staged @ [ operation ]; Ok ())
@@ -3726,7 +3719,7 @@ let () =
     (dispatch_outliner
        session
        (`Assoc [ "type", `String "tapBlock"; "uuid", `String source.uuid ]));
-  live_blocks := [ { source with Logseq_chat_model.status = Some todo } ];
+  live_blocks := [ { source with Logseq_chat_lg_core_native.status = Some todo } ];
   ignore
     (dispatch_outliner
        session
@@ -3744,9 +3737,9 @@ let () =
 ;;
 
 let () =
-  let page = Logseq_chat_graph_read.{ uuid = "task-page"; title = "Task page" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "task-page"; title = "Task page" } in
   let todo =
-    Logseq_chat_model.
+    Logseq_chat_lg_core_native.
       { uuid = "status-todo"
       ; ident = Some "logseq.property/status.todo"
       ; title = "Todo"
@@ -3757,7 +3750,7 @@ let () =
   in
   let source =
     { (remote_block "task-source" "Todo") with
-      Logseq_chat_model.page_id = page.uuid
+      Logseq_chat_lg_core_native.page_id = page.uuid
     ; parent_id = Some page.uuid
     ; order = Some "a0"
     ; status = Some todo
@@ -3776,7 +3769,7 @@ let () =
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~sync_cursor:(fun () -> Some 42)
       ~graph_sidebar_pages:(fun () ->
-        Some Logseq_chat_graph_read.{ favorites = [ page ]; recent_pages = [] })
+        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list [ page ]; recent_pages = Rrbvec.of_list [] })
       ~graph_page_blocks:(fun uuid ->
         if String.equal uuid page.uuid then Some [ source ] else None)
       ~stage_operation:(fun _ -> Ok ())
@@ -3819,10 +3812,10 @@ let () =
 ;;
 
 let () =
-  let today_page = Logseq_chat_graph_read.{ uuid = "journal-today"; title = "Today" } in
+  let today_page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "journal-today"; title = "Today" } in
   let source =
     { (remote_block "journal-source" "Hello") with
-      Logseq_chat_model.page_id = today_page.uuid
+      Logseq_chat_lg_core_native.page_id = today_page.uuid
     ; parent_id = Some today_page.uuid
     ; order = Some "a0"
     ; journal = Some ("Today", 20260818)
@@ -3830,7 +3823,7 @@ let () =
   in
   let child =
     { (remote_block "journal-child" "Child") with
-      Logseq_chat_model.page_id = today_page.uuid
+      Logseq_chat_lg_core_native.page_id = today_page.uuid
     ; parent_id = Some source.uuid
     ; order = Some "a0"
     ; journal = Some ("Today", 20260818)
@@ -3849,7 +3842,7 @@ let () =
           { (remote_block
                (page_id ^ "-block-" ^ string_of_int block_index)
                "Unrelated") with
-            Logseq_chat_model.page_id
+            Logseq_chat_lg_core_native.page_id
               = page_id
           ; parent_id = Some page_id
           ; order = Some order
@@ -3866,12 +3859,12 @@ let () =
      | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
        let original =
          List.find
-           (fun (block : Logseq_chat_model.block) -> String.equal block.uuid uuid)
+           (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.uuid uuid)
            !today_blocks
        in
        today_blocks :=
          List.map
-           (fun (block : Logseq_chat_model.block) ->
+           (fun (block : Logseq_chat_lg_core_native.block) ->
              if String.equal block.uuid uuid then { block with title = before } else block)
            !today_blocks
          @ [ { original with
@@ -3935,8 +3928,8 @@ let () =
 ;;
 
 let () =
-  let graph_a_model = Logseq_chat_model.create () in
-  let graph_b_model = Logseq_chat_model.create () in
+  let graph_a_model = (Logseq_chat_lg_core_native.logseq_chat_cache_model_create None) in
+  let graph_b_model = (Logseq_chat_lg_core_native.logseq_chat_cache_model_create None) in
   let session =
     Logseq_chat_rpc.create
       ~open_graph:(fun _ -> Ok ())
@@ -3969,28 +3962,27 @@ let () =
     (Logseq_chat_rpc.call
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"graph-a-asset\",\"title\":\"photo.jpg\",\"now\":1,\"assetType\":\"jpg\",\"assetSize\":4,\"assetChecksum\":\"abcd\",\"localPath\":\"Assets/photo.jpg\"}"}}|});
-  if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
+  if List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (session.model))) <> 1
   then failwith "graph A should contain its pending asset";
   open_graph "graph-b";
-  if Logseq_chat_model.pending_blocks session.model <> []
+  if (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (session.model))) <> []
   then failwith "graph B must not inherit graph A's optimistic projection";
   open_graph "graph-a";
-  if List.length (Logseq_chat_model.pending_blocks session.model) <> 1
+  if List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (session.model))) <> 1
   then failwith "switching back should restore graph A's optimistic projection"
 ;;
 
 let () =
   let favorite = ref false in
   let calls = ref [] in
-  let page = Logseq_chat_graph_read.{ uuid = "page-favorite"; title = "Favorite me" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "page-favorite"; title = "Favorite me" } in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~graph_sidebar_pages:(fun () ->
         Some
-          Logseq_chat_graph_read.
-            { favorites = (if !favorite then [ page ] else [])
-            ; recent_pages = [ page ]
+          Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list (if !favorite then [ page ] else [])
+            ; recent_pages = Rrbvec.of_list [ page ]
             })
       ~graph_set_page_favorite:(fun ~page_uuid ~favorite:value ~operation_id ~now ->
         calls := (page_uuid, value, operation_id, now) :: !calls;
@@ -4036,15 +4028,14 @@ let () =
 
 let () =
   let deleted = ref None in
-  let page = Logseq_chat_graph_read.{ uuid = "page-delete"; title = "Delete me" } in
+  let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "page-delete"; title = "Delete me" } in
   let session =
     Logseq_chat_rpc.create
       ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
       ~graph_sidebar_pages:(fun () ->
         Some
-          Logseq_chat_graph_read.
-            { favorites = []
-            ; recent_pages = (if Option.is_some !deleted then [] else [ page ])
+          Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list []
+            ; recent_pages = Rrbvec.of_list (if Option.is_some !deleted then [] else [ page ])
             })
       ~graph_delete_page:(fun ~page_uuid ~operation_id ~now ->
         deleted := Some (page_uuid, operation_id, now);
@@ -4126,7 +4117,7 @@ let () =
 
 let () =
   let parent = remote_block "parent" "Parent" in
-  let child = { (remote_block "child" "Child") with Logseq_chat_model.parent_id = Some "parent" } in
+  let child = { (remote_block "child" "Child") with Logseq_chat_lg_core_native.parent_id = Some "parent" } in
   let staged = ref [] in
   let session = Logseq_chat_rpc.create
     ~load_graph_catalog:(fun () -> Some plain_graph_catalog)

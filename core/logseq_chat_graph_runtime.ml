@@ -11,7 +11,7 @@ type t =
   ; encrypt_title : string -> (string, string) result
   ; mutable server_t : int
   ; mutable snapshot : Projection.snapshot
-  ; mutable sidebar_cache : (Datascript.db * Logseq_chat_graph_read.sidebar_pages) option
+  ; mutable sidebar_cache : (Datascript.db * Logseq_chat_lg_core_native.sidebar_pages) option
   ; prepared : (string, Ops.t) Hashtbl.t
   ; mutable journal_limit : int
   ; search_index : Logseq_chat_search_index.t option
@@ -534,8 +534,8 @@ let stage runtime operation =
 
 let ensure_today_journal runtime =
   let created_at = int_of_float (Unix.gettimeofday () *. 1000.0) in
-  let journal_day = Logseq_chat_model.journal_day_for_ms created_at in
-  match Logseq_chat_graph_read.journal_page_uuid runtime.snapshot.db ~journal_day with
+  let journal_day = Logseq_chat_lg_core_native.logseq_chat_cache_model_journal_day_for_ms created_at in
+  match LG.logseq_chat_graph_read_journal_page_uuid runtime.snapshot.db journal_day with
   | Some _ -> Ok ()
   | None ->
     let operation =
@@ -584,9 +584,8 @@ let rebase = rebase_operations
 ;;
 
 let blocks runtime =
-  Logseq_chat_graph_read.blocks
-    ~journal_limit:runtime.journal_limit
-    runtime.snapshot.db
+  LG.logseq_chat_graph_read_blocks (fun value -> Ok value)
+    runtime.journal_limit runtime.snapshot.db |> Rrbvec.to_list
 ;;
 
 let due_flashcards runtime ~now =
@@ -601,7 +600,7 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
     let repeated = Logseq_chat_lg_core_native.logseq_chat_flashcards_repeat now due_card.card rating in
     let eid = Datascript.entid db "block/uuid" (Datascript.Uuid uuid) in
     let current attr =
-      Option.bind eid (fun eid -> Logseq_chat_graph_read.value db eid attr)
+      Option.bind eid (fun eid -> Logseq_chat_lg_core_native.logseq_chat_graph_read_value db eid attr)
     in
     let semantic_option value =
       match value with
@@ -636,7 +635,7 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
 ;;
 
 let has_older_journals runtime =
-  runtime.journal_limit < Logseq_chat_graph_read.journal_page_count runtime.snapshot.db
+  runtime.journal_limit < Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count runtime.snapshot.db
 ;;
 
 let load_older_journals runtime =
@@ -644,9 +643,8 @@ let load_older_journals runtime =
 ;;
 
 let blocks_for_page runtime page_uuid =
-  Logseq_chat_graph_read.blocks_for_page
-    runtime.snapshot.db
-    page_uuid
+  LG.logseq_chat_graph_read_blocks_for_page (fun value -> Ok value)
+    runtime.snapshot.db page_uuid |> Rrbvec.to_list
 ;;
 
 let sidebar_pages runtime =
@@ -654,19 +652,19 @@ let sidebar_pages runtime =
   match runtime.sidebar_cache with
   | Some (cached_db, pages) when cached_db == db -> pages
   | _ ->
-    let pages = Logseq_chat_graph_read.sidebar_pages db in
+    let pages = LG.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) db in
     runtime.sidebar_cache <- Some (db, pages);
     pages
 ;;
 
 let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
   let db = runtime.snapshot.db in
-  let current = Logseq_chat_graph_read.page_is_favorite db page_uuid in
+  let current = Logseq_chat_lg_core_native.logseq_chat_graph_read_page_is_favorite_ db page_uuid in
   if current = favorite
   then Ok ()
   else if favorite
   then
-    LG.logseq_chat_fractional_order_between (Logseq_chat_graph_read.last_favorite_order db) None
+    LG.logseq_chat_fractional_order_between (Logseq_chat_lg_core_native.logseq_chat_graph_read_last_favorite_order db) None
     >>= fun order ->
     stage
       runtime
@@ -684,7 +682,7 @@ let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
               }
         }
   else
-    match Logseq_chat_graph_read.favorite_block_uuid db page_uuid with
+    match Logseq_chat_lg_core_native.logseq_chat_graph_read_favorite_block_uuid db page_uuid with
     | None -> Ok ()
     | Some favorite_uuid ->
       stage
@@ -705,7 +703,7 @@ let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
 ;;
 
 let delete_page runtime ~page_uuid ~operation_id ~now =
-  LG.logseq_chat_fractional_order_between (Logseq_chat_graph_read.last_recycle_order runtime.snapshot.db) None
+  LG.logseq_chat_fractional_order_between (Logseq_chat_lg_core_native.logseq_chat_graph_read_last_recycle_order runtime.snapshot.db) None
   >>= fun order ->
   stage
     runtime
@@ -718,45 +716,44 @@ let delete_page runtime ~page_uuid ~operation_id ~now =
 ;;
 
 let node_destination runtime uuid =
-  Logseq_chat_graph_read.node_destination
+  LG.logseq_chat_graph_read_node_destination (fun value -> Ok value)
     runtime.snapshot.db
     uuid
 ;;
 
 let objects_for_tag runtime uuid =
-  Logseq_chat_graph_read.objects_for_tag
+  LG.logseq_chat_graph_read_objects_for_tag (fun value -> Ok value)
     runtime.snapshot.db
-    uuid
+    uuid |> Rrbvec.to_list
 ;;
 
 let tag_pages runtime =
-  Logseq_chat_graph_read.tag_pages runtime.snapshot.db
+  LG.logseq_chat_graph_read_tag_pages (fun value -> Ok value) runtime.snapshot.db
+  |> Rrbvec.to_list
 ;;
 
 let node_is_tag runtime uuid =
-  Logseq_chat_graph_read.node_is_tag runtime.snapshot.db uuid
+  Logseq_chat_lg_core_native.logseq_chat_graph_read_node_is_tag_ runtime.snapshot.db uuid
 ;;
 
 let node_is_property runtime uuid =
-  Logseq_chat_graph_read.node_is_property runtime.snapshot.db uuid
+  Logseq_chat_lg_core_native.logseq_chat_graph_read_node_is_property_ runtime.snapshot.db uuid
 ;;
 
 let references_for_node runtime uuid =
-  Logseq_chat_graph_read.references_for_node
+  LG.logseq_chat_graph_read_references_for_node (fun value -> Ok value)
     runtime.snapshot.db
-    uuid
+    uuid |> Rrbvec.to_list
 ;;
 
 let journal_page_uuid runtime ~journal_day =
-  Logseq_chat_graph_read.journal_page_uuid runtime.snapshot.db ~journal_day
+  LG.logseq_chat_graph_read_journal_page_uuid runtime.snapshot.db journal_day
 ;;
 
 let normalize_titles runtime ~uuid titles =
-  Logseq_chat_graph_read.normalize_titles_creating_tags
-    runtime.snapshot.db
-    ~fresh_uuid
-    ~uuid
-    titles
+  let titles, tags = LG.logseq_chat_graph_read_normalize_titles_creating_tags
+    runtime.snapshot.db fresh_uuid uuid (List.to_seq, titles) in
+  Rrbvec.to_list titles, Rrbvec.to_list tags
 ;;
 
 let search runtime query =

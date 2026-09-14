@@ -35,27 +35,27 @@ let () =
    | Error message -> failwith message
    | Ok () -> ());
   let db = conn_db conn in
-  if Logseq_chat_graph_read.journal_page_count db <> 8
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db <> 8
   then failwith "the E2E fixture must exercise journal pagination";
-  (match (Logseq_chat_graph_read.sidebar_pages db).favorites with
+  (match (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (db))).favorites)) with
    | [ favorite ] when String.equal favorite.uuid (Seed.page_uuid 7) -> ()
    | _ -> failwith "the E2E fixture must expose the target page as a favorite");
-  if List.length (Logseq_chat_graph_read.blocks db) <> 18
+  if List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) <> 18
   then failwith "the initial fixture window must contain links and rich block examples";
   if
-    Logseq_chat_graph_read.blocks db
-    |> List.exists (fun block -> String.equal block.Logseq_chat_model.uuid Seed.older_block_uuid)
+    (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db)))
+    |> List.exists (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.Logseq_chat_lg_core_native.uuid Seed.older_block_uuid)
   then failwith "the earliest journal must stay outside the initial window";
   (match
-     Logseq_chat_graph_read.blocks db
-     |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid Seed.source_uuid)
+     (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db)))
+     |> List.find_opt (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.Logseq_chat_lg_core_native.uuid Seed.source_uuid)
    with
    | Some source ->
      if List.length source.references <> 2
      then failwith "the E2E source must cover both page and block references";
      if
        List.map
-         (fun (item : Logseq_chat_model.entity_summary) -> item.uuid, item.title)
+         (fun (item : Logseq_chat_lg_core_native.entity_summary) -> item.uuid, item.title)
          source.tags
        |> List.sort compare
        <> [ Seed.tag_uuid, "E2E Project"; Seed.trailing_tag_uuid, "E2E Trailing" ]
@@ -79,8 +79,8 @@ let () =
      then failwith "only the tag encoded in the title may be rendered inline"
    | None -> failwith "the E2E link source is missing");
   if
-    Logseq_chat_graph_read.objects_for_tag db Seed.tag_uuid
-    |> List.exists (fun block -> String.equal block.Logseq_chat_model.title "E2E Child Tag Object")
+    (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_objects_for_tag (fun value -> Ok value) (db) (Seed.tag_uuid)))
+    |> List.exists (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.Logseq_chat_lg_core_native.title "E2E Child Tag Object")
     |> not
   then failwith "parent tagged nodes must include objects of extending tags"
   else
@@ -88,7 +88,7 @@ let () =
     | [ card ]
       when String.equal card.block.uuid "e2e00000-0000-4000-8000-000000000020"
            && String.equal card.block.title "The capital of France is {{cloze Paris}}"
-           && List.map (fun child -> child.Logseq_chat_model.title) card.children
+           && List.map (fun (child : Logseq_chat_lg_core_native.block) -> child.Logseq_chat_lg_core_native.title) card.children
               = [ "Paris is the answer" ] -> ()
     | _ -> failwith "the E2E fixture must expose a due Logseq Card with its answer"
 ;;
@@ -102,17 +102,17 @@ let () =
    | Error message -> failwith message
    | Ok () -> ());
   let db = conn_db conn in
-  if Logseq_chat_graph_read.journal_page_count db <> 1
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db <> 1
   then failwith "the resettable outliner fixture must keep only today's journal";
   if Datascript.entid db "block/uuid" (Uuid Seed.outliner_block_uuid) = None
   then failwith "the resettable outliner fixture must expose today's writable block";
   if
     not
       (List.exists
-         (fun page -> String.equal page.Logseq_chat_graph_read.uuid Seed.outliner_tag_uuid)
-         (Logseq_chat_graph_read.tag_pages db))
+         (fun (page : Logseq_chat_lg_core_native.entity_summary) -> String.equal page.Logseq_chat_lg_core_native.uuid Seed.outliner_tag_uuid)
+         (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_tag_pages (fun value -> Ok value) (db))))
   then failwith "the outliner fixture must expose a deterministic tag completion";
-  let visible_block_count = List.length (Logseq_chat_graph_read.blocks db) in
+  let visible_block_count = List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) in
   if visible_block_count <> 1
   then
     failwith
@@ -130,9 +130,9 @@ let () =
    | Error message -> failwith message
    | Ok () -> ());
   let db = conn_db conn in
-  if Logseq_chat_graph_read.journal_page_count db <> 8
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db <> 8
   then failwith "the resettable standard fixture must keep eight journals";
-  if List.length (Logseq_chat_graph_read.blocks db) <> 18
+  if List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) <> 18
   then failwith "the resettable standard fixture must remain idempotent"
 ;;
 
@@ -145,9 +145,9 @@ let () =
    | Error message -> failwith message
    | Ok () -> ());
   let db = conn_db conn in
-  if Logseq_chat_graph_read.journal_page_count db <> 100
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db <> 100
   then failwith "the performance fixture must keep one hundred journals";
-  if List.length (Logseq_chat_graph_read.blocks db) <> 56
+  if List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) <> 56
   then failwith "the performance fixture must expose eight rows for seven journals"
 ;;
 
@@ -157,9 +157,9 @@ let () =
    | Error message -> failwith message
    | Ok () -> ());
   let db = conn_db conn in
-  if Logseq_chat_graph_read.journal_page_count db <> 1
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db <> 1
   then failwith "the header fixture must create exactly one journal";
-  match Logseq_chat_graph_read.blocks db with
+  match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) with
   | [ block ]
     when block.journal = Some ("Aug 24th, 2026", 20260824)
          && String.equal block.title "E2E Header Navigation" -> ()
@@ -229,9 +229,9 @@ let () =
   then failwith "composer reset must remove stale user pages";
   if Datascript.entid db "block/uuid" (Uuid "e2e-stale-block") <> None
   then failwith "composer reset must remove stale user blocks";
-  if Logseq_chat_graph_read.journal_page_count db <> 1
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db <> 1
   then failwith "composer reset must leave exactly one current journal";
-  match Logseq_chat_graph_read.blocks db with
+  match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) with
   | [ block ] when String.equal block.title "E2E Composer Fixture" -> ()
   | _ -> failwith "composer reset must be idempotent and expose one fixture block"
 ;;

@@ -1,5 +1,5 @@
 module String_set = Set.Make (String)
-module Model = Logseq_chat_model
+module Model = Logseq_chat_lg_core_native
 module Ops = Logseq_chat_pending_ops
 module LG = Logseq_chat_lg_core_native
 
@@ -736,7 +736,7 @@ let drop context selected target_uuid placement =
   match roots, find_block context target_uuid with
   | [], _ | _, None -> None
   | roots, Some target ->
-    let root_ids = List.fold_left (fun set block -> String_set.add block.Model.uuid set) String_set.empty roots in
+    let root_ids = List.fold_left (fun set (block : Model.block) -> String_set.add block.uuid set) String_set.empty roots in
     if String_set.mem target_uuid root_ids
        || not (String_set.is_empty (String_set.inter root_ids (ancestor_uuids context target)))
     then None
@@ -754,7 +754,7 @@ let drop context selected target_uuid placement =
           let parent_uuid = Option.value target.parent_id ~default:target.page_id in
           let siblings =
             sorted_siblings context (Some parent_uuid)
-            |> List.filter (fun block -> not (String_set.mem block.Model.uuid moving_ids))
+            |> List.filter (fun (block : Model.block) -> not (String_set.mem block.uuid moving_ids))
           in
           (match index_of_uuid target.uuid siblings with
            | None -> None
@@ -1001,7 +1001,7 @@ let update context state message =
     let titles =
       context.blocks
       |> List.filter (fun (block : Model.block) -> String_set.mem block.uuid state.selected)
-      |> List.map (fun block -> block.Model.title)
+      |> List.map (fun (block : Model.block) -> block.title)
     in
     ( { state with selected = String_set.empty }
     , [ Copy_text (String.concat "\n" titles); Haptic Impact ] )

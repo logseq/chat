@@ -1,10 +1,11 @@
 (ns logseq-chat.graph-projection
+  (:refer-clojure :exclude [identity update])
   (:require [logseq-chat.datascript-value :as ds-value]
             [logseq-chat.sync-protocol :as protocol]
             [ocaml.package/datascript-ocaml-native]
             [ocaml.Datascript :as ds]
-            [ocaml.Logseq_chat_graph_read :as graph-read]
-            [ocaml.Logseq_chat_model :as model]
+            [logseq-chat.graph-read :as graph-read]
+            [logseq-chat.cache-model :as model]
             [ocaml.Transit_core.Json :as transit]
             [ocaml.Stdlib :as stdlib]
             [ocaml.Rrbvec :as rrbvec]))
@@ -12,14 +13,14 @@
 (type-record graph-projection
   (decrypt-title :fn<string;result<string;string>>)
   (recent-pages :ref<set<int>>)
-  (blocks-by-uuid :ref<map<string;Logseq_chat_model.block>>))
+  (blocks-by-uuid :ref<map<string;model/block>>))
 
 (defn recent-pages [db]
-  (set (graph-read/recent-journal-page-ids db)))
+  (set (graph-read/recent-journal-page-ids 7 db)))
 
 (defn read-blocks [decrypt-title db]
   (into {} (map (fn [block] (tuple (:uuid block) block))
-               (graph-read/blocks :decrypt_title decrypt-title db))))
+               (graph-read/blocks decrypt-title 7 db))))
 
 (defn rebuild [projection db]
   (reset! (:recent-pages projection) (recent-pages db))

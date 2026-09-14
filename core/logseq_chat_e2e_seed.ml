@@ -44,9 +44,10 @@ let () =
           prerr_endline message;
           exit 1
         | Ok db ->
-          let blocks = Logseq_chat_graph_read.blocks db in
-          let tag_pages = Logseq_chat_graph_read.tag_pages db in
-          let favorites = (Logseq_chat_graph_read.sidebar_pages db).favorites in
+          let plain value = Ok value in
+          let blocks = Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks plain 7 db in
+          let tag_pages = Logseq_chat_lg_core_native.logseq_chat_graph_read_tag_pages plain db in
+          let favorites = (Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages plain db).favorites in
           let due_flashcards =
             Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards
               db
@@ -69,10 +70,10 @@ let () =
           Printf.printf
             "Seeded iOS E2E graph: %s journals=%d visible-blocks=%d tags=%d favorites=%d due-flashcards=%d projected-due-flashcards=%d\n"
             path
-            (Logseq_chat_graph_read.journal_page_count db)
-            (List.length blocks)
-            (List.length tag_pages)
-            (List.length favorites)
+            (Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count db)
+            (Rrbvec.length blocks)
+            (Rrbvec.length tag_pages)
+            (Rrbvec.length favorites)
             (List.length due_flashcards)
             (List.length projected_due_flashcards))
      | Error message ->

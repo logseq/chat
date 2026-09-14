@@ -14,4 +14,3 @@
 ../duniverse/melange-edn/lib_native/.melange_edn_native.objs/byte/melange_edn_native.cmi
 ../duniverse/melange-transit/lib/common/.transit_core.objs/byte/transit_core.cmi
 ../duniverse/melange-transit/lib/native/.transit_native.objs/byte/transit_native.cmi
-../core/.logseq_chat_graph_support.objs/byte/logseq_chat_graph_read.cmi

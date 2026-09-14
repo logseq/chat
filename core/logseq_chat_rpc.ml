@@ -1,6 +1,6 @@
 open Yojson.Basic
 
-module Model = Logseq_chat_model
+module Model = Logseq_chat_lg_core_native
 module Api = Logseq_chat_lg_core_native
 module Http = Logseq_chat_http
 module Pending_ops = Logseq_chat_pending_ops
@@ -57,35 +57,35 @@ type node_route =
   { uuid : string
   ; is_tag : bool
   ; is_property : bool
-  ; page : Logseq_chat_graph_read.sidebar_page
+  ; page : Logseq_chat_lg_core_native.entity_summary
   ; zoom_to_block : bool
   ; related_blocks : Model.block list
   ; mutable state : Outliner_state.t
   }
 
 type t =
-  { mutable model : Model.t
+  { mutable model : Model.cachemodel
   ; mutable config : Api.api_config option
   ; mutable available_graphs : Api.api_graph list
   ; mutable related_blocks : Model.block list
-  ; mutable selected_sidebar_page : Logseq_chat_graph_read.sidebar_page option
+  ; mutable selected_sidebar_page : Logseq_chat_lg_core_native.entity_summary option
   ; mutable node_routes : node_route list
   ; mutable node_base_state : Outliner_state.t option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
-  ; model_for_graph : (graph_id:string -> Model.t) option
+  ; model_for_graph : (graph_id:string -> Model.cachemodel) option
   ; apply_sync_event : (string -> (unit, string) result) option
   ; sync_cursor : (unit -> int option) option
   ; mutable accepted_server_t : int option
   ; graph_blocks : (unit -> Model.block list option) option
   ; authoritative_graph_blocks : (unit -> Model.block list option) option
-  ; graph_sidebar_pages : (unit -> Logseq_chat_graph_read.sidebar_pages option) option
-  ; graph_tag_pages : (unit -> Logseq_chat_graph_read.sidebar_page list option) option
+  ; graph_sidebar_pages : (unit -> Logseq_chat_lg_core_native.sidebar_pages option) option
+  ; graph_tag_pages : (unit -> Logseq_chat_lg_core_native.entity_summary list option) option
   ; graph_node_is_tag : (string -> bool) option
   ; graph_node_is_property : (string -> bool) option
   ; graph_page_blocks : (string -> Model.block list option) option
   ; graph_node_destination :
-      (string -> (Logseq_chat_graph_read.sidebar_page * bool) option) option
+      (string -> (Logseq_chat_lg_core_native.entity_summary * bool) option) option
   ; graph_node_references : (string -> Model.block list option) option
   ; graph_tag_objects : (string -> Model.block list option) option
   ; graph_normalize_titles :
@@ -370,7 +370,7 @@ let graph_json (graph : Api.api_graph) =
     ]
 ;;
 
-let sidebar_page_json (page : Logseq_chat_graph_read.sidebar_page) =
+let sidebar_page_json (page : Logseq_chat_lg_core_native.entity_summary) =
   `Assoc [ "uuid", `String page.uuid; "title", `String page.title ]
 ;;
 
@@ -435,23 +435,23 @@ let outliner_context_with_blocks ?sidebar_pages session blocks =
     let sidebar =
       match sidebar_pages, session.graph_sidebar_pages with
       | Some sidebar, _ -> sidebar
-      | None, None -> Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
+      | None, None -> Logseq_chat_lg_core_native.{ favorites = Rrbvec.empty; recent_pages = Rrbvec.empty }
       | None, Some load ->
         Option.value
           (load ())
-          ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
+          ~default:Logseq_chat_lg_core_native.{ favorites = Rrbvec.empty; recent_pages = Rrbvec.empty }
     in
-      sidebar.favorites @ sidebar.recent_pages
-      |> List.map (fun page ->
-        Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.uuid })
+      Rrbvec.to_list sidebar.favorites @ Rrbvec.to_list sidebar.recent_pages
+      |> List.map (fun (page : LG.entity_summary) ->
+        Outliner_state.{ label = page.Logseq_chat_lg_core_native.title; value = page.uuid })
   in
   let tags =
     match session.graph_tag_pages with
     | None -> []
     | Some load ->
       Option.value (load ()) ~default:[]
-      |> List.map (fun page ->
-        Outliner_state.{ label = page.Logseq_chat_graph_read.title; value = page.uuid })
+      |> List.map (fun (page : LG.entity_summary) ->
+        Outliner_state.{ label = page.Logseq_chat_lg_core_native.title; value = page.uuid })
   in
   Outliner_state.{ blocks; pages; tags }
 ;;
@@ -486,7 +486,7 @@ let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
         live_blocks;
       cached
       |> List.filter (fun (block : Model.block) -> String.equal block.page_id page_uuid)
-      |> List.map (fun block ->
+      |> List.map (fun (block : Model.block) ->
         match Hashtbl.find_opt live_by_uuid block.Model.uuid with
         | Some live -> merge_live_block_metadata block live
         | None -> block)
@@ -500,7 +500,7 @@ let base_outliner_context_live session =
     match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
     | Some page, Some load, _ -> Option.value (load page.uuid) ~default:[]
     | _, _, Some load -> Option.value (load ()) ~default:[]
-    | _ -> Model.visible_blocks session.model
+    | _ -> Rrbvec.to_list (Model.logseq_chat_cache_model_visible_blocks session.model)
   in
   outliner_context_with_blocks session blocks
 ;;
@@ -582,7 +582,7 @@ let page_for_visible_block _session (block : Model.block) =
        | None ->
          block.Model.title)
   in
-  let page : Logseq_chat_graph_read.sidebar_page =
+  let page : Logseq_chat_lg_core_native.entity_summary =
     { uuid = block.Model.page_id; title = page_title }
   in
   page
@@ -753,7 +753,7 @@ let rec project_outliner_intent blocks = function
       List.find_opt
         (fun (block : Model.block) -> String.equal block.uuid previous_uuid)
         blocks
-      |> Option.map (fun block -> block.Model.title)
+      |> Option.map (fun (block : Model.block) -> block.title)
       |> Option.value ~default:""
     in
     let title = Option.value merged_title ~default:(previous_title ^ title) in
@@ -1041,13 +1041,13 @@ let selected_graph_is_unlocked session =
    logseq.property.class/extends (handled by objects_for_tag). *)
 let selected_page_is_tag session =
   match session.selected_sidebar_page, session.graph_node_is_tag with
-  | Some page, Some is_tag -> is_tag page.Logseq_chat_graph_read.uuid
+  | Some page, Some is_tag -> is_tag page.Logseq_chat_lg_core_native.uuid
   | _ -> false
 ;;
 
 let selected_page_is_property session =
   match session.selected_sidebar_page, session.graph_node_is_property with
-  | Some page, Some is_property -> is_property page.Logseq_chat_graph_read.uuid
+  | Some page, Some is_property -> is_property page.Logseq_chat_lg_core_native.uuid
   | _ -> false
 ;;
 
@@ -1056,7 +1056,7 @@ let snapshot_related_blocks session =
   then (
     match session.selected_sidebar_page, session.graph_tag_objects with
     | Some page, Some load ->
-      Option.value (load page.Logseq_chat_graph_read.uuid) ~default:[]
+      Option.value (load page.Logseq_chat_lg_core_native.uuid) ~default:[]
     | _ -> [])
   else session.related_blocks
 ;;
@@ -1066,7 +1066,7 @@ let snapshot_linked_reference_blocks session =
   then (
     match session.selected_sidebar_page, session.graph_node_references with
     | Some page, Some load ->
-      Option.value (load page.Logseq_chat_graph_read.uuid) ~default:[]
+      Option.value (load page.Logseq_chat_lg_core_native.uuid) ~default:[]
     | _ -> [])
   else []
 ;;
@@ -1075,7 +1075,7 @@ let has_pending_operations session =
   session.semantic_queue <> []
   || Option.is_some session.semantic_active
   || Option.is_some session.pending_sync
-  || Logseq_chat_model.pending_blocks session.model <> []
+  || Rrbvec.length (Model.logseq_chat_cache_model_pending_blocks session.model) > 0
 ;;
 
 let snapshot session ~context_blocks blocks =
@@ -1087,7 +1087,7 @@ let snapshot session ~context_blocks blocks =
   in
   let sidebar_pages =
     Option.bind session.graph_sidebar_pages (fun load -> load ())
-    |> Option.value ~default:Logseq_chat_graph_read.{ favorites = []; recent_pages = [] }
+    |> Option.value ~default:Logseq_chat_lg_core_native.{ favorites = Rrbvec.empty; recent_pages = Rrbvec.empty }
   in
   report "sidebar";
   let base_state = Option.value session.node_base_state ~default:session.outliner_state in
@@ -1109,7 +1109,7 @@ let snapshot session ~context_blocks blocks =
       [ "revision", `Int session.model.revision
       ; "blocks", `List (List.map serialize_block blocks)
       ; "selectedBlock",
-        (match Model.selected_block session.model with
+        (match Model.logseq_chat_cache_model_selected_block session.model with
          | Some block -> block_json block
          | None -> `Null)
       ; "relatedBlocks", `List (List.map block_json (snapshot_related_blocks session))
@@ -1134,8 +1134,8 @@ let snapshot session ~context_blocks blocks =
          | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
          | _ -> `Null)
       ; "graphs", `List (List.map graph_json session.available_graphs)
-      ; "favorites", `List (List.map sidebar_page_json sidebar_pages.favorites)
-      ; "recentPages", `List (List.map sidebar_page_json sidebar_pages.recent_pages)
+      ; "favorites", `List (List.map sidebar_page_json (Rrbvec.to_list sidebar_pages.favorites))
+      ; "recentPages", `List (List.map sidebar_page_json (Rrbvec.to_list sidebar_pages.recent_pages))
       ; "selectedPage",
         (match session.selected_sidebar_page with
          | Some page -> sidebar_page_json page
@@ -1145,7 +1145,7 @@ let snapshot session ~context_blocks blocks =
       ; "appliedServerT",
         Option.fold ~none:`Null ~some:(fun value -> `Int value) (projection_server_t session)
       ; "syncConnected", `Bool session.sync_connected
-      ; "taskStatuses", `List (List.map status_response_json (Model.all_statuses session.model))
+      ; "taskStatuses", `List (List.map status_response_json (Rrbvec.to_list (Model.logseq_chat_cache_model_all_statuses session.model)))
       ; "pendingSyncRequest", pending_request_json session
       ; "outlinerState", outliner_state_json base_state
       ; "outlinerAutocompleteCandidates",
@@ -1336,7 +1336,7 @@ let snapshot_visible session =
        let local_by_uuid = Hashtbl.create (List.length blocks) in
        List.iter
          (fun (block : Model.block) -> Hashtbl.replace local_by_uuid block.uuid block)
-         (Model.all_blocks session.model);
+         (Rrbvec.to_list (Model.logseq_chat_cache_model_all_blocks session.model));
        List.map
          (fun (block : Model.block) ->
            match Hashtbl.find_opt local_by_uuid block.uuid with
@@ -1345,14 +1345,14 @@ let snapshot_visible session =
            | Some _ | None -> block)
          blocks
        | None -> [])
-    | None -> Model.visible_blocks session.model
+    | None -> Rrbvec.to_list (Model.logseq_chat_cache_model_visible_blocks session.model)
   in
   if session.flashcards <> [] then debug "flashcards visible blocks loaded count=%d" (List.length blocks);
   let context_blocks = blocks in
   let blocks =
     if Option.is_some session.graph_blocks || Option.is_some session.selected_sidebar_page
     then blocks
-    else Model.visible_from session.model blocks
+    else Rrbvec.to_list (Model.logseq_chat_cache_model_visible_from session.model (Some List.to_seq, blocks))
   in
   if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
     Printf.eprintf "LOGSEQ_SNAPSHOT_METRIC stage=blocks elapsed_ms=%.3f\n%!" ((Unix.gettimeofday () -. started) *. 1000.);
@@ -1413,14 +1413,14 @@ let reconcile_authoritative_blocks session =
            String.equal left.uuid right.uuid
          | _ -> false
        in
-       Model.unsynced_blocks session.model
+       Rrbvec.to_list (Model.logseq_chat_cache_model_unsynced_blocks session.model)
        |> List.iter (fun (block : Model.block) ->
          match Hashtbl.find_opt authoritative_by_uuid block.uuid with
          | Some authoritative when
              String.equal block.sync_status "submitted"
              || (String.equal block.title authoritative.title
                  && same_status block.status authoritative.status) ->
-           ignore (Model.mark_block_synced session.model ~uuid:block.uuid)
+           ignore (Model.logseq_chat_cache_model_mark_block_synced session.model block.uuid)
          | Some _ | None -> ()))
 ;;
 
@@ -1477,7 +1477,7 @@ let create
       ?save_graph_catalog
       ()
   =
-  let model = Model.create ?storage () in
+  let model = Model.logseq_chat_cache_model_create storage in
   let available_graphs =
     match Option.bind load_graph_catalog (fun load -> load ()) with
     | Some body ->
@@ -1617,14 +1617,12 @@ let cache_remote_blocks session (response : Api.api_response) ~now =
     in
     List.iter
       (fun (journal : Api.api_journal) ->
-        Model.upsert_journal_page
-          ~title:journal.title
+        Model.logseq_chat_cache_model_upsert_journal_page
           session.model
-          ~uuid:journal.uuid
-          ~journal_day:journal.journal_day)
+          journal.uuid journal.journal_day journal.title)
       journals;
     debug "remote refresh parsed blocks=%d" (List.length blocks);
-    Model.upsert_blocks session.model blocks ~refresh_time:now;
+    Model.logseq_chat_cache_model_upsert_blocks session.model (List.to_seq, blocks) now;
     Ok ())
   else (
     debug "remote refresh HTTP failed status=%d" response.Api.status;
@@ -1636,7 +1634,7 @@ let cache_task_statuses session (response : Api.api_response) =
   then (
     let statuses = Api.logseq_chat_api_statuses_from_property_body response.body in
     debug "remote task statuses parsed count=%d" (List.length statuses);
-    Model.upsert_statuses session.model statuses;
+    Model.logseq_chat_cache_model_upsert_statuses session.model (List.to_seq, statuses);
     Ok ())
   else Error ("Logseq status property returned HTTP " ^ string_of_int response.Api.status)
 ;;
@@ -1644,7 +1642,7 @@ let cache_task_statuses session (response : Api.api_response) =
 let refresh_from_remote session (config : Api.api_config) =
   let now = now_ms () in
   debug "remote refresh started graph=%s" config.Api.graph_id;
-  let journal_day = Model.journal_day_for_ms now in
+  let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms now in
   match session.send (Api.logseq_chat_api_recent_blocks_request config journal_day) with
   | Ok response ->
     (match cache_remote_blocks session response ~now with
@@ -1724,12 +1722,12 @@ let pending_block_unchanged session sent =
   Option.fold
     ~none:false
     ~some:(same_pending_version sent)
-    (Model.read_block session.model sent.Model.uuid)
+    (Model.logseq_chat_cache_model_read_block session.model sent.Model.uuid)
 ;;
 
 let mark_pending_failed_if_unchanged session block =
   if pending_block_unchanged session block
-  then ignore (Model.mark_block_sync_failed session.model ~uuid:block.uuid)
+  then ignore (Model.logseq_chat_cache_model_mark_block_sync_failed session.model block.uuid)
 ;;
 
 let set_pending_active session pump ~transport ~operation ?cleanup_path () =
@@ -1788,7 +1786,7 @@ and prepare_pending_creation session pump (block : Model.block) =
     match encrypted_title session pump.config block.title with
     | Error _ as error -> error
     | Ok title ->
-      let journal_day = Model.journal_day_for_ms block.created_at in
+      let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms block.created_at in
       let cached_page = Hashtbl.find_opt pump.resolved_journal_pages journal_day in
       let graph_page =
         match cached_page, session.journal_page_id with
@@ -1985,7 +1983,7 @@ let capture_operations session ~uuid ~title ~now ?status () =
     |> Option.to_result ~none:"A current server cursor is required"
   in
   Result.bind base_t (fun base_t ->
-    let journal_day = Model.journal_day_for_ms now in
+    let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms now in
     let page_uuid = Option.bind session.journal_page_id (fun find -> find ~journal_day) in
     let capture_operation =
       match page_uuid with
@@ -2094,7 +2092,7 @@ let begin_pending_sync session (config : Api.api_config) =
   then ()
   else (
     restore_semantic_queue session config;
-    let pending = Model.pending_blocks session.model in
+    let pending = Rrbvec.to_list (Model.logseq_chat_cache_model_pending_blocks session.model) in
     let pending_assets = List.filter (fun (block : Model.block) -> block.is_asset) pending in
     (* Upload local files before operations that may reference their blocks. *)
     if pending_assets = [] then activate_semantic_request session config;
@@ -2151,7 +2149,7 @@ let finish_pending_block session pump block ~succeeded =
   if succeeded
   then (
     if pending_block_unchanged session block
-    then ignore (Model.mark_block_submitted session.model ~uuid:block.uuid))
+    then ignore (Model.logseq_chat_cache_model_mark_block_submitted session.model block.uuid))
   else mark_pending_failed_if_unchanged session block;
   pump.active <- None;
   prepare_pending_next session pump
@@ -2176,7 +2174,7 @@ let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.
             context.blocks
           |> Option.map (fun (parent : Model.block) -> parent.page_id, parent_uuid)
         | None ->
-          let journal_day = Model.journal_day_for_ms block.created_at in
+          let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms block.created_at in
           Option.bind session.journal_page_id (fun find -> find ~journal_day)
           |> Option.map (fun page_uuid -> page_uuid, page_uuid)
       in
@@ -2283,11 +2281,8 @@ let complete_pending_active session pump (active : pending_active) (response : A
             if pending_block_unchanged session block then "submitted" else "pending"
           in
           ignore
-            (Model.reconcile_created_block
-               ~sync_status
-               session.model
-               ~local_uuid:block.uuid
-               ~remote_uuid);
+            (Model.logseq_chat_cache_model_reconcile_created_block
+               session.model block.uuid remote_uuid sync_status);
           pump.active <- None;
           prepare_pending_next session pump))
   | Create_block block -> finish_pending_block session pump block ~succeeded:false
@@ -2296,8 +2291,8 @@ let complete_pending_active session pump (active : pending_active) (response : A
       if pending_block_unchanged session block then "submitted" else "pending"
     in
     ignore
-      (Model.reconcile_created_block
-         ~sync_status session.model ~local_uuid:block.uuid ~remote_uuid);
+      (Model.logseq_chat_cache_model_reconcile_created_block
+         session.model block.uuid remote_uuid sync_status);
     pump.active <- None;
     prepare_pending_next session pump
   | Move_created_asset { block; _ } -> finish_pending_block session pump block ~succeeded:false
@@ -2621,7 +2616,7 @@ let aggregate_return_context session payload message =
     Some source_uuid, Some destination ->
     Option.bind (destination source_uuid) (fun (page, _) ->
       Option.map
-        (fun context -> context, page.Logseq_chat_graph_read.uuid)
+        (fun context -> context, page.Logseq_chat_lg_core_native.uuid)
         (page_outliner_context session page.uuid))
   | _ -> None
 ;;
@@ -2941,8 +2936,8 @@ let dispatch session action payload =
   | "selectPage" ->
     (match payload, Option.bind session.graph_sidebar_pages (fun load -> load ()) with
      | Some uuid, Some pages ->
-       let all_pages = pages.favorites @ pages.recent_pages in
-       (match List.find_opt (fun page -> String.equal page.Logseq_chat_graph_read.uuid uuid) all_pages with
+       let all_pages = Rrbvec.to_list pages.favorites @ Rrbvec.to_list pages.recent_pages in
+       (match List.find_opt (fun (page : LG.entity_summary) -> String.equal page.uuid uuid) all_pages with
         | Some page ->
           clear_node_navigation session;
           session.selected_sidebar_page <- Some page;
@@ -3177,7 +3172,7 @@ let dispatch session action payload =
             | Ok () -> snapshot_visible session
             | Error message -> failure ~code:"capture_failed" ~message)
          | _ ->
-           Model.cache_local_message session.model ~uuid ~title:text ~now;
+           Model.logseq_chat_cache_model_cache_local_message session.model uuid text now;
            snapshot_visible session))
   | "sendTask" ->
     (match payload with
@@ -3206,7 +3201,7 @@ let dispatch session action payload =
                   | Ok () -> snapshot_visible session
                   | Error message -> failure ~code:"capture_failed" ~message)
                | _ ->
-                 Model.cache_local_task session.model ~uuid ~title:text ~status ~now;
+                 Model.logseq_chat_cache_model_cache_local_task session.model uuid text status now;
                  snapshot_visible session)
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
@@ -3231,7 +3226,7 @@ let dispatch session action payload =
              let before_state = session.outliner_state in
              Option.iter
                (fun target_uuid ->
-                 if Option.is_none (Model.read_block session.model target_uuid)
+                 if Option.is_none (Model.logseq_chat_cache_model_read_block session.model target_uuid)
                  then
                    let context = base_outliner_context session in
                    match
@@ -3239,12 +3234,11 @@ let dispatch session action payload =
                        (fun (block : Model.block) -> String.equal block.uuid target_uuid)
                        context.blocks
                    with
-                   | Some target -> Model.upsert_blocks session.model [ target ] ~refresh_time:now
+                   | Some target -> Model.logseq_chat_cache_model_upsert_blocks session.model (List.to_seq, [ target ]) now
                    | None -> ())
                target_block_id;
-             Model.cache_local_asset session.model ~uuid ~title ~asset_type ~asset_size
-               ~asset_checksum ~local_path ?target_block_id
-               ~now;
+             Model.logseq_chat_cache_model_cache_local_asset session.model uuid title asset_type asset_size
+               asset_checksum local_path now target_block_id;
              let visible_asset_response () =
                match session.selected_sidebar_page, session.node_routes with
                | None, [] ->
@@ -3256,7 +3250,7 @@ let dispatch session action payload =
                | Some _, _ | None, _ :: _ -> snapshot_visible session
              in
              (match session.config, session.stage_operation,
-                    Model.read_block session.model uuid with
+                    Model.logseq_chat_cache_model_read_block session.model uuid with
               | Some _, Some stage, Some block ->
                 (match asset_datoms_operation ~state:Applied session block with
                  | Ok operation ->
@@ -3320,7 +3314,7 @@ let dispatch session action payload =
               | Some _, None ->
                 failure ~code:"invalid_params" ~message:"A current server cursor is required"
               | None, _ ->
-                (match Model.cache_local_child session.model ~uuid ~title ~parent_id ~now with
+                (match Model.logseq_chat_cache_model_cache_local_child session.model uuid title parent_id now with
                  | Ok () -> snapshot_visible session
                  | Error message -> failure ~code:"invalid_params" ~message))
            | Error message, _, _, _ | _, Error message, _, _
@@ -3437,7 +3431,7 @@ let dispatch session action payload =
            | None ->
              (match required_string "uuid" fields, status_payload fields with
               | Ok uuid, Ok status ->
-                (match Model.update_block_status session.model ~uuid ~status ~now:(now_ms ()) with
+                (match Model.logseq_chat_cache_model_update_block_status session.model uuid status (now_ms ()) with
                  | Error message -> failure ~code:"unknown_block" ~message
                  | Ok () -> snapshot_visible session)
               | Error message, _ | _, Error message ->
@@ -3494,13 +3488,13 @@ let dispatch session action payload =
              if String.equal title ""
              then failure ~code:"invalid_params" ~message:"updateBlock title must not be empty"
              else (
-               match Model.update_block_title session.model ~uuid ~title ~now:(now_ms ()) with
+               match Model.logseq_chat_cache_model_update_block_title session.model uuid title (now_ms ()) with
                | Ok () ->
                  Option.iter
                    (fun status ->
                      ignore
-                       (Model.update_block_status
-                          session.model ~uuid ~status ~now:(now_ms ())))
+                       (Model.logseq_chat_cache_model_update_block_status
+                          session.model uuid status (now_ms ())))
                    status;
                  snapshot_visible session
                | Error message -> failure ~code:"unknown_block" ~message)
@@ -3745,12 +3739,12 @@ let dispatch session action payload =
   | "select" ->
     (match payload with
      | Some uuid ->
-       (match Model.select session.model uuid with
+       (match Model.logseq_chat_cache_model_select session.model uuid with
         | Ok () -> snapshot_visible session
         | Error message -> failure ~code:"unknown_block" ~message)
      | None -> failure ~code:"invalid_params" ~message:"select requires a block uuid")
   | "clearSelection" ->
-    Model.clear_selection session.model;
+    Model.logseq_chat_cache_model_clear_selection session.model;
     snapshot_visible session
   | _ -> failure ~code:"unknown_action" ~message:("unknown action: " ^ action)
 ;;

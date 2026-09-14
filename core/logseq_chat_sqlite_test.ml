@@ -92,23 +92,17 @@ let () =
   with_temp_db (fun path ->
     let first_session = Logseq_chat_sqlite.open_session path in
     let first_model =
-      Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage first_session) ()
+      (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage first_session))))
     in
-    Logseq_chat_model.cache_local_message
-      first_model
-      ~uuid:"local-persisted"
-      ~title:"Persisted offline capture"
-      ~now:1_776_000_000_000;
-    Logseq_chat_model.upsert_statuses
-      first_model
-      [ { uuid = "status-waiting"
+    (Logseq_chat_lg_core_native.logseq_chat_cache_model_cache_local_message (first_model) ("local-persisted") ("Persisted offline capture") (1_776_000_000_000));
+    (Logseq_chat_lg_core_native.logseq_chat_cache_model_upsert_statuses (first_model) (List.to_seq, ([ { uuid = "status-waiting"
         ; ident = Some "user.status/waiting"
         ; title = "Waiting"
         ; icon_type = Some "tabler-icon"
         ; icon_id = Some "clock"
         ; icon_color = Some "#7c3aed"
         }
-      ];
+      ])));
     Logseq_chat_sqlite.close first_session;
 
     let second_session = Logseq_chat_sqlite.open_session path in
@@ -116,9 +110,9 @@ let () =
       ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
       (fun () ->
         let restored_model =
-          Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage second_session) ()
+          (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage second_session))))
         in
-        match Logseq_chat_model.read_block restored_model "local-persisted" with
+        match Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block restored_model "local-persisted" with
         | None -> failwith "expected persisted block after reopening SQLite storage"
         | Some block ->
           assert_equal "title" "Persisted offline capture" block.title;
@@ -127,7 +121,7 @@ let () =
             "journal page id should be persisted"
             (String.length block.page_id >= 8
              && String.equal (String.sub block.page_id 0 8) "journal/");
-          (match Logseq_chat_model.all_statuses restored_model with
+          (match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_all_statuses (restored_model))) with
            | [ status ] ->
              assert_equal "custom status title" "Waiting" status.title;
              assert_equal
@@ -152,7 +146,7 @@ let () =
     Logseq_chat_sqlite.close first_store;
 
     let remote_block =
-      Logseq_chat_model.
+      Logseq_chat_lg_core_native.
         { uuid = "remote-existing"
         ; title = "Existing server block"
         ; page_id = "journal/2026-04-13"
@@ -183,8 +177,7 @@ let () =
             ~graph_blocks:(fun () -> Some [ remote_block ])
             ()
         in
-        Logseq_chat_model.upsert_journal_page
-          second_rpc.model ~uuid:"journal/2026-04-13" ~journal_day:20260413;
+        (Logseq_chat_lg_core_native.logseq_chat_cache_model_upsert_journal_page (second_rpc.model) ("journal/2026-04-13") (20260413) "");
         let response =
           Logseq_chat_rpc.call
             second_rpc
@@ -298,30 +291,22 @@ let () =
             ~address:"logseq-chat/graph-catalog/v1"
             catalog;
           let legacy_model =
-            Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage source) ()
+            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage source))))
           in
-          Logseq_chat_model.cache_local_asset
-            legacy_model
-            ~uuid:"legacy-asset"
-            ~title:"photo.jpg"
-            ~asset_type:"jpg"
-            ~asset_size:4
-            ~asset_checksum:"abcd"
-            ~local_path:"Assets/photo.jpg"
-            ~now:1;
+          (Logseq_chat_lg_core_native.logseq_chat_cache_model_cache_local_asset (legacy_model) ("legacy-asset") ("photo.jpg") ("jpg") (4) ("abcd") ("Assets/photo.jpg") (1) None);
           Logseq_chat_sqlite.migrate_datascript_storage ~source ~destination;
           let migrated =
-            Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage destination) ()
+            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage destination))))
           in
           assert_bool
             "legacy optimistic data should migrate into the graph projection"
-            (List.length (Logseq_chat_model.pending_blocks migrated) = 1);
+            (List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (migrated))) = 1);
           let emptied_source =
-            Logseq_chat_model.create ~storage:(Logseq_chat_sqlite.storage source) ()
+            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage source))))
           in
           assert_bool
             "legacy optimistic data should be removed from app-level storage"
-            (Logseq_chat_model.pending_blocks emptied_source = []);
+            ((Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (emptied_source))) = []);
           assert_bool
             "graph catalog metadata should remain in app-level storage"
             (Logseq_chat_sqlite.restore_string

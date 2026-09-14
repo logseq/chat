@@ -188,7 +188,7 @@ let () =
   assert_bool "favorite operation is satisfied after projection"
     (Projection.satisfied favorited favorite);
   assert_bool "favorite projection appears in sidebar"
-    (match (Logseq_chat_graph_read.sidebar_pages favorited).favorites with
+    (match (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (favorited))).favorites)) with
      | [ page ] -> String.equal page.uuid "project"
      | _ -> false);
   let unfavorite =
@@ -208,7 +208,7 @@ let () =
   assert_bool "unfavorite operation is satisfied after projection"
     (Projection.satisfied unfavorited unfavorite);
   assert_bool "unfavorite projection leaves sidebar"
-    ((Logseq_chat_graph_read.sidebar_pages unfavorited).favorites = [])
+    ((Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (unfavorited))).favorites)) = [])
 ;;
 
 let () =
@@ -241,12 +241,12 @@ let () =
   assert_bool "recycled page is hidden from recent pages"
     (not
        (List.exists
-          (fun page -> String.equal page.Logseq_chat_graph_read.uuid "page")
-          (Logseq_chat_graph_read.sidebar_pages recycled).recent_pages));
+          (fun (page : Logseq_chat_lg_core_native.entity_summary) -> String.equal page.Logseq_chat_lg_core_native.uuid "page")
+          (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (recycled))).recent_pages))));
   assert_bool "recycled page is no longer a node destination"
-    (Logseq_chat_graph_read.node_destination recycled "page" = None);
+    ((Logseq_chat_lg_core_native.logseq_chat_graph_read_node_destination (fun value -> Ok value) (recycled) ("page")) = None);
   assert_bool "a block below a recycled page is no longer a node destination"
-    (Logseq_chat_graph_read.node_destination recycled "block" = None);
+    ((Logseq_chat_lg_core_native.logseq_chat_graph_read_node_destination (fun value -> Ok value) (recycled) ("block")) = None);
   assert_bool "page recycle preserves its original parent"
     (Ds_value.optional_ref_eid
        recycled
@@ -1225,7 +1225,7 @@ let () =
   assert_string "created page title" "New Page" (title projected.db "new-page");
   assert_bool "ordinary page is not a tag" (not (has_ident_tag projected.db ~source:"new-page" ~target:"logseq.class/Tag"));
   assert_bool "created page appears in page search"
-    (List.exists (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.uuid = "new-page") (Logseq_chat_graph_read.sidebar_pages projected.db).recent_pages);
+    (List.exists (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.uuid = "new-page") (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (projected.db))).recent_pages)));
   with_temp_db (fun path ->
     Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
     Ops.save ~path operation;

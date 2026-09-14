@@ -1,6 +1,6 @@
 module State = Logseq_chat_outliner_state
 module Effects = Logseq_chat_outliner_effects
-module Model = Logseq_chat_model
+module Model = Logseq_chat_lg_core_native
 module Ops = Logseq_chat_pending_ops
 
 let fail label = failwith label

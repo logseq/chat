@@ -4,7 +4,7 @@
             [clojure.string :as string]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
-            [ocaml.Logseq_chat_model :as model]
+            [logseq-chat.cache-model :as model]
             [ocaml.Rrbvec :as rrbvec]
             [ocaml.String :as bytes]
             [ocaml.Char :as char]
@@ -236,7 +236,7 @@
 (defn summary-of-json [input]
   (let [uuid (string-member "uuid" input) title (string-member "title" input)]
     (when (and (not (empty? uuid)) (not (empty? title)))
-      (record Logseq_chat_model.entity_summary (uuid uuid) (title title)))))
+      (record model/entity-summary (uuid uuid) (title title)))))
 
 (defn summaries-member [name input]
   (rrbvec/to-list (vec (keep summary-of-json (list-member name input)))))
@@ -245,7 +245,7 @@
   (let [uuid (string-member "uuid" input) title (string-member "title" input)
         icon (member "icon" input)]
     (when (and (not (empty? uuid)) (not (empty? title)))
-      (record Logseq_chat_model.status
+      (record model/status
         (uuid uuid) (title title) (ident (option-string-member "ident" input))
         (icon-type (option-string-member "type" icon)) (icon-id (option-string-member "id" icon))
         (icon-color (option-string-member "color" icon))))))
@@ -266,7 +266,7 @@
 (defn block-of-json [fallback-time input]
   (let [uuid (string-member "uuid" input) title (string-member "title" input)]
     (when (and (not (empty? uuid)) (not (empty? title)))
-      (record Logseq_chat_model.block
+      (record model/block
         (uuid uuid) (title title) (page-id (string-member "page-id" input))
         (parent-id (option-string-member "parent-id" input)) (order (option-string-member "order" input))
         (created-at (let [value (int-member "created-at" input)] (if (= value 0) fallback-time value)))

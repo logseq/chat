@@ -1,6 +1,6 @@
 module State = Logseq_chat_outliner_state
 module Ops = Logseq_chat_pending_ops
-module Model = Logseq_chat_model
+module Model = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 
 type platform_command =
@@ -44,7 +44,7 @@ let next_order context (block : Model.block) =
        | _ -> first_strictly_greater lower rest)
   in
   let rec loop = function
-    | current :: rest when String.equal current.Model.uuid block.uuid ->
+    | (current : Model.block) :: rest when String.equal current.uuid block.uuid ->
       first_strictly_greater block.order rest
     | _ :: rest -> loop rest
     | [] -> None
@@ -62,8 +62,8 @@ let status_reference (status : Model.status) =
   | None -> Ops.Ref_uuid status.uuid
 ;;
 
-let next_status_value block =
-  let current_ident = Option.bind block.Model.status (fun status -> status.Model.ident) in
+let next_status_value (block : Model.block) =
+  let current_ident = Option.bind block.status (fun (status : Model.status) -> status.ident) in
   match current_ident with
   | Some "logseq.property/status.todo" ->
     Some (Ops.Ref_ident "logseq.property/status.doing")

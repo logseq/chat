@@ -68,9 +68,9 @@ let () =
   assert_equal "tag title" "Project" (List.hd semantic.tags).title;
   assert_equal "reference title" "Project" (List.hd semantic.references).title;
   assert_some_string "status title" "Todo"
-    (Option.map (fun (status : Logseq_chat_model.status) -> status.title) semantic.status);
+    (Option.map (fun (status : Logseq_chat_lg_core_native.status) -> status.title) semantic.status);
   assert_some_string "status icon" "circle"
-    (Option.bind semantic.status (fun (status : Logseq_chat_model.status) -> status.icon_id));
+    (Option.bind semantic.status (fun (status : Logseq_chat_lg_core_native.status) -> status.icon_id));
   let statuses =
     Logseq_chat_lg_core_native.logseq_chat_api_statuses_from_property_body
       {|{"results":[{"uuid":"property-status","ident":"logseq.property/status","title":"Status","choices":[{"uuid":"status-waiting","ident":"user.status/waiting","title":"Waiting","icon":{"type":"tabler-icon","id":"clock","color":"#7c3aed"}}]}]}|}

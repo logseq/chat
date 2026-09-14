@@ -1,6 +1,6 @@
 (ns logseq-chat.markup
   (:require [clojure.string :as string]
-            [ocaml.Logseq_chat_model :as model]
+            [logseq-chat.cache-model :as model]
             [ocaml.Mldoc.Inline :as inline]
             [ocaml.Mldoc.Conf :as conf]
             [ocaml.Angstrom :as angstrom]
@@ -97,7 +97,7 @@
     (subs value (count left) (- (count value) (count right)))
     value))
 
-(defn find-summary [^:list<Logseq_chat_model.entity_summary> summaries value]
+(defn find-summary [^:list<model/entity-summary> summaries value]
   (some (fn [summary]
           (when (or (= value (:uuid summary))
                     (= (bytes/lowercase-ascii value) (bytes/lowercase-ascii (:title summary))))

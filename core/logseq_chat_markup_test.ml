@@ -1,7 +1,7 @@
 module Markup = Logseq_chat_lg_core_native
-module Model = Logseq_chat_model
+module Model = Logseq_chat_lg_core_native
 
-let summary uuid title = Model.{ uuid; title }
+let summary uuid title : Model.entity_summary = Model.{ uuid; title }
 let assert_bool label value = if not value then failwith label
 let parse ~references ~tags source =
   Markup.logseq_chat_markup_parse references tags source |> Rrbvec.to_list

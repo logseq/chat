@@ -209,10 +209,10 @@ let () =
          ]
        5);
   let latest_page_eid = Option.get (entid (conn_db conn) "block/uuid" (Uuid next_page_uuid)) in
-  if Logseq_chat_graph_read.recent_journal_page_ids ~limit:1 (conn_db conn)
+  if (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_recent_journal_page_ids (1) ((conn_db conn))))
      <> [ latest_page_eid ]
   then failwith "journal reads must honor the bounded newest-first window";
-  if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 2
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count (conn_db conn) <> 2
   then failwith "journal pagination must expose whether older pages remain";
   ignore
     (transact_conn
@@ -222,17 +222,17 @@ let () =
            , "logseq.property/deleted-at"
            , Instant 6 )
        ]);
-  if Logseq_chat_graph_read.recent_journal_page_ids (conn_db conn) <> [
+  if (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_recent_journal_page_ids 7 ((conn_db conn)))) <> [
        Option.get (entid (conn_db conn) "block/uuid" (Uuid page_uuid))
      ]
   then failwith "recycled journals must be excluded from the journal window";
   if List.exists
-       (fun (block : Logseq_chat_model.block) -> block.page_id = next_page_uuid)
-       (Logseq_chat_graph_read.blocks (conn_db conn))
+       (fun (block : Logseq_chat_lg_core_native.block) -> block.page_id = next_page_uuid)
+       (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 ((conn_db conn))))
   then failwith "blocks below a recycled journal must not remain visible";
-  if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 1
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count (conn_db conn) <> 1
   then failwith "recycled journals must not count toward pagination";
-  if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260817 <> None
+  if (Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_uuid ((conn_db conn)) (20260817)) <> None
   then failwith "recycled journals must not resolve as today's journal";
   Logseq_chat_lg_core_native.logseq_chat_graph_projection_update
     projection
@@ -388,30 +388,30 @@ let () =
            }
        ]);
   let db = conn_db conn in
-  (match Logseq_chat_graph_read.node_destination db page_uuid with
+  (match (Logseq_chat_lg_core_native.logseq_chat_graph_read_node_destination (fun value -> Ok value) (db) (page_uuid)) with
    | Some (page, false) when page.uuid = page_uuid && page.title = "Node page" -> ()
    | _ -> failwith "a page node reference did not resolve to its outliner page");
-  (match Logseq_chat_graph_read.node_destination db block_uuid with
+  (match (Logseq_chat_lg_core_native.logseq_chat_graph_read_node_destination (fun value -> Ok value) (db) (block_uuid)) with
    | Some (page, true) when page.uuid = page_uuid -> ()
    | _ -> failwith "an ordinary block node reference did not resolve to its containing page");
-  if Logseq_chat_graph_read.node_destination db "hidden-parent" <> None
-     || Logseq_chat_graph_read.node_destination db "hidden-child" <> None
+  if (Logseq_chat_lg_core_native.logseq_chat_graph_read_node_destination (fun value -> Ok value) (db) ("hidden-parent")) <> None
+     || (Logseq_chat_lg_core_native.logseq_chat_graph_read_node_destination (fun value -> Ok value) (db) ("hidden-child")) <> None
   then failwith "hidden blocks must not remain node navigation destinations";
-  (match Logseq_chat_graph_read.objects_for_tag db tag_uuid with
+  (match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_objects_for_tag (fun value -> Ok value) (db) (tag_uuid))) with
    | [ block ]
      when block.uuid = object_uuid
           && block.title = "Tagged object"
           && List.map
-               (fun (summary : Logseq_chat_model.entity_summary) -> summary.title)
+               (fun (summary : Logseq_chat_lg_core_native.entity_summary) -> summary.title)
                block.breadcrumbs
              = [ "Node page"; "Parent block" ] -> ()
    | _ -> failwith "tag objects were not read from the projected Datascript DB");
-  (match Logseq_chat_graph_read.references_for_node db page_uuid with
+  (match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_references_for_node (fun value -> Ok value) (db) (page_uuid))) with
    | [ block ]
      when block.uuid = "linked-reference"
           && block.title = "Linked reference"
           && List.map
-               (fun (summary : Logseq_chat_model.entity_summary) -> summary.title)
+               (fun (summary : Logseq_chat_lg_core_native.entity_summary) -> summary.title)
                block.breadcrumbs
              = [ "Node page" ] -> ()
    | _ -> failwith "linked references were not read from the projected Datascript DB")
@@ -497,8 +497,8 @@ let () =
            }
        ]);
   let uuids =
-    Logseq_chat_graph_read.blocks ~journal_limit:2 (conn_db conn)
-    |> List.map (fun block -> block.Logseq_chat_model.uuid)
+    (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) (2) ((conn_db conn))))
+    |> List.map (fun (block : Logseq_chat_lg_core_native.block) -> block.Logseq_chat_lg_core_native.uuid)
   in
   if uuids <> [ "newer-first"; "newer-second"; "older-first"; "older-second" ]
   then failwith "journal blocks must stay grouped newest-first in outliner order"
@@ -601,15 +601,15 @@ let () =
            ]
        ]);
   let db = conn_db conn in
-  if not (Logseq_chat_graph_read.node_is_tag db "child-tag")
+  if not (Logseq_chat_lg_core_native.logseq_chat_graph_read_node_is_tag_ db "child-tag")
   then failwith "a class that extends another tag must still use the tag node route";
-  if not (Logseq_chat_graph_read.node_is_property db "status-property")
+  if not (Logseq_chat_lg_core_native.logseq_chat_graph_read_node_is_property_ db "status-property")
   then failwith "pages tagged #Property must be identified as property nodes";
-  if Logseq_chat_graph_read.node_is_property db "tagged-page"
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_node_is_property_ db "tagged-page"
   then failwith "ordinary pages must not be identified as property nodes";
   (* Tagged nodes are ordinary blocks and whole pages (like journals tagged
      #Journal or property pages tagged #Property). *)
-  (match Logseq_chat_graph_read.objects_for_tag db "parent-tag" with
+  (match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_objects_for_tag (fun value -> Ok value) (db) ("parent-tag"))) with
    | [ block; page ]
      when String.equal block.uuid "tagged-object"
           && String.equal page.uuid "tagged-page"
@@ -618,11 +618,11 @@ let () =
    | _ ->
      failwith
        "tagged nodes must include blocks and page entities of transitively extending tags");
-  match Logseq_chat_graph_read.blocks_for_page db "page" with
+  match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks_for_page (fun value -> Ok value) (db) ("page"))) with
   | blocks ->
     (match
        List.find_opt
-         (fun (block : Logseq_chat_model.block) -> String.equal block.uuid "asset-object")
+         (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.uuid "asset-object")
          blocks
      with
      | Some block when block.is_asset -> ()
@@ -671,15 +671,15 @@ let () =
                ]
            }
        ]);
-  if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260815
+  if (Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_uuid ((conn_db conn)) (20260815))
      <> Some page_uuid
   then failwith "journal day must resolve to the graph page UUID";
-  if Logseq_chat_graph_read.journal_page_uuid (conn_db conn) ~journal_day:20260816
+  if (Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_uuid ((conn_db conn)) (20260816))
      <> None
   then failwith "missing journal day must not resolve to a placeholder";
-  (match Logseq_chat_graph_read.blocks (conn_db conn) with
+  (match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 ((conn_db conn)))) with
   | [ block ] ->
-    if not (String.equal block.Logseq_chat_model.uuid block_uuid)
+    if not (String.equal block.Logseq_chat_lg_core_native.uuid block_uuid)
     then failwith "graph block UUID changed";
     if not (String.equal block.title "Desktop seed")
     then failwith "graph block title changed";
@@ -703,9 +703,9 @@ let () =
     | "cipher-page" -> Ok "Decrypted journal"
     | value -> Ok value
   in
-  match Logseq_chat_graph_read.blocks ~decrypt_title (conn_db conn) with
+  match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (decrypt_title) 7 ((conn_db conn)))) with
   | [ block ] ->
-    if not (String.equal block.Logseq_chat_model.title "Decrypted block")
+    if not (String.equal block.Logseq_chat_lg_core_native.title "Decrypted block")
     then failwith "encrypted block title was not decrypted for the projection";
     if block.journal <> Some ("Decrypted journal", 20260815)
     then failwith "encrypted journal title was not decrypted for the projection"
@@ -812,8 +812,8 @@ let () =
        ]);
   let db = conn_db conn in
   (match
-     Logseq_chat_graph_read.tag_pages db
-     |> List.map (fun (tag : Logseq_chat_graph_read.sidebar_page) -> tag.uuid, tag.title)
+     (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_tag_pages (fun value -> Ok value) (db)))
+     |> List.map (fun (tag : Logseq_chat_lg_core_native.entity_summary) -> tag.uuid, tag.title)
      |> List.sort compare
    with
    | [ "internal-tag", "Task"; "public-built-in-tag", "Card"; "tag-target", "Project" ] -> ()
@@ -821,14 +821,14 @@ let () =
      failwith
        "tag autocomplete pages must include public built-ins and hide internal tags");
   match
-    Logseq_chat_graph_read.blocks db
-    |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
+    (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db)))
+    |> List.find_opt (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.Logseq_chat_lg_core_native.uuid "source")
   with
   | None -> failwith "source block missing from graph projection"
   | Some block ->
     let summaries values =
       List.map
-        (fun (summary : Logseq_chat_model.entity_summary) ->
+        (fun (summary : Logseq_chat_lg_core_native.entity_summary) ->
           summary.uuid, summary.title)
         values
       |> List.sort compare
@@ -866,7 +866,7 @@ let () =
          2);
     (match
        Logseq_chat_lg_core_native.logseq_chat_graph_projection_blocks projection
-       |> List.find_opt (fun block -> String.equal block.Logseq_chat_model.uuid "source")
+       |> List.find_opt (fun (block : Logseq_chat_lg_core_native.block) -> String.equal block.Logseq_chat_lg_core_native.uuid "source")
      with
      | Some source
        when summaries source.references
@@ -977,20 +977,20 @@ let () =
                ]
            }
        ]);
-  let sidebar = Logseq_chat_graph_read.sidebar_pages (conn_db conn) in
-  if List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.favorites
+  let sidebar = (Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) ((conn_db conn))) in
+  if List.map (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.Logseq_chat_lg_core_native.uuid) (Rrbvec.to_list ((sidebar).favorites))
      <> [ "page-beta"; "page-alpha" ]
   then failwith "favorites must preserve their graph order";
-  if List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.recent_pages
+  if List.map (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.Logseq_chat_lg_core_native.uuid) (Rrbvec.to_list ((sidebar).recent_pages))
      <> [ "page-seeded-recent" ]
   then failwith "recent pages must exclude favorites and built-in pages";
   if List.exists
-       (fun page -> page.Logseq_chat_graph_read.uuid = "favorites-page")
-       sidebar.recent_pages
+       (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.Logseq_chat_lg_core_native.uuid = "favorites-page")
+       (Rrbvec.to_list ((sidebar).recent_pages))
   then failwith "hidden built-in pages must not appear in recent pages"
   else
-    match Logseq_chat_graph_read.blocks_for_page (conn_db conn) "page-alpha" with
-    | [ block ] when block.Logseq_chat_model.uuid = "alpha-block" -> ()
+    match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks_for_page (fun value -> Ok value) ((conn_db conn)) ("page-alpha"))) with
+    | [ block ] when block.Logseq_chat_lg_core_native.uuid = "alpha-block" -> ()
     | _ -> failwith "opening a sidebar page must read that page's blocks by UUID"
 ;;
 
@@ -1038,16 +1038,16 @@ let () =
     Ok value
   in
   let visible =
-    Logseq_chat_graph_read.blocks ~decrypt_title ~journal_limit:7 (conn_db conn)
+    (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (decrypt_title) (7) ((conn_db conn))))
   in
   if List.length visible <> 7
   then failwith "large graphs must materialize only the requested journal window";
   if !decrypt_count <> 14
   then failwith "older journal titles must not be decrypted or materialized";
-  if Logseq_chat_graph_read.journal_page_count (conn_db conn) <> 1_000
+  if Logseq_chat_lg_core_native.logseq_chat_graph_read_journal_page_count (conn_db conn) <> 1_000
   then failwith "bounded reads must retain an accurate older-journal indicator";
   if
-    List.map (fun block -> block.Logseq_chat_model.uuid) visible
+    List.map (fun (block : Logseq_chat_lg_core_native.block) -> block.Logseq_chat_lg_core_native.uuid) visible
     <> List.init 7 (fun offset -> "large-block-" ^ string_of_int (999 - offset))
   then failwith "bounded journal reads must preserve stable block identities and order"
 ;;
@@ -1077,9 +1077,9 @@ let () =
          ; Raw_datom (datom ~e:2 ~a:"block/created-at" ~v:(Instant 1) ())
          ]
   in
-  match Logseq_chat_graph_read.blocks db with
+  match (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_blocks (fun value -> Ok value) 7 (db))) with
   | [ block ]
-    when block.Logseq_chat_model.uuid = "raw-block"
+    when block.Logseq_chat_lg_core_native.uuid = "raw-block"
          && block.page_id = "raw-page"
          && block.parent_id = Some "raw-page"
          && block.journal = Some ("Raw journal", 20260817) -> ()
@@ -1139,7 +1139,7 @@ let () =
            ]
        ]);
   let db = conn_db conn in
-  let normalize = Logseq_chat_graph_read.normalize_title_text db ~uuid:"note-uuid" in
+  let normalize = (Logseq_chat_lg_core_native.logseq_chat_graph_read_normalize_title_text (fun _ -> None) (db) ("note-uuid")) in
   assert
     (String.equal
        (normalize "Ship [[Roadmap]] as #project and #[[Project]]")
@@ -1155,21 +1155,13 @@ let () =
   let counter = ref 0 in
   let fresh_uuid () = incr counter; "fresh-" ^ string_of_int !counter in
   let titles, created =
-    Logseq_chat_graph_read.normalize_titles_creating_tags
-      db
-      ~fresh_uuid
-      ~uuid:"note-uuid"
-      [ "start #foobar"; "end #FooBar and #project" ]
+    (let titles, created = Logseq_chat_lg_core_native.logseq_chat_graph_read_normalize_titles_creating_tags (db) (fresh_uuid) ("note-uuid") (List.to_seq, ([ "start #foobar"; "end #FooBar and #project" ])) in Rrbvec.to_list titles, Rrbvec.to_list created)
   in
   assert (titles = [ "start #[[fresh-1]]"; "end #[[fresh-1]] and #[[project-tag-uuid]]" ]);
   assert (created = [ "fresh-1", "foobar" ]);
   (* Without new hashtags nothing is created. *)
   let unchanged, none_created =
-    Logseq_chat_graph_read.normalize_titles_creating_tags
-      db
-      ~fresh_uuid
-      ~uuid:"note-uuid"
-      [ "plain #project" ]
+    (let titles, created = Logseq_chat_lg_core_native.logseq_chat_graph_read_normalize_titles_creating_tags (db) (fresh_uuid) ("note-uuid") (List.to_seq, ([ "plain #project" ])) in Rrbvec.to_list titles, Rrbvec.to_list created)
   in
   assert (unchanged = [ "plain #[[project-tag-uuid]]" ] && none_created = [])
 ;;
@@ -1197,13 +1189,13 @@ let () =
        ]));
   let decrypted = ref [] in
   let decrypt_title title = decrypted := title :: !decrypted; Ok title in
-  let sidebar = Logseq_chat_graph_read.sidebar_pages ~decrypt_title (conn_db conn) in
-  let actual = List.map (fun page -> page.Logseq_chat_graph_read.uuid) sidebar.recent_pages in
+  let sidebar = (Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (decrypt_title) ((conn_db conn))) in
+  let actual = List.map (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.Logseq_chat_lg_core_native.uuid) (Rrbvec.to_list ((sidebar).recent_pages)) in
   let expected = List.init 15 (fun index -> "recent-" ^ string_of_int (100 - index)) in
   if actual <> expected then failwith "recent window must fill past hidden and blank pages in newest-first order";
   if List.exists (fun title -> List.mem title !decrypted) ["1"; "85"]
   then failwith "recent window must not decrypt titles outside the visible 15 pages";
-  if (Logseq_chat_graph_read.sidebar_pages (empty_db ())).recent_pages <> []
+  if (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) ((empty_db ())))).recent_pages)) <> []
   then failwith "an empty graph must have no recent pages"
 ;;
 
@@ -1234,9 +1226,9 @@ let () =
   ignore (transact_conn conn [Add (Entity_id 20, "block/uuid", Uuid "older-use"); Add (Entity_id 20, "block/tags", Ref 6)]);
   ignore (transact_conn conn [Add (Entity_id 21, "block/uuid", Uuid "newer-use"); Add (Entity_id 21, "block/tags", Ref 7)]);
   let db = conn_db conn in
-  let names pages = List.map (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.title) pages in
-  let recent = names (Logseq_chat_graph_read.sidebar_pages db).recent_pages in
-  let tags = names (Logseq_chat_graph_read.tag_pages db) in
+  let names pages = List.map (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.title) pages in
+  let recent = names (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (db))).recent_pages)) in
+  let tags = names (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_tag_pages (fun value -> Ok value) (db))) in
   let failures = ref [] in
   let check label condition =
     Printf.printf "%s: %s\n%!" (if condition then "PASS" else "FAIL") label;

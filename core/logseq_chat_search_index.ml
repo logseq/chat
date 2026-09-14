@@ -239,9 +239,8 @@ let row_of_eid db eid =
       with
       | Some (Bool true), _ | _, Some _ -> true
       | _ ->
-        Logseq_chat_graph_read.page_is_hidden
+        Logseq_chat_lg_core_native.logseq_chat_graph_read_page_is_hidden_
           db
-          Logseq_chat_graph_read.Int_set.empty
           eid
     in
     if hidden || utf8_length title > 10000
@@ -503,8 +502,8 @@ type hit =
   { uuid : string
   ; title : string
   ; is_page : bool
-  ; page : Logseq_chat_graph_read.sidebar_page option
-  ; breadcrumbs : Logseq_chat_model.entity_summary list
+  ; page : Logseq_chat_lg_core_native.entity_summary option
+  ; breadcrumbs : Logseq_chat_lg_core_native.entity_summary list
   }
 
 (* Search and attach the display context the UI needs: the containing page
@@ -527,7 +526,7 @@ let search_hits ?limit t db query =
       then None
       else (
         match entity_eid result.page_uuid with
-        | Some page_eid -> Logseq_chat_graph_read.page_summary plain db page_eid
+        | Some page_eid -> Logseq_chat_lg_core_native.logseq_chat_graph_read_page_summary plain db page_eid
         | None -> None)
     in
     let breadcrumbs =
@@ -535,7 +534,7 @@ let search_hits ?limit t db query =
       then []
       else (
         match entity_eid result.uuid with
-        | Some eid -> Logseq_chat_graph_read.breadcrumbs plain db eid
+        | Some eid -> Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_graph_read_breadcrumbs plain db eid)
         | None -> [])
     in
     { uuid = result.uuid; title = result.title; is_page = result.is_page; page; breadcrumbs })

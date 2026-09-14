@@ -1,14 +1,14 @@
 (ns logseq-chat.flashcards
+  (:refer-clojure :exclude [repeat descendants])
   (:require [ocaml.package/datascript-ocaml-native]
             [ocaml.package/ocaml-fsrs]
             [logseq-chat.datascript-value :as ds-value]
             [ocaml.Datascript :as ds]
             [ocaml.Float :as float]
             [ocaml.Fsrs :as fsrs]
-            [ocaml.Hashtbl :as hashtbl]
             [ocaml.List :as list]
-            [ocaml.Logseq_chat_graph_read :as graph-read]
-            [ocaml.Logseq_chat_graph_read.Int_set :as int-set]
+            [logseq-chat.graph-read :as graph-read]
+            [logseq-chat.cache-model :as model]
             [ocaml.Models :as models]
             [ocaml.Parameters :as parameters]
             [ocaml.Rrbvec :as rrbvec]
@@ -40,8 +40,8 @@
   (last-rating :option<flashcard-rating>))
 
 (type-record due-card
-  (block :Logseq_chat_model.block)
-  (children :list<Logseq_chat_model.block>)
+  (block :model/block)
+  (children :list<model/block>)
   (card :fsrs-card))
 
 (defn rating-keyword [rating]
@@ -236,17 +236,17 @@
 
 (defn contains-class-eid? [class-eids tag-eids]
   (some
-   (fn [class-eid] (int-set/mem class-eid class-eids))
+   (fn [class-eid] (contains? class-eids class-eid))
    tag-eids))
 
 (defn card-eid [db eid]
   (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
     None false
     (Some card-class-eid)
-    (let [classes (graph-read/class_descendants db card-class-eid)]
-      (contains-class-eid? classes (graph-read/ref_eids db eid "block/tags")))))
+    (let [classes (graph-read/class-descendants db card-class-eid)]
+      (boolean (contains-class-eid? classes (graph-read/ref-eids db eid "block/tags"))))))
 
-(defn ^:list<Logseq_chat_model.block> descendants [^:list<Logseq_chat_model.block> page-blocks parent-uuid]
+(defn ^:list<model/block> descendants [^:list<model/block> page-blocks parent-uuid]
   (list/of-seq
    (mapcat
     (fn [child]
@@ -257,11 +257,11 @@
      page-blocks))))
 
 (defn page-blocks-for-page [page-blocks-cache db page-uuid]
-  (match (hashtbl/find_opt page-blocks-cache page-uuid)
+  (match (get @page-blocks-cache page-uuid)
     (Some blocks) blocks
     None
-    (let [blocks (graph-read/blocks_for_page db page-uuid)]
-      (hashtbl/add page-blocks-cache page-uuid blocks)
+    (let [blocks (rrbvec/to-list (graph-read/blocks-for-page decrypt-title db page-uuid))]
+      (swap! page-blocks-cache assoc page-uuid blocks)
       blocks)))
 
 (defn card-for-eid [page-blocks-cache db now uuid eid]
@@ -270,7 +270,7 @@
       (Some block)
       (let [page-blocks (page-blocks-for-page page-blocks-cache db (:page-id block))
             created-at (if (> (:created-at block) 0) (:created-at block) now)
-            due (graph-read/int_value
+            due (graph-read/int-value
                  (graph-read/value db eid "logseq.property.fsrs/due"))
             card (card-of-values
                   created-at
@@ -287,7 +287,7 @@
 (defn card-for-uuid [db now uuid]
   (match (ds/entid db "block/uuid" (ds/Uuid uuid))
     (Some eid)
-    (card-for-eid (hashtbl/create 8) db now uuid eid)
+    (card-for-eid (atom {}) db now uuid eid)
     None None))
 
 (defn int-compare [left right]
@@ -296,7 +296,7 @@
     (if (> left right) 1 0)))
 
 (defn due-card-for-eid [page-blocks-cache db now eid]
-  (match (graph-read/uuid_for_eid db eid)
+  (match (graph-read/uuid-for-eid db eid)
     None None
     (Some uuid)
     (match (card-for-eid page-blocks-cache db now uuid eid)
@@ -310,9 +310,9 @@
   (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
     None (list)
     (Some card-class-eid)
-    (let [page-blocks-cache (hashtbl/create 8)
-          class-eids (int-set/to_seq (graph-read/class_descendants db card-class-eid))
-          tagged-datoms (seq/flat_map
+    (let [page-blocks-cache (atom {})
+          class-eids (graph-read/class-descendants db card-class-eid)
+          tagged-datoms (mapcat
                          (fn [class-eid]
                            (ds-value/datoms-by-ref db (ds/Aevt) "block/tags" class-eid))
                          class-eids)

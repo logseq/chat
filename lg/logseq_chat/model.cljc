@@ -1,4 +1,5 @@
 (ns logseq-chat.model
+  (:refer-clojure :exclude [update])
   (:require [clojure.string :as string]))
 
 (defn task-status [uuid ident title icon-id]

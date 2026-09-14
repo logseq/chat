@@ -1,4 +1,5 @@
-(ns logseq-chat.model)
+(ns logseq-chat.model
+  (:refer-clojure :exclude [update]))
 
 (type-variant sync-state
   (OfflineState)

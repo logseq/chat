@@ -1,5 +1,5 @@
 module State = Logseq_chat_outliner_state
-module Model = Logseq_chat_model
+module Model = Logseq_chat_lg_core_native
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
@@ -135,7 +135,7 @@ let () =
 ;;
 
 let () =
-  let summary uuid title = Model.{ uuid; title } in
+  let summary uuid title : Model.entity_summary = Model.{ uuid; title } in
   let stored =
     { (block "a" "Ship [[page-uuid-1]] with #[[tag-uuid-1]] and #[[tag-uuid-2]]") with
       Model.references = [ summary "page-uuid-1" "Roadmap" ]
@@ -151,7 +151,7 @@ let () =
 ;;
 
 let () =
-  let summary uuid title = Model.{ uuid; title } in
+  let summary uuid title : Model.entity_summary = Model.{ uuid; title } in
   let stored =
     { (block "a" "See [[page-uuid-1]] or [[page-uuid-2]]") with
       Model.references = [ summary "page-uuid-1" "Roadmap"; summary "page-uuid-2" "roadmap" ]
@@ -853,11 +853,11 @@ let () =
     ]
   in
   assert_bool "block ordering handles missing order and creation fallback"
-    (List.sort State.compare_blocks unordered |> List.map (fun block -> block.Model.uuid)
+    (List.sort State.compare_blocks unordered |> List.map (fun (block : Model.block) -> block.uuid)
      = [ "ordered"; "earlier"; "later" ]);
   let same_created = [ block ~order:None "b" "B"; block ~order:None "a" "A" ] in
   assert_bool "block ordering finally falls back to UUID"
-    (List.sort State.compare_blocks same_created |> List.map (fun block -> block.Model.uuid)
+    (List.sort State.compare_blocks same_created |> List.map (fun (block : Model.block) -> block.uuid)
      = [ "a"; "b" ])
 ;;
 

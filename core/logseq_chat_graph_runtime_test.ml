@@ -112,8 +112,8 @@ let () =
            ~now:100
          = Ok ());
       assert_bool "favorite operation updates the sidebar immediately"
-        (match (Runtime.sidebar_pages runtime).favorites with
-         | [ page ] -> String.equal page.Logseq_chat_graph_read.uuid "page"
+        (match (Rrbvec.to_list (((Runtime.sidebar_pages runtime)).favorites)) with
+         | [ page ] -> String.equal page.Logseq_chat_lg_core_native.uuid "page"
          | _ -> false);
       assert_bool "favorite operation persists as one semantic pending operation"
         (match Runtime.pending_operations runtime with
@@ -169,8 +169,8 @@ let () =
       assert_bool "page deletion hides the page immediately"
         (not
            (List.exists
-              (fun page -> String.equal page.Logseq_chat_graph_read.uuid "page")
-              (Runtime.sidebar_pages runtime).recent_pages));
+              (fun (page : Logseq_chat_lg_core_native.entity_summary) -> String.equal page.Logseq_chat_lg_core_native.uuid "page")
+              (Rrbvec.to_list (((Runtime.sidebar_pages runtime)).recent_pages))));
       assert_bool "page deletion persists one semantic page operation"
         (match Runtime.pending_operations runtime with
          | [ { Ops.operation_id = "delete-page-op"; intent = Delete_page { page_uuid = "page"; _ }; _ } ] -> true
@@ -201,11 +201,11 @@ let () =
     assert_bool "authoritative conn remains unchanged" (String.equal (title (conn_db conn)) "Old");
     assert_bool "page block reader uses projected DB"
       (match Runtime.blocks_for_page runtime "page" with
-       | [ block ] -> String.equal block.Logseq_chat_model.title "Pending"
+       | [ block ] -> String.equal block.Logseq_chat_lg_core_native.title "Pending"
        | _ -> false);
     assert_bool "journal reader uses projected DB"
       (match Runtime.blocks runtime with
-       | [ block ] -> String.equal block.Logseq_chat_model.title "Pending"
+       | [ block ] -> String.equal block.Logseq_chat_lg_core_native.title "Pending"
        | _ -> false);
     assert_bool "missing node destinations stay absent in the projected DB"
       (Runtime.node_destination runtime "missing" = None);
@@ -493,7 +493,7 @@ let () =
       (List.for_all (fun pending -> Runtime.stage runtime pending = Ok ()) operations);
     assert_bool "consecutive empty-block deletes leave only the original block"
       (Runtime.blocks_for_page runtime "page"
-       |> List.map (fun block -> block.Logseq_chat_model.uuid)
+       |> List.map (fun (block : Logseq_chat_lg_core_native.block) -> block.Logseq_chat_lg_core_native.uuid)
        = [ "block" ]))
 ;;
 
@@ -1153,8 +1153,8 @@ let () =
     let sidebar = Runtime.sidebar_pages runtime in
     assert_bool "sidebar and journal readers use the projected DB"
       (List.exists
-         (fun page -> String.equal page.Logseq_chat_graph_read.uuid "page")
-         sidebar.recent_pages
+         (fun (page : Logseq_chat_lg_core_native.entity_summary) -> String.equal page.Logseq_chat_lg_core_native.uuid "page")
+         (Rrbvec.to_list ((sidebar).recent_pages))
        && Runtime.journal_page_uuid runtime ~journal_day:20260816 = Some "page")
   )
 ;;
@@ -1269,7 +1269,7 @@ let () =
         (match Runtime.blocks runtime with
          | [ block ] ->
            Option.map
-             (fun (status : Logseq_chat_model.status) -> status.uuid)
+             (fun (status : Logseq_chat_lg_core_native.status) -> status.uuid)
              block.status
            = Some "status-doing"
          | _ -> false))
@@ -1320,7 +1320,7 @@ let () =
         (String.equal (title (Runtime.db runtime)) "Pending");
       assert_bool "encrypted graph reader uses local plaintext"
         (match Runtime.blocks runtime with
-         | [ block ] -> String.equal block.Logseq_chat_model.title "Pending"
+         | [ block ] -> String.equal block.Logseq_chat_lg_core_native.title "Pending"
          | _ -> false);
       assert_bool "pending SQLite operation remains plaintext"
         (match Ops.list ~path with
@@ -1402,7 +1402,7 @@ let () =
       Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let conn = conn_from_db (empty_db ~schema ()) in
       let now = int_of_float (Unix.gettimeofday () *. 1000.0) in
-      let today = Logseq_chat_model.journal_day_for_ms now in
+      let today = Logseq_chat_lg_core_native.logseq_chat_cache_model_journal_day_for_ms now in
       let runtime = Runtime.create ~auto_create_today:true ~path ~server_t:42 conn in
       let expected_page =
         match Runtime.journal_page_uuid runtime ~journal_day:today with
@@ -1419,7 +1419,7 @@ let () =
         (String.equal expected_page expected_journal_uuid);
       assert_bool "a new journal contains one editable empty block"
         (match Runtime.blocks_for_page runtime expected_page with
-         | [ block ] -> String.equal block.Logseq_chat_model.title ""
+         | [ block ] -> String.equal block.Logseq_chat_lg_core_native.title ""
          | _ -> false);
       assert_bool "today's journal is one pending atomic operation"
         (List.length (Runtime.pending_operations runtime) = 1);
@@ -1436,7 +1436,7 @@ let () =
     (fun () ->
       Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
       let now = int_of_float (Unix.gettimeofday () *. 1000.0) in
-      let today = Logseq_chat_model.journal_day_for_ms now in
+      let today = Logseq_chat_lg_core_native.logseq_chat_cache_model_journal_day_for_ms now in
       let db =
         empty_db ~schema ()
         |> db_with
@@ -1484,7 +1484,7 @@ let () =
         (List.length (Ops.list ~path) = 1);
       assert_bool "accepted partial journal keeps its first block visible"
         (match Runtime.blocks_for_page runtime page_uuid with
-         | [ block ] -> String.equal block.Logseq_chat_model.uuid block_uuid
+         | [ block ] -> String.equal block.Logseq_chat_lg_core_native.uuid block_uuid
          | _ -> false))
 ;;
 
@@ -1545,16 +1545,16 @@ let () =
     let remote = Runtime.sidebar_pages runtime in
     assert_bool "Authoritative page changes invalidate sidebar results"
       (remote <> initial && List.exists
-        (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.title = "Remote title")
-        remote.recent_pages);
+        (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.title = "Remote title")
+        (Rrbvec.to_list ((remote).recent_pages)));
     Ops.save ~path
       { Ops.operation_id = "pending-page-title"; base_t = 43; state = Queued
       ; intent = Save_title { uuid = "page"; expected_title = "Remote title"; title = "Local title" } };
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool "Pending local titles appear in the same sidebar snapshot"
       (List.exists
-        (fun (page : Logseq_chat_graph_read.sidebar_page) -> page.title = "Local title")
-        (Runtime.sidebar_pages runtime).recent_pages);
+        (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.title = "Local title")
+        (Rrbvec.to_list (((Runtime.sidebar_pages runtime)).recent_pages)));
     Ops.remove ~path ~operation_id:"pending-page-title";
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool "Removing a pending change restores authoritative sidebar data"
