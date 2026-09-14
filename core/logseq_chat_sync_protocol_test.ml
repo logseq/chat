@@ -32,7 +32,7 @@ let payload =
 
 let () =
   let wire = Transit_native.Transit.Json.to_string payload in
-  match Logseq_chat_sync_protocol.decode_change_set wire with
+  match Logseq_chat_lg_core_native.logseq_chat_sync_protocol_decode_change_set wire with
   | Error message -> fail message
   | Ok change ->
     if change.format_version <> 1 then fail "format version changed";
@@ -41,7 +41,7 @@ let () =
     if change.t_before <> 41 || change.t <> 42 then fail "cursor changed";
     if change.operation_ids <> [ "op-delete"; "op-title" ]
     then fail "operation identities were not preserved";
-    if Logseq_chat_sync_protocol.changed_block_uuids change <> [ uuid ]
+    if (Logseq_chat_lg_core_native.logseq_chat_sync_protocol_changed_block_uuids change |> Rrbvec.to_list) <> [ uuid ]
     then fail "changed block UUIDs were not extracted for incremental indexing";
     (match change.upserts with
      | [ entity ] ->
@@ -62,7 +62,7 @@ let () =
     | _ -> assert false
   in
   let wire = Transit_native.Transit.Json.to_string without_operation_ids in
-  match Logseq_chat_sync_protocol.decode_change_set wire with
+  match Logseq_chat_lg_core_native.logseq_chat_sync_protocol_decode_change_set wire with
   | Ok { operation_ids = []; _ } -> ()
   | Ok _ -> fail "missing operation-ids must decode as an empty compatibility field"
   | Error message -> fail message
@@ -78,7 +78,7 @@ let () =
     | _ -> assert false
   in
   let wire = Transit_native.Transit.Json.to_string malformed_operation_ids in
-  match Logseq_chat_sync_protocol.decode_change_set wire with
+  match Logseq_chat_lg_core_native.logseq_chat_sync_protocol_decode_change_set wire with
   | Error _ -> ()
   | Ok _ -> fail "operation-ids must contain only strings"
 ;;
@@ -91,7 +91,7 @@ let () =
       ]
     |> Transit_native.Transit.Json.to_string
   in
-  match Logseq_chat_sync_protocol.decode_event ~event_name:"reset" reset with
+  match Logseq_chat_lg_core_native.logseq_chat_sync_protocol_decode_event "reset" reset with
   | Ok (Reset { reason = "cursor-expired"; snapshot_required = true }) -> ()
   | _ -> fail "reset event was not decoded"
 ;;
@@ -110,7 +110,7 @@ let () =
       ]
     |> Transit_native.Transit.Json.to_string
   in
-  match Logseq_chat_sync_protocol.decode_change_set malformed with
+  match Logseq_chat_lg_core_native.logseq_chat_sync_protocol_decode_change_set malformed with
   | Error _ -> ()
   | Ok _ -> fail "numeric server-local entity ids must be rejected"
 ;;

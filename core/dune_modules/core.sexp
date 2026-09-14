@@ -21,7 +21,6 @@
  "logseq_chat_rpc"
  "logseq_chat_search_index"
  "logseq_chat_snapshot"
- "logseq_chat_sync_protocol"
  "logseq_chat_sync_tx"
  "logseq_chat_sync_session"
 )

@@ -1,6 +1,7 @@
 module Snapshot = Logseq_chat_snapshot
 module Store = Logseq_chat_graph_store
 module LG = Logseq_chat_lg_core_native
+module Protocol = Logseq_chat_lg_core_native
 
 type checkpoint = LG.sync_checkpoint =
   { graph_id : string
@@ -98,8 +99,7 @@ let sync_error_of_lg_code = function
   | code -> Apply_failed ("Unknown LG sync-state error: " ^ code)
 ;;
 
-let apply_validated_change_set (state : state) (change : Logseq_chat_sync_protocol.change_set) ~apply =
-  let open Logseq_chat_sync_protocol in
+let apply_validated_change_set (state : state) (change : Protocol.sync_change_set) ~apply =
   match
     LG.logseq_chat_sync_state_apply_change_set_error
       state.graph_id
@@ -278,7 +278,7 @@ let apply_change_set
         (fun () ->
         let checkpoint =
           create_checkpoint
-            ~graph_id:change.Logseq_chat_sync_protocol.graph_id
+            ~graph_id:change.graph_id
             ~schema_version:change.schema_version
             ~applied_server_t:change.t
         in

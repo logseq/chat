@@ -1,5 +1,5 @@
 let change ~graph_id ~schema_version ~t_before ~t =
-  { Logseq_chat_sync_protocol.format_version = 1
+  { Logseq_chat_lg_core_native.format_version = 1
   ; graph_id
   ; schema_version
   ; t_before

@@ -1,5 +1,5 @@
 open Datascript
-module Protocol = Logseq_chat_sync_protocol
+module Protocol = Logseq_chat_lg_core_native
 module Value = Transit_core.Json
 
 let bind result f =
@@ -128,7 +128,7 @@ let decoded_attrs decrypt db pending_temp_ids attrs =
 let pending_temp_ids db entities =
   let rec collect pending = function
     | [] -> Ok pending
-    | (entity : Protocol.entity) :: rest ->
+    | (entity : Protocol.sync_entity) :: rest ->
       bind (identity_parts entity.id) (fun (identity_attr, identity_value, identity_ref) ->
         let pending =
           match Datascript.entid_ref db identity_ref with
@@ -143,7 +143,7 @@ let pending_temp_ids db entities =
   collect [] entities
 ;;
 
-let upsert_ops decrypt db pending_temp_ids (entity : Protocol.entity) =
+let upsert_ops decrypt db pending_temp_ids (entity : Protocol.sync_entity) =
   bind (identity_parts entity.id) (fun (identity_attr, identity_value, identity_ref) ->
     bind (decoded_attrs decrypt db pending_temp_ids entity.attrs) (fun attrs ->
       match Datascript.entid_ref db identity_ref with
@@ -192,7 +192,7 @@ let delete_ops db identities =
   collect [] identities
 ;;
 
-let apply_change_set ?(decrypt_protected = fun value -> Ok value) conn (change : Protocol.change_set) =
+let apply_change_set ?(decrypt_protected = fun value -> Ok value) conn (change : Protocol.sync_change_set) =
   try
     let db = Datascript.conn_db conn in
     bind (pending_temp_ids db change.upserts) (fun pending_temp_ids ->

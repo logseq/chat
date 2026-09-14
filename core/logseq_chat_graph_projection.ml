@@ -1,6 +1,6 @@
 module Graph_read = Logseq_chat_graph_read
 module Model = Logseq_chat_model
-module Protocol = Logseq_chat_sync_protocol
+module Protocol = Logseq_chat_lg_core_native
 
 type t =
   { decrypt_title : string -> (string, string) result
@@ -70,10 +70,10 @@ let refresh_block projection db uuid =
     else Hashtbl.remove projection.blocks_by_uuid uuid
 ;;
 
-let update projection db (change : Protocol.change_set) =
+let update projection db (change : Protocol.sync_change_set) =
   let changed_uuids, changed_idents =
     List.fold_left
-      (fun (uuids, idents) (entity : Protocol.entity) ->
+      (fun (uuids, idents) (entity : Protocol.sync_entity) ->
         match identity entity.id with
         | Some (`Uuid uuid) -> Graph_read.String_set.add uuid uuids, idents
         | Some (`Ident ident) -> uuids, Graph_read.String_set.add ident idents

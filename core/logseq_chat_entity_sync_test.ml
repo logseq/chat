@@ -1,5 +1,5 @@
 open Datascript
-module Protocol = Logseq_chat_sync_protocol
+module Protocol = Logseq_chat_lg_core_native
 module Value = Transit_core.Json
 
 let one ?value_type ?(unique = None) () =
@@ -21,7 +21,7 @@ let identity uuid =
   Value.Array [ Value.Keyword "block/uuid"; Value.Uuid uuid ]
 ;;
 
-let entity uuid attrs : Protocol.entity = { id = identity uuid; attrs }
+let entity uuid attrs : Protocol.sync_entity = { id = identity uuid; attrs }
 
 let block uuid title =
   [ Value.Keyword "block/uuid", Value.Uuid uuid
@@ -57,7 +57,7 @@ let () =
        ; Entity { db_id = None; attrs = [ "block/uuid", One_value (Uuid tag_uuid); "block/title", One_value (String "Tag") ] }
        ; Entity { db_id = None; attrs = [ "block/uuid", One_value (Uuid doomed_uuid); "block/title", One_value (String "Delete me") ] }
        ]);
-  let changes : Protocol.change_set =
+  let changes : Protocol.sync_change_set =
     { format_version = 1
     ; graph_id = "graph-1"
     ; schema_version = "65.33"
@@ -129,7 +129,7 @@ let () =
     ]
   in
   let conn = create_conn ~schema () in
-  let change : Protocol.change_set =
+  let change : Protocol.sync_change_set =
     { format_version = 1
     ; graph_id = "encrypted-graph"
     ; schema_version = "65.33"

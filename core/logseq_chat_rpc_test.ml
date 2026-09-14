@@ -4217,7 +4217,7 @@ let () =
         ~prepare_operation:prepare_test_operation
         ~apply_sync_event:(fun payload ->
           let fields = from_string payload |> function `Assoc fields -> fields | _ -> assert false in
-          let change = { Logseq_chat_sync_protocol.format_version = 1;
+          let change : Logseq_chat_lg_core_native.sync_change_set = { format_version = 1;
             graph_id = "plain-1"; schema_version = "65.33";
             t_before = required_int "before" fields; t = required_int "t" fields;
             upserts = List.init (required_int "t" fields - required_int "before" fields)
@@ -4225,7 +4225,7 @@ let () =
                 let module V = Transit_core.Json in
                 let index = required_int "before" fields - 42 + offset + 1 in
                 let uuid = Printf.sprintf "00000000-0000-4000-8000-%012d" index in
-                { Logseq_chat_sync_protocol.id = V.Array [V.Keyword "block/uuid"; V.Uuid uuid];
+                { Logseq_chat_lg_core_native.id = V.Array [V.Keyword "block/uuid"; V.Uuid uuid];
                   attrs = [V.Keyword "block/uuid", V.Uuid uuid;
                            V.Keyword "block/title", V.String "photo.jpg"] });
             deleted = []; operation_ids = [] } in

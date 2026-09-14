@@ -158,7 +158,7 @@ let () =
           ~schema_version:"65.33"
           ~applied_server_t:48192
       in
-      let change : Logseq_chat_sync_protocol.change_set =
+      let change : Logseq_chat_lg_core_native.sync_change_set =
         { format_version = 1
         ; graph_id = "graph-1"
         ; schema_version = "65.33"

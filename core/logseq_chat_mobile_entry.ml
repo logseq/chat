@@ -171,9 +171,9 @@ let apply_sync_event payload =
       let* event_name = required_string fields "type" in
       let* data = required_string fields "data" in
       bind
-        (Logseq_chat_sync_protocol.decode_event ~event_name data)
+        (Logseq_chat_lg_core_native.logseq_chat_sync_protocol_decode_event event_name data)
         (function
-          | Logseq_chat_sync_protocol.Reset reset ->
+          | Logseq_chat_lg_core_native.Reset reset ->
             Error ("snapshot required: " ^ reset.reason)
           | Graph_changes change ->
             (match !graph_runtime with
@@ -199,7 +199,8 @@ let apply_sync_event payload =
                      ~server_t:change.t
                      ~operation_ids:change.operation_ids
                      ~changed_uuids:
-                       (Logseq_chat_sync_protocol.changed_block_uuids change);
+                       (Logseq_chat_lg_core_native.logseq_chat_sync_protocol_changed_block_uuids change
+                        |> Rrbvec.to_list);
                    Ok ())))
     | _ -> Error "WebSocket sync event must be an object"
   with

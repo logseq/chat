@@ -1,5 +1,5 @@
 open Datascript
-module Protocol = Logseq_chat_sync_protocol
+module Protocol = Logseq_chat_lg_core_native
 module Transit = Transit_core.Json
 
 let one ?value_type ?(unique = None) () =
@@ -32,7 +32,7 @@ let identity uuid =
   Transit.Array [ Transit.Keyword "block/uuid"; Transit.Uuid uuid ]
 ;;
 
-let change ?(upserts = []) ?(deleted = []) t : Protocol.change_set =
+let change ?(upserts = []) ?(deleted = []) t : Protocol.sync_change_set =
   { format_version = 1
   ; graph_id = "graph-1"
   ; schema_version = "65.33"
