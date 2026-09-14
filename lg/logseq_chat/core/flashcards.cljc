@@ -16,6 +16,35 @@
             [ocaml.String :as string]
             [ocaml.Stdlib :as stdlib]))
 
+(type-variant flashcard-rating
+  Again
+  Hard
+  Good
+  Easy)
+
+(type-variant flashcard-state
+  New
+  Learning
+  Review
+  Relearning)
+
+(type-record fsrs-card
+  (due :int)
+  (stability :float)
+  (difficulty :float)
+  (elapsed-days :int)
+  (scheduled-days :int)
+  (reps :int)
+  (lapses :int)
+  (state :flashcard-state)
+  (last-repeat :int)
+  (last-rating :option<flashcard-rating>))
+
+(type-record due-card
+  (block :Logseq_chat_model.block)
+  (children :list<Logseq_chat_model.block>)
+  (card :fsrs-card))
+
 (defn rating-keyword [rating]
   (match rating
     Again :again
@@ -222,7 +251,7 @@
        (fn [^int class-eid] (int-set/mem class-eid classes))
        (graph-read/ref_eids db eid "block/tags")))))
 
-(defn descendants [^:list<Logseq_chat_model.block> page-blocks ^string parent-uuid]
+(defn ^:list<Logseq_chat_model.block> descendants [^:list<Logseq_chat_model.block> page-blocks ^string parent-uuid]
   (list/concat_map
    (fn [^:Logseq_chat_model.block child]
      (list* child (descendants page-blocks (:uuid child))))
