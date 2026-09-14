@@ -1,11 +1,12 @@
 module Value = Transit_core.Json
+module LG = Logseq_chat_lg_core_native
 
-type entity =
+type entity = LG.sync_entity =
   { id : Value.value
   ; attrs : (Value.value * Value.value) list
   }
 
-type change_set =
+type change_set = LG.sync_change_set =
   { format_version : int
   ; graph_id : string
   ; schema_version : string
@@ -16,12 +17,12 @@ type change_set =
   ; operation_ids : string list
   }
 
-type reset =
+type reset = LG.sync_reset =
   { reason : string
   ; snapshot_required : bool
   }
 
-type event =
+type event = LG.sync_event =
   | Graph_changes of change_set
   | Reset of reset
 
