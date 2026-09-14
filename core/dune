@@ -68,6 +68,8 @@
  (target logseq_chat_lg_core_native.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
+  ../lg/logseq_chat/fractional_order.lgi
+  ../lg/logseq_chat/fractional_order.cljc
   ../lg/logseq_chat/ref_text.lgi
   ../lg/logseq_chat/ref_text.cljc
   ../lg/logseq_chat/sync_state.lgi
@@ -78,6 +80,8 @@
    %{bin:lg}
    --target native
    --compile-files-from %{lib:signal-lg.states:signal_native.state}
+   ../lg/logseq_chat/fractional_order.lgi
+   ../lg/logseq_chat/fractional_order.cljc
    ../lg/logseq_chat/ref_text.lgi
    ../lg/logseq_chat/ref_text.cljc
    ../lg/logseq_chat/sync_state.lgi

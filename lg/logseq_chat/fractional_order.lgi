@@ -1,0 +1,48 @@
+(ns logseq-chat.fractional-order)
+
+(type-variant int-result
+  (OrderIntOk :int)
+  (OrderIntError :string))
+
+(type-variant string-result
+  (OrderStringOk :string)
+  (OrderStringError :string))
+
+(type-variant optional-string-result
+  (OrderOptionalStringOk :option<string>)
+  (OrderOptionalStringError :string))
+
+(type-variant string-vector-result
+  (OrderStringVectorOk :vector<string>)
+  (OrderStringVectorError :string))
+
+(type-record digit-run
+  (digit-run-value :string)
+  (digit-run-carried :bool))
+
+(signature logseq-chat.fractional-order/digits :string)
+(signature logseq-chat.fractional-order/zero :string)
+(signature logseq-chat.fractional-order/lowercase :string)
+(signature logseq-chat.fractional-order/uppercase :string)
+(signature logseq-chat.fractional-order/minimum :string)
+(signature logseq-chat.fractional-order/index-of :fn<string;option<int>>)
+(signature logseq-chat.fractional-order/integer-length :fn<string;int-result>)
+(signature logseq-chat.fractional-order/integer-part :fn<string;string-result>)
+(signature logseq-chat.fractional-order/suffix :fn<string;int;string>)
+(signature logseq-chat.fractional-order/validate-integer-error
+ :fn<string;option<string>>)
+(signature logseq-chat.fractional-order/validate-error :fn<string;option<string>>)
+(signature logseq-chat.fractional-order/increment :fn<string;optional-string-result>)
+(signature logseq-chat.fractional-order/decrement :fn<string;optional-string-result>)
+(signature logseq-chat.fractional-order/increment-digit-run
+ :fn<string;int;digit-run>)
+(signature logseq-chat.fractional-order/decrement-digit-run
+ :fn<string;int;digit-run>)
+(signature logseq-chat.fractional-order/midpoint
+ :fn<string;option<string>;string-result>)
+(signature logseq-chat.fractional-order/between-core
+ :fn<option<string>;option<string>;string-result>)
+(signature logseq-chat.fractional-order/between
+ :fn<option<string>;option<string>;string-result>)
+(signature logseq-chat.fractional-order/n-between
+ :fn<option<string>;option<string>;int;string-vector-result>)

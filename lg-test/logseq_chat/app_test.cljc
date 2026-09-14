@@ -8,6 +8,7 @@
             [logseq-chat.app :as chat]
             [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]
+            [logseq-chat.fractional-order :as order]
             [logseq-chat.ref-text :as ref-text]
             [logseq-chat.sync-state :as sync-state]
             [logseq-chat.view :as view]))
@@ -89,6 +90,24 @@
      (str "todo" (char 9) "#[[" tag-uuid "]]")
      (ref-text/to-ids resolve-ref resolve-tag (str "todo" (char 9) "#project"))
      "hashtags can start after tabs")))
+
+(deftest fractional-order-generates-logseq-compatible-keys
+  (assert-equal
+   (order/OrderStringOk "a0V")
+   (order/between (Some "a0") (Some "a1"))
+   "LG fractional ordering should generate midpoint keys")
+  (assert-equal
+   (order/OrderStringVectorOk ["a0G" "a0V" "a0l"])
+   (order/n-between (Some "a0") (Some "a1") 3)
+   "LG fractional ordering should generate batch keys")
+  (assert-equal
+   (order/OrderOptionalStringOk (Some "b00"))
+   (order/increment "az")
+   "LG fractional ordering should preserve integer width growth")
+  (assert-equal
+   (order/OrderStringError "invalid order bounds")
+   (order/between (Some "a1") (Some "a0"))
+   "LG fractional ordering should reject reversed bounds"))
 
 (defn property-string [renderer node property]
   (match (apple/property renderer node property)
