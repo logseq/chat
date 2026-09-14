@@ -1,10 +1,5 @@
-type value = Melange_edn_native.any
+type value = Logseq_chat_lg_core_native.value
 
-let decode source =
-  try Ok (Melange_edn_native.of_edn_string source) with
-  | Melange_edn_native.Parse_error message -> Error message
-  | Failure message -> Error message
-  | Invalid_argument message -> Error message
-;;
+let decode = Logseq_chat_lg_core_native.logseq_chat_edn_decode
 
-let encode = Melange_edn_native.to_edn_string
+let encode = Logseq_chat_lg_core_native.logseq_chat_edn_encode

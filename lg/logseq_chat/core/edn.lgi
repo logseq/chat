@@ -1,0 +1,6 @@
+(ns logseq-chat.edn)
+
+(type-alias value :Melange_edn_native.any)
+
+(signature logseq-chat.edn/decode :fn<string;result<value;string>>)
+(signature logseq-chat.edn/encode :fn<value;string>)

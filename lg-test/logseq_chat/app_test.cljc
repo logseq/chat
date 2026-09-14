@@ -6,6 +6,7 @@
             [lui.extension :as ext]
             [lui.protocol :as proto :refer [StringValue]]
             [logseq-chat.app :as chat]
+            [logseq-chat.edn :as edn]
             [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]
             [logseq-chat.flashcards :as flashcards]
@@ -91,6 +92,15 @@
    (flashcards/new-card 42)
    (flashcards/card-of-values 42 None None)
    "missing FSRS properties should fall back to a new card"))
+
+(deftest edn-codec-is-lg-owned
+  (match (edn/decode "{:block/tags #{:logseq.class/Task}}")
+    (Ok value)
+    (assert-equal true
+                  (string/includes? (edn/encode value) ":block/tags")
+                  "LG EDN codec should round-trip a Logseq property map")
+    (Error message)
+    (is false message)))
 
 (deftest ref-text-converts-between-editor-and-storage-forms
   (let [page-uuid "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
