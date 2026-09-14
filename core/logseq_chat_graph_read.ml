@@ -1,6 +1,11 @@
 open Datascript
 module Model = Logseq_chat_model
-module Ds_value = Logseq_chat_datascript_value
+
+module Ds_value = struct
+  let ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_ref_eid
+  let optional_ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_optional_ref_eid
+  let datoms_by_ref = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_datoms_by_ref
+end
 
 module Int_set = Set.Make (Int)
 module String_set = Set.Make (String)
@@ -525,12 +530,12 @@ let normalize_title_text ?(create_tag = fun _name -> None) db ~uuid title =
       | [ summary ] -> Some summary.Model.uuid
       | _ -> None)
   in
-  Logseq_chat_ref_text.to_ids
-    ~resolve_ref:(fun name ->
+  Logseq_chat_lg_graph_support_native.logseq_chat_ref_text_to_ids
+    (fun name ->
       match known (refs @ tags) name with
       | Some uuid -> Some uuid
       | None -> unique_named_uuid db name)
-    ~resolve_tag:(fun name ->
+    (fun name ->
       match known tags name with
       | Some uuid -> Some uuid
       | None ->

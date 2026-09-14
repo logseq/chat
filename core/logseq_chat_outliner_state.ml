@@ -2,7 +2,12 @@ module String_set = Set.Make (String)
 module Model = Logseq_chat_model
 module Ops = Logseq_chat_pending_ops
 module LG = Logseq_chat_lg_core_native
-module Ref_text = Logseq_chat_ref_text
+
+module Ref_text = struct
+  let to_text = Logseq_chat_lg_graph_support_native.logseq_chat_ref_text_to_text
+  let plain_tag_label = Logseq_chat_lg_graph_support_native.logseq_chat_ref_text_plain_tag_label_
+  let is_uuid = Logseq_chat_lg_graph_support_native.logseq_chat_ref_text_is_uuid_
+end
 
 let option_value_map option ~default ~f = match option with Some value -> f value | None -> default
 let list_last values = match List.rev values with value :: _ -> Some value | [] -> None
@@ -216,8 +221,8 @@ let display_block_title context (block : Model.block) =
       summaries
   in
   Ref_text.to_text
-    ~tag_title:(summary_title (block.tags @ block.references))
-    ~ref_title:(summary_title (block.references @ block.tags))
+    (summary_title (block.tags @ block.references))
+    (summary_title (block.references @ block.tags))
     block.title
 ;;
 

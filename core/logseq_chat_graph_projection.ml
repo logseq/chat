@@ -2,6 +2,10 @@ module Graph_read = Logseq_chat_graph_read
 module Model = Logseq_chat_model
 module Protocol = Logseq_chat_lg_core_native
 
+module Ds_value = struct
+  let optional_ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_optional_ref_eid
+end
+
 type t =
   { decrypt_title : string -> (string, string) result
   ; mutable recent_pages : Graph_read.Int_set.t
@@ -54,7 +58,7 @@ let refresh_block projection db uuid =
   | Some eid ->
     let page_is_recent =
       match
-        Logseq_chat_datascript_value.optional_ref_eid
+        Ds_value.optional_ref_eid
           db
           "block/page"
           (Graph_read.value db eid "block/page")

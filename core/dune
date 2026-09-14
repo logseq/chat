@@ -46,8 +46,35 @@
  (foreign_stubs
   (language c)
   (names logseq_chat_https_stub logseq_chat_graph_store_stubs))
- (c_library_flags
+  (c_library_flags
   (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
+
+(rule
+ (target logseq_chat_lg_graph_support_native.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
+  ../lg/logseq_chat/core/datascript_value.cljc
+  ../lg/logseq_chat/core/ref_text.cljc
+  %{bin:lg})
+(action
+  (setenv
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
+   (setenv
+    LG_OCAML_INCLUDE_PATH
+    %{read:lg_native_include_path}
+    (setenv
+     OCAMLPATH
+     %{read:lg_native_include_path}
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      ../lg/logseq_chat/core/datascript_value.cljc
+      ../lg/logseq_chat/core/ref_text.cljc
+      -o %{target}))))))
 
 (rule
  (target logseq_chat_lg_core_native.ml)

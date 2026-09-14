@@ -2,7 +2,12 @@ open Datascript
 open Logseq_chat_pending_ops
 
 module Outliner = Logseq_chat_outliner
-module Ds_value = Logseq_chat_datascript_value
+
+module Ds_value = struct
+  let ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_ref_eid
+  let optional_ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_optional_ref_eid
+  let datoms_by_ref = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_datoms_by_ref
+end
 
 type snapshot =
   { db : db

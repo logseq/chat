@@ -8,8 +8,10 @@
    supported. *)
 
 open Datascript
-module Ds_value = Logseq_chat_datascript_value
-module Ref_text = Logseq_chat_ref_text
+
+module Ds_value = struct
+  let optional_ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_optional_ref_eid
+end
 
 external search_open : string -> unit = "logseq_chat_search_index_open"
 
@@ -255,7 +257,12 @@ let row_of_eid db eid =
             Option.value (uuid_value (value db page_eid "block/uuid")) ~default:uuid
           | None -> uuid)
       in
-      let title = Ref_text.to_text ~tag_title:title_for_uuid ~ref_title:title_for_uuid title in
+      let title =
+        Logseq_chat_lg_graph_support_native.logseq_chat_ref_text_to_text
+          title_for_uuid
+          title_for_uuid
+          title
+      in
       let title =
         match value db eid "block/journal-day" with
         | Some (Int day) | Some (Instant day) -> title ^ " " ^ string_of_int day

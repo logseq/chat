@@ -3,6 +3,11 @@ open Datascript
 module Ops = Logseq_chat_pending_ops
 module Projection = Logseq_chat_pending_projection
 
+module Ds_value = struct
+  let ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_ref_eid
+  let optional_ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_optional_ref_eid
+end
+
 let fail label message = failwith (label ^ ": " ^ message)
 let assert_bool label value = if not value then fail label "expected true"
 
@@ -73,7 +78,7 @@ let has_tag db ~source ~target =
   | Some source_eid, Some target_eid ->
     datoms db Eavt ~e:source_eid ~a:"block/tags" ()
     |> Seq.exists (fun datom ->
-      Logseq_chat_datascript_value.ref_eid db "block/tags" datom.v = Some target_eid)
+      Ds_value.ref_eid db "block/tags" datom.v = Some target_eid)
   | _ -> false
 ;;
 
@@ -82,7 +87,7 @@ let has_ident_tag db ~source ~target =
   | Some source_eid, Some target_eid ->
     datoms db Eavt ~e:source_eid ~a:"block/tags" ()
     |> Seq.exists (fun datom ->
-      Logseq_chat_datascript_value.ref_eid db "block/tags" datom.v = Some target_eid)
+      Ds_value.ref_eid db "block/tags" datom.v = Some target_eid)
   | _ -> false
 ;;
 
@@ -243,7 +248,7 @@ let () =
   assert_bool "a block below a recycled page is no longer a node destination"
     (Logseq_chat_graph_read.node_destination recycled "block" = None);
   assert_bool "page recycle preserves its original parent"
-    (Logseq_chat_datascript_value.optional_ref_eid
+    (Ds_value.optional_ref_eid
        recycled
        "logseq.property.recycle/original-parent"
        (Datascript.datoms
@@ -256,7 +261,7 @@ let () =
         |> Option.map (fun (datom, _) -> datom.v))
      = Some 6);
   assert_bool "page recycle preserves its original page and order"
-    (Logseq_chat_datascript_value.optional_ref_eid
+    (Ds_value.optional_ref_eid
        recycled
        "logseq.property.recycle/original-page"
        (Datascript.datoms
@@ -333,7 +338,7 @@ let () =
      | Some tag_eid, Some class_eid ->
        datoms snapshot.db Eavt ~e:tag_eid ~a:"block/tags" ()
        |> Seq.exists (fun datom ->
-         Logseq_chat_datascript_value.ref_eid snapshot.db "block/tags" datom.v
+         Ds_value.ref_eid snapshot.db "block/tags" datom.v
          = Some class_eid)
      | _ -> false);
   assert_bool "created tag has a canonical user class ident"
@@ -351,7 +356,7 @@ let () =
      | Some tag_eid, Some root_eid ->
        datoms snapshot.db Eavt ~e:tag_eid ~a:"logseq.property.class/extends" ()
        |> Seq.exists (fun datom ->
-         Logseq_chat_datascript_value.ref_eid
+         Ds_value.ref_eid
            snapshot.db
            "logseq.property.class/extends"
            datom.v
