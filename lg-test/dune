@@ -21,6 +21,8 @@
    %{env:OPAM_SWITCH_PREFIX=}/lib/lui/lg/lui/backend/flutter
    ../lg/logseq_chat/model.lgi
    ../lg/logseq_chat/model.cljc
+   ../lg/logseq_chat/ref_text.lgi
+   ../lg/logseq_chat/ref_text.cljc
    ../lg/logseq_chat/sync_state.lgi
    ../lg/logseq_chat/sync_state.cljc
    ../lg/logseq_chat/view.lgi

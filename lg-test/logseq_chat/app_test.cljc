@@ -8,6 +8,7 @@
             [logseq-chat.app :as chat]
             [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]
+            [logseq-chat.ref-text :as ref-text]
             [logseq-chat.sync-state :as sync-state]
             [logseq-chat.view :as view]))
 
@@ -47,6 +48,47 @@
      (sync-state/apply-change-set-error
       "graph-1" "65.33" 10 1 "graph-1" "65.33" 10 9)
      "rewound cursors should be rejected")))
+
+(deftest ref-text-converts-between-editor-and-storage-forms
+  (let [page-uuid "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
+        tag-uuid "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec9"
+        title-for-uuid
+        (fn [uuid]
+          (if (= uuid page-uuid)
+            (Some "Roadmap")
+            (if (= uuid tag-uuid) (Some "favorite book") None)))
+        resolve-ref
+        (fn [title] (if (= title "Roadmap") (Some page-uuid) None))
+        resolve-tag
+        (fn [title]
+          (if (= (string/lower-case title) "project")
+            (Some tag-uuid)
+            (if (= title "favorite book") (Some tag-uuid) None)))]
+    (assert-equal true (ref-text/is-uuid? page-uuid)
+                  "canonical UUIDs should be detected")
+    (assert-equal false (ref-text/is-uuid? "018f7850-c6aa")
+                  "short values should not be UUIDs")
+    (assert-equal true (ref-text/plain-tag-label? "Project")
+                  "single-token tags can render as hashtags")
+    (assert-equal false (ref-text/plain-tag-label? "favorite book")
+                  "multi-word tags should keep bracket syntax")
+    (assert-equal false (ref-text/plain-tag-label? (str "Pro" (char 9) "ject"))
+                  "tab-separated tags should keep bracket syntax")
+    (assert-equal
+     (str "Ship [[Roadmap]] with #[[favorite book]] and #[[missing]]")
+     (ref-text/to-text title-for-uuid title-for-uuid
+                       (str "Ship [[" page-uuid "]] with #[[" tag-uuid
+                            "]] and #[[missing]]"))
+     "stored uuid refs should render with known labels")
+    (assert-equal
+     (str "Ship [[" page-uuid "]] as #[[" tag-uuid "]] and #[[" tag-uuid "]].")
+     (ref-text/to-ids resolve-ref resolve-tag
+                      "Ship [[Roadmap]] as #project and #[[favorite book]].")
+     "editor refs should resolve back to stored UUID refs")
+    (assert-equal
+     (str "todo" (char 9) "#[[" tag-uuid "]]")
+     (ref-text/to-ids resolve-ref resolve-tag (str "todo" (char 9) "#project"))
+     "hashtags can start after tabs")))
 
 (defn property-string [renderer node property]
   (match (apple/property renderer node property)
