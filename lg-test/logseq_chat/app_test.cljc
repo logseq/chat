@@ -6,6 +6,7 @@
             [lui.extension :as ext]
             [lui.protocol :as proto :refer [StringValue]]
             [logseq-chat.app :as chat]
+            [logseq-chat.datascript-value :as ds-value]
             [logseq-chat.edn :as edn]
             [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]
@@ -101,6 +102,14 @@
                   "LG EDN codec should round-trip a Logseq property map")
     (Error message)
     (is false message)))
+
+(deftest datascript-value-ref-conversion-is-lg-owned
+  (assert-equal true
+                (ds-value/built-in-ref-attr? "block/page")
+                "LG should recognize built-in Logseq ref attrs")
+  (assert-equal false
+                (ds-value/built-in-ref-attr? "block/title")
+                "LG should reject scalar attrs as built-in refs"))
 
 (deftest ref-text-converts-between-editor-and-storage-forms
   (let [page-uuid "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
