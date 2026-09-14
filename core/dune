@@ -28,11 +28,9 @@
  (wrapped false)
  (modules
   logseq_chat_api
-  logseq_chat_edn
   logseq_chat_e2ee
   logseq_chat_e2ee_keyring
   logseq_chat_entity_sync
-  logseq_chat_fractional_order
   logseq_chat_graph_store
   logseq_chat_graph_bootstrap_data
   logseq_chat_graph_bootstrap

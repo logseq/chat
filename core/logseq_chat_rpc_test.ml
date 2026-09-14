@@ -1,5 +1,7 @@
 open Yojson.Basic
 
+module LG = Logseq_chat_lg_core_native
+
 let assoc name fields = List.assoc_opt name fields
 
 let required_assoc name fields =
@@ -2352,7 +2354,7 @@ let () =
   let staged = ref [] in
   let selected_block = remote_block "selected" "Selected" in
   let unrelated_tail =
-    match Logseq_chat_fractional_order.n_between (Some "a0") None 100 with
+    match LG.logseq_chat_fractional_order_n_between (Some "a0") None 100 with
     | Error message -> failwith message
     | Ok orders ->
       List.mapi
@@ -2360,7 +2362,7 @@ let () =
           { (remote_block ("delete-tail-" ^ string_of_int index) "Unrelated") with
             Logseq_chat_model.order = Some order
           })
-        orders
+        (Rrbvec.to_list orders)
   in
   let projected = ref (selected_block :: unrelated_tail) in
   let session =
@@ -3287,7 +3289,7 @@ let () =
 let () =
   let source = remote_block "source" "Hello" in
   let unrelated_tail =
-    match Logseq_chat_fractional_order.n_between (Some "a0") None 100 with
+    match LG.logseq_chat_fractional_order_n_between (Some "a0") None 100 with
     | Error message -> failwith message
     | Ok orders ->
       List.mapi
@@ -3295,7 +3297,7 @@ let () =
           { (remote_block ("unrelated-" ^ string_of_int index) "Unrelated") with
             Logseq_chat_model.order = Some order
           })
-        orders
+        (Rrbvec.to_list orders)
   in
   let projected = ref (source :: unrelated_tail) in
   let server_t = ref 42 in
@@ -3835,8 +3837,8 @@ let () =
     }
   in
   let orders =
-    match Logseq_chat_fractional_order.n_between (Some "a0") None 20 with
-    | Ok orders -> orders
+    match LG.logseq_chat_fractional_order_n_between (Some "a0") None 20 with
+    | Ok orders -> Rrbvec.to_list orders
     | Error message -> failwith message
   in
   let distant =

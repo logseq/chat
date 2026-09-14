@@ -1,7 +1,7 @@
 module State = Logseq_chat_outliner_state
 module Ops = Logseq_chat_pending_ops
 module Model = Logseq_chat_model
-module Order = Logseq_chat_fractional_order
+module LG = Logseq_chat_lg_core_native
 
 type platform_command =
   | Haptic of State.haptic
@@ -92,7 +92,7 @@ let command ~base_t ~now ~fresh_uuid context = function
      | Some block ->
        let lower = block.Model.order in
        let upper = next_order context block in
-       Result.bind (Order.between lower upper) (fun new_order ->
+       Result.bind (LG.logseq_chat_fractional_order_between lower upper) (fun new_order ->
          let operation_id = fresh_uuid () in
          let new_uuid = fresh_uuid () in
          Ok
@@ -235,7 +235,7 @@ let command ~base_t ~now ~fresh_uuid context = function
       | last :: _ -> last.Model.order
       | [] -> None
     in
-    Result.bind (Order.between lower None) (fun order ->
+    Result.bind (LG.logseq_chat_fractional_order_between lower None) (fun order ->
       let operation_id = fresh_uuid () in
       let new_uuid = fresh_uuid () in
       Ok

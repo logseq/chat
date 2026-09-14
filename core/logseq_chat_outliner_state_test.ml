@@ -484,15 +484,27 @@ let () =
   let state, effects = State.update context state (Toolbar Outdent) in
   assert_bool "outdent preserves selection for repeated structural commands"
     (State.selected_uuids state = [ "child-a"; "child-b" ]);
-  assert_bool "outdent inserts selection immediately after parent"
-    (match effects with
-     | [ State.Move_blocks [ first; second ]; State.Haptic State.Impact ] ->
-       String.equal first.parent_uuid "page"
-       && String.equal second.parent_uuid "page"
-       && String.compare "a0" first.order < 0
-       && String.compare first.order second.order < 0
-       && String.compare second.order "a1" < 0
-     | _ -> false)
+  (match effects with
+   | [ State.Move_blocks [ first; second ]; State.Haptic State.Impact ] ->
+     if not
+          (String.equal first.parent_uuid "page"
+           && String.equal second.parent_uuid "page"
+           && String.compare "a0" first.order < 0
+           && String.compare first.order second.order < 0
+           && String.compare second.order "a1" < 0)
+     then
+       failwith
+         (Printf.sprintf
+            "outdent inserts selection immediately after parent: first=%s/%s second=%s/%s"
+            first.parent_uuid
+            first.order
+            second.parent_uuid
+            second.order)
+   | effects ->
+     failwith
+       (Printf.sprintf
+          "outdent inserts selection immediately after parent: effect count=%d"
+          (List.length effects)))
 ;;
 
 let () =

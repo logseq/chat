@@ -1,4 +1,34 @@
-module Order = Logseq_chat_fractional_order
+module LG = Logseq_chat_lg_core_native
+
+module Order = struct
+  let integer_length value =
+    LG.logseq_chat_fractional_order_integer_length (String.make 1 value)
+  ;;
+
+  let integer_part = LG.logseq_chat_fractional_order_integer_part
+  let suffix = LG.logseq_chat_fractional_order_suffix
+
+  let validate_integer value =
+    match LG.logseq_chat_fractional_order_validate_integer_error value with
+    | None -> Ok ()
+    | Some message -> Error message
+  ;;
+
+  let validate value =
+    match LG.logseq_chat_fractional_order_validate_error value with
+    | None -> Ok ()
+    | Some message -> Error message
+  ;;
+
+  let increment = LG.logseq_chat_fractional_order_increment
+  let decrement = LG.logseq_chat_fractional_order_decrement
+  let midpoint = LG.logseq_chat_fractional_order_midpoint
+  let between = LG.logseq_chat_fractional_order_between
+
+  let n_between lower upper count =
+    Result.map Rrbvec.to_list (LG.logseq_chat_fractional_order_n_between lower upper count)
+  ;;
+end
 
 let assert_equal label expected actual =
   if not (String.equal expected actual)

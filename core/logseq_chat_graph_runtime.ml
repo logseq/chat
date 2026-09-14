@@ -1,6 +1,6 @@
 module Ops = Logseq_chat_pending_ops
 module Projection = Logseq_chat_pending_projection
-module Order = Logseq_chat_fractional_order
+module LG = Logseq_chat_lg_core_native
 
 let ( >>= ) = Result.bind
 let ( >>| ) result f = Result.map f result
@@ -666,7 +666,7 @@ let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
   then Ok ()
   else if favorite
   then
-    Order.between (Logseq_chat_graph_read.last_favorite_order db) None
+    LG.logseq_chat_fractional_order_between (Logseq_chat_graph_read.last_favorite_order db) None
     >>= fun order ->
     stage
       runtime
@@ -705,7 +705,7 @@ let set_page_favorite runtime ~page_uuid ~favorite ~operation_id ~now =
 ;;
 
 let delete_page runtime ~page_uuid ~operation_id ~now =
-  Order.between (Logseq_chat_graph_read.last_recycle_order runtime.snapshot.db) None
+  LG.logseq_chat_fractional_order_between (Logseq_chat_graph_read.last_recycle_order runtime.snapshot.db) None
   >>= fun order ->
   stage
     runtime

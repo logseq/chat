@@ -8,7 +8,7 @@ module Session = Logseq_chat_sync_session
 module Store = Logseq_chat_graph_store
 module Runtime = Logseq_chat_graph_runtime
 module Ops = Logseq_chat_pending_ops
-module Order = Logseq_chat_fractional_order
+module LG = Logseq_chat_lg_core_native
 
 let contents_page_uuid = "00000004-1690-2597-3200-000000000000"
 
@@ -231,7 +231,7 @@ let rec submit_tx ~cfg runtime operation attempts =
 
 let stage_insert runtime ~page_uuid ~title =
   let created_at = Api.epoch_ms () in
-  let order = require "fractional order" (Order.between None None) in
+  let order = require "fractional order" (LG.logseq_chat_fractional_order_between None None) in
   let operation =
     Ops.
       { operation_id = fresh_uuid ()
@@ -254,7 +254,7 @@ let stage_insert runtime ~page_uuid ~title =
 
 let stage_asset runtime ~page_uuid ~title ~asset_type ~asset_size ~asset_checksum =
   let created_at = Api.epoch_ms () in
-  let order = require "asset order" (Order.between (Some "a0") None) in
+  let order = require "asset order" (LG.logseq_chat_fractional_order_between (Some "a0") None) in
   let uuid = fresh_uuid () in
   let operation =
     Ops.

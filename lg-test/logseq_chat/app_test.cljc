@@ -180,19 +180,19 @@
 
 (deftest fractional-order-generates-logseq-compatible-keys
   (assert-equal
-   (order/OrderStringOk "a0V")
+   (Ok "a0V")
    (order/between (Some "a0") (Some "a1"))
    "LG fractional ordering should generate midpoint keys")
   (assert-equal
-   (order/OrderStringVectorOk ["a0G" "a0V" "a0l"])
+   (Ok ["a0G" "a0V" "a0l"])
    (order/n-between (Some "a0") (Some "a1") 3)
    "LG fractional ordering should generate batch keys")
   (assert-equal
-   (order/OrderOptionalStringOk (Some "b00"))
+   (Ok (Some "b00"))
    (order/increment "az")
    "LG fractional ordering should preserve integer width growth")
   (assert-equal
-   (order/OrderStringError "invalid order bounds")
+   (Error "invalid order bounds")
    (order/between (Some "a1") (Some "a0"))
    "LG fractional ordering should reject reversed bounds"))
 

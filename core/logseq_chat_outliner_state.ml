@@ -1,7 +1,7 @@
 module String_set = Set.Make (String)
 module Model = Logseq_chat_model
 module Ops = Logseq_chat_pending_ops
-module Order = Logseq_chat_fractional_order
+module LG = Logseq_chat_lg_core_native
 module Ref_text = Logseq_chat_ref_text
 
 let option_value_map option ~default ~f = match option with Some value -> f value | None -> default
@@ -623,9 +623,10 @@ let selected_roots context selected =
 ;;
 
 let moves_with_orders roots ~parent_uuid lower upper =
-  match Order.n_between lower upper (List.length roots) with
+  match LG.logseq_chat_fractional_order_n_between lower upper (List.length roots) with
   | Error _ -> None
   | Ok orders ->
+    let orders = Rrbvec.to_list orders in
     Some
       (List.map2
          (fun (block : Model.block) order ->

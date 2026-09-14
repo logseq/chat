@@ -7,7 +7,6 @@ module Pending_ops = Logseq_chat_pending_ops
 module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
-module Order = Logseq_chat_fractional_order
 module Graph_bootstrap = Logseq_chat_graph_bootstrap
 module Markup = Logseq_chat_markup
 
@@ -2047,7 +2046,7 @@ let capture_operations session ~uuid ~title ~now ?status () =
                     ; created_at = now
                     }
               })
-          (Order.between last_order None)
+          (LG.logseq_chat_fractional_order_between last_order None)
     in
     Result.map
       (fun capture_operation ->
@@ -2229,7 +2228,7 @@ let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.
                      ; asset_checksum
                      }
                })
-           (Order.between last_order None))
+           (LG.logseq_chat_fractional_order_between last_order None))
     | _ -> Error "asset metadata is incomplete")
 ;;
 
@@ -3315,7 +3314,7 @@ let dispatch session action payload =
                      |> List.rev
                      |> function order :: _ -> Some order | [] -> None
                    in
-                   (match Order.between last_order None with
+                   (match LG.logseq_chat_fractional_order_between last_order None with
                     | Error message -> failure ~code:"invalid_params" ~message
                     | Ok order ->
                       let operation =

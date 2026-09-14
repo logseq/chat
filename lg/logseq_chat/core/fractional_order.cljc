@@ -49,26 +49,26 @@
 (defn integer-length [^:string head]
   (match (index-of-in lowercase head)
     (Some index)
-    (OrderIntOk (+ index 2))
+    (Ok (+ index 2))
     None
     (match (index-of-in uppercase head)
       (Some index)
-      (OrderIntOk (+ (- (dec (count uppercase)) index) 2))
-      None (OrderIntError "invalid order key head"))))
+      (Ok (+ (- (dec (count uppercase)) index) 2))
+      None (Error "invalid order key head"))))
 
 (defn integer-part [^:string key]
   (if (= key "")
-    (OrderStringError "empty order key")
+    (Error "empty order key")
     (match (integer-length (char-at key 0))
-      (OrderIntOk length)
+      (Ok length)
       (if (< (count key) length)
-        (OrderStringError "invalid integer part of order key")
-        (OrderStringOk (subs key 0 length)))
-      (OrderIntError message) (OrderStringError message))))
+        (Error "invalid integer part of order key")
+        (Ok (subs key 0 length)))
+      (Error message) (Error message))))
 
 (defn validate-integer-error [^:string value]
   (match (integer-part value)
-    (OrderStringOk integer)
+    (Ok integer)
     (let [digits-are-valid
           (loop [index 1]
             (if (= index (count integer))
@@ -80,18 +80,18 @@
       (if (and (= (count integer) (count value)) digits-are-valid)
         None
         (Some "invalid integer part of order key")))
-    (OrderStringError message) (Some message)))
+    (Error message) (Some message)))
 
 (defn validate-error [^:string key]
   (match (integer-part key)
-    (OrderStringOk integer)
+    (Ok integer)
     (let [fraction (suffix key (count integer))]
       (if (or (= key minimum)
               (and (not (= fraction ""))
                    (= (char-at fraction (dec (count fraction))) zero)))
         (Some "invalid order key")
         None))
-    (OrderStringError message) (Some message)))
+    (Error message) (Some message)))
 
 (defn set-char [^:string value ^:int index ^:string character]
   (str (subs value 0 index) character (suffix value (inc index))))
@@ -113,16 +113,16 @@
 
 (defn increment [^:string value]
   (match (validate-integer-error value)
-    (Some message) (OrderOptionalStringError message)
+    (Some message) (Error message)
     None
     (let [run (increment-digit-run value (dec (count value)))]
       (if (not (:digit-run-carried run))
-        (OrderOptionalStringOk (Some (:digit-run-value run)))
+        (Ok (Some (:digit-run-value run)))
       (let [head (char-at value 0)]
         (if (= head "Z")
-          (OrderOptionalStringOk (Some "a0"))
+          (Ok (Some "a0"))
           (if (= head "z")
-            (OrderOptionalStringOk None)
+            (Ok None)
             (match (adjacent-head head 1)
               (Some next)
               (let [tail (suffix (:digit-run-value run) 1)
@@ -130,8 +130,8 @@
                     (if (= (index-of-in lowercase next) None)
                       (subs tail 0 (dec (count tail)))
                       (str tail zero))]
-                (OrderOptionalStringOk (Some (str next new-tail))))
-              None (OrderOptionalStringError "invalid order key head")))))))))
+                (Ok (Some (str next new-tail))))
+              None (Error "invalid order key head")))))))))
 
 (defn decrement-digit-run [^:string value ^:int index]
   (if (= index 0)
@@ -146,16 +146,16 @@
 
 (defn decrement [^:string value]
   (match (validate-integer-error value)
-    (Some message) (OrderOptionalStringError message)
+    (Some message) (Error message)
     None
     (let [run (decrement-digit-run value (dec (count value)))]
       (if (not (:digit-run-carried run))
-        (OrderOptionalStringOk (Some (:digit-run-value run)))
+        (Ok (Some (:digit-run-value run)))
       (let [head (char-at value 0)]
         (if (= head "a")
-          (OrderOptionalStringOk (Some "Zz"))
+          (Ok (Some "Zz"))
           (if (= head "A")
-            (OrderOptionalStringOk None)
+            (Ok None)
             (match (adjacent-head head -1)
               (Some previous)
               (let [tail (suffix (:digit-run-value run) 1)
@@ -163,8 +163,8 @@
                     (if (= (index-of-in uppercase previous) None)
                       (subs tail 0 (dec (count tail)))
                       (str tail (digit-at (dec (count digits)))))]
-                (OrderOptionalStringOk (Some (str previous new-tail))))
-              None (OrderOptionalStringError "invalid order key head")))))))))
+                (Ok (Some (str previous new-tail))))
+              None (Error "invalid order key head")))))))))
 
 (defn invalid-lower-upper? [^:string lower upper]
   (match upper
@@ -190,12 +190,12 @@
 
 (defn midpoint [^:string lower upper]
   (if (invalid-lower-upper? lower upper)
-    (OrderStringError "invalid midpoint bounds")
+    (Error "invalid midpoint bounds")
     (if (or (trailing-zero? lower)
             (match upper
               (Some value) (trailing-zero? value)
               None false))
-      (OrderStringError "midpoint has trailing zero")
+      (Error "midpoint has trailing zero")
       (let [shared
             (match upper
               (Some value) (midpoint-shared-prefix lower value)
@@ -204,10 +204,10 @@
           (match upper
             (Some upper-value)
             (match (midpoint (suffix lower shared) (Some (suffix upper-value shared)))
-              (OrderStringOk rest)
-              (OrderStringOk (str (subs upper-value 0 shared) rest))
-              (OrderStringError message) (OrderStringError message))
-            None (OrderStringError "invalid midpoint bounds"))
+              (Ok rest)
+              (Ok (str (subs upper-value 0 shared) rest))
+              (Error message) (Error message))
+            None (Error "invalid midpoint bounds"))
           (let [lower-digit
                 (if (= lower "") (Some 0) (index-of (char-at lower 0)))
                 upper-digit
@@ -220,22 +220,22 @@
                 (Some upper-value)
                 (if (> (- upper-value lower-value) 1)
                   (let [middle (quot (inc (+ lower-value upper-value)) 2)]
-                    (OrderStringOk (digit-at middle)))
+                    (Ok (digit-at middle)))
                   (match upper
                     (Some upper-value-string)
                     (if (> (count upper-value-string) 1)
-                      (OrderStringOk (subs upper-value-string 0 1))
+                      (Ok (subs upper-value-string 0 1))
                       (match (midpoint (suffix lower 1) None)
-                        (OrderStringOk rest)
-                        (OrderStringOk (str (digit-at lower-value) rest))
-                        (OrderStringError message) (OrderStringError message)))
+                        (Ok rest)
+                        (Ok (str (digit-at lower-value) rest))
+                        (Error message) (Error message)))
                     None
                     (match (midpoint (suffix lower 1) None)
-                      (OrderStringOk rest)
-                      (OrderStringOk (str (digit-at lower-value) rest))
-                      (OrderStringError message) (OrderStringError message))))
-                None (OrderStringError "invalid fractional digit"))
-              None (OrderStringError "invalid fractional digit"))))))))
+                      (Ok rest)
+                      (Ok (str (digit-at lower-value) rest))
+                      (Error message) (Error message))))
+                None (Error "invalid fractional digit"))
+              None (Error "invalid fractional digit"))))))))
 
 (defn validate-optional-error [value]
   (match value
@@ -252,41 +252,45 @@
     (Some upper-value) (not (string-less? value upper-value))
     None false))
 
-(defn optional-string-or-error [value ^:string fallback]
+(defn optional-string-or-error [^:result<option<string>;string> value ^:string fallback]
   (match value
-    (OrderOptionalStringOk maybe-value)
+    (Ok maybe-value)
     (match maybe-value
-      (Some result) (OrderStringOk result)
-      None (OrderStringError fallback))
-    (OrderOptionalStringError message) (OrderStringError message)))
+      (Some result) (Ok result)
+      None (Error fallback))
+    (Error message) (Error message)))
 
-(defn optional-string-or-midpoint [value ^:string integer ^:string fraction]
+(defn optional-string-or-midpoint
+  [^:result<option<string>;string> value ^:string integer ^:string fraction]
   (match value
-    (OrderOptionalStringOk maybe-value)
+    (Ok maybe-value)
     (match maybe-value
-      (Some result) (OrderStringOk result)
+      (Some result) (Ok result)
       None
       (match (midpoint fraction None)
-        (OrderStringOk middle) (OrderStringOk (str integer middle))
-        (OrderStringError message) (OrderStringError message)))
-    (OrderOptionalStringError message) (OrderStringError message)))
+        (Ok middle) (Ok (str integer middle))
+        (Error message) (Error message)))
+    (Error message) (Error message)))
 
-(defn prepend-string-result [^:string prefix result]
+(defn prepend-string-result [^:string prefix ^:result<string;string> result]
   (match result
-    (OrderStringOk value) (OrderStringOk (str prefix value))
-    (OrderStringError message) (OrderStringError message)))
+    (Ok value) (Ok (str prefix value))
+    (Error message) (Error message)))
 
 (defn before-upper-or-midpoint
-  [value ^:string upper-value ^:string lower-integer ^:string lower-fraction]
+  [^:result<option<string>;string> value
+   ^:string upper-value
+   ^:string lower-integer
+   ^:string lower-fraction]
   (match value
-    (OrderOptionalStringOk maybe-value)
+    (Ok maybe-value)
     (match maybe-value
       (Some result)
       (if (string-less? result upper-value)
-        (OrderStringOk result)
+        (Ok result)
         (prepend-string-result lower-integer (midpoint lower-fraction None)))
       None (prepend-string-result lower-integer (midpoint lower-fraction None)))
-    (OrderOptionalStringError message) (OrderStringError message)))
+    (Error message) (Error message)))
 
 (defn between-before-upper [^:string upper-value ^:string integer]
   (let [fraction (suffix upper-value (count integer))]
@@ -313,108 +317,110 @@
   (match lower
     None
     (match upper
-      None (OrderStringOk "a0")
+      None (Ok "a0")
       (Some upper-value)
       (match (integer-part upper-value)
-        (OrderStringOk integer) (between-before-upper upper-value integer)
-        (OrderStringError message) (OrderStringError message)))
+        (Ok integer) (between-before-upper upper-value integer)
+        (Error message) (Error message)))
     (Some lower-value)
     (match upper
       None
       (match (integer-part lower-value)
-        (OrderStringOk integer) (between-after-lower lower-value integer)
-        (OrderStringError message) (OrderStringError message))
+        (Ok integer) (between-after-lower lower-value integer)
+        (Error message) (Error message))
       (Some upper-value)
       (match (integer-part lower-value)
-        (OrderStringOk lower-integer)
+        (Ok lower-integer)
         (match (integer-part upper-value)
-          (OrderStringOk upper-integer)
+          (Ok upper-integer)
           (let [lower-fraction (suffix lower-value (count lower-integer))
                 upper-fraction (suffix upper-value (count upper-integer))]
             (if (= lower-integer upper-integer)
               (between-shared-integers lower-integer lower-fraction upper-fraction)
               (between-different-integers upper-value lower-integer lower-fraction)))
-          (OrderStringError message) (OrderStringError message))
-        (OrderStringError message) (OrderStringError message)))))
+          (Error message) (Error message))
+        (Error message) (Error message)))))
 
 (defn between [lower upper]
   (match (validate-optional-error lower)
-    (Some message) (OrderStringError message)
+    (Some message) (Error message)
     None
     (match (validate-optional-error upper)
-      (Some message) (OrderStringError message)
+      (Some message) (Error message)
       None
       (match lower
         (Some lower-value)
         (match upper
           (Some upper-value)
           (if (not (string-less? lower-value upper-value))
-            (OrderStringError "invalid order bounds")
+            (Error "invalid order bounds")
             (match (between-core lower upper)
-              (OrderStringOk value)
+              (Ok value)
               (if (or (optional-lower-fails? lower value)
                       (optional-upper-fails? value upper))
-                (OrderStringError "generate-key-between failed")
-                (OrderStringOk value))
-              (OrderStringError message) (OrderStringError message)))
+                (Error "generate-key-between failed")
+                (Ok value))
+              (Error message) (Error message)))
           None
           (match (between-core lower upper)
-            (OrderStringOk value)
+            (Ok value)
             (if (or (optional-lower-fails? lower value)
                     (optional-upper-fails? value upper))
-              (OrderStringError "generate-key-between failed")
-              (OrderStringOk value))
-            (OrderStringError message) (OrderStringError message)))
+              (Error "generate-key-between failed")
+              (Ok value))
+            (Error message) (Error message)))
         None
         (match (between-core lower upper)
-          (OrderStringOk value)
+          (Ok value)
           (if (or (optional-lower-fails? lower value)
                   (optional-upper-fails? value upper))
-            (OrderStringError "generate-key-between failed")
-            (OrderStringOk value))
-          (OrderStringError message) (OrderStringError message))))))
+            (Error "generate-key-between failed")
+            (Ok value))
+          (Error message) (Error message))))))
 
-(defn n-after [lower ^:int count result]
+(def empty-string-vector (subvec [""] 0 0))
+
+(defn n-after [lower ^:int count ^:vector<string> result]
   (if (= count 0)
-    (OrderStringVectorOk result)
+    (Ok result)
     (match (between lower None)
-      (OrderStringOk value)
+      (Ok value)
       (n-after (Some value) (dec count) (conj result value))
-      (OrderStringError message) (OrderStringVectorError message))))
+      (Error message) (Error message))))
 
-(defn n-before [upper ^:int count result]
+(defn n-before [upper ^:int count ^:vector<string> result]
   (if (= count 0)
-    (OrderStringVectorOk result)
+    (Ok result)
     (match (between None upper)
-      (OrderStringOk value)
+      (Ok value)
       (n-before (Some value) (dec count) (into [value] result))
-      (OrderStringError message) (OrderStringVectorError message))))
+      (Error message) (Error message))))
 
 (defn n-between [lower upper ^:int count]
   (if (< count 0)
-    (OrderStringVectorError "order key count must not be negative")
+    (Error "order key count must not be negative")
     (if (= count 0)
-      (OrderStringVectorOk [])
+      (Ok empty-string-vector)
       (if (= count 1)
         (match (between lower upper)
-          (OrderStringOk value) (OrderStringVectorOk [value])
-          (OrderStringError message) (OrderStringVectorError message))
+          (Ok value) (Ok [value])
+          (Error message) (Error message))
         (match upper
           None
-          (n-after lower count [])
+          (n-after lower count empty-string-vector)
           (Some upper-value)
           (match lower
             None
-            (n-before (Some upper-value) count [])
+            (n-before (Some upper-value) count empty-string-vector)
             (Some _)
             (let [left-count (quot count 2)]
               (match (between lower upper)
-                (OrderStringOk middle)
+                (Ok middle)
                 (match (n-between lower (Some middle) left-count)
-                  (OrderStringVectorOk left)
+                  (Ok left)
                   (match (n-between (Some middle) upper (- (- count left-count) 1))
-                    (OrderStringVectorOk right)
-                    (OrderStringVectorOk (into (conj left middle) right))
-                    (OrderStringVectorError message) (OrderStringVectorError message))
-                  (OrderStringVectorError message) (OrderStringVectorError message))
-                (OrderStringError message) (OrderStringVectorError message)))))))))
+                    (Ok right)
+                    (Ok (into (conj left middle) right))
+                    (Error message) (Error message))
+                  (Error message) (Error message))
+                (Error message) (Error message)))))))))
