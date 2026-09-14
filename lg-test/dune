@@ -40,6 +40,7 @@
  (modules logseq_chat_lui_test)
  (flags (:standard -w -27-32-37-39-69))
  (libraries
+  datascript-ocaml-native
   lg.edn-backend.native
   lg.runtime
   lg.rrbvec

@@ -1,0 +1,34 @@
+(ns logseq-chat.flashcards)
+
+(type-variant flashcard-rating
+  Again
+  Hard
+  Good
+  Easy)
+
+(type-variant flashcard-state
+  New
+  Learning
+  Review
+  Relearning)
+
+(type-record fsrs-card
+  (due :int)
+  (stability :float)
+  (difficulty :float)
+  (elapsed-days :int)
+  (scheduled-days :int)
+  (reps :int)
+  (lapses :int)
+  (state :flashcard-state)
+  (last-repeat :int)
+  (last-rating :option<flashcard-rating>))
+
+(signature logseq-chat.flashcards/rating-keyword :fn<flashcard-rating;string>)
+(signature logseq-chat.flashcards/rating-of-keyword :fn<string;option<flashcard-rating>>)
+(signature logseq-chat.flashcards/state-keyword :fn<flashcard-state;string>)
+(signature logseq-chat.flashcards/state-of-keyword :fn<string;option<flashcard-state>>)
+(signature logseq-chat.flashcards/new-card :fn<int;fsrs-card>)
+(signature logseq-chat.flashcards/state-value :fn<fsrs-card;Datascript.value>)
+(signature logseq-chat.flashcards/card-of-values
+ :fn<int;option<int>;option<Datascript.value>;fsrs-card>)

@@ -1,20 +1,21 @@
 open Datascript
+module LG = Logseq_chat_lg_core_native
 module Upstream = Fsrs
 module Upstream_models = Models
 
-type rating = Upstream_models.rating =
+type rating = LG.flashcard_rating =
   | Again
   | Hard
   | Good
   | Easy
 
-type state = Upstream_models.state =
+type state = LG.flashcard_state =
   | New
   | Learning
   | Review
   | Relearning
 
-type card =
+type card = LG.fsrs_card =
   { due : int
   ; stability : float
   ; difficulty : float
@@ -34,48 +35,18 @@ type due_card =
   }
 
 let rating_keyword = function
-  | Again -> "again"
-  | Hard -> "hard"
-  | Good -> "good"
-  | Easy -> "easy"
+  | rating -> LG.logseq_chat_flashcards_rating_keyword rating
 ;;
 
-let rating_of_keyword = function
-  | "again" -> Some Again
-  | "hard" -> Some Hard
-  | "good" -> Some Good
-  | "easy" -> Some Easy
-  | _ -> None
-;;
+let rating_of_keyword = LG.logseq_chat_flashcards_rating_of_keyword
 
 let state_keyword = function
-  | New -> "new"
-  | Learning -> "learning"
-  | Review -> "review"
-  | Relearning -> "relearning"
+  | state -> LG.logseq_chat_flashcards_state_keyword state
 ;;
 
-let state_of_keyword = function
-  | "new" -> Some New
-  | "learning" -> Some Learning
-  | "review" -> Some Review
-  | "relearning" -> Some Relearning
-  | _ -> None
-;;
+let state_of_keyword = LG.logseq_chat_flashcards_state_of_keyword
 
-let new_card ~now =
-  { due = now
-  ; stability = 0.
-  ; difficulty = 0.
-  ; elapsed_days = 0
-  ; scheduled_days = 0
-  ; reps = 0
-  ; lapses = 0
-  ; state = New
-  ; last_repeat = now
-  ; last_rating = None
-  }
-;;
+let new_card ~now = LG.logseq_chat_flashcards_new_card now
 
 let timestamp milliseconds =
   Timedesc.Timestamp.of_float_s (Float.of_int milliseconds /. 1000.)
@@ -95,15 +66,36 @@ let upstream_card (card : card) : Upstream_models.card =
   ; scheduled_days = card.scheduled_days
   ; reps = card.reps
   ; lapses = card.lapses
-  ; state = card.state
+  ; state =
+      (match card.state with
+       | New -> Upstream_models.New
+       | Learning -> Upstream_models.Learning
+       | Review -> Upstream_models.Review
+       | Relearning -> Upstream_models.Relearning)
   ; last_review = timestamp card.last_repeat
   }
 ;;
 
 let scheduler = Upstream.create (Parameters.default ())
 
+let upstream_rating = function
+  | Again -> Upstream_models.Again
+  | Hard -> Upstream_models.Hard
+  | Good -> Upstream_models.Good
+  | Easy -> Upstream_models.Easy
+;;
+
+let state_of_upstream = function
+  | Upstream_models.New -> New
+  | Upstream_models.Learning -> Learning
+  | Upstream_models.Review -> Review
+  | Upstream_models.Relearning -> Relearning
+;;
+
 let repeat ~now card rating =
-  let scheduled = Upstream.next scheduler (upstream_card card) (timestamp now) rating in
+  let scheduled =
+    Upstream.next scheduler (upstream_card card) (timestamp now) (upstream_rating rating)
+  in
   let next = scheduled.Upstream_models.card in
   { due = milliseconds next.due
   ; stability = next.stability
@@ -112,79 +104,16 @@ let repeat ~now card rating =
   ; scheduled_days = next.scheduled_days
   ; reps = next.reps
   ; lapses = card.lapses + if rating = Again then 1 else 0
-  ; state = next.state
+  ; state = state_of_upstream next.state
   ; last_repeat = milliseconds next.last_review
   ; last_rating = Some rating
   }
 ;;
 
-let state_value card =
-  let entries =
-    [ Keyword "stability", Float card.stability
-    ; Keyword "difficulty", Float card.difficulty
-    ; Keyword "elapsed-days", Int card.elapsed_days
-    ; Keyword "scheduled-days", Int card.scheduled_days
-    ; Keyword "reps", Int card.reps
-    ; Keyword "lapses", Int card.lapses
-    ; Keyword "state", Keyword (state_keyword card.state)
-    ; Keyword "last-repeat", Int card.last_repeat
-    ]
-  in
-  let entries =
-    match card.last_rating with
-    | None -> entries
-    | Some rating ->
-      (Keyword "logseq/last-rating", Keyword (rating_keyword rating)) :: entries
-  in
-  Map entries
-;;
-
-let map_value key entries =
-  List.find_map
-    (fun (candidate, value) ->
-      match candidate with
-      | Keyword candidate when String.equal candidate key -> Some value
-      | _ -> None)
-    entries
-;;
-
-let float_value = function
-  | Some (Float value) -> Some value
-  | Some (Int value) -> Some (Float.of_int value)
-  | _ -> None
-;;
-
-let int_value = function
-  | Some (Int value) | Some (Instant value) -> Some value
-  | _ -> None
-;;
-
-let keyword_value = function Some (Keyword value) -> Some value | _ -> None
+let state_value = LG.logseq_chat_flashcards_state_value
 
 let card_of_values ~created_at ~due ~state =
-  match due, state with
-  | Some due, Some (Map entries) ->
-    (match
-       float_value (map_value "stability" entries),
-       float_value (map_value "difficulty" entries),
-       int_value (map_value "elapsed-days" entries),
-       int_value (map_value "scheduled-days" entries),
-       int_value (map_value "reps" entries),
-       int_value (map_value "lapses" entries),
-       Option.bind (keyword_value (map_value "state" entries)) state_of_keyword,
-       int_value (map_value "last-repeat" entries)
-     with
-     | Some stability, Some difficulty, Some elapsed_days, Some scheduled_days,
-       Some reps, Some lapses, Some state, Some last_repeat ->
-       let last_rating =
-         Option.bind
-           (keyword_value (map_value "logseq/last-rating" entries))
-           rating_of_keyword
-       in
-       { due; stability; difficulty; elapsed_days; scheduled_days; reps; lapses; state
-       ; last_repeat; last_rating }
-     | _ -> new_card ~now:created_at)
-  | _ -> new_card ~now:created_at
+  LG.logseq_chat_flashcards_card_of_values created_at due state
 ;;
 
 let card_eid db eid =

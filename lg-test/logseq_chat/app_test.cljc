@@ -8,6 +8,7 @@
             [logseq-chat.app :as chat]
             [logseq-chat.native-bridge :as bridge]
             [logseq-chat.model :as model]
+            [logseq-chat.flashcards :as flashcards]
             [logseq-chat.fractional-order :as order]
             [logseq-chat.ref-text :as ref-text]
             [logseq-chat.sync-checkpoint :as sync-checkpoint]
@@ -66,6 +67,30 @@
    (Error "graph sync checkpoint must be a Transit map")
    (sync-checkpoint/decode "[]")
    "LG sync checkpoint codec should reject non-map payloads"))
+
+(deftest flashcard-state-codec-is-lg-owned
+  (let [now 1776000000000
+        original (record flashcards/fsrs-card
+                   (due (- now 86400000))
+                   (stability 4.2)
+                   (difficulty 5.1)
+                   (elapsed-days 2)
+                   (scheduled-days 2)
+                   (reps 7)
+                   (lapses 1)
+                   (state flashcards/Review)
+                   (last-repeat (- now 172800000))
+                   (last-rating (Some flashcards/Good)))
+        decoded (flashcards/card-of-values
+                 (- now 864000000)
+                 (Some (:due original))
+                 (Some (flashcards/state-value original)))]
+    (assert-equal original decoded
+                  "LG flashcard state codec should round-trip"))
+  (assert-equal
+   (flashcards/new-card 42)
+   (flashcards/card-of-values 42 None None)
+   "missing FSRS properties should fall back to a new card"))
 
 (deftest ref-text-converts-between-editor-and-storage-forms
   (let [page-uuid "018f7850-c6aa-7da0-8b3f-6dbb64aa4ec8"
