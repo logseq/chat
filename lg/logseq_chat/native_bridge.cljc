@@ -65,9 +65,9 @@
        (version (:version settings)) (revision (:revision settings))))
     (host-update/Runtime_log records)
     (model/ApplyRuntimeLog
-     (mapv (fn [record]
-             (record model/runtime-log-record (id (:id record)) (level (:level record))
-               (source (:source record)) (timestamp (:timestamp record)) (message (:message record)))) records))
+     (mapv (fn [entry]
+             (record model/runtime-log-record (id (:id entry)) (level (:level entry))
+               (source (:source entry)) (timestamp (:timestamp entry)) (message (:message entry)))) records))
     (host-update/Local_graph_ids ids) (model/ApplyLocalGraphIds ids)
     (host-update/Composer_asset asset) (model/StageComposerAsset (session-asset asset))
     host-update/Save_ui_session model/SaveUISession

@@ -8,7 +8,7 @@ let () =
   | Error message -> failwith message
   | Ok snapshot ->
     if Rrbvec.length snapshot.node_routes <> 1 then failwith "expected one node route";
-    let projected = Rrbvec.get snapshot.node_routes 0 in
+    let projected = Rrbvec.nth snapshot.node_routes 0 in
     (match Rrbvec.to_list projected.outliner_rows with
      | [ row ] when String.equal row.uuid "child" -> ()
      | _ -> failwith "node route rows were not retained in the LG projection");

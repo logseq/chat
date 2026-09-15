@@ -29,11 +29,11 @@ let () =
     if not (Rrbvec.is_empty snapshot.outliner_rows) || snapshot.outliner_editing <> None
        || not (Rrbvec.is_empty snapshot.outliner_selected_block_ids) then
       failwith "an empty active route must clear, not inherit, base outliner state";
-    equal "null" (Rrbvec.get snapshot.journal_outliner_rows 0).markup_json "explicit null markup";
-    let card = Rrbvec.get snapshot.flashcards 0 in
+    equal "null" (Rrbvec.nth snapshot.journal_outliner_rows 0).markup_json "explicit null markup";
+    let card = Rrbvec.nth snapshot.flashcards 0 in
     equal "[…] {{unknown x}} {{cloze unfinished" card.question_hidden "legacy cloze boundaries";
     equal "answer {{unknown x}} {{cloze unfinished" card.question_revealed "legacy cloze reveal";
-    if (Rrbvec.get card.answer_rows 0).index <> 0 then
+    if (Rrbvec.nth card.answer_rows 0).index <> 0 then
       failwith "answer indices must be assigned after invalid rows are discarded"
 ;;
 

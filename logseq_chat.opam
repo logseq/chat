@@ -30,7 +30,7 @@ pin-depends: [
   ["melange-transit-core.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-native.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
   ["melange-transit-melange.0.1.0" "git+https://github.com/tiensonqin/melange-transit.git#898bc1418e8e6405f53d659209d932cddc6e3070"]
-  ["lg.dev" "git+ssh://git@github.com/logseq/lg.git#478f5dec317b40199cd272aef7bcd0373d1e7426"]
+  ["lg.dev" "git+ssh://git@github.com/logseq/lg.git#9b92c3c4c7b4b5d2ac2a723378f160aa6f0a97e8"]
   ["lui.0.1.0" "git+ssh://git@github.com/tiensonqin/lui.git#8a594a9b67946e4d1b27c1d7e3a39a5c0f54d599"]
   ["signal-lg.0.1.0" "git+https://github.com/tiensonqin/signal-lg.git#ed2e6c68322316d64bf41644480a5f8901940a02"]
   ["mldoc.dev" "git+https://github.com/logseq/mldoc.git#c51b957ccb0f9b0173bb1e0b422a6798f1a59dd2"]
