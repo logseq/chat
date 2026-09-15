@@ -424,12 +424,6 @@ let pending_request_json session =
   | None, Some _ | None, None -> `Null
 ;;
 
-let autocomplete_kind_json = function
-  | Outliner_state.Node -> "node"
-  | Tag -> "tag"
-  | Property -> "property"
-;;
-
 let outliner_context_with_blocks ?sidebar_pages session blocks =
   let pages =
     let sidebar =
@@ -840,34 +834,6 @@ let project_outliner_operations context operations =
   { context with Outliner_state.blocks }
 ;;
 
-let outliner_state_json state =
-  `Assoc
-    [ ( "editing"
-      , match state.Outliner_state.editing with
-        | None -> `Null
-        | Some editing ->
-          `Assoc
-            [ "uuid", `String editing.uuid
-            ; "title", `String editing.title
-            ; "caretUTF16Offset", `Int editing.caret
-            ] )
-    ; "selectedBlockIds", `List (List.map (fun uuid -> `String uuid) (Outliner_state.logseq_chat_outliner_state_selected_uuids state))
-    ; "collapsedBlockIds",
-      `List
-        (Outliner_state.logseq_chat_outliner_state_collapsed_uuids state
-         |> List.map (fun uuid -> `String uuid))
-    ; "zoomedBlockIds", `List (List.map (fun uuid -> `String uuid) state.zoomed)
-    ; ( "autocomplete"
-      , match state.autocomplete with
-        | None -> `Null
-        | Some autocomplete ->
-          `Assoc
-            [ "kind", `String (autocomplete_kind_json autocomplete.kind)
-            ; "query", `String autocomplete.query
-            ] )
-    ]
-;;
-
 let outliner_row_json_with ?youtube_target_url serialize_block row =
   `Assoc
     ([ "block", serialize_block row.Outliner_state.block
@@ -933,7 +899,7 @@ let node_routes_json session =
         `List (List.map block_json (node_route_related_blocks session route))
       ; "linkedReferenceBlocks",
         `List (List.map block_json (node_route_linked_reference_blocks session route))
-      ; "outlinerState", outliner_state_json state
+      ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json state
       ; "outlinerRows", outliner_rows_json session context state
       ; "outlinerAutocompleteCandidates", outliner_candidates_json context state
       ])
@@ -1075,7 +1041,7 @@ let snapshot session ~context_blocks blocks =
       ; "syncConnected", `Bool session.sync_connected
       ; "taskStatuses", `List (List.map status_response_json (Rrbvec.to_list (Model.logseq_chat_cache_model_all_statuses session.model)))
       ; "pendingSyncRequest", pending_request_json session
-      ; "outlinerState", outliner_state_json base_state
+      ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json base_state
       ; "outlinerAutocompleteCandidates",
         outliner_candidates_json base_context base_state
       ; "outlinerRows",
@@ -1106,7 +1072,7 @@ let outliner_patch_result
       ; "blocks", `List (List.map (visible_block_json session.model) blocks)
       ; "deletedBlockIds", `List (List.map (fun uuid -> `String uuid) deleted_block_ids)
       ; "selectedBlock", `Null
-      ; "outlinerState", outliner_state_json session.outliner_state
+      ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json session.outliner_state
       ; "outlinerAutocompleteCandidates",
         outliner_candidates_json context session.outliner_state
       ; "outlinerRows", `List []

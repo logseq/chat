@@ -139,6 +139,29 @@
 
 (defn json-strings [values] (tag List (apply list (map #(tag String %) values))))
 
+(defn json-object [fields]
+  (let [^:Yojson.Basic.t result (tag Assoc (apply list fields))] result))
+
+(defn autocomplete-kind-json [kind]
+  (match kind outliner/Node "node" outliner/Tag "tag" outliner/Property "property"))
+
+(defn outliner-state-json [state]
+  (json-object
+    [(tuple "editing"
+       (if-some [editing (:editing state)]
+         (json-object [(tuple "uuid" (tag String (:uuid editing)))
+                       (tuple "title" (tag String (:title editing)))
+                       (tuple "caretUTF16Offset" (tag Int (:caret editing)))])
+         (tag Null)))
+     (tuple "selectedBlockIds" (json-strings (outliner/selected-uuids state)))
+     (tuple "collapsedBlockIds" (json-strings (outliner/collapsed-uuids state)))
+     (tuple "zoomedBlockIds" (json-strings (:zoomed state)))
+     (tuple "autocomplete"
+       (if-some [request (:autocomplete state)]
+         (json-object [(tuple "kind" (tag String (autocomplete-kind-json (:kind request))))
+                       (tuple "query" (tag String (:query request)))])
+         (tag Null)))]))
+
 (defn outliner-command-json [command]
   (let [[kind key value]
         (match command
@@ -152,5 +175,4 @@
           (effects/Platform_pick_attachment uuid) (tuple "pickAttachment" "uuid" (tag String uuid))
           (effects/Platform_take_photo uuid) (tuple "takePhoto" "uuid" (tag String uuid))
           (effects/Platform_record_audio uuid) (tuple "recordAudio" "uuid" (tag String uuid)))]
-    (let [^:Yojson.Basic.t result (tag Assoc (list (tuple "type" (tag String kind)) (tuple key value)))]
-      result)))
+    (json-object [(tuple "type" (tag String kind)) (tuple key value)])))

@@ -85,6 +85,23 @@
 
 (defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
 
+(deftest empty-outliner-state-keeps-null-and-empty-wire-fields
+  (is (= "{\"editing\":null,\"selectedBlockIds\":[],\"collapsedBlockIds\":[],\"zoomedBlockIds\":[],\"autocomplete\":null}"
+         (json/to-string (rpc/outliner-state-json outliner/empty)))))
+
+(deftest outliner-state-serializes-drafts-and-orders-identifiers
+  (run!
+    (fn [[kind wire-kind]]
+      (let [state (assoc outliner/empty
+                         :editing (Some (record outliner/editor-draft (uuid "block") (expected-title "Old") (title "New") (caret 2)))
+                         :selected #{"z" "a"} :collapsed #{"y" "b"} :zoomed (list "outer" "inner")
+                         :autocomplete (Some (record outliner/reducer-autocomplete (kind kind) (query "query"))))]
+        (is (= (str "{\"editing\":{\"uuid\":\"block\",\"title\":\"New\",\"caretUTF16Offset\":2},"
+                    "\"selectedBlockIds\":[\"a\",\"z\"],\"collapsedBlockIds\":[\"b\",\"y\"],"
+                    "\"zoomedBlockIds\":[\"outer\",\"inner\"],\"autocomplete\":{\"kind\":\"" wire-kind "\",\"query\":\"query\"}}")
+               (json/to-string (rpc/outliner-state-json state))))))
+    [(tuple outliner/Node "node") (tuple outliner/Tag "tag") (tuple outliner/Property "property")]))
+
 (deftest platform-commands-preserve-their-json-wire-format
   (run! (fn [[command expected]]
           (is (= expected (json/to-string (rpc/outliner-command-json command)))))
