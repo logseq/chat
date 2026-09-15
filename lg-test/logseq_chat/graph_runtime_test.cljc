@@ -7,6 +7,7 @@
             [ocaml.Filename :as filename]
             [ocaml.Sys :as sys]
             [ocaml.Datascript :as ds]
+            [ocaml.Transit_native.Transit.Json :as transit]
             [ocaml.Logseq_chat_graph_runtime :as runtime]))
 
 (deftest semantic-values-preserve-native-primitives
@@ -84,6 +85,226 @@
 (defn ok? [result] (match result (Ok _) true (Error _) false))
 (defn prepares-save? [current op]
   (match (runtime/prepare-sync current op) (Ok ["save-block" _]) true _ false))
+
+(defn with-runtime [f]
+  (with-store (fn [path]
+                (let [conn (ds/conn-from-db (base-db "Old"))
+                      current (runtime/create :path path :server_t 42 conn)]
+                  (f path conn current)))))
+
+(defn native-operation [id intent]
+  (record ops/pending_operation (operation-id id) (base-t 42) (state (ops/Queued)) (intent intent)))
+
+(defn native-split [uuid before after new-uuid]
+  (ops/Split_block (record ops/pending_split (uuid uuid) (expected-title (str before after))
+                          (before before) (after after) (new-uuid new-uuid) (new-order "a1") (created-at 100))))
+
+(defn title [db uuid]
+  (match (ops/logseq-chat-pending-ops-raw-title db uuid)
+    (Ok value) value (Error message) (throw (Failure message))))
+
+(defn wire-values [input]
+  (into [input]
+        (match input
+          (transit/Array values) (vec (mapcat wire-values values))
+          (transit/List values) (vec (mapcat wire-values values))
+          (transit/Set values) (vec (mapcat wire-values values))
+          (transit/Map entries) (vec (mapcat (fn [[key value]] (concat (wire-values key) (wire-values value))) entries))
+          (transit/Tagged _ value) (wire-values value)
+          _ [])))
+
+(deftest projected-readers-share-offline-edits-without-changing-authoritative-data
+  (with-runtime
+    (fn [path conn current]
+      (is (ok? (runtime/stage current (save-title "title" "Old" "Pending"))))
+      (is (= "Pending" (title (runtime/db current) "block")))
+      (is (= "Old" (title (ds/conn-db conn) "block")))
+      (is (= ["Pending"] (mapv :title (runtime/blocks-for-page current "page"))))
+      (is (= ["Pending"] (mapv :title (runtime/blocks current))))
+      (is (nil? (runtime/node-destination current "missing")))
+      (is (empty? (runtime/objects-for-tag current "missing")))
+      (is (empty? (runtime/tag-pages current)))
+      (is (not (runtime/node-is-tag current "missing")))
+      (is (empty? (runtime/references-for-node current "missing")))
+      (is (= ["title"] (mapv :operation-id (ops/logseq-chat-pending-ops-list path)))))))
+
+(deftest favorites-update-sidebar-and-encode-the-link-transaction
+  (with-store
+    (fn [path]
+      (let [db (ds/db-with
+                 (list (add 20 "block/uuid" (ds/Uuid "favorites-page"))
+                       (add 20 "block/title" (ds/String "Favorites"))
+                       (add 20 "block/name" (ds/String "$$$favorites"))) (base-db "Old"))
+            current (runtime/create :path path :server_t 42 (ds/conn-from-db db))]
+        (is (ok? (runtime/set-page-favorite current :page_uuid "page" :favorite true :operation_id "favorite" :now 100)))
+        (is (= ["page"] (mapv :uuid (:favorites (runtime/sidebar-pages current)))))
+        (let [operations (vec (runtime/pending-operations current))]
+          (is (= 1 (count operations)))
+          (let [op (nth operations 0)]
+            (is (= "favorite" (:operation-id op)))
+            (is (match (:intent op) (ops/Set_favorite value) (:favorite value) _ false))
+            (is (match (runtime/prepare-sync current op)
+                  (Ok ["insert-blocks" wire])
+                  (some #(= (transit/Keyword "block/link") %) (wire-values (transit/of-string wire)))
+                  _ false))))))))
+
+(deftest page-deletion-is-optimistic-durable-and-rejects-built-ins
+  (with-store
+    (fn [path]
+      (let [db (ds/db-with
+                 (list (ds/Retract (ds/Entity_id 1) "block/journal-day" (Some (ds/Int 20260816)))
+                       (add 20 "block/uuid" (ds/Uuid "recycle-page"))
+                       (add 20 "block/title" (ds/String "Recycle")) (add 20 "block/name" (ds/String "recycle"))
+                       (add 20 "logseq.property/built-in?" (ds/Bool true))
+                       (add 20 "logseq.property/hide?" (ds/Bool true))) (base-db "Old"))
+            current (runtime/create :path path :server_t 42 (ds/conn-from-db db))]
+        (is (ok? (runtime/delete-page current :page_uuid "page" :operation_id "delete-page" :now 100)))
+        (is (not (some #(= "page" (:uuid %)) (:recent-pages (runtime/sidebar-pages current)))))
+        (let [operations (vec (runtime/pending-operations current))]
+          (is (= 1 (count operations)))
+          (let [op (nth operations 0)]
+            (is (= "delete-page" (:operation-id op)))
+            (is (match (:intent op) (ops/Delete_page value) (= "page" (:page-uuid value)) _ false))
+            (is (match (runtime/prepare-sync current op) (Ok ["delete-page" _]) true _ false))))
+        (is (not (ok? (runtime/delete-page current :page_uuid "recycle-page" :operation_id "built-in" :now 101))))))))
+
+(deftest flashcard-review-is-one-atomic-millisecond-operation
+  (with-store
+    (fn [path]
+      (let [now 1776000000000
+            db (ds/db-with (list (add 20 "db/ident" (ds/Keyword "logseq.class/Card"))
+                                 (add 10 "block/tags" (ds/Ref 20))) (base-db "Remember this"))
+            current (runtime/create :path path :server_t 42 (ds/conn-from-db db))]
+        (is (= ["block"] (mapv #(:uuid (:block %)) (runtime/due-flashcards current :now now))))
+        (is (ok? (runtime/review-flashcard current :uuid "block" :rating (ops/Good) :now now :operation_id "review")))
+        (is (empty? (runtime/due-flashcards current :now now)))
+        (let [operations (ops/logseq-chat-pending-ops-list path)]
+          (is (= 1 (count operations)))
+          (is (match (:intent (nth operations 0))
+                (ops/Set_properties value)
+                (let [changes (:changes value)]
+                  (and (= "block" (:uuid value)) (= 2 (count changes))
+                       (= "logseq.property.fsrs/state" (:attr (nth changes 0)))
+                       (= "logseq.property.fsrs/due" (:attr (nth changes 1)))
+                       (match (:value (nth changes 1)) (Some (ops/Int_value _)) true _ false)
+                       (match (:value (nth changes 0))
+                         (Some (ops/Map_value entries))
+                         (some (fn [[key value]] (and (= key "last-repeat") (match value (ops/Int_value _) true _ false))) entries)
+                         _ false)))
+                _ false)))))))
+
+(deftest legacy-fsrs-instants-never-reach-the-wire-as-dates
+  (with-runtime
+    (fn [_ _ current]
+      (let [op (native-operation "legacy-review"
+                 (ops/Set_properties
+                   (record ops/pending_properties (uuid "block")
+                     (changes [(record ops/property_change (attr "logseq.property.fsrs/state") (expected nil)
+                                 (value (Some (ops/Map_value [(tuple "last-repeat" (ops/Instant_value 1776000000000))
+                                                            (tuple "state" (ops/Keyword_value "review"))]))))
+                               (record ops/property_change (attr "logseq.property.fsrs/due") (expected nil)
+                                 (value (Some (ops/Instant_value 1776086400000))))]))))]
+        (is (ok? (runtime/stage current op)))
+        (is (match (runtime/prepare-sync current op)
+              (Ok ["save-block" wire])
+              (not (some #(match % (transit/Date _) true _ false) (wire-values (transit/of-string wire))))
+              _ false))))))
+
+(deftest split-preparation-is-atomic-and-leaves-authoritative-data-unchanged
+  (with-runtime
+    (fn [_ conn current]
+      (let [op (native-operation "split" (native-split "block" "O" "ld" "new-block"))]
+        (is (match (runtime/prepare-sync current op)
+              (Ok ["split-block" wire])
+              (match (transit/of-string wire) (transit/Array values) (>= (count values) 2) _ false)
+              _ false))
+        (is (= "Old" (title (ds/conn-db conn) "block")))))))
+
+(deftest consecutive-empty-splits-and-merges-use-the-latest-projection
+  (with-runtime
+    (fn [_ _ current]
+      (let [operations
+            [(native-operation "split-1" (native-split "block" "Old" "" "empty-1"))
+             (native-operation "split-2" (native-split "empty-1" "" "" "empty-2"))
+             (native-operation "merge-1" (ops/Merge_backward
+                                          (record ops/pending_merge (uuid "empty-2") (expected-title "") (title "")
+                                            (previous-uuid "empty-1") (expected-previous-title "") (merged-title nil))))
+             (native-operation "merge-2" (ops/Merge_backward
+                                          (record ops/pending_merge (uuid "empty-1") (expected-title "") (title "")
+                                            (previous-uuid "block") (expected-previous-title "Old") (merged-title nil))))]]
+        (run! #(is (ok? (runtime/stage current %))) operations)
+        (is (= ["block"] (mapv :uuid (runtime/blocks-for-page current "page"))))))))
+
+(deftest remote-title-conflicts-discard-stale-projections
+  (with-runtime
+    (fn [_ conn current]
+      (is (ok? (runtime/stage current (save-title "title" "Old" "Pending"))))
+      (ds/reset-conn conn (base-db "Remote"))
+      (runtime/rebase current :server_t 43 :operation_ids (list))
+      (is (= "Remote" (title (runtime/db current) "block")))
+      (is (some (fn [[id state]] (and (= id "title") (match state (ops/Conflicted _) true _ false)))
+                (runtime/operation-statuses current))))))
+
+(deftest cursor-advance-rebases-offline-edits-and-their-structural-dependencies
+  (with-runtime
+    (fn [path conn current]
+      (let [split (native-operation "split" (native-split "block" "O" "ld" "dependent-new"))
+            edit (native-operation "edit" (ops/Save_title (record ops/pending_title
+                                                           (uuid "dependent-new") (expected-title "ld") (title "Edited"))))]
+        (is (ok? (runtime/stage current split)))
+        (is (ok? (runtime/stage current edit)))
+        (ds/reset-conn conn (base-db "Old"))
+        (runtime/rebase current :server_t 43 :operation_ids (list))
+        (is (= "Edited" (title (runtime/db current) "dependent-new")))
+        (let [persisted (ops/logseq-chat-pending-ops-list path)]
+          (is (= 2 (count persisted)))
+          (is (every? #(and (= 43 (:base-t %)) (= (ops/Queued) (:state %))) persisted)))))))
+
+(deftest stale-deletions-restore-authoritative-content-as-durable-conflicts
+  (with-runtime
+    (fn [path conn current]
+      (let [op (native-operation "delete" (ops/Delete_blocks (record ops/pending_delete (uuids ["block"]))))]
+        (is (ok? (runtime/stage current op)))
+        (ds/reset-conn conn (base-db "Remote update"))
+        (runtime/rebase current :server_t 43 :operation_ids (list))
+        (let [persisted (ops/logseq-chat-pending-ops-list path)]
+          (is (= 1 (count persisted)))
+          (is (match (:state (nth persisted 0)) (ops/Conflicted _) true _ false)))
+        (is (= "Remote update" (title (runtime/db current) "block")))))))
+
+(deftest confirmation-requires-both-operation-id-and-authoritative-result
+  (run! (fn [[remote confirmed]]
+          (with-runtime
+            (fn [path conn current]
+              (is (ok? (runtime/stage current (save-title "title" "Old" "Pending"))))
+              (ds/reset-conn conn (base-db remote))
+              (runtime/rebase current :server_t 43 :operation_ids (list "title"))
+              (is (= confirmed (empty? (ops/logseq-chat-pending-ops-list path))))
+              (is (= "Pending" (title (runtime/db current) "block"))))))
+        [(tuple "Pending" true) (tuple "Old" false)]))
+
+(deftest rebase-replays-valid-applied-operations-and-persists-invalid-conflicts
+  (with-runtime
+    (fn [path conn current]
+      (run! #(ops/logseq-chat-pending-ops-save path %)
+            [(assoc (save-title "conflicted" "Old" "Ignored") :state (ops/Conflicted "known"))
+             (assoc (save-title "applied" "Old" "Applied") :state (ops/Applied))
+             (assoc (save-title "bad-applied" "Wrong" "Bad") :state (ops/Applied))])
+      (ds/reset-conn conn (base-db "Old"))
+      (runtime/rebase current :server_t 42 :operation_ids (list))
+      (is (= "Applied" (title (runtime/db current) "block")))
+      (is (some #(and (= "bad-applied" (:operation-id %)) (match (:state %) (ops/Conflicted _) true _ false))
+                (ops/logseq-chat-pending-ops-list path))))))
+
+(deftest retryable-and-submitted-edits-replay-in-order
+  (with-runtime
+    (fn [path conn current]
+      (run! #(ops/logseq-chat-pending-ops-save path %)
+            [(assoc (save-title "retryable" "Old" "Retry") :state (ops/Retryable))
+             (assoc (save-title "submitted" "Retry" "Submit") :state (ops/Submitted))])
+      (ds/reset-conn conn (base-db "Old"))
+      (runtime/rebase current :server_t 42 :operation_ids (list))
+      (is (= "Submit" (title (runtime/db current) "block"))))))
 
 (deftest dependent-edits-can-sync-on-an-accepted-projection
   (with-store
