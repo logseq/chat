@@ -350,6 +350,90 @@
 (defn response-error-code [response]
   (json-util/to-string (json-util/member "code" (json-util/member "error" response))))
 
+(deftest optimistic-capture-is-returned-before-sync
+  (let [session (native-rpc/create)
+        response (dispatch-json session "send"
+                   "{\"text\":\"Optimistic capture\",\"uuid\":\"local-swift\",\"now\":1776000000000}")
+        blocks (json-util/to-list (json-util/member "blocks" (json-util/member "result" response)))
+        block (nth blocks 0)]
+    (is (= "local-swift" (json-util/to-string (json-util/member "uuid" block))))
+    (is (= "Optimistic capture" (json-util/to-string (json-util/member "title" block))))
+    (is (= "pending" (json-util/to-string (json-util/member "syncStatus" block))))
+    (is (= 1776000000000 (json-util/to-int (json-util/member "createdAt" block))))))
+
+(defn title-operation [wire]
+  (record ops/pending-operation
+          (operation-id "original") (base-t 42) (state ops/Retryable)
+          (intent (ops/intent-of-json (json/from-string wire)))))
+
+(def title-intent-wires
+  ["{\"type\":\"save-title\",\"uuid\":\"b\",\"expectedTitle\":\"old\",\"title\":\"one\"}"
+   "{\"type\":\"insert-block\",\"uuid\":\"b\",\"title\":\"one\",\"pageUuid\":\"p\",\"parentUuid\":\"p\",\"order\":\"a0\",\"createdAt\":1}"
+   "{\"type\":\"split-block\",\"uuid\":\"b\",\"expectedTitle\":\"old\",\"before\":\"one\",\"after\":\"two\",\"newUuid\":\"new\",\"newOrder\":\"a1\",\"createdAt\":1}"
+   "{\"type\":\"merge-backward\",\"uuid\":\"b\",\"expectedTitle\":\"old\",\"title\":\"one\",\"previousUuid\":\"prev\",\"expectedPreviousTitle\":\"previous\",\"mergedTitle\":\"combined\"}"])
+
+(deftest title-normalization-preserves-operation-and-stages-tags-first
+  (let [calls (atom 0)
+        normalize (fn [uuid titles]
+                    (is (= "b" uuid))
+                    (swap! calls inc)
+                    (tuple (mapv #(str "normalized:" %) titles)
+                           [["tag-1" "First"] ["tag-2" "Second"]]))]
+    (run! (fn [wire]
+            (let [operation (title-operation wire)
+                  result (rpc/normalize-operation-titles (Some normalize) (fn [] "new-id") (fn [] 100) operation)
+                  changed (nth result 2)
+                  expected (title-operation
+                             (-> wire
+                                 (string/replace "\"one\"" "\"normalized:one\"")
+                                 (string/replace "\"two\"" "\"normalized:two\"")))]
+              (is (= 3 (count result)))
+              (is (= "original" (:operation-id changed)))
+              (is (= 42 (:base-t changed)))
+              (is (= ops/Retryable (:state changed)))
+              (run! (fn [index]
+                      (let [tag-op (nth result index)]
+                        (is (= 42 (:base-t tag-op)))
+                        (is (= ops/Queued (:state tag-op)))
+                        (match (:intent tag-op)
+                          (ops/Create-tag tag)
+                          (do (is (= (nth ["tag-1" "tag-2"] index) (:uuid tag)))
+                              (is (= (nth ["First" "Second"] index) (:title tag)))
+                              (is (= 100 (:created-at tag))))
+                          _ (is false))))
+                    [0 1])
+              (is (= expected changed))))
+          title-intent-wires)
+    (is (= 4 @calls))))
+
+(deftest title-normalization-keeps-original-intent-on-wrong-arity
+  (let [normalize (fn [_uuid _titles] (tuple [] [["tag" "Tag"]]))]
+    (run! (fn [wire]
+            (let [operation (title-operation wire)
+                  result (rpc/normalize-operation-titles (Some normalize) (fn [] "new-id") (fn [] 100) operation)]
+              (is (= 2 (count result)))
+              (is (= operation (nth result 1)))))
+          title-intent-wires)))
+
+(deftest title-normalization-skips-unrelated-intents-and-absent-service
+  (let [calls (atom 0)
+        normalize (fn [_uuid titles] (swap! calls inc) (tuple titles []))
+        operation (title-operation "{\"type\":\"delete-blocks\",\"uuids\":[\"b\"]}")]
+    (is (= [operation] (rpc/normalize-operation-titles (Some normalize) (fn [] "new-id") (fn [] 100) operation)))
+    (is (= 0 @calls))
+    (run! (fn [wire]
+            (let [operation (title-operation wire)]
+              (is (= [operation] (rpc/normalize-operation-titles nil (fn [] "new-id") (fn [] 100) operation)))))
+          title-intent-wires)))
+
+(deftest capture-requires-projection-cursor-before-looking-up-journal
+  (let [calls (atom 0)
+        session (native-rpc/create
+                  :journal_page_id (fn [_day] (swap! calls inc) nil))]
+    (is (= (Error "A current server cursor is required")
+           (native-rpc/capture-operations session :uuid "b" :title "Text" :now 1776000000000)))
+    (is (= 0 @calls))))
+
 (defn native-asset [uuid]
   (assoc (native-core/logseq-chat-cache-model-local-block uuid "photo.jpg" "local-page" nil 1776000000000)
          :is-asset true :asset-type (Some "jpg") :asset-size (Some 2048)

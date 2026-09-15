@@ -1242,135 +1242,28 @@ let enqueue_semantic session _config operation =
        Ok ())
 ;;
 
-(* Editor text keeps page and tag names readable; stored titles use UUID
-   references. New hashtags are staged before the title operation. *)
-let normalize_operation_titles session (operation : Pending_ops.pending_operation) =
-  match session.graph_normalize_titles with
-  | None -> [ operation ]
-  | Some normalize ->
-    let created = ref [] in
-    let normalize ~uuid titles =
-      let titles, new_tags = normalize ~uuid titles in
-      created := !created @ new_tags;
-      titles
-    in
-    let intent =
-      match operation.Pending_ops.intent with
-      | Pending_ops.Save_title { uuid; expected_title; title } ->
-        (match normalize ~uuid [ title ] with
-         | [ title ] -> Pending_ops.Save_title { uuid; expected_title; title }
-         | _ -> operation.Pending_ops.intent)
-      | Pending_ops.Insert_block record ->
-        (match normalize ~uuid:record.uuid [ record.title ] with
-         | [ title ] -> Pending_ops.Insert_block { record with title }
-         | _ -> operation.Pending_ops.intent)
-      | Pending_ops.Split_block record ->
-        (match normalize ~uuid:record.uuid [ record.before; record.after ] with
-         | [ before; after ] -> Pending_ops.Split_block { record with before; after }
-         | _ -> operation.Pending_ops.intent)
-      | Pending_ops.Merge_backward record ->
-        (match normalize ~uuid:record.uuid [ record.title ] with
-         | [ title ] -> Pending_ops.Merge_backward { record with title }
-         | _ -> operation.Pending_ops.intent)
-      | intent -> intent
-    in
-    let create_operations =
-      List.map
-        (fun (uuid, title) ->
-          Pending_ops.
-            { operation_id = fresh_squuid ()
-            ; base_t = operation.base_t
-            ; state = Queued
-            ; intent = Create_tag { uuid; title; created_at = now_ms () }
-            })
-        !created
-    in
-    create_operations @ [ { operation with Pending_ops.intent } ]
+let normalize_operation_titles session operation =
+  let normalizer =
+    Option.map
+      (fun normalize uuid titles ->
+        let titles, tags = normalize ~uuid (Rrbvec.to_list titles) in
+        (Rrbvec.to_seq, Rrbvec.of_list titles),
+        Rrbvec.of_list (List.map (fun (uuid, title) -> Rrbvec.of_list [ uuid; title ]) tags))
+      session.graph_normalize_titles
+  in
+  LG.logseq_chat_rpc_normalize_operation_titles normalizer fresh_squuid now_ms operation
+  |> Rrbvec.to_list
 ;;
 
 let capture_operations session ~uuid ~title ~now ?status () =
-  (* A batch acknowledgement can precede its local graph update. Stage captures
-     against the applied graph; the transport separately uses the accepted cursor. *)
-  let base_t =
-    projection_server_t session
-    |> Option.to_result ~none:"A current server cursor is required"
-  in
-  Result.bind base_t (fun base_t ->
-    let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms now in
-    let page_uuid = Option.bind session.journal_page_id (fun find -> find ~journal_day) in
-    let capture_operation =
-      match page_uuid with
-      | None ->
-        Ok
-          Pending_ops.
-            { operation_id = fresh_squuid ()
-            ; base_t
-            ; state = Queued
-            ; intent =
-                Create_journal
-                  { page_uuid = LG.logseq_chat_rpc_journal_page_uuid journal_day
-                  ; block_uuid = uuid
-                  ; title
-                  ; journal_day
-                  ; created_at = now
-                  }
-            }
-      | Some page_uuid ->
-        let orders =
-          (base_outliner_context session).Outliner_state.blocks
-          |> List.filter (fun (block : Model.block) ->
-            String.equal block.page_id page_uuid
-            && block.parent_id = Some page_uuid)
-          |> List.filter_map (fun (block : Model.block) -> block.order)
-          |> List.sort String.compare
-          |> List.rev
-        in
-        let last_order = match orders with order :: _ -> Some order | [] -> None in
-        Result.map
-          (fun order ->
-            Pending_ops.
-              { operation_id = fresh_squuid ()
-              ; base_t
-              ; state = Queued
-              ; intent =
-                  Insert_block
-                    { uuid
-                    ; title
-                    ; page_uuid
-                    ; parent_uuid = page_uuid
-                    ; order
-                    ; created_at = now
-                    }
-              })
-          (LG.logseq_chat_fractional_order_between last_order None)
-    in
-    Result.map
-      (fun capture_operation ->
-        let status_operations =
-          match status with
-          | None -> []
-          | Some (status : Model.status) ->
-            let value =
-              match status.ident with
-              | Some ident -> Pending_ops.Ref_ident ident
-              | None -> Ref_uuid status.uuid
-            in
-            [ Pending_ops.
-                { operation_id = fresh_squuid ()
-                ; base_t
-                ; state = Queued
-                ; intent =
-                    Set_property
-                      { uuid
-                      ; attr = "logseq.property/status"
-                      ; expected = None
-                      ; value = Some value
-                      }
-                }
-            ]
-        in
-        normalize_operation_titles session capture_operation @ status_operations)
-      capture_operation)
+  LG.logseq_chat_rpc_capture_operations
+    (projection_server_t session)
+    uuid title now status
+    (fun () -> base_outliner_context session)
+    (Option.map (fun find journal_day -> find ~journal_day) session.journal_page_id)
+    fresh_squuid
+    (fun operation -> List.to_seq, normalize_operation_titles session operation)
+  |> Result.map Rrbvec.to_list
 ;;
 
 let enqueue_capture session config ~uuid ~title ~now ?status () =

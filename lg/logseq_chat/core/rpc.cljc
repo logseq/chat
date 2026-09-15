@@ -53,6 +53,69 @@
                 (model/mark-block-synced cache (:uuid block)))))
           (model/unsynced-blocks cache))))
 
+(defn normalize-title-intent [normalize intent]
+  (match intent
+    (ops/Save-title value)
+    (let [[titles tags] (normalize (:uuid value) [(:title value)])]
+      (tuple (if (= 1 (count titles)) (ops/Save-title (assoc value :title (nth titles 0))) intent) tags))
+    (ops/Insert-block value)
+    (let [[titles tags] (normalize (:uuid value) [(:title value)])]
+      (tuple (if (= 1 (count titles)) (ops/Insert-block (assoc value :title (nth titles 0))) intent) tags))
+    (ops/Split-block value)
+    (let [[titles tags] (normalize (:uuid value) [(:before value) (:after value)])]
+      (tuple (if (= 2 (count titles))
+               (ops/Split-block (assoc value :before (nth titles 0) :after (nth titles 1))) intent) tags))
+    (ops/Merge-backward value)
+    (let [[titles tags] (normalize (:uuid value) [(:title value)])]
+      (tuple (if (= 1 (count titles)) (ops/Merge-backward (assoc value :title (nth titles 0))) intent) tags))
+    _ (tuple intent [])))
+
+(defn normalize-operation-titles [normalizer fresh-id clock operation]
+  (if-some [normalize normalizer]
+    (let [[intent tags] (normalize-title-intent normalize (:intent operation))
+          created (mapv (fn [[uuid title]]
+                          (record ops/pending-operation
+                                  (operation-id (fresh-id)) (base-t (:base-t operation)) (state ops/Queued)
+                                  (intent (ops/Create-tag
+                                            (record ops/pending-create
+                                                    (uuid uuid) (title title) (created-at (clock)))))))
+                        tags)]
+      (conj created (assoc operation :intent intent)))
+    [operation]))
+
+(defn capture-operation [base-t uuid title now load-context journal-page-id fresh-id]
+  (let [journal-day (model/journal-day-for-ms now)
+        page (when-some [find-page journal-page-id] (find-page journal-day))]
+    (if-some [page-uuid page]
+      (let [last-order (->> (effects/sorted-siblings (load-context) (Some page-uuid))
+                            (filter #(= (:page-id %) page-uuid))
+                            (keep :order)
+                            last)]
+        (let* [position (order/between last-order nil)]
+          (Ok (effects/operation base-t fresh-id
+                (ops/Insert-block (record ops/pending-insert
+                                         (uuid uuid) (title title) (page-uuid page-uuid)
+                                         (parent-uuid page-uuid) (order position) (created-at now)))))))
+      (Ok (effects/operation base-t fresh-id
+            (ops/Create-journal (record ops/pending-journal
+                                       (page-uuid (journal-page-uuid journal-day)) (block-uuid uuid)
+                                       (title title) (journal-day journal-day) (created-at now))))))))
+
+(defn capture-operations [cursor uuid title now status load-context journal-page-id fresh-id normalize]
+  (if-some [base-t cursor]
+    (let* [operation (capture-operation base-t uuid title now load-context journal-page-id fresh-id)]
+      (let [status-operations
+            (if-some [value status]
+              [(effects/operation base-t fresh-id
+                 (ops/Set-property (record ops/pending-property
+                                           (uuid uuid) (attr "logseq.property/status") (expected nil)
+                                           (value (Some (if-some [ident (:ident value)]
+                                                          (ops/Ref-ident ident)
+                                                          (ops/Ref-uuid (:uuid value))))))))]
+              [])]
+        (Ok (into (vec (normalize operation)) status-operations))))
+    (Error "A current server cursor is required")))
+
 (defn asset-destination [context block journal-page-id]
   (if-some [parent-uuid (:parent-id block)]
     (when-some [parent (outliner/find-block context parent-uuid)]

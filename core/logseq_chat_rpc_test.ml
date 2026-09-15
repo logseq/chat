@@ -99,27 +99,6 @@ let pending_request response =
 
 
 let () =
-  let session = Logseq_chat_rpc.create () in
-  let response =
-    Logseq_chat_rpc.call session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Optimistic capture\",\"uuid\":\"local-swift\",\"now\":1776000000000}"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    let result = required_assoc "result" fields in
-    let blocks = required_list "blocks" result in
-    (match blocks with
-     | `Assoc block :: _ ->
-       assert_equal "uuid" "local-swift" (required_string "uuid" block);
-       assert_equal "title" "Optimistic capture" (required_string "title" block);
-       assert_equal "sync status" "pending" (required_string "syncStatus" block);
-       assert_int_equal "created at" 1_776_000_000_000 (required_int "createdAt" block)
-     | _ -> failwith "expected one returned block")
-  | _ -> failwith "expected RPC response object"
-;;
-
-let () =
   let parent =
     Logseq_chat_lg_core_native.
       { uuid = "page-parent"; title = "Parent"; page_id = "selected-page"
