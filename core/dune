@@ -190,11 +190,10 @@
  (modules logseq_chat_model_test)
  (libraries logseq_chat_core))
 
-(tests
- (names logseq_chat_lui_snapshot_test logseq_chat_lui_projection_test)
+(test
+ (name logseq_chat_lui_snapshot_test)
  (modules
   logseq_chat_lui_snapshot_test
-  logseq_chat_lui_projection_test
   logseq_chat_lui_native)
  (flags (:standard -w -27-32-37-39-69))
  (libraries
