@@ -2,6 +2,8 @@
   (:require [clojure.test :refer [deftest is]]
             [clojure.string :as string]
             [ocaml.List :as native-list]
+            [ocaml.Sys :as sys]
+            [ocaml.Stdlib :as stdlib]
             [ocaml.Logseq_chat_lg_core_native :as native-core]
             [logseq-chat.rpc :as rpc]
             [logseq-chat.pending-ops :as ops]
@@ -205,6 +207,116 @@
     (if-some [updated (native-core/logseq-chat-cache-model-read-block (:model session) "remote-task")]
       (is (= "submitted" (:sync-status updated)))
       (is false))))
+
+(deftest encrypted-graph-creation-provisions-uploads-and-cleans-up-in-order
+  (let [created (atom false)
+        provisioned (atom nil)
+        events (atom [])
+        uploaded-path (atom nil)
+        session
+        (native-rpc/create
+          :send (fn [request]
+                  (cond
+                    (and (= (:method_ request) "POST") (string/ends-with? (:url request) "/graphs"))
+                    (do (swap! events conj "create")
+                        (reset! created true)
+                        (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"new-private\"}")))
+                    (string/ends-with? (:url request) "/graphs")
+                    (do (swap! events conj "discover")
+                        (Ok (native-core/logseq-chat-api-response 200
+                              (if @created
+                                "{\"graphs\":[{\"graph-id\":\"new-private\",\"graph-name\":\"Private notes\",\"schema-version\":\"65.33\",\"graph-e2ee?\":true,\"graph-ready-for-use?\":true}]}"
+                                "{\"graphs\":[]}"))))
+                    :else (Error (str "unexpected request: " (:url request)))))
+          :provision_graph_key (fn [config]
+                                 (swap! events conj "provision")
+                                 (reset! provisioned (Some (:graph_id config)))
+                                 (Ok (stdlib/ignore 0)))
+          :encrypt_title (fn [_graph-id value] (Ok (str "encrypted:" value)))
+          :upload_file (fn [upload]
+                         (swap! events conj "upload")
+                         (reset! uploaded-path (Some (:file_path upload)))
+                         (is (sys/file-exists (:file_path upload)))
+                         (is (string/includes? (:url (:request upload)) "?"))
+                         (is (string/ends-with? (:url (:request upload)) "checksum=0000000000000000"))
+                         (is (= "application/transit+json" (:content_type upload)))
+                         (Ok (native-core/logseq-chat-api-response 200 "{\"ok\":true,\"count\":8}"))))]
+    (dispatch-json session "configure" "{\"baseUrl\":\"https://api.example\",\"graphId\":\"\",\"token\":\"access\"}")
+    (is (json-util/to-bool (json-util/member "ok"
+                           (dispatch-json session "createSyncGraph" "{\"name\":\"Private notes\",\"isEncrypted\":true}"))))
+    (is (= (Some "new-private") @provisioned))
+    (is (= ["create" "provision" "upload" "discover"] @events))
+    (if-some [path @uploaded-path] (is (not (sys/file-exists path))) (is false))))
+
+(deftest semantic-capture-pump-never-calls-blocking-transport
+  (let [legacy-send-count (atom 0)
+        staged (atom [])
+        session (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 91))
+                  :journal_page_id (fn [_day] (Some "journal-page"))
+                  :stage_operation (fn [operation]
+                                     (swap! staged
+                                       (fn [operations]
+                                         (into [operation]
+                                           (remove #(= (:operation_id %) (:operation_id operation)) operations))))
+                                     (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))
+                  :pending_operations (fn [] (apply list (reverse @staged)))
+                  :send (fn [_request]
+                          (swap! legacy-send-count inc)
+                          (stdlib/failwith "asynchronous pending pump called the blocking transport")))]
+    (dispatch-json session "configure" "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
+    (let [response (dispatch-json session "send" "{\"text\":\"First title\",\"uuid\":\"async-local\",\"now\":1776000000000}")]
+      (is (json-util/to-bool (json-util/member "hasPendingSemanticOperations" (json-util/member "result" response)))))
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (do (is (= "POST" (json-util/to-string (json-util/member "method" request))))
+          (is (= "http://127.0.0.1:8787/sync/plain-1/tx/batch"
+                 (json-util/to-string (json-util/member "url" request))))
+          (is (= 1 (json-util/to-int (json-util/member "id" request)))))
+      (is false))
+    (is (= 0 @legacy-send-count))
+    (is (nil? (pending-request
+                (dispatch-json session "completePendingSync"
+                  "{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}"))))))
+
+(deftest encrypted-task-stages-journal-before-status-and-drains-both-requests
+  (let [staged (atom [])
+        session (native-rpc/create
+                  :load_graph_catalog (fn [] (Some "{\"graphs\":[{\"graph-id\":\"encrypted-1\",\"graph-name\":\"Private\",\"graph-e2ee?\":true,\"graph-ready-for-use?\":true}]}"))
+                  :graph_unlocked (fn [_graph-id] true)
+                  :sync_cursor (fn [] (Some 91))
+                  :journal_page_id (fn [_day] nil)
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]"))))]
+    (dispatch-json session "configure" "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"\",\"token\":\"access\"}")
+    (dispatch-json session "selectGraph" "encrypted-1")
+    (dispatch-json session "sendTask"
+      "{\"text\":\"Secret task\",\"uuid\":\"encrypted-async\",\"now\":1776000000000,\"status\":{\"uuid\":\"todo\",\"title\":\"Todo\"}}")
+    (is (= 2 (count @staged)))
+    (match (:intent (nth @staged 0))
+      (native-core/Create_journal journal)
+      (do (is (= "encrypted-async" (:block_uuid journal)))
+          (is (= "Secret task" (:title journal))))
+      _ (is false))
+    (match (:intent (nth @staged 1))
+      (native-core/Set_property property)
+      (do (is (= "encrypted-async" (:uuid property)))
+          (is (= "logseq.property/status" (:attr property))))
+      _ (is false))
+    (run! (fn [response]
+            (if-some [request (pending-request response)]
+              (is (= "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+                     (json-util/to-string (json-util/member "url" request))))
+              (is false)))
+          [(dispatch-json session "beginPendingSync" "")
+           (dispatch-json session "completePendingSync"
+             "{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":92}\",\"error\":null}")])
+    (is (nil? (pending-request
+                (dispatch-json session "completePendingSync"
+                  "{\"id\":2,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":93}\",\"error\":null}"))))))
 
 (deftest graph-creation-stops-after-initial-upload-failure
   (let [discovered (atom false)
