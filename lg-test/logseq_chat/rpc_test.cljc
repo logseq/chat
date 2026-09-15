@@ -14,6 +14,33 @@
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
+(deftest required-string-lists-preserve-order-and-validate-every-item
+  (is (= (Ok []) (rpc/required-string-list "uuids" (json/from-string "{\"uuids\":[]}"))))
+  (is (= (Ok [" b " "a" "a"])
+         (rpc/required-string-list "uuids" (json/from-string "{\"uuids\":[\" b \",\"a\",\"a\"]}"))))
+  (run! (fn [wire]
+          (is (= (Error "field must be a list: uuids") (rpc/required-string-list "uuids" (json/from-string wire)))))
+        ["{}" "{\"uuids\":null}" "{\"uuids\":1}"])
+  (run! (fn [wire]
+          (is (= (Error "field must be a list of non-empty strings: uuids")
+                 (rpc/required-string-list "uuids" (json/from-string wire)))))
+        ["{\"uuids\":[\"\"]}" "{\"uuids\":[\" \"]}" "{\"uuids\":[\"a\",null]}"]))
+
+(deftest move-payloads-preserve-order-and-first-validation-error
+  (is (= (Ok []) (rpc/required-moves (json/from-string "{\"moves\":[]}"))))
+  (let [move (record ops/pending-move (uuid "a") (page-uuid "page") (parent-uuid "parent") (order "a0"))]
+    (is (= (Ok [move move])
+           (rpc/required-moves (json/from-string
+             "{\"moves\":[{\"uuid\":\"a\",\"pageUuid\":\"page\",\"parentUuid\":\"parent\",\"order\":\"a0\"},{\"uuid\":\"a\",\"pageUuid\":\"page\",\"parentUuid\":\"parent\",\"order\":\"a0\"}]}")))))
+  (run! (fn [[wire message]] (is (= (Error message) (rpc/required-moves (json/from-string wire)))))
+        [(tuple "{}" "field must be a list: moves")
+         (tuple "{\"moves\":[null]}" "moves must contain objects")
+         (tuple "{\"moves\":[{},null]}" "missing field: uuid")
+         (tuple "{\"moves\":[{\"uuid\":1,\"pageUuid\":1}]}" "field must be a string: uuid")
+         (tuple "{\"moves\":[{\"uuid\":\"a\"}]}" "missing field: pageUuid")
+         (tuple "{\"moves\":[{\"uuid\":\"a\",\"pageUuid\":\"p\"}]}" "missing field: parentUuid")
+         (tuple "{\"moves\":[{\"uuid\":\"a\",\"pageUuid\":\"p\",\"parentUuid\":\"p\"}]}" "missing field: order")]))
+
 (deftest status-payload-preserves-validation-and-optional-fields
   (run! (fn [[wire message]]
           (is (= (Error message) (rpc/status-payload (json/from-string wire)))))

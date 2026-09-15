@@ -50,6 +50,40 @@
     None (Ok nil)
     _ (Error (str "field must be a string: " name))))
 
+(defn required-string-list [name input]
+  (match (json-util/member name input)
+    (tag List values)
+    (reduce (fn [result value]
+              (let* [items result]
+                (match value
+                  (tag String text)
+                  (if (string/blank? text)
+                    (Error (str "field must be a list of non-empty strings: " name))
+                    (Ok (conj items text)))
+                  _ (Error (str "field must be a list of non-empty strings: " name)))))
+            (Ok []) values)
+    _ (Error (str "field must be a list: " name))))
+
+(defn decode-move [input]
+  (match input
+    (tag Assoc entries)
+    (let [fields (into {} (reverse entries))]
+      (let* [uuid (required-string fields "uuid")
+             page-uuid (required-string fields "pageUuid")
+             parent-uuid (required-string fields "parentUuid")
+             order (required-string fields "order")]
+        (Ok (record ops/pending-move (uuid uuid) (page-uuid page-uuid)
+              (parent-uuid parent-uuid) (order order)))))
+    _ (Error "moves must contain objects")))
+
+(defn required-moves [input]
+  (match (json-util/member "moves" input)
+    (tag List values)
+    (reduce (fn [result value]
+              (let* [moves result move (decode-move value)] (Ok (conj moves move))))
+            (Ok []) values)
+    _ (Error "field must be a list: moves")))
+
 (defn status-payload [input]
   (match (json-util/member "status" input)
     (tag Assoc entries)

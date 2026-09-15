@@ -192,45 +192,6 @@ let required_bool name fields =
   | None -> Error ("missing field: " ^ name)
 ;;
 
-let required_string_list name fields =
-  match assoc name fields with
-  | Some (`List values) ->
-    let rec loop result = function
-      | [] -> Ok (List.rev result)
-      | `String value :: rest when not (String.equal (String.trim value) "") ->
-        loop (value :: result) rest
-      | _ -> Error ("field must be a list of non-empty strings: " ^ name)
-    in
-    loop [] values
-  | _ -> Error ("field must be a list: " ^ name)
-;;
-
-let required_moves fields =
-  match assoc "moves" fields with
-  | Some (`List values) ->
-    let decode = function
-      | `Assoc move ->
-        (match required_string "uuid" move,
-               required_string "pageUuid" move,
-               required_string "parentUuid" move,
-               required_string "order" move with
-         | Ok uuid, Ok page_uuid, Ok parent_uuid, Ok order ->
-           Ok (Pending_ops.{ uuid; page_uuid; parent_uuid; order } : Pending_ops.pending_move)
-         | Error message, _, _, _ | _, Error message, _, _
-         | _, _, Error message, _ | _, _, _, Error message -> Error message)
-      | _ -> Error "moves must contain objects"
-    in
-    let rec loop result = function
-      | [] -> Ok (List.rev result)
-      | value :: rest ->
-        (match decode value with
-         | Ok move -> loop (move :: result) rest
-         | Error _ as error -> error)
-    in
-    loop [] values
-  | _ -> Error "field must be a list: moves"
-;;
-
 let pending_request_json session =
   match session.semantic_active, session.pending_sync with
   | Some active, _ ->
@@ -3192,13 +3153,13 @@ let dispatch session action payload =
         | `Assoc fields ->
           (match required_string "operationId" fields,
                  optional_int "expectedServerT" fields,
-                 required_moves fields,
+                 LG.logseq_chat_rpc_required_moves (`Assoc fields),
                  session.config,
                  projection_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok moves, Some config, Some current_t
              when expected_server_t = current_t ->
-             let identities = List.map (fun (move : Pending_ops.pending_move) -> move.uuid) moves in
-             if moves = [] || List.length identities <> List.length (List.sort_uniq String.compare identities)
+             let identities = List.map (fun (move : Pending_ops.pending_move) -> move.uuid) (Rrbvec.to_list moves) in
+             if Rrbvec.is_empty moves || List.length identities <> List.length (List.sort_uniq String.compare identities)
              then LG.logseq_chat_rpc_failure "invalid_params" "moveBlocks requires distinct moves"
              else
                let operation =
@@ -3206,7 +3167,7 @@ let dispatch session action payload =
                    { operation_id
                    ; base_t = current_t
                    ; state = Queued
-                   ; intent = (Move_blocks { moves = (Rrbvec.of_list (moves : Logseq_chat_lg_core_native.pending_move list)) })
+                   ; intent = (Move_blocks { moves })
                    }
                in
                (match enqueue_semantic session config operation with
@@ -3232,12 +3193,12 @@ let dispatch session action payload =
         | `Assoc fields ->
           (match required_string "operationId" fields,
                  optional_int "expectedServerT" fields,
-                 required_string_list "uuids" fields,
+                 LG.logseq_chat_rpc_required_string_list "uuids" (`Assoc fields),
                  session.config,
                  projection_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok uuids, Some config, Some current_t
              when expected_server_t = current_t ->
-             let uuids = List.sort_uniq String.compare uuids in
+             let uuids = List.sort_uniq String.compare (Rrbvec.to_list uuids) in
              if uuids = []
              then LG.logseq_chat_rpc_failure "invalid_params" "deleteBlocks requires block ids"
              else
