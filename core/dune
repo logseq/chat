@@ -190,17 +190,9 @@
  (modules logseq_chat_model_test)
  (libraries logseq_chat_core))
 
-(test
- (name logseq_chat_lui_snapshot_test)
- (modules
-  logseq_chat_lui_snapshot_test
-  logseq_chat_lui_native)
- (flags (:standard -w -27-32-37-39-69))
- (libraries
-  logseq_chat_core
-  lg.edn-backend.native
-  lg.runtime
-  lg.rrbvec))
+(alias
+ (name runtest)
+ (deps (alias ../lg-test/runtest)))
 
 (test
  (name logseq_chat_lui_host_update_test)
