@@ -340,6 +340,132 @@
              (json-util/to-string (json-util/member "code" (json-util/member "error" response))))))
     (is (not @discovered))))
 
+(def encrypted-graph-catalog
+  "{\"graphs\":[{\"graph-id\":\"encrypted-1\",\"graph-name\":\"Private\",\"graph-e2ee?\":true,\"graph-ready-for-use?\":true}]}")
+
+(defn configure-encrypted-session [session]
+  (dispatch-json session "configure"
+    "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"\",\"token\":\"access\"}"))
+
+(defn response-error-code [response]
+  (json-util/to-string (json-util/member "code" (json-util/member "error" response))))
+
+(deftest graph-creation-validates-before-performing-io
+  (let [calls (atom 0)
+        session (native-rpc/create :send (fn [_request]
+                                          (swap! calls inc)
+                                          (Error "unexpected transport")))]
+    (is (= "graph_not_configured"
+           (response-error-code (dispatch-json session "createSyncGraph" "{}"))))
+    (configure-encrypted-session session)
+    (run! (fn [[payload code]]
+            (is (= code (response-error-code (dispatch-json session "createSyncGraph" payload)))))
+          [(tuple "{" "invalid_json") (tuple "[]" "invalid_params")
+           (tuple "{}" "invalid_params")
+           (tuple "{\"name\":\"  \",\"isEncrypted\":false}" "invalid_params")
+           (tuple "{\"name\":\"Graph\",\"isEncrypted\":\"false\"}" "invalid_params")])
+    (is (= 0 @calls))
+    (is (= "invalid_params"
+           (response-error-code
+             (json/from-string (native-rpc/call session
+               "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"createSyncGraph\"}}")))))))
+
+(deftest graph-creation-preserves-transport-and-response-errors
+  (run! (fn [[reply code message]]
+          (let [uploads (atom 0)
+                session (native-rpc/create
+                          :send (fn [_request] reply)
+                          :upload_file (fn [_upload]
+                                         (swap! uploads inc)
+                                         (Error "unexpected upload")))]
+            (configure-encrypted-session session)
+            (let [response (dispatch-json session "createSyncGraph" "{\"name\":\"Graph\",\"isEncrypted\":false}")]
+              (is (= code (response-error-code response)))
+              (is (= message (json-util/to-string
+                               (json-util/member "message" (json-util/member "error" response))))))
+            (is (= 0 @uploads))))
+        [(tuple (Error "offline") "graph_create_failed" "offline")
+         (tuple (Ok (native-core/logseq-chat-api-response 503 "")) "graph_create_failed" "Could not create graph")
+         (tuple (Ok (native-core/logseq-chat-api-response 403 "denied")) "graph_create_failed" "denied")
+         (tuple (Ok (native-core/logseq-chat-api-response 201 "{}")) "graph_create_failed" "Graph creation returned no graph id")
+         (tuple (Ok (native-core/logseq-chat-api-response 201 "[]")) "graph_create_failed" "Graph creation returned no graph id")
+         (tuple (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":1}")) "graph_create_failed" "Graph creation returned no graph id")]))
+
+(deftest encrypted-graph-creation-stops-when-key-provisioning-is-unavailable
+  (let [uploads (atom 0)
+        session (native-rpc/create
+                  :send (fn [_request] (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"new-private\"}")))
+                  :upload_file (fn [_upload] (swap! uploads inc) (Error "unexpected upload")))]
+    (configure-encrypted-session session)
+    (is (= "graph_key_provision_failed"
+           (response-error-code (dispatch-json session "createSyncGraph" "{\"name\":\"Private\",\"isEncrypted\":true}"))))
+    (is (= 0 @uploads))))
+
+(deftest encrypted-graph-creation-stops-after-key-provisioning-failure
+  (let [events (atom [])
+        session (native-rpc/create
+                  :send (fn [_request]
+                          (swap! events conj "create")
+                          (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"new-private\"}")))
+                  :provision_graph_key (fn [config]
+                                         (is (= "new-private" (:graph_id config)))
+                                         (is (= (Some "Private") (:graph_name config)))
+                                         (swap! events conj "provision")
+                                         (Error "key storage unavailable"))
+                  :upload_file (fn [_upload] (swap! events conj "upload") (Error "unexpected upload")))]
+    (configure-encrypted-session session)
+    (is (= "graph_key_provision_failed"
+           (response-error-code (dispatch-json session "createSyncGraph" "{\"name\":\" Private \",\"isEncrypted\":true}"))))
+    (is (= ["create" "provision"] @events))))
+
+(deftest graph-creation-cleans-up-after-upload-http-failure
+  (let [uploaded-path (atom nil)
+        session (native-rpc/create
+                  :send (fn [_request] (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"new-plain\"}")))
+                  :upload_file (fn [upload]
+                                 (reset! uploaded-path (Some (:file_path upload)))
+                                 (is (sys/file-exists (:file_path upload)))
+                                 (Ok (native-core/logseq-chat-api-response 500 ""))))]
+    (configure-encrypted-session session)
+    (let [response (dispatch-json session "createSyncGraph" "{\"name\":\"Plain\",\"isEncrypted\":false}")]
+      (is (= "graph_initial_upload_failed" (response-error-code response)))
+      (is (= "Initial snapshot upload failed with HTTP 500"
+             (json-util/to-string (json-util/member "message" (json-util/member "error" response))))))
+    (if-some [path @uploaded-path] (is (not (sys/file-exists path))) (is false))))
+
+(deftest encrypted-graph-selection-attempts-offline-key-cache
+  (let [loaded (atom [])
+        session (native-rpc/create
+                  :load_graph_catalog (fn [] (Some encrypted-graph-catalog))
+                  :load_cached_graph_key (fn [config]
+                                           (swap! loaded conj (:graph_id config))
+                                           (Error "not cached"))
+                  :graph_unlocked (fn [_graph-id] false))]
+    (configure-encrypted-session session)
+    (let [response (dispatch-json session "selectGraph" "encrypted-1")
+          result (json-util/member "result" response)]
+      (is (json-util/to-bool (json-util/member "ok" response)))
+      (is (json-util/to-bool (json-util/member "isGraphEncrypted" result)))
+      (is (not (json-util/to-bool (json-util/member "isGraphUnlocked" result)))))
+    (is (= ["encrypted-1"] @loaded))))
+
+(deftest encrypted-graph-unlock-forwards-password-and-updates-state
+  (let [unlocked (atom false)
+        received (atom nil)
+        session (native-rpc/create
+                  :load_graph_catalog (fn [] (Some encrypted-graph-catalog))
+                  :unlock_graph (fn [_config password]
+                                  (reset! received (Some password))
+                                  (reset! unlocked true)
+                                  (Ok (stdlib/ignore 0)))
+                  :graph_unlocked (fn [_graph-id] @unlocked))]
+    (configure-encrypted-session session)
+    (dispatch-json session "selectGraph" "encrypted-1")
+    (let [response (dispatch-json session "unlockGraph" "correct horse")]
+      (is (json-util/to-bool (json-util/member "ok" response)))
+      (is (json-util/to-bool (json-util/member "isGraphUnlocked" (json-util/member "result" response)))))
+    (is (= (Some "correct horse") @received))))
+
 (deftest session-rejects-legacy-sync-action
   (let [response (json/from-string
                   (native-rpc/call (native-rpc/create)

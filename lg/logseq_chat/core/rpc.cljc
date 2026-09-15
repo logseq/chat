@@ -5,6 +5,8 @@
             [logseq-chat.outliner-effects :as effects]
             [logseq-chat.cache-model :as model]
             [logseq-chat.pending-ops :as ops]
+            [logseq-chat.api :as api]
+            [logseq-chat.graph-bootstrap :as bootstrap]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Stdlib :as stdlib]
@@ -389,6 +391,80 @@
                   (tuple "result" (tag Null))
                   (tuple "error" (json-object [(tuple "code" (tag String code))
                                                 (tuple "message" (tag String message))]))])))
+
+(defn upload-initial-graph-snapshot [config e2ee encrypt-title upload-file cleanup-file]
+  (let* [encrypt-text (if e2ee
+                       (if-some [encrypt encrypt-title]
+                         (Ok (fn [value] (encrypt (:graph-id config) value)))
+                         (Error "E2EE title encryption is unavailable"))
+                       (Ok (fn [value] (Ok value))))
+         prepared (bootstrap/prepare (:graph-id config) e2ee encrypt-text)]
+    (try
+      (let* [response (upload-file
+                       (api/initial-snapshot-upload-request config (:file-path prepared) (:checksum prepared)))]
+        (if (<= 200 (:status response) 299)
+          (do (stdlib/prerr-endline
+                (format "LogseqChat core initial graph snapshot uploaded graph=%s rows=%d"
+                        (:graph-id config) (:row-count prepared)))
+              (Ok (stdlib/ignore 0)))
+          (Error (if (= "" (:body response))
+                   (format "Initial snapshot upload failed with HTTP %d" (:status response))
+                   (:body response)))))
+      (finally (cleanup-file (:file-path prepared))))))
+
+(defn graph-creation-payload [payload]
+  (match (json/from-string payload)
+    (tag Assoc entries)
+    (let [fields (into {} (reverse entries))]
+      (match (tuple (required-string fields "name") (field fields "isEncrypted"))
+        (tuple (Ok name) (Some (tag Bool encrypted)))
+        (if (string/blank? name)
+          (Error (tuple "invalid_params" "Graph name cannot be empty"))
+          (Ok (tuple (string/trim name) encrypted)))
+        _ (Error (tuple "invalid_params" "createSyncGraph requires a name and isEncrypted flag"))))
+    _ (Error (tuple "invalid_params" "createSyncGraph payload must be an object"))))
+
+(defn graph-creation-response [response]
+  (if (<= 200 (:status response) 299)
+    (match (json/from-string (:body response))
+      (tag Assoc entries)
+      (match (get (into {} (reverse entries)) "graph-id")
+        (Some (tag String graph-id)) (Ok graph-id)
+        _ (Error "Graph creation returned no graph id"))
+      _ (Error "Graph creation returned no graph id"))
+    (Error (if (= "" (:body response)) "Could not create graph" (:body response)))))
+
+(defn graph-workflow-result [code result]
+  (match result
+    (Ok value) (Ok value)
+    (Error message) (Error (tuple code message))))
+
+(defn create-sync-graph [config payload send provision initialize discover created]
+  (match (tuple config payload)
+    (tuple None _) (failure "graph_not_configured" "Configure Logseq before creating a graph")
+    (tuple _ None) (failure "invalid_params" "createSyncGraph requires a payload")
+    (tuple (Some config) (Some payload))
+    (try
+      (let [result
+            (let* [[name encrypted] (graph-creation-payload payload)
+                   response (graph-workflow-result "graph_create_failed"
+                              (send (api/create-graph-request config name "65.33" encrypted)))
+                   graph-id (graph-workflow-result "graph_create_failed" (graph-creation-response response))]
+              (let [selected (assoc config :graph-id graph-id :graph-name (Some name))]
+                (let* [_ (graph-workflow-result "graph_key_provision_failed"
+                           (if encrypted
+                             (if-some [provision provision]
+                               (provision selected)
+                               (Error "E2EE key provisioning is unavailable"))
+                             (Ok (stdlib/ignore 0))))
+                       _ (graph-workflow-result "graph_initial_upload_failed"
+                           (initialize (assoc config :graph-id graph-id) encrypted))
+                       _ (graph-workflow-result "graph_discovery_failed" (discover config))]
+                  (Ok (created selected)))))]
+        (match result
+          (Ok response) response
+          (Error (tuple code message)) (failure code message)))
+      (catch error (failure "invalid_json" (Printexc/to-string error))))))
 
 (defn route [snapshot dispatch input]
   (match input

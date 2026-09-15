@@ -7,7 +7,6 @@ module Pending_ops = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_lg_core_native
 module Outliner_effects = Logseq_chat_lg_core_native
-module Graph_bootstrap = Logseq_chat_lg_core_native
 
 type pending_transport =
   | Json_request of Api.api_request
@@ -967,45 +966,6 @@ let discover_graphs session config =
        Option.iter (fun save -> save response.body) session.save_graph_catalog;
        Ok ()
      with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
-;;
-
-let upload_initial_graph_snapshot session (config : Api.api_config) ~graph_id ~e2ee =
-  let graph_config = { config with Api.graph_id = graph_id } in
-  let encrypt_text =
-    if not e2ee
-    then Ok (fun value -> Ok value)
-    else
-      match session.encrypt_title with
-      | Some encrypt -> Ok (fun value -> encrypt ~graph_id value)
-      | None -> Error "E2EE title encryption is unavailable"
-  in
-  match encrypt_text with
-  | Error _ as error -> error
-  | Ok encrypt_text ->
-    (match Graph_bootstrap.logseq_chat_graph_bootstrap_prepare graph_id e2ee encrypt_text with
-     | Error _ as error -> error
-     | Ok prepared ->
-       let upload =
-         Api.logseq_chat_api_initial_snapshot_upload_request
-           graph_config
-           prepared.file_path prepared.checksum
-       in
-       Fun.protect
-         ~finally:(fun () -> session.cleanup_file prepared.file_path)
-         (fun () ->
-           match session.upload_file upload with
-           | Ok response when response.status >= 200 && response.status < 300 ->
-             debug
-               "initial graph snapshot uploaded graph=%s rows=%d"
-               graph_id
-               prepared.row_count;
-             Ok ()
-           | Ok response ->
-             Error
-               (if String.equal response.body ""
-                then Printf.sprintf "Initial snapshot upload failed with HTTP %d" response.status
-                else response.body)
-           | Error message -> Error message))
 ;;
 
 let cache_remote_blocks session (response : Api.api_response) ~now =
@@ -2082,74 +2042,17 @@ let dispatch session action payload =
           debug "graph catalog refresh failed: %s" message;
           graph_catalog_snapshot session))
   | "createSyncGraph" ->
-    (match session.config, payload with
-     | Some config, Some payload ->
-       (try
-          match from_string payload with
-          | `Assoc fields ->
-            (match required_string "name" fields,
-                   List.assoc_opt "isEncrypted" fields with
-             | Ok name, Some (`Bool is_encrypted)
-               when not (String.equal (String.trim name) "") ->
-               let request =
-                 Api.logseq_chat_api_create_graph_request
-                   config
-                   (String.trim name) "65.33" is_encrypted
-               in
-               (match session.send request with
-                | Ok response when response.status >= 200 && response.status < 300 ->
-                  let graph_id =
-                    match from_string response.body with
-                    | `Assoc response_fields ->
-                      (match List.assoc_opt "graph-id" response_fields with
-                       | Some (`String value) -> Some value
-                       | _ -> None)
-                    | _ -> None
-                  in
-                  let provision_result =
-                    match graph_id, is_encrypted, session.provision_graph_key with
-                    | Some graph_id, true, Some provision ->
-                      provision { config with graph_id; graph_name = Some (String.trim name) }
-                    | Some _, true, None -> Error "E2EE key provisioning is unavailable"
-                    | _ -> Ok ()
-                  in
-                  (match graph_id, provision_result with
-                   | Some _, Error message ->
-                     LG.logseq_chat_rpc_failure "graph_key_provision_failed" message
-                   | Some graph_id, Ok () ->
-                     (match upload_initial_graph_snapshot session config ~graph_id ~e2ee:is_encrypted with
-                      | Error message ->
-                        LG.logseq_chat_rpc_failure "graph_initial_upload_failed" message
-                      | Ok () ->
-                        (match discover_graphs session config with
-                         | Error message -> LG.logseq_chat_rpc_failure "graph_discovery_failed" message
-                         | Ok () ->
-                           session.accepted_server_t <- None;
-                           session.config <-
-                             Some
-                               { config with
-                                 graph_id
-                               ; graph_name = Some (String.trim name)
-                               };
-                           snapshot_visible session))
-                   | None, _ ->
-                     LG.logseq_chat_rpc_failure "graph_create_failed" "Graph creation returned no graph id"
-                  )
-                | Ok response ->
-                  LG.logseq_chat_rpc_failure
-                    "graph_create_failed"
-                    (if String.equal response.body "" then "Could not create graph" else response.body)
-                | Error message -> LG.logseq_chat_rpc_failure "graph_create_failed" message)
-             | Ok _, Some (`Bool _) ->
-               LG.logseq_chat_rpc_failure "invalid_params" "Graph name cannot be empty"
-             | _ ->
-               LG.logseq_chat_rpc_failure
-                 "invalid_params"
-                 "createSyncGraph requires a name and isEncrypted flag")
-          | _ -> LG.logseq_chat_rpc_failure "invalid_params" "createSyncGraph payload must be an object"
-        with error -> LG.logseq_chat_rpc_failure "invalid_json" (Printexc.to_string error))
-     | None, _ -> LG.logseq_chat_rpc_failure "graph_not_configured" "Configure Logseq before creating a graph"
-     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "createSyncGraph requires a payload")
+    LG.logseq_chat_rpc_create_sync_graph session.config payload session.send
+      session.provision_graph_key
+      (fun config encrypted ->
+        LG.logseq_chat_rpc_upload_initial_graph_snapshot config (Fun.id, encrypted)
+          (Option.map (fun encrypt graph_id title -> encrypt ~graph_id title) session.encrypt_title)
+          session.upload_file session.cleanup_file)
+      (discover_graphs session)
+      (fun config ->
+        session.accepted_server_t <- None;
+        session.config <- Some config;
+        snapshot_visible session)
   | "selectGraph" ->
     (match session.config, payload with
      | Some config, Some graph_id ->
