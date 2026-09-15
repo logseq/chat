@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [clojure.string :as string]
             [logseq-chat.pending-ops :as ops]
+            [ocaml.Datascript :as ds]
             [ocaml.Yojson.Basic :as json]
             [ocaml.In_channel :as input]))
 
@@ -38,6 +39,49 @@
    (ops/Set-favorite (record ops/pending-favorite (page-uuid "page") (favorite-uuid "favorite") (favorite true) (order "a0") (created-at 44)))
    (ops/Set-favorite (record ops/pending-favorite (page-uuid "page") (favorite-uuid "favorite") (favorite false) (order "a0") (created-at 44)))
    (ops/Delete-page (record ops/pending-page-delete (page-uuid "page") (order "a0") (deleted-at 45)))])
+
+(deftest search-refresh-targets-cover-every-intent
+  (let [db (ds/empty-db :schema (list))
+        expected [["block"] [] [] [] ["new"] ["asset"] ["block"] ["first" "second"]
+                  ["block" "new"] ["source" "previous"] ["source" "previous"]
+                  ["first" "second"] ["tag"]
+                  ["page"] ["page" "block"] ["block"] ["page" "favorite"]
+                  ["page" "favorite"] ["page"]]]
+    (run! (fn [[intent targets]] (is (= targets (ops/affected-uuids db intent))))
+          (map (fn [intent targets] (tuple intent targets)) (into intents page-intents) expected))))
+
+(deftest search-refresh-ignores-unrelated-properties
+  (let [db (ds/empty-db :schema (list))
+        change (record ops/pending-property (uuid "block") (attr "logseq.property/status")
+                       (expected nil) (value nil))]
+    (is (= [] (ops/affected-uuids db (ops/Set-property change))))
+    (run! (fn [attr]
+            (is (= ["block"] (ops/affected-uuids db (ops/Set-property (assoc change :attr attr))))))
+          ["block/title" "block/name" "block/page" "block/parent" "block/journal-day"
+           "block/refs" "logseq.property/built-in?" "block/closed-value-property"
+           "logseq.property/hide?" "logseq.property/deleted-at"])
+    (is (= ["block"]
+           (ops/affected-uuids db
+             (ops/Set-properties (record ops/pending-properties (uuid "block")
+               (changes [(record ops/property-change (attr "custom") (expected nil) (value nil))
+                         (record ops/property-change (attr "block/title") (expected nil) (value nil))]))))))))
+
+(deftest deleted-search-targets-include-descendants-and-missing-roots
+  (let [uuid-attr (record Datascript.schema_attr
+                   (cardinality (ds/One)) (unique (Some (ds/Identity))) (indexed true)
+                   (is-component false) (no-history false) (doc nil)
+                   (value-type (Some (ds/UuidType))) (tuple-attrs nil) (tuple-types nil))
+        db (ds/db-with
+             (list (ds/Add (ds/Entity_id 1) "block/uuid" (ds/Uuid "root"))
+                   (ds/Add (ds/Entity_id 2) "block/uuid" (ds/Uuid "child"))
+                   (ds/Add (ds/Entity_id 2) "block/parent" (ds/Ref 1))
+                   (ds/Add (ds/Entity_id 3) "block/uuid" (ds/Uuid "grandchild"))
+                   (ds/Add (ds/Entity_id 3) "block/parent" (ds/Ref 2))
+                   (ds/Add (ds/Entity_id 4) "block/parent" (ds/Ref 1)))
+             (ds/empty-db :schema (list (tuple "block/uuid" uuid-attr))))]
+    (is (= ["root" "child" "grandchild" "missing"]
+           (ops/affected-uuids db (ops/Delete-blocks (record ops/pending-delete (uuids ["root" "missing"]))))))
+    (is (= [] (ops/affected-uuids db (ops/Delete-blocks (record ops/pending-delete (uuids []))))))))
 
 (deftest persisted-intents-preserve-independent-legacy-golden-fixtures
   (let [all (into (conj intents (ops/Save-title (record ops/pending-title (uuid "duplicate") (expected-title "") (title "first")))) page-intents)

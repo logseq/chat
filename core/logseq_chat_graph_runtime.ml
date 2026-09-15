@@ -34,77 +34,6 @@ let refresh_search runtime =
     runtime.search_index
 ;;
 
-let rec subtree_uuids db roots =
-  match roots with
-  | [] -> []
-  | uuid :: rest ->
-    (match Datascript.entid db "block/uuid" (Datascript.Uuid uuid) with
-     | None -> uuid :: subtree_uuids db rest
-     | Some eid ->
-       let children =
-         Datascript.datoms db Datascript.Aevt ~a:"block/parent" ~v:(Datascript.Ref eid) ()
-         |> Seq.filter_map (fun datom ->
-           match
-             Datascript.datoms db Datascript.Eavt ~e:datom.Datascript.e ~a:"block/uuid" ()
-             |> Seq.uncons
-           with
-           | Some ({ Datascript.v = Datascript.Uuid child; _ }, _) -> Some child
-           | _ -> None)
-         |> List.of_seq
-       in
-       uuid :: subtree_uuids db (children @ rest))
-;;
-
-let search_visible_property = function
-  | "block/title" | "block/name" | "block/page" | "block/parent"
-  | "block/journal-day" | "block/refs" | "logseq.property/built-in?"
-  | "block/closed-value-property" | "logseq.property/hide?"
-  | "logseq.property/deleted-at" -> true
-  | _ -> false
-;;
-
-let affected_uuids db = function
-  | Ops.Set_property { uuid; attr; _ } ->
-    if search_visible_property attr then [ uuid ] else []
-  | Ops.Set_properties { uuid; changes } ->
-    if Rrbvec.exists (fun (change : Ops.property_change) -> search_visible_property change.attr) changes
-    then [uuid]
-    else []
-  | Ops.Save_title { uuid; _ }
-  | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ }
-  | Ops.Move_block { uuid; _ }
-  | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } | Ops.Create_page { uuid; _ } -> [ uuid ]
-  | Ops.Move_blocks { moves } -> (let moves = Rrbvec.to_list moves in
-                                  List.map (fun (move : Ops.pending_move) -> move.uuid) moves)
-  | Ops.Split_block { uuid; new_uuid; _ } -> [ uuid; new_uuid ]
-  | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
-  | Ops.Delete_blocks { uuids } -> (let uuids = Rrbvec.to_list uuids in subtree_uuids db uuids)
-  | Ops.Create_journal { page_uuid; block_uuid; _ } -> [ page_uuid; block_uuid ]
-  | Ops.Set_favorite { page_uuid; favorite_uuid; _ } -> [ page_uuid; favorite_uuid ]
-  | Ops.Delete_page { page_uuid; _ } -> [ page_uuid ]
-;;
-
-let rec semantic_value = function
-  | Datascript.String value -> Ok (Ops.String_value value)
-  | Datascript.Int value -> Ok (Ops.Int_value value)
-  | Datascript.Instant value -> Ok (Ops.Instant_value value)
-  | Datascript.Float value -> Ok (Ops.Float_value value)
-  | Datascript.Bool value -> Ok (Ops.Bool_value value)
-  | Datascript.Keyword value -> Ok (Ops.Keyword_value value)
-  | Datascript.Map entries ->
-    List.fold_left
-      (fun result (key, value) ->
-        result >>= fun converted ->
-        match key with
-        | Datascript.Keyword key ->
-          semantic_value value >>| fun value -> (key, value) :: converted
-        | _ -> Error "flashcard state contains a non-keyword key")
-      (Ok [])
-      entries
-    >>| fun entries -> (Ops.Map_value (Rrbvec.of_list (List.rev entries)))
-  | _ -> Error "flashcard state contains an unsupported value"
-;;
-
 let refresh_search_affected runtime ~before intent =
   match runtime.search_index with
   | None -> ()
@@ -112,7 +41,8 @@ let refresh_search_affected runtime ~before intent =
     (try
        (Logseq_chat_lg_core_native.logseq_chat_search_index_refresh_uuids index
           before (runtime.snapshot).Projection.db
-          (Lg_runtime.Runtime_seq.of_list, (affected_uuids before intent)))
+          (Lg_runtime.Runtime_seq.of_vector,
+           LG.logseq_chat_pending_ops_affected_uuids before intent))
      with
      | Failure _ -> runtime.search_index_is_fresh <- false)
   | Some _ -> ()
@@ -125,8 +55,8 @@ let refresh_search_after_rebase ~changed_uuids runtime ~before ~operations =
     let pending_uuids =
       operations
       |> List.concat_map (fun (operation : Ops.pending_operation) ->
-        affected_uuids before operation.Ops.intent
-        @ affected_uuids snapshot.db operation.intent)
+        Rrbvec.to_list (LG.logseq_chat_pending_ops_affected_uuids before operation.Ops.intent)
+        @ Rrbvec.to_list (LG.logseq_chat_pending_ops_affected_uuids snapshot.db operation.intent))
     in
     (try
        (Logseq_chat_lg_core_native.logseq_chat_search_index_refresh_uuids index
@@ -135,39 +65,6 @@ let refresh_search_after_rebase ~changed_uuids runtime ~before ~operations =
      with
      | Failure _ -> runtime.search_index_is_fresh <- false)
   | Some _ | None -> ()
-;;
-
-let safe_to_rebase = function
-  | Ops.Save_title _ | Ops.Set_property _ | Ops.Set_properties _
-  | Ops.Split_block _ | Ops.Merge_backward _
-  | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Add_tag _ | Ops.Insert_block _
-  | Ops.Create_asset _
-  | Ops.Move_block _ | Ops.Move_blocks _ | Ops.Set_favorite _ | Ops.Delete_page _ -> true
-  | Ops.Delete_blocks _ -> false
-;;
-
-let inserted_result_exists db = function
-  | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ } ->
-    Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid uuid))
-  | _ -> false
-;;
-
-let split_result_exists db = function
-  | Ops.Split_block { new_uuid; _ } ->
-    Option.is_some (Datascript.entid db "block/uuid" (Datascript.Uuid new_uuid))
-  | _ -> false
-;;
-
-let committed_despite_later_changes ~server_t authoritative (operation : Ops.pending_operation) =
-  if inserted_result_exists authoritative operation.intent
-  then true
-  else match operation.state with
-  | Ops.Accepted accepted_t ->
-    accepted_t <= server_t && split_result_exists authoritative operation.intent
-  | Ops.Submitted -> split_result_exists authoritative operation.intent
-  | Ops.Conflicted "split block UUID already exists" ->
-    split_result_exists authoritative operation.intent
-  | Ops.Queued | Ops.Retryable | Ops.Applied | Ops.Conflicted _ -> false
 ;;
 
 let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
@@ -189,7 +86,7 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
                 operation.intent) -> true
     | (Ops.Submitted | Ops.Accepted _) when (Projection.logseq_chat_pending_projection_satisfied authoritative
                                                operation.intent) -> true
-    | _ -> committed_despite_later_changes ~server_t authoritative operation
+    | _ -> LG.logseq_chat_pending_ops_committed_despite_later_changes_ server_t authoritative operation
     in
     if is_confirmed then
       (Ops.logseq_chat_pending_ops_remove runtime.path operation.operation_id);
@@ -214,7 +111,7 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
     | Ops.Queued | Ops.Retryable | Ops.Submitted ->
       Hashtbl.remove runtime.prepared operation.operation_id;
       (match
-         if operation.base_t <> server_t && not (safe_to_rebase operation.intent)
+         if operation.base_t <> server_t && not (LG.logseq_chat_pending_ops_safe_to_rebase_ operation.intent)
          then Error "the server changed while the structural operation was pending"
          else (Result.map Rrbvec.to_list
                  (Projection.logseq_chat_pending_projection_compile (!projected)
@@ -586,11 +483,12 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
     let semantic_option value =
       match value with
       | None -> Ok None
-      | Some value -> semantic_value value >>| Option.some
+      | Some value -> LG.logseq_chat_pending_ops_semantic_value_from_datascript value >>| Option.some
     in
     semantic_option (current "logseq.property.fsrs/state") >>= fun expected_state ->
     semantic_option (current "logseq.property.fsrs/due") >>= fun expected_due ->
-    semantic_value (Logseq_chat_lg_core_native.logseq_chat_flashcards_state_value repeated)
+    LG.logseq_chat_pending_ops_semantic_value_from_datascript
+      (Logseq_chat_lg_core_native.logseq_chat_flashcards_state_value repeated)
     >>= fun state ->
     stage
       runtime

@@ -11,7 +11,7 @@ let assert_bool label value = if not value then fail label
 let () =
   List.iter (fun (input, expected) ->
       assert_bool "native values cross the LG pending-value boundary unchanged"
-        (Runtime.semantic_value input = Ok expected))
+        (Ops.logseq_chat_pending_ops_semantic_value_from_datascript input = Ok expected))
     [ String "text", Ops.String_value "text"
     ; Int 42, Ops.Int_value 42
     ; Instant 1234, Ops.Instant_value 1234
@@ -25,12 +25,12 @@ let () =
                                   ["nested", Ops.Map_value (Rrbvec.of_list ["flag", Ops.Bool_value true]);
                                    "duplicate", Ops.Int_value 1; "duplicate", Ops.Int_value 2]) in
   assert_bool "nested pending maps preserve entry order and duplicate keys"
-    (Runtime.semantic_value input = Ok expected);
+    (Ops.logseq_chat_pending_ops_semantic_value_from_datascript input = Ok expected);
   assert_bool "pending maps reject non-keyword keys"
-    (Runtime.semantic_value (Map [String "invalid", Int 1; Keyword "later", Int 2])
+    (Ops.logseq_chat_pending_ops_semantic_value_from_datascript (Map [String "invalid", Int 1; Keyword "later", Int 2])
      = Error "flashcard state contains a non-keyword key");
   assert_bool "pending maps reject unsupported nested values"
-    (Runtime.semantic_value (Map [Keyword "invalid", Ref 42])
+    (Ops.logseq_chat_pending_ops_semantic_value_from_datascript (Map [Keyword "invalid", Ref 42])
      = Error "flashcard state contains an unsupported value")
 
 let one ?unique ?value_type ?(indexed = false) () =
@@ -545,10 +545,10 @@ let () =
   in
   assert_bool
     "status-only changes do not write the search index"
-    (Runtime.affected_uuids (base_db "Old") status_change = []);
+    (Ops.logseq_chat_pending_ops_affected_uuids (base_db "Old") status_change = Rrbvec.empty);
   assert_bool
     "search-visible property changes still refresh incrementally"
-    (Runtime.affected_uuids (base_db "Old") title_change = [ "block" ])
+    (Rrbvec.to_list (Ops.logseq_chat_pending_ops_affected_uuids (base_db "Old") title_change) = [ "block" ])
 ;;
 
 let () =
@@ -1213,9 +1213,9 @@ let () =
     ]
   in
   assert_bool "rebase safety is defined for every pending intent"
-    (List.for_all Runtime.safe_to_rebase rebaseable_structural
-     && List.for_all Runtime.safe_to_rebase semantic
-     && not (Runtime.safe_to_rebase (Ops.Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })))
+    (List.for_all Ops.logseq_chat_pending_ops_safe_to_rebase_ rebaseable_structural
+     && List.for_all Ops.logseq_chat_pending_ops_safe_to_rebase_ semantic
+     && not (Ops.logseq_chat_pending_ops_safe_to_rebase_ (Ops.Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })))
 ;;
 
 let () =

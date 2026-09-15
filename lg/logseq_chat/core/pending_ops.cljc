@@ -4,6 +4,8 @@
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Stdlib :as stdlib]
+            [ocaml.Datascript :as ds]
+            [ocaml.Datascript.Db :as db-api]
             [ocaml.Rrbvec :as rrbvec]))
 
 (type-variant pending-state
@@ -13,6 +15,27 @@
   (Float-value :float) (Bool-value :bool) (Keyword-value :string)
   (Map-value :vector<tuple<string;semantic-value>>)
   (Ref-uuid :string) (Ref-ident :string))
+
+(defn semantic-value-from-datascript [input]
+  (match input
+    (ds/String value) (Ok (String-value value))
+    (ds/Int value) (Ok (Int-value value))
+    (ds/Instant value) (Ok (Instant-value value))
+    (ds/Float value) (Ok (Float-value value))
+    (ds/Bool value) (Ok (Bool-value value))
+    (ds/Keyword value) (Ok (Keyword-value value))
+    (ds/Map entries)
+    (let* [converted
+           (reduce (fn [result [key native-value]]
+                     (let* [acc result]
+                       (match key
+                         (ds/Keyword name)
+                         (let* [converted-value (semantic-value-from-datascript native-value)]
+                           (Ok (conj acc (tuple name converted-value))))
+                         _ (Error "flashcard state contains a non-keyword key"))))
+                   (Ok []) entries)]
+      (Ok (Map-value converted)))
+    _ (Error "flashcard state contains an unsupported value")))
 
 (type-record property-change
   (attr :string) (expected :option<semantic-value>) (value :option<semantic-value>))
@@ -54,6 +77,74 @@
   (Add-tag :pending-tag) (Set-favorite :pending-favorite) (Delete-page :pending-page-delete))
 (type-record pending-operation
   (operation-id :string) (base-t :int) (state :pending-state) (intent :pending-intent))
+
+(defn subtree-uuids [db roots]
+  (loop [pending (vec (reverse roots)) result []]
+    (if (empty? pending)
+      result
+      (let [uuid (nth pending (dec (count pending)))
+            remaining (pop pending)
+            children (if-let [eid (ds/entid db "block/uuid" (ds/Uuid uuid))]
+                       (into [] (keep (fn [datom]
+                               (when-let [identity (first (db-api/datoms db (ds/Eavt) :e (:e datom) :a "block/uuid"))]
+                                 (match (:v identity) (ds/Uuid child) (Some child) _ nil)))
+                             (db-api/datoms db (ds/Aevt) :a "block/parent" :v (ds/Ref eid))))
+                       [])]
+        (recur (into remaining (reverse children)) (conj result uuid))))))
+
+(defn search-visible-property? [attr]
+  (contains? #{"block/title" "block/name" "block/page" "block/parent"
+               "block/journal-day" "block/refs" "logseq.property/built-in?"
+               "block/closed-value-property" "logseq.property/hide?"
+               "logseq.property/deleted-at"} attr))
+
+(defn affected-uuids [db intent]
+  (match intent
+    (Set-property value) (if (search-visible-property? (:attr value)) [(:uuid value)] [])
+    (Set-properties value) (if (some #(search-visible-property? (:attr %)) (:changes value)) [(:uuid value)] [])
+    (Save-title value) [(:uuid value)]
+    (Insert-block value) [(:uuid value)]
+    (Create-asset value) [(:uuid value)]
+    (Move-block value) [(:uuid value)]
+    (Add-tag value) [(:uuid value)]
+    (Create-tag value) [(:uuid value)]
+    (Create-page value) [(:uuid value)]
+    (Move-blocks value) (mapv :uuid (:moves value))
+    (Split-block value) [(:uuid value) (:new-uuid value)]
+    (Merge-backward value) [(:uuid value) (:previous-uuid value)]
+    (Delete-blocks value) (subtree-uuids db (:uuids value))
+    (Create-journal value) [(:page-uuid value) (:block-uuid value)]
+    (Set-favorite value) [(:page-uuid value) (:favorite-uuid value)]
+    (Delete-page value) [(:page-uuid value)]))
+
+(defn safe-to-rebase? [intent]
+  (match intent
+    (Save-title _) true (Set-property _) true (Set-properties _) true
+    (Split-block _) true (Merge-backward _) true
+    (Create-tag _) true (Create-page _) true (Create-journal _) true
+    (Add-tag _) true (Insert-block _) true (Create-asset _) true
+    (Move-block _) true (Move-blocks _) true (Set-favorite _) true (Delete-page _) true
+    (Delete-blocks _) false))
+
+(defn inserted-result-exists? [db intent]
+  (match intent
+    (Insert-block value) (some? (ds/entid db "block/uuid" (ds/Uuid (:uuid value))))
+    (Create-asset value) (some? (ds/entid db "block/uuid" (ds/Uuid (:uuid value))))
+    _ false))
+
+(defn split-result-exists? [db intent]
+  (match intent
+    (Split-block value) (some? (ds/entid db "block/uuid" (ds/Uuid (:new-uuid value))))
+    _ false))
+
+(defn committed-despite-later-changes? [server-t db operation]
+  (let [intent (:intent operation)]
+    (or (inserted-result-exists? db intent)
+        (match (:state operation)
+          (Accepted accepted-t) (and (<= accepted-t server-t) (split-result-exists? db intent))
+          Submitted (split-result-exists? db intent)
+          (Conflicted "split block UUID already exists") (split-result-exists? db intent)
+          _ false))))
 
 (ffi store-raw [:string :string :int :string :string] :unit
   {:ocaml "logseq_chat_pending_ops_store"})
