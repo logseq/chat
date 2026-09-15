@@ -750,3 +750,114 @@
           (is (= "Old" (title (ds/conn-db conn) "block")))
           (is (= operations (ops/logseq-chat-pending-ops-list path)))
           (is (< restore-bytes (* projection-bytes 1.6))))))))
+
+(defn insert-operation [id]
+  (native-operation id
+                    (ops/Insert_block (record ops/pending_insert
+                                              (uuid "new") (title "Local title") (page-uuid "page")
+                                              (parent-uuid "page") (order "a1") (created-at 100)))))
+
+(deftest authoritative-insert-echo-accepts-server-normalized-fields
+  (with-runtime
+    (fn [path conn current]
+      (is (ok? (runtime/stage current (insert-operation "insert-echo"))))
+      (ds/reset-conn conn
+                     (ds/db-with (list (add 20 "block/uuid" (ds/Uuid "new"))
+                                       (add 20 "block/title" (ds/String "Server-normalized title"))
+                                       (add 20 "block/page" (ds/Ref 1)) (add 20 "block/parent" (ds/Ref 1))
+                                       (add 20 "block/order" (ds/String "a2"))) (base-db "Old")))
+      (runtime/rebase current :server_t 43 :operation_ids (list))
+      (is (empty? (ops/logseq-chat-pending-ops-list path)))
+      (is (= "Server-normalized title" (title (runtime/db current) "new"))))))
+
+(deftest unrelated-server-progress-preserves-and-rebases-offline-inserts
+  (with-runtime
+    (fn [path conn current]
+      (let [op (insert-operation "offline-insert")]
+        (is (match (runtime/prepare-sync current op) (Ok ["insert-blocks" _]) true _ false))
+        (is (ok? (runtime/stage current op)))
+        (ds/reset-conn conn (base-db "Old"))
+        (runtime/rebase current :server_t 43 :operation_ids (list))
+        (let [stored (ops/logseq-chat-pending-ops-list path)]
+          (is (= ["offline-insert"] (mapv :operation-id stored)))
+          (is (= [43] (mapv :base-t stored)))
+          (is (= [(ops/Queued)] (mapv :state stored)))
+          (is (ok? (runtime/prepare-sync current (nth stored 0)))))
+        (is (= "Local title" (title (runtime/db current) "new")))
+        (is (= (Some "page") (runtime/journal-page-uuid current :journal_day 20260816)))
+        (is (some #(= "page" (:uuid %)) (:recent-pages (runtime/sidebar-pages current))))))))
+
+(deftest stale-cursors-and-missing-titles-are-rejected-before-staging
+  (with-runtime
+    (fn [path _ current]
+      (let [db (runtime/db current)
+            without-title (ds/db-with (list (add 30 "block/uuid" (ds/Uuid "without-title"))) db)
+            stale (assoc (save-title "stale" "Old" "New") :base-t 41)
+            stale-error (Error "operation was created against a stale server cursor")]
+        (is (= (Error "block no longer exists") (ops/logseq-chat-pending-ops-raw-title db "missing")))
+        (is (= (Error "block title is missing") (ops/logseq-chat-pending-ops-raw-title without-title "without-title")))
+        (is (= (Error "title changed on the server")
+               (ops/logseq-chat-pending-ops-normalize-expected-title db "block" "Wrong")))
+        (is (= stale-error (runtime/prepare-sync current stale)))
+        (is (= stale-error (runtime/stage current stale)))
+        (is (empty? (ops/logseq-chat-pending-ops-list path)))))))
+
+(deftest pending-task-status-is-visible-without-changing-the-authoritative-ref
+  (with-store
+    (fn [path]
+      (let [db (ds/db-with
+                (list (add 20 "block/uuid" (ds/Uuid "status-todo"))
+                      (add 20 "db/ident" (ds/Keyword "logseq.property/status.todo"))
+                      (add 20 "block/title" (ds/String "Todo"))
+                      (add 21 "block/uuid" (ds/Uuid "status-doing"))
+                      (add 21 "db/ident" (ds/Keyword "logseq.property/status.doing"))
+                      (add 21 "block/title" (ds/String "Doing"))
+                      (add 10 "logseq.property/status" (ds/Ref 20))) (base-db "Task"))
+            conn (ds/conn-from-db db)
+            current (runtime/create :path path :server_t 42 conn)
+            op (native-operation "status"
+                                 (ops/Set_property (record ops/pending_property
+                                                   (uuid "block") (attr "logseq.property/status")
+                                                   (expected (Some (ops/Ref_uuid "status-todo")))
+                                                   (value (Some (ops/Ref_uuid "status-doing"))))))]
+        (is (ok? (ops/logseq-chat-pending-projection-compile db (:intent op))))
+        (is (ok? (runtime/stage current op)))
+        (let [blocks (runtime/blocks current)]
+          (is (= 1 (count blocks)))
+          (is (match (:status (nth blocks 0)) (Some status) (= "status-doing" (:uuid status)) _ false)))
+        (is (identical? db (ds/conn-db conn)))))))
+
+(deftest title-normalization-preserves-insert-and-non-title-intents
+  (with-runtime
+    (fn [_path conn _current]
+      (let [insert (insert-operation "normalize-insert")
+            intents [(ops/Move_block (record ops/pending_move (uuid "block") (page-uuid "page") (parent-uuid "page") (order "a1")))
+                     (ops/Set_property (record ops/pending_property (uuid "block") (attr "block/title") (expected nil) (value nil)))
+                     (ops/Move_blocks (record ops/pending_moves (moves [])))
+                     (ops/Delete_blocks (record ops/pending_delete (uuids ["block"])))]]
+        (is (= (Ok insert) (ops/logseq-chat-pending-ops-normalize-operation (ds/conn-db conn) insert)))
+        (run! (fn [intent]
+                (let [op (native-operation "passthrough" intent)]
+                  (is (= (Ok op) (ops/logseq-chat-pending-ops-normalize-operation (ds/conn-db conn) op)))))
+              intents)))))
+
+(deftest status-only-properties-do-not-invalidate-search
+  (let [db (base-db "Old")
+        status (ops/Set_property (record ops/pending_property (uuid "block") (attr "logseq.property/status")
+                                         (expected nil) (value (Some (ops/Ref_ident "logseq.property/status.todo")))))
+        title (ops/Set_property (record ops/pending_property (uuid "block") (attr "block/title")
+                                        (expected (Some (ops/String_value "Old"))) (value (Some (ops/String_value "New")))))]
+    (is (empty? (ops/logseq-chat-pending-ops-affected-uuids db status)))
+    (is (= ["block"] (ops/logseq-chat-pending-ops-affected-uuids db title)))))
+
+(deftest safe-queued-title-rebases-to-the-latest-cursor-and-prepares-immediately
+  (with-runtime
+    (fn [path conn current]
+      (is (ok? (runtime/stage current (save-title "queued-rebase" "Old" "Pending"))))
+      (ds/reset-conn conn (base-db "Old"))
+      (runtime/rebase current :server_t 43 :operation_ids (list))
+      (let [stored (ops/logseq-chat-pending-ops-list path)]
+        (is (= [(save-title "queued-rebase" "Old" "Pending")]
+               (mapv #(assoc % :base-t 42) stored)))
+        (is (= [43] (mapv :base-t stored)))
+        (is (prepares-save? current (nth stored 0)))))))
