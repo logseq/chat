@@ -6,6 +6,10 @@
             [logseq-chat.graph-store :as store]
             [ocaml.Filename :as filename]
             [ocaml.Sys :as sys]
+            [ocaml.Unix :as unix]
+            [ocaml.Gc :as gc]
+            [ocaml.Stdlib :as stdlib]
+            [ocaml.Yojson.Basic :as json]
             [ocaml.Datascript :as ds]
             [ocaml.Transit_native.Transit.Json :as transit]
             [ocaml.Logseq_chat_graph_runtime :as runtime]))
@@ -516,3 +520,164 @@
                 (runtime/load-older-journals current)
                 (is (= expected (count (runtime/blocks current))))
                 (is (runtime/has-older-journals current))) [3 5])))))
+
+(deftest submitted-echoes-and-accepted-cursors-confirm-only-visible-results
+  (with-runtime
+    (fn [path conn current]
+      (is (ok? (runtime/stage current (assoc (save-title "echo" "Old" "Pending") :state (ops/Submitted)))))
+      (ds/reset-conn conn (base-db "Pending"))
+      (runtime/rebase current :server_t 43 :operation_ids (list))
+      (is (empty? (ops/logseq-chat-pending-ops-list path)))
+      (is (= "Pending" (title (runtime/db current) "block")))))
+  (with-runtime
+    (fn [path conn current]
+      (is (ok? (runtime/stage current (assoc (save-title "accepted" "Old" "Pending") :state (ops/Accepted 44)))))
+      (ds/reset-conn conn (base-db "Old"))
+      (runtime/rebase current :server_t 43 :operation_ids (list))
+      (is (= "Pending" (title (runtime/db current) "block")))
+      (is (= ["accepted"] (mapv :operation-id (ops/logseq-chat-pending-ops-list path))))
+      (ds/reset-conn conn (base-db "Pending"))
+      (runtime/rebase current :server_t 44 :operation_ids (list))
+      (is (empty? (ops/logseq-chat-pending-ops-list path)))
+      (is (= "Pending" (title (runtime/db current) "block"))))))
+
+(deftest transport-state-updates-do-not-replay-unrelated-late-rows
+  (with-runtime
+    (fn [path _ current]
+      (let [op (save-title "state-only" "Old" "Pending")]
+        (is (ok? (runtime/stage current op)))
+        (ops/logseq-chat-pending-ops-save path (save-title "unrelated" "Old" "Other"))
+        (is (ok? (runtime/stage current (assoc op :state (ops/Accepted 44)))))
+        (is (some #(and (= "state-only" (:operation-id %)) (= (ops/Accepted 44) (:state %)))
+                  (ops/logseq-chat-pending-ops-list path)))))))
+
+(deftest invalid-operations-never-reach-persistence-or-projection
+  (with-runtime
+    (fn [path _ current]
+      (let [op (native-operation "invalid"
+                 (ops/Move_block (record ops/pending_move (uuid "block") (page-uuid "page") (parent-uuid "block") (order "a0"))))]
+        (is (not (ok? (runtime/stage current op))))
+        (is (empty? (ops/logseq-chat-pending-ops-list path)))
+        (is (= "Old" (title (runtime/db current) "block")))))))
+
+(deftest only-transport-recoverable-states-enter-the-send-queue
+  (with-runtime
+    (fn [path _ current]
+      (run! (fn [[id state]] (ops/logseq-chat-pending-ops-save path (assoc (save-title id "Old" id) :state state)))
+            [(tuple "queued" (ops/Queued)) (tuple "retryable" (ops/Retryable))
+             (tuple "submitted" (ops/Submitted)) (tuple "accepted" (ops/Accepted 44))
+             (tuple "applied" (ops/Applied)) (tuple "conflicted" (ops/Conflicted "server changed"))])
+      (is (= ["queued" "retryable" "submitted"] (mapv :operation-id (runtime/pending-operations current)))))))
+
+(deftest staging-five-hundred-offline-edits-stays-bounded
+  (with-runtime
+    (fn [_ _ current]
+      (let [started (unix/gettimeofday)]
+        (loop [index 1 previous "Old"]
+          (when (<= index 500)
+            (let [next-title (str "Offline " index)]
+              (is (ok? (runtime/stage current (save-title (str "incremental-" index) previous next-title))))
+              (recur (inc index) next-title))))
+        (let [elapsed (- (unix/gettimeofday) started)]
+          (is (< elapsed 0.5))
+          (is (= "Offline 500" (title (runtime/db current) "block"))))))))
+
+(defn today []
+  (ops/logseq-chat-cache-model-journal-day-for-ms (stdlib/int-of-float (* (unix/gettimeofday) 1000.0))))
+
+(deftest today-journal-is-canonical-atomic-and-not-duplicated-on-reopen
+  (with-store
+    (fn [path]
+      (let [conn (ds/conn-from-db (ds/empty-db :schema (apply list (seq schema))))
+            day (today)
+            current (runtime/create :auto_create_today true :path path :server_t 42 conn)
+            expected (format "00000001-%04d-%04d-0000-000000000000" (quot day 10000) (mod day 10000))]
+        (is (= (Some expected) (runtime/journal-page-uuid current :journal_day day)))
+        (is (= [""] (mapv :title (runtime/blocks-for-page current expected))))
+        (is (= 1 (count (runtime/pending-operations current))))
+        (let [reopened (runtime/create :auto_create_today true :path path :server_t 42 conn)]
+          (is (= 1 (count (runtime/pending-operations reopened))))
+          (is (= 1 (count (runtime/blocks-for-page reopened expected)))))))))
+
+(deftest authoritative-today-journal-is-not-recreated
+  (with-store
+    (fn [path]
+      (let [day (today)
+            db (ds/db-with (list (add 1 "block/uuid" (ds/Uuid "existing-today"))
+                                 (add 1 "block/title" (ds/String "Today")) (add 1 "block/name" (ds/String "today"))
+                                 (add 1 "block/journal-day" (ds/Int day)))
+                            (ds/empty-db :schema (apply list (seq schema))))
+            current (runtime/create :auto_create_today true :path path :server_t 42 (ds/conn-from-db db))]
+        (is (= (Some "existing-today") (runtime/journal-page-uuid current :journal_day day)))
+        (is (empty? (runtime/pending-operations current)))))))
+
+(deftest accepted-partial-journal-keeps-its-pending-first-block
+  (with-store
+    (fn [path]
+      (let [conn (ds/conn-from-db (ds/empty-db :schema (apply list (seq schema))))
+            current (runtime/create :auto_create_today true :path path :server_t 42 conn)
+            operations (ops/logseq-chat-pending-ops-list path)]
+        (is (= 1 (count operations)))
+        (let [op (nth operations 0)]
+          (is (ok? (runtime/stage current (assoc op :state (ops/Accepted 43)))))
+          (is (match (:intent op)
+                (ops/Create_journal value)
+                (let [db (ds/db-with
+                           (list (add 1 "block/uuid" (ds/Uuid (:page-uuid value)))
+                                 (add 1 "block/title" (ds/String (:title value)))
+                                 (add 1 "block/name" (ds/String (:title value)))
+                                 (add 1 "block/journal-day" (ds/Int (:journal-day value))))
+                           (ds/empty-db :schema (apply list (seq schema))))]
+                  (ds/reset-conn conn db)
+                  (runtime/rebase current :server_t 43 :operation_ids (list))
+                  (and (= 1 (count (ops/logseq-chat-pending-ops-list path)))
+                       (= [(:block-uuid value)] (mapv :uuid (runtime/blocks-for-page current (:page-uuid value))))))
+                _ false)))))))
+
+(deftest persisted-offline-pages-reopen-for-every-transport-state
+  (run! (fn [state]
+          (with-runtime
+            (fn [path conn _]
+              (let [payload "{\"type\":\"create-page\",\"uuid\":\"offline-page\",\"title\":\"Offline Page\",\"createdAt\":7}"]
+                (ops/logseq-chat-pending-ops-store-raw path "offline-page" 42 state payload)
+                (let [current (runtime/create :path path :server_t 43 conn)
+                      stored (ops/logseq-chat-pending-ops-list path)]
+                  (is (not (empty? (runtime/blocks current))))
+                  (is (= "Offline Page" (title (runtime/db current) "offline-page")))
+                  (is (= 1 (count stored)))
+                  (let [op (nth stored 0)]
+                    (is (= (json/from-string payload) (ops/logseq-chat-pending-ops-intent-json (:intent op))))
+                    (if (= state "accepted:43")
+                      (is (empty? (runtime/pending-operations current)))
+                      (is (prepares-save? current op)))
+                    (ds/transact-conn conn
+                      (list (add 20 "block/uuid" (ds/Uuid "offline-page"))
+                            (add 20 "block/title" (ds/String "Server Page")) (add 20 "block/name" (ds/String "server page"))))
+                    (ops/logseq-chat-pending-ops-save path (assoc op :state (ops/Accepted 44)))
+                    (let [reopened (runtime/create :path path :server_t 44 conn)]
+                      (is (empty? (ops/logseq-chat-pending-ops-list path)))
+                      (is (= "Server Page" (title (runtime/db reopened) "offline-page"))))))))))
+        ["queued" "retryable" "submitted" "accepted:43"]))
+
+(deftest sidebar-cache-reuses-unchanged-reads-and-invalidates-on-rebase
+  (with-runtime
+    (fn [path conn current]
+      (let [initial (runtime/sidebar-pages current)]
+        (gc/full-major)
+        (let [before (gc/allocated-bytes)]
+          (dotimes [_ 100] (runtime/sidebar-pages current))
+          (is (< (- (gc/allocated-bytes) before) 50000.0)))
+        (ds/transact-conn conn (list (add 1 "block/title" (ds/String "Remote title"))))
+        (runtime/rebase current :server_t 43 :operation_ids (list))
+        (let [remote (runtime/sidebar-pages current)]
+          (is (not= initial remote))
+          (is (some #(= "Remote title" (:title %)) (:recent-pages remote)))
+          (ops/logseq-chat-pending-ops-save path
+            (assoc (native-operation "page-title"
+                     (ops/Save_title (record ops/pending_title (uuid "page") (expected-title "Remote title") (title "Local title"))))
+                   :base-t 43))
+          (runtime/rebase current :server_t 43 :operation_ids (list))
+          (is (some #(= "Local title" (:title %)) (:recent-pages (runtime/sidebar-pages current))))
+          (ops/logseq-chat-pending-ops-remove path "page-title")
+          (runtime/rebase current :server_t 43 :operation_ids (list))
+          (is (= remote (runtime/sidebar-pages current))))))))
