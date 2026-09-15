@@ -199,12 +199,6 @@
  (libraries logseq_chat_core))
 
 (test
- (name logseq_chat_pending_ops_test)
- (modules logseq_chat_pending_ops_test)
- (deps pending_ops_golden.jsonl)
- (libraries logseq_chat_core))
-
-(test
  (name logseq_chat_outliner_state_test)
  (modules logseq_chat_outliner_state_test)
  (libraries logseq_chat_core))

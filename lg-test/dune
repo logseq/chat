@@ -75,5 +75,5 @@
 
 (rule
  (alias runtest)
- (deps logseq_chat_lui_test.exe)
+ (deps logseq_chat_lui_test.exe ../core/pending_ops_golden.jsonl)
  (action (run %{exe:logseq_chat_lui_test.exe})))
