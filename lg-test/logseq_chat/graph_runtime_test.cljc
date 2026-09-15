@@ -8,6 +8,7 @@
             [ocaml.Sys :as sys]
             [ocaml.Unix :as unix]
             [ocaml.Gc :as gc]
+            [ocaml.Lg_runtime.Runtime_seq :as native-seq]
             [ocaml.Stdlib :as stdlib]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Datascript :as ds]
@@ -681,3 +682,71 @@
           (ops/logseq-chat-pending-ops-remove path "page-title")
           (runtime/rebase current :server_t 43 :operation_ids (list))
           (is (= remote (runtime/sidebar-pages current))))))))
+
+(deftest startup-persists-stale-conflicts-and-restores-valid-edits
+  (with-store
+    (fn [path]
+      (run! #(ops/logseq-chat-pending-ops-save path %)
+            [(save-title "stale" "Remote title" "Stale local edit")
+             (save-title "valid" "Old" "Valid local edit")])
+      (let [current (runtime/create :path path :server_t 42 (ds/conn-from-db (base-db "Old")))]
+        (is (= ["valid"] (mapv :operation-id (runtime/pending-operations current))))
+        (is (= "Valid local edit" (title (runtime/db current) "block")))
+        (is (some #(and (= "stale" (:operation-id %))
+                        (match (:state %) (ops/Conflicted _) true _ false))
+                  (ops/logseq-chat-pending-ops-list path)))))))
+
+(deftest startup-split-confirmation-distinguishes-submission-from-collision
+  (run!
+    (fn [[state cursor confirmed?]]
+      (with-store
+        (fn [path]
+          (let [db (ds/db-with
+                     (list (add 11 "block/uuid" (ds/Uuid "already-created"))
+                           (add 11 "block/title" (ds/String "Edited later"))
+                           (add 11 "block/page" (ds/Ref 1)) (add 11 "block/parent" (ds/Ref 1))
+                           (add 11 "block/order" (ds/String "a2"))
+                           (add 11 "block/created-at" (ds/Int 2)) (add 11 "block/updated-at" (ds/Int 3)))
+                     (base-db "Old"))
+                op (assoc (native-operation "committed-split"
+                            (native-split "block" "Old" "" "already-created")) :state state)]
+            (ops/logseq-chat-pending-ops-save path op)
+            (runtime/create :path path :server_t cursor (ds/conn-from-db db))
+            (let [stored (ops/logseq-chat-pending-ops-list path)]
+              (is (= confirmed? (empty? stored)))
+              (when (or (= state (ops/Queued)) (= state (ops/Retryable)))
+                (is (match (:state (nth stored 0)) (ops/Conflicted _) true _ false)))
+              (when (= state (ops/Conflicted "source block changed"))
+                (is (= state (:state (nth stored 0))))))))))
+    [(tuple (ops/Conflicted "split block UUID already exists") 43 true)
+     (tuple (ops/Submitted) 43 true)
+     (tuple (ops/Accepted 44) 43 false)
+     (tuple (ops/Accepted 44) 44 true)
+     (tuple (ops/Queued) 43 false)
+     (tuple (ops/Retryable) 43 false)
+     (tuple (ops/Conflicted "source block changed") 43 false)]))
+
+(defn measure-allocation [f]
+  (gc/full-major)
+  (let [before (gc/allocated-bytes)
+        result (f)]
+    (tuple result (- (gc/allocated-bytes) before))))
+
+(deftest startup-constructs-the-pending-projection-only-once
+  (with-runtime
+    (fn [path conn _]
+      (let [operations (mapv (fn [index]
+                              (save-title (str "restore-" index)
+                                          (if (= index 0) "Old" (str (dec index)))
+                                          (str index))) (range 30))]
+        (run! #(ops/logseq-chat-pending-ops-save path %) operations)
+        (let [[expected projection-bytes]
+              (measure-allocation #(ops/logseq-chat-pending-projection-build
+                                     42 (ds/conn-db conn) (tuple native-seq/of-vector operations)))
+              [current restore-bytes]
+              (measure-allocation #(runtime/create :path path :server_t 42 conn))]
+          (is (= (title (:db expected) "block") (title (runtime/db current) "block")))
+          (is (= (vec (runtime/operation-statuses current)) (:statuses expected)))
+          (is (= "Old" (title (ds/conn-db conn) "block")))
+          (is (= operations (ops/logseq-chat-pending-ops-list path)))
+          (is (< restore-bytes (* projection-bytes 1.6))))))))
