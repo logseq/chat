@@ -27,6 +27,7 @@
   (:include dune_modules/core.sexp))
  (libraries
   logseq_chat_graph_support
+  sqlite3
   datascript-ocaml-native
   datascript-ocaml-lg
   lg.edn-backend.native
@@ -64,10 +65,10 @@
    1
    (setenv
     LG_OCAML_INCLUDE_PATH
-    %{read:lg_native_include_path}
+    %{read-lines:lg_native_include_path}
     (setenv
      OCAMLPATH
-     %{read:lg_native_include_path}
+     %{read-lines:lg_native_include_path}
      (run
       %{bin:lg}
       --target native
@@ -90,10 +91,10 @@
    1
    (setenv
     LG_OCAML_INCLUDE_PATH
-    %{read:lg_native_include_path}
+    %{read-lines:lg_native_include_path}
     (setenv
      OCAMLPATH
-     %{read:lg_native_include_path}
+     %{read-lines:lg_native_include_path}
      (run
       %{bin:lg}
       --target native
@@ -124,10 +125,10 @@
    1
    (setenv
     LG_OCAML_INCLUDE_PATH
-    %{read:lg_native_include_path}
+    %{read-lines:lg_native_include_path}
     (setenv
      OCAMLPATH
-     %{read:lg_native_include_path}
+     %{read-lines:lg_native_include_path}
      (run
       %{bin:lg}
       --target native

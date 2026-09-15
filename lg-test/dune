@@ -20,10 +20,10 @@
    1
    (setenv
     LG_OCAML_INCLUDE_PATH
-    "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read:lg_native_include_path}"
+    "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read-lines:lg_native_include_path}"
     (setenv
      OCAMLPATH
-     "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read:lg_native_include_path}"
+     "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read-lines:lg_native_include_path}"
      (run
       %{bin:lg}
       --target native
@@ -54,6 +54,7 @@
  (flags (:standard -w -27-32-37-39-69))
  (libraries
   logseq_chat_core
+  sqlite3
   datascript-ocaml-native
   lg.edn-backend.native
   lg.runtime

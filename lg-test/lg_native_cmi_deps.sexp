@@ -1,6 +1,7 @@
 %{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime/lg_test_runtime.cmi
 %{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest/lg_test_alcotest.cmi
 %{lib:ocaml-fsrs:fsrs.cmi}
+../duniverse/sqlite3-ocaml/lib/.sqlite3.objs/byte/sqlite3.cmi
 %{lib:mldoc:mldoc.cma}
 %{lib:angstrom:angstrom.cma}
 ../duniverse/lg/runtime/.lg_runtime.objs/byte/lg_runtime.cmi

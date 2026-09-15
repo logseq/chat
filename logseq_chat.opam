@@ -18,6 +18,7 @@ depends: [
   "mldoc"
   "ocaml-fsrs"
   "yojson"
+  "sqlite3"
 ]
 pin-depends: [
   ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#b3c98542ef4e65c7a325c86c3fc6ac00f46d2d80"]

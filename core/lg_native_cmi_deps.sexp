@@ -1,4 +1,5 @@
 %{lib:ocaml-fsrs:fsrs.cmi}
+../duniverse/sqlite3-ocaml/lib/.sqlite3.objs/byte/sqlite3.cmi
 %{lib:mldoc:mldoc.cma}
 %{lib:angstrom:angstrom.cma}
 ../duniverse/lg/runtime/.lg_runtime.objs/byte/lg_runtime.cmi
