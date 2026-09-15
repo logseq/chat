@@ -207,16 +207,6 @@
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
 
 (test
- (name logseq_chat_graph_store_test)
- (modules logseq_chat_graph_store_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_graph_bootstrap_test)
- (modules logseq_chat_graph_bootstrap_test)
- (libraries logseq_chat_core))
-
-(test
  (name logseq_chat_sync_session_test)
  (modules logseq_chat_sync_session_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))

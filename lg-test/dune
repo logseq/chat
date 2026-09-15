@@ -2,6 +2,7 @@
  (target logseq_chat_lui_test.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
+  %{lib:lg:stdlib/lg/literal.cljc}
   (source_tree ../lg/logseq_chat)
   (source_tree logseq_chat)
   (source_tree ../duniverse/lui/lg/lui)
@@ -29,6 +30,7 @@
       %{bin:lg}
       --target native
       --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      %{lib:lg:stdlib/lg/literal.cljc}
       ../duniverse/lui/lg/lui
       ../duniverse/lui/lg/lui/backend/retained
       ../duniverse/lui/lg/lui/backend/apple
