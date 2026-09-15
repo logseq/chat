@@ -197,16 +197,6 @@
  (deps (alias ../lg-test/runtest)))
 
 (test
- (name logseq_chat_api_test)
- (modules logseq_chat_api_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_http_test)
- (modules logseq_chat_http_test)
- (libraries logseq_chat_core unix threads.posix))
-
-(test
  (name logseq_chat_markup_test)
  (modules logseq_chat_markup_test)
  (libraries logseq_chat_core))

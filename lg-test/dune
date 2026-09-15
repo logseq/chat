@@ -10,6 +10,7 @@
   %{lib:lg-test.sources:run.cljc}
   %{lib:lg-test.runtime:lg_test_runtime.cmi}
   %{lib:lg-test.alcotest:lg_test_alcotest.cmi}
+  %{lib:threads.posix:thread.cmi}
   (:include lg_native_cmi_deps.sexp)
   lg_native_include_path
   (source_tree ../lg/logseq_chat/core)
@@ -20,10 +21,10 @@
    1
    (setenv
     LG_OCAML_INCLUDE_PATH
-    "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read-lines:lg_native_include_path}"
+    "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{ocaml-config:standard_library}/threads:%{read-lines:lg_native_include_path}"
     (setenv
      OCAMLPATH
-     "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{read-lines:lg_native_include_path}"
+     "%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime:%{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest:%{ocaml-config:standard_library}/threads:%{read-lines:lg_native_include_path}"
      (run
       %{bin:lg}
       --target native
@@ -55,6 +56,7 @@
  (libraries
   logseq_chat_core
   sqlite3
+  threads.posix
   datascript-ocaml-native.sqlite
   datascript-ocaml-native
   lg.edn-backend.native
