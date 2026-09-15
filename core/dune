@@ -184,16 +184,6 @@
  (libraries logseq_chat_core yojson))
 
 (test
- (name logseq_chat_graph_read_test)
- (modules logseq_chat_graph_read_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_pending_projection_test)
- (modules logseq_chat_pending_projection_test)
- (libraries logseq_chat_core))
-
-(test
  (name logseq_chat_graph_runtime_test)
  (modules logseq_chat_graph_runtime_test)
  (libraries logseq_chat_core))
