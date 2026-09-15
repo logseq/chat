@@ -1,4 +1,4 @@
-module State = Logseq_chat_outliner_state
+module State = Logseq_chat_lg_core_native
 module Model = Logseq_chat_lg_core_native
 
 let fail label = failwith label
@@ -67,7 +67,7 @@ let () =
     ]
   in
   let uuids =
-    State.visible_rows State.{ blocks; pages = []; tags = [] } State.empty
+    State.logseq_chat_outliner_state_visible_rows State.{ blocks; pages = []; tags = [] } State.logseq_chat_outliner_state_empty
     |> List.map (fun row -> row.State.block.uuid)
   in
   assert_bool
@@ -78,20 +78,20 @@ let () =
 let context = State.{ blocks = [ block "a" "Alpha"; block ~order:(Some "a1") "b" "Beta" ]; pages = []; tags = [] }
 
 let () =
-  let state, effects = State.update context State.empty (Tap_block "a") in
-  assert_bool "tap starts inline editing" (State.editing_uuid state = Some "a");
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+  assert_bool "tap starts inline editing" (State.logseq_chat_outliner_state_editing_uuid state = Some "a");
   assert_bool "tap has no effect" (effects = []);
-  let state, effects = State.update context state (Text_changed { title = "A [[Pro"; caret = 7 }) in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Text_changed { title = "A [[Pro"; caret = 7 }) in
   assert_bool "text change remains pure" (effects = []);
   assert_bool "node autocomplete is derived in the reducer"
-    (match State.autocomplete state with
+    (match State.logseq_chat_outliner_state_autocomplete state with
      | Some { kind = Node; query = "Pro" } -> true
      | _ -> false);
-  let state, effects = State.update context state (Choose_autocomplete "Project") in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Choose_autocomplete "Project") in
   assert_bool "autocomplete completion updates editor text"
-    (State.editing_title state = Some "A [[Project]]");
+    (State.logseq_chat_outliner_state_editing_title state = Some "A [[Project]]");
   assert_bool "new page completion creates the page without saving the draft"
-    (effects = [ State.Create_page "Project"; State.Haptic Selection ])
+    (effects = [ State.Create_linked_page "Project"; State.Haptic Selection ])
 ;;
 
 let () =
@@ -103,19 +103,19 @@ let () =
       ; tags = [ { label = "Project"; value = tag_uuid } ]
       }
   in
-  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   let state, _ =
-    State.update context state (Text_changed { title = "Alpha #Pro"; caret = 10 })
+    State.logseq_chat_outliner_state_update context state (Text_changed { title = "Alpha #Pro"; caret = 10 })
   in
   assert_bool "inline tag autocomplete is recognized"
-    (match State.autocomplete state with
+    (match State.logseq_chat_outliner_state_autocomplete state with
      | Some { kind = Tag; query = "Pro" } -> true
      | _ -> false);
-  let state, effects = State.update context state (Choose_autocomplete tag_uuid) in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Choose_autocomplete tag_uuid) in
   assert_bool "tag completion removes the inline token from the editor"
-    (State.editing_title state = Some "Alpha");
+    (State.logseq_chat_outliner_state_editing_title state = Some "Alpha");
   assert_bool "tag completion keeps editing active and emits a semantic tag command"
-    (State.editing_uuid state = Some "a" && List.length effects = 2)
+    (State.logseq_chat_outliner_state_editing_uuid state = Some "a" && List.length effects = 2)
 ;;
 
 let () =
@@ -127,11 +127,11 @@ let () =
       ; tags = [ { label = "favorite book"; value = tag_uuid } ]
       }
   in
-  let state, _ = State.update context State.empty (Tap_block "a") in
-  let state, _ = State.update context state (Text_changed { title = "Alpha #fav"; caret = 10 }) in
-  let state, _ = State.update context state (Choose_autocomplete tag_uuid) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Text_changed { title = "Alpha #fav"; caret = 10 }) in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Choose_autocomplete tag_uuid) in
   assert_bool "spaced tag completion also removes the inline token"
-    (State.editing_title state = Some "Alpha")
+    (State.logseq_chat_outliner_state_editing_title state = Some "Alpha")
 ;;
 
 let () =
@@ -143,10 +143,10 @@ let () =
     }
   in
   let context = State.{ blocks = [ stored ]; pages = []; tags = [] } in
-  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   assert_bool "editing shows names instead of stored uuid references"
-    (State.editing_title state = Some "Ship [[Roadmap]] with #Project and #[[favorite book]]");
-  let _, effects = State.update context state Cancel_editing in
+    (State.logseq_chat_outliner_state_editing_title state = Some "Ship [[Roadmap]] with #Project and #[[favorite book]]");
+  let _, effects = State.logseq_chat_outliner_state_update context state Cancel_editing in
   assert_bool "leaving an untouched display title does not emit a commit" (effects = [])
 ;;
 
@@ -158,9 +158,9 @@ let () =
     }
   in
   let context = State.{ blocks = [ stored ]; pages = []; tags = [] } in
-  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   assert_bool "duplicated reference names stay uuid-addressed in the editor"
-    (State.editing_title state = Some "See [[page-uuid-1]] or [[page-uuid-2]]")
+    (State.logseq_chat_outliner_state_editing_title state = Some "See [[page-uuid-1]] or [[page-uuid-2]]")
 ;;
 
 let () =
@@ -172,7 +172,7 @@ let () =
       }
   in
   let node_candidates =
-    State.autocomplete_candidates context State.{ kind = Node; query = "alpha" }
+    State.logseq_chat_outliner_state_autocomplete_candidates context State.{ kind = Node; query = "alpha" }
   in
   assert_bool "node autocomplete combines pages and blocks in OCaml"
     (node_candidates
@@ -189,20 +189,20 @@ let () =
     ]
   in
   let context = State.{ blocks; pages = []; tags = [] } in
-  let state, effects = State.update context State.empty (Toggle_collapsed "parent") in
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Toggle_collapsed "parent") in
   assert_bool "collapse emits only a platform haptic" (effects = [ State.Haptic Impact ]);
   assert_bool "collapsed child is absent from visible rows"
-    (State.visible_rows context state |> List.map (fun row -> row.State.block.uuid)
+    (State.logseq_chat_outliner_state_visible_rows context state |> List.map (fun row -> row.State.block.uuid)
      = [ "parent"; "sibling" ]);
-  let state, effects = State.update context state (Zoom_in "parent") in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Zoom_in "parent") in
   assert_bool "zoom emits only a platform haptic" (effects = [ State.Haptic Selection ]);
   assert_bool "zoom owns the visible subtree"
-    (match State.visible_rows context state with
+    (match State.logseq_chat_outliner_state_visible_rows context state with
      | [ { State.block = { uuid = "parent"; _ }; depth = 0; _ } ] -> true
      | _ -> false);
-  let state, _ = State.update context state Zoom_out in
+  let state, _ = State.logseq_chat_outliner_state_update context state Zoom_out in
   assert_bool "zoom out restores the full outline"
-    (State.visible_rows context state |> List.map (fun row -> row.State.block.uuid)
+    (State.logseq_chat_outliner_state_visible_rows context state |> List.map (fun row -> row.State.block.uuid)
      = [ "parent"; "sibling" ])
 ;;
 
@@ -213,65 +213,65 @@ let () =
     ]
   in
   let context = State.{ blocks; pages = []; tags = [] } in
-  let editing, _ = State.update context State.empty (Tap_block "parent") in
+  let editing, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "parent") in
   let editing, _ =
-    State.update context editing (Text_changed { title = "Changed"; caret = 7 })
+    State.logseq_chat_outliner_state_update context editing (Text_changed { title = "Changed"; caret = 7 })
   in
-  let navigated, effects = State.update context editing (Zoom_in "child") in
+  let navigated, effects = State.logseq_chat_outliner_state_update context editing (Zoom_in "child") in
   assert_bool "page navigation exits editing and selection"
-    (State.editing_uuid navigated = None && State.selected_uuids navigated = []);
+    (State.logseq_chat_outliner_state_editing_uuid navigated = None && State.logseq_chat_outliner_state_selected_uuids navigated = []);
   assert_bool "page navigation commits the editor before navigating"
     (effects
      = [ State.Commit_title
            { uuid = "parent"; expected_title = "Parent"; title = "Changed" }
        ; State.Haptic State.Selection
        ]);
-  let selected, _ = State.update context State.empty (Long_press_block "parent") in
-  let selected, _ = State.update context selected (Zoom_in "parent") in
-  assert_bool "page navigation exits selection" (State.selected_uuids selected = []);
-  let zoomed, _ = State.update context State.empty (Zoom_in "parent") in
-  let editing, _ = State.update context zoomed (Tap_block "child") in
+  let selected, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "parent") in
+  let selected, _ = State.logseq_chat_outliner_state_update context selected (Zoom_in "parent") in
+  assert_bool "page navigation exits selection" (State.logseq_chat_outliner_state_selected_uuids selected = []);
+  let zoomed, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Zoom_in "parent") in
+  let editing, _ = State.logseq_chat_outliner_state_update context zoomed (Tap_block "child") in
   let editing, _ =
-    State.update context editing (Text_changed { title = "Edited child"; caret = 12 })
+    State.logseq_chat_outliner_state_update context editing (Text_changed { title = "Edited child"; caret = 12 })
   in
-  let backed, effects = State.update context editing Zoom_out in
+  let backed, effects = State.logseq_chat_outliner_state_update context editing Zoom_out in
   assert_bool "back exits editing and returns to the previous page"
-    (State.editing_uuid backed = None && State.zoom_path backed = []);
+    (State.logseq_chat_outliner_state_editing_uuid backed = None && State.logseq_chat_outliner_state_zoom_path backed = []);
   assert_bool "back commits the editor before navigating"
     (effects
      = [ State.Commit_title
            { uuid = "child"; expected_title = "Child"; title = "Edited child" }
        ; State.Haptic State.Selection
        ]);
-  let selected, _ = State.update context zoomed (Long_press_block "child") in
-  let backed, _ = State.update context selected Zoom_out in
-  assert_bool "back exits selection" (State.selected_uuids backed = [])
+  let selected, _ = State.logseq_chat_outliner_state_update context zoomed (Long_press_block "child") in
+  let backed, _ = State.logseq_chat_outliner_state_update context selected Zoom_out in
+  assert_bool "back exits selection" (State.logseq_chat_outliner_state_selected_uuids backed = [])
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Long_press_block "a") in
-  assert_bool "long press selects" (State.selected_uuids state = [ "a" ]);
-  let state, _ = State.update context state (Tap_block "b") in
-  assert_bool "tap toggles another selection" (State.selected_uuids state = [ "a"; "b" ]);
-  let state, _ = State.update context state (Tap_block "a") in
-  assert_bool "tap removes a selected block" (State.selected_uuids state = [ "b" ]);
-  let state, _ = State.update context state (Long_press_block "a") in
-  assert_bool "a new long press starts a fresh selection" (State.selected_uuids state = [ "a" ])
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "a") in
+  assert_bool "long press selects" (State.logseq_chat_outliner_state_selected_uuids state = [ "a" ]);
+  let state, _ = State.logseq_chat_outliner_state_update context state (Tap_block "b") in
+  assert_bool "tap toggles another selection" (State.logseq_chat_outliner_state_selected_uuids state = [ "a"; "b" ]);
+  let state, _ = State.logseq_chat_outliner_state_update context state (Tap_block "a") in
+  assert_bool "tap removes a selected block" (State.logseq_chat_outliner_state_selected_uuids state = [ "b" ]);
+  let state, _ = State.logseq_chat_outliner_state_update context state (Long_press_block "a") in
+  assert_bool "a new long press starts a fresh selection" (State.logseq_chat_outliner_state_selected_uuids state = [ "a" ])
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "a") in
-  let unchanged, effects = State.update context state (Toolbar Task) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+  let unchanged, effects = State.logseq_chat_outliner_state_update context state (Toolbar Task) in
   assert_bool "task toolbar keeps inline editing active" (unchanged = state);
   assert_bool "task toolbar cycles the editing block status"
     (effects = [ State.Cycle_task_status "a"; State.Haptic State.Impact ])
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "a") in
-  let state, _ = State.update context state (Text_changed { title = "Alpha Beta"; caret = 5 }) in
-  let state, effects = State.update context state Return_pressed in
-  assert_bool "return leaves editing" (State.editing_uuid state = None);
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Text_changed { title = "Alpha Beta"; caret = 5 }) in
+  let state, effects = State.logseq_chat_outliner_state_update context state Return_pressed in
+  assert_bool "return leaves editing" (State.logseq_chat_outliner_state_editing_uuid state = None);
   assert_bool "return requests one split effect"
     (effects
      = [ State.Split_at
@@ -284,11 +284,11 @@ let () =
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   let state, effects =
-    State.update context state (Return_pressed_with_text { title = "Changed text"; caret = 7 })
+    State.logseq_chat_outliner_state_update context state (Return_pressed_with_text { title = "Changed text"; caret = 7 })
   in
-  assert_bool "atomic return leaves editing" (State.editing_uuid state = None);
+  assert_bool "atomic return leaves editing" (State.logseq_chat_outliner_state_editing_uuid state = None);
   assert_bool "atomic return splits the final UIKit text without an intermediate render"
     (effects
      = [ State.Split_at
@@ -302,39 +302,39 @@ let () =
 
 let () =
   let unchanged_return, return_effects =
-    State.update
+    State.logseq_chat_outliner_state_update
       context
-      State.empty
+      State.logseq_chat_outliner_state_empty
       (Return_pressed_with_text { title = "Draft"; caret = 5 })
   in
   let unchanged_backspace, backspace_effects =
-    State.update
+    State.logseq_chat_outliner_state_update
       context
-      State.empty
+      State.logseq_chat_outliner_state_empty
       (Backspace_pressed_with_text { title = "Draft"; selection_length = 0 })
   in
-  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   let selected_backspace, selected_effects =
-    State.update
+    State.logseq_chat_outliner_state_update
       context
       state
       (Backspace_pressed_with_text { title = "Draft"; selection_length = 1 })
   in
   assert_bool "atomic return without an editor is ignored"
-    (unchanged_return = State.empty && return_effects = []);
+    (unchanged_return = State.logseq_chat_outliner_state_empty && return_effects = []);
   assert_bool "atomic backspace without an editor is ignored"
-    (unchanged_backspace = State.empty && backspace_effects = []);
+    (unchanged_backspace = State.logseq_chat_outliner_state_empty && backspace_effects = []);
   assert_bool "atomic backspace with a selection stays inside UIKit"
     (selected_backspace = state && selected_effects = [])
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "b") in
-  let state, _ = State.update context state (Caret_moved 0) in
-  let _, effects = State.update context state (Backspace_pressed { selection_length = 0 }) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "b") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Caret_moved 0) in
+  let _, effects = State.logseq_chat_outliner_state_update context state (Backspace_pressed { selection_length = 0 }) in
   assert_bool "backspace at start requests merge"
     (effects
-     = [ State.Merge_backward
+     = [ State.Merge_into_previous
            { uuid = "b"
            ; expected_title = "Beta"
            ; title = "Beta"
@@ -363,10 +363,10 @@ let () =
   in
   let context = State.{ blocks; pages = []; tags = [] } in
   let state, _ =
-    State.update context State.empty (Tap_block "journal-two-block")
+    State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "journal-two-block")
   in
   let state, effects =
-    State.update
+    State.logseq_chat_outliner_state_update
       context
       state
       (Backspace_pressed_with_text
@@ -374,8 +374,8 @@ let () =
   in
   assert_bool
     "backspace deletes the first block of a journal without closing its editor"
-    (State.editing_uuid state = Some "journal-two-next"
-     && effects = [ State.Delete_blocks [ "journal-two-block" ] ])
+    (State.logseq_chat_outliner_state_editing_uuid state = Some "journal-two-next"
+     && effects = [ State.Remove_blocks [ "journal-two-block" ] ])
 ;;
 
 let () =
@@ -386,15 +386,15 @@ let () =
     ]
   in
   let nested_context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update nested_context State.empty (Tap_block "empty") in
+  let state, _ = State.logseq_chat_outliner_state_update nested_context State.logseq_chat_outliner_state_empty (Tap_block "empty") in
   let state, effects =
-    State.update nested_context state (Return_pressed_with_text { title = ""; caret = 0 })
+    State.logseq_chat_outliner_state_update nested_context state (Return_pressed_with_text { title = ""; caret = 0 })
   in
   assert_bool "return on the final empty child keeps that block focused"
-    (State.editing_uuid state = Some "empty");
+    (State.logseq_chat_outliner_state_editing_uuid state = Some "empty");
   assert_bool "return on the final empty child outdents instead of splitting"
     (match effects with
-     | [ State.Move_blocks [ move ] ] ->
+     | [ State.Reparent_blocks [ move ] ] ->
        String.equal move.Logseq_chat_lg_core_native.uuid "empty"
        && String.equal move.parent_uuid "page"
      | _ -> false)
@@ -408,22 +408,22 @@ let () =
     ]
   in
   let nested_context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update nested_context State.empty (Tap_block "empty") in
-  let state, effects = State.update nested_context state Return_pressed in
+  let state, _ = State.logseq_chat_outliner_state_update nested_context State.logseq_chat_outliner_state_empty (Tap_block "empty") in
+  let state, effects = State.logseq_chat_outliner_state_update nested_context state Return_pressed in
   assert_bool "an empty child that is not last still follows normal split behavior"
-    (State.editing_uuid state = None
+    (State.logseq_chat_outliner_state_editing_uuid state = None
      && match effects with [ State.Split_at _ ] -> true | _ -> false)
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "b") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "b") in
   let _, effects =
-    State.update context state
+    State.logseq_chat_outliner_state_update context state
       (Backspace_pressed_with_text { title = "Changed"; selection_length = 0 })
   in
   assert_bool "atomic backspace merges the final UIKit text"
     (effects
-     = [ State.Merge_backward
+     = [ State.Merge_into_previous
            { uuid = "b"
            ; expected_title = "Beta"
            ; title = "Changed"
@@ -441,14 +441,14 @@ let () =
     ]
   in
   let context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update context State.empty (Long_press_block "second") in
-  let state, _ = State.update context state (Tap_block "third") in
-  let state, effects = State.update context state (Toolbar Indent) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "second") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Tap_block "third") in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar Indent) in
   assert_bool "indent preserves selection for repeated structural commands"
-    (State.selected_uuids state = [ "second"; "third" ]);
+    (State.logseq_chat_outliner_state_selected_uuids state = [ "second"; "third" ]);
   assert_bool "indent emits one atomic move batch"
     (match effects with
-     | [ State.Move_blocks moves; State.Haptic State.Impact ] ->
+     | [ State.Reparent_blocks moves; State.Haptic State.Impact ] ->
        List.map (fun (move : Logseq_chat_lg_core_native.pending_move) -> move.uuid) moves = [ "second"; "third" ]
        && List.for_all
          (fun (move : Logseq_chat_lg_core_native.pending_move) -> String.equal move.parent_uuid "first")
@@ -457,16 +457,16 @@ let () =
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Long_press_block "a") in
-  let state, effects = State.update context state (Toolbar Delete) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "a") in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar Delete) in
   assert_bool "delete asks the UI for confirmation without mutating data"
     (effects = [ State.Request_delete_confirmation [ "a" ]; State.Haptic State.Impact ]);
   assert_bool "delete closes the selection immediately"
-    (State.selected_uuids state = []);
-  let state, effects = State.update context state Confirm_delete in
+    (State.logseq_chat_outliner_state_selected_uuids state = []);
+  let state, effects = State.logseq_chat_outliner_state_update context state Confirm_delete in
   assert_bool "confirmed delete becomes a domain effect"
-    (effects = [ State.Delete_blocks [ "a" ] ]);
-  let _, effects = State.update context state Confirm_delete in
+    (effects = [ State.Remove_blocks [ "a" ] ]);
+  let _, effects = State.logseq_chat_outliner_state_update context state Confirm_delete in
   assert_bool "confirmation is consumed after the delete" (effects = [])
 ;;
 
@@ -479,13 +479,13 @@ let () =
     ]
   in
   let context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update context State.empty (Long_press_block "child-a") in
-  let state, _ = State.update context state (Tap_block "child-b") in
-  let state, effects = State.update context state (Toolbar Outdent) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "child-a") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Tap_block "child-b") in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar Outdent) in
   assert_bool "outdent preserves selection for repeated structural commands"
-    (State.selected_uuids state = [ "child-a"; "child-b" ]);
+    (State.logseq_chat_outliner_state_selected_uuids state = [ "child-a"; "child-b" ]);
   (match effects with
-   | [ State.Move_blocks [ first; second ]; State.Haptic State.Impact ] ->
+   | [ State.Reparent_blocks [ first; second ]; State.Haptic State.Impact ] ->
      if not
           (String.equal first.parent_uuid "page"
            && String.equal second.parent_uuid "page"
@@ -515,29 +515,29 @@ let () =
     ]
   in
   let context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update context State.empty (Long_press_block "parent") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "parent") in
   let unchanged, effects =
-    State.update context state (Drop_blocks { target_uuid = "child"; placement = After })
+    State.logseq_chat_outliner_state_update context state (Drop_blocks { target_uuid = "child"; placement = After })
   in
   assert_bool "drop onto descendant is rejected" (unchanged = state && effects = []);
   let moved, effects =
-    State.update context state (Drop_blocks { target_uuid = "target"; placement = Inside })
+    State.logseq_chat_outliner_state_update context state (Drop_blocks { target_uuid = "target"; placement = Inside })
   in
-  assert_bool "valid drop clears selection" (State.selected_uuids moved = []);
+  assert_bool "valid drop clears selection" (State.logseq_chat_outliner_state_selected_uuids moved = []);
   assert_bool "valid drop emits one move batch"
     (match effects with
-     | [ State.Move_blocks [ move ]; State.Haptic State.Impact ] ->
+     | [ State.Reparent_blocks [ move ]; State.Haptic State.Impact ] ->
        String.equal move.uuid "parent" && String.equal move.parent_uuid "target"
      | _ -> false)
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "b") in
-  let state, effects = State.update context state (Toolbar Indent) in
-  assert_bool "editor indent keeps the same block focused" (State.editing_uuid state = Some "b");
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "b") in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar Indent) in
+  assert_bool "editor indent keeps the same block focused" (State.logseq_chat_outliner_state_editing_uuid state = Some "b");
   assert_bool "editor indent moves the editing block"
     (match effects with
-     | [ State.Move_blocks [ move ]; State.Haptic State.Impact ] ->
+     | [ State.Reparent_blocks [ move ]; State.Haptic State.Impact ] ->
        String.equal move.Logseq_chat_lg_core_native.uuid "b"
        && String.equal move.parent_uuid "a"
      | _ -> false)
@@ -551,13 +551,13 @@ let () =
     ]
   in
   let child_context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update child_context State.empty (Tap_block "child") in
-  let state, effects = State.update child_context state (Toolbar Outdent) in
+  let state, _ = State.logseq_chat_outliner_state_update child_context State.logseq_chat_outliner_state_empty (Tap_block "child") in
+  let state, effects = State.logseq_chat_outliner_state_update child_context state (Toolbar Outdent) in
   assert_bool "editor outdent keeps the same block focused"
-    (State.editing_uuid state = Some "child");
+    (State.logseq_chat_outliner_state_editing_uuid state = Some "child");
   assert_bool "editor outdent moves the editing block"
     (match effects with
-     | [ State.Move_blocks [ move ]; State.Haptic State.Impact ] ->
+     | [ State.Reparent_blocks [ move ]; State.Haptic State.Impact ] ->
        String.equal move.Logseq_chat_lg_core_native.uuid "child"
        && String.equal move.parent_uuid "page"
      | _ -> false)
@@ -565,17 +565,17 @@ let () =
 
 let () =
   let insert action expected_title expected_caret expected_autocomplete =
-    let state, _ = State.update context State.empty (Tap_block "a") in
-    let state, _ = State.update context state (Text_changed { title = "AlphaBeta"; caret = 5 }) in
-    let state, effects = State.update context state (Toolbar action) in
+    let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+    let state, _ = State.logseq_chat_outliner_state_update context state (Text_changed { title = "AlphaBeta"; caret = 5 }) in
+    let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar action) in
     assert_bool "toolbar insertion keeps inline editing active"
-      (State.editing_uuid state = Some "a");
+      (State.logseq_chat_outliner_state_editing_uuid state = Some "a");
     assert_bool "toolbar insertion edits at the caret"
-      (State.editing_title state = Some expected_title);
+      (State.logseq_chat_outliner_state_editing_title state = Some expected_title);
     assert_bool "toolbar insertion moves the caret correctly"
-      (Option.map (fun editing -> editing.State.caret) state.editing = Some expected_caret);
+      (Option.map (fun (editing : State.editor_draft) -> editing.State.caret) state.editing = Some expected_caret);
     assert_bool "toolbar insertion opens the matching autocomplete"
-      (match State.autocomplete state, expected_autocomplete with
+      (match State.logseq_chat_outliner_state_autocomplete state, expected_autocomplete with
        | Some actual, Some expected -> actual.kind = expected
        | None, None -> true
        | _ -> false);
@@ -587,9 +587,9 @@ let () =
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   let assert_media action expected =
-    let unchanged, effects = State.update context state (Toolbar action) in
+    let unchanged, effects = State.logseq_chat_outliner_state_update context state (Toolbar action) in
     assert_bool "media toolbar action keeps inline editing active" (unchanged = state);
     assert_bool "media toolbar action targets the editing block"
       (effects = [ expected; State.Haptic State.Impact ])
@@ -600,10 +600,10 @@ let () =
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "a") in
-  let state, _ = State.update context state (Text_changed { title = "Changed"; caret = 7 }) in
-  let state, effects = State.update context state (Toolbar Hide_keyboard) in
-  assert_bool "keyboard toolbar action ends editing" (State.editing_uuid state = None);
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Text_changed { title = "Changed"; caret = 7 }) in
+  let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar Hide_keyboard) in
+  assert_bool "keyboard toolbar action ends editing" (State.logseq_chat_outliner_state_editing_uuid state = None);
   assert_bool "keyboard toolbar action commits the current draft"
     (effects =
        [ State.Commit_title { uuid = "a"; expected_title = "Alpha"; title = "Changed" }
@@ -612,10 +612,10 @@ let () =
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Long_press_block "a") in
-  let copied, copy = State.update context state (Toolbar Copy) in
-  let referenced, copy_reference = State.update context state (Toolbar Copy_reference) in
-  let linked, copy_url = State.update context state (Toolbar Copy_url) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Long_press_block "a") in
+  let copied, copy = State.logseq_chat_outliner_state_update context state (Toolbar Copy) in
+  let referenced, copy_reference = State.logseq_chat_outliner_state_update context state (Toolbar Copy_reference) in
+  let linked, copy_url = State.logseq_chat_outliner_state_update context state (Toolbar Copy_url) in
   assert_bool "selection copy command is complete"
     (copy = [ State.Copy_text "Alpha"; State.Haptic State.Impact ]);
   assert_bool "selection copy reference command is complete"
@@ -623,12 +623,12 @@ let () =
   assert_bool "selection copy URL command is complete"
     (copy_url = [ State.Copy_urls [ "a" ]; State.Haptic State.Impact ]);
   assert_bool "copy commands close the selection"
-    (State.selected_uuids copied = []
-     && State.selected_uuids referenced = []
-     && State.selected_uuids linked = []);
-  let state, effects = State.update context state (Toolbar Unselect) in
+    (State.logseq_chat_outliner_state_selected_uuids copied = []
+     && State.logseq_chat_outliner_state_selected_uuids referenced = []
+     && State.logseq_chat_outliner_state_selected_uuids linked = []);
+  let state, effects = State.logseq_chat_outliner_state_update context state (Toolbar Unselect) in
   assert_bool "unselect clears selection"
-    (State.selected_uuids state = [] && effects = [ State.Haptic State.Impact ])
+    (State.logseq_chat_outliner_state_selected_uuids state = [] && effects = [ State.Haptic State.Impact ])
 ;;
 
 let () =
@@ -640,20 +640,20 @@ let () =
     ]
   in
   let nested_context = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update nested_context State.empty (Zoom_in "parent") in
-  let state, _ = State.update nested_context state (Zoom_in "child") in
+  let state, _ = State.logseq_chat_outliner_state_update nested_context State.logseq_chat_outliner_state_empty (Zoom_in "parent") in
+  let state, _ = State.logseq_chat_outliner_state_update nested_context state (Zoom_in "child") in
   assert_bool "zoom is nested page navigation"
-    (State.zoom_path state = [ "parent"; "child" ]);
+    (State.logseq_chat_outliner_state_zoom_path state = [ "parent"; "child" ]);
   assert_bool "nested zoom shows the destination page tree"
-    (State.visible_rows nested_context state
+    (State.logseq_chat_outliner_state_visible_rows nested_context state
      |> List.map (fun row -> row.State.block.uuid)
      = [ "child"; "grandchild" ]);
-  let state, _ = State.update nested_context state Zoom_out in
+  let state, _ = State.logseq_chat_outliner_state_update nested_context state Zoom_out in
   assert_bool "zoom back returns to the previous page"
-    (State.zoom_path state = [ "parent" ]);
-  let state, _ = State.update nested_context state Zoom_out in
+    (State.logseq_chat_outliner_state_zoom_path state = [ "parent" ]);
+  let state, _ = State.logseq_chat_outliner_state_update nested_context state Zoom_out in
   assert_bool "zoom back from the first page returns to the journal"
-    (State.zoom_path state = [])
+    (State.logseq_chat_outliner_state_zoom_path state = [])
 ;;
 
 let () =
@@ -663,18 +663,18 @@ let () =
     ]
   in
   let before_delete = State.{ blocks; pages = []; tags = [] } in
-  let state, _ = State.update before_delete State.empty (Zoom_in "parent") in
-  let state, _ = State.update before_delete state (Zoom_in "child") in
+  let state, _ = State.logseq_chat_outliner_state_update before_delete State.logseq_chat_outliner_state_empty (Zoom_in "parent") in
+  let state, _ = State.logseq_chat_outliner_state_update before_delete state (Zoom_in "child") in
   let after_delete = State.{ blocks = []; pages = []; tags = [] } in
   let state, _ =
-    State.update
+    State.logseq_chat_outliner_state_update
       after_delete
       state
       (Operation_staged (Logseq_chat_lg_core_native.Delete_blocks
                            { uuids = (Rrbvec.of_list ["parent"]) }))
   in
   assert_bool "deleting the zoom destination returns to a valid page"
-    (State.zoom_path state = [])
+    (State.logseq_chat_outliner_state_zoom_path state = [])
 ;;
 
 let () =
@@ -692,37 +692,32 @@ let () =
   in
   let large_context = State.{ blocks = make_chain 0 None []; pages = []; tags = [] } in
   let started = Unix.gettimeofday () in
-  let rows = State.visible_rows large_context State.empty in
+  let rows = State.logseq_chat_outliner_state_visible_rows large_context State.logseq_chat_outliner_state_empty in
   let elapsed = Unix.gettimeofday () -. started in
   assert_bool "large outlines remain linear enough for user-visible actions"
     (List.length rows = count && elapsed < 0.1)
 ;;
 
 let () =
-  assert_bool "option mapper covers present and absent values"
-    (State.option_value_map (Some 2) ~default:0 ~f:(( + ) 1) = 3
-     && State.option_value_map None ~default:0 ~f:(( + ) 1) = 0);
-  assert_bool "list_last covers present and absent lists"
-    (State.list_last [ 1; 2 ] = Some 2 && State.list_last [] = None);
   assert_bool "UTF-8 sequence lengths cover every encoded width"
-    (State.utf8_sequence_length 0x41 = 1
-     && State.utf8_sequence_length 0xC3 = 2
-     && State.utf8_sequence_length 0xE4 = 3
-     && State.utf8_sequence_length 0xF0 = 4
-     && State.utf8_sequence_length 0x80 = 1);
+    (State.logseq_chat_outliner_state_utf8_sequence_length 0x41 = 1
+     && State.logseq_chat_outliner_state_utf8_sequence_length 0xC3 = 2
+     && State.logseq_chat_outliner_state_utf8_sequence_length 0xE4 = 3
+     && State.logseq_chat_outliner_state_utf8_sequence_length 0xF0 = 4
+     && State.logseq_chat_outliner_state_utf8_sequence_length 0x80 = 1);
   let unicode = "Aé中😀" in
   assert_bool "UTF-16 caret conversion handles BMP and supplementary characters"
-    (State.utf16_length unicode = 5
-     && State.byte_index_of_utf16 unicode 0 = 0
-     && State.byte_index_of_utf16 unicode 2 = 3
-     && State.byte_index_of_utf16 unicode 5 = String.length unicode
-     && State.byte_index_of_utf16 unicode 99 = String.length unicode);
+    (State.logseq_chat_outliner_state_utf16_length unicode = 5
+     && State.logseq_chat_outliner_state_byte_index_of_utf16 unicode 0 = 0
+     && State.logseq_chat_outliner_state_byte_index_of_utf16 unicode 2 = 3
+     && State.logseq_chat_outliner_state_byte_index_of_utf16 unicode 5 = String.length unicode
+     && State.logseq_chat_outliner_state_byte_index_of_utf16 unicode 99 = String.length unicode);
   assert_bool "empty substring is intentionally not searchable"
-    (State.last_substring "value" "" = None);
+    (State.logseq_chat_outliner_state_last_substring "value" "" = None);
   assert_bool "substring search returns the last occurrence"
-    (State.last_substring "aba" "a" = Some 2);
+    (State.logseq_chat_outliner_state_last_substring "aba" "a" = Some 2);
   assert_bool "empty autocomplete query matches every candidate"
-    (State.includes_case_insensitive "Value" "  ")
+    (State.logseq_chat_outliner_state_includes_case_insensitive "Value" "  ")
 ;;
 
 let () =
@@ -740,44 +735,44 @@ let () =
       }
   in
   assert_bool "autocomplete candidates deduplicate by value"
-    (State.autocomplete_candidates candidates_context State.{ kind = Node; query = "project" }
+    (State.logseq_chat_outliner_state_autocomplete_candidates candidates_context State.{ kind = Node; query = "project" }
      = [ State.{ label = "Project"; value = "project" } ]);
   let context_with_blank_block =
     State.{ candidates_context with blocks = block "blank" "" :: candidates_context.blocks }
   in
   assert_bool "node autocomplete excludes blank blocks"
-    (State.autocomplete_candidates context_with_blank_block State.{ kind = Node; query = "" }
+    (State.logseq_chat_outliner_state_autocomplete_candidates context_with_blank_block State.{ kind = Node; query = "" }
      |> List.for_all (fun candidate -> not (String.equal candidate.State.label "")));
   assert_bool "tag candidates reuse page entities"
     (List.length
-       (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "project" })
+       (State.logseq_chat_outliner_state_autocomplete_candidates candidates_context State.{ kind = Tag; query = "project" })
      = 1);
   assert_bool "an exact tag match offers no create candidate"
-    (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "Project" }
+    (State.logseq_chat_outliner_state_autocomplete_candidates candidates_context State.{ kind = Tag; query = "Project" }
      = [ State.{ label = "Project"; value = "project" } ]);
   assert_bool "a novel tag query offers a create candidate"
-    (State.autocomplete_candidates candidates_context State.{ kind = Tag; query = "foobar" }
+    (State.logseq_chat_outliner_state_autocomplete_candidates candidates_context State.{ kind = Tag; query = "foobar" }
      = [ State.{ label = "New tag: foobar"; value = "foobar" } ]);
   assert_bool "an empty tag query offers no create candidate"
-    (State.autocomplete_candidates
+    (State.logseq_chat_outliner_state_autocomplete_candidates
        State.{ blocks = []; pages = []; tags = [] }
        State.{ kind = Tag; query = "" }
      = []);
   assert_bool "property candidates are core-owned"
-    (State.autocomplete_candidates candidates_context State.{ kind = Property; query = "prio" }
+    (State.logseq_chat_outliner_state_autocomplete_candidates candidates_context State.{ kind = Property; query = "prio" }
      = [ State.{ label = "priority"; value = "priority" } ]);
   let many_pages =
     List.init 20 (fun index -> State.{ label = string_of_int index; value = string_of_int index })
   in
   assert_bool "autocomplete result count is bounded"
     (List.length
-       (State.autocomplete_candidates State.{ blocks = []; pages = many_pages; tags = [] }
+       (State.logseq_chat_outliner_state_autocomplete_candidates State.{ blocks = []; pages = many_pages; tags = [] }
           State.{ kind = Node; query = "" })
      = 12)
 ;;
 
 let assert_autocomplete label expected title =
-  assert_bool label (State.autocomplete_for title (State.utf16_length title) = expected)
+  assert_bool label (State.logseq_chat_outliner_state_autocomplete_for title (State.logseq_chat_outliner_state_utf16_length title) = expected)
 ;;
 
 let () =
@@ -800,9 +795,9 @@ let () =
     (Some State.{ kind = Tag; query = "two words" })
     "#two words";
   assert_bool "tag token helper allows spaces but stops at a newline"
-    (State.token_request State.Tag '#' "#two words"
+    (State.logseq_chat_outliner_state_token_request State.Tag '#' "#two words"
      = Some State.{ kind = Tag; query = "two words" }
-     && State.token_request State.Tag '#' "#two\nwords" = None);
+     && State.logseq_chat_outliner_state_token_request State.Tag '#' "#two\nwords" = None);
   assert_autocomplete "closed node token is inactive" None "[[Page]]";
   assert_autocomplete "legacy block token is inactive" None "((Block";
   assert_autocomplete "slash command token is inactive" None "/query";
@@ -810,13 +805,13 @@ let () =
 ;;
 
 let editing title =
-  State.{ uuid = "a"; expected_title = title; title; caret = utf16_length title }
+  State.{ uuid = "a"; expected_title = title; title; caret = logseq_chat_outliner_state_utf16_length title }
 ;;
 
 let completed_title kind title value =
   Option.map
-    (fun editing -> editing.State.title)
-    (State.complete context (editing title) kind value)
+    (fun (editing : State.editor_draft) -> editing.State.title)
+    (State.logseq_chat_outliner_state_complete context (editing title) kind value)
 ;;
 
 let () =
@@ -832,18 +827,18 @@ let () =
   assert_bool "property completion replaces the current line"
     (completed_title State.Property "before\nsta::" "status" = Some "before\nstatus:: ");
   assert_bool "completion without its marker is ignored"
-    (State.complete context (editing "plain") State.Node "Project" = None);
+    (State.logseq_chat_outliner_state_complete context (editing "plain") State.Node "Project" = None);
   assert_bool "unchanged title does not emit a commit"
-    (State.commit_effect context (Some (editing "Alpha")) = []
-     && State.commit_effect context None = []);
-  let empty_editing : State.editing =
+    (State.logseq_chat_outliner_state_commit_effect context (Some (editing "Alpha")) = []
+     && State.logseq_chat_outliner_state_commit_effect context None = []);
+  let empty_editing : State.editor_draft =
     { uuid = "a"; expected_title = ""; title = ""; caret = 0 }
   in
   assert_bool "insert at empty caret needs no separator"
-    ((State.insert_at_caret empty_editing "#" ~backward_utf16:0).title = "#");
+    ((State.logseq_chat_outliner_state_insert_at_caret empty_editing "#" 0).title = "#");
   let spaced = { empty_editing with title = "A "; expected_title = "A "; caret = 2 } in
   assert_bool "insert after whitespace needs no extra separator"
-    ((State.insert_at_caret spaced "#" ~backward_utf16:0).title = "A #")
+    ((State.logseq_chat_outliner_state_insert_at_caret spaced "#" 0).title = "A #")
 ;;
 
 let () =
@@ -854,26 +849,26 @@ let () =
     ]
   in
   assert_bool "block ordering handles missing order and creation fallback"
-    (List.sort State.compare_blocks unordered |> List.map (fun (block : Model.block) -> block.uuid)
+    (List.sort State.logseq_chat_outliner_state_compare_blocks unordered |> List.map (fun (block : Model.block) -> block.uuid)
      = [ "ordered"; "earlier"; "later" ]);
   let same_created = [ block ~order:None "b" "B"; block ~order:None "a" "A" ] in
   assert_bool "block ordering finally falls back to UUID"
-    (List.sort State.compare_blocks same_created |> List.map (fun (block : Model.block) -> block.uuid)
+    (List.sort State.logseq_chat_outliner_state_compare_blocks same_created |> List.map (fun (block : Model.block) -> block.uuid)
      = [ "a"; "b" ])
 ;;
 
 let () =
   let invalid_bounds_roots = [ block "root" "Root" ] in
   assert_bool "move order allocation reports invalid bounds without throwing"
-    (State.moves_with_orders invalid_bounds_roots ~parent_uuid:"page"
+    (State.logseq_chat_outliner_state_moves_with_orders invalid_bounds_roots "page"
        (Some "a1") (Some "a0")
      = None);
   assert_bool "empty structural selections are no-ops"
-    (State.indent context State.String_set.empty = None
-     && State.outdent context State.String_set.empty = None
-     && State.drop context State.String_set.empty "a" State.After = None);
+    (State.logseq_chat_outliner_state_indent context Lg_runtime.Core_set.String_set.empty = None
+     && State.logseq_chat_outliner_state_outdent context Lg_runtime.Core_set.String_set.empty = None
+     && State.logseq_chat_outliner_state_drop context Lg_runtime.Core_set.String_set.empty "a" State.After = None);
   assert_bool "drop rejects a missing target"
-    (State.drop context (State.String_set.singleton "a") "missing" State.After = None)
+    (State.logseq_chat_outliner_state_drop context (Lg_runtime.Core_set.String_set.singleton "a") "missing" State.After = None)
 ;;
 
 let () =
@@ -884,9 +879,9 @@ let () =
     ]
   in
   let drop_context = State.{ blocks; pages = []; tags = [] } in
-  let selected = State.String_set.singleton "middle" in
-  let before = State.drop drop_context selected "first" State.Before in
-  let after = State.drop drop_context selected "last" State.After in
+  let selected = Lg_runtime.Core_set.String_set.singleton "middle" in
+  let before = State.logseq_chat_outliner_state_drop drop_context selected "first" State.Before in
+  let after = State.logseq_chat_outliner_state_drop drop_context selected "last" State.After in
   assert_bool "drop before first creates an order below the target"
     (match before with
      | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" < 0
@@ -896,66 +891,66 @@ let () =
      | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a2" > 0
      | _ -> false);
   assert_bool "drop onto the selected root is rejected"
-    (State.drop drop_context selected "middle" State.Inside = None)
+    (State.logseq_chat_outliner_state_drop drop_context selected "middle" State.Inside = None)
 ;;
 
 let () =
-  let state, no_tap = State.update context State.empty (Tap_block "missing") in
-  assert_bool "tap missing block is ignored" (state = State.empty && no_tap = []);
-  let unchanged, no_text = State.update context State.empty (Text_changed { title = "x"; caret = 1 }) in
-  assert_bool "text change without editor is ignored" (unchanged = State.empty && no_text = []);
-  let unchanged, no_caret = State.update context State.empty (Caret_moved 1) in
-  assert_bool "caret move without editor is ignored" (unchanged = State.empty && no_caret = []);
-  let unchanged, no_return = State.update context State.empty Return_pressed in
-  assert_bool "return without editor is ignored" (unchanged = State.empty && no_return = []);
+  let state, no_tap = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "missing") in
+  assert_bool "tap missing block is ignored" (state = State.logseq_chat_outliner_state_empty && no_tap = []);
+  let unchanged, no_text = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Text_changed { title = "x"; caret = 1 }) in
+  assert_bool "text change without editor is ignored" (unchanged = State.logseq_chat_outliner_state_empty && no_text = []);
+  let unchanged, no_caret = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Caret_moved 1) in
+  assert_bool "caret move without editor is ignored" (unchanged = State.logseq_chat_outliner_state_empty && no_caret = []);
+  let unchanged, no_return = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty Return_pressed in
+  assert_bool "return without editor is ignored" (unchanged = State.logseq_chat_outliner_state_empty && no_return = []);
   let unchanged, no_backspace =
-    State.update context State.empty (Backspace_pressed { selection_length = 0 })
+    State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Backspace_pressed { selection_length = 0 })
   in
   assert_bool "backspace without editor is ignored"
-    (unchanged = State.empty && no_backspace = []);
+    (unchanged = State.logseq_chat_outliner_state_empty && no_backspace = []);
   let unchanged, selected_backspace =
-    State.update context State.empty (Backspace_pressed { selection_length = 1 })
+    State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Backspace_pressed { selection_length = 1 })
   in
   assert_bool "backspace with native selection stays native"
-    (unchanged = State.empty && selected_backspace = []);
-  let unchanged, no_choice = State.update context State.empty (Choose_autocomplete "value") in
+    (unchanged = State.logseq_chat_outliner_state_empty && selected_backspace = []);
+  let unchanged, no_choice = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Choose_autocomplete "value") in
   assert_bool "autocomplete choice without editor is ignored"
-    (unchanged = State.empty && no_choice = []);
-  let unchanged, no_confirm = State.update context State.empty Confirm_delete in
+    (unchanged = State.logseq_chat_outliner_state_empty && no_choice = []);
+  let unchanged, no_confirm = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty Confirm_delete in
   assert_bool "delete confirmation without selection is ignored"
-    (unchanged = State.empty && no_confirm = [])
+    (unchanged = State.logseq_chat_outliner_state_empty && no_confirm = [])
 ;;
 
 let () =
   let idle_actions = [ State.Task; Tag_action; Page_reference; Camera; Attachment ] in
   List.iter
     (fun action ->
-      let state, effects = State.update context State.empty (Toolbar action) in
+      let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Toolbar action) in
       assert_bool "editor-only toolbar action is idle without an editor"
-        (state = State.empty && effects = []))
+        (state = State.logseq_chat_outliner_state_empty && effects = []))
     idle_actions;
-  let state, effects = State.update context State.empty (Toolbar State.Indent) in
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Toolbar State.Indent) in
   assert_bool "invalid idle indent still provides feedback"
-    (state = State.empty && effects = [ State.Haptic State.Impact ]);
-  let state, effects = State.update context State.empty (Toolbar State.Outdent) in
+    (state = State.logseq_chat_outliner_state_empty && effects = [ State.Haptic State.Impact ]);
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Toolbar State.Outdent) in
   assert_bool "invalid idle outdent still provides feedback"
-    (state = State.empty && effects = [ State.Haptic State.Impact ]);
-  let state, effects = State.update context State.empty Cancel_editing in
-  assert_bool "cancel without editor is a no-op" (state = State.empty && effects = [])
+    (state = State.logseq_chat_outliner_state_empty && effects = [ State.Haptic State.Impact ]);
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty Cancel_editing in
+  assert_bool "cancel without editor is a no-op" (state = State.logseq_chat_outliner_state_empty && effects = [])
 ;;
 
 let () =
-  let unchanged, effects = State.update context State.empty (Zoom_in "missing") in
-  assert_bool "zoom into missing block is ignored" (unchanged = State.empty && effects = []);
-  let state, _ = State.update context State.empty (Zoom_in "a") in
-  let same, effects = State.update context state (Zoom_in "a") in
+  let unchanged, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Zoom_in "missing") in
+  assert_bool "zoom into missing block is ignored" (unchanged = State.logseq_chat_outliner_state_empty && effects = []);
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Zoom_in "a") in
+  let same, effects = State.logseq_chat_outliner_state_update context state (Zoom_in "a") in
   assert_bool "zoom into current block does not duplicate the path"
-    (State.zoom_path same = [ "a" ] && effects = [ State.Haptic State.Selection ]);
-  let state, effects = State.update context State.empty Zoom_out in
+    (State.logseq_chat_outliner_state_zoom_path same = [ "a" ] && effects = [ State.Haptic State.Selection ]);
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty Zoom_out in
   assert_bool "zoom out at journal root stays at root"
-    (State.zoom_path state = [] && effects = [ State.Haptic State.Selection ]);
+    (State.logseq_chat_outliner_state_zoom_path state = [] && effects = [ State.Haptic State.Selection ]);
   let unchanged, effects =
-    State.update context State.empty
+    State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty
       (Operation_staged
          (Logseq_chat_lg_core_native.Merge_backward
             { uuid = "a"; expected_title = "Alpha"; title = "Alpha"
@@ -963,36 +958,36 @@ let () =
             ; merged_title = None }))
   in
   assert_bool "staged merge with missing survivor is ignored"
-    (unchanged = State.empty && effects = []);
+    (unchanged = State.logseq_chat_outliner_state_empty && effects = []);
   let state, effects =
-    State.update context State.empty
+    State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty
       (Operation_staged
          (Logseq_chat_lg_core_native.Split_block
             { uuid = "a"; expected_title = "Alpha"; before = "A"; after = "lpha"
             ; new_uuid = "new"; new_order = "a1"; created_at = 1 }))
   in
   assert_bool "staged split focuses its optimistic block title"
-    (State.editing_uuid state = Some "new"
-     && State.editing_title state = Some "lpha"
+    (State.logseq_chat_outliner_state_editing_uuid state = Some "new"
+     && State.logseq_chat_outliner_state_editing_title state = Some "lpha"
      && effects = [])
 ;;
 
 let () =
-  let state, effects = State.update context State.empty (Add_root_block "page-1") in
+  let state, effects = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Add_root_block "page-1") in
   assert_bool "add root block stages a focused insert"
-    (state = State.empty
+    (state = State.logseq_chat_outliner_state_empty
      && effects
         = [ State.Insert_root_block { page_uuid = "page-1" }; State.Haptic State.Impact ]);
   let state, effects =
-    State.update context State.empty
+    State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty
       (Operation_staged
          (Logseq_chat_lg_core_native.Insert_block
             { uuid = "new-root"; title = ""; page_uuid = "page-1"
             ; parent_uuid = "page-1"; order = "a0"; created_at = 1 }))
   in
   assert_bool "staged insert opens the editor on the new block"
-    (State.editing_uuid state = Some "new-root"
-     && State.editing_title state = Some ""
+    (State.logseq_chat_outliner_state_editing_uuid state = Some "new-root"
+     && State.logseq_chat_outliner_state_editing_title state = Some ""
      && effects = [])
 ;;
 
@@ -1000,22 +995,22 @@ let () =
   assert_autocomplete "slash command after newline is inactive" None "text\n/query";
   assert_autocomplete "property query starts at the current line"
     (Some State.{ kind = Property; query = "status" }) "before\nstatus::";
-  let malformed_state : State.t =
-    { State.empty with
+  let malformed_state : State.outliner_state =
+    { State.logseq_chat_outliner_state_empty with
       editing = Some (editing "plain")
     ; autocomplete = Some { kind = Node; query = "" }
     }
   in
-  let unchanged, effects = State.update context malformed_state (Choose_autocomplete "Project") in
+  let unchanged, effects = State.logseq_chat_outliner_state_update context malformed_state (Choose_autocomplete "Project") in
   assert_bool "autocomplete completion with a stale marker is ignored"
     (unchanged = malformed_state && effects = [])
 ;;
 
 let () =
   let stale_editing = State.{ uuid = "missing"; expected_title = ""; title = ""; caret = 0 } in
-  let stale_state = State.{ empty with editing = Some stale_editing } in
+  let stale_state = State.{ logseq_chat_outliner_state_empty with editing = Some stale_editing } in
   let unchanged, effects =
-    State.update context stale_state (Backspace_pressed { selection_length = 0 })
+    State.logseq_chat_outliner_state_update context stale_state (Backspace_pressed { selection_length = 0 })
   in
   assert_bool "backspace on an editor absent from the outline is ignored"
     (unchanged = stale_state && effects = [])
@@ -1025,14 +1020,14 @@ let () =
   let ordered = block ~order:(Some "a0") "ordered" "Ordered" in
   let unordered = block ~order:None "unordered" "Unordered" in
   assert_bool "ordered blocks sort before unordered blocks in either comparator direction"
-    (State.compare_blocks ordered unordered < 0
-     && State.compare_blocks unordered ordered > 0);
+    (State.logseq_chat_outliner_state_compare_blocks ordered unordered < 0
+     && State.logseq_chat_outliner_state_compare_blocks unordered ordered > 0);
   assert_bool "index lookup covers an empty sibling list"
-    (State.index_of_uuid "missing" [] = None);
+    (State.logseq_chat_outliner_state_index_of_uuid "missing" [] = None);
   assert_bool "empty roots are not contiguous"
-    (not (State.selection_is_contiguous [] [ ordered ]));
+    (not (State.logseq_chat_outliner_state_selection_is_contiguous Seq.empty (List.to_seq [ ordered ])));
   assert_bool "unselected siblings are excluded from contiguity indices"
-    (State.selection_is_contiguous [ ordered ] [ unordered; ordered ])
+    (State.logseq_chat_outliner_state_selection_is_contiguous (List.to_seq [ ordered ]) (List.to_seq [ unordered; ordered ]))
 ;;
 
 let () =
@@ -1046,17 +1041,17 @@ let () =
   in
   let structural = State.{ blocks; pages = []; tags = [] } in
   assert_bool "indent rejects the first sibling"
-    (State.indent structural (State.String_set.singleton "first") = None);
+    (State.logseq_chat_outliner_state_indent structural (Lg_runtime.Core_set.String_set.singleton "first") = None);
   let noncontiguous =
-    State.String_set.(empty |> add "second" |> add "fourth")
+    Lg_runtime.Core_set.String_set.(empty |> add "second" |> add "fourth")
   in
   assert_bool "indent rejects noncontiguous roots"
-    (State.indent structural noncontiguous = None);
+    (State.logseq_chat_outliner_state_indent structural noncontiguous = None);
   let different_parents =
-    State.String_set.(empty |> add "second" |> add "other-child")
+    Lg_runtime.Core_set.String_set.(empty |> add "second" |> add "other-child")
   in
   assert_bool "indent rejects roots from different parents"
-    (State.indent structural different_parents = None);
+    (State.logseq_chat_outliner_state_indent structural different_parents = None);
   let with_existing_child =
     State.
       { blocks =
@@ -1068,15 +1063,15 @@ let () =
       }
   in
   assert_bool "indent appends after existing children"
-    (match State.indent with_existing_child (State.String_set.singleton "second") with
+    (match State.logseq_chat_outliner_state_indent with_existing_child (Lg_runtime.Core_set.String_set.singleton "second") with
      | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
      | _ -> false)
 ;;
 
 let () =
-  let top_level = State.String_set.singleton "a" in
+  let top_level = Lg_runtime.Core_set.String_set.singleton "a" in
   assert_bool "outdent rejects a block whose parent is not a block"
-    (State.outdent context top_level = None);
+    (State.logseq_chat_outliner_state_outdent context top_level = None);
   let blocks =
     [ block "parent" "Parent"
     ; block ~parent_id:(Some "parent") "first" "First"
@@ -1087,9 +1082,9 @@ let () =
   in
   let structural = State.{ blocks; pages = []; tags = [] } in
   assert_bool "outdent rejects noncontiguous children"
-    (State.outdent structural State.String_set.(empty |> add "first" |> add "third") = None);
+    (State.logseq_chat_outliner_state_outdent structural Lg_runtime.Core_set.String_set.(empty |> add "first" |> add "third") = None);
   assert_bool "outdent rejects roots from different parents"
-    (State.outdent structural State.String_set.(empty |> add "first" |> add "other-child") = None);
+    (State.logseq_chat_outliner_state_outdent structural Lg_runtime.Core_set.String_set.(empty |> add "first" |> add "other-child") = None);
   let parent_without_outer_membership =
     State.
       { blocks =
@@ -1100,7 +1095,7 @@ let () =
       }
   in
   assert_bool "outdent rejects a parent missing from its outer sibling list"
-    (State.outdent parent_without_outer_membership (State.String_set.singleton "child") = None);
+    (State.logseq_chat_outliner_state_outdent parent_without_outer_membership (Lg_runtime.Core_set.String_set.singleton "child") = None);
   let no_next_outer =
     State.
       { blocks =
@@ -1111,7 +1106,7 @@ let () =
       }
   in
   assert_bool "outdent after the final outer sibling allocates an unbounded order"
-    (match State.outdent no_next_outer (State.String_set.singleton "child") with
+    (match State.logseq_chat_outliner_state_outdent no_next_outer (Lg_runtime.Core_set.String_set.singleton "child") with
      | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
      | _ -> false)
 ;;
@@ -1121,9 +1116,9 @@ let () =
   let cyclic_b = block ~parent_id:(Some "cyclic-a") "cyclic-b" "B" in
   let cyclic = State.{ blocks = [ cyclic_a; cyclic_b ]; pages = []; tags = [] } in
   assert_bool "ancestor traversal terminates on malformed cycles"
-    (State.String_set.cardinal (State.ancestor_uuids cyclic cyclic_a) = 2);
+    (Lg_runtime.Core_set.String_set.cardinal (State.logseq_chat_outliner_state_ancestor_uuids cyclic cyclic_a) = 2);
   let roots =
-    State.selected_roots cyclic State.String_set.(empty |> add "cyclic-a" |> add "cyclic-b")
+    State.logseq_chat_outliner_state_selected_roots cyclic Lg_runtime.Core_set.String_set.(empty |> add "cyclic-a" |> add "cyclic-b")
   in
   assert_bool "selected-root traversal terminates on malformed cycles" (roots = [])
 ;;
@@ -1138,39 +1133,39 @@ let () =
     ]
   in
   let drop_context = State.{ blocks; pages = []; tags = [] } in
-  let selected = State.String_set.singleton "middle" in
+  let selected = Lg_runtime.Core_set.String_set.singleton "middle" in
   assert_bool "drop inside appends after existing children"
-    (match State.drop drop_context selected "last" State.Inside with
+    (match State.logseq_chat_outliner_state_drop drop_context selected "last" State.Inside with
      | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
      | _ -> false);
   assert_bool "drop before a non-first target uses the previous order"
-    (match State.drop drop_context selected "last" State.Before with
+    (match State.logseq_chat_outliner_state_drop drop_context selected "last" State.Before with
      | Some [ move ] ->
        String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
        && String.compare move.order "a2" < 0
      | _ -> false);
   assert_bool "drop after a non-final target uses the next order"
-    (match State.drop drop_context selected "first" State.After with
+    (match State.logseq_chat_outliner_state_drop drop_context selected "first" State.After with
      | Some [ move ] ->
        String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
        && String.compare move.order "a2" < 0
      | _ -> false);
   assert_bool "drop target absent from normalized siblings is rejected by order allocation"
-    (State.drop drop_context selected "detached" State.Before = None)
+    (State.logseq_chat_outliner_state_drop drop_context selected "detached" State.Before = None)
 ;;
 
 let () =
-  let state, _ = State.update context State.empty (Tap_block "a") in
-  let state, _ = State.update context state (Caret_moved 0) in
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
+  let state, _ = State.logseq_chat_outliner_state_update context state (Caret_moved 0) in
   let unchanged, effects =
-    State.update context state (Backspace_pressed { selection_length = 0 })
+    State.logseq_chat_outliner_state_update context state (Backspace_pressed { selection_length = 0 })
   in
   assert_bool "backspace deletes the first visible block and focuses its successor"
-    (State.editing_uuid unchanged = Some "b" && effects = [ State.Delete_blocks [ "a" ] ]);
-  let collapsed, _ = State.update context State.empty (Toggle_collapsed "a") in
-  let expanded, effects = State.update context collapsed (Toggle_collapsed "a") in
+    (State.logseq_chat_outliner_state_editing_uuid unchanged = Some "b" && effects = [ State.Remove_blocks [ "a" ] ]);
+  let collapsed, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Toggle_collapsed "a") in
+  let expanded, effects = State.logseq_chat_outliner_state_update context collapsed (Toggle_collapsed "a") in
   assert_bool "second collapse toggle expands the block"
-    (expanded.collapsed = State.String_set.empty && effects = [ State.Haptic State.Impact ])
+    (expanded.collapsed = Lg_runtime.Core_set.String_set.empty && effects = [ State.Haptic State.Impact ])
 ;;
 
 let () =
@@ -1179,11 +1174,11 @@ let () =
   let cycle_b = block ~parent_id:(Some "cycle-a") "cycle-b" "B" in
   let cycle_context = State.{ blocks = [ selected; cycle_a; cycle_b ]; pages = []; tags = [] } in
   assert_bool "selected-root ancestor scan stops when unselected ancestors cycle"
-    (State.selected_roots cycle_context (State.String_set.singleton "selected") = [ selected ]);
-  let state, _ = State.update context State.empty (Tap_block "a") in
+    (State.logseq_chat_outliner_state_selected_roots cycle_context (Lg_runtime.Core_set.String_set.singleton "selected") = [ selected ]);
+  let state, _ = State.logseq_chat_outliner_state_update context State.logseq_chat_outliner_state_empty (Tap_block "a") in
   let without_editing_block = State.{ blocks = [ block "other" "Other" ]; pages = []; tags = [] } in
   let unchanged, effects =
-    State.update without_editing_block state (Backspace_pressed { selection_length = 0 })
+    State.logseq_chat_outliner_state_update without_editing_block state (Backspace_pressed { selection_length = 0 })
   in
   assert_bool "backspace ignores an editor whose block disappeared during rebase"
     (unchanged = state && effects = [])
@@ -1197,15 +1192,15 @@ let () =
   in
   let ctx = State.{ context with pages = [ { label = "Project"; value = "page-id" } ] } in
   let start title caret =
-    let state, _ = State.update ctx State.empty (Tap_block "a") in
-    fst (State.update ctx state (Text_changed { title; caret }))
+    let state, _ = State.logseq_chat_outliner_state_update ctx State.logseq_chat_outliner_state_empty (Tap_block "a") in
+    fst (State.logseq_chat_outliner_state_update ctx state (Text_changed { title; caret }))
   in
   List.iter (fun (title, caret, value, expected) ->
-    let state, effects = State.update ctx (start title caret) (Choose_autocomplete value) in
+    let state, effects = State.logseq_chat_outliner_state_update ctx (start title caret) (Choose_autocomplete value) in
     check ("balanced completion: " ^ title)
-      (State.editing_title state = Some expected
+      (State.logseq_chat_outliner_state_editing_title state = Some expected
        && effects = (if value = "Novel"
-                     then [ State.Create_page "Novel"; State.Haptic Selection ]
+                     then [ State.Create_linked_page "Novel"; State.Haptic Selection ]
                      else [ State.Haptic Selection ])))
     [ "[[Pro]]", 5, "page-id", "[[Project]]"
     ; "[[]]", 2, "Novel", "[[Novel]]"
@@ -1217,18 +1212,18 @@ let () =
     ; "[[Project]]", 5, "page-id", "[[Project]]"
     ];
   check "unmatched page offers creation"
-    (State.autocomplete_candidates ctx State.{ kind = Node; query = "Novel" }
+    (State.logseq_chat_outliner_state_autocomplete_candidates ctx State.{ kind = Node; query = "Novel" }
      = [ State.{ label = "New page: Novel"; value = "Novel" } ]);
   check "empty page query never offers creation"
-    (State.autocomplete_candidates State.{ blocks = []; pages = []; tags = [] }
+    (State.logseq_chat_outliner_state_autocomplete_candidates State.{ blocks = []; pages = []; tags = [] }
        State.{ kind = Node; query = "" } = []);
   List.iter (fun initially_collapsed ->
     let state = start "Edited [[Pro" 12 in
     let state = if initially_collapsed
-      then { state with collapsed = State.String_set.singleton "b" } else state in
-    let state, effects = State.update ctx state (Toggle_collapsed "b") in
+      then { state with collapsed = Lg_runtime.Core_set.String_set.singleton "b" } else state in
+    let state, effects = State.logseq_chat_outliner_state_update ctx state (Toggle_collapsed "b") in
     check (if initially_collapsed then "expand exits editing" else "collapse exits editing")
-      (State.editing_uuid state = None && State.autocomplete state = None
+      (State.logseq_chat_outliner_state_editing_uuid state = None && State.logseq_chat_outliner_state_autocomplete state = None
        && List.exists (function State.Commit_title _ -> true | _ -> false) effects))
     [false; true];
   if !failures <> [] then failwith (String.concat "; " (List.rev !failures))
@@ -1237,7 +1232,7 @@ let () =
 let () =
   let tags = State.[{label = "Project"; value = "project"}; {label = "Personal"; value = "personal"}] in
   let context = State.{blocks = []; pages = []; tags} in
-  let matches = State.autocomplete_candidates context State.{kind = Tag; query = "prj"} in
+  let matches = State.logseq_chat_outliner_state_autocomplete_candidates context State.{kind = Tag; query = "prj"} in
   assert_bool "tag completion shares Logseq fuzzy matching"
-    (List.exists (fun (candidate : State.autocomplete_candidate) -> candidate.value = "project") matches)
+    (List.exists (fun (candidate : State.outliner_candidate) -> candidate.value = "project") matches)
 ;;

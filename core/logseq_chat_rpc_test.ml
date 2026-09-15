@@ -48,8 +48,8 @@ let assert_equal label expected actual =
 ;;
 
 let () =
-  let open Logseq_chat_outliner_state in
-  let cases =
+  let open Logseq_chat_lg_core_native in
+  let cases : (string * outliner_toolbar) list =
     [ "task", Task
     ; "outdent", Outdent
     ; "indent", Indent

@@ -580,7 +580,7 @@ let () =
       assert_bool
         "search sees the incrementally indexed optimistic title"
         (Runtime.search runtime "Pending"
-         |> List.exists (fun hit -> String.equal hit.Logseq_chat_lg_core_native.uuid "block"));
+         |> List.exists (fun (hit : Search.indexed_search_hit) -> String.equal hit.Logseq_chat_lg_core_native.uuid "block"));
       let split =
         Ops.
           { operation_id = "incremental-search-split"
@@ -603,7 +603,7 @@ let () =
       assert_bool "a split keeps the incremental index ready" runtime.search_index_is_fresh;
       assert_bool "the split block is searchable without a full refresh"
         (Runtime.search runtime "Tail"
-         |> List.exists (fun hit ->
+         |> List.exists (fun (hit : Search.indexed_search_hit) ->
              String.equal hit.Logseq_chat_lg_core_native.uuid "incremental-search-new")))
 ;;
 
@@ -643,7 +643,7 @@ let () =
       assert_bool
         "remote changes update only their affected FTS rows"
         (Runtime.search runtime "Remote"
-         |> List.exists (fun hit -> String.equal hit.Search.uuid "block"));
+         |> List.exists (fun (hit : Search.indexed_search_hit) -> String.equal hit.Search.uuid "block"));
       assert_bool
         "remote incremental refresh does not scan and reconcile the whole index"
         ((Rrbvec.to_list
@@ -695,9 +695,9 @@ let () =
         runtime.search_index_is_fresh;
       let renamed_hits = Runtime.search runtime "Renamed" in
       assert_bool "the renamed page is incrementally searchable"
-        (List.exists (fun hit -> String.equal hit.Logseq_chat_lg_core_native.uuid "target") renamed_hits);
+        (List.exists (fun (hit : Search.indexed_search_hit) -> String.equal hit.Logseq_chat_lg_core_native.uuid "target") renamed_hits);
       assert_bool "blocks referring to the renamed page are reindexed incrementally"
-        (List.exists (fun hit -> String.equal hit.Logseq_chat_lg_core_native.uuid "block") renamed_hits))
+        (List.exists (fun (hit : Search.indexed_search_hit) -> String.equal hit.Logseq_chat_lg_core_native.uuid "block") renamed_hits))
 ;;
 
 let () =
@@ -955,7 +955,7 @@ let () =
     done;
     let elapsed = Unix.gettimeofday () -. started_at in
     assert_bool
-      "staging a burst of offline edits stays bounded"
+      (Printf.sprintf "staging a burst of offline edits stays bounded (%.3fs)" elapsed)
       (elapsed < 0.5 && String.equal (title (Runtime.db runtime)) "Offline 500"))
 ;;
 

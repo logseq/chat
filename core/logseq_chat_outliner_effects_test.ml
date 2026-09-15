@@ -1,5 +1,5 @@
-module State = Logseq_chat_outliner_state
-module Effects = Logseq_chat_outliner_effects
+module State = Logseq_chat_lg_core_native
+module Effects = Logseq_chat_lg_core_native
 module Model = Logseq_chat_lg_core_native
 module Ops = Logseq_chat_lg_core_native
 
@@ -35,10 +35,10 @@ let fresh_uuid () =
 
 let () =
   let result =
-    Effects.interpret
-      ~base_t:42
-      ~now:(fun () -> 100)
-      ~fresh_uuid
+    Effects.logseq_chat_outliner_effects_interpret
+      42
+      (fun () -> 100)
+      fresh_uuid
       context
       [ State.Split_at
           { uuid = "second"; expected_title = "Second"; before = "Sec"; after = "ond" }
@@ -77,10 +77,10 @@ let () =
     | [] -> fail "duplicate-order fresh UUID exhausted"
   in
   let result =
-    Effects.interpret
-      ~base_t:42
-      ~now:(fun () -> 100)
-      ~fresh_uuid:duplicate_fresh_uuid
+    Effects.logseq_chat_outliner_effects_interpret
+      42
+      (fun () -> 100)
+      duplicate_fresh_uuid
       duplicate_order_context
       [ State.Split_at
           { uuid = "second"; expected_title = "Second"; before = "Second"; after = "" }
@@ -99,10 +99,10 @@ let () =
 
 let () =
   let result =
-    Effects.interpret
-      ~base_t:43
-      ~now:(fun () -> 100)
-      ~fresh_uuid
+    Effects.logseq_chat_outliner_effects_interpret
+      43
+      (fun () -> 100)
+      fresh_uuid
       context
       [ State.Set_task_status_value { uuid = "first"; status = Ops.Ref_uuid "waiting" }
       ; State.Haptic State.Impact
@@ -119,18 +119,18 @@ let () =
            ; _ } ] -> true
        | _ -> false);
     assert_bool "explicit status preserves its haptic platform effect"
-      (result.platform = [ Effects.Haptic State.Impact ])
+      (result.platform = [ Effects.Platform_haptic State.Impact ])
 ;;
 
 let () =
   let move : Ops.pending_move = Ops.{ uuid = "second"; page_uuid = "page"; parent_uuid = "first"; order = "a0" } in
   let result =
-    Effects.interpret
-      ~base_t:42
-      ~now:(fun () -> 100)
-      ~fresh_uuid
+    Effects.logseq_chat_outliner_effects_interpret
+      42
+      (fun () -> 100)
+      fresh_uuid
       context
-      [ State.Move_blocks [ move ]; State.Haptic State.Impact ]
+      [ State.Reparent_blocks [ move ]; State.Haptic State.Impact ]
   in
   match result with
   | Error message -> fail ("move interpreter failed: " ^ message)
@@ -140,15 +140,15 @@ let () =
        | [ { Ops.intent = Move_blocks { moves }; _ } ] -> Rrbvec.to_list moves = [move]
        | _ -> false);
     assert_bool "haptic stays a platform command"
-      (result.platform = [ Effects.Haptic State.Impact ])
+      (result.platform = [ Effects.Platform_haptic State.Impact ])
 ;;
 
 let () =
   let result =
-    Effects.interpret
-      ~base_t:42
-      ~now:(fun () -> 100)
-      ~fresh_uuid
+    Effects.logseq_chat_outliner_effects_interpret
+      42
+      (fun () -> 100)
+      fresh_uuid
       context
       [ State.Cycle_task_status "first" ]
   in
@@ -171,20 +171,20 @@ let () =
 ;;
 
 let interpret_platform command =
-  Effects.interpret
-    ~base_t:42
-    ~now:(fun () -> 100)
-    ~fresh_uuid
+  Effects.logseq_chat_outliner_effects_interpret
+    42
+    (fun () -> 100)
+    fresh_uuid
     context
     [ command ]
 ;;
 
 let () =
   let cases =
-    [ State.Haptic State.Selection, Effects.Haptic State.Selection
-    ; State.Pick_attachment "first", Effects.Pick_attachment "first"
-    ; State.Record_audio "first", Effects.Record_audio "first"
-    ; State.Take_photo "first", Effects.Take_photo "first"
+    [ State.Haptic State.Selection, Effects.Platform_haptic State.Selection
+    ; State.Pick_attachment "first", Effects.Platform_pick_attachment "first"
+    ; State.Record_audio "first", Effects.Platform_record_audio "first"
+    ; State.Take_photo "first", Effects.Platform_take_photo "first"
     ; State.Copy_text "First", Effects.Set_clipboard_text "First"
     ; State.Copy_references [ "first" ], Effects.Set_clipboard_references [ "first" ]
     ; State.Copy_urls [ "first" ], Effects.Set_clipboard_urls [ "first" ]
@@ -210,10 +210,10 @@ let fresh_values values =
 ;;
 
 let interpret ?(context = context) ?(ids = [ "operation" ]) commands =
-  Effects.interpret
-    ~base_t:42
-    ~now:(fun () -> 100)
-    ~fresh_uuid:(fresh_values ids)
+  Effects.logseq_chat_outliner_effects_interpret
+    42
+    (fun () -> 100)
+    (fresh_values ids)
     context
     commands
 ;;
@@ -237,7 +237,7 @@ let () =
   assert_bool "siblings sort ordered values before missing values and then by UUID"
     (List.map
        (fun (item : Model.block) -> item.uuid)
-       (Effects.sorted_siblings unordered_context (Some "page"))
+       (Effects.logseq_chat_outliner_effects_sorted_siblings unordered_context (Some "page"))
      = [ "ordered"; "a"; "z" ])
 ;;
 
@@ -247,17 +247,17 @@ let () =
                    { uuid = "missing"; expected_title = ""; before = ""; after = "" }
                ]);
   assert_error "empty move batches are rejected" "move batch must not be empty"
-    (interpret [ State.Move_blocks [] ]);
+    (interpret [ State.Reparent_blocks [] ]);
   assert_error "cycling a missing task is rejected" "task block no longer exists"
     (interpret [ State.Cycle_task_status "missing" ]);
   assert_error "setting a missing task is rejected" "task block no longer exists"
     (interpret
        [ State.Set_task_status_value { uuid = "missing"; status = Ops.Ref_uuid "todo" } ]);
   assert_bool "empty delete is an intentional no-op"
-    (interpret [ State.Delete_blocks [] ]
+    (interpret [ State.Remove_blocks [] ]
      = Ok Effects.{ operations = []; platform = [] });
   assert_bool "nonempty delete is one semantic operation"
-    (match interpret [ State.Delete_blocks [ "first" ] ] with
+    (match interpret [ State.Remove_blocks [ "first" ] ] with
      | Ok { operations = [ { Ops.intent = Delete_blocks { uuids }; _ } ]; _ } ->
        Rrbvec.to_list uuids = ["first"]
      | _ -> false)
@@ -282,7 +282,7 @@ let () =
   assert_bool "merge focuses the surviving previous block"
     (match
        interpret
-         [ State.Merge_backward
+         [ State.Merge_into_previous
              { uuid = "second"
              ; expected_title = "Second"
              ; title = "Second"

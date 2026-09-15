@@ -5,8 +5,8 @@ module Api = Logseq_chat_lg_core_native
 module Http = Logseq_chat_lg_core_native
 module Pending_ops = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
-module Outliner_state = Logseq_chat_outliner_state
-module Outliner_effects = Logseq_chat_outliner_effects
+module Outliner_state = Logseq_chat_lg_core_native
+module Outliner_effects = Logseq_chat_lg_core_native
 module Graph_bootstrap = Logseq_chat_lg_core_native
 
 type pending_transport =
@@ -60,7 +60,7 @@ type node_route =
   ; page : Logseq_chat_lg_core_native.entity_summary
   ; zoom_to_block : bool
   ; related_blocks : Model.block list
-  ; mutable state : Outliner_state.t
+  ; mutable state : Outliner_state.outliner_state
   }
 
 type t =
@@ -70,7 +70,7 @@ type t =
   ; mutable related_blocks : Model.block list
   ; mutable selected_sidebar_page : Logseq_chat_lg_core_native.entity_summary option
   ; mutable node_routes : node_route list
-  ; mutable node_base_state : Outliner_state.t option
+  ; mutable node_base_state : Outliner_state.outliner_state option
   ; open_graph : (string -> (unit, string) result) option
   ; import_snapshot : (string -> (unit, string) result) option
   ; model_for_graph : (graph_id:string -> Model.cachemodel) option
@@ -124,9 +124,9 @@ type t =
   ; pending_operations : (unit -> Pending_ops.pending_operation list) option
   ; mutable semantic_queue : semantic_pending list
   ; mutable semantic_active : semantic_active option
-  ; mutable outliner_state : Outliner_state.t
+  ; mutable outliner_state : Outliner_state.outliner_state
   ; mutable outliner_optimistic_blocks : Model.block list option
-  ; mutable outliner_commands : Outliner_effects.platform_command list
+  ; mutable outliner_commands : Outliner_effects.outliner_platform_command list
   ; mutable outliner_revision : int
   ; save_graph_catalog : (string -> unit) option
   }
@@ -478,7 +478,7 @@ let merge_live_block_metadata
 
 let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
   let base =
-    match session.outliner_optimistic_blocks, Outliner_state.editing_uuid session.outliner_state with
+    match session.outliner_optimistic_blocks, Outliner_state.logseq_chat_outliner_state_editing_uuid session.outliner_state with
     | Some cached, Some _ ->
       let live_by_uuid = Hashtbl.create (List.length live_blocks) in
       List.iter
@@ -851,10 +851,10 @@ let outliner_state_json state =
             ; "title", `String editing.title
             ; "caretUTF16Offset", `Int editing.caret
             ] )
-    ; "selectedBlockIds", `List (List.map (fun uuid -> `String uuid) (Outliner_state.selected_uuids state))
+    ; "selectedBlockIds", `List (List.map (fun uuid -> `String uuid) (Outliner_state.logseq_chat_outliner_state_selected_uuids state))
     ; "collapsedBlockIds",
       `List
-        (Outliner_state.String_set.elements state.collapsed
+        (Outliner_state.logseq_chat_outliner_state_collapsed_uuids state
          |> List.map (fun uuid -> `String uuid))
     ; "zoomedBlockIds", `List (List.map (fun uuid -> `String uuid) state.zoomed)
     ; ( "autocomplete"
@@ -931,7 +931,7 @@ let outliner_rows_json ?serialize_block session context state =
   let serialize_block =
     Option.value serialize_block ~default:(visible_block_json session.model)
   in
-  let rows = Outliner_state.visible_rows context state in
+  let rows = Outliner_state.logseq_chat_outliner_state_visible_rows context state in
   let targets = youtube_target_urls (List.map (fun row -> row.Outliner_state.block) rows) in
   rows
   |> List.map (fun row ->
@@ -946,7 +946,7 @@ let outliner_candidates_json context state =
   match state.Outliner_state.autocomplete with
   | None -> `List []
   | Some request ->
-    Outliner_state.autocomplete_candidates context request
+    Outliner_state.logseq_chat_outliner_state_autocomplete_candidates context request
     |> List.map (fun candidate ->
       `Assoc
         [ "label", `String candidate.Outliner_state.label
@@ -985,7 +985,7 @@ let node_routes_json session =
 let haptic_json = function Outliner_state.Selection -> "selection" | Impact -> "impact"
 
 let outliner_command_json = function
-  | Outliner_effects.Haptic haptic ->
+  | Outliner_effects.Platform_haptic haptic ->
     `Assoc [ "type", `String "haptic"; "style", `String (haptic_json haptic) ]
   | Focus_block uuid -> `Assoc [ "type", `String "focusBlock"; "uuid", `String uuid ]
   | Confirm_delete uuids ->
@@ -1005,11 +1005,11 @@ let outliner_command_json = function
       [ "type", `String "setClipboardURLs"
       ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
       ]
-  | Pick_attachment uuid ->
+  | Platform_pick_attachment uuid ->
     `Assoc [ "type", `String "pickAttachment"; "uuid", `String uuid ]
-  | Take_photo uuid ->
+  | Platform_take_photo uuid ->
     `Assoc [ "type", `String "takePhoto"; "uuid", `String uuid ]
-  | Record_audio uuid ->
+  | Platform_record_audio uuid ->
     `Assoc [ "type", `String "recordAudio"; "uuid", `String uuid ]
 ;;
 
@@ -1168,7 +1168,7 @@ let snapshot session ~context_blocks blocks =
 
 let outliner_patch_result
       session
-      (context : Outliner_state.context)
+      (context : Outliner_state.outliner_context)
       ~blocks
       ~deleted_block_ids
       ~row_splices
@@ -1192,7 +1192,7 @@ let outliner_patch_result
       ])
 ;;
 
-let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.context) =
+let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.outliner_context) =
   let changed = Hashtbl.create (List.length changed_uuids) in
   List.iter (fun uuid -> Hashtbl.replace changed uuid ()) changed_uuids;
   let blocks =
@@ -1211,9 +1211,9 @@ let outliner_patch ?(changed_uuids = []) session (context : Outliner_state.conte
 let structural_outliner_patch
       ?(anchored = false)
       session
-      ~(before_context : Outliner_state.context)
+      ~(before_context : Outliner_state.outliner_context)
       ~before_state
-      ~(after_context : Outliner_state.context)
+      ~(after_context : Outliner_state.outliner_context)
   =
   let before_blocks = Hashtbl.create (List.length before_context.blocks) in
   let after_blocks = Hashtbl.create (List.length after_context.blocks) in
@@ -1238,10 +1238,10 @@ let structural_outliner_patch
       before_context.blocks
   in
   let before_rows =
-    Outliner_state.visible_rows before_context before_state |> Array.of_list
+    Outliner_state.logseq_chat_outliner_state_visible_rows before_context before_state |> Array.of_list
   in
   let after_rows =
-    Outliner_state.visible_rows after_context session.outliner_state |> Array.of_list
+    Outliner_state.logseq_chat_outliner_state_visible_rows after_context session.outliner_state |> Array.of_list
   in
   let after_youtube_targets =
     Array.to_list after_rows
@@ -1540,7 +1540,7 @@ let create
   ; pending_operations
   ; semantic_queue = []
   ; semantic_active = None
-  ; outliner_state = Outliner_state.empty
+  ; outliner_state = Outliner_state.logseq_chat_outliner_state_empty
   ; outliner_optimistic_blocks = None
   ; outliner_commands = []
   ; outliner_revision = 0
@@ -2432,7 +2432,7 @@ let load_related session request key =
 ;;
 
 let reset_outliner session =
-  session.outliner_state <- Outliner_state.empty;
+  session.outliner_state <- Outliner_state.logseq_chat_outliner_state_empty;
   session.outliner_optimistic_blocks <- None;
   session.outliner_commands <- [];
   session.outliner_revision <- session.outliner_revision + 1
@@ -2454,12 +2454,12 @@ let persist_active_node_state session =
 
 let initial_node_state session route =
   if not route.zoom_to_block
-  then Outliner_state.empty
+  then Outliner_state.logseq_chat_outliner_state_empty
   else
     fst
-      (Outliner_state.update
+      (Outliner_state.logseq_chat_outliner_state_update
          (node_route_context session route)
-         Outliner_state.empty
+         Outliner_state.logseq_chat_outliner_state_empty
          (Outliner_state.Zoom_in route.uuid))
 ;;
 
@@ -2485,7 +2485,7 @@ let pop_node_route session =
      | None, Some state ->
        session.outliner_state <- state;
        session.node_base_state <- None
-     | None, None -> session.outliner_state <- Outliner_state.empty);
+     | None, None -> session.outliner_state <- Outliner_state.logseq_chat_outliner_state_empty);
     session.outliner_commands <- [];
     session.outliner_revision <- session.outliner_revision + 1
 ;;
@@ -2601,7 +2601,7 @@ let outliner_structure_source payload =
 
 let outliner_structure_source_matches state payload =
   match outliner_structure_source payload with
-  | Some uuid -> Option.equal String.equal (Outliner_state.editing_uuid state) (Some uuid)
+  | Some uuid -> Option.equal String.equal (Outliner_state.logseq_chat_outliner_state_editing_uuid state) (Some uuid)
   | None -> true
 ;;
 
@@ -2634,19 +2634,19 @@ let dispatch_outliner_event session payload =
       | None -> outliner_context session, None
     in
     let previous_state = session.outliner_state in
-    let next_state, commands = Outliner_state.update context previous_state message in
+    let next_state, commands = Outliner_state.logseq_chat_outliner_state_update context previous_state message in
     let base_t = projection_server_t session |> Option.value ~default:(-1) in
     (match
        Result.map
-         (fun (interpreted : Outliner_effects.result) ->
+         (fun (interpreted : Outliner_effects.outliner_effects) ->
            { interpreted with
              Outliner_effects.operations =
                List.concat_map (normalize_operation_titles session) interpreted.operations
            })
-         (Outliner_effects.interpret
-            ~base_t
-            ~now:now_ms
-            ~fresh_uuid:fresh_squuid
+         (Outliner_effects.logseq_chat_outliner_effects_interpret
+            base_t
+            now_ms
+            fresh_squuid
             context
             commands)
      with
@@ -2701,7 +2701,7 @@ let dispatch_outliner_event session payload =
             List.fold_left
               (fun state operation ->
                 fst
-                  (Outliner_state.update
+                  (Outliner_state.logseq_chat_outliner_state_update
                      projected_context
                      state
                      (Operation_staged operation.Pending_ops.intent)))
@@ -2981,7 +2981,7 @@ let dispatch session action payload =
           in
           let route =
             { uuid; is_tag; is_property; page; zoom_to_block; related_blocks
-            ; state = Outliner_state.empty
+            ; state = Outliner_state.logseq_chat_outliner_state_empty
             }
           in
           push_node_route session route;

@@ -173,18 +173,18 @@ let () =
          ]
   in
   let due = LG.logseq_chat_flashcards_due_cards db now in
-  let uuids = List.map (fun card -> card.LG.block.Logseq_chat_lg_core_native.uuid) due in
+  let uuids = List.map (fun (card : LG.due_card) -> card.LG.block.Logseq_chat_lg_core_native.uuid) due in
   assert_bool "new cards without FSRS properties are immediately due" (List.mem "new-card" uuids);
   assert_bool "Card subclasses participate in reviews" (List.mem "due-subclass" uuids);
   assert_bool "future cards are excluded" (not (List.mem "future-card" uuids));
   assert_bool "a card includes its child answer blocks"
-    (match List.find_opt (fun card -> String.equal card.LG.block.uuid "new-card") due with
+    (match List.find_opt (fun (card : LG.due_card) -> String.equal card.LG.block.uuid "new-card") due with
      | Some card -> List.map (fun (block : Logseq_chat_lg_core_native.block) -> block.title) card.children = [ "The answer" ]
      | None -> false);
   assert_int "only due cards are returned" 2 (List.length due);
   let ordered_uuids db =
     LG.logseq_chat_flashcards_due_cards db now
-    |> List.map (fun card -> card.LG.block.Logseq_chat_lg_core_native.uuid)
+    |> List.map (fun (card : LG.due_card) -> card.LG.block.Logseq_chat_lg_core_native.uuid)
   in
   let tied =
     db_with
