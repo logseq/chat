@@ -6,6 +6,7 @@
             [logseq-chat.cache-model :as model]
             [logseq-chat.pending-ops :as ops]
             [ocaml.Yojson.Basic :as json]
+            [ocaml.Yojson.Basic.Util :as json-util]
             [logseq-chat.flashcards :as flashcards]))
 
 (defn toolbar-action [wire]
@@ -48,6 +49,30 @@
     (Some (tag Null)) (Ok nil)
     None (Ok nil)
     _ (Error (str "field must be a string: " name))))
+
+(defn status-payload [input]
+  (match (json-util/member "status" input)
+    (tag Assoc entries)
+    (let [fields (into {} (reverse entries))]
+      (let* [uuid (required-string fields "uuid")
+             title (required-string fields "title")
+             ident (optional-string fields "ident")
+             icon-type (optional-string fields "iconType")
+             icon-id (optional-string fields "iconId")
+             icon-color (optional-string fields "iconColor")]
+        (Ok (record model/status (uuid uuid) (title title) (ident ident)
+              (icon-type icon-type) (icon-id icon-id) (icon-color icon-color)))))
+    _ (Error "missing field: status")))
+
+(defn optional-status-payload [input]
+  (match (json-util/member "status" input)
+    (tag Null) (Ok nil)
+    _ (let* [status (status-payload input)] (Ok (Some status)))))
+
+(defn status-semantic-ref [status]
+  (if-some [ident (:ident status)]
+    (if (string/blank? ident) (ops/Ref-uuid (:uuid status)) (ops/Ref-ident ident))
+    (ops/Ref-uuid (:uuid status))))
 
 (defn optional-int [fields name]
   (match (field fields name)

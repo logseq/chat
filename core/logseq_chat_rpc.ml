@@ -231,32 +231,6 @@ let required_moves fields =
   | _ -> Error "field must be a list: moves"
 ;;
 
-let status_payload fields =
-  match assoc "status" fields with
-  | Some (`Assoc status) ->
-    (match required_string "uuid" status, required_string "title" status,
-           optional_string "ident" status, optional_string "iconType" status,
-           optional_string "iconId" status, optional_string "iconColor" status with
-     | Ok uuid, Ok title, Ok ident, Ok icon_type, Ok icon_id, Ok icon_color ->
-       Ok Model.{ uuid; ident; title; icon_type; icon_id; icon_color }
-     | Error message, _, _, _, _, _ | _, Error message, _, _, _, _
-     | _, _, Error message, _, _, _ | _, _, _, Error message, _, _
-     | _, _, _, _, Error message, _ | _, _, _, _, _, Error message -> Error message)
-  | _ -> Error "missing field: status"
-;;
-
-let optional_status_payload fields =
-  match assoc "status" fields with
-  | None | Some `Null -> Ok None
-  | Some _ -> Result.map Option.some (status_payload fields)
-;;
-
-let status_semantic_ref (status : Model.status) =
-  match status.ident with
-  | Some ident when not (String.equal (String.trim ident) "") -> Pending_ops.Ref_ident ident
-  | Some _ | None -> Pending_ops.Ref_uuid status.uuid
-;;
-
 let pending_request_json session =
   match session.semantic_active, session.pending_sync with
   | Some active, _ ->
@@ -2771,7 +2745,7 @@ let dispatch session action payload =
        (match from_string payload with
         | `Assoc fields ->
           (match required_string "text" fields, required_string "uuid" fields,
-                 optional_int "now" fields, status_payload fields with
+                 optional_int "now" fields, LG.logseq_chat_rpc_status_payload (`Assoc fields) with
            | Ok text, Ok uuid, Ok now, Ok status ->
              let text = String.trim text in
              if text = "" then snapshot_visible session
@@ -2983,7 +2957,7 @@ let dispatch session action payload =
                     required_string "operationId" fields,
                     optional_string "expectedStatusUuid" fields,
                     optional_string "expectedStatusIdent" fields,
-                    status_payload fields,
+                    LG.logseq_chat_rpc_status_payload (`Assoc fields),
                     session.config,
                     projection_server_t session with
               | Ok uuid, Ok operation_id, Ok expected_status_uuid, Ok expected_status_ident, Ok status,
@@ -3004,7 +2978,7 @@ let dispatch session action payload =
                           { uuid
                           ; attr = "logseq.property/status"
                           ; expected
-                          ; value = Some (status_semantic_ref status)
+                          ; value = Some (LG.logseq_chat_rpc_status_semantic_ref status)
                           }
                     }
                 in
@@ -3020,7 +2994,7 @@ let dispatch session action payload =
               | _, _, _, _, _, None, _ ->
                 LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before editing")
            | None ->
-             (match required_string "uuid" fields, status_payload fields with
+             (match required_string "uuid" fields, LG.logseq_chat_rpc_status_payload (`Assoc fields) with
               | Ok uuid, Ok status ->
                 (match Model.logseq_chat_cache_model_update_block_status session.model uuid status (now_ms ()) with
                  | Error message -> LG.logseq_chat_rpc_failure "unknown_block" message
@@ -3072,7 +3046,7 @@ let dispatch session action payload =
              (match
                 required_string "uuid" fields,
                 required_string "title" fields,
-                optional_status_payload fields
+                LG.logseq_chat_rpc_optional_status_payload (`Assoc fields)
               with
               | Ok uuid, Ok title, Ok status ->
              let title = String.trim title in

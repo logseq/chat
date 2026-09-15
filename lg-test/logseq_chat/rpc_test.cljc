@@ -14,6 +14,34 @@
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
+(deftest status-payload-preserves-validation-and-optional-fields
+  (run! (fn [[wire message]]
+          (is (= (Error message) (rpc/status-payload (json/from-string wire)))))
+        [(tuple "{}" "missing field: status")
+         (tuple "{\"status\":null}" "missing field: status")
+         (tuple "{\"status\":{}}" "missing field: uuid")
+         (tuple "{\"status\":{\"uuid\":1,\"title\":1}}" "field must be a string: uuid")
+         (tuple "{\"status\":{\"uuid\":\"s\"}}" "missing field: title")
+         (tuple "{\"status\":{\"uuid\":\"s\",\"title\":\"Todo\",\"ident\":1}}" "field must be a string: ident")
+         (tuple "{\"status\":{\"uuid\":\"s\",\"title\":\"Todo\",\"iconColor\":false}}" "field must be a string: iconColor")])
+  (let [wire (json/from-string "{\"status\":{\"uuid\":\"s\",\"title\":\"Todo\",\"ident\":\"todo\",\"iconType\":\"tabler-icon\",\"iconId\":\"circle\",\"iconColor\":\"red\"}}")
+        expected (record model/status (uuid "s") (title "Todo") (ident (Some "todo"))
+                   (icon-type (Some "tabler-icon")) (icon-id (Some "circle")) (icon-color (Some "red")))]
+    (is (= (Ok expected) (rpc/status-payload wire)))
+    (is (= (Ok (Some expected)) (rpc/optional-status-payload wire))))
+  (run! (fn [wire] (is (= (Ok nil) (rpc/optional-status-payload (json/from-string wire)))))
+        ["{}" "{\"status\":null}"])
+  (is (= (Error "missing field: uuid") (rpc/optional-status-payload (json/from-string "{\"status\":{}}")))))
+
+(deftest status-reference-prefers-nonblank-ident-without-trimming-it
+  (let [status (record model/status (uuid "s") (title "Todo") (ident nil)
+                 (icon-type nil) (icon-id nil) (icon-color nil))]
+    (run! (fn [ident]
+            (is (= (ops/Ref-uuid "s") (rpc/status-semantic-ref (assoc status :ident (Some ident))))))
+          ["" " \n\t"])
+    (is (= (ops/Ref-uuid "s") (rpc/status-semantic-ref status)))
+    (is (= (ops/Ref-ident " todo ") (rpc/status-semantic-ref (assoc status :ident (Some " todo ")))))))
+
 (deftest graph-creation-stops-after-initial-upload-failure
   (let [discovered (atom false)
         session (native-rpc/create
