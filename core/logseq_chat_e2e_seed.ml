@@ -57,11 +57,8 @@ let () =
             if Array.length Sys.argv = 3 && String.equal Sys.argv.(2) "--inspect"
             then
               let snapshot =
-                Logseq_chat_pending_projection.build
-                  ~server_t:1
-                  db
-                  (Rrbvec.to_list
-                     (Logseq_chat_lg_core_native.logseq_chat_pending_ops_list path))
+                Logseq_chat_lg_core_native.logseq_chat_pending_projection_build 1 db
+                  (Rrbvec.to_seq, Logseq_chat_lg_core_native.logseq_chat_pending_ops_list path)
               in
               Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards
                 snapshot.db

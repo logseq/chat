@@ -2,7 +2,7 @@ open Datascript
 
 module Bootstrap = Logseq_chat_lg_core_native
 module Ops = Logseq_chat_lg_core_native
-module Projection = Logseq_chat_pending_projection
+module Projection = Logseq_chat_lg_core_native
 module Snapshot = Logseq_chat_lg_core_native
 module Transit = Transit_native.Transit.Json
 
@@ -205,8 +205,9 @@ let () =
       ; intent = Create_tag { uuid = "10000000-0000-0000-0000-000000000001"; title = "Card"; created_at = 1 }
       }
   in
-  let projected = Projection.build ~server_t:0 authoritative [ operation ] in
-  (match List.assoc_opt operation.operation_id projected.statuses with
+  let projected = (Projection.logseq_chat_pending_projection_build 0 authoritative
+                     (Lg_runtime.Runtime_seq.of_list, [operation])) in
+  (match List.assoc_opt operation.operation_id (Rrbvec.to_list projected.statuses) with
    | Some Ops.Applied -> ()
    | Some (Ops.Conflicted message) -> fail "fresh graph tag" message
    | Some Ops.Queued

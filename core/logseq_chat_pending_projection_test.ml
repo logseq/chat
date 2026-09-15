@@ -1,7 +1,7 @@
 open Datascript
 
 module Ops = Logseq_chat_lg_core_native
-module Projection = Logseq_chat_pending_projection
+module Projection = Logseq_chat_lg_core_native
 
 module Ds_value = struct
   let ref_eid = Logseq_chat_lg_graph_support_native.logseq_chat_datascript_value_ref_eid
@@ -139,11 +139,12 @@ let () =
       }
   in
   let projected =
-    match Projection.compile (base_db ()) intent with
+    match (Result.map Rrbvec.to_list
+             (Projection.logseq_chat_pending_projection_compile (base_db ()) intent)) with
     | Ok tx -> db_with tx (base_db ())
     | Error message -> fail "asset projection" message
   in
-  assert_bool "asset projection is satisfied" (Projection.satisfied projected intent);
+  assert_bool "asset projection is satisfied" (Projection.logseq_chat_pending_projection_satisfied projected intent);
   assert_string "asset projection preserves title" "photo.png" (title projected "asset");
   assert_bool "asset projection uses the built-in Asset class"
     (has_ident_tag projected ~source:"asset" ~target:"logseq.class/Asset");
@@ -181,12 +182,13 @@ let () =
       }
   in
   let favorited =
-    match Projection.compile db favorite with
+    match (Result.map Rrbvec.to_list
+             (Projection.logseq_chat_pending_projection_compile db favorite)) with
     | Ok tx -> db_with tx db
     | Error message -> fail "favorite projection" message
   in
   assert_bool "favorite operation is satisfied after projection"
-    (Projection.satisfied favorited favorite);
+    (Projection.logseq_chat_pending_projection_satisfied favorited favorite);
   assert_bool "favorite projection appears in sidebar"
     (match (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (favorited))).favorites)) with
      | [ page ] -> String.equal page.uuid "project"
@@ -201,12 +203,13 @@ let () =
       }
   in
   let unfavorited =
-    match Projection.compile favorited unfavorite with
+    match (Result.map Rrbvec.to_list
+             (Projection.logseq_chat_pending_projection_compile favorited unfavorite)) with
     | Ok tx -> db_with tx favorited
     | Error message -> fail "unfavorite projection" message
   in
   assert_bool "unfavorite operation is satisfied after projection"
-    (Projection.satisfied unfavorited unfavorite);
+    (Projection.logseq_chat_pending_projection_satisfied unfavorited unfavorite);
   assert_bool "unfavorite projection leaves sidebar"
     ((Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (unfavorited))).favorites)) = [])
 ;;
@@ -232,12 +235,13 @@ let () =
       }
   in
   let recycled =
-    match Projection.compile db intent with
+    match (Result.map Rrbvec.to_list
+             (Projection.logseq_chat_pending_projection_compile db intent)) with
     | Ok tx -> db_with tx db
     | Error message -> fail "page recycle projection" message
   in
   assert_bool "page recycle is satisfied after projection"
-    (Projection.satisfied recycled intent);
+    (Projection.logseq_chat_pending_projection_satisfied recycled intent);
   assert_bool "recycled page is hidden from recent pages"
     (not
        (List.exists
@@ -288,7 +292,8 @@ let () =
          ; title = "New #[[project]]"
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ op ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [op])) in
   assert_bool "inline tag edit projects the canonical block/tags relation"
     (has_tag snapshot.db ~source:"block" ~target:"project");
   assert_bool "inline tag edit preserves independently assigned non-inline tags"
@@ -310,7 +315,8 @@ let () =
          ; title = "Plain"
          })
   in
-  let removed = Projection.build ~server_t:42 with_inline [ remove ] in
+  let removed = (Projection.logseq_chat_pending_projection_build 42 with_inline
+                   (Lg_runtime.Runtime_seq.of_list, [remove])) in
   assert_bool "removing inline syntax retracts only its derived tag relation"
     (not (has_tag removed.db ~source:"block" ~target:"project")
      && has_tag removed.db ~source:"block" ~target:"non-inline-tag")
@@ -330,7 +336,8 @@ let () =
       42
       (Save_title { uuid = "block"; expected_title = "Old"; title = "New #[[new-tag]]" })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ create; save ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [create; save])) in
   assert_string "created tag title" "Foobar" (title snapshot.db "new-tag");
   assert_bool "created tag is an instance of logseq.class/Tag"
     (match entid snapshot.db "block/uuid" (Uuid "new-tag"),
@@ -365,23 +372,24 @@ let () =
   assert_bool "block links the freshly created tag"
     (has_tag snapshot.db ~source:"block" ~target:"new-tag");
   assert_bool "creating an already existing tag is a no-op"
-    (Projection.compile snapshot.db
-       (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+    ((Result.map Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_compile snapshot.db
+           (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })))
      = Ok []);
   assert_bool "tag creation requires the graph Tag class"
     (match
-       Projection.compile
-         (empty_db ~schema ())
-         (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+       (Result.map Rrbvec.to_list
+          (Projection.logseq_chat_pending_projection_compile (empty_db ~schema ())
+             (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })))
      with
      | Error _ -> true
      | Ok _ -> false);
   assert_bool "tag creation is satisfied once the tag exists"
-    (Projection.satisfied snapshot.db
-       (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })
+    ((Projection.logseq_chat_pending_projection_satisfied snapshot.db
+        (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 }))
      && not
-          (Projection.satisfied authoritative
-             (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })))
+       (Projection.logseq_chat_pending_projection_satisfied authoritative
+          (Ops.Create_tag { uuid = "new-tag"; title = "Foobar"; created_at = 99 })))
 ;;
 
 let () =
@@ -416,11 +424,12 @@ let () =
     (Option.is_some (entid page_only "block/journal-day" (Int journal_day)));
   assert_bool "partial journal fixture does not contain the first block"
     (Option.is_none (entid page_only "block/uuid" (Uuid "today-block")));
-  let projected = Projection.build ~server_t:1 page_only [ operation "op-journal" 0 intent ] in
+  let projected = (Projection.logseq_chat_pending_projection_build 1 page_only
+                     (Lg_runtime.Runtime_seq.of_list, [operation "op-journal" 0 intent])) in
   assert_bool "partially applied journal creation still projects its first block"
     (Option.is_some (entid projected.db "block/uuid" (Uuid "today-block")));
   assert_bool "journal creation is not satisfied until its first block exists"
-    (not (Projection.satisfied page_only intent))
+    (not (Projection.logseq_chat_pending_projection_satisfied page_only intent))
 ;;
 
 let () =
@@ -438,7 +447,8 @@ let () =
       ; created_at = 99
       }
   in
-  let projected = Projection.build ~server_t:1 authoritative [ operation "op-journal" 0 intent ] in
+  let projected = (Projection.logseq_chat_pending_projection_build 1 authoritative
+                     (Lg_runtime.Runtime_seq.of_list, [operation "op-journal" 0 intent])) in
   assert_bool "journal creation tags the page with the canonical Logseq Journal class"
     (has_ident_tag projected.db ~source:"today-page" ~target:"logseq.class/Journal")
 ;;
@@ -447,23 +457,29 @@ let () =
   let authoritative = base_db () in
   let op = operation "op-title" 42
       (Save_title { uuid = "block"; expected_title = "Old"; title = "New [[Project]]" }) in
-  let snapshot = Projection.build ~server_t:42 authoritative [ op ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [op])) in
   assert_string "projected title" "New [[Project]]" (title snapshot.db "block");
   assert_bool "projected linked ref" (has_ref snapshot.db ~source:"block" ~target:"project");
   assert_bool "stale linked ref removed" (not (has_ref snapshot.db ~source:"block" ~target:"old-ref"));
   assert_string "authoritative title stays immutable" "Old" (title authoritative "block");
   assert_bool "authoritative refs stay immutable" (has_ref authoritative ~source:"block" ~target:"old-ref");
-  assert_bool "operation applied" (List.assoc_opt "op-title" snapshot.statuses = Some Ops.Applied)
+  assert_bool "operation applied" (List.assoc_opt "op-title" (Rrbvec.to_list snapshot.statuses) = Some Ops.Applied)
 ;;
 
 let () =
   let db = base_db () in
   assert_bool "page reference parser ignores empty and unfinished references"
-    (Projection.page_names "[[]] [[Project]] [[" = [ "Project" ]);
+    ((Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_page_names
+           "[[]] [[Project]] [[")) = [ "Project" ]);
   assert_bool "page reference parser handles text without references"
-    (Projection.page_names "plain" = []);
+    ((Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_page_names "plain")) = []);
   assert_bool "inline tag parser ignores empty and unfinished tags"
-    (Projection.inline_tag_names "#[[]] #[[unfinished" = []);
+    ((Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_inline_tag_names
+           "#[[]] #[[unfinished")) = []);
   let db_without_tag_class =
     empty_db ~schema ()
     |> db_with
@@ -472,58 +488,68 @@ let () =
          ]
   in
   assert_bool "inline tags require the graph Tag class"
-    (Projection.tag_eids_for_title db_without_tag_class "#[[project]]" = []);
+    ((Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_tag_eids_for_title
+           db_without_tag_class "#[[project]]")) = []);
   assert_bool "one-value lookup rejects missing entities and cardinality-many attributes"
-    (Projection.one_value db (lookup "missing") "block/title" = None
-     && Projection.one_value db (lookup "block") "block/refs" = None);
+    ((Projection.logseq_chat_pending_projection_one_value db (lookup "missing")
+        "block/title") = None
+     && (Projection.logseq_chat_pending_projection_one_value db (lookup "block")
+           "block/refs") = None);
   assert_bool "UUID lookup rejects entities without UUID values"
-    (Projection.uuid_for_eid db 999 = None);
+    ((Projection.logseq_chat_pending_projection_uuid_for_eid db 999) = None);
   assert_bool "outliner lookup rejects missing and incomplete blocks"
-    (Projection.outliner_block db "missing" = None
-     && Projection.outliner_block db "project" = None);
+    ((Projection.logseq_chat_pending_projection_outliner_block db "missing") = None
+     && (Projection.logseq_chat_pending_projection_outliner_block db "project") = None);
   assert_bool "semantic equality preserves native instant and float representations"
-    (Projection.semantic_value_equal db (Some (Instant 42)) (Some (Instant_value 42))
-     && Projection.semantic_value_equal db (Some (Float 1.0)) (Some (Float_value 1.0))
-     && Projection.semantic_value_equal db (Some (Int 1)) (Some (Float_value 1.0)));
+    ((Projection.logseq_chat_pending_projection_semantic_value_equal db
+        (Some (Instant 42)) (Some (Instant_value 42)))
+     && (Projection.logseq_chat_pending_projection_semantic_value_equal db
+           (Some (Float 1.0)) (Some (Float_value 1.0)))
+     && (Projection.logseq_chat_pending_projection_semantic_value_equal db
+           (Some (Int 1)) (Some (Float_value 1.0))));
   let expected_map = Ops.Map_value
       (Rrbvec.of_list ["nested", Ops.Map_value (Rrbvec.of_list ["value", Ops.Int_value 1])]) in
   assert_bool "semantic map equality traverses vector-backed nested values"
-    (Projection.semantic_value_equal db
-       (Some (Map [Keyword "nested", Map [Keyword "value", Int 1]])) (Some expected_map));
+    (Projection.logseq_chat_pending_projection_semantic_value_equal db
+       (Some (Map [((Keyword "nested"), (Map [((Keyword "value"), (Int 1))]))]))
+       (Some expected_map));
   List.iter (fun actual ->
       assert_bool "semantic maps reject incompatible keys, values and lengths"
-        (not (Projection.semantic_value_equal db (Some actual) (Some expected_map))))
+        (not (Projection.logseq_chat_pending_projection_semantic_value_equal db
+                (Some actual) (Some expected_map))))
     [ Map []
     ; Map [String "nested", Map [Keyword "value", Int 1]]
     ; Map [Keyword "nested", Map [Keyword "value", Int 2]]
     ];
   assert_bool "semantic equality supports primitive values"
-    (Projection.semantic_value_equal db (Some (Int 8)) (Some (Int_value 8))
-     && Projection.semantic_value_equal db (Some (Bool true)) (Some (Bool_value true)));
+    ((Projection.logseq_chat_pending_projection_semantic_value_equal db
+        (Some (Int 8)) (Some (Int_value 8)))
+     && (Projection.logseq_chat_pending_projection_semantic_value_equal db
+           (Some (Bool true)) (Some (Bool_value true))));
   let ident_db = db_with [ Add (Entity_id 50, "db/ident", Keyword "status.todo") ] db in
   assert_bool "semantic equality resolves ident references"
-    (Projection.semantic_value_equal
-       ident_db
-       (Some (Ref 50))
-       (Some (Ref_ident "status.todo"))
-     && Projection.semantic_value_equal
-          ident_db
-          (Some (Int 50))
-          (Some (Ref_ident "status.todo")));
+    ((Projection.logseq_chat_pending_projection_semantic_value_equal ident_db
+        (Some (Ref 50)) (Some (Ref_ident "status.todo")))
+     && (Projection.logseq_chat_pending_projection_semantic_value_equal ident_db
+           (Some (Int 50)) (Some (Ref_ident "status.todo"))));
   assert_bool "title transaction for a missing UUID has no stale refs to retract"
-    (Projection.title_tx db "new-title-target" "New" =
+    ((Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_title_tx db "new-title-target"
+           "New")) =
      [ Add (lookup "new-title-target", "block/title", String "New") ]);
   (match
-     Projection.compile
-       db
-       (Insert_block
-          { uuid = "inline-tagged-insert"
-          ; title = "New #[[project]]"
-          ; page_uuid = "page"
-          ; parent_uuid = "page"
-          ; order = "a1"
-          ; created_at = 1
-          })
+     (Result.map Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_compile db
+           (Insert_block
+              {
+                uuid = "inline-tagged-insert";
+                title = "New #[[project]]";
+                page_uuid = "page";
+                parent_uuid = "page";
+                order = "a1";
+                created_at = 1
+              })))
    with
    | Ok ([ Entity { attrs; _ } ] as tx) ->
      assert_bool "insert transaction contains the derived inline tag"
@@ -534,7 +560,9 @@ let () =
    | Ok _ -> fail "inline tagged insert" "expected one entity transaction"
    | Error message -> fail "inline tagged insert" message);
   assert_bool "outliner delete mutation ignores an already missing entity"
-    (Projection.outliner_mutation_tx db (Projection.Outliner.Delete { uuid = "missing" }) = []);
+    ((Rrbvec.to_list
+        (Projection.logseq_chat_pending_projection_outliner_mutation_tx db
+           (Projection.Delete { uuid = "missing" }))) = []);
   let dangling =
     db_with
       [ Add (Entity_id 41, "block/title", String "No UUID")
@@ -547,7 +575,7 @@ let () =
       db
   in
   assert_bool "outliner lookup rejects dangling structural references"
-    (Projection.outliner_block dangling "dangling" = None);
+    ((Projection.logseq_chat_pending_projection_outliner_block dangling "dangling") = None);
   let malformed_ref =
     db_with
       [ Add (Entity_id 42, "block/uuid", Uuid "malformed-ref")
@@ -559,7 +587,8 @@ let () =
       db
   in
   assert_bool "outliner lookup rejects non-reference structural values"
-    (Projection.outliner_block malformed_ref "malformed-ref" = None)
+    ((Projection.logseq_chat_pending_projection_outliner_block malformed_ref
+        "malformed-ref") = None)
 ;;
 
 let () =
@@ -582,16 +611,17 @@ let () =
          ]
   in
   assert_bool "raw numeric ref properties preserve semantic equality"
-    (Projection.semantic_value_equal
-       db
-       (Projection.one_value db (lookup "raw-child") "block/parent")
-       (Some (Ref_uuid "raw-parent")));
+    (Projection.logseq_chat_pending_projection_semantic_value_equal db
+       (Projection.logseq_chat_pending_projection_one_value db
+          (lookup "raw-child") "block/parent") (Some (Ref_uuid "raw-parent")));
   assert_bool "raw numeric structural refs produce editable outliner blocks"
-    (match Projection.outliner_block db "raw-child" with
+    (match (Projection.logseq_chat_pending_projection_outliner_block db "raw-child") with
      | Some block -> block.page_uuid = "raw-page" && block.parent_uuid = "raw-parent"
      | None -> false);
   assert_bool "raw numeric parent refs participate in recursive deletion"
-    (match Projection.compile db (Delete_blocks { uuids = (Rrbvec.of_list ["raw-parent"]) }) with
+    (match (Result.map Rrbvec.to_list
+              (Projection.logseq_chat_pending_projection_compile db
+                 (Delete_blocks { uuids = (Rrbvec.of_list ["raw-parent"]) }))) with
      | Ok tx ->
        db_with tx db
        |> fun projected ->
@@ -624,10 +654,13 @@ let () =
            ; expected = Some (String_value "New label"); value = None })
     ]
   in
-  let snapshot = Projection.build ~server_t:42 authoritative operations in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, operations)) in
   assert_bool "string, boolean, and retraction property values project"
-    (Projection.one_value snapshot.db (lookup "block") "user.property/label" = None
-     && Projection.one_value snapshot.db (lookup "block") "user.property/enabled"
+    ((Projection.logseq_chat_pending_projection_one_value snapshot.db
+        (lookup "block") "user.property/label") = None
+     && (Projection.logseq_chat_pending_projection_one_value snapshot.db
+           (lookup "block") "user.property/enabled")
         = Some (Bool true));
   let conflict =
     operation "wrong-bool" 42
@@ -636,7 +669,9 @@ let () =
          ; expected = Some (Bool_value false); value = Some (Bool_value true) })
   in
   assert_bool "property comparison rejects a mismatched semantic value"
-    (match Projection.compile snapshot.db conflict.intent with Error _ -> true | Ok _ -> false)
+    (match (Result.map Rrbvec.to_list
+              (Projection.logseq_chat_pending_projection_compile snapshot.db
+                 conflict.intent)) with Error _ -> true | Ok _ -> false)
 ;;
 
 let () =
@@ -667,26 +702,27 @@ let () =
        })
   in
   let projected =
-    match Projection.compile authoritative intent with
+    match (Result.map Rrbvec.to_list
+             (Projection.logseq_chat_pending_projection_compile authoritative intent)) with
     | Ok tx -> db_with tx authoritative
     | Error message -> failwith ("flashcard properties must compile atomically: " ^ message)
   in
   assert_bool "flashcard state and due project in one operation"
-    (Projection.semantic_value_equal
-       projected
-       (Projection.one_value projected (lookup "block") "logseq.property.fsrs/state")
-       (Some state)
-     && Projection.semantic_value_equal
-          projected
-          (Projection.one_value projected (lookup "block") "logseq.property.fsrs/due")
-          (Some (Ops.Int_value 1_776_000_060_000)));
+    ((Projection.logseq_chat_pending_projection_semantic_value_equal projected
+        (Projection.logseq_chat_pending_projection_one_value projected
+           (lookup "block") "logseq.property.fsrs/state") (Some state))
+     && (Projection.logseq_chat_pending_projection_semantic_value_equal projected
+           (Projection.logseq_chat_pending_projection_one_value projected
+              (lookup "block") "logseq.property.fsrs/due")
+           (Some (Ops.Int_value 1_776_000_060_000))));
   let changed =
     db_with
       [ Add (lookup "block", "logseq.property.fsrs/due", Int 99) ]
       authoritative
   in
   assert_bool "one stale flashcard property rejects the whole atomic review"
-    (match Projection.compile changed intent with Error _ -> true | Ok _ -> false)
+    (match (Result.map Rrbvec.to_list
+              (Projection.logseq_chat_pending_projection_compile changed intent)) with Error _ -> true | Ok _ -> false)
 ;;
 
 let () =
@@ -725,7 +761,8 @@ let () =
                    }] : Logseq_chat_lg_core_native.pending_move list))
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ batch ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [batch])) in
   let target_eid = Option.get (entid snapshot.db "block/uuid" (Uuid "target")) in
   List.iter
     (fun uuid ->
@@ -735,7 +772,7 @@ let () =
          |> Seq.exists (fun _ -> true)))
     [ "block"; "second" ];
   assert_bool "batch move remains one projected operation"
-    (List.assoc_opt "op-move-batch" snapshot.statuses = Some Ops.Applied)
+    (List.assoc_opt "op-move-batch" (Rrbvec.to_list snapshot.statuses) = Some Ops.Applied)
 ;;
 
 let () =
@@ -758,7 +795,8 @@ let () =
          ; value = Some (Ref_ident "logseq.property/status.doing")
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ status ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [status])) in
   let block_eid = Option.get (entid snapshot.db "block/uuid" (Uuid "block")) in
   let doing_eid =
     Option.get (entid snapshot.db "db/ident" (Keyword "logseq.property/status.doing"))
@@ -767,7 +805,7 @@ let () =
     (datoms snapshot.db Eavt ~e:block_eid ~a:"logseq.property/status" ~v:(Ref doing_eid) ()
      |> Seq.exists (fun _ -> true));
   assert_bool "built-in status projection remains applied"
-    (List.assoc_opt "op-builtin-status" snapshot.statuses = Some Ops.Applied)
+    (List.assoc_opt "op-builtin-status" (Rrbvec.to_list snapshot.statuses) = Some Ops.Applied)
 ;;
 
 let () =
@@ -776,10 +814,11 @@ let () =
       (Save_title { uuid = "block"; expected_title = "Old"; title = "First" }) in
   let second = operation "op-second" 42
       (Save_title { uuid = "block"; expected_title = "First"; title = "Second" }) in
-  let snapshot = Projection.build ~server_t:42 authoritative [ first; second ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [first; second])) in
   assert_string "ordered semantic replay" "Second" (title snapshot.db "block");
   assert_bool "both edits applied"
-    (List.for_all (fun id -> List.assoc_opt id snapshot.statuses = Some Ops.Applied)
+    (List.for_all (fun id -> List.assoc_opt id (Rrbvec.to_list snapshot.statuses) = Some Ops.Applied)
        [ "op-first"; "op-second" ])
 ;;
 
@@ -788,7 +827,8 @@ let () =
   let op = operation "op-property" 42
       (Set_property { uuid = "block"; attr = "user.property/effort";
                       expected = None; value = Some (Int_value 8) }) in
-  let snapshot = Projection.build ~server_t:42 authoritative [ op ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [op])) in
   assert_bool "generic Datalog-visible pending property"
     (datoms snapshot.db Aevt ~a:"user.property/effort" ~v:(Int 8) () |> Seq.exists (fun _ -> true));
   assert_bool "authoritative property is unchanged"
@@ -802,8 +842,10 @@ let () =
       ; Add (Entity_id 11, "block/page", Ref 1)
       ; Add (Entity_id 11, "block/parent", Ref 10)
       ; Add (Entity_id 11, "block/order", String "a0") ] in
-  let snapshot = Projection.build ~server_t:42 authoritative
-      [ operation "op-delete" 42 (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) }) ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list,
+                     [operation "op-delete" 42
+                        (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })])) in
   assert_bool "delete hides target" (Option.is_none (entid snapshot.db "block/uuid" (Uuid "block")));
   assert_bool "delete hides descendants" (Option.is_none (entid snapshot.db "block/uuid" (Uuid "child")));
   assert_bool "delete does not mutate authoritative target" (Option.is_some (entid authoritative "block/uuid" (Uuid "block")));
@@ -814,10 +856,11 @@ let () =
   let remote = base_db () |> db_with [ Add (lookup "block", "block/title", String "Remote") ] in
   let op = operation "op-conflict" 42
       (Save_title { uuid = "block"; expected_title = "Old"; title = "Local" }) in
-  let rebased = Projection.build ~server_t:43 remote [ op ] in
+  let rebased = (Projection.logseq_chat_pending_projection_build 43 remote
+                   (Lg_runtime.Runtime_seq.of_list, [op])) in
   assert_string "conflict preserves remote title" "Remote" (title rebased.db "block");
   assert_bool "conflict is explicit"
-    (match List.assoc_opt "op-conflict" rebased.statuses with
+    (match List.assoc_opt "op-conflict" (Rrbvec.to_list rebased.statuses) with
      | Some (Ops.Conflicted _) -> true | _ -> false)
 ;;
 
@@ -839,7 +882,8 @@ let () =
       (Move_block
          { uuid = "inserted"; page_uuid = "page"; parent_uuid = "page"; order = "a2" })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ insert; moved ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [insert; moved])) in
   assert_string "pending insert title" "Inserted [[Project]]" (title snapshot.db "inserted");
   assert_bool "pending insert refs participate in linked refs"
     (has_ref snapshot.db ~source:"inserted" ~target:"project");
@@ -863,9 +907,10 @@ let () =
          ; value = Some (String_value "Must not transact")
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ missing_target ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [missing_target])) in
   assert_bool "missing property target is a conflict instead of a DataScript exception"
-    (match List.assoc_opt "op-missing-target" snapshot.statuses with
+    (match List.assoc_opt "op-missing-target" (Rrbvec.to_list snapshot.statuses) with
      | Some (Ops.Conflicted _) -> true
      | _ -> false)
 ;;
@@ -884,7 +929,8 @@ let () =
          ; created_at = 100
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ split ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [split])) in
   assert_string "split updates source title atomically" "O" (title snapshot.db "block");
   assert_string "split inserts suffix sibling atomically" "ld" (title snapshot.db "split-new");
   assert_bool "split keeps authoritative source unchanged"
@@ -920,7 +966,8 @@ let () =
          ; merged_title = None
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ merge ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [merge])) in
   assert_string "merge combines titles" "Before Old" (title snapshot.db "previous");
   assert_bool "merge retracts source"
     (Option.is_none (entid snapshot.db "block/uuid" (Uuid "block")));
@@ -940,9 +987,10 @@ let () =
       (Move_block
          { uuid = "block"; page_uuid = "page"; parent_uuid = "block"; order = "a0" })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ invalid_move ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [invalid_move])) in
   assert_bool "self-parent move conflicts"
-    (match List.assoc_opt "op-cycle" snapshot.statuses with
+    (match List.assoc_opt "op-cycle" (Rrbvec.to_list snapshot.statuses) with
      | Some (Ops.Conflicted _) -> true
      | _ -> false)
 ;;
@@ -958,7 +1006,8 @@ let () =
          ; value = Some (Ref_uuid "project")
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ status ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [status])) in
   let block_eid = Option.get (entid snapshot.db "block/uuid" (Uuid "block")) in
   let project_eid = Option.get (entid snapshot.db "block/uuid" (Uuid "project")) in
   assert_bool "pending ref property is queryable"
@@ -973,9 +1022,10 @@ let () =
          ; value = None
          })
   in
-  let conflicted = Projection.build ~server_t:42 snapshot.db [ wrong_expected ] in
+  let conflicted = (Projection.logseq_chat_pending_projection_build 42 snapshot.db
+                      (Lg_runtime.Runtime_seq.of_list, [wrong_expected])) in
   assert_bool "ref CAS compares stable identity rather than numeric eid"
-    (match List.assoc_opt "op-wrong-ref-cas" conflicted.statuses with
+    (match List.assoc_opt "op-wrong-ref-cas" (Rrbvec.to_list conflicted.statuses) with
      | Some (Ops.Conflicted _) -> true
      | _ -> false)
 ;;
@@ -985,9 +1035,10 @@ let () =
   let delete_page =
     operation "op-delete-page" 42 (Delete_blocks { uuids = (Rrbvec.of_list ["page"]) })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ delete_page ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [delete_page])) in
   assert_bool "ordinary block delete rejects pages"
-    (match List.assoc_opt "op-delete-page" snapshot.statuses with
+    (match List.assoc_opt "op-delete-page" (Rrbvec.to_list snapshot.statuses) with
      | Some (Ops.Conflicted _) -> true
      | _ -> false);
   assert_bool "rejected page remains visible"
@@ -1007,9 +1058,10 @@ let () =
          ; created_at = 100
          })
   in
-  let snapshot = Projection.build ~server_t:42 authoritative [ missing_parent ] in
+  let snapshot = (Projection.logseq_chat_pending_projection_build 42 authoritative
+                    (Lg_runtime.Runtime_seq.of_list, [missing_parent])) in
   assert_bool "insert with missing parent conflicts"
-    (match List.assoc_opt "op-missing-parent" snapshot.statuses with
+    (match List.assoc_opt "op-missing-parent" (Rrbvec.to_list snapshot.statuses) with
      | Some (Ops.Conflicted _) -> true
      | _ -> false)
 ;;
@@ -1019,139 +1071,215 @@ let expect_error label = function Error _ -> () | Ok _ -> fail label "expected a
 let () =
   let db = base_db () in
   expect_error "save title CAS conflict"
-    (Projection.compile db
-       (Save_title { uuid = "block"; expected_title = "Wrong"; title = "New" }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Save_title { uuid = "block"; expected_title = "Wrong"; title = "New" })));
   expect_error "save missing block"
-    (Projection.compile db
-       (Save_title { uuid = "missing"; expected_title = ""; title = "New" }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Save_title { uuid = "missing"; expected_title = ""; title = "New" })));
   expect_error "property missing block"
-    (Projection.compile db
-       (Set_property
-          { uuid = "missing"; attr = "user.property/label"; expected = None
-          ; value = Some (String_value "New") }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Set_property
+             {
+               uuid = "missing";
+               attr = "user.property/label";
+               expected = None;
+               value = (Some (String_value "New"))
+             })));
   expect_error "insert duplicate UUID"
-    (Projection.compile db
-       (Insert_block
-          { uuid = "block"; title = "Duplicate"; page_uuid = "page"
-          ; parent_uuid = "page"; order = "a1"; created_at = 1 }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Insert_block
+             {
+               uuid = "block";
+               title = "Duplicate";
+               page_uuid = "page";
+               parent_uuid = "page";
+               order = "a1";
+               created_at = 1
+             })));
   expect_error "insert missing page"
-    (Projection.compile db
-       (Insert_block
-          { uuid = "new"; title = "New"; page_uuid = "missing"
-          ; parent_uuid = "page"; order = "a1"; created_at = 1 }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Insert_block
+             {
+               uuid = "new";
+               title = "New";
+               page_uuid = "missing";
+               parent_uuid = "page";
+               order = "a1";
+               created_at = 1
+             })));
   expect_error "move missing target"
-    (Projection.compile db
-       (Move_block
-          { uuid = "block"; page_uuid = "page"; parent_uuid = "missing"; order = "a1" }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Move_block
+             {
+               uuid = "block";
+               page_uuid = "page";
+               parent_uuid = "missing";
+               order = "a1"
+             })));
   expect_error "empty move batch"
-    (Projection.compile db (Move_blocks { moves = (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list)) }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Move_blocks
+             {
+               moves =
+                 (Rrbvec.of_list
+                    ([] : Logseq_chat_lg_core_native.pending_move list))
+             })));
   expect_error "move batch stops at a conflicting move"
-    (Projection.compile db
-       (Move_blocks
-          {
-            moves =
-              (Rrbvec.of_list
-                 ([{
-                     uuid = "block";
-                     page_uuid = "page";
-                     parent_uuid = "page";
-                     order = "a1"
-                   };
-                    {
-                      uuid = "missing";
-                      page_uuid = "page";
-                      parent_uuid = "page";
-                      order = "a2"
-                    }] : Logseq_chat_lg_core_native.pending_move list))
-          }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Move_blocks
+             {
+               moves =
+                 (Rrbvec.of_list
+                    ([{
+                        uuid = "block";
+                        page_uuid = "page";
+                        parent_uuid = "page";
+                        order = "a1"
+                      };
+                       {
+                         uuid = "missing";
+                         page_uuid = "page";
+                         parent_uuid = "page";
+                         order = "a2"
+                       }] : Logseq_chat_lg_core_native.pending_move list))
+             })));
   expect_error "split missing source"
-    (Projection.compile db
-       (Split_block
-          { uuid = "missing"; expected_title = ""; before = ""; after = ""
-          ; new_uuid = "new"; new_order = "a1"; created_at = 1 }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Split_block
+             {
+               uuid = "missing";
+               expected_title = "";
+               before = "";
+               after = "";
+               new_uuid = "new";
+               new_order = "a1";
+               created_at = 1
+             })));
   expect_error "delete missing roots"
-    (Projection.compile db (Delete_blocks { uuids = (Rrbvec.of_list ["missing"]) }))
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db
+          (Delete_blocks { uuids = (Rrbvec.of_list ["missing"]) })))
 ;;
 
 let () =
   let db = base_db () in
   assert_bool "save satisfaction compares projected title"
-    (Projection.satisfied db
-       (Save_title { uuid = "block"; expected_title = "Before"; title = "Old" })
+    ((Projection.logseq_chat_pending_projection_satisfied db
+        (Save_title { uuid = "block"; expected_title = "Before"; title = "Old" }))
      && not
-          (Projection.satisfied db
-             (Save_title { uuid = "block"; expected_title = "Old"; title = "Other" })));
+       (Projection.logseq_chat_pending_projection_satisfied db
+          (Save_title { uuid = "block"; expected_title = "Old"; title = "Other" })));
   assert_bool "property satisfaction compares semantic values"
-    (Projection.satisfied db
-       (Set_property
-          { uuid = "block"; attr = "user.property/label"; expected = None; value = None })
+    ((Projection.logseq_chat_pending_projection_satisfied db
+        (Set_property
+           {
+             uuid = "block";
+             attr = "user.property/label";
+             expected = None;
+             value = None
+           }))
      && not
-          (Projection.satisfied db
-             (Set_property
-                { uuid = "block"; attr = "user.property/label"; expected = None
-                ; value = Some (String_value "value") })));
+       (Projection.logseq_chat_pending_projection_satisfied db
+          (Set_property
+             {
+               uuid = "block";
+               attr = "user.property/label";
+               expected = None;
+               value = (Some (String_value "value"))
+             })));
   let insert_intent : Ops.pending_intent =
     Insert_block
       { uuid = "inserted"; title = "Inserted"; page_uuid = "page"; parent_uuid = "page"
       ; order = "a1"; created_at = 1 }
   in
-  let inserted = db_with (Result.get_ok (Projection.compile db insert_intent)) db in
+  let inserted = db_with (Result.get_ok (Result.map Rrbvec.to_list
+                                           (Projection.logseq_chat_pending_projection_compile db insert_intent))) db in
   assert_bool "insert satisfaction checks every structural field"
-    (Projection.satisfied inserted insert_intent
+    ((Projection.logseq_chat_pending_projection_satisfied inserted insert_intent)
      && not
-          (Projection.satisfied inserted
-             (Insert_block
-                { uuid = "inserted"; title = "Inserted"; page_uuid = "page"
-                ; parent_uuid = "block"; order = "a1"; created_at = 1 })));
+       (Projection.logseq_chat_pending_projection_satisfied inserted
+          (Insert_block
+             {
+               uuid = "inserted";
+               title = "Inserted";
+               page_uuid = "page";
+               parent_uuid = "block";
+               order = "a1";
+               created_at = 1
+             })));
   let current_move : Ops.pending_intent =
     Move_block { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a0" }
   in
   assert_bool "move and move-batch satisfaction check every move"
-    (Projection.satisfied db current_move
-     && Projection.satisfied db (Move_blocks
-                                   {
-                                     moves =
-                                       (Rrbvec.of_list
-                                          ([{
-                                              uuid = "block";
-                                              page_uuid = "page";
-                                              parent_uuid = "page";
-                                              order = "a0"
-                                            }] : Logseq_chat_lg_core_native.pending_move list))
-                                   })
-     && not (Projection.satisfied db (Move_blocks { moves = (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list)) }))
+    ((Projection.logseq_chat_pending_projection_satisfied db current_move)
+     && (Projection.logseq_chat_pending_projection_satisfied db
+           (Move_blocks
+              {
+                moves =
+                  (Rrbvec.of_list
+                     ([{
+                         uuid = "block";
+                         page_uuid = "page";
+                         parent_uuid = "page";
+                         order = "a0"
+                       }] : Logseq_chat_lg_core_native.pending_move list))
+              }))
+     && not (Projection.logseq_chat_pending_projection_satisfied db
+               (Move_blocks
+                  {
+                    moves =
+                      (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list))
+                  }))
      && not
-          (Projection.satisfied db
-             (Move_blocks
-                {
-                  moves =
-                    (Rrbvec.of_list
-                       ([{
-                           uuid = "block";
-                           page_uuid = "page";
-                           parent_uuid = "page";
-                           order = "wrong"
-                         }] : Logseq_chat_lg_core_native.pending_move list))
-                })));
+       (Projection.logseq_chat_pending_projection_satisfied db
+          (Move_blocks
+             {
+               moves =
+                 (Rrbvec.of_list
+                    ([{
+                        uuid = "block";
+                        page_uuid = "page";
+                        parent_uuid = "page";
+                        order = "wrong"
+                      }] : Logseq_chat_lg_core_native.pending_move list))
+             })));
   let split_intent : Ops.pending_intent =
     Split_block
       { uuid = "block"; expected_title = "Old"; before = "O"; after = "ld"
       ; new_uuid = "split"; new_order = "a1"; created_at = 1 }
   in
-  let split_db = db_with (Result.get_ok (Projection.compile db split_intent)) db in
+  let split_db = db_with (Result.get_ok (Result.map Rrbvec.to_list
+                                           (Projection.logseq_chat_pending_projection_compile db split_intent))) db in
   assert_bool "split satisfaction checks source, sibling title, and order"
-    (Projection.satisfied split_db split_intent
+    ((Projection.logseq_chat_pending_projection_satisfied split_db split_intent)
      && not
-          (Projection.satisfied split_db
-             (Split_block
-                { uuid = "block"; expected_title = "Old"; before = "O"; after = "ld"
-                ; new_uuid = "split"; new_order = "wrong"; created_at = 1 })));
+       (Projection.logseq_chat_pending_projection_satisfied split_db
+          (Split_block
+             {
+               uuid = "block";
+               expected_title = "Old";
+               before = "O";
+               after = "ld";
+               new_uuid = "split";
+               new_order = "wrong";
+               created_at = 1
+             })));
   let linked_split : Ops.pending_intent =
     Split_block
       { uuid = "block"; expected_title = "Old"; before = "O"; after = "[[Project]]"
       ; new_uuid = "linked-split"; new_order = "a1"; created_at = 1 }
   in
-  let linked_split_db = db_with (Result.get_ok (Projection.compile db linked_split)) db in
+  let linked_split_db = db_with (Result.get_ok (Result.map Rrbvec.to_list
+                                                  (Projection.logseq_chat_pending_projection_compile db linked_split))) db in
   assert_bool "outliner insert mutations derive linked references"
     (has_ref linked_split_db ~source:"linked-split" ~target:"project");
   let merge_intent : Ops.pending_intent =
@@ -1159,12 +1287,15 @@ let () =
       { uuid = "split"; expected_title = "ld"; title = "ld"; previous_uuid = "block"
       ; expected_previous_title = "O"; merged_title = Some "Old" }
   in
-  let merged_db = db_with (Result.get_ok (Projection.compile split_db merge_intent)) split_db in
+  let merged_db = db_with (Result.get_ok (Result.map Rrbvec.to_list
+                                            (Projection.logseq_chat_pending_projection_compile split_db merge_intent))) split_db in
   assert_bool "merge satisfaction supports an explicit merged title"
-    (Projection.satisfied merged_db merge_intent);
+    (Projection.logseq_chat_pending_projection_satisfied merged_db merge_intent);
   assert_bool "delete satisfaction requires every UUID to be absent"
-    (Projection.satisfied db (Delete_blocks { uuids = (Rrbvec.of_list ["missing"]) })
-     && not (Projection.satisfied db (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })))
+    ((Projection.logseq_chat_pending_projection_satisfied db
+        (Delete_blocks { uuids = (Rrbvec.of_list ["missing"]) }))
+     && not (Projection.logseq_chat_pending_projection_satisfied db
+               (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })))
 ;;
 
 let () =
@@ -1177,15 +1308,24 @@ let () =
          ]
   in
   expect_error "journal entities cannot be deleted as ordinary blocks"
-    (Projection.compile journal_only (Delete_blocks { uuids = (Rrbvec.of_list ["journal"]) }));
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile journal_only
+          (Delete_blocks { uuids = (Rrbvec.of_list ["journal"]) })));
   let cyclic =
     base_db ()
     |> db_with
          [ Add (lookup "block", "block/parent", Ref_to (lookup "block")) ]
   in
   expect_error "cycle traversal terminates"
-    (Projection.compile cyclic
-       (Move_block { uuid = "block"; page_uuid = "page"; parent_uuid = "block"; order = "a0" }))
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile cyclic
+          (Move_block
+             {
+               uuid = "block";
+               page_uuid = "page";
+               parent_uuid = "block";
+               order = "a0"
+             })))
 ;;
 
 let with_temp_db f =
@@ -1309,7 +1449,8 @@ let () =
   assert_bool "ordinary page creation is a persisted semantic operation" (Option.is_some decoded);
   let intent = Option.get decoded in
   let operation = operation "create-page" 42 intent in
-  let projected = Projection.build ~server_t:42 (base_db ()) [operation] in
+  let projected = (Projection.logseq_chat_pending_projection_build 42 (base_db ())
+                     (Lg_runtime.Runtime_seq.of_list, [operation])) in
   assert_string "created page title" "New Page" (title projected.db "new-page");
   assert_bool "ordinary page is not a tag" (not (has_ident_tag projected.db ~source:"new-page" ~target:"logseq.class/Tag"));
   assert_bool "created page appears in page search"

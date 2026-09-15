@@ -1,5 +1,5 @@
 module Ops = Logseq_chat_lg_core_native
-module Projection = Logseq_chat_pending_projection
+module Projection = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 
 let ( >>= ) = Result.bind
@@ -10,7 +10,7 @@ type t =
   ; conn : Datascript.conn
   ; encrypt_title : string -> (string, string) result
   ; mutable server_t : int
-  ; mutable snapshot : Projection.snapshot
+  ; mutable snapshot : Projection.pending_projection_snapshot
   ; mutable sidebar_cache : (Datascript.db * Logseq_chat_lg_core_native.sidebar_pages) option
   ; prepared : (string, Ops.pending_operation) Hashtbl.t
   ; mutable journal_limit : int
@@ -188,8 +188,10 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
   let operations = (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path)) |> List.filter (fun (operation : Ops.pending_operation) ->
     let is_confirmed = match operation.Ops.state with
     | _ when Hashtbl.mem confirmed operation.operation_id
-             && Projection.satisfied authoritative operation.intent -> true
-    | (Ops.Submitted | Ops.Accepted _) when Projection.satisfied authoritative operation.intent -> true
+          && (Projection.logseq_chat_pending_projection_satisfied authoritative
+                operation.intent) -> true
+    | (Ops.Submitted | Ops.Accepted _) when (Projection.logseq_chat_pending_projection_satisfied authoritative
+                                               operation.intent) -> true
     | _ -> committed_despite_later_changes ~server_t authoritative operation
     in
     if is_confirmed then
@@ -202,7 +204,9 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
     let status = match operation.state with
     | Ops.Conflicted message -> Ops.Conflicted message
     | Ops.Accepted _ | Ops.Applied ->
-      (match Projection.compile !projected operation.intent with
+      (match (Result.map Rrbvec.to_list
+                (Projection.logseq_chat_pending_projection_compile (!projected)
+                   operation.intent)) with
        | Ok tx ->
          projected := Datascript.db_with tx !projected;
          Ops.Applied
@@ -215,7 +219,9 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
       (match
          if operation.base_t <> server_t && not (safe_to_rebase operation.intent)
          then Error "the server changed while the structural operation was pending"
-         else Projection.compile !projected operation.intent
+         else (Result.map Rrbvec.to_list
+                 (Projection.logseq_chat_pending_projection_compile (!projected)
+                    operation.intent))
        with
        | Error message ->
          (Ops.logseq_chat_pending_ops_save runtime.path
@@ -231,7 +237,7 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
     operation.operation_id, status) operations in
   (* Reconciliation already built the complete ordered projection. Publishing
      that same value avoids replaying every pending transaction a second time. *)
-  runtime.snapshot <- Projection.{ db = !projected; server_t; statuses };
+  runtime.snapshot <- Projection.{ db = !projected; server_t; statuses = Rrbvec.of_list statuses };
   report "projected";
   refresh_search_after_rebase ~changed_uuids runtime ~before ~operations;
   report "complete"
@@ -252,7 +258,7 @@ let create_base
   in
   (* Rebase below constructs the pending projection once the operation states
      have been reconciled with the authoritative graph. *)
-  let snapshot = Projection.{ db = Datascript.conn_db conn; server_t; statuses = [] } in
+  let snapshot = Projection.{ db = Datascript.conn_db conn; server_t; statuses = Rrbvec.empty } in
   let search_index =
     Option.bind search_index_path (fun path ->
       try Some (Logseq_chat_search_index.create ~path) with
@@ -309,11 +315,11 @@ let journal_day_title journal_day =
 ;;
 
 let db runtime = runtime.snapshot.db
-let operation_statuses runtime = runtime.snapshot.statuses
+let operation_statuses runtime = Rrbvec.to_list runtime.snapshot.statuses
 
 let pending_operations runtime =
-  let projected_states = Hashtbl.create (List.length runtime.snapshot.statuses) in
-  List.iter
+  let projected_states = Hashtbl.create (Rrbvec.length runtime.snapshot.statuses) in
+  Rrbvec.iter
     (fun (operation_id, state) -> Hashtbl.replace projected_states operation_id state)
     runtime.snapshot.statuses;
   (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path))
@@ -420,10 +426,8 @@ let db_before_operation runtime operation_id =
   let rec collect_previous reversed = function
     | [] -> authoritative
     | operation :: _ when String.equal operation.Ops.operation_id operation_id ->
-      (Projection.build
-         ~server_t:runtime.server_t
-         authoritative
-         (List.rev reversed)).db
+      (Projection.logseq_chat_pending_projection_build runtime.server_t
+         authoritative (Lg_runtime.Runtime_seq.of_list, (List.rev reversed))).db
     | operation :: rest -> collect_previous (operation :: reversed) rest
   in
   collect_previous [] (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path))
@@ -442,7 +446,8 @@ let prepare_sync runtime operation =
     let db = db_before_operation runtime operation.operation_id in
     normalize_operation_against runtime db operation
     >>= fun normalized ->
-    Projection.compile db normalized.intent
+    (Result.map Rrbvec.to_list
+       (Projection.logseq_chat_pending_projection_compile db normalized.intent))
     >>= fun tx ->
     Logseq_chat_lg_core_native.logseq_chat_sync_tx_encode
       runtime.encrypt_title
@@ -455,7 +460,7 @@ let prepare_sync runtime operation =
 
 let stage runtime operation =
   let operation_is_known =
-    List.exists
+    Rrbvec.exists
       (fun (operation_id, _) -> String.equal operation_id operation.Ops.operation_id)
       runtime.snapshot.statuses
   in
@@ -495,7 +500,9 @@ let stage runtime operation =
     if operation.base_t <> runtime.server_t
     then Error "operation was created against a stale server cursor"
     else
-      (match Projection.compile runtime.snapshot.db operation.intent with
+      (match (Result.map Rrbvec.to_list
+                (Projection.logseq_chat_pending_projection_compile (runtime.snapshot).db
+                   operation.intent)) with
        | Error message -> Error message
        | Ok tx ->
          let before = runtime.snapshot.db in
@@ -503,9 +510,7 @@ let stage runtime operation =
          runtime.snapshot <-
            { runtime.snapshot with
              db = Datascript.db_with tx runtime.snapshot.db
-           ; statuses =
-               runtime.snapshot.statuses
-               @ [ operation.operation_id, Ops.Applied ]
+           ; statuses = Rrbvec.push_back runtime.snapshot.statuses (operation.operation_id, Ops.Applied)
            };
          refresh_search_affected runtime ~before operation.intent;
          Ok ())
@@ -517,12 +522,11 @@ let stage runtime operation =
       @ [ operation ]
     in
     let candidate =
-      Projection.build
-        ~server_t:runtime.server_t
-        (Datascript.conn_db runtime.conn)
-        candidate_ops
+      (Projection.logseq_chat_pending_projection_build runtime.server_t
+         (Datascript.conn_db runtime.conn)
+         (Lg_runtime.Runtime_seq.of_list, candidate_ops))
     in
-    (match List.assoc operation.operation_id candidate.statuses with
+    (match List.assoc operation.operation_id (Rrbvec.to_list candidate.statuses) with
      | Ops.Applied ->
        let before = runtime.snapshot.db in
        (Ops.logseq_chat_pending_ops_save runtime.path operation);

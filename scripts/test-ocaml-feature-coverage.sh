@@ -26,7 +26,6 @@ awk '
     minimum["core/logseq_chat_graph_runtime.ml"] = 7558
     minimum["core/logseq_chat_outliner_effects.ml"] = 8411
     minimum["core/logseq_chat_outliner_state.ml"] = 9423
-    minimum["core/logseq_chat_pending_projection.ml"] = 8772
   }
   $4 in minimum {
     print

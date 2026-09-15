@@ -1300,7 +1300,9 @@ let () =
                 }
           }
       in
-      (match Logseq_chat_pending_projection.compile db operation.intent with
+      (match (Result.map Rrbvec.to_list
+                (Logseq_chat_lg_core_native.logseq_chat_pending_projection_compile db
+                   operation.intent)) with
        | Ok _ -> ()
        | Error message -> fail ("status projection did not compile: " ^ message));
       (match Runtime.stage runtime operation with
@@ -1631,12 +1633,13 @@ let () =
       result, Gc.allocated_bytes () -. before
     in
     let expected, projection_bytes = measure (fun () ->
-      Logseq_chat_pending_projection.build ~server_t:42 (conn_db conn) operations) in
+        (Logseq_chat_lg_core_native.logseq_chat_pending_projection_build 42
+           (conn_db conn) (Lg_runtime.Runtime_seq.of_list, operations))) in
     let runtime, restore_bytes = measure (fun () -> Runtime.create ~path ~server_t:42 conn) in
     assert_bool "Restoring sequential pending edits preserves the projected title"
       (title (Runtime.db runtime) = title expected.db);
     assert_bool "Restoring pending edits preserves their projected statuses"
-      (Runtime.operation_statuses runtime = expected.statuses);
+      (Runtime.operation_statuses runtime = (Rrbvec.to_list expected.statuses));
     assert_bool "Restoring pending edits keeps the authoritative graph unchanged"
       (title (conn_db conn) = "Old" && (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = operations);
     assert_bool "Graph restore must not construct the pending projection twice"

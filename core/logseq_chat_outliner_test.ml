@@ -4,7 +4,7 @@ let fail label message = failwith (label ^ ": " ^ message)
 let assert_bool label value = if not value then fail label "expected true"
 let plan ~find ~children command = logseq_chat_outliner_plan find children command
 
-let block ?(parent_uuid = "page") ?(page_uuid = "page") ?(order = "a0") uuid title =
+let block ?(parent_uuid = "page") ?(page_uuid = "page") ?(order = "a0") uuid title : outliner_block =
   { uuid; title; page_uuid; parent_uuid; order }
 ;;
 
