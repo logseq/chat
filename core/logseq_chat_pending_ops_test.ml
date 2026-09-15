@@ -1,49 +1,22 @@
-open Logseq_chat_pending_ops
+open Logseq_chat_lg_core_native
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
 
 module LG = Logseq_chat_lg_core_native
 
-let decode_outcome decode input =
-  try Ok (decode input) with
-  | Invalid_argument _ -> Error `Invalid
-  | Not_found -> Error `Missing
-;;
+let intent_json = LG.logseq_chat_pending_ops_intent_json
+let intent_of_json = LG.logseq_chat_pending_ops_intent_of_json
+let semantic_value_json = LG.logseq_chat_pending_ops_semantic_value_json
+let semantic_value_of_json = LG.logseq_chat_pending_ops_semantic_value_of_json
+let state_string = LG.logseq_chat_pending_ops_state_string
+let state_of_string = LG.logseq_chat_pending_ops_state_of_string
+let outliner_op = LG.logseq_chat_pending_ops_outliner_op
+let option_value = LG.logseq_chat_pending_ops_option_value
+let option_json = LG.logseq_chat_pending_ops_option_json
 
-let intent_of_json input =
-  let legacy = decode_outcome Logseq_chat_pending_ops.intent_of_json input in
-  let migrated = decode_outcome LG.logseq_chat_pending_ops_intent_of_json input in
-  match legacy, migrated with
-  | Ok legacy, Ok migrated ->
-    assert_bool "LG preserves canonical intent JSON"
-      (intent_json legacy = LG.logseq_chat_pending_ops_intent_json migrated);
-    legacy
-  | Error `Invalid, Error `Invalid -> invalid_arg "invalid pending intent"
-  | Error `Missing, Error `Missing -> raise Not_found
-  | _ -> fail "LG and legacy intent decoders disagree"
-;;
-
-let semantic_value_of_json input =
-  let legacy = decode_outcome Logseq_chat_pending_ops.semantic_value_of_json input in
-  let migrated = decode_outcome LG.logseq_chat_pending_ops_semantic_value_of_json input in
-  match legacy, migrated with
-  | Ok legacy, Ok migrated ->
-    assert_bool "LG preserves canonical semantic JSON"
-      (semantic_value_json legacy = LG.logseq_chat_pending_ops_semantic_value_json migrated);
-    legacy
-  | Error `Invalid, Error `Invalid -> invalid_arg "invalid semantic value"
-  | _ -> fail "LG and legacy semantic decoders disagree"
-;;
-
-let state_of_string input =
-  let legacy = Logseq_chat_pending_ops.state_of_string input in
-  assert_bool "LG preserves persisted state normalization"
-    (state_string legacy =
-     LG.logseq_chat_pending_ops_state_string
-       (LG.logseq_chat_pending_ops_state_of_string input));
-  legacy
-;;
+let golden_intents =
+  ref (In_channel.with_open_text "pending_ops_golden.jsonl" In_channel.input_lines)
 
 let assert_invalid label operation =
   match operation () with
@@ -51,16 +24,16 @@ let assert_invalid label operation =
   | exception Invalid_argument _ -> ()
 ;;
 
-let move uuid = { uuid; page_uuid = "page"; parent_uuid = "parent"; order = "a0" }
+let move uuid : pending_move = { uuid; page_uuid = "page"; parent_uuid = "parent"; order = "a0" }
 
-let assert_lg_intent intent =
-  let module LG = Logseq_chat_lg_core_native in
+let assert_legacy_encoding intent =
   let encoded = intent_json intent in
-  let decoded = LG.logseq_chat_pending_ops_intent_of_json encoded in
-  assert_bool "LG preserves the exact persisted intent encoding"
-    (LG.logseq_chat_pending_ops_intent_json decoded = encoded);
-  assert_bool "LG preserves server operation names"
-    (LG.logseq_chat_pending_ops_outliner_op decoded = outliner_op intent)
+  (match !golden_intents with
+   | expected :: rest ->
+     golden_intents := rest;
+     assert_bool "LG preserves the legacy wire-format fixture"
+       (Yojson.Basic.to_string encoded = expected)
+   | [] -> fail "missing legacy wire-format fixture")
 ;;
 
 let intents =
@@ -73,25 +46,28 @@ let intents =
       }
   ; Set_property
       { uuid = "block"; attr = "user.property/flag"; expected = None; value = None }
-  ; Set_properties
-      { uuid = "block"
-      ; changes =
-          [ { attr = "logseq.property.fsrs/due"
-            ; expected = None
-            ; value = Some (Int_value 86_400_000)
-            }
-          ; { attr = "logseq.property.fsrs/state"
-            ; expected = None
-            ; value =
-                Some
-                  (Map_value
-                     [ "state", Keyword_value "learning"
-                     ; "stability", Float_value 0.4
-                     ; "reps", Int_value 1
-                     ])
-            }
-          ]
-      }
+  ; (Set_properties
+       {
+         uuid = "block";
+         changes =
+           (Rrbvec.of_list
+              ([{
+                  attr = "logseq.property.fsrs/due";
+                  expected = None;
+                  value = (Some (Int_value 86_400_000))
+                };
+                 {
+                   attr = "logseq.property.fsrs/state";
+                   expected = None;
+                   value =
+                     (Some
+                        (Map_value
+                           (Rrbvec.of_list
+                              [("state", (Keyword_value "learning"));
+                               ("stability", (Float_value 0.4));
+                               ("reps", (Int_value 1))])))
+                 }] : Logseq_chat_lg_core_native.property_change list))
+       })
   ; Insert_block
       { uuid = "new"
       ; title = "New"
@@ -112,7 +88,7 @@ let intents =
       ; asset_checksum = "abc123"
       }
   ; Move_block (move "block")
-  ; Move_blocks { moves = [ move "first"; move "second" ] }
+  ; (Move_blocks { moves = (Rrbvec.of_list ([move "first"; move "second"] : Logseq_chat_lg_core_native.pending_move list)) })
   ; Split_block
       { uuid = "block"
       ; expected_title = "Old"
@@ -138,7 +114,7 @@ let intents =
       ; expected_previous_title = "Previous"
       ; merged_title = None
       }
-  ; Delete_blocks { uuids = [ "first"; "second" ] }
+  ; (Delete_blocks { uuids = (Rrbvec.of_list ["first"; "second"]) })
   ; Create_tag { uuid = "tag"; title = "Project"; created_at = 42 }
   ]
 ;;
@@ -146,7 +122,7 @@ let intents =
 let () =
   List.iter
     (fun intent ->
-      assert_lg_intent intent;
+       assert_legacy_encoding intent;
       assert_bool "every pending intent survives JSON round-trip"
         (intent_of_json (intent_json intent) = intent))
     intents;
@@ -178,13 +154,15 @@ let () =
     ; Ref_ident "db/ident"
     ; Float_value 0.4
     ; Keyword_value "learning"
-    ; Map_value
-        [ "state", Keyword_value "learning"
-        ; "stability", Float_value 0.4
-        ; "nested", Map_value [ "reps", Int_value 1 ]
-        ; "last-repeat", Instant_value 1_776_000_000_000
-        ]
-    ; Map_value [ "duplicate", Int_value 1; "duplicate", Int_value 2 ]
+    ; (Map_value
+         (Rrbvec.of_list
+            [("state", (Keyword_value "learning"));
+             ("stability", (Float_value 0.4));
+             ("nested", (Map_value (Rrbvec.of_list [("reps", (Int_value 1))])));
+             ("last-repeat", (Instant_value 1_776_000_000_000))]))
+    ; (Map_value
+         (Rrbvec.of_list
+            [("duplicate", (Int_value 1)); ("duplicate", (Int_value 2))]))
     ]
   in
   List.iter
@@ -223,9 +201,12 @@ let () =
 ;;
 
 let () =
-  List.iter (fun value -> ignore (state_of_string value))
-    [ ""; "accepted:"; "accepted:-1"; "accepted:0x2a"; "accepted:1_000"
-    ; "accepted:99999999999999999999999"; "conflicted:"; "conflicted:one:two" ];
+  List.iter (fun (value, expected) ->
+      assert_bool "persisted state normalization" (state_of_string value = expected))
+    [ "", Retryable; "accepted:", Retryable; "accepted:-1", Accepted (-1)
+    ; "accepted:0x2a", Accepted 42; "accepted:1_000", Accepted 1000
+    ; "accepted:99999999999999999999999", Retryable
+    ; "conflicted:", Conflicted ""; "conflicted:one:two", Conflicted "one:two" ];
   List.iter
     (fun input -> assert_invalid "invalid semantic shape" (fun () -> semantic_value_of_json input))
     [ `Assoc [ "value", `Int 1; "type", `String "int" ]
@@ -249,7 +230,7 @@ let () =
     ; [ "type", `String "set-property"; "uuid", `String "block"; "attr", `String "flag"
       ; "expected", `Null ]
     ];
-  assert_lg_intent
+  assert_legacy_encoding
     (Save_title { uuid = "duplicate"; expected_title = ""; title = "first" });
   assert_bool "duplicate intent fields still select the first value"
     (intent_of_json
@@ -276,7 +257,7 @@ let () =
   in
   List.iter
     (fun (intent, expected_op) ->
-      assert_lg_intent intent;
+       assert_legacy_encoding intent;
       assert_bool "page and journal intents preserve their persisted form"
         (intent_of_json (intent_json intent) = intent);
       assert_bool "page and journal intents preserve the server operation"
@@ -340,3 +321,5 @@ let () =
       intent_of_json
         (assoc [ "type", `String "delete-blocks"; "uuids", `List [ `Int 1 ] ]))
 ;;
+
+let () = assert_bool "all legacy wire-format fixtures were exercised" (!golden_intents = [])

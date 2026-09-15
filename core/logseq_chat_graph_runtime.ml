@@ -1,4 +1,4 @@
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module Projection = Logseq_chat_pending_projection
 module LG = Logseq_chat_lg_core_native
 
@@ -12,7 +12,7 @@ type t =
   ; mutable server_t : int
   ; mutable snapshot : Projection.snapshot
   ; mutable sidebar_cache : (Datascript.db * Logseq_chat_lg_core_native.sidebar_pages) option
-  ; prepared : (string, Ops.t) Hashtbl.t
+  ; prepared : (string, Ops.pending_operation) Hashtbl.t
   ; mutable journal_limit : int
   ; search_index : Logseq_chat_search_index.t option
   ; mutable search_index_is_fresh : bool
@@ -66,17 +66,18 @@ let affected_uuids db = function
   | Ops.Set_property { uuid; attr; _ } ->
     if search_visible_property attr then [ uuid ] else []
   | Ops.Set_properties { uuid; changes } ->
-    if List.exists (fun change -> search_visible_property change.Ops.attr) changes
-    then [ uuid ]
+    if Rrbvec.exists (fun (change : Ops.property_change) -> search_visible_property change.attr) changes
+    then [uuid]
     else []
   | Ops.Save_title { uuid; _ }
   | Ops.Insert_block { uuid; _ } | Ops.Create_asset { uuid; _ }
   | Ops.Move_block { uuid; _ }
   | Ops.Add_tag { uuid; _ } | Ops.Create_tag { uuid; _ } | Ops.Create_page { uuid; _ } -> [ uuid ]
-  | Ops.Move_blocks { moves } -> List.map (fun (move : Ops.move) -> move.uuid) moves
+  | Ops.Move_blocks { moves } -> (let moves = Rrbvec.to_list moves in
+                                  List.map (fun (move : Ops.pending_move) -> move.uuid) moves)
   | Ops.Split_block { uuid; new_uuid; _ } -> [ uuid; new_uuid ]
   | Ops.Merge_backward { uuid; previous_uuid; _ } -> [ uuid; previous_uuid ]
-  | Ops.Delete_blocks { uuids } -> subtree_uuids db uuids
+  | Ops.Delete_blocks { uuids } -> (let uuids = Rrbvec.to_list uuids in subtree_uuids db uuids)
   | Ops.Create_journal { page_uuid; block_uuid; _ } -> [ page_uuid; block_uuid ]
   | Ops.Set_favorite { page_uuid; favorite_uuid; _ } -> [ page_uuid; favorite_uuid ]
   | Ops.Delete_page { page_uuid; _ } -> [ page_uuid ]
@@ -99,7 +100,7 @@ let rec semantic_value = function
         | _ -> Error "flashcard state contains a non-keyword key")
       (Ok [])
       entries
-    >>| fun entries -> Ops.Map_value (List.rev entries)
+    >>| fun entries -> (Ops.Map_value (Rrbvec.of_list (List.rev entries)))
   | _ -> Error "flashcard state contains an unsupported value"
 ;;
 
@@ -124,7 +125,7 @@ let refresh_search_after_rebase ~changed_uuids runtime ~before ~operations =
   | Some index when runtime.search_index_is_fresh ->
     let pending_uuids =
       operations
-      |> List.concat_map (fun operation ->
+      |> List.concat_map (fun (operation : Ops.pending_operation) ->
         affected_uuids before operation.Ops.intent
         @ affected_uuids snapshot.db operation.intent)
     in
@@ -160,7 +161,7 @@ let split_result_exists db = function
   | _ -> false
 ;;
 
-let committed_despite_later_changes ~server_t authoritative (operation : Ops.t) =
+let committed_despite_later_changes ~server_t authoritative (operation : Ops.pending_operation) =
   if inserted_result_exists authoritative operation.intent
   then true
   else match operation.state with
@@ -184,7 +185,7 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
   List.iter (Hashtbl.remove runtime.prepared) operation_ids;
   let before = runtime.snapshot.Projection.db in
   let authoritative = Datascript.conn_db runtime.conn in
-  let operations = Ops.list ~path:runtime.path |> List.filter (fun operation ->
+  let operations = (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path)) |> List.filter (fun (operation : Ops.pending_operation) ->
     let is_confirmed = match operation.Ops.state with
     | _ when Hashtbl.mem confirmed operation.operation_id
              && Projection.satisfied authoritative operation.intent -> true
@@ -192,12 +193,12 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
     | _ -> committed_despite_later_changes ~server_t authoritative operation
     in
     if is_confirmed then
-      Ops.remove ~path:runtime.path ~operation_id:operation.operation_id;
+      (Ops.logseq_chat_pending_ops_remove runtime.path operation.operation_id);
     not is_confirmed) in
   report "confirmed";
   runtime.server_t <- server_t;
   let projected = ref authoritative in
-  let statuses = List.map (fun (operation : Ops.t) ->
+  let statuses = List.map (fun (operation : Ops.pending_operation) ->
     let status = match operation.state with
     | Ops.Conflicted message -> Ops.Conflicted message
     | Ops.Accepted _ | Ops.Applied ->
@@ -206,7 +207,8 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
          projected := Datascript.db_with tx !projected;
          Ops.Applied
        | Error message ->
-         Ops.save ~path:runtime.path { operation with state = Ops.Conflicted message };
+         (Ops.logseq_chat_pending_ops_save runtime.path
+            { operation with state = (Ops.Conflicted message) });
          Ops.Conflicted message)
     | Ops.Queued | Ops.Retryable | Ops.Submitted ->
       Hashtbl.remove runtime.prepared operation.operation_id;
@@ -216,14 +218,14 @@ let rebase_operations ?(changed_uuids = []) runtime ~server_t ~operation_ids =
          else Projection.compile !projected operation.intent
        with
        | Error message ->
-         Ops.save ~path:runtime.path
-           { operation with base_t = server_t; state = Ops.Conflicted message };
+         (Ops.logseq_chat_pending_ops_save runtime.path
+            { operation with base_t = server_t; state = (Ops.Conflicted message) });
          Ops.Conflicted message
        | Ok tx ->
          projected := Datascript.db_with tx !projected;
          if operation.base_t <> server_t then
-           Ops.save ~path:runtime.path
-             { operation with base_t = server_t; state = Ops.Queued };
+           (Ops.logseq_chat_pending_ops_save runtime.path
+              { operation with base_t = server_t; state = Ops.Queued });
          Ops.Applied)
     in
     operation.operation_id, status) operations in
@@ -314,8 +316,8 @@ let pending_operations runtime =
   List.iter
     (fun (operation_id, state) -> Hashtbl.replace projected_states operation_id state)
     runtime.snapshot.statuses;
-  Ops.list ~path:runtime.path
-  |> List.filter (fun operation ->
+  (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path))
+  |> List.filter (fun (operation : Ops.pending_operation) ->
     match operation.Ops.state with
     | Ops.Queued | Ops.Retryable | Ops.Submitted ->
       (match Hashtbl.find_opt projected_states operation.operation_id with
@@ -344,7 +346,7 @@ let normalize_fsrs_value attr = function
     Ops.Int_value value
   | Ops.Map_value entries when String.equal attr "logseq.property.fsrs/state" ->
     Ops.Map_value
-      (List.map
+      (Rrbvec.map
          (function
            | "last-repeat", Ops.Instant_value value -> "last-repeat", Ops.Int_value value
            | entry -> entry)
@@ -401,7 +403,7 @@ let normalize_operation_against runtime db operation =
            ; value = Option.map (normalize_fsrs_value attr) value
            })
     | Ops.Set_properties { uuid; changes } ->
-      Ok (Ops.Set_properties { uuid; changes = List.map normalize_property_change changes })
+      Ok (Ops.Set_properties { uuid; changes = Rrbvec.map normalize_property_change changes })
     | (Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
       | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
       | Ops.Set_favorite _ | Ops.Delete_page _) as intent -> Ok intent
@@ -424,12 +426,12 @@ let db_before_operation runtime operation_id =
          (List.rev reversed)).db
     | operation :: rest -> collect_previous (operation :: reversed) rest
   in
-  collect_previous [] (Ops.list ~path:runtime.path)
+  collect_previous [] (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path))
 ;;
 
 let prepare_sync runtime operation =
   let operation =
-    Ops.list ~path:runtime.path
+    (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path))
     |> List.find_opt (fun persisted ->
       String.equal persisted.Ops.operation_id operation.Ops.operation_id)
     |> Option.value ~default:operation
@@ -448,7 +450,7 @@ let prepare_sync runtime operation =
       tx
     >>| fun wire ->
     Hashtbl.replace runtime.prepared operation.operation_id normalized;
-    Ops.outliner_op normalized.intent, wire
+    (Ops.logseq_chat_pending_ops_outliner_op normalized.intent), wire
 ;;
 
 let stage runtime operation =
@@ -457,7 +459,7 @@ let stage runtime operation =
       (fun (operation_id, _) -> String.equal operation_id operation.Ops.operation_id)
       runtime.snapshot.statuses
   in
-  let existing = if operation_is_known then Ops.list ~path:runtime.path else [] in
+  let existing = if operation_is_known then (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list runtime.path)) else [] in
   let replacing =
     List.find_opt
       (fun pending ->
@@ -487,7 +489,7 @@ let stage runtime operation =
   in
   match state_only_update with
   | Some operation ->
-    Ops.save ~path:runtime.path operation;
+    (Ops.logseq_chat_pending_ops_save runtime.path operation);
     Ok ()
   | None when Option.is_none replacing ->
     if operation.base_t <> runtime.server_t
@@ -497,7 +499,7 @@ let stage runtime operation =
        | Error message -> Error message
        | Ok tx ->
          let before = runtime.snapshot.db in
-         Ops.save ~path:runtime.path operation;
+         (Ops.logseq_chat_pending_ops_save runtime.path operation);
          runtime.snapshot <-
            { runtime.snapshot with
              db = Datascript.db_with tx runtime.snapshot.db
@@ -523,7 +525,7 @@ let stage runtime operation =
     (match List.assoc operation.operation_id candidate.statuses with
      | Ops.Applied ->
        let before = runtime.snapshot.db in
-       Ops.save ~path:runtime.path operation;
+       (Ops.logseq_chat_pending_ops_save runtime.path operation);
        runtime.snapshot <- candidate;
        refresh_search_affected runtime ~before operation.intent;
        Ok ()
@@ -618,19 +620,22 @@ let review_flashcard runtime ~uuid ~rating ~now ~operation_id =
         ; base_t = runtime.server_t
         ; state = Queued
         ; intent =
-            Set_properties
-              { uuid
-              ; changes =
-                  [ { attr = "logseq.property.fsrs/state"
-                    ; expected = expected_state
-                    ; value = Some state
-                    }
-                  ; { attr = "logseq.property.fsrs/due"
-                    ; expected = expected_due
-                    ; value = Some (Int_value repeated.due)
-                    }
-                  ]
-              }
+            (Set_properties
+               {
+                 uuid;
+                 changes =
+                   (Rrbvec.of_list
+                      ([{
+                          attr = "logseq.property.fsrs/state";
+                          expected = expected_state;
+                          value = (Some state)
+                        };
+                         {
+                           attr = "logseq.property.fsrs/due";
+                           expected = expected_due;
+                           value = (Some (Int_value (repeated.due)))
+                         }] : Logseq_chat_lg_core_native.property_change list))
+               })
         }
 ;;
 

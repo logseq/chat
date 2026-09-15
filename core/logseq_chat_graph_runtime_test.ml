@@ -1,12 +1,37 @@
 open Datascript
 
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module Runtime = Logseq_chat_graph_runtime
 module Search = Logseq_chat_search_index
 module Transit = Transit_native.Transit.Json
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
+
+let () =
+  List.iter (fun (input, expected) ->
+      assert_bool "native values cross the LG pending-value boundary unchanged"
+        (Runtime.semantic_value input = Ok expected))
+    [ String "text", Ops.String_value "text"
+    ; Int 42, Ops.Int_value 42
+    ; Instant 1234, Ops.Instant_value 1234
+    ; Float 0.5, Ops.Float_value 0.5
+    ; Bool false, Ops.Bool_value false
+    ; Keyword "learning", Ops.Keyword_value "learning"
+    ];
+  let input = Map [Keyword "nested", Map [Keyword "flag", Bool true];
+                   Keyword "duplicate", Int 1; Keyword "duplicate", Int 2] in
+  let expected = Ops.Map_value (Rrbvec.of_list
+                                  ["nested", Ops.Map_value (Rrbvec.of_list ["flag", Ops.Bool_value true]);
+                                   "duplicate", Ops.Int_value 1; "duplicate", Ops.Int_value 2]) in
+  assert_bool "nested pending maps preserve entry order and duplicate keys"
+    (Runtime.semantic_value input = Ok expected);
+  assert_bool "pending maps reject non-keyword keys"
+    (Runtime.semantic_value (Map [String "invalid", Int 1; Keyword "later", Int 2])
+     = Error "flashcard state contains a non-keyword key");
+  assert_bool "pending maps reject unsupported nested values"
+    (Runtime.semantic_value (Map [Keyword "invalid", Ref 42])
+     = Error "flashcard state contains an unsupported value")
 
 let one ?unique ?value_type ?(indexed = false) () =
   { cardinality = One; unique; indexed; is_component = false; no_history = false
@@ -218,7 +243,7 @@ let () =
     assert_bool "missing nodes have no projected references"
       (Runtime.references_for_node runtime "missing" = []);
     assert_bool "pending op is stored beside graph kvs"
-      (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-title" ]))
+      (List.map (fun op -> op.Ops.operation_id) (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = [ "op-title" ]))
 ;;
 
 let () =
@@ -251,11 +276,13 @@ let () =
       assert_bool "reviewed card immediately leaves the due queue"
         (Runtime.due_flashcards runtime ~now = []);
       assert_bool "one pending operation uses Logseq's millisecond FSRS property format"
-        (match Ops.list ~path with
+        (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
          | [ { intent = Set_properties
                  { uuid = "block"
-                 ; changes =
-                     [ { attr = "logseq.property.fsrs/state"
+                 ; changes }
+             ; _ } ] ->
+           (match Rrbvec.to_list changes with
+            | [ { attr = "logseq.property.fsrs/state"
                        ; value = Some (Ops.Map_value state)
                        ; _
                        }
@@ -263,13 +290,12 @@ let () =
                        ; value = Some (Ops.Int_value _)
                        ; _
                        }
-                     ]
-                 }
-               ; _
-               }
-           ] ->
-           List.assoc_opt "last-repeat" state
-           |> Option.fold ~none:false ~some:(function Ops.Int_value _ -> true | _ -> false)
+              ] ->
+              (let state = Rrbvec.to_list state in
+               (List.assoc_opt "last-repeat" state) |>
+               (Option.fold ~none:false
+                  ~some:(function | Ops.Int_value _ -> true | _ -> false)))
+            | _ -> false)
          | _ -> false))
 ;;
 
@@ -290,24 +316,27 @@ let () =
         ; base_t = 42
         ; state = Queued
         ; intent =
-            Set_properties
-              { uuid = "block"
-              ; changes =
-                  [ { attr = "logseq.property.fsrs/state"
-                    ; expected = None
-                    ; value =
-                        Some
-                          (Map_value
-                             [ "last-repeat", Instant_value 1_776_000_000_000
-                             ; "state", Keyword_value "review"
-                             ])
-                    }
-                  ; { attr = "logseq.property.fsrs/due"
-                    ; expected = None
-                    ; value = Some (Instant_value 1_776_086_400_000)
-                    }
-                  ]
-              }
+            (Set_properties
+               {
+                 uuid = "block";
+                 changes =
+                   (Rrbvec.of_list
+                      ([{
+                          attr = "logseq.property.fsrs/state";
+                          expected = None;
+                          value =
+                            (Some
+                               (Map_value
+                                  (Rrbvec.of_list
+                                     [("last-repeat", (Instant_value 1_776_000_000_000));
+                                      ("state", (Keyword_value "review"))])))
+                        };
+                         {
+                           attr = "logseq.property.fsrs/due";
+                           expected = None;
+                           value = (Some (Instant_value 1_776_086_400_000))
+                         }] : Logseq_chat_lg_core_native.property_change list))
+               })
         }
     in
     assert_bool "legacy FSRS review stages" (Runtime.stage runtime legacy = Ok ());
@@ -350,7 +379,7 @@ let () =
       (match
          List.find_opt
            (fun operation -> String.equal operation.Ops.operation_id stale_second.operation_id)
-           (Ops.list ~path)
+           (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path))
        with
        | Some operation -> operation.base_t = 43 && operation.state = Retryable
        | None -> false))
@@ -362,15 +391,15 @@ let () =
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
       Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
-      Ops.save
-        ~path
-        { (save_title "retry-after-reopen" "Old" "New") with
-          base_t = 42
-        ; state = Retryable
-        };
+      (Ops.logseq_chat_pending_ops_save path
+         {
+           (save_title "retry-after-reopen" "Old" "New") with
+           base_t = 42;
+           state = Retryable
+         });
       let runtime = Runtime.create_base ~path ~server_t:43 (conn_from_db (base_db "Old")) in
       assert_bool "reopening rebases a safe retryable operation"
-        (match Ops.list ~path with
+        (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
          | [ { Ops.base_t = 43; state = Queued; _ } ] -> true
          | _ -> false);
       assert_bool "the rebased operation prepares immediately after reopen"
@@ -386,17 +415,17 @@ let () =
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
       Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
-      Ops.save
-        ~path
-        Ops.
-          { operation_id = "unsafe-delete-after-reopen"
-          ; base_t = 42
-          ; state = Retryable
-          ; intent = Delete_blocks { uuids = [ "block" ] }
-          };
+      (Ops.logseq_chat_pending_ops_save path
+         (let open Ops in
+          {
+            operation_id = "unsafe-delete-after-reopen";
+            base_t = 42;
+            state = Retryable;
+            intent = (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })
+          }));
       ignore (Runtime.create_base ~path ~server_t:43 (conn_from_db (base_db "Old")));
       assert_bool "reopening conflicts an unsafe stale structural operation"
-        (match Ops.list ~path with
+        (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
          | [ { Ops.base_t = 43; state = Conflicted _; _ } ] -> true
          | _ -> false))
 ;;
@@ -717,7 +746,7 @@ let () =
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool
       "an authoritative insert echo clears the pending operation despite server normalization"
-      (Ops.list ~path = []);
+      ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []);
     assert_bool
       "the authoritative echoed insert remains visible"
       (Option.is_some
@@ -730,11 +759,11 @@ let () =
       (Runtime.stage runtime (save_title "op-rebase" "Old" "Pending") = Ok ());
     ignore (reset_conn conn (base_db "Old"));
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
-    (match Ops.list ~path with
+    (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
      | [ { Ops.operation_id = "op-rebase"; base_t = 43; state = Queued; _ } ] -> ()
      | _ -> fail "safe semantic rebase must advance the pending operation cursor");
     assert_bool "rebased save can be prepared"
-      (match Runtime.prepare_sync runtime (List.hd (Ops.list ~path)) with
+      (match Runtime.prepare_sync runtime (List.hd (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path))) with
        | Ok _ -> true
        | Error _ -> false))
 ;;
@@ -778,7 +807,7 @@ let () =
          entity_attr entity "block/title" = Some (One_value (String "Edited"))
        | None -> false);
     assert_bool "both dependent operations advance to the latest cursor"
-      (Ops.list ~path
+      ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path))
        |> List.for_all (fun operation -> operation.Ops.base_t = 43 && operation.state = Queued)))
 ;;
 
@@ -805,7 +834,7 @@ let () =
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool
       "unrelated server progress preserves an offline insert"
-      (match Ops.list ~path with
+      (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
        | [ { Ops.operation_id = "offline-insert"; base_t = 43; state = Queued; _ } ] ->
          Option.is_some
            (entity (Runtime.db runtime) (Lookup_ref ("block/uuid", Uuid "offline-new")))
@@ -819,14 +848,14 @@ let () =
         { operation_id = "op-delete-conflict"
         ; base_t = 42
         ; state = Queued
-        ; intent = Delete_blocks { uuids = [ "block" ] }
+        ; intent = (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })
         }
     in
     assert_bool "guarded delete stages" (Runtime.stage runtime delete = Ok ());
     ignore (reset_conn conn (base_db "Remote update"));
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool "server movement conflicts a pending delete"
-      (match Ops.list ~path with
+      (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
        | [ { Ops.state = Conflicted _; _ } ] -> true
        | _ -> false);
     assert_bool "conflicted delete restores the authoritative block"
@@ -838,7 +867,7 @@ let () =
     assert_bool "valid operation stages" (Runtime.stage runtime (save_title "op-title" "Old" "Pending") = Ok ());
     ignore (reset_conn conn (base_db "Pending"));
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[ "op-title" ];
-    assert_bool "confirmed operation leaves the SQLite log" (Ops.list ~path = []);
+    assert_bool "confirmed operation leaves the SQLite log" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []);
     assert_bool "confirmed authoritative value stays visible"
       (String.equal (title (Runtime.db runtime)) "Pending"))
 ;;
@@ -852,7 +881,7 @@ let () =
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[ "premature-confirm" ];
     assert_bool
       "confirmation id cannot discard an edit absent from authoritative state"
-      (match Ops.list ~path with
+      (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
        | [ { Ops.operation_id = "premature-confirm"; _ } ] -> true
        | _ -> false))
 ;;
@@ -863,7 +892,7 @@ let () =
     assert_bool "submitted operation stages" (Runtime.stage runtime submitted = Ok ());
     ignore (reset_conn conn (base_db "Pending"));
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
-    assert_bool "authoritative semantic echo removes submitted operation" (Ops.list ~path = []);
+    assert_bool "authoritative semantic echo removes submitted operation" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []);
     assert_bool "authoritative semantic echo stays visible"
       (String.equal (title (Runtime.db runtime)) "Pending"))
 ;;
@@ -877,10 +906,10 @@ let () =
     assert_bool "accepted operation remains projected before accepted cursor"
       (String.equal (title (Runtime.db runtime)) "Pending");
     assert_bool "accepted operation remains persisted before accepted cursor"
-      (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-accepted" ]);
+      (List.map (fun op -> op.Ops.operation_id) (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = [ "op-accepted" ]);
     ignore (reset_conn conn (base_db "Pending"));
     Runtime.rebase runtime ~server_t:44 ~operation_ids:[];
-    assert_bool "accepted operation is removed at accepted cursor" (Ops.list ~path = []);
+    assert_bool "accepted operation is removed at accepted cursor" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []);
     assert_bool "authoritative accepted value remains visible"
       (String.equal (title (Runtime.db runtime)) "Pending"))
 ;;
@@ -891,14 +920,15 @@ let () =
     assert_bool
       "operation stages before transport"
       (Runtime.stage runtime submitted = Ok ());
-    Ops.save ~path (save_title "unrelated-late-row" "Old" "Other");
+    (Ops.logseq_chat_pending_ops_save path
+       (save_title "unrelated-late-row" "Old" "Other"));
     assert_bool
       "transport state update does not replay the pending log"
       (Runtime.stage runtime { submitted with state = Accepted 44 } = Ok ());
     assert_bool
       "accepted transport state is persisted"
       (match
-         Ops.list ~path
+         (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path))
          |> List.find_opt (fun operation ->
            String.equal operation.Ops.operation_id "state-only")
        with
@@ -940,14 +970,14 @@ let () =
     in
     assert_bool "invalid operation is rejected before persistence"
       (match Runtime.stage runtime invalid with Error _ -> true | Ok () -> false);
-    assert_bool "rejected operation is absent from SQLite" (Ops.list ~path = []);
+    assert_bool "rejected operation is absent from SQLite" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []);
     assert_bool "rejected operation does not change projection"
       (String.equal (title (Runtime.db runtime)) "Old"))
 ;;
 
 let () =
   with_runtime (fun path _conn runtime ->
-    let save operation = Ops.save ~path operation in
+      let save operation = (Ops.logseq_chat_pending_ops_save path operation) in
     save (save_title "queued" "Old" "Queued");
     save { (save_title "retryable" "Old" "Retryable") with state = Retryable };
     save { (save_title "submitted" "Old" "Submitted") with state = Submitted };
@@ -972,8 +1002,10 @@ let () =
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
       Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
-      Ops.save ~path (save_title "stale" "Remote title" "Stale local edit");
-      Ops.save ~path (save_title "valid" "Old" "Valid local edit");
+      (Ops.logseq_chat_pending_ops_save path
+         (save_title "stale" "Remote title" "Stale local edit"));
+      (Ops.logseq_chat_pending_ops_save path
+         (save_title "valid" "Old" "Valid local edit"));
       let runtime =
         Runtime.create ~path ~server_t:42 (conn_from_db (base_db "Old"))
       in
@@ -987,7 +1019,7 @@ let () =
       assert_bool
         "startup persists projected conflicts instead of retrying them forever"
         (match
-           Ops.list ~path
+           (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path))
            |> List.find_opt (fun operation ->
              String.equal operation.Ops.operation_id "stale")
          with
@@ -1032,7 +1064,7 @@ let with_reopened_split ?(server_t = 43) state f =
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
       Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
-      Ops.save ~path (split_operation ~state);
+      (Ops.logseq_chat_pending_ops_save path (split_operation ~state));
       ignore (Runtime.create ~path ~server_t (conn_from_db (edited_split_authoritative ())));
       f path)
 ;;
@@ -1043,35 +1075,35 @@ let () =
     (fun path ->
       assert_bool
         "startup removes a committed split even when later edits changed the new block"
-        (Ops.list ~path = []))
+        ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []))
 ;;
 
 let () =
   with_reopened_split Ops.Submitted (fun path ->
     assert_bool
       "startup removes a submitted split whose authoritative block was edited later"
-      (Ops.list ~path = []))
+      ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []))
 ;;
 
 let () =
   with_reopened_split ~server_t:43 (Ops.Accepted 44) (fun path ->
     assert_bool
       "startup preserves a split before its accepted cursor is authoritative"
-      (Ops.list ~path <> []))
+      ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) <> []))
 ;;
 
 let () =
   with_reopened_split ~server_t:44 (Ops.Accepted 44) (fun path ->
     assert_bool
       "startup removes an accepted split once its cursor is authoritative"
-      (Ops.list ~path = []))
+      ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []))
 ;;
 
 let () =
   with_reopened_split Ops.Queued (fun path ->
     assert_bool
       "startup preserves a queued split when its UUID collides before submission"
-      (match Ops.list ~path with
+      (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
        | [ { state = Ops.Conflicted _; _ } ] -> true
        | _ -> false))
 ;;
@@ -1080,7 +1112,7 @@ let () =
   with_reopened_split (Ops.Conflicted "source block changed") (fun path ->
     assert_bool
       "startup preserves an unrelated split conflict despite a UUID collision"
-      (match Ops.list ~path with
+      (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
        | [ { state = Ops.Conflicted "source block changed"; _ } ] -> true
        | _ -> false))
 ;;
@@ -1135,8 +1167,8 @@ let () =
     let passthrough_intents =
       [ Ops.Set_property
           { uuid = "block"; attr = "block/title"; expected = None; value = None }
-      ; Move_blocks { moves = [] }
-      ; Delete_blocks { uuids = [ "block" ] }
+      ; (Move_blocks { moves = (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list)) })
+      ; (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })
       ]
     in
     assert_bool "every non-title intent passes normalization unchanged"
@@ -1165,7 +1197,7 @@ let () =
         { uuid = "new"; title = ""; page_uuid = "page"; parent_uuid = "page"
         ; order = "a1"; created_at = 1 }
     ; Move_block { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a0" }
-    ; Move_blocks { moves = [] }
+    ; (Move_blocks { moves = (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list)) })
     ]
   in
   let semantic =
@@ -1182,14 +1214,20 @@ let () =
   assert_bool "rebase safety is defined for every pending intent"
     (List.for_all Runtime.safe_to_rebase rebaseable_structural
      && List.for_all Runtime.safe_to_rebase semantic
-     && not (Runtime.safe_to_rebase (Ops.Delete_blocks { uuids = [ "block" ] })))
+     && not (Runtime.safe_to_rebase (Ops.Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })))
 ;;
 
 let () =
   with_runtime (fun path conn runtime ->
-    Ops.save ~path { (save_title "conflicted" "Old" "Ignored") with state = Conflicted "known" };
-    Ops.save ~path { (save_title "applied" "Old" "Applied") with state = Applied };
-    Ops.save ~path { (save_title "bad-applied" "Wrong" "Bad") with state = Applied };
+      (Ops.logseq_chat_pending_ops_save path
+         {
+           (save_title "conflicted" "Old" "Ignored") with
+           state = (Conflicted "known")
+         });
+      (Ops.logseq_chat_pending_ops_save path
+         { (save_title "applied" "Old" "Applied") with state = Applied });
+      (Ops.logseq_chat_pending_ops_save path
+         { (save_title "bad-applied" "Wrong" "Bad") with state = Applied });
     ignore (reset_conn conn (base_db "Old"));
     Runtime.rebase runtime ~server_t:42 ~operation_ids:[];
     assert_bool "rebase skips conflicts and replays only valid applied operations"
@@ -1197,7 +1235,7 @@ let () =
     assert_bool
       "an applied operation that no longer compiles becomes a durable conflict"
       (match
-         Ops.list ~path
+         (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path))
          |> List.find_opt (fun operation ->
            String.equal operation.Ops.operation_id "bad-applied")
        with
@@ -1207,8 +1245,11 @@ let () =
 
 let () =
   with_runtime (fun path conn runtime ->
-    Ops.save ~path { (save_title "retryable-rebase" "Old" "Retry") with state = Retryable };
-    Ops.save ~path { (save_title "submitted-rebase" "Retry" "Submit") with state = Submitted };
+      (Ops.logseq_chat_pending_ops_save path
+         { (save_title "retryable-rebase" "Old" "Retry") with state = Retryable });
+      (Ops.logseq_chat_pending_ops_save path
+         { (save_title "submitted-rebase" "Retry" "Submit") with state = Submitted
+         });
     ignore (reset_conn conn (base_db "Old"));
     Runtime.rebase runtime ~server_t:42 ~operation_ids:[];
     assert_bool "retryable and submitted operations both participate in rebase"
@@ -1323,7 +1364,7 @@ let () =
          | [ block ] -> String.equal block.Logseq_chat_lg_core_native.title "Pending"
          | _ -> false);
       assert_bool "pending SQLite operation remains plaintext"
-        (match Ops.list ~path with
+        (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
          | [ { intent = Save_title { expected_title; title; _ }; _ } ] ->
            String.equal expected_title "Old" && String.equal title "Pending"
          | _ -> false))
@@ -1461,7 +1502,7 @@ let () =
       let conn = conn_from_db (empty_db ~schema ()) in
       let runtime = Runtime.create ~auto_create_today:true ~path ~server_t:42 conn in
       let operation, page_uuid, block_uuid, title, journal_day =
-        match Ops.list ~path with
+        match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with
         | [ ({ intent = Create_journal { page_uuid; block_uuid; title; journal_day; _ }; _ }
               as operation) ] ->
           operation, page_uuid, block_uuid, title, journal_day
@@ -1481,7 +1522,7 @@ let () =
       ignore (reset_conn conn page_only);
       Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
       assert_bool "accepted partial journal remains pending until its first block arrives"
-        (List.length (Ops.list ~path) = 1);
+        (List.length (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = 1);
       assert_bool "accepted partial journal keeps its first block visible"
         (match Runtime.blocks_for_page runtime page_uuid with
          | [ block ] -> String.equal block.Logseq_chat_lg_core_native.uuid block_uuid
@@ -1492,7 +1533,8 @@ let () =
   List.iter (fun state ->
     with_runtime (fun path conn _ ->
       let payload = {|{"type":"create-page","uuid":"offline-page","title":"Offline Page","createdAt":7}|} in
-      Ops.store_raw path "offline-create-page" 42 state payload;
+      (Ops.logseq_chat_pending_ops_store_raw path "offline-create-page" 42 state
+         payload);
       let restored =
         try Some (Runtime.create ~path ~server_t:43 conn)
         with Invalid_argument _ -> None
@@ -1504,11 +1546,11 @@ let () =
       let page = entity (Runtime.db runtime) (Lookup_ref ("block/uuid", Uuid "offline-page")) in
       assert_bool "offline page title is restored"
         (Option.bind page (fun entity -> entity_attr entity "block/title") = Some (One_value (String "Offline Page")));
-      let operations = Ops.list ~path in
+      let operations = (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) in
       assert_bool "opening the graph preserves the pending operation" (List.length operations = 1);
       let operation = List.hd operations in
       assert_bool "the persisted payload remains compatible"
-        (Ops.intent_json operation.intent = Yojson.Basic.from_string payload);
+        ((Ops.logseq_chat_pending_ops_intent_json operation.intent) = Yojson.Basic.from_string payload);
       if state = "accepted:43" then
         assert_bool "accepted creation is not resubmitted"
           (Runtime.pending_operations runtime = [])
@@ -1519,10 +1561,11 @@ let () =
         [ Add (Entity_id 20, "block/uuid", Uuid "offline-page")
         ; Add (Entity_id 20, "block/title", String "Server Page")
         ; Add (Entity_id 20, "block/name", String "server page") ]);
-      Ops.save ~path { operation with state = Ops.Accepted 44 };
+      (Ops.logseq_chat_pending_ops_save path
+         { operation with state = (Ops.Accepted 44) });
       let reopened = Runtime.create ~path ~server_t:44 conn in
       assert_bool "confirmed creation is removed without overwriting the server page"
-        (Ops.list ~path = []
+        ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []
          && Option.bind
               (entity (Runtime.db reopened) (Lookup_ref ("block/uuid", Uuid "offline-page")))
               (fun entity -> entity_attr entity "block/title")
@@ -1547,15 +1590,25 @@ let () =
       (remote <> initial && List.exists
         (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.title = "Remote title")
         (Rrbvec.to_list ((remote).recent_pages)));
-    Ops.save ~path
-      { Ops.operation_id = "pending-page-title"; base_t = 43; state = Queued
-      ; intent = Save_title { uuid = "page"; expected_title = "Remote title"; title = "Local title" } };
+    (Ops.logseq_chat_pending_ops_save path
+       {
+         Ops.operation_id = "pending-page-title";
+         base_t = 43;
+         state = Queued;
+         intent =
+           (Save_title
+              {
+                uuid = "page";
+                expected_title = "Remote title";
+                title = "Local title"
+              })
+       });
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool "Pending local titles appear in the same sidebar snapshot"
       (List.exists
         (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.title = "Local title")
         (Rrbvec.to_list (((Runtime.sidebar_pages runtime)).recent_pages)));
-    Ops.remove ~path ~operation_id:"pending-page-title";
+    (Ops.logseq_chat_pending_ops_remove path "pending-page-title");
     Runtime.rebase runtime ~server_t:43 ~operation_ids:[];
     assert_bool "Removing a pending change restores authoritative sidebar data"
       (Runtime.sidebar_pages runtime = remote))
@@ -1570,7 +1623,7 @@ let () =
           { uuid = "block"
           ; expected_title = if index = 0 then "Old" else string_of_int (index - 1)
           ; title = string_of_int index } }) in
-    List.iter (Ops.save ~path) operations;
+    List.iter (Ops.logseq_chat_pending_ops_save path) operations;
     let measure f =
       Gc.full_major ();
       let before = Gc.allocated_bytes () in
@@ -1585,7 +1638,7 @@ let () =
     assert_bool "Restoring pending edits preserves their projected statuses"
       (Runtime.operation_statuses runtime = expected.statuses);
     assert_bool "Restoring pending edits keeps the authoritative graph unchanged"
-      (title (conn_db conn) = "Old" && Ops.list ~path = operations);
+      (title (conn_db conn) = "Old" && (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = operations);
     assert_bool "Graph restore must not construct the pending projection twice"
       (restore_bytes < projection_bytes *. 1.6))
 ;;

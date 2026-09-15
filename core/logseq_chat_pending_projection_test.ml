@@ -1,6 +1,6 @@
 open Datascript
 
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module Projection = Logseq_chat_pending_projection
 
 module Ds_value = struct
@@ -481,6 +481,22 @@ let () =
   assert_bool "outliner lookup rejects missing and incomplete blocks"
     (Projection.outliner_block db "missing" = None
      && Projection.outliner_block db "project" = None);
+  assert_bool "semantic equality preserves native instant and float representations"
+    (Projection.semantic_value_equal db (Some (Instant 42)) (Some (Instant_value 42))
+     && Projection.semantic_value_equal db (Some (Float 1.0)) (Some (Float_value 1.0))
+     && Projection.semantic_value_equal db (Some (Int 1)) (Some (Float_value 1.0)));
+  let expected_map = Ops.Map_value
+      (Rrbvec.of_list ["nested", Ops.Map_value (Rrbvec.of_list ["value", Ops.Int_value 1])]) in
+  assert_bool "semantic map equality traverses vector-backed nested values"
+    (Projection.semantic_value_equal db
+       (Some (Map [Keyword "nested", Map [Keyword "value", Int 1]])) (Some expected_map));
+  List.iter (fun actual ->
+      assert_bool "semantic maps reject incompatible keys, values and lengths"
+        (not (Projection.semantic_value_equal db (Some actual) (Some expected_map))))
+    [ Map []
+    ; Map [String "nested", Map [Keyword "value", Int 1]]
+    ; Map [Keyword "nested", Map [Keyword "value", Int 2]]
+    ];
   assert_bool "semantic equality supports primitive values"
     (Projection.semantic_value_equal db (Some (Int 8)) (Some (Int_value 8))
      && Projection.semantic_value_equal db (Some (Bool true)) (Some (Bool_value true)));
@@ -575,7 +591,7 @@ let () =
      | Some block -> block.page_uuid = "raw-page" && block.parent_uuid = "raw-parent"
      | None -> false);
   assert_bool "raw numeric parent refs participate in recursive deletion"
-    (match Projection.compile db (Delete_blocks { uuids = [ "raw-parent" ] }) with
+    (match Projection.compile db (Delete_blocks { uuids = (Rrbvec.of_list ["raw-parent"]) }) with
      | Ok tx ->
        db_with tx db
        |> fun projected ->
@@ -626,21 +642,29 @@ let () =
 let () =
   let authoritative = base_db () in
   let state =
-    Ops.Map_value
-      [ "state", Ops.Keyword_value "learning"
-      ; "stability", Ops.Float_value 0.4
-      ; "reps", Ops.Int_value 1
-      ]
+    (Ops.Map_value
+       (Rrbvec.of_list
+          [("state", (Ops.Keyword_value "learning"));
+           ("stability", (Ops.Float_value 0.4));
+           ("reps", (Ops.Int_value 1))]))
   in
   let intent =
-    Ops.Set_properties
-      { uuid = "block"
-      ; changes =
-          [ { attr = "logseq.property.fsrs/state"; expected = None; value = Some state }
-          ; { attr = "logseq.property.fsrs/due"; expected = None
-            ; value = Some (Ops.Int_value 1_776_000_060_000) }
-          ]
-      }
+    (Ops.Set_properties
+       {
+         uuid = "block";
+         changes =
+           (Rrbvec.of_list
+              ([{
+                  attr = "logseq.property.fsrs/state";
+                  expected = None;
+                  value = (Some state)
+                };
+                 {
+                   attr = "logseq.property.fsrs/due";
+                   expected = None;
+                   value = (Some (Ops.Int_value 1_776_000_060_000))
+                 }] : Logseq_chat_lg_core_native.property_change list))
+       })
   in
   let projected =
     match Projection.compile authoritative intent with
@@ -684,10 +708,21 @@ let () =
   let batch =
     operation "op-move-batch" 42
       (Move_blocks
-         { moves =
-             [ { uuid = "block"; page_uuid = "page"; parent_uuid = "target"; order = "a0" }
-             ; { uuid = "second"; page_uuid = "page"; parent_uuid = "target"; order = "a1" }
-             ]
+         {
+           moves =
+             (Rrbvec.of_list
+                ([{
+                    uuid = "block";
+                    page_uuid = "page";
+                    parent_uuid = "target";
+                    order = "a0"
+                  };
+                   {
+                     uuid = "second";
+                     page_uuid = "page";
+                     parent_uuid = "target";
+                     order = "a1"
+                   }] : Logseq_chat_lg_core_native.pending_move list))
          })
   in
   let snapshot = Projection.build ~server_t:42 authoritative [ batch ] in
@@ -768,7 +803,7 @@ let () =
       ; Add (Entity_id 11, "block/parent", Ref 10)
       ; Add (Entity_id 11, "block/order", String "a0") ] in
   let snapshot = Projection.build ~server_t:42 authoritative
-      [ operation "op-delete" 42 (Delete_blocks { uuids = [ "block" ] }) ] in
+      [ operation "op-delete" 42 (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) }) ] in
   assert_bool "delete hides target" (Option.is_none (entid snapshot.db "block/uuid" (Uuid "block")));
   assert_bool "delete hides descendants" (Option.is_none (entid snapshot.db "block/uuid" (Uuid "child")));
   assert_bool "delete does not mutate authoritative target" (Option.is_some (entid authoritative "block/uuid" (Uuid "block")));
@@ -948,7 +983,7 @@ let () =
 let () =
   let authoritative = base_db () in
   let delete_page =
-    operation "op-delete-page" 42 (Delete_blocks { uuids = [ "page" ] })
+    operation "op-delete-page" 42 (Delete_blocks { uuids = (Rrbvec.of_list ["page"]) })
   in
   let snapshot = Projection.build ~server_t:42 authoritative [ delete_page ] in
   assert_bool "ordinary block delete rejects pages"
@@ -1009,21 +1044,33 @@ let () =
        (Move_block
           { uuid = "block"; page_uuid = "page"; parent_uuid = "missing"; order = "a1" }));
   expect_error "empty move batch"
-    (Projection.compile db (Move_blocks { moves = [] }));
+    (Projection.compile db (Move_blocks { moves = (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list)) }));
   expect_error "move batch stops at a conflicting move"
     (Projection.compile db
        (Move_blocks
-          { moves =
-              [ { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a1" }
-              ; { uuid = "missing"; page_uuid = "page"; parent_uuid = "page"; order = "a2" }
-              ] }));
+          {
+            moves =
+              (Rrbvec.of_list
+                 ([{
+                     uuid = "block";
+                     page_uuid = "page";
+                     parent_uuid = "page";
+                     order = "a1"
+                   };
+                    {
+                      uuid = "missing";
+                      page_uuid = "page";
+                      parent_uuid = "page";
+                      order = "a2"
+                    }] : Logseq_chat_lg_core_native.pending_move list))
+          }));
   expect_error "split missing source"
     (Projection.compile db
        (Split_block
           { uuid = "missing"; expected_title = ""; before = ""; after = ""
           ; new_uuid = "new"; new_order = "a1"; created_at = 1 }));
   expect_error "delete missing roots"
-    (Projection.compile db (Delete_blocks { uuids = [ "missing" ] }))
+    (Projection.compile db (Delete_blocks { uuids = (Rrbvec.of_list ["missing"]) }))
 ;;
 
 let () =
@@ -1043,7 +1090,7 @@ let () =
              (Set_property
                 { uuid = "block"; attr = "user.property/label"; expected = None
                 ; value = Some (String_value "value") })));
-  let insert_intent : Ops.intent =
+  let insert_intent : Ops.pending_intent =
     Insert_block
       { uuid = "inserted"; title = "Inserted"; page_uuid = "page"; parent_uuid = "page"
       ; order = "a1"; created_at = 1 }
@@ -1056,17 +1103,37 @@ let () =
              (Insert_block
                 { uuid = "inserted"; title = "Inserted"; page_uuid = "page"
                 ; parent_uuid = "block"; order = "a1"; created_at = 1 })));
-  let current_move : Ops.intent =
+  let current_move : Ops.pending_intent =
     Move_block { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a0" }
   in
   assert_bool "move and move-batch satisfaction check every move"
     (Projection.satisfied db current_move
-     && Projection.satisfied db (Move_blocks { moves = [ { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a0" } ] })
-     && not (Projection.satisfied db (Move_blocks { moves = [] }))
+     && Projection.satisfied db (Move_blocks
+                                   {
+                                     moves =
+                                       (Rrbvec.of_list
+                                          ([{
+                                              uuid = "block";
+                                              page_uuid = "page";
+                                              parent_uuid = "page";
+                                              order = "a0"
+                                            }] : Logseq_chat_lg_core_native.pending_move list))
+                                   })
+     && not (Projection.satisfied db (Move_blocks { moves = (Rrbvec.of_list ([] : Logseq_chat_lg_core_native.pending_move list)) }))
      && not
           (Projection.satisfied db
-             (Move_blocks { moves = [ { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "wrong" } ] })));
-  let split_intent : Ops.intent =
+             (Move_blocks
+                {
+                  moves =
+                    (Rrbvec.of_list
+                       ([{
+                           uuid = "block";
+                           page_uuid = "page";
+                           parent_uuid = "page";
+                           order = "wrong"
+                         }] : Logseq_chat_lg_core_native.pending_move list))
+                })));
+  let split_intent : Ops.pending_intent =
     Split_block
       { uuid = "block"; expected_title = "Old"; before = "O"; after = "ld"
       ; new_uuid = "split"; new_order = "a1"; created_at = 1 }
@@ -1079,7 +1146,7 @@ let () =
              (Split_block
                 { uuid = "block"; expected_title = "Old"; before = "O"; after = "ld"
                 ; new_uuid = "split"; new_order = "wrong"; created_at = 1 })));
-  let linked_split : Ops.intent =
+  let linked_split : Ops.pending_intent =
     Split_block
       { uuid = "block"; expected_title = "Old"; before = "O"; after = "[[Project]]"
       ; new_uuid = "linked-split"; new_order = "a1"; created_at = 1 }
@@ -1087,7 +1154,7 @@ let () =
   let linked_split_db = db_with (Result.get_ok (Projection.compile db linked_split)) db in
   assert_bool "outliner insert mutations derive linked references"
     (has_ref linked_split_db ~source:"linked-split" ~target:"project");
-  let merge_intent : Ops.intent =
+  let merge_intent : Ops.pending_intent =
     Merge_backward
       { uuid = "split"; expected_title = "ld"; title = "ld"; previous_uuid = "block"
       ; expected_previous_title = "O"; merged_title = Some "Old" }
@@ -1096,8 +1163,8 @@ let () =
   assert_bool "merge satisfaction supports an explicit merged title"
     (Projection.satisfied merged_db merge_intent);
   assert_bool "delete satisfaction requires every UUID to be absent"
-    (Projection.satisfied db (Delete_blocks { uuids = [ "missing" ] })
-     && not (Projection.satisfied db (Delete_blocks { uuids = [ "block" ] })))
+    (Projection.satisfied db (Delete_blocks { uuids = (Rrbvec.of_list ["missing"]) })
+     && not (Projection.satisfied db (Delete_blocks { uuids = (Rrbvec.of_list ["block"]) })))
 ;;
 
 let () =
@@ -1110,7 +1177,7 @@ let () =
          ]
   in
   expect_error "journal entities cannot be deleted as ordinary blocks"
-    (Projection.compile journal_only (Delete_blocks { uuids = [ "journal" ] }));
+    (Projection.compile journal_only (Delete_blocks { uuids = (Rrbvec.of_list ["journal"]) }));
   let cyclic =
     base_db ()
     |> db_with
@@ -1131,32 +1198,24 @@ let () =
     Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
     let first = operation "op-persisted" 42
         (Save_title { uuid = "block"; expected_title = "Old"; title = "Offline" }) in
-    Ops.save ~path first;
-    assert_bool "pending op round trip" (Ops.list ~path = [ first ]);
-    let module LG = Logseq_chat_lg_core_native in
-    let migrated = LG.logseq_chat_pending_ops_list path |> Rrbvec.to_list in
-    let migrated_first =
-      match migrated with
-      | [ operation ] -> operation
-      | _ -> failwith "LG must read the existing pending queue"
-    in
-    assert_bool "LG reads the legacy pending storage ABI"
-      (migrated_first.operation_id = first.operation_id
-       && migrated_first.base_t = first.base_t
-       && LG.logseq_chat_pending_ops_intent_json migrated_first.intent = Ops.intent_json first.intent);
-    LG.logseq_chat_pending_ops_save path { migrated_first with state = LG.Accepted 43 };
-    assert_bool "legacy storage reads the LG write without conversion"
-      (Ops.list ~path = [ { first with state = Accepted 43 } ]);
-    LG.logseq_chat_pending_ops_set_state path first.operation_id LG.Retryable;
+    let payload = {|{"type":"save-title","uuid":"block","expectedTitle":"Old","title":"Offline"}|} in
+    Ops.logseq_chat_pending_ops_store_raw path first.operation_id 42 "queued" payload;
+    assert_bool "LG restores a legacy SQLite row without conversion"
+      (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path) = [first]);
+    Ops.logseq_chat_pending_ops_save path { first with state = Accepted 43 };
+    assert_bool "LG writes the unchanged SQLite wire format"
+      (Ops.logseq_chat_pending_ops_list_raw path
+       = [first.operation_id, 42, "accepted:43", payload]);
+    Ops.logseq_chat_pending_ops_set_state path first.operation_id Retryable;
     assert_bool "LG updates the existing row state"
-      (Ops.list ~path = [ { first with state = Retryable } ]);
-    Ops.set_state ~path ~operation_id:first.operation_id Submitted;
+      ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = [ { first with state = Retryable } ]);
+    (Ops.logseq_chat_pending_ops_set_state path first.operation_id Submitted);
     assert_bool "pending state update"
-      (match Ops.list ~path with [ { state = Submitted; _ } ] -> true | _ -> false);
+      (match (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) with [ { state = Submitted; _ } ] -> true | _ -> false);
     ignore
-      (LG.logseq_chat_pending_ops_confirm path
+      (Ops.logseq_chat_pending_ops_confirm path
          (Lg_runtime.Runtime_seq.of_vector, Rrbvec.of_list [ first.operation_id; "unknown" ]));
-    assert_bool "pending removal" (Ops.list ~path = []))
+    assert_bool "pending removal" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = []))
 ;;
 
 let () =
@@ -1175,9 +1234,15 @@ let () =
           (Move_block { uuid = "new"; page_uuid = "page"; parent_uuid = "page"; order = "a1" })
       ; operation "04b-move-batch" 42
           (Move_blocks
-             { moves =
-                 [ { uuid = "new"; page_uuid = "page"; parent_uuid = "block"; order = "a1" }
-                 ]
+             {
+               moves =
+                 (Rrbvec.of_list
+                    ([{
+                        uuid = "new";
+                        page_uuid = "page";
+                        parent_uuid = "block";
+                        order = "a1"
+                      }] : Logseq_chat_lg_core_native.pending_move list))
              })
       ; operation "05-split" 42
           (Split_block { uuid = "block"; expected_title = "Old"; before = "O"; after = "ld";
@@ -1185,7 +1250,7 @@ let () =
       ; operation "06-merge" 42
           (Merge_backward { uuid = "split"; expected_title = "ld"; title = "ld"; previous_uuid = "block";
                             expected_previous_title = "O"; merged_title = None })
-      ; operation "07-delete" 42 (Delete_blocks { uuids = [ "block"; "new" ] })
+      ; operation "07-delete" 42 (Delete_blocks { uuids = (Rrbvec.of_list ["block"; "new"]) })
       ; operation "08-favorite" 42
           (Set_favorite
              { page_uuid = "project"; favorite_uuid = "favorite-project"; favorite = true
@@ -1193,15 +1258,15 @@ let () =
       ; operation "09-delete-page" 42
           (Delete_page { page_uuid = "project"; order = "a1"; deleted_at = 10 }) ]
     in
-    List.iter (Ops.save ~path) operations;
-    assert_bool "all semantic intents round trip in insertion order" (Ops.list ~path = operations);
+    List.iter (Ops.logseq_chat_pending_ops_save path) operations;
+    assert_bool "all semantic intents round trip in insertion order" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = operations);
     let replacement =
       { (List.hd operations) with
         state = Retryable;
         intent = Save_title { uuid = "block"; expected_title = "Old"; title = "Replacement" } }
     in
-    Ops.save ~path replacement;
-    let restored = Ops.list ~path in
+    (Ops.logseq_chat_pending_ops_save path replacement);
+    let restored = (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) in
     assert_bool "operation-id upsert does not duplicate or reorder" (List.length restored = 10);
     assert_bool "operation-id upsert replaces payload" (List.hd restored = replacement))
 ;;
@@ -1213,14 +1278,18 @@ let () =
         (Save_title { uuid = "block"; expected_title = "Old"; title = "First" }) in
     let second = operation "op-second" 42
         (Save_title { uuid = "block"; expected_title = "First"; title = "Second" }) in
-    Ops.save ~path { first with state = Accepted 43 };
-    Ops.save ~path { second with state = Submitted };
-    Ops.confirm ~path ~operation_ids:[];
+    (Ops.logseq_chat_pending_ops_save path { first with state = (Accepted 43) });
+    (Ops.logseq_chat_pending_ops_save path { second with state = Submitted });
+    (ignore
+       (Ops.logseq_chat_pending_ops_confirm path
+          (Lg_runtime.Runtime_seq.of_list, [])));
     assert_bool "cursor advance without operation identity confirms nothing"
-      (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-first"; "op-second" ]);
-    Ops.confirm ~path ~operation_ids:[ "op-first"; "unknown" ];
+      (List.map (fun op -> op.Ops.operation_id) (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = [ "op-first"; "op-second" ]);
+    (ignore
+       (Ops.logseq_chat_pending_ops_confirm path
+          (Lg_runtime.Runtime_seq.of_list, ["op-first"; "unknown"])));
     assert_bool "WebSocket sync confirms only matching operation identities"
-      (List.map (fun op -> op.Ops.operation_id) (Ops.list ~path) = [ "op-second" ]))
+      (List.map (fun op -> op.Ops.operation_id) (Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = [ "op-second" ]))
 ;;
 
 let () =
@@ -1228,15 +1297,15 @@ let () =
     Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging active_path;
     let op = operation "op-survives-snapshot" 42
         (Save_title { uuid = "block"; expected_title = "Old"; title = "Offline" }) in
-    Ops.save ~path:active_path op;
+    (Ops.logseq_chat_pending_ops_save active_path op);
     (match Logseq_chat_lg_core_native.logseq_chat_graph_store_begin_import active_path with Ok () -> () | Error message -> fail "begin import" message);
     (match Logseq_chat_lg_core_native.logseq_chat_graph_store_activate active_path with Ok () -> () | Error message -> fail "activate import" message);
-    assert_bool "snapshot replacement preserves pending ops" (Ops.list ~path:active_path = [ op ]))
+    assert_bool "snapshot replacement preserves pending ops" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list active_path)) = [ op ]))
 ;;
 
 let () =
   let payload = Yojson.Basic.from_string {|{"type":"create-page","uuid":"new-page","title":"New Page","createdAt":7}|} in
-  let decoded = try Some (Ops.intent_of_json payload) with Invalid_argument _ -> None in
+  let decoded = try Some (Ops.logseq_chat_pending_ops_intent_of_json payload) with Invalid_argument _ -> None in
   assert_bool "ordinary page creation is a persisted semantic operation" (Option.is_some decoded);
   let intent = Option.get decoded in
   let operation = operation "create-page" 42 intent in
@@ -1247,6 +1316,6 @@ let () =
     (List.exists (fun (page : Logseq_chat_lg_core_native.entity_summary) -> page.uuid = "new-page") (Rrbvec.to_list (((Logseq_chat_lg_core_native.logseq_chat_graph_read_sidebar_pages (fun value -> Ok value) (projected.db))).recent_pages)));
   with_temp_db (fun path ->
     Logseq_chat_lg_core_native.logseq_chat_graph_store_prepare_staging path;
-    Ops.save ~path operation;
-    assert_bool "page creation survives restart" (Ops.list ~path = [operation]))
+    (Ops.logseq_chat_pending_ops_save path operation);
+    assert_bool "page creation survives restart" ((Rrbvec.to_list (Ops.logseq_chat_pending_ops_list path)) = [operation]))
 ;;

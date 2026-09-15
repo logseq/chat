@@ -1,7 +1,7 @@
 module State = Logseq_chat_outliner_state
 module Effects = Logseq_chat_outliner_effects
 module Model = Logseq_chat_lg_core_native
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
@@ -123,7 +123,7 @@ let () =
 ;;
 
 let () =
-  let move = Ops.{ uuid = "second"; page_uuid = "page"; parent_uuid = "first"; order = "a0" } in
+  let move : Ops.pending_move = Ops.{ uuid = "second"; page_uuid = "page"; parent_uuid = "first"; order = "a0" } in
   let result =
     Effects.interpret
       ~base_t:42
@@ -137,7 +137,7 @@ let () =
   | Ok result ->
     assert_bool "move batch stays one operation"
       (match result.operations with
-       | [ { Ops.intent = Move_blocks { moves = [ actual ] }; _ } ] -> actual = move
+       | [ { Ops.intent = Move_blocks { moves }; _ } ] -> Rrbvec.to_list moves = [move]
        | _ -> false);
     assert_bool "haptic stays a platform command"
       (result.platform = [ Effects.Haptic State.Impact ])
@@ -258,8 +258,8 @@ let () =
      = Ok Effects.{ operations = []; platform = [] });
   assert_bool "nonempty delete is one semantic operation"
     (match interpret [ State.Delete_blocks [ "first" ] ] with
-     | Ok { operations = [ { Ops.intent = Delete_blocks { uuids = [ "first" ] }; _ } ]; _ } ->
-       true
+     | Ok { operations = [ { Ops.intent = Delete_blocks { uuids }; _ } ]; _ } ->
+       Rrbvec.to_list uuids = ["first"]
      | _ -> false)
 ;;
 

@@ -4,7 +4,6 @@
  "logseq_chat_lui_snapshot"
  "logseq_chat_outliner_state"
  "logseq_chat_outliner_effects"
- "logseq_chat_pending_ops"
  "logseq_chat_pending_projection"
  "logseq_chat_rpc"
  "logseq_chat_search_index"

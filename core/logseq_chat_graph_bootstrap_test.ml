@@ -1,7 +1,7 @@
 open Datascript
 
 module Bootstrap = Logseq_chat_lg_core_native
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module Projection = Logseq_chat_pending_projection
 module Snapshot = Logseq_chat_lg_core_native
 module Transit = Transit_native.Transit.Json

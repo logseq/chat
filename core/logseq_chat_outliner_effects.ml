@@ -1,5 +1,5 @@
 module State = Logseq_chat_outliner_state
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module Model = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 
@@ -15,7 +15,7 @@ type platform_command =
   | Record_audio of string
 
 type result =
-  { operations : Ops.t list
+  { operations : Ops.pending_operation list
   ; platform : platform_command list
   }
 
@@ -138,7 +138,7 @@ let command ~base_t ~now ~fresh_uuid context = function
     then Error "move batch must not be empty"
     else
       Ok
-        { operations = [ operation ~base_t ~fresh_uuid (Move_blocks { moves }) ]
+        { operations = [ operation ~base_t ~fresh_uuid (Move_blocks { moves = (Rrbvec.of_list (moves : Logseq_chat_lg_core_native.pending_move list)) }) ]
         ; platform = []
         }
   | State.Request_delete_confirmation uuids ->
@@ -148,7 +148,7 @@ let command ~base_t ~now ~fresh_uuid context = function
     then Ok { operations = []; platform = [] }
     else
       Ok
-        { operations = [ operation ~base_t ~fresh_uuid (Delete_blocks { uuids }) ]
+        { operations = [ operation ~base_t ~fresh_uuid (Delete_blocks { uuids = (Rrbvec.of_list uuids) }) ]
         ; platform = []
         }
   | State.Cycle_task_status uuid ->

@@ -1,5 +1,5 @@
 open Datascript
-open Logseq_chat_pending_ops
+open Logseq_chat_lg_core_native
 
 module Outliner = Logseq_chat_lg_core_native
 
@@ -12,7 +12,7 @@ end
 type snapshot =
   { db : db
   ; server_t : int
-  ; statuses : (string * state) list
+  ; statuses : (string * pending_state) list
   }
 
 let lookup uuid = Lookup_ref ("block/uuid", Uuid uuid)
@@ -63,7 +63,7 @@ let rec datascript_value = function
   | Bool_value value -> Bool value
   | Keyword_value value -> Keyword value
   | Map_value entries ->
-    Map (List.map (fun (key, value) -> Keyword key, datascript_value value) entries)
+    Map (List.map (fun (key, value) -> Keyword key, datascript_value value) (Rrbvec.to_list entries))
   | Ref_uuid uuid -> Ref_to (lookup uuid)
   | Ref_ident ident -> Ref_to (Lookup_ref ("db/ident", Keyword ident))
 ;;
@@ -78,8 +78,8 @@ let rec semantic_value_equal_value db left right =
   | Bool value, Bool_value expected -> value = expected
   | Keyword value, Keyword_value expected -> String.equal value expected
   | Map entries, Map_value expected ->
-    List.length entries = List.length expected
-    && List.for_all
+    List.length entries = Rrbvec.length expected
+    && Rrbvec.for_all
          (fun (key, expected_value) ->
            List.exists
              (fun (actual_key, actual_value) ->
@@ -326,25 +326,20 @@ let rec compile db = function
              | Some value -> Add (lookup uuid, attr, datascript_value value)
              | None -> RetractAttr (lookup uuid, attr)) ]
   | Set_properties { uuid; changes } ->
-    if changes = []
-    then Error "property changes cannot be empty"
-    else if Option.is_none (entid db "block/uuid" (Uuid uuid))
-    then Error "block no longer exists"
-    else if
-      not
-        (List.for_all
-           (fun { attr; expected; _ } ->
-             semantic_value_equal db (one_value db (lookup uuid) attr) expected)
-           changes)
+    if Rrbvec.length changes = 0 then Error "property changes cannot be empty"
+    else if Option.is_none (entid db "block/uuid" (Uuid uuid)) then Error "block no longer exists"
+    else if not (Rrbvec.for_all
+                   (fun ({ attr; expected; _ } : property_change) ->
+                      semantic_value_equal db (one_value db (lookup uuid) attr) expected)
+                   changes)
     then Error "property changed on the server"
     else
-      Ok
-        (List.map
-           (fun { attr; value; _ } ->
-             match value with
-             | Some value -> Add (lookup uuid, attr, datascript_value value)
-             | None -> RetractAttr (lookup uuid, attr))
-           changes)
+      Ok (List.map
+            (fun ({ attr; value; _ } : property_change) ->
+               match value with
+               | Some value -> Add (lookup uuid, attr, datascript_value value)
+               | None -> RetractAttr (lookup uuid, attr))
+            (Rrbvec.to_list changes))
   | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
     if Option.is_some (entid db "block/uuid" (Uuid uuid))
     then Error "inserted block UUID already exists"
@@ -405,17 +400,21 @@ let rec compile db = function
      | Some _, Some _, Some _ -> Error "move would create an outliner cycle"
      | _ -> Error "move target no longer exists")
   | Move_blocks { moves } ->
-    if moves = []
-    then Error "move batch must not be empty"
-    else
-      let rec compile_moves db tx = function
-        | [] -> Ok (List.rev tx |> List.concat)
-        | { uuid; page_uuid; parent_uuid; order } :: rest ->
-          (match compile db (Move_block { uuid; page_uuid; parent_uuid; order }) with
+    (let moves = Rrbvec.to_list moves in
+     if moves = []
+     then Error "move batch must not be empty"
+     else
+       (let rec compile_moves db tx =
+          function
+          | [] -> Ok ((List.rev tx) |> List.concat)
+          | ({ uuid; page_uuid; parent_uuid; order } : pending_move)::rest ->
+            (match compile db
+                     (Move_block { uuid; page_uuid; parent_uuid; order })
+             with
            | Error _ as error -> error
-           | Ok move_tx -> compile_moves (db_with move_tx db) (move_tx :: tx) rest)
-      in
-      compile_moves db [] moves
+           | Ok move_tx ->
+             compile_moves (db_with move_tx db) (move_tx :: tx) rest) in
+        compile_moves db [] moves))
   | Split_block { uuid; expected_title; before; after; new_uuid; new_order; created_at } ->
     compile_outliner db
       (Outliner.Split
@@ -440,12 +439,18 @@ let rec compile db = function
          ; merged_title
          })
   | Delete_blocks { uuids } ->
-    let roots = List.filter_map (fun uuid -> entid db "block/uuid" (Uuid uuid)) uuids in
-    if roots = []
-    then Error "block no longer exists"
-    else if List.exists (page_entity db) roots
-    then Error "ordinary block delete cannot delete a page"
-    else Ok (List.map (fun eid -> RetractEntity (Entity_id eid)) (subtree db roots))
+    (let uuids = Rrbvec.to_list uuids in
+     let roots =
+       List.filter_map (fun uuid -> entid db "block/uuid" (Uuid uuid)) uuids in
+     if roots = []
+     then Error "block no longer exists"
+     else
+     if List.exists (page_entity db) roots
+     then Error "ordinary block delete cannot delete a page"
+     else
+       Ok
+         (List.map (fun eid -> RetractEntity (Entity_id eid))
+            (subtree db roots)))
   | Create_page { uuid; title; created_at } ->
     if Option.is_some (entid db "block/uuid" (Uuid uuid))
     then Ok []
@@ -632,9 +637,9 @@ let rec satisfied db = function
   | Set_property { uuid; attr; value; _ } ->
     semantic_value_equal db (one_value db (lookup uuid) attr) value
   | Set_properties { uuid; changes } ->
-    changes <> []
-    && List.for_all
-         (fun { attr; value; _ } ->
+    Rrbvec.length changes > 0
+    && Rrbvec.for_all
+      (fun ({ attr; value; _ } : property_change) ->
            semantic_value_equal db (one_value db (lookup uuid) attr) value)
          changes
   | Insert_block { uuid; title; page_uuid; parent_uuid; order; _ } ->
@@ -660,20 +665,17 @@ let rec satisfied db = function
          (one_value db (lookup uuid) "logseq.property.asset/remote-metadata")
          (Some
             (Map_value
-               [ "checksum", String_value asset_checksum
-               ; "type", String_value asset_type
-               ]))
+               (Rrbvec.of_list
+                  [("checksum", (String_value asset_checksum));
+                   ("type", (String_value asset_type))])))
   | Move_block { uuid; page_uuid; parent_uuid; order } ->
     Option.is_some (entid db "block/uuid" (Uuid uuid))
     && semantic_value_equal db (one_value db (lookup uuid) "block/page") (Some (Ref_uuid page_uuid))
     && semantic_value_equal db (one_value db (lookup uuid) "block/parent") (Some (Ref_uuid parent_uuid))
     && string_value (one_value db (lookup uuid) "block/order") = Some order
   | Move_blocks { moves } ->
-    moves <> []
-    && List.for_all
-         (fun { uuid; page_uuid; parent_uuid; order } ->
-           satisfied db (Move_block { uuid; page_uuid; parent_uuid; order }))
-         moves
+    Rrbvec.length moves > 0
+    && Rrbvec.for_all (fun move -> satisfied db (Move_block move)) moves
   | Split_block { uuid; before; after; new_uuid; new_order; _ } ->
     string_value (one_value db (lookup uuid) "block/title") = Some before
     && string_value (one_value db (lookup new_uuid) "block/title") = Some after
@@ -683,7 +685,7 @@ let rec satisfied db = function
     && string_value (one_value db (lookup previous_uuid) "block/title")
        = Some (Option.value merged_title ~default:(expected_previous_title ^ title))
   | Delete_blocks { uuids } ->
-    List.for_all (fun uuid -> Option.is_none (entid db "block/uuid" (Uuid uuid))) uuids
+    Rrbvec.for_all (fun uuid -> Option.is_none (entid db "block/uuid" (Uuid uuid))) uuids
   | Create_tag { uuid; _ } | Create_page { uuid; _ } -> Option.is_some (entid db "block/uuid" (Uuid uuid))
   | Create_journal { block_uuid; journal_day; _ } ->
     (match journal_page_eid db journal_day, entid db "block/uuid" (Uuid block_uuid) with
@@ -716,7 +718,7 @@ let rec satisfied db = function
 let build ~server_t authoritative operations =
   let db, statuses =
     List.fold_left
-      (fun (db, statuses) operation ->
+      (fun (db, statuses) (operation : pending_operation) ->
         match operation.state with
         | Conflicted message -> db, (operation.operation_id, Conflicted message) :: statuses
         | _ ->

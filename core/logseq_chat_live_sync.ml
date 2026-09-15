@@ -7,7 +7,7 @@ module Bootstrap = Logseq_chat_lg_core_native
 module Session = Logseq_chat_lg_core_native
 module Store = Logseq_chat_lg_core_native
 module Runtime = Logseq_chat_graph_runtime
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 
 let contents_page_uuid = "00000004-1690-2597-3200-000000000000"

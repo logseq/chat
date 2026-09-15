@@ -395,7 +395,7 @@ let () =
   assert_bool "return on the final empty child outdents instead of splitting"
     (match effects with
      | [ State.Move_blocks [ move ] ] ->
-       String.equal move.Logseq_chat_pending_ops.uuid "empty"
+       String.equal move.Logseq_chat_lg_core_native.uuid "empty"
        && String.equal move.parent_uuid "page"
      | _ -> false)
 ;;
@@ -449,9 +449,9 @@ let () =
   assert_bool "indent emits one atomic move batch"
     (match effects with
      | [ State.Move_blocks moves; State.Haptic State.Impact ] ->
-       List.map (fun move -> move.Logseq_chat_pending_ops.uuid) moves = [ "second"; "third" ]
+       List.map (fun (move : Logseq_chat_lg_core_native.pending_move) -> move.uuid) moves = [ "second"; "third" ]
        && List.for_all
-            (fun move -> String.equal move.Logseq_chat_pending_ops.parent_uuid "first")
+         (fun (move : Logseq_chat_lg_core_native.pending_move) -> String.equal move.parent_uuid "first")
             moves
      | _ -> false)
 ;;
@@ -538,7 +538,7 @@ let () =
   assert_bool "editor indent moves the editing block"
     (match effects with
      | [ State.Move_blocks [ move ]; State.Haptic State.Impact ] ->
-       String.equal move.Logseq_chat_pending_ops.uuid "b"
+       String.equal move.Logseq_chat_lg_core_native.uuid "b"
        && String.equal move.parent_uuid "a"
      | _ -> false)
 ;;
@@ -558,7 +558,7 @@ let () =
   assert_bool "editor outdent moves the editing block"
     (match effects with
      | [ State.Move_blocks [ move ]; State.Haptic State.Impact ] ->
-       String.equal move.Logseq_chat_pending_ops.uuid "child"
+       String.equal move.Logseq_chat_lg_core_native.uuid "child"
        && String.equal move.parent_uuid "page"
      | _ -> false)
 ;;
@@ -670,7 +670,8 @@ let () =
     State.update
       after_delete
       state
-      (Operation_staged (Logseq_chat_pending_ops.Delete_blocks { uuids = [ "parent" ] }))
+      (Operation_staged (Logseq_chat_lg_core_native.Delete_blocks
+                           { uuids = (Rrbvec.of_list ["parent"]) }))
   in
   assert_bool "deleting the zoom destination returns to a valid page"
     (State.zoom_path state = [])
@@ -888,11 +889,11 @@ let () =
   let after = State.drop drop_context selected "last" State.After in
   assert_bool "drop before first creates an order below the target"
     (match before with
-     | Some [ move ] -> String.compare move.Logseq_chat_pending_ops.order "a0" < 0
+     | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" < 0
      | _ -> false);
   assert_bool "drop after last creates an order above the target"
     (match after with
-     | Some [ move ] -> String.compare move.Logseq_chat_pending_ops.order "a2" > 0
+     | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a2" > 0
      | _ -> false);
   assert_bool "drop onto the selected root is rejected"
     (State.drop drop_context selected "middle" State.Inside = None)
@@ -956,7 +957,7 @@ let () =
   let unchanged, effects =
     State.update context State.empty
       (Operation_staged
-         (Logseq_chat_pending_ops.Merge_backward
+         (Logseq_chat_lg_core_native.Merge_backward
             { uuid = "a"; expected_title = "Alpha"; title = "Alpha"
             ; previous_uuid = "missing"; expected_previous_title = "Missing"
             ; merged_title = None }))
@@ -966,7 +967,7 @@ let () =
   let state, effects =
     State.update context State.empty
       (Operation_staged
-         (Logseq_chat_pending_ops.Split_block
+         (Logseq_chat_lg_core_native.Split_block
             { uuid = "a"; expected_title = "Alpha"; before = "A"; after = "lpha"
             ; new_uuid = "new"; new_order = "a1"; created_at = 1 }))
   in
@@ -985,7 +986,7 @@ let () =
   let state, effects =
     State.update context State.empty
       (Operation_staged
-         (Logseq_chat_pending_ops.Insert_block
+         (Logseq_chat_lg_core_native.Insert_block
             { uuid = "new-root"; title = ""; page_uuid = "page-1"
             ; parent_uuid = "page-1"; order = "a0"; created_at = 1 }))
   in
@@ -1068,7 +1069,7 @@ let () =
   in
   assert_bool "indent appends after existing children"
     (match State.indent with_existing_child (State.String_set.singleton "second") with
-     | Some [ move ] -> String.compare move.Logseq_chat_pending_ops.order "a0" > 0
+     | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
      | _ -> false)
 ;;
 
@@ -1111,7 +1112,7 @@ let () =
   in
   assert_bool "outdent after the final outer sibling allocates an unbounded order"
     (match State.outdent no_next_outer (State.String_set.singleton "child") with
-     | Some [ move ] -> String.compare move.Logseq_chat_pending_ops.order "a0" > 0
+     | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
      | _ -> false)
 ;;
 
@@ -1140,18 +1141,18 @@ let () =
   let selected = State.String_set.singleton "middle" in
   assert_bool "drop inside appends after existing children"
     (match State.drop drop_context selected "last" State.Inside with
-     | Some [ move ] -> String.compare move.Logseq_chat_pending_ops.order "a0" > 0
+     | Some [ move ] -> String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
      | _ -> false);
   assert_bool "drop before a non-first target uses the previous order"
     (match State.drop drop_context selected "last" State.Before with
      | Some [ move ] ->
-       String.compare move.Logseq_chat_pending_ops.order "a0" > 0
+       String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
        && String.compare move.order "a2" < 0
      | _ -> false);
   assert_bool "drop after a non-final target uses the next order"
     (match State.drop drop_context selected "first" State.After with
      | Some [ move ] ->
-       String.compare move.Logseq_chat_pending_ops.order "a0" > 0
+       String.compare move.Logseq_chat_lg_core_native.order "a0" > 0
        && String.compare move.order "a2" < 0
      | _ -> false);
   assert_bool "drop target absent from normalized siblings is rejected by order allocation"

@@ -326,12 +326,12 @@ let () =
 let () =
   let legacy_send_count = ref 0 in
   let staged = ref [] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     staged :=
       operation
       :: List.filter
            (fun existing ->
-             not (String.equal existing.Logseq_chat_pending_ops.operation_id operation.operation_id))
+            not (String.equal existing.Logseq_chat_lg_core_native.operation_id operation.operation_id))
            !staged;
     Ok ()
   in
@@ -342,7 +342,8 @@ let () =
       ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
       ~stage_operation:stage
       ~prepare_operation:(fun operation ->
-        Ok (Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent, "[]"))
+          Ok ((Logseq_chat_lg_core_native.logseq_chat_pending_ops_outliner_op
+                 operation.Logseq_chat_lg_core_native.intent), "[]"))
       ~pending_operations:(fun () -> List.rev !staged)
       ~send:(fun _request ->
         incr legacy_send_count;
@@ -462,7 +463,8 @@ let () =
         Ok ())
       ~prepare_operation:(fun operation ->
         Ok
-          ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
+          ( (Logseq_chat_lg_core_native.logseq_chat_pending_ops_outliner_op
+               operation.Logseq_chat_lg_core_native.intent)
           , "[]" ))
       ()
   in
@@ -476,7 +478,7 @@ let () =
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"sendTask","payload":"{\"text\":\"Secret task\",\"uuid\":\"encrypted-async\",\"now\":1776000000000,\"status\":{\"uuid\":\"todo\",\"title\":\"Todo\"}}"}}|});
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent = Create_journal { block_uuid; title; _ }; _ }
+   | [ { Logseq_chat_lg_core_native.intent = Create_journal { block_uuid; title; _ }; _ }
      ; { intent = Set_property { uuid; attr; _ }; _ }
      ] ->
      assert_equal "encrypted task journal block" "encrypted-async" block_uuid;
@@ -534,7 +536,8 @@ let () =
         staged := !staged @ [ operation ];
         Ok ())
       ~prepare_operation:(fun operation ->
-        Ok (Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent, "[]"))
+          Ok ((Logseq_chat_lg_core_native.logseq_chat_pending_ops_outliner_op
+                 operation.Logseq_chat_lg_core_native.intent), "[]"))
       ~cleanup_file:(fun path -> cleaned := path :: !cleaned)
       ()
   in
@@ -579,7 +582,7 @@ let () =
     "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
     (required_string "url" tx_request);
   (match !staged with
-   | [ { Logseq_chat_pending_ops.state = Applied; _ }
+   | [ { Logseq_chat_lg_core_native.state = Applied; _ }
      ; { state = Queued
        ; intent = Create_asset
              { uuid; title; page_uuid; parent_uuid; asset_type; asset_size;
@@ -786,7 +789,7 @@ let () =
       }
   in
   let projected = ref [ parent ] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     (match operation.intent with
      | Create_asset
          { uuid; title; page_uuid; parent_uuid; order; created_at; asset_type;
@@ -814,7 +817,8 @@ let () =
       ~stage_operation:stage
       ~prepare_operation:(fun operation ->
         Ok
-          ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
+          ( (Logseq_chat_lg_core_native.logseq_chat_pending_ops_outliner_op
+               operation.Logseq_chat_lg_core_native.intent)
           , "[]" ))
       ()
   in
@@ -1807,7 +1811,8 @@ let () =
 
 let prepare_test_operation operation =
   Ok
-    ( Logseq_chat_pending_ops.outliner_op operation.Logseq_chat_pending_ops.intent
+    ( (Logseq_chat_lg_core_native.logseq_chat_pending_ops_outliner_op
+         operation.Logseq_chat_lg_core_native.intent)
     , "[]" )
 ;;
 
@@ -1825,7 +1830,7 @@ let () =
       ]
   in
   let staged = ref [] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     staged := !staged @ [ operation ];
     (match operation.intent with
      | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
@@ -1864,7 +1869,7 @@ let () =
     |> from_string
   in
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent = Insert_block { uuid = "local-hello"; _ }; _ } ] -> ()
+   | [ { Logseq_chat_lg_core_native.intent = Insert_block { uuid = "local-hello"; _ }; _ } ] -> ()
    | _ -> failwith "plain local capture was not staged in the projected graph");
   (match captured with
    | `Assoc fields ->
@@ -1914,7 +1919,7 @@ let () =
   in
   let projected = ref [ parent ] in
   let staged = ref [] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     staged := !staged @ [ operation ];
     (match operation.intent with
      | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
@@ -1949,7 +1954,7 @@ let () =
     |> from_string
   in
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent =
+   | [ { Logseq_chat_lg_core_native.intent =
            Insert_block { uuid = "local-child"; page_uuid = "child-page";
                           parent_uuid = "child-parent"; _ }
        ; _ } ] -> ()
@@ -2010,7 +2015,7 @@ let () =
       ~journal_page_id:(fun ~journal_day:_ -> Some "journal-page")
       ~stage_operation:(fun operation ->
         staged := !staged @ [ operation ];
-        (match operation.Logseq_chat_pending_ops.intent with
+        (match operation.Logseq_chat_lg_core_native.intent with
          | Create_asset { uuid; title; _ } ->
            projected := [target; { (remote_block uuid title) with is_asset = true }]
          | _ -> ());
@@ -2024,7 +2029,7 @@ let () =
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"addAsset","payload":"{\"uuid\":\"2f659891-3fbc-492c-8943-9e08de2ed949\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"}}|});
   (match !staged with
-   | [ { Logseq_chat_pending_ops.state = Applied
+   | [ { Logseq_chat_lg_core_native.state = Applied
        ; intent = Create_asset { uuid = "2f659891-3fbc-492c-8943-9e08de2ed949"; _ }
        ; _ } ] -> ()
    | _ -> failwith "local asset must enter projection before its raw upload");
@@ -2058,7 +2063,7 @@ let () =
        "2f659891-3fbc-492c-8943-9e08de2ed949" (required_string "tx-id" tx)
    | _ -> failwith "asset batch must contain one transaction");
   (match !staged with
-   | [ { Logseq_chat_pending_ops.state = Applied; _ }
+   | [ { Logseq_chat_lg_core_native.state = Applied; _ }
      ; { state = Queued
        ; intent = Create_asset { uuid; page_uuid; parent_uuid; order; _ }
        ; _ } ] ->
@@ -2096,7 +2101,7 @@ let () =
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|});
   (match !staged with
-   | [ { Logseq_chat_pending_ops.state = Applied
+   | [ { Logseq_chat_lg_core_native.state = Applied
        ; intent = Create_asset { uuid = "retry-asset"; _ }
        ; _ } ] -> ()
    | _ -> failwith "failed raw upload must keep only its local asset projection");
@@ -2142,7 +2147,7 @@ let () =
        session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Encrypted capture\",\"uuid\":\"encrypted-capture\",\"now\":1776000000000}"}}|});
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent =
+   | [ { Logseq_chat_lg_core_native.intent =
            Insert_block { uuid; title; page_uuid; parent_uuid; order; _ }
        ; _
        } ] ->
@@ -2292,7 +2297,7 @@ let () =
       ~graph_blocks:(fun () -> Some !projected)
       ~stage_operation:(fun operation ->
         staged := operation :: !staged;
-        (match operation.Logseq_chat_pending_ops.intent with
+        (match operation.Logseq_chat_lg_core_native.intent with
          | Save_title { uuid; title; _ } ->
            projected :=
              List.map
@@ -2365,13 +2370,13 @@ let () =
       ~graph_blocks:(fun () -> Some !projected)
       ~stage_operation:(fun operation ->
         staged := !staged @ [ operation ];
-        (match operation.Logseq_chat_pending_ops.intent with
+        (match operation.Logseq_chat_lg_core_native.intent with
          | Delete_blocks { uuids } ->
-           projected :=
-             List.filter
-               (fun (block : Logseq_chat_lg_core_native.block) ->
-                 not (List.exists (String.equal block.uuid) uuids))
-               !projected
+           (let uuids = Rrbvec.to_list uuids in
+            projected :=
+              (List.filter
+                 (fun (block : Logseq_chat_lg_core_native.block) ->
+                    not (List.exists (String.equal block.uuid) uuids)) (!projected)))
          | _ -> ());
         Ok ())
       ~prepare_operation:prepare_test_operation
@@ -2395,9 +2400,9 @@ let () =
        (`Assoc [ "type", `String "toolbar"; "action", `String "delete" ]));
   let confirmed = dispatch_outliner session (`Assoc [ "type", `String "confirmDelete" ]) in
   (match !staged with
-   | [ { Logseq_chat_pending_ops.base_t = 91
-       ; intent = Delete_blocks { uuids = [ "selected" ] }
-       ; _ } ] -> ()
+   | [ { Logseq_chat_lg_core_native.base_t = 91
+       ; intent = Delete_blocks { uuids }
+       ; _ } ] when Rrbvec.to_list uuids = ["selected"] -> ()
    | _ -> failwith "confirmed outliner delete must stage one semantic operation");
   if not (required_bool "isOutlinerPatch" confirmed)
   then failwith "confirmed delete must use a bounded patch";
@@ -2439,7 +2444,7 @@ let () =
          ; "statusIdent", `String "user.status/waiting"
          ]));
   match !staged with
-  | [ { Logseq_chat_pending_ops.base_t = 92
+  | [ { Logseq_chat_lg_core_native.base_t = 92
       ; intent =
           Set_property
             { uuid = "task"; attr = "logseq.property/status"; expected = None;
@@ -2526,7 +2531,7 @@ let () =
    | `Assoc fields when required_bool "ok" fields -> ()
    | _ -> failwith "projected graph update should be staged");
   (match !staged with
-   | [ { Logseq_chat_pending_ops.operation_id = "op-title"
+   | [ { Logseq_chat_lg_core_native.operation_id = "op-title"
        ; base_t = 42
        ; intent = Save_title { uuid = "remote"; expected_title = "Old"; title = "Pending" }
        ; _ } ] -> ()
@@ -2548,7 +2553,7 @@ let () =
   let restore_stage_calls = ref 0 in
   let pending_operations () =
     List.init 200 (fun index ->
-      Logseq_chat_pending_ops.
+        Logseq_chat_lg_core_native.
         { operation_id = "restored-" ^ string_of_int index
         ; base_t = 42
         ; state = Queued
@@ -2587,7 +2592,7 @@ let () =
 
 let () =
   let operation operation_id title =
-    Logseq_chat_pending_ops.
+    Logseq_chat_lg_core_native.
       { operation_id
       ; base_t = 42
       ; state = Queued
@@ -2604,7 +2609,7 @@ let () =
       ~graph_blocks:(fun () -> Some [ remote_block "remote" "Old" ])
       ~stage_operation:(fun _ -> Ok ())
       ~prepare_operation:(fun operation ->
-        if String.equal operation.Logseq_chat_pending_ops.operation_id "stale-head"
+          if String.equal operation.Logseq_chat_lg_core_native.operation_id "stale-head"
         then Error "block no longer exists"
         else prepare_test_operation operation)
       ~pending_operations:(fun () -> !pending)
@@ -2635,7 +2640,7 @@ let () =
 
 let () =
   let pending =
-    Logseq_chat_pending_ops.
+    Logseq_chat_lg_core_native.
       { operation_id = "bounded-pending"
       ; base_t = 42
       ; state = Queued
@@ -2696,7 +2701,7 @@ let () =
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":44}\",\"error\":null}"}}|});
   match List.rev !staged with
-  | { Logseq_chat_pending_ops.operation_id = "op-accepted"; state = Accepted 44; _ } :: _ -> ()
+  | { Logseq_chat_lg_core_native.operation_id = "op-accepted"; state = Accepted 44; _ } :: _ -> ()
   | _ -> failwith "semantic completion must persist the accepted server cursor"
 ;;
 
@@ -2708,8 +2713,8 @@ let () =
         (fun pending ->
           not
             (String.equal
-               pending.Logseq_chat_pending_ops.operation_id
-               operation.Logseq_chat_pending_ops.operation_id))
+               pending.Logseq_chat_lg_core_native.operation_id
+               operation.Logseq_chat_lg_core_native.operation_id))
         !staged
       @ [ operation ];
     Ok ()
@@ -2723,8 +2728,8 @@ let () =
       ~prepare_operation:prepare_test_operation
       ~pending_operations:(fun () ->
         List.filter
-          (fun operation ->
-            match operation.Logseq_chat_pending_ops.state with
+          (fun (operation : Logseq_chat_lg_core_native.pending_operation) ->
+             match operation.state with
             | Queued | Retryable | Submitted -> true
             | Accepted _ | Applied | Conflicted _ -> false)
           !staged)
@@ -2774,14 +2779,14 @@ let () =
      runtime cursor while their request chains from the accepted cursor. *)
   let source = remote_block "accepted-before-sse" "First" in
   let staged = ref [] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     (match operation.state with
      | (Queued | Applied) when operation.base_t <> 42 ->
        Error "operation was created against a stale server cursor"
      | _ ->
        staged :=
          List.filter
-           (fun (pending : Logseq_chat_pending_ops.t) ->
+           (fun (pending : Logseq_chat_lg_core_native.pending_operation) ->
              not (String.equal pending.operation_id operation.operation_id))
            !staged
          @ [ operation ];
@@ -2796,8 +2801,8 @@ let () =
       ~prepare_operation:prepare_test_operation
       ~pending_operations:(fun () ->
         List.filter
-          (fun operation ->
-            match operation.Logseq_chat_pending_ops.state with
+          (fun (operation : Logseq_chat_lg_core_native.pending_operation) ->
+             match operation.state with
             | Queued | Retryable | Submitted -> true
             | Accepted _ | Applied | Conflicted _ -> false)
           !staged)
@@ -2841,7 +2846,7 @@ let () =
        session
        (`Assoc [ "type", `String "returnPressed"; "uuid", `String source.uuid ]));
   match List.rev !staged with
-  | { Logseq_chat_pending_ops.state = Queued; base_t = 42; _ } :: _ -> ()
+  | { Logseq_chat_lg_core_native.state = Queued; base_t = 42; _ } :: _ -> ()
   | _ -> failwith "post-acceptance outliner edits must use the authoritative cursor"
 ;;
 
@@ -2867,28 +2872,28 @@ let () =
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/reject\\\",\\\"reason\\\":\\\"stale\\\",\\\"t\\\":43}\",\"error\":null}"}}|});
   match List.rev !staged with
-  | { Logseq_chat_pending_ops.operation_id = "op-rejected"; state = Retryable; _ } :: _ -> ()
+  | { Logseq_chat_lg_core_native.operation_id = "op-rejected"; state = Retryable; _ } :: _ -> ()
   | _ -> failwith "a tx/reject response must remain retryable despite HTTP 200"
 ;;
 
 let () =
   let persisted = ref [] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     persisted :=
       List.filter
         (fun pending ->
           not
             (String.equal
-               pending.Logseq_chat_pending_ops.operation_id
-               operation.Logseq_chat_pending_ops.operation_id))
+               pending.Logseq_chat_lg_core_native.operation_id
+               operation.Logseq_chat_lg_core_native.operation_id))
         !persisted
       @ [ operation ];
     Ok ()
   in
   let pending_operations () =
     List.filter
-      (fun operation ->
-        match operation.Logseq_chat_pending_ops.state with
+      (fun (operation : Logseq_chat_lg_core_native.pending_operation) ->
+         match operation.state with
         | Queued | Retryable | Submitted -> true
         | Accepted _ | Applied | Conflicted _ -> false)
       !persisted
@@ -2919,7 +2924,7 @@ let () =
           {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":%d,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|}
           first_id));
   (match !persisted with
-   | [ { Logseq_chat_pending_ops.operation_id = "op-retry"; state = Retryable; _ } ] -> ()
+   | [ { Logseq_chat_lg_core_native.operation_id = "op-retry"; state = Retryable; _ } ] -> ()
    | _ -> failwith "failed semantic transport must remain retryable in durable storage");
   let retried =
     Logseq_chat_rpc.call session
@@ -2954,10 +2959,10 @@ let () =
    | `Assoc fields when required_bool "ok" fields -> ()
    | _ -> failwith "deleteBlock should stage a guarded delete");
   (match !staged with
-   | [ { Logseq_chat_pending_ops.operation_id = "op-delete"
+   | [ { Logseq_chat_lg_core_native.operation_id = "op-delete"
        ; base_t = 77
-       ; intent = Delete_blocks { uuids = [ "delete-me" ] }
-       ; _ } ] -> ()
+       ; intent = Delete_blocks { uuids }
+       ; _ } ] when Rrbvec.to_list uuids = ["delete-me"] -> ()
    | _ -> failwith "deleteBlock did not stage a semantic delete-blocks intent");
   let request =
     Logseq_chat_rpc.call session
@@ -2993,7 +2998,7 @@ let () =
    | `Assoc fields when required_bool "ok" fields -> ()
    | _ -> failwith "splitBlock should stage one atomic semantic intent");
   (match !staged with
-   | [ { Logseq_chat_pending_ops.operation_id = "op-split"
+   | [ { Logseq_chat_lg_core_native.operation_id = "op-split"
        ; intent = Split_block
            { uuid = "source"; expected_title = "hello world"; before = "hello";
              after = " world"; new_uuid = "new"; new_order = "a1"; created_at = 100 }
@@ -3014,11 +3019,11 @@ let () =
 
 let () =
   let persisted = ref [] in
-  let stage (operation : Logseq_chat_pending_ops.t) =
+  let stage (operation : Logseq_chat_lg_core_native.pending_operation) =
     persisted :=
       List.filter
         (fun current ->
-          current.Logseq_chat_pending_ops.operation_id <> operation.operation_id)
+           current.Logseq_chat_lg_core_native.operation_id <> operation.operation_id)
         !persisted
       @ [ operation ];
     Ok ()
@@ -3032,8 +3037,8 @@ let () =
       ~prepare_operation:prepare_test_operation
       ~pending_operations:(fun () ->
         List.filter
-          (fun operation ->
-            match operation.Logseq_chat_pending_ops.state with
+          (fun (operation : Logseq_chat_lg_core_native.pending_operation) ->
+             match operation.state with
             | Queued | Retryable | Submitted -> true
             | Accepted _ | Applied | Conflicted _ -> false)
           !persisted)
@@ -3042,7 +3047,7 @@ let () =
   configure_plain_graph session;
   List.iter
     (fun operation -> ignore (stage operation))
-    [ Logseq_chat_pending_ops.
+    [ Logseq_chat_lg_core_native.
         { operation_id = "first"
         ; base_t = 42
         ; state = Queued
@@ -3097,7 +3102,7 @@ let () =
    | `Assoc fields when required_bool "ok" fields -> ()
    | _ -> failwith "mergeBackward should stage one atomic semantic intent");
   (match !staged with
-   | [ { Logseq_chat_pending_ops.operation_id = "op-merge"
+   | [ { Logseq_chat_lg_core_native.operation_id = "op-merge"
        ; intent = Merge_backward
            { uuid = "source"; expected_title = " world"; title = " world"; previous_uuid = "previous";
              expected_previous_title = "hello"; merged_title = None }
@@ -3126,9 +3131,12 @@ let () =
    | `Assoc fields when required_bool "ok" fields -> ()
    | _ -> failwith "moveBlocks should stage one batch intent");
   (match !staged with
-   | [ { Logseq_chat_pending_ops.intent = Move_blocks { moves = [ first; second ] }; _ } ] ->
-     assert_equal "first moved block" "first" first.uuid;
-     assert_equal "second moved block" "second" second.uuid
+   | [ { Logseq_chat_lg_core_native.intent = Move_blocks { moves }; _ } ] ->
+     (match Rrbvec.to_list moves with
+      | [first; second] ->
+        assert_equal "first moved block" "first" first.uuid;
+        assert_equal "second moved block" "second" second.uuid
+      | _ -> failwith "moveBlocks must preserve both moves")
    | _ -> failwith "moveBlocks did not stage one batch intent");
   let entry =
     Logseq_chat_rpc.call session
@@ -3155,7 +3163,8 @@ let () =
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"deleteBlocks","payload":"{\"operationId\":\"op-delete-batch\",\"expectedServerT\":51,\"uuids\":[\"second\",\"first\",\"first\"]}"}}|});
   match !staged with
-  | [ { Logseq_chat_pending_ops.intent = Delete_blocks { uuids = [ "first"; "second" ] }; _ } ] -> ()
+  | [ { Logseq_chat_lg_core_native.intent = Delete_blocks { uuids }; _ } ]
+    when Rrbvec.to_list uuids = ["first"; "second"] -> ()
   | _ -> failwith "deleteBlocks must stage one deduplicated batch intent"
 ;;
 
@@ -3175,7 +3184,7 @@ let () =
     (Logseq_chat_rpc.call session
        {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlockStatus","payload":"{\"uuid\":\"task\",\"operationId\":\"op-status\",\"expectedStatusUuid\":null,\"status\":{\"uuid\":\"doing\",\"title\":\"Doing\"}}"}}|});
   (match !staged with
-   | [ { Logseq_chat_pending_ops.operation_id = "op-status"
+   | [ { Logseq_chat_lg_core_native.operation_id = "op-status"
        ; intent = Set_property
            { uuid = "task"; attr = "logseq.property/status";
              expected = None; value = Some (Ref_uuid "doing") }
@@ -3247,7 +3256,7 @@ let () =
       ~sync_cursor:(fun () -> Some 5)
       ~graph_blocks:(fun () -> Some !projected)
       ~stage_operation:(fun operation ->
-        (match operation.Logseq_chat_pending_ops.intent with
+          (match operation.Logseq_chat_lg_core_native.intent with
          | Save_title { uuid; title; _ } ->
            projected :=
              List.map
@@ -3310,7 +3319,7 @@ let () =
         !projected
   in
   let stage operation =
-    (match operation.Logseq_chat_pending_ops.intent with
+    (match operation.Logseq_chat_lg_core_native.intent with
      | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
        replace_projected uuid (fun block -> { block with title = before });
        let original = Option.get (find_projected uuid) in
@@ -3337,7 +3346,7 @@ let () =
     incr prepare_calls;
     let exists uuid = Hashtbl.mem authoritative uuid in
     let dependencies_exist =
-      match operation.Logseq_chat_pending_ops.intent with
+      match operation.Logseq_chat_lg_core_native.intent with
       | Split_block { uuid; _ } -> exists uuid
       | Merge_backward { uuid; previous_uuid; _ } -> exists uuid && exists previous_uuid
       | _ -> true
@@ -3663,7 +3672,7 @@ let () =
   let projected =
     Logseq_chat_rpc.project_outliner_intent
       [ source ]
-      (Logseq_chat_pending_ops.Set_property
+      (Logseq_chat_lg_core_native.Set_property
          { uuid = source.uuid
          ; attr = "logseq.property/status"
          ; expected = None
@@ -3729,7 +3738,7 @@ let () =
          ; "statusIdent", `String "logseq.property/status.doing"
          ]));
   match !staged with
-  | [ { Logseq_chat_pending_ops.intent =
+  | [ { Logseq_chat_lg_core_native.intent =
           Set_property
             { expected = Some (Ref_ident "logseq.property/status.todo"); _ }
       ; _ } ] -> ()
@@ -3855,7 +3864,7 @@ let () =
   let full_graph_reads = ref 0 in
   let page_reads = ref 0 in
   let stage operation =
-    (match operation.Logseq_chat_pending_ops.intent with
+    (match operation.Logseq_chat_lg_core_native.intent with
      | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
        let original =
          List.find
@@ -4152,7 +4161,8 @@ let () =
   assert_equal "new page keeps paired reference in the draft" "Draft [[Novel]]" (required_string "title" editing);
   match !staged with
   | [operation] ->
-    (match Logseq_chat_pending_ops.intent_json operation.intent with
+    (match (Logseq_chat_lg_core_native.logseq_chat_pending_ops_intent_json
+              operation.intent) with
      | `Assoc fields -> assert_equal "new page stages creation without saving the block" "create-page" (required_string "type" fields)
      | _ -> failwith "new page operation must be serializable")
   | _ -> failwith "choosing New page must create exactly one real page without saving the draft"
@@ -4165,7 +4175,7 @@ let () =
     ~sync_cursor:(fun () -> Some 92)
     ~graph_blocks:(fun () -> Some [!live])
     ~stage_operation:(fun operation ->
-      (match operation.Logseq_chat_pending_ops.intent with
+        (match operation.Logseq_chat_lg_core_native.intent with
        | Save_title { title; _ } ->
          live := { !live with title; references = [{ uuid = "target"; title = "New page" }] }
        | _ -> ());
@@ -4280,7 +4290,7 @@ let () =
   let session = Logseq_chat_rpc.create
       ~sync_cursor:(fun () -> Some 60)
       ~prepare_operation:prepare_test_operation () in
-  let operation : Logseq_chat_pending_ops.t =
+  let operation : Logseq_chat_lg_core_native.pending_operation =
     { operation_id = "late-ack"; base_t = 60; state = Queued;
       intent = Save_title { uuid = "remote"; expected_title = "Old"; title = "New" } } in
   configure_plain_graph session;

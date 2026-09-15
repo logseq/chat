@@ -60,7 +60,8 @@ let () =
                 Logseq_chat_pending_projection.build
                   ~server_t:1
                   db
-                  (Logseq_chat_pending_ops.list ~path)
+                  (Rrbvec.to_list
+                     (Logseq_chat_lg_core_native.logseq_chat_pending_ops_list path))
               in
               Logseq_chat_lg_core_native.logseq_chat_flashcards_due_cards
                 snapshot.db

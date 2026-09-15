@@ -3,7 +3,7 @@ open Yojson.Basic
 module Model = Logseq_chat_lg_core_native
 module Api = Logseq_chat_lg_core_native
 module Http = Logseq_chat_http
-module Pending_ops = Logseq_chat_pending_ops
+module Pending_ops = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
 module Outliner_effects = Logseq_chat_outliner_effects
@@ -45,7 +45,7 @@ type pending_sync =
   }
 
 type semantic_pending =
-  { operation : Pending_ops.t }
+  { operation : Pending_ops.pending_operation }
 
 type semantic_active =
   { id : int
@@ -119,9 +119,9 @@ type t =
   ; mutable sync_connected : bool
   ; mutable pending_sync : pending_sync option
   ; mutable next_pending_request_id : int
-  ; stage_operation : (Pending_ops.t -> (unit, string) result) option
-  ; prepare_operation : (Pending_ops.t -> (string * string, string) result) option
-  ; pending_operations : (unit -> Pending_ops.t list) option
+  ; stage_operation : (Pending_ops.pending_operation -> (unit, string) result) option
+  ; prepare_operation : (Pending_ops.pending_operation -> (string * string, string) result) option
+  ; pending_operations : (unit -> Pending_ops.pending_operation list) option
   ; mutable semantic_queue : semantic_pending list
   ; mutable semantic_active : semantic_active option
   ; mutable outliner_state : Outliner_state.t
@@ -229,7 +229,7 @@ let required_moves fields =
                required_string "parentUuid" move,
                required_string "order" move with
          | Ok uuid, Ok page_uuid, Ok parent_uuid, Ok order ->
-           Ok Pending_ops.{ uuid; page_uuid; parent_uuid; order }
+           Ok (Pending_ops.{ uuid; page_uuid; parent_uuid; order } : Pending_ops.pending_move)
          | Error message, _, _, _ | _, Error message, _, _
          | _, _, Error message, _ | _, _, _, Error message -> Error message)
       | _ -> Error "moves must contain objects"
@@ -777,14 +777,15 @@ let rec project_outliner_intent blocks = function
         else block)
       blocks
   | Move_blocks { moves } ->
-    List.fold_left
-      (fun blocks move -> project_outliner_intent blocks (Pending_ops.Move_block move))
-      blocks
-      moves
+    (let moves = Rrbvec.to_list moves in
+     List.fold_left
+       (fun blocks move ->
+          project_outliner_intent blocks (Pending_ops.Move_block move)) blocks
+       moves)
   | Delete_blocks { uuids } ->
-    List.filter
-      (fun (block : Model.block) -> not (List.mem block.uuid uuids))
-      blocks
+    (let uuids = Rrbvec.to_list uuids in
+     List.filter (fun (block : Model.block) -> not (List.mem block.uuid uuids))
+       blocks)
   | Set_property { uuid; attr = "logseq.property/status"; value; _ } ->
     let status =
       Option.bind value (function
@@ -831,7 +832,7 @@ let rec project_outliner_intent blocks = function
 let project_outliner_operations context operations =
   let blocks =
     List.fold_left
-      (fun blocks (operation : Pending_ops.t) ->
+      (fun blocks (operation : Pending_ops.pending_operation) ->
         project_outliner_intent blocks operation.intent)
       context.Outliner_state.blocks
       operations
@@ -1931,7 +1932,7 @@ let enqueue_semantic session _config operation =
 
 (* Editor text keeps page and tag names readable; stored titles use UUID
    references. New hashtags are staged before the title operation. *)
-let normalize_operation_titles session (operation : Pending_ops.t) =
+let normalize_operation_titles session (operation : Pending_ops.pending_operation) =
   match session.graph_normalize_titles with
   | None -> [ operation ]
   | Some normalize ->
@@ -3632,7 +3633,7 @@ let dispatch session action payload =
                  projection_server_t session with
            | Ok operation_id, Ok (Some expected_server_t), Ok moves, Some config, Some current_t
              when expected_server_t = current_t ->
-             let identities = List.map (fun move -> move.Pending_ops.uuid) moves in
+             let identities = List.map (fun (move : Pending_ops.pending_move) -> move.uuid) moves in
              if moves = [] || List.length identities <> List.length (List.sort_uniq String.compare identities)
              then failure ~code:"invalid_params" ~message:"moveBlocks requires distinct moves"
              else
@@ -3641,7 +3642,7 @@ let dispatch session action payload =
                    { operation_id
                    ; base_t = current_t
                    ; state = Queued
-                   ; intent = Move_blocks { moves }
+                   ; intent = (Move_blocks { moves = (Rrbvec.of_list (moves : Logseq_chat_lg_core_native.pending_move list)) })
                    }
                in
                (match enqueue_semantic session config operation with
@@ -3681,7 +3682,7 @@ let dispatch session action payload =
                    { operation_id
                    ; base_t = current_t
                    ; state = Queued
-                   ; intent = Delete_blocks { uuids }
+                   ; intent = (Delete_blocks { uuids = (Rrbvec.of_list uuids) })
                    }
                in
                (match enqueue_semantic session config operation with
@@ -3717,7 +3718,7 @@ let dispatch session action payload =
                  { operation_id
                  ; base_t = current_t
                  ; state = Queued
-                 ; intent = Delete_blocks { uuids = [ uuid ] }
+                 ; intent = (Delete_blocks { uuids = (Rrbvec.of_list [uuid]) })
                  }
              in
              (match enqueue_semantic session config operation with

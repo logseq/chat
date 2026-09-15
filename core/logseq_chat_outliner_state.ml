@@ -1,6 +1,6 @@
 module String_set = Set.Make (String)
 module Model = Logseq_chat_lg_core_native
-module Ops = Logseq_chat_pending_ops
+module Ops = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 
 module Ref_text = struct
@@ -111,7 +111,7 @@ type msg =
   | Zoom_in of string
   | Zoom_out
   | Add_root_block of string
-  | Operation_staged of Ops.intent
+  | Operation_staged of Ops.pending_intent
 
 type haptic =
   | Selection
@@ -137,7 +137,7 @@ type cmd =
       ; previous_uuid : string
       ; expected_previous_title : string
       }
-  | Move_blocks of Ops.move list
+  | Move_blocks of Ops.pending_move list
   | Request_delete_confirmation of string list
   | Delete_blocks of string list
   | Cycle_task_status of string
@@ -635,7 +635,7 @@ let moves_with_orders roots ~parent_uuid lower upper =
     Some
       (List.map2
          (fun (block : Model.block) order ->
-           Ops.{ uuid = block.uuid; page_uuid = block.page_id; parent_uuid; order })
+            (Ops.{ uuid = block.uuid; page_uuid = block.page_id; parent_uuid; order } : Ops.pending_move))
          roots
          orders)
 ;;

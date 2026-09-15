@@ -19,13 +19,13 @@ summary=$(
 
 # These exact basis-point floors preserve the coverage of the current feature
 # surface. Raise them whenever tests add coverage; never lower them to land code.
+# Outliner and pending ops now live in LG. Their regression suites still run
+# above; these per-file floors only apply to the remaining handwritten OCaml.
 awk '
   BEGIN {
     minimum["core/logseq_chat_graph_runtime.ml"] = 7558
-    minimum["core/logseq_chat_outliner.ml"] = 9818
     minimum["core/logseq_chat_outliner_effects.ml"] = 8411
     minimum["core/logseq_chat_outliner_state.ml"] = 9423
-    minimum["core/logseq_chat_pending_ops.ml"] = 8894
     minimum["core/logseq_chat_pending_projection.ml"] = 8772
   }
   $4 in minimum {
