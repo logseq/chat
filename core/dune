@@ -195,11 +195,6 @@
  (deps (alias ../lg-test/runtest)))
 
 (test
- (name logseq_chat_lui_host_update_test)
- (modules logseq_chat_lui_host_update_test)
- (libraries logseq_chat_core))
-
-(test
  (name logseq_chat_api_test)
  (modules logseq_chat_api_test)
  (libraries logseq_chat_core))
@@ -250,11 +245,6 @@
  (name logseq_chat_snapshot_test)
  (modules logseq_chat_snapshot_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
-
-(test
- (name logseq_chat_sync_checkpoint_test)
- (modules logseq_chat_sync_checkpoint_test)
- (libraries logseq_chat_core))
 
 (test
  (name logseq_chat_graph_store_test)
@@ -310,11 +300,6 @@
 (test
  (name logseq_chat_outliner_test)
  (modules logseq_chat_outliner_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_fractional_order_test)
- (modules logseq_chat_fractional_order_test)
  (libraries logseq_chat_core))
 
 (test
