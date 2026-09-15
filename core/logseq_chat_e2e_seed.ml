@@ -10,27 +10,27 @@ let () =
     then
       match Sys.argv.(2) with
       | "--inspect" -> (fun _conn -> Ok ())
-      | "--header-navigation" -> Logseq_chat_e2e_seed_data.seed_header_navigation
+      | "--header-navigation" -> Logseq_chat_lg_core_native.logseq_chat_e2e_seed_data_seed_header_navigation
       | "--composer" ->
         (fun conn ->
-          Logseq_chat_e2e_seed_data.seed_composer
+          Logseq_chat_lg_core_native.logseq_chat_e2e_seed_data_seed_composer
             conn
-            ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
+            (int_of_float (Unix.gettimeofday () *. 1000.0)))
       | "--outliner" ->
         (fun conn ->
-          Logseq_chat_e2e_seed_data.seed_outliner
+          Logseq_chat_lg_core_native.logseq_chat_e2e_seed_data_seed_outliner
             conn
-            ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
-      | "--fixture" -> Logseq_chat_e2e_seed_data.seed_fixture
+            (int_of_float (Unix.gettimeofday () *. 1000.0)))
+      | "--fixture" -> Logseq_chat_lg_core_native.logseq_chat_e2e_seed_data_seed_fixture
       | "--performance" ->
         (fun conn ->
-          Logseq_chat_e2e_seed_data.seed_performance
+          Logseq_chat_lg_core_native.logseq_chat_e2e_seed_data_seed_performance
             conn
-            ~now:(int_of_float (Unix.gettimeofday () *. 1000.0)))
+            (int_of_float (Unix.gettimeofday () *. 1000.0)))
       | mode ->
         prerr_endline ("unknown seed mode: " ^ mode);
         exit 2
-    else Logseq_chat_e2e_seed_data.seed
+    else Logseq_chat_lg_core_native.logseq_chat_e2e_seed_data_seed
   in
   match Logseq_chat_lg_core_native.logseq_chat_graph_store_restore_conn path with
   | Error message ->

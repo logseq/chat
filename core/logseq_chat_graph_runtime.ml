@@ -289,28 +289,6 @@ let fresh_uuid () =
   | _ -> failwith "Datascript.squuid returned a non-UUID value"
 ;;
 
-let journal_day_title journal_day =
-  let month_names =
-    [| "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"
-     ; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"
-    |]
-  in
-  let year = journal_day / 10_000 in
-  let month = (journal_day / 100) mod 100 in
-  let day = journal_day mod 100 in
-  let suffix =
-    if day mod 100 >= 11 && day mod 100 <= 13
-    then "th"
-    else
-      match day mod 10 with
-      | 1 -> "st"
-      | 2 -> "nd"
-      | 3 -> "rd"
-      | _ -> "th"
-  in
-  Printf.sprintf "%s %d%s, %04d" month_names.(month - 1) day suffix year
-;;
-
 let db runtime = runtime.snapshot.db
 let operation_statuses runtime = Rrbvec.to_list runtime.snapshot.statuses
 
@@ -554,7 +532,7 @@ let ensure_today_journal runtime =
                     (journal_day / 10_000)
                     (journal_day mod 10_000)
               ; block_uuid = fresh_uuid ()
-              ; title = journal_day_title journal_day
+              ; title = Logseq_chat_lg_core_native.logseq_chat_journal_day_title journal_day
               ; journal_day
               ; created_at
               }
