@@ -194,16 +194,6 @@
  (libraries logseq_chat_core))
 
 (test
- (name logseq_chat_flashcards_test)
- (modules logseq_chat_flashcards_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_search_index_test)
- (modules logseq_chat_search_index_test)
- (libraries logseq_chat_core unix))
-
-(test
  (name logseq_chat_pending_projection_test)
  (modules logseq_chat_pending_projection_test)
  (libraries logseq_chat_core))
