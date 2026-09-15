@@ -81,7 +81,7 @@ let () =
   let source = block ~parent_uuid:"parent" "source" " world" in
   let previous = block ~parent_uuid:"parent" "previous" "hello" in
   let child = block ~parent_uuid:"source" "child" "nested" in
-  let command =
+  let command : command =
     Merge_backward
       { source_uuid = "source"
       ; expected_source_title = " world"
@@ -124,7 +124,7 @@ let () =
     (Result.is_error
        (plan ~find:(fun _ -> Some source) ~children:(fun _ -> []) invalid_split));
   let previous = block ~page_uuid:"other" "previous" "before" in
-  let invalid_merge =
+  let invalid_merge : command =
     Merge_backward
       { source_uuid = "source"
       ; expected_source_title = "local"
@@ -160,7 +160,7 @@ let merge_request
     ?(expected_previous_title = "previous title")
     ?merged_title
     ()
-  =
+  : command =
   Merge_backward
     { source_uuid
     ; expected_source_title

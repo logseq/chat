@@ -3,6 +3,48 @@ open Logseq_chat_pending_ops
 let fail label = failwith label
 let assert_bool label value = if not value then fail label
 
+module LG = Logseq_chat_lg_core_native
+
+let decode_outcome decode input =
+  try Ok (decode input) with
+  | Invalid_argument _ -> Error `Invalid
+  | Not_found -> Error `Missing
+;;
+
+let intent_of_json input =
+  let legacy = decode_outcome Logseq_chat_pending_ops.intent_of_json input in
+  let migrated = decode_outcome LG.logseq_chat_pending_ops_intent_of_json input in
+  match legacy, migrated with
+  | Ok legacy, Ok migrated ->
+    assert_bool "LG preserves canonical intent JSON"
+      (intent_json legacy = LG.logseq_chat_pending_ops_intent_json migrated);
+    legacy
+  | Error `Invalid, Error `Invalid -> invalid_arg "invalid pending intent"
+  | Error `Missing, Error `Missing -> raise Not_found
+  | _ -> fail "LG and legacy intent decoders disagree"
+;;
+
+let semantic_value_of_json input =
+  let legacy = decode_outcome Logseq_chat_pending_ops.semantic_value_of_json input in
+  let migrated = decode_outcome LG.logseq_chat_pending_ops_semantic_value_of_json input in
+  match legacy, migrated with
+  | Ok legacy, Ok migrated ->
+    assert_bool "LG preserves canonical semantic JSON"
+      (semantic_value_json legacy = LG.logseq_chat_pending_ops_semantic_value_json migrated);
+    legacy
+  | Error `Invalid, Error `Invalid -> invalid_arg "invalid semantic value"
+  | _ -> fail "LG and legacy semantic decoders disagree"
+;;
+
+let state_of_string input =
+  let legacy = Logseq_chat_pending_ops.state_of_string input in
+  assert_bool "LG preserves persisted state normalization"
+    (state_string legacy =
+     LG.logseq_chat_pending_ops_state_string
+       (LG.logseq_chat_pending_ops_state_of_string input));
+  legacy
+;;
+
 let assert_invalid label operation =
   match operation () with
   | _ -> fail (label ^ ": expected Invalid_argument")
@@ -10,6 +52,16 @@ let assert_invalid label operation =
 ;;
 
 let move uuid = { uuid; page_uuid = "page"; parent_uuid = "parent"; order = "a0" }
+
+let assert_lg_intent intent =
+  let module LG = Logseq_chat_lg_core_native in
+  let encoded = intent_json intent in
+  let decoded = LG.logseq_chat_pending_ops_intent_of_json encoded in
+  assert_bool "LG preserves the exact persisted intent encoding"
+    (LG.logseq_chat_pending_ops_intent_json decoded = encoded);
+  assert_bool "LG preserves server operation names"
+    (LG.logseq_chat_pending_ops_outliner_op decoded = outliner_op intent)
+;;
 
 let intents =
   [ Save_title { uuid = "block"; expected_title = "Old"; title = "New" }
@@ -94,6 +146,7 @@ let intents =
 let () =
   List.iter
     (fun intent ->
+      assert_lg_intent intent;
       assert_bool "every pending intent survives JSON round-trip"
         (intent_of_json (intent_json intent) = intent))
     intents;
@@ -131,6 +184,7 @@ let () =
         ; "nested", Map_value [ "reps", Int_value 1 ]
         ; "last-repeat", Instant_value 1_776_000_000_000
         ]
+    ; Map_value [ "duplicate", Int_value 1; "duplicate", Int_value 2 ]
     ]
   in
   List.iter
@@ -168,7 +222,67 @@ let () =
   assert_bool "unknown state retries" (state_of_string "unknown" = Retryable)
 ;;
 
+let () =
+  List.iter (fun value -> ignore (state_of_string value))
+    [ ""; "accepted:"; "accepted:-1"; "accepted:0x2a"; "accepted:1_000"
+    ; "accepted:99999999999999999999999"; "conflicted:"; "conflicted:one:two" ];
+  List.iter
+    (fun input -> assert_invalid "invalid semantic shape" (fun () -> semantic_value_of_json input))
+    [ `Assoc [ "value", `Int 1; "type", `String "int" ]
+    ; `Assoc [ "type", `String "int"; "value", `Int 1; "extra", `Null ]
+    ; `Assoc [ "type", `String "map"; "value", `List [ `Null ] ]
+    ];
+  assert_bool "integer JSON remains accepted for float semantic values"
+    (semantic_value_of_json (`Assoc [ "type", `String "float"; "value", `Int 1 ])
+     = Float_value 1.)
+;;
+
 let assoc fields = `Assoc fields
+
+let () =
+  List.iter
+    (fun fields ->
+      match intent_of_json (assoc fields) with
+      | _ -> fail "missing semantic fields must retain Not_found"
+      | exception Not_found -> ())
+    [ [ "type", `String "set-property"; "uuid", `String "block"; "attr", `String "flag" ]
+    ; [ "type", `String "set-property"; "uuid", `String "block"; "attr", `String "flag"
+      ; "expected", `Null ]
+    ];
+  assert_lg_intent
+    (Save_title { uuid = "duplicate"; expected_title = ""; title = "first" });
+  assert_bool "duplicate intent fields still select the first value"
+    (intent_of_json
+       (assoc [ "type", `String "save-title"; "uuid", `String "duplicate"
+              ; "expectedTitle", `String ""; "title", `String "first"; "title", `String "second" ])
+     = Save_title { uuid = "duplicate"; expected_title = ""; title = "first" })
+;;
+
+let () =
+  let cases =
+    [ (Create_page { uuid = "page"; title = "Page"; created_at = 42 }, "save-block")
+    ; (Create_journal
+         { page_uuid = "page"; block_uuid = "block"; title = "Journal"
+         ; journal_day = 20260915; created_at = 43 }, "insert-blocks")
+    ; (Add_tag { uuid = "block"; tag_uuid = "tag" }, "save-block")
+    ; (Set_favorite
+         { page_uuid = "page"; favorite_uuid = "favorite"; favorite = true
+         ; order = "a0"; created_at = 44 }, "insert-blocks")
+    ; (Set_favorite
+         { page_uuid = "page"; favorite_uuid = "favorite"; favorite = false
+         ; order = "a0"; created_at = 44 }, "delete-blocks")
+    ; (Delete_page { page_uuid = "page"; order = "a0"; deleted_at = 45 }, "delete-page")
+    ]
+  in
+  List.iter
+    (fun (intent, expected_op) ->
+      assert_lg_intent intent;
+      assert_bool "page and journal intents preserve their persisted form"
+        (intent_of_json (intent_json intent) = intent);
+      assert_bool "page and journal intents preserve the server operation"
+        (outliner_op intent = expected_op))
+    cases
+;;
 
 let () =
   assert_invalid "intent must be an object" (fun () -> intent_of_json (`String "invalid"));

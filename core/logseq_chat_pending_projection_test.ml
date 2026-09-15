@@ -1133,10 +1133,29 @@ let () =
         (Save_title { uuid = "block"; expected_title = "Old"; title = "Offline" }) in
     Ops.save ~path first;
     assert_bool "pending op round trip" (Ops.list ~path = [ first ]);
+    let module LG = Logseq_chat_lg_core_native in
+    let migrated = LG.logseq_chat_pending_ops_list path |> Rrbvec.to_list in
+    let migrated_first =
+      match migrated with
+      | [ operation ] -> operation
+      | _ -> failwith "LG must read the existing pending queue"
+    in
+    assert_bool "LG reads the legacy pending storage ABI"
+      (migrated_first.operation_id = first.operation_id
+       && migrated_first.base_t = first.base_t
+       && LG.logseq_chat_pending_ops_intent_json migrated_first.intent = Ops.intent_json first.intent);
+    LG.logseq_chat_pending_ops_save path { migrated_first with state = LG.Accepted 43 };
+    assert_bool "legacy storage reads the LG write without conversion"
+      (Ops.list ~path = [ { first with state = Accepted 43 } ]);
+    LG.logseq_chat_pending_ops_set_state path first.operation_id LG.Retryable;
+    assert_bool "LG updates the existing row state"
+      (Ops.list ~path = [ { first with state = Retryable } ]);
     Ops.set_state ~path ~operation_id:first.operation_id Submitted;
     assert_bool "pending state update"
       (match Ops.list ~path with [ { state = Submitted; _ } ] -> true | _ -> false);
-    Ops.remove ~path ~operation_id:first.operation_id;
+    ignore
+      (LG.logseq_chat_pending_ops_confirm path
+         (Lg_runtime.Runtime_seq.of_vector, Rrbvec.of_list [ first.operation_id; "unknown" ]));
     assert_bool "pending removal" (Ops.list ~path = []))
 ;;
 
