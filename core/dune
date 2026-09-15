@@ -174,11 +174,6 @@
  (modules logseq_chat_e2e_seed)
  (libraries logseq_chat_core))
 
-(test
- (name logseq_chat_model_test)
- (modules logseq_chat_model_test)
- (libraries logseq_chat_core))
-
 (alias
  (name runtest)
  (deps (alias ../lg-test/runtest)))
