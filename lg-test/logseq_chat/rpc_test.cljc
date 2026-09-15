@@ -350,6 +350,150 @@
 (defn response-error-code [response]
   (json-util/to-string (json-util/member "code" (json-util/member "error" response))))
 
+(defn native-asset [uuid]
+  (assoc (native-core/logseq-chat-cache-model-local-block uuid "photo.jpg" "local-page" nil 1776000000000)
+         :is-asset true :asset-type (Some "jpg") :asset-size (Some 2048)
+         :asset-checksum (Some "checksum") :local-path (Some "Assets/photo.jpg")))
+
+(deftest asset-operation-rejects-missing-cursor-before-loading-destination
+  (let [loads (atom 0)
+        session (native-rpc/create
+                  :graph_blocks (fn [] (swap! loads inc) (Some (list)))
+                  :journal_page_id (fn [_day] (swap! loads inc) (Some "journal")))]
+    (is (= (Error "A current server cursor is required")
+           (native-rpc/asset-datoms-operation session (native-asset "a"))))
+    (is (= 0 @loads))))
+
+(deftest asset-operation-rejects-incomplete-metadata-before-loading-destination
+  (let [loads (atom 0)
+        session (native-rpc/create
+                  :sync_cursor (fn [] (Some 7))
+                  :graph_blocks (fn [] (swap! loads inc) (Some (list)))
+                  :journal_page_id (fn [_day] (swap! loads inc) (Some "journal")))
+        asset (native-asset "a")]
+    (run! (fn [block]
+            (is (= (Error "asset metadata is incomplete")
+                   (native-rpc/asset-datoms-operation session block))))
+          [(assoc asset :asset-type nil) (assoc asset :asset-size nil)
+           (assoc asset :asset-checksum nil)])
+    (is (= 0 @loads))))
+
+(deftest asset-operation-does-not-fallback-from-missing-parent-to-journal
+  (let [journal-lookups (atom 0)
+        session (native-rpc/create
+                  :sync_cursor (fn [] (Some 7))
+                  :journal_page_id (fn [_day]
+                                     (swap! journal-lookups inc)
+                                     (Some "journal")))]
+    (is (= (Error "asset destination is not available")
+           (native-rpc/asset-datoms-operation session
+             (assoc (native-asset "a") :parent-id (Some "missing")))))
+    (is (= 0 @journal-lookups))))
+
+(deftest asset-operation-uses-journal-date-and-preserves-durable-metadata
+  (let [days (atom [])
+        session (native-rpc/create
+                  :sync_cursor (fn [] (Some 7))
+                  :journal_page_id (fn [day] (swap! days conj day) (Some "journal")))
+        asset (native-asset "a")]
+    (match (native-rpc/asset-datoms-operation :state (native-core/Applied) session asset)
+      (Ok operation)
+      (do (is (= "asset:a" (:operation-id operation)))
+          (is (= 7 (:base-t operation)))
+          (is (= (native-core/Applied) (:state operation)))
+          (match (:intent operation)
+            (native-core/Create_asset value)
+            (do (is (= "a" (:uuid value)))
+                (is (= "photo.jpg" (:title value)))
+                (is (= "journal" (:page-uuid value)))
+                (is (= "journal" (:parent-uuid value)))
+                (is (= "a0" (:order value)))
+                (is (= 1776000000000 (:created-at value)))
+                (is (= "jpg" (:asset-type value)))
+                (is (= 2048 (:asset-size value)))
+                (is (= "checksum" (:asset-checksum value))))
+            _ (is false)))
+      _ (is false))
+    (is (= [(native-core/logseq-chat-cache-model-journal-day-for-ms (:created-at asset))] @days))))
+
+(deftest asset-operation-orders-after-siblings-without-counting-itself
+  (let [parent (native-core/logseq-chat-cache-model-local-block "parent" "Parent" "page" nil 1)
+        sibling (assoc parent :uuid "sibling" :parent-id (Some "parent") :order (Some "a2"))
+        earlier (assoc sibling :uuid "earlier" :order (Some "a0"))
+        other-page (assoc sibling :uuid "other-page" :page-id "elsewhere" :order (Some "zZ"))
+        other-parent (assoc sibling :uuid "other-parent" :parent-id (Some "elsewhere") :order (Some "zZ"))
+        unordered (assoc sibling :uuid "unordered" :order nil)
+        asset (assoc (native-asset "a") :parent-id (Some "parent") :page-id "page" :order (Some "zZ"))
+        session (native-rpc/create
+                  :sync_cursor (fn [] (Some 7))
+                  :graph_blocks (fn [] (Some (list parent sibling earlier other-page other-parent unordered asset))))]
+    (match (native-rpc/asset-datoms-operation session asset)
+      (Ok operation)
+      (do (is (= (native-core/Queued) (:state operation)))
+          (match (:intent operation)
+            (native-core/Create_asset value)
+            (do (is (= "page" (:page-uuid value)))
+                (is (= "parent" (:parent-uuid value)))
+                (is (= "a3" (:order value))))
+            _ (is false)))
+      _ (is false))))
+
+(deftest encrypted-asset-upload-stages-datoms-and-cleans-temporary-payload
+  (let [cleaned (atom [])
+        staged (atom [])
+        checksum "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        session (native-rpc/create
+                  :load_graph_catalog (fn [] (Some encrypted-graph-catalog))
+                  :graph_unlocked (fn [_graph-id] true)
+                  :encrypt_title (fn [_graph-id title] (Ok (str "cipher(" title ")")))
+                  :resolve_asset_path (fn [path]
+                                        (is (= "Assets/photo.jpg" path))
+                                        "/documents/Assets/photo.jpg")
+                  :encrypt_asset_file (fn [_graph-id path]
+                                        (is (= "/documents/Assets/photo.jpg" path))
+                                        (Ok (tuple "/tmp/photo.transit" 4096)))
+                  :journal_page_id (fn [_day] (Some "real-journal-page"))
+                  :sync_cursor (fn [] (Some 91))
+                  :stage_operation (fn [operation]
+                                     (match (:intent operation)
+                                       (native-core/Create_asset value)
+                                       (do (is (= "asset-async" (:uuid value)))
+                                           (is (= "photo.jpg" (:title value)))
+                                           (is (= "real-journal-page" (:page-uuid value)))
+                                           (is (= "real-journal-page" (:parent-uuid value)))
+                                           (is (= "jpg" (:asset-type value)))
+                                           (is (= 2048 (:asset-size value)))
+                                           (is (= checksum (:asset-checksum value))))
+                                       _ (is false))
+                                     (swap! staged conj (native-core/logseq-chat-pending-ops-state-string (:state operation)))
+                                     (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))
+                  :cleanup_file (fn [path] (swap! cleaned conj path) (stdlib/ignore 0)))]
+    (configure-encrypted-session session)
+    (dispatch-json session "selectGraph" "encrypted-1")
+    (dispatch-json session "addAsset"
+      (str "{\"uuid\":\"asset-async\",\"title\":\"photo.jpg\",\"now\":1776000000000,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\""
+           checksum "\",\"localPath\":\"Assets/photo.jpg\"}"))
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (do (is (= "PUT" (json-util/to-string (json-util/member "method" request))))
+          (is (= "/tmp/photo.transit" (json-util/to-string (json-util/member "filePath" request))))
+          (is (= "text/plain" (json-util/to-string (json-util/member "contentType" request))))
+          (is (= "http://127.0.0.1:8787/assets/encrypted-1/asset-async.jpg"
+                 (json-util/to-string (json-util/member "url" request))))
+          (let [headers (json-util/member "headers" request)]
+            (is (= checksum (json-util/to-string (json-util/member "x-amz-meta-checksum" headers))))
+            (is (= "jpg" (json-util/to-string (json-util/member "x-amz-meta-type" headers))))))
+      (is false))
+    (if-some [request (pending-request
+                       (dispatch-json session "completePendingSync"
+                         "{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}"))]
+      (is (= "http://127.0.0.1:8787/sync/encrypted-1/tx/batch"
+             (json-util/to-string (json-util/member "url" request))))
+      (is false))
+    (is (= ["applied" "queued"] @staged))
+    (is (= ["/tmp/photo.transit"] @cleaned))))
+
 (deftest graph-creation-validates-before-performing-io
   (let [calls (atom 0)
         session (native-rpc/create :send (fn [_request]
