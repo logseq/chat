@@ -11,6 +11,47 @@
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
+(deftest rpc-routing-validates-before-executing-actions
+  (let [calls (atom [])
+        snapshot (fn [] (swap! calls conj "snapshot") "snapshot-result")
+        dispatch (fn [action payload]
+                   (swap! calls conj action)
+                   (match payload (Some value) value None "no-payload"))
+        call (fn [request] (rpc/call snapshot dispatch request))]
+    (run! (fn [[request code message]]
+            (is (= (rpc/failure code message) (call request))))
+          [(tuple "{" "invalid_json" "request must be valid JSON")
+           (tuple "[]" "invalid_request" "request must be an object")
+           (tuple "{}" "invalid_request" "missing field: apiVersion")
+           (tuple "{\"apiVersion\":2}" "unsupported_version" "only API version 1 is supported")
+           (tuple "{\"apiVersion\":null}" "invalid_request" "apiVersion must be an integer")
+           (tuple "{\"apiVersion\":1}" "invalid_request" "missing field: method")
+           (tuple "{\"apiVersion\":1,\"method\":1}" "invalid_request" "field must be a string: method")
+           (tuple "{\"apiVersion\":1,\"method\":\"open\"}" "invalid_request" "missing field: params")
+           (tuple "{\"apiVersion\":1,\"method\":\"open\",\"params\":null}" "invalid_request" "params must be an object")
+           (tuple "{\"apiVersion\":1,\"method\":\"bad\",\"params\":{}}" "unknown_method" "unknown method: bad")
+           (tuple "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{}}" "invalid_params" "missing field: action")
+           (tuple "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":1}}" "invalid_params" "field must be a string: payload")])
+    (is (= [] @calls))
+    (is (= "snapshot-result" (call "{\"apiVersion\":1,\"method\":\"open\",\"params\":{}}")))
+    (is (= "snapshot-result" (call "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")))
+    (is (= "hello" (call "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":\"hello\"}}")))
+    (is (= "no-payload" (call "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"sync\"}}")))
+    (is (= ["snapshot" "snapshot" "send" "sync"] @calls))))
+
+(deftest rpc-routing-keeps-first-fields-and-catches-handler-errors
+  (let [snapshot (fn [] "snapshot")
+        dispatch (fn [_action payload] (match payload (Some value) value None "nil"))]
+    (is (= "first"
+           (rpc/call snapshot dispatch
+             "{\"apiVersion\":1,\"apiVersion\":2,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":\"first\",\"payload\":\"second\"}}")))
+    (is (= "nil"
+           (rpc/call snapshot dispatch
+             "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"sync\",\"payload\":null}}")))
+    (is (= (rpc/failure "invalid_json" "request must be valid JSON")
+           (rpc/call (fn [] (json/to-string (json/from-string "{"))) dispatch
+             "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")))))
+
 (deftest capture-payload-supports-plain-text-and-validated-json
   (run! (fn [[payload expected]] (is (= (Ok expected) (rpc/send-payload payload))))
         [(tuple nil (tuple "" nil nil))

@@ -3386,33 +3386,6 @@ let dispatch session action payload =
   | _ -> LG.logseq_chat_rpc_failure "unknown_action" ("unknown action: " ^ action)
 ;;
 
-let route session json =
-  match json with
-  | `Assoc fields ->
-    (match assoc "apiVersion" fields with
-     | Some (`Int 1) ->
-       (match required_string "method" fields, assoc "params" fields with
-        | Error message, _ -> LG.logseq_chat_rpc_failure "invalid_request" message
-        | _, Some (`Assoc params) ->
-          (match required_string "method" fields with
-           | Error message -> LG.logseq_chat_rpc_failure "invalid_request" message
-           | Ok "snapshot" -> snapshot_visible session
-           | Ok "dispatch" ->
-             (match required_string "action" params, optional_string "payload" params with
-              | Ok action, Ok payload -> dispatch session action payload
-              | Error message, _ | _, Error message -> LG.logseq_chat_rpc_failure "invalid_params" message)
-           | Ok "open" -> snapshot_visible session
-           | Ok method_name ->
-             LG.logseq_chat_rpc_failure "unknown_method" ("unknown method: " ^ method_name))
-        | _, Some _ -> LG.logseq_chat_rpc_failure "invalid_request" "params must be an object"
-        | _, None -> LG.logseq_chat_rpc_failure "invalid_request" "missing field: params")
-     | Some (`Int _) -> LG.logseq_chat_rpc_failure "unsupported_version" "only API version 1 is supported"
-     | Some _ -> LG.logseq_chat_rpc_failure "invalid_request" "apiVersion must be an integer"
-     | None -> LG.logseq_chat_rpc_failure "invalid_request" "missing field: apiVersion")
-  | _ -> LG.logseq_chat_rpc_failure "invalid_request" "request must be an object"
-;;
-
 let call session request =
-  try from_string request |> route session with
-  | _ -> LG.logseq_chat_rpc_failure "invalid_json" "request must be valid JSON"
+  LG.logseq_chat_rpc_call (fun () -> snapshot_visible session) (dispatch session) request
 ;;

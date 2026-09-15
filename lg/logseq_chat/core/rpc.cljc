@@ -174,6 +174,40 @@
                   (tuple "error" (json-object [(tuple "code" (tag String code))
                                                 (tuple "message" (tag String message))]))])))
 
+(defn route [snapshot dispatch input]
+  (match input
+    (tag Assoc entries)
+    (let [fields (into {} (reverse entries))]
+      (match (field fields "apiVersion")
+        (Some (tag Int 1))
+        (match (required-string fields "method")
+          (Error message) (failure "invalid_request" message)
+          (Ok method)
+          (match (field fields "params")
+            (Some (tag Assoc entries))
+            (case method
+              "snapshot" (snapshot)
+              "open" (snapshot)
+              "dispatch"
+              (let [params (into {} (reverse entries))
+                    decoded (let* [action (required-string params "action")
+                                   payload (optional-string params "payload")]
+                              (Ok (tuple action payload)))]
+                (match decoded
+                  (Ok (tuple action payload)) (dispatch action payload)
+                  (Error message) (failure "invalid_params" message)))
+              (failure "unknown_method" (str "unknown method: " method)))
+            None (failure "invalid_request" "missing field: params")
+            _ (failure "invalid_request" "params must be an object")))
+        (Some (tag Int _)) (failure "unsupported_version" "only API version 1 is supported")
+        None (failure "invalid_request" "missing field: apiVersion")
+        _ (failure "invalid_request" "apiVersion must be an integer")))
+    _ (failure "invalid_request" "request must be an object")))
+
+(defn call [snapshot dispatch request]
+  (try (route snapshot dispatch (json/from-string request))
+       (catch _ (failure "invalid_json" "request must be valid JSON"))))
+
 (defn request-json [id request file-path content-type headers]
   (json-object
     (concat [(tuple "id" (tag Int id))
