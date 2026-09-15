@@ -16,7 +16,7 @@ let e2ee_keyring =
     (E2ee_keyring.logseq_chat_platform_crypto_save_graph_key crypto_call_raw)
     (fun () -> E2ee_keyring.logseq_chat_platform_crypto_load_e2ee_password crypto_call_raw)
     (E2ee_keyring.logseq_chat_platform_crypto_save_e2ee_password crypto_call_raw)
-    Logseq_chat_http.send
+    Logseq_chat_lg_core_native.logseq_chat_http_send
 ;;
 
 type graph_runtime =

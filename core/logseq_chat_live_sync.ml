@@ -2,7 +2,7 @@
    upload against a local db-sync server. Not part of the default test alias. *)
 
 module Api = Logseq_chat_lg_core_native
-module Http = Logseq_chat_http
+module Http = Logseq_chat_lg_core_native
 module Bootstrap = Logseq_chat_lg_core_native
 module Session = Logseq_chat_lg_core_native
 module Store = Logseq_chat_lg_core_native
@@ -50,7 +50,7 @@ let json_int name fields =
 ;;
 
 let send request =
-  match Http.send request with
+  match Http.logseq_chat_http_send request with
   | Error message -> Error message
   | Ok response -> Ok response
 ;;
@@ -309,7 +309,7 @@ let create_and_upload cfg ~name ~e2ee ~encrypt_text =
   Fun.protect
     ~finally:(fun () -> try Sys.remove prepared.file_path with _ -> ())
     (fun () ->
-      match Http.upload_file upload with
+      match Http.logseq_chat_http_upload_file upload with
       | Error message -> fail "initial snapshot upload" message
       | Ok response when response.status >= 200 && response.status < 300 -> ()
       | Ok response ->
@@ -336,7 +336,7 @@ let upload_asset_file cfg ~uuid ~asset_type ~checksum ~bytes ~content_type =
           cfg
           uuid asset_type checksum path content_type
       in
-      match Http.upload_file upload with
+      match Http.logseq_chat_http_upload_file upload with
       | Error message -> fail "asset upload" message
       | Ok response when response.status >= 200 && response.status < 300 -> ()
       | Ok response ->

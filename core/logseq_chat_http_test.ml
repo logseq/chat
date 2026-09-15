@@ -45,7 +45,7 @@ let () =
         write_fd
         "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\n{}";
       match
-        with_timeout 1 (fun () -> Logseq_chat_http.read_response read_fd)
+        with_timeout 1 (fun () -> Logseq_chat_lg_core_native.logseq_chat_http_read_response read_fd)
       with
       | Error message -> failwith message
 	 | Ok (headers, body) ->
@@ -65,9 +65,58 @@ let find_sub needle value =
   loop 0
 ;;
 
+let response_from_parts parts =
+  let read_fd, write_fd = Unix.pipe () in
+  let writer = Thread.create (fun () ->
+    Fun.protect ~finally:(fun () -> close_quietly write_fd) (fun () ->
+      List.iter (fun part -> write_string write_fd part; Thread.delay 0.001) parts)) () in
+  Fun.protect ~finally:(fun () -> close_quietly read_fd; Thread.join writer)
+    (fun () -> with_timeout 2 (fun () -> Logseq_chat_lg_core_native.logseq_chat_http_read_response read_fd))
+;;
+
+let () =
+  List.iter (fun (label, parts, expected) ->
+    match response_from_parts parts, expected with
+    | Ok (_, body), Ok wanted -> assert_equal label wanted body
+    | Error message, Error wanted -> assert_equal label wanted message
+    | _ -> failwith (label ^ ": unexpected response"))
+    [ "fragmented content length",
+      ["HTTP/1.1 200 OK\r\nContent-Len"; "gth: 5\r\n\r"; "\nhe"; "llo"], Ok "hello"
+    ; "fragmented chunks and extensions",
+      ["HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, Chunked\r\n\r\n";
+       "2;test=yes\r"; "\nhe\r\n3\r\nllo\r\n0\r\n\r\n"], Ok "hello"
+    ; "connection close body", ["HTTP/1.0 200 OK\r\nX-Test: yes\r\n\r\nhi"; " there"], Ok "hi there"
+    ; "empty body", ["HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"], Ok ""
+    ; "body clipped to length", ["HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhello"], Ok "he"
+    ; "missing headers", ["HTTP/1.1 200 OK"], Error "HTTP response did not contain headers"
+    ; "truncated body", ["HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhi"],
+      Error "HTTP response ended before Content-Length bytes were read"
+    ; "truncated chunk", ["HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhi"],
+      Error "HTTP chunked body ended early"
+    ; "invalid chunk", ["HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nnope\r\n"],
+      Error "invalid HTTP chunk size: nope"
+    ];
+  (match Logseq_chat_lg_core_native.logseq_chat_http_response_of_native "201\nhello\nworld" with
+   | Ok response when response.status = 201 -> assert_equal "native body" "hello\nworld" response.body
+   | _ -> failwith "native response decode failed");
+  List.iter (fun (raw, expected) ->
+    match Logseq_chat_lg_core_native.logseq_chat_http_response_of_native raw with
+    | Error message -> assert_equal "native error" expected message
+    | Ok _ -> failwith "expected native response error")
+    ["ERROR\ntransport failed", "transport failed"; "bad\nbody", "invalid native HTTP response"];
+  List.iter (fun (url, scheme, host, port, path) ->
+    match Logseq_chat_lg_core_native.logseq_chat_http_parse_url url with
+    | Ok endpoint when endpoint.scheme = scheme && endpoint.host = host && endpoint.port = port ->
+      assert_equal "endpoint path" path endpoint.request_path
+    | _ -> failwith ("URL parse failed: " ^ url))
+    ["http://localhost", "http", "localhost", 80, "/";
+     "https://example.test/a?q=1", "https", "example.test", 443, "/a?q=1";
+     "http://localhost:8123/a", "http", "localhost", 8123, "/a"]
+;;
+
 let () =
   match
-    Logseq_chat_http.send
+    Logseq_chat_lg_core_native.logseq_chat_http_send
       { Logseq_chat_lg_core_native.method_ = "GET"
       ; url = "https://api-staging.logseq.io/api/v1/graphs"
       ; body = None
@@ -91,15 +140,16 @@ let () =
     | _ -> failwith "expected an inet listen socket"
   in
   let file_path = Filename.temp_file "logseq-chat-upload" ".bin" in
+  let payload = "\000" ^ String.make 5000 'x' ^ "asset-bytes\255\228\184\173" in
   let channel = open_out_bin file_path in
-  output_string channel "asset-bytes";
+  output_string channel payload;
   close_out channel;
   let result = ref (Error "upload thread did not finish") in
   let worker =
     Thread.create
       (fun () ->
         result :=
-          Logseq_chat_http.upload_file
+          Logseq_chat_lg_core_native.logseq_chat_http_upload_file
             { request =
                 { method_ = "PUT"
                 ; url = Printf.sprintf "http://127.0.0.1:%d/assets/graph/file.png" port
@@ -124,7 +174,7 @@ let () =
       let rec read_request () =
         let raw = Buffer.contents buffer in
         if
-          find_sub "asset-bytes" raw <> None
+          find_sub payload raw <> None
           && find_sub "x-amz-meta-checksum: abc123" raw <> None
           && find_sub "PUT /assets/graph/file.png" raw <> None
         then raw
@@ -136,8 +186,10 @@ let () =
             read_request ())
       in
       let request = with_timeout 2 read_request in
-      if find_sub "asset-bytes" request = None
+      if find_sub payload request = None
       then failwith ("http upload missing body: " ^ request);
+      if find_sub ("Content-Length: " ^ string_of_int (String.length payload)) request = None
+      then failwith "http upload must report the binary byte length";
       if find_sub "x-amz-meta-checksum: abc123" request = None
       then failwith ("http upload missing checksum header: " ^ request);
       if find_sub "Content-Type: image/png" request = None
@@ -165,7 +217,7 @@ let () =
         write_fd
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
       match
-        with_timeout 1 (fun () -> Logseq_chat_http.read_response read_fd)
+        with_timeout 1 (fun () -> Logseq_chat_lg_core_native.logseq_chat_http_read_response read_fd)
       with
       | Error message -> failwith ("chunked decode failed: " ^ message)
       | Ok (_headers, body) -> assert_equal "chunked body" "hello world" body)

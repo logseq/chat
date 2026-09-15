@@ -2,7 +2,7 @@ open Yojson.Basic
 
 module Model = Logseq_chat_lg_core_native
 module Api = Logseq_chat_lg_core_native
-module Http = Logseq_chat_http
+module Http = Logseq_chat_lg_core_native
 module Pending_ops = Logseq_chat_lg_core_native
 module LG = Logseq_chat_lg_core_native
 module Outliner_state = Logseq_chat_outliner_state
@@ -1471,8 +1471,8 @@ let create
       ?(resolve_asset_path = Fun.id)
       ?encrypt_asset_file
       ?journal_page_id
-      ?(send = Http.send)
-      ?(upload_file = Http.upload_file)
+      ?(send = Http.logseq_chat_http_send)
+      ?(upload_file = Http.logseq_chat_http_upload_file)
       ?(cleanup_file = fun path -> try Sys.remove path with _ -> ())
       ?load_graph_catalog
       ?save_graph_catalog
