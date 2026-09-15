@@ -14,7 +14,7 @@ type t =
   ; mutable sidebar_cache : (Datascript.db * Logseq_chat_lg_core_native.sidebar_pages) option
   ; prepared : (string, Ops.pending_operation) Hashtbl.t
   ; mutable journal_limit : int
-  ; search_index : Logseq_chat_search_index.t option
+  ; search_index : Logseq_chat_lg_core_native.search_index option
   ; mutable search_index_is_fresh : bool
   }
 
@@ -22,7 +22,8 @@ let refresh_search runtime =
   Option.iter
     (fun index ->
       try
-        Logseq_chat_search_index.refresh index runtime.snapshot.Projection.db;
+        (Logseq_chat_lg_core_native.logseq_chat_search_index_refresh index
+           (runtime.snapshot).Projection.db);
         runtime.search_index_is_fresh <- true
       with
       | error ->
@@ -109,11 +110,9 @@ let refresh_search_affected runtime ~before intent =
   | None -> ()
   | Some index when runtime.search_index_is_fresh ->
     (try
-       Logseq_chat_search_index.refresh_uuids
-         index
-         ~before
-         ~after:runtime.snapshot.Projection.db
-         (affected_uuids before intent)
+       (Logseq_chat_lg_core_native.logseq_chat_search_index_refresh_uuids index
+          before (runtime.snapshot).Projection.db
+          (Lg_runtime.Runtime_seq.of_list, (affected_uuids before intent)))
      with
      | Failure _ -> runtime.search_index_is_fresh <- false)
   | Some _ -> ()
@@ -130,11 +129,9 @@ let refresh_search_after_rebase ~changed_uuids runtime ~before ~operations =
         @ affected_uuids snapshot.db operation.intent)
     in
     (try
-       Logseq_chat_search_index.refresh_uuids
-         index
-         ~before
-         ~after:snapshot.db
-         (changed_uuids @ pending_uuids)
+       (Logseq_chat_lg_core_native.logseq_chat_search_index_refresh_uuids index
+          before snapshot.db
+          (Lg_runtime.Runtime_seq.of_list, (changed_uuids @ pending_uuids)))
      with
      | Failure _ -> runtime.search_index_is_fresh <- false)
   | Some _ | None -> ()
@@ -261,7 +258,7 @@ let create_base
   let snapshot = Projection.{ db = Datascript.conn_db conn; server_t; statuses = Rrbvec.empty } in
   let search_index =
     Option.bind search_index_path (fun path ->
-      try Some (Logseq_chat_search_index.create ~path) with
+        try Some (Logseq_chat_lg_core_native.logseq_chat_search_index_create path) with
       | error ->
         Printf.eprintf
           "LOGSEQ_SEARCH_INDEX_ERROR stage=open error=%s\n%!"
@@ -771,7 +768,9 @@ let search runtime query =
   | Some index ->
     if not runtime.search_index_is_fresh then refresh_search runtime;
     (try
-       let hits = Logseq_chat_search_index.search_hits index runtime.snapshot.db query in
+       let hits = (Rrbvec.to_list
+                     (Logseq_chat_lg_core_native.logseq_chat_search_index_search_hits 100 index
+                        (runtime.snapshot).db query)) in
        Printf.eprintf
          "LOGSEQ_SEARCH_INDEX_QUERY query=%S fresh=%b hits=%d\n%!"
          query

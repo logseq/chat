@@ -1094,12 +1094,13 @@ let () =
   (* searchNodes projects sqlite search hits with page context and
      breadcrumbs, and clears them for blank queries. *)
   let hit =
-    Logseq_chat_search_index.
+    Logseq_chat_lg_core_native.
       { uuid = "block-1"
       ; title = "Search me"
       ; is_page = false
       ; page = Some Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" }
-      ; breadcrumbs = [ Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" } ]
+      ; breadcrumbs = Rrbvec.of_list
+            [ ({ uuid = "page-1"; title = "Page one" } : Logseq_chat_lg_core_native.entity_summary) ]
       }
   in
   let session =

@@ -325,7 +325,8 @@ let autocomplete_candidates context request =
     |> Seq.filter (fun candidate ->
       not (String.equal (String.trim candidate.label) "")
       && (if request.kind = Tag && normalized_query <> ""
-          then Logseq_chat_search_index.Fuzzy.score normalized_query candidate.label > 0.
+          then (Logseq_chat_lg_core_native.logseq_chat_search_index_fuzzy_score
+                  normalized_query candidate.label) > 0.
           else includes_normalized_query candidate.label normalized_query)
       && if Hashtbl.mem seen candidate.value then false else (Hashtbl.add seen candidate.value (); true))
     |> (fun matches ->
@@ -333,8 +334,10 @@ let autocomplete_candidates context request =
         matches |> List.of_seq
         |> List.stable_sort (fun left right ->
           Float.compare
-            (Logseq_chat_search_index.Fuzzy.score normalized_query right.label)
-            (Logseq_chat_search_index.Fuzzy.score normalized_query left.label))
+            (Logseq_chat_lg_core_native.logseq_chat_search_index_fuzzy_score
+               normalized_query right.label)
+            (Logseq_chat_lg_core_native.logseq_chat_search_index_fuzzy_score
+               normalized_query left.label))
         |> List.to_seq
       else matches)
     |> Seq.take 12

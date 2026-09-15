@@ -90,7 +90,7 @@ type t =
   ; graph_tag_objects : (string -> Model.block list option) option
   ; graph_normalize_titles :
       (uuid:string -> string list -> string list * (string * string) list) option
-  ; graph_search : (string -> Logseq_chat_search_index.hit list) option
+  ; graph_search : (string -> Logseq_chat_lg_core_native.indexed_search_hit list) option
   ; graph_due_flashcards : (now:int -> LG.due_card list) option
   ; graph_review_flashcard :
       (uuid:string -> rating:LG.flashcard_rating -> now:int -> operation_id:string
@@ -101,7 +101,7 @@ type t =
   ; graph_delete_page :
       (page_uuid:string -> operation_id:string -> now:int -> (unit, string) result) option
   ; mutable flashcards : LG.due_card list
-  ; mutable search_results : Logseq_chat_search_index.hit list
+  ; mutable search_results : Logseq_chat_lg_core_native.indexed_search_hit list
   ; mutable search_query : string
   ; load_older_journals : (unit -> unit) option
   ; has_older_journals : (unit -> bool) option
@@ -374,7 +374,7 @@ let sidebar_page_json (page : Logseq_chat_lg_core_native.entity_summary) =
   `Assoc [ "uuid", `String page.uuid; "title", `String page.title ]
 ;;
 
-let search_hit_json (hit : Logseq_chat_search_index.hit) =
+let search_hit_json (hit : Logseq_chat_lg_core_native.indexed_search_hit) =
   `Assoc
     [ "uuid", `String hit.uuid
     ; "title", `String hit.title
@@ -388,7 +388,7 @@ let search_hit_json (hit : Logseq_chat_search_index.hit) =
           (List.map
              (fun (summary : Model.entity_summary) ->
                `Assoc [ "uuid", `String summary.uuid; "title", `String summary.title ])
-             hit.breadcrumbs) )
+             (Rrbvec.to_list hit.breadcrumbs)) )
     ]
 ;;
 

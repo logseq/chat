@@ -5,5 +5,4 @@
  "logseq_chat_outliner_state"
  "logseq_chat_outliner_effects"
  "logseq_chat_rpc"
- "logseq_chat_search_index"
 )

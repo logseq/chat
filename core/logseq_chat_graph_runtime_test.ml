@@ -2,7 +2,7 @@ open Datascript
 
 module Ops = Logseq_chat_lg_core_native
 module Runtime = Logseq_chat_graph_runtime
-module Search = Logseq_chat_search_index
+module Search = Logseq_chat_lg_core_native
 module Transit = Transit_native.Transit.Json
 
 let fail label = failwith label
@@ -580,7 +580,7 @@ let () =
       assert_bool
         "search sees the incrementally indexed optimistic title"
         (Runtime.search runtime "Pending"
-         |> List.exists (fun hit -> String.equal hit.Logseq_chat_search_index.uuid "block"));
+         |> List.exists (fun hit -> String.equal hit.Logseq_chat_lg_core_native.uuid "block"));
       let split =
         Ops.
           { operation_id = "incremental-search-split"
@@ -604,7 +604,7 @@ let () =
       assert_bool "the split block is searchable without a full refresh"
         (Runtime.search runtime "Tail"
          |> List.exists (fun hit ->
-           String.equal hit.Logseq_chat_search_index.uuid "incremental-search-new")))
+             String.equal hit.Logseq_chat_lg_core_native.uuid "incremental-search-new")))
 ;;
 
 let () =
@@ -629,9 +629,8 @@ let () =
       in
       ignore (Runtime.search runtime "Old");
       let index = Option.get runtime.search_index in
-      Search.search_upsert
-        search_path
-        [ "search-sentinel", "incremental sentinel", "search-sentinel" ];
+      (Search.logseq_chat_search_index_search_upsert search_path
+         [("search-sentinel", "incremental sentinel", "search-sentinel")]);
       ignore
         (transact_conn
            conn
@@ -647,8 +646,10 @@ let () =
          |> List.exists (fun hit -> String.equal hit.Search.uuid "block"));
       assert_bool
         "remote incremental refresh does not scan and reconcile the whole index"
-        (Search.search index "incremental sentinel"
-         |> List.exists (fun (hit : Search.result) ->
+        ((Rrbvec.to_list
+            (Search.logseq_chat_search_index_search (fun _ -> false) 100 index
+               "incremental sentinel"))
+         |> List.exists (fun (hit : Search.search_result) ->
            String.equal hit.Search.uuid "search-sentinel")))
 ;;
 
@@ -694,9 +695,9 @@ let () =
         runtime.search_index_is_fresh;
       let renamed_hits = Runtime.search runtime "Renamed" in
       assert_bool "the renamed page is incrementally searchable"
-        (List.exists (fun hit -> String.equal hit.Logseq_chat_search_index.uuid "target") renamed_hits);
+        (List.exists (fun hit -> String.equal hit.Logseq_chat_lg_core_native.uuid "target") renamed_hits);
       assert_bool "blocks referring to the renamed page are reindexed incrementally"
-        (List.exists (fun hit -> String.equal hit.Logseq_chat_search_index.uuid "block") renamed_hits))
+        (List.exists (fun hit -> String.equal hit.Logseq_chat_lg_core_native.uuid "block") renamed_hits))
 ;;
 
 let () =
