@@ -3,6 +3,8 @@
             [logseq-chat.rpc :as rpc]
             [logseq-chat.pending-ops :as ops]
             [logseq-chat.cache-model :as model]
+            [logseq-chat.outliner-effects :as effects]
+            [ocaml.Yojson.Basic :as json]
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
@@ -82,6 +84,20 @@
          (rpc/outliner-message "{\"type\":\"tapBlock\",\"uuid\":\"first\",\"uuid\":\"second\"}"))))
 
 (defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
+
+(deftest platform-commands-preserve-their-json-wire-format
+  (run! (fn [[command expected]]
+          (is (= expected (json/to-string (rpc/outliner-command-json command)))))
+        [(tuple (effects/Platform_haptic outliner/Selection) "{\"type\":\"haptic\",\"style\":\"selection\"}")
+         (tuple (effects/Platform_haptic outliner/Impact) "{\"type\":\"haptic\",\"style\":\"impact\"}")
+         (tuple (effects/Focus_block "block") "{\"type\":\"focusBlock\",\"uuid\":\"block\"}")
+         (tuple (effects/Confirm_delete (list "first" "second")) "{\"type\":\"confirmDelete\",\"uuids\":[\"first\",\"second\"]}")
+         (tuple (effects/Set_clipboard_text "a\nb") "{\"type\":\"setClipboardText\",\"text\":\"a\\nb\"}")
+         (tuple (effects/Set_clipboard_references (list "x" "x")) "{\"type\":\"setClipboardReferences\",\"uuids\":[\"x\",\"x\"]}")
+         (tuple (effects/Set_clipboard_urls (list)) "{\"type\":\"setClipboardURLs\",\"uuids\":[]}")
+         (tuple (effects/Platform_pick_attachment "x") "{\"type\":\"pickAttachment\",\"uuid\":\"x\"}")
+         (tuple (effects/Platform_take_photo "x") "{\"type\":\"takePhoto\",\"uuid\":\"x\"}")
+         (tuple (effects/Platform_record_audio "x") "{\"type\":\"recordAudio\",\"uuid\":\"x\"}")]))
 
 (deftest youtube-timestamps-follow-the-most-recent-video-across-blocks
   (is (= [(tuple "time" "https://www.youtube.com/watch?v=dQw4w9WgXcQ")]

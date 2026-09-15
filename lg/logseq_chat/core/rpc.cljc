@@ -2,6 +2,7 @@
   (:require [logseq-chat.outliner-state :as outliner]
             [clojure.string :as string]
             [logseq-chat.markup :as markup]
+            [logseq-chat.outliner-effects :as effects]
             [logseq-chat.pending-ops :as ops]
             [ocaml.Yojson.Basic :as json]
             [logseq-chat.flashcards :as flashcards]))
@@ -135,3 +136,21 @@
               (tuple current (if-some [url target] (conj targets (tuple (:uuid block) url)) targets))))
           (tuple nil []) blocks)]
     targets))
+
+(defn json-strings [values] (tag List (apply list (map #(tag String %) values))))
+
+(defn outliner-command-json [command]
+  (let [[kind key value]
+        (match command
+          (effects/Platform_haptic haptic)
+          (tuple "haptic" "style" (tag String (match haptic outliner/Selection "selection" outliner/Impact "impact")))
+          (effects/Focus_block uuid) (tuple "focusBlock" "uuid" (tag String uuid))
+          (effects/Confirm_delete uuids) (tuple "confirmDelete" "uuids" (json-strings uuids))
+          (effects/Set_clipboard_text text) (tuple "setClipboardText" "text" (tag String text))
+          (effects/Set_clipboard_references uuids) (tuple "setClipboardReferences" "uuids" (json-strings uuids))
+          (effects/Set_clipboard_urls uuids) (tuple "setClipboardURLs" "uuids" (json-strings uuids))
+          (effects/Platform_pick_attachment uuid) (tuple "pickAttachment" "uuid" (tag String uuid))
+          (effects/Platform_take_photo uuid) (tuple "takePhoto" "uuid" (tag String uuid))
+          (effects/Platform_record_audio uuid) (tuple "recordAudio" "uuid" (tag String uuid)))]
+    (let [^:Yojson.Basic.t result (tag Assoc (list (tuple "type" (tag String kind)) (tuple key value)))]
+      result)))

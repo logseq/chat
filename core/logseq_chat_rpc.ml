@@ -940,37 +940,6 @@ let node_routes_json session =
   |> fun routes -> `List routes
 ;;
 
-let haptic_json = function Outliner_state.Selection -> "selection" | Impact -> "impact"
-
-let outliner_command_json = function
-  | Outliner_effects.Platform_haptic haptic ->
-    `Assoc [ "type", `String "haptic"; "style", `String (haptic_json haptic) ]
-  | Focus_block uuid -> `Assoc [ "type", `String "focusBlock"; "uuid", `String uuid ]
-  | Confirm_delete uuids ->
-    `Assoc
-      [ "type", `String "confirmDelete"
-      ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
-      ]
-  | Set_clipboard_text text ->
-    `Assoc [ "type", `String "setClipboardText"; "text", `String text ]
-  | Set_clipboard_references uuids ->
-    `Assoc
-      [ "type", `String "setClipboardReferences"
-      ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
-      ]
-  | Set_clipboard_urls uuids ->
-    `Assoc
-      [ "type", `String "setClipboardURLs"
-      ; "uuids", `List (List.map (fun uuid -> `String uuid) uuids)
-      ]
-  | Platform_pick_attachment uuid ->
-    `Assoc [ "type", `String "pickAttachment"; "uuid", `String uuid ]
-  | Platform_take_photo uuid ->
-    `Assoc [ "type", `String "takePhoto"; "uuid", `String uuid ]
-  | Platform_record_audio uuid ->
-    `Assoc [ "type", `String "recordAudio"; "uuid", `String uuid ]
-;;
-
 let selected_graph session =
   match session.config with
   | Some config ->
@@ -1112,7 +1081,7 @@ let snapshot session ~context_blocks blocks =
       ; "outlinerRows",
         outliner_rows_json ~serialize_block session base_context base_state
       ; "outlinerCommandRevision", `Int session.outliner_revision
-      ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
+      ; "outlinerCommands", `List (List.map LG.logseq_chat_rpc_outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
         `Bool (has_pending_operations session)
       ; "hasOlderJournals",
@@ -1143,7 +1112,7 @@ let outliner_patch_result
       ; "outlinerRows", `List []
       ; "outlinerRowSplices", `List row_splices
       ; "outlinerCommandRevision", `Int session.outliner_revision
-      ; "outlinerCommands", `List (List.map outliner_command_json session.outliner_commands)
+      ; "outlinerCommands", `List (List.map LG.logseq_chat_rpc_outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
         `Bool (has_pending_operations session)
       ; "isOutlinerPatch", `Bool true
