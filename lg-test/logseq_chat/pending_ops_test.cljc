@@ -83,6 +83,76 @@
            (ops/affected-uuids db (ops/Delete-blocks (record ops/pending-delete (uuids ["root" "missing"]))))))
     (is (= [] (ops/affected-uuids db (ops/Delete-blocks (record ops/pending-delete (uuids []))))))))
 
+(defn normalization-db []
+  (let [uuid-attr (record Datascript.schema_attr
+                   (cardinality (ds/One)) (unique (Some (ds/Identity))) (indexed true)
+                   (is-component false) (no-history false) (doc nil)
+                   (value-type (Some (ds/UuidType))) (tuple-attrs nil) (tuple-types nil))]
+    (ds/db-with
+      (list (ds/Add (ds/Entity_id 1) "block/uuid" (ds/Uuid "block"))
+            (ds/Add (ds/Entity_id 1) "block/title" (ds/String "Old"))
+            (ds/Add (ds/Entity_id 2) "block/uuid" (ds/Uuid "previous"))
+            (ds/Add (ds/Entity_id 2) "block/title" (ds/String "Before "))
+            (ds/Add (ds/Entity_id 3) "block/uuid" (ds/Uuid "without-title")))
+      (ds/empty-db :schema (list (tuple "block/uuid" uuid-attr))))))
+
+(defn normalization-operation [intent]
+  (record ops/pending-operation (operation-id "normalize") (base-t 42)
+          (state (ops/Accepted 43)) (intent intent)))
+
+(deftest normalization-checks-raw-titles-without-changing-operation-metadata
+  (let [db (normalization-db)
+        title (record ops/pending-title (uuid "block") (expected-title "Old") (title "New"))
+        op (normalization-operation (ops/Save-title title))]
+    (is (= (Ok op) (ops/normalize-operation db op)))
+    (is (= (Error "block no longer exists") (ops/raw-title db "missing")))
+    (is (= (Error "block title is missing") (ops/raw-title db "without-title")))
+    (is (= (Error "title changed on the server")
+           (ops/normalize-operation db (assoc op :intent (ops/Save-title (assoc title :expected-title "Wrong"))))))
+    (let [split (normalization-operation (nth intents 8))]
+      (is (= (Ok split) (ops/normalize-operation db split))))))
+
+(deftest normalization-merges-check-both-titles-and-recompute-the-result
+  (let [db (normalization-db)
+        merge (record ops/pending-merge (uuid "block") (expected-title "Old") (title "Payload")
+                      (previous-uuid "previous") (expected-previous-title "Before ") (merged-title (Some "stale")))
+        op (normalization-operation (ops/Merge-backward merge))]
+    (is (= (Ok (assoc op :intent (ops/Merge-backward (assoc merge :merged-title (Some "Before Payload")))))
+           (ops/normalize-operation db op)))
+    (run! (fn [invalid]
+            (is (= (Error "title changed on the server")
+                   (ops/normalize-operation db (assoc op :intent (ops/Merge-backward invalid))))))
+          [(assoc merge :expected-title "Wrong") (assoc merge :expected-previous-title "Wrong")])))
+
+(deftest normalization-preserves-non-title-intents
+  (let [db (normalization-db)]
+    (run! (fn [intent]
+            (let [op (normalization-operation intent)]
+              (is (= (Ok op) (ops/normalize-operation db op)))))
+          (into (mapv #(nth intents %) [1 2 3 4 5 6 7 11 12]) page-intents))))
+
+(deftest normalization-converts-only-fsrs-time-fields
+  (let [db (normalization-db)
+        state (ops/Map-value [(tuple "last-repeat" (ops/Instant-value 9))
+                              (tuple "other" (ops/Instant-value 10))])
+        normalized (ops/Map-value [(tuple "last-repeat" (ops/Int-value 9))
+                                   (tuple "other" (ops/Instant-value 10))])]
+    (run! (fn [[attr input expected]]
+            (let [property (record ops/pending-property (uuid "block") (attr attr)
+                                   (expected (Some input)) (value (Some input)))
+                  op (normalization-operation (ops/Set-property property))
+                  change (record ops/property-change (attr attr) (expected (Some input)) (value (Some input)))
+                  batch (normalization-operation (ops/Set-properties (record ops/pending-properties (uuid "block") (changes [change]))))]
+              (is (= (Ok (assoc op :intent (ops/Set-property (assoc property :expected (Some expected) :value (Some expected)))))
+                     (ops/normalize-operation db op)))
+              (is (= (Ok (assoc batch :intent (ops/Set-properties (record ops/pending-properties (uuid "block")
+                                              (changes [(assoc change :expected (Some expected) :value (Some expected))])))))
+                     (ops/normalize-operation db batch)))))
+          [(tuple "logseq.property.fsrs/due" (ops/Instant-value 7) (ops/Int-value 7))
+           (tuple "logseq.property.fsrs/state" state normalized)
+           (tuple "custom" state state)
+           (tuple "custom" (ops/Instant-value 7) (ops/Instant-value 7))])))
+
 (deftest persisted-intents-preserve-independent-legacy-golden-fixtures
   (let [all (into (conj intents (ops/Save-title (record ops/pending-title (uuid "duplicate") (expected-title "") (title "first")))) page-intents)
         expected (string/split-lines (input/with-open-text "../core/pending_ops_golden.jsonl" input/input-all))]

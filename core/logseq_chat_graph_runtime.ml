@@ -204,95 +204,6 @@ let pending_operations runtime =
     | Ops.Accepted _ | Ops.Applied | Ops.Conflicted _ -> false)
 ;;
 
-let raw_title db uuid =
-  match Datascript.entity db (Datascript.Lookup_ref ("block/uuid", Datascript.Uuid uuid)) with
-  | Some entity ->
-    (match Datascript.Entity.entity_attr_raw entity "block/title" with
-     | Some (Datascript.One_value (Datascript.String value)) -> Ok value
-     | _ -> Error "block title is missing")
-  | None -> Error "block no longer exists"
-;;
-
-let normalize_expected_title _runtime db ~uuid ~expected =
-  raw_title db uuid
-  >>= fun current ->
-  if String.equal current expected then Ok current else Error "title changed on the server"
-;;
-
-let normalize_fsrs_value attr = function
-  | Ops.Instant_value value when String.equal attr "logseq.property.fsrs/due" ->
-    Ops.Int_value value
-  | Ops.Map_value entries when String.equal attr "logseq.property.fsrs/state" ->
-    Ops.Map_value
-      (Rrbvec.map
-         (function
-           | "last-repeat", Ops.Instant_value value -> "last-repeat", Ops.Int_value value
-           | entry -> entry)
-         entries)
-  | value -> value
-;;
-
-let normalize_property_change (change : Ops.property_change) =
-  { change with
-    expected = Option.map (normalize_fsrs_value change.attr) change.expected
-  ; value = Option.map (normalize_fsrs_value change.attr) change.value
-  }
-;;
-
-let normalize_operation_against runtime db operation =
-  let intent =
-    match operation.Ops.intent with
-    | Ops.Save_title { uuid; expected_title; title } ->
-      normalize_expected_title runtime db ~uuid ~expected:expected_title
-      >>= fun expected_title ->
-      Ok (Ops.Save_title { uuid; expected_title; title })
-    | Ops.Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
-      Ok (Ops.Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at })
-    | Ops.Split_block
-        { uuid; expected_title; before; after; new_uuid; new_order; created_at }
-      ->
-      normalize_expected_title runtime db ~uuid ~expected:expected_title
-      >>= fun expected_title ->
-      Ok (Ops.Split_block
-        { uuid; expected_title; before; after; new_uuid; new_order; created_at }
-      )
-    | Ops.Merge_backward
-        { uuid; expected_title; title; previous_uuid; expected_previous_title; _ }
-      ->
-      let source_title = title in
-      normalize_expected_title runtime db ~uuid ~expected:expected_title
-      >>= fun expected_title ->
-      normalize_expected_title runtime db ~uuid:previous_uuid ~expected:expected_previous_title
-      >>= fun expected_previous_title ->
-      Ok (Ops.Merge_backward
-        { uuid
-        ; expected_title
-        ; title = source_title
-        ; previous_uuid
-        ; expected_previous_title
-        ; merged_title = Some (expected_previous_title ^ source_title)
-        }
-      )
-    | Ops.Set_property ({ attr; expected; value; _ } as property) ->
-      Ok
-        (Ops.Set_property
-           { property with
-             expected = Option.map (normalize_fsrs_value attr) expected
-           ; value = Option.map (normalize_fsrs_value attr) value
-           })
-    | Ops.Set_properties { uuid; changes } ->
-      Ok (Ops.Set_properties { uuid; changes = Rrbvec.map normalize_property_change changes })
-    | (Ops.Move_block _ | Ops.Move_blocks _ | Ops.Delete_blocks _
-      | Ops.Create_tag _ | Ops.Create_page _ | Ops.Create_journal _ | Ops.Create_asset _ | Ops.Add_tag _
-      | Ops.Set_favorite _ | Ops.Delete_page _) as intent -> Ok intent
-  in
-  intent >>| fun intent -> { operation with Ops.intent }
-;;
-
-let normalize_operation runtime operation =
-  normalize_operation_against runtime (Datascript.conn_db runtime.conn) operation
-;;
-
 let db_before_operation runtime operation_id =
   let authoritative = Datascript.conn_db runtime.conn in
   let rec collect_previous reversed = function
@@ -316,7 +227,7 @@ let prepare_sync runtime operation =
   then Error "operation was created against a stale server cursor"
   else
     let db = db_before_operation runtime operation.operation_id in
-    normalize_operation_against runtime db operation
+    LG.logseq_chat_pending_ops_normalize_operation db operation
     >>= fun normalized ->
     (Result.map Rrbvec.to_list
        (Projection.logseq_chat_pending_projection_compile db normalized.intent))

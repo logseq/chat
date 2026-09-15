@@ -1122,15 +1122,15 @@ let () =
   with_runtime (fun _path _conn runtime ->
     let db = Runtime.db runtime in
     assert_bool "raw title reports missing entities and missing title attributes"
-      (Runtime.raw_title db "missing" = Error "block no longer exists"
-       && Runtime.raw_title db "page-without-title" = Error "block no longer exists");
+      (Ops.logseq_chat_pending_ops_raw_title db "missing" = Error "block no longer exists"
+       && Ops.logseq_chat_pending_ops_raw_title db "page-without-title" = Error "block no longer exists");
     let without_title =
       db_with [ Add (Entity_id 30, "block/uuid", Uuid "without-title") ] db
     in
     assert_bool "raw title distinguishes an entity without a title"
-      (Runtime.raw_title without_title "without-title" = Error "block title is missing");
+      (Ops.logseq_chat_pending_ops_raw_title without_title "without-title" = Error "block title is missing");
     assert_bool "expected title normalization detects a server change"
-      (Runtime.normalize_expected_title runtime db ~uuid:"block" ~expected:"Wrong"
+      (Ops.logseq_chat_pending_ops_normalize_expected_title db "block" "Wrong"
        = Error "title changed on the server");
     let stale = { (save_title "stale" "Old" "New") with base_t = 41 } in
     assert_bool "sync preparation rejects a stale cursor"
@@ -1155,7 +1155,7 @@ let () =
         }
     in
     assert_bool "insert normalization follows the title codec"
-      (match Runtime.normalize_operation runtime insert with
+      (match Ops.logseq_chat_pending_ops_normalize_operation (conn_db runtime.Runtime.conn) insert with
        | Ok { intent = Insert_block { title = "New"; _ }; _ } -> true
        | _ -> false);
     let move =
@@ -1164,7 +1164,7 @@ let () =
         ; intent = Move_block { uuid = "block"; page_uuid = "page"; parent_uuid = "page"; order = "a1" } }
     in
     assert_bool "non-title operations pass normalization unchanged"
-      (Runtime.normalize_operation runtime move = Ok move);
+      (Ops.logseq_chat_pending_ops_normalize_operation (conn_db runtime.Runtime.conn) move = Ok move);
     let passthrough_intents =
       [ Ops.Set_property
           { uuid = "block"; attr = "block/title"; expected = None; value = None }
@@ -1176,7 +1176,7 @@ let () =
       (List.for_all
          (fun intent ->
            let operation = { move with Ops.intent } in
-           Runtime.normalize_operation runtime operation = Ok operation)
+           Ops.logseq_chat_pending_ops_normalize_operation (conn_db runtime.Runtime.conn) operation = Ok operation)
          passthrough_intents);
     (match Runtime.prepare_sync runtime insert with
      | Ok ("insert-blocks", _) ->

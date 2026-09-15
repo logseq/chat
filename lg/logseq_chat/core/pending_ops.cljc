@@ -6,6 +6,7 @@
             [ocaml.Stdlib :as stdlib]
             [ocaml.Datascript :as ds]
             [ocaml.Datascript.Db :as db-api]
+            [ocaml.Datascript.Entity :as entity]
             [ocaml.Rrbvec :as rrbvec]))
 
 (type-variant pending-state
@@ -77,6 +78,61 @@
   (Add-tag :pending-tag) (Set-favorite :pending-favorite) (Delete-page :pending-page-delete))
 (type-record pending-operation
   (operation-id :string) (base-t :int) (state :pending-state) (intent :pending-intent))
+
+(defn raw-title [db uuid]
+  (if-some [block (ds/entity db (ds/Lookup_ref "block/uuid" (ds/Uuid uuid)))]
+    (match (entity/entity-attr-raw block "block/title")
+      (Some (ds/One_value (ds/String title))) (Ok title)
+      _ (Error "block title is missing"))
+    (Error "block no longer exists")))
+
+(defn normalize-expected-title [db uuid expected]
+  (let* [current (raw-title db uuid)]
+    (if (= current expected) (Ok current) (Error "title changed on the server"))))
+
+(defn normalize-fsrs-value [attr value]
+  (match value
+    (Instant-value time) (if (= attr "logseq.property.fsrs/due") (Int-value time) value)
+    (Map-value entries)
+    (if (= attr "logseq.property.fsrs/state")
+      (Map-value (mapv (fn [[key entry]]
+                        (tuple key (match entry
+                                     (Instant-value time) (if (= key "last-repeat") (Int-value time) entry)
+                                     _ entry))) entries))
+      value)
+    _ value))
+
+(defn normalize-optional-value [attr value]
+  (match value (Some present) (Some (normalize-fsrs-value attr present)) None None))
+
+(defn normalize-property-change [change]
+  (record property-change
+    (attr (:attr change))
+    (expected (normalize-optional-value (:attr change) (:expected change)))
+    (value (normalize-optional-value (:attr change) (:value change)))))
+
+(defn normalize-operation [db operation]
+  (let* [intent
+         (match (:intent operation)
+           (Save-title value)
+           (let* [expected (normalize-expected-title db (:uuid value) (:expected-title value))]
+             (Ok (Save-title (assoc value :expected-title expected))))
+           (Split-block value)
+           (let* [expected (normalize-expected-title db (:uuid value) (:expected-title value))]
+             (Ok (Split-block (assoc value :expected-title expected))))
+           (Merge-backward value)
+           (let* [expected (normalize-expected-title db (:uuid value) (:expected-title value))
+                  previous (normalize-expected-title db (:previous-uuid value) (:expected-previous-title value))]
+             (Ok (Merge-backward (assoc value :expected-title expected :expected-previous-title previous
+                                       :merged-title (Some (str previous (:title value)))))))
+           (Set-property value)
+           (Ok (Set-property (assoc value
+                              :expected (normalize-optional-value (:attr value) (:expected value))
+                              :value (normalize-optional-value (:attr value) (:value value)))))
+           (Set-properties value)
+           (Ok (Set-properties (assoc value :changes (mapv normalize-property-change (:changes value)))))
+           other (Ok other))]
+    (Ok (assoc operation :intent intent))))
 
 (defn subtree-uuids [db roots]
   (loop [pending (vec (reverse roots)) result []]
