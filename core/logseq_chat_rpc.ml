@@ -832,26 +832,8 @@ let reconcile_authoritative_blocks session =
     (match graph_blocks () with
      | None -> ()
      | Some blocks ->
-       let authoritative_by_uuid = Hashtbl.create (List.length blocks) in
-       List.iter
-         (fun (block : Model.block) -> Hashtbl.replace authoritative_by_uuid block.uuid block)
-         blocks;
-       let same_status left right =
-         match left, right with
-         | None, None -> true
-         | Some (left : Model.status), Some (right : Model.status) ->
-           String.equal left.uuid right.uuid
-         | _ -> false
-       in
-       Rrbvec.to_list (Model.logseq_chat_cache_model_unsynced_blocks session.model)
-       |> List.iter (fun (block : Model.block) ->
-         match Hashtbl.find_opt authoritative_by_uuid block.uuid with
-         | Some authoritative when
-             String.equal block.sync_status "submitted"
-             || (String.equal block.title authoritative.title
-                 && same_status block.status authoritative.status) ->
-           ignore (Model.logseq_chat_cache_model_mark_block_synced session.model block.uuid)
-         | Some _ | None -> ()))
+       ignore (LG.logseq_chat_rpc_reconcile_authoritative_blocks session.model
+         (List.to_seq, blocks)))
 ;;
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
@@ -1089,61 +1071,10 @@ let resolve_graph _session (config : Api.api_config) =
   else Error "Select a Logseq graph before syncing"
 ;;
 
-let journal_page_uuid journal_day =
-  let year = journal_day / 10_000 in
-  let month_and_day = journal_day mod 10_000 in
-  Printf.sprintf "00000001-%04d-%04d-0000-000000000000" year month_and_day
-;;
-
-let journal_day_title journal_day =
-  let month_names =
-    [| "Jan"; "Feb"; "Mar"; "Apr"; "May"; "Jun"
-     ; "Jul"; "Aug"; "Sep"; "Oct"; "Nov"; "Dec"
-    |]
-  in
-  let year = journal_day / 10_000 in
-  let month = (journal_day / 100) mod 100 in
-  let day = journal_day mod 100 in
-  let suffix =
-    if day mod 100 >= 11 && day mod 100 <= 13
-    then "th"
-    else
-      match day mod 10 with
-      | 1 -> "st"
-      | 2 -> "nd"
-      | 3 -> "rd"
-      | _ -> "th"
-  in
-  let month_name =
-    if month >= 1 && month <= Array.length month_names
-    then month_names.(month - 1)
-    else invalid_arg "invalid journal month"
-  in
-  Printf.sprintf "%s %d%s, %04d" month_name day suffix year
-;;
-
-let same_status left right =
-  match left, right with
-  | None, None -> true
-  | Some (left : Model.status), Some (right : Model.status) ->
-    String.equal left.uuid right.uuid
-  | _ -> false
-;;
-
-let same_pending_version (left : Model.block) (right : Model.block) =
-  String.equal left.uuid right.uuid
-  && String.equal left.title right.title
-  && left.updated_at = right.updated_at
-  && same_status left.status right.status
-  && left.asset_size = right.asset_size
-  && left.asset_checksum = right.asset_checksum
-  && left.local_path = right.local_path
-;;
-
 let pending_block_unchanged session sent =
   Option.fold
     ~none:false
-    ~some:(same_pending_version sent)
+    ~some:(LG.logseq_chat_rpc_same_pending_version_ sent)
     (Model.logseq_chat_cache_model_read_block session.model sent.Model.uuid)
 ;;
 
@@ -1219,8 +1150,8 @@ and prepare_pending_creation session pump (block : Model.block) =
       (match graph_page with
        | Some page_id -> prepare_pending_create_request session pump block ~title ~page_id:(Some page_id)
        | None ->
-         let page_id = journal_page_uuid journal_day in
-         let journal_title = journal_day_title journal_day in
+         let page_id = LG.logseq_chat_rpc_journal_page_uuid journal_day in
+         let journal_title = LG.logseq_chat_rpc_journal_day_title journal_day in
          (match
             encrypted_title session pump.config journal_title,
             encrypted_title session pump.config (String.lowercase_ascii journal_title)
@@ -1417,7 +1348,7 @@ let capture_operations session ~uuid ~title ~now ?status () =
             ; state = Queued
             ; intent =
                 Create_journal
-                  { page_uuid = journal_page_uuid journal_day
+                  { page_uuid = LG.logseq_chat_rpc_journal_page_uuid journal_day
                   ; block_uuid = uuid
                   ; title
                   ; journal_day
@@ -1911,28 +1842,12 @@ let pop_node_route session =
     session.outliner_revision <- session.outliner_revision + 1
 ;;
 
-let outliner_structure_source payload =
-  match from_string payload with
-  | `Assoc fields ->
-    (match List.assoc_opt "type" fields, List.assoc_opt "uuid" fields with
-     | Some (`String ("returnPressed" | "backspacePressed")), Some (`String uuid) ->
-       Some uuid
-     | _ -> None)
-  | _ -> None
-;;
-
-let outliner_structure_source_matches state payload =
-  match outliner_structure_source payload with
-  | Some uuid -> Option.equal String.equal (Outliner_state.logseq_chat_outliner_state_editing_uuid state) (Some uuid)
-  | None -> true
-;;
-
 let aggregate_return_context session payload message =
   match
     session.selected_sidebar_page,
     session.node_routes,
     message,
-    outliner_structure_source payload,
+    LG.logseq_chat_rpc_outliner_structure_source payload,
     session.graph_node_destination
   with
   | None, [], (Outliner_state.Return_pressed | Return_pressed_with_text _),
@@ -1947,7 +1862,7 @@ let aggregate_return_context session payload message =
 let dispatch_outliner_event session payload =
   match LG.logseq_chat_rpc_outliner_message payload with
   | Error message -> LG.logseq_chat_rpc_failure "invalid_outliner_event" message
-  | Ok _ when not (outliner_structure_source_matches session.outliner_state payload) ->
+  | Ok _ when not (LG.logseq_chat_rpc_outliner_structure_source_matches_ session.outliner_state payload) ->
     outliner_patch ~changed_uuids:[] session (outliner_context session)
   | Ok message ->
     let context, aggregate_page_uuid =

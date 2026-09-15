@@ -69,6 +69,59 @@
     (is (= (ops/Ref-uuid "s") (rpc/status-semantic-ref status)))
     (is (= (ops/Ref-ident " todo ") (rpc/status-semantic-ref (assoc status :ident (Some " todo ")))))))
 
+(deftest journal-identifiers-and-titles-preserve-wire-format
+  (is (= "00000001-2026-0916-0000-000000000000" (rpc/journal-page-uuid 20260916)))
+  (run! (fn [[day title]] (is (= title (rpc/journal-day-title day))))
+        [(tuple 20260101 "Jan 1st, 2026") (tuple 20260202 "Feb 2nd, 2026")
+         (tuple 20260303 "Mar 3rd, 2026") (tuple 20260411 "Apr 11th, 2026")
+         (tuple 20260512 "May 12th, 2026") (tuple 20260613 "Jun 13th, 2026")
+         (tuple 20260721 "Jul 21st, 2026") (tuple 20260822 "Aug 22nd, 2026")
+         (tuple 20260923 "Sep 23rd, 2026") (tuple 20261024 "Oct 24th, 2026")
+         (tuple 20261130 "Nov 30th, 2026") (tuple 20261231 "Dec 31st, 2026")])
+  (run! (fn [day]
+          (is (try (do (rpc/journal-day-title day) false) (catch _ true))))
+        [20260001 20261301]))
+
+(deftest pending-version-compares-content-and-asset-identity
+  (let [block (model/local-block "b" "Title" "page" nil 10)
+        status (record model/status (uuid "s") (title "Todo") (ident nil)
+                       (icon-type nil) (icon-id nil) (icon-color nil))
+        tagged (assoc block :status (Some status))]
+    (is (rpc/same-pending-version? block block))
+    (is (rpc/same-pending-version? tagged
+          (assoc tagged :status (Some (assoc status :title "Renamed")))))
+    (run! (fn [changed] (is (not (rpc/same-pending-version? block changed))))
+          [(assoc block :uuid "other") (assoc block :title "Changed")
+           (assoc block :updated-at 11) tagged (assoc block :asset-size (Some 2))
+           (assoc block :asset-checksum (Some "hash")) (assoc block :local-path (Some "file"))])
+    (is (not (rpc/same-pending-version? tagged block)))))
+
+(deftest structural-events-preserve-source-and-ignore-other-event-types
+  (run! (fn [kind]
+          (is (= (Some "b") (rpc/outliner-structure-source
+                              (str "{\"type\":\"" kind "\",\"uuid\":\"b\"}")))))
+        ["returnPressed" "backspacePressed"])
+  (run! (fn [wire] (is (nil? (rpc/outliner-structure-source wire))))
+        ["null" "[]" "{}" "{\"type\":\"returnPressed\"}"
+         "{\"type\":\"returnPressed\",\"uuid\":1}"
+         "{\"type\":\"textChanged\",\"uuid\":\"b\"}"]))
+
+(deftest authoritative-reconciliation-preserves-newer-local-edits
+  (let [cache (model/create nil)
+        same (model/local-block "same" "Same" "page" nil 1)
+        changed (model/local-block "changed" "Local" "page" nil 1)
+        submitted (assoc (model/local-block "submitted" "Local" "page" nil 1)
+                         :sync-status "submitted")
+        missing (model/local-block "missing" "Missing" "page" nil 1)]
+    (model/upsert-blocks cache [same changed submitted missing] 1)
+    (rpc/reconcile-authoritative-blocks cache
+      [same (assoc changed :title "Remote") (assoc submitted :title "Remote")])
+    (run! (fn [[uuid expected]]
+            (is (= (Some expected)
+                   (when-some [block (model/read-block cache uuid)] (:sync-status block)))))
+          [(tuple "same" "synced") (tuple "changed" "pending")
+           (tuple "submitted" "synced") (tuple "missing" "pending")])))
+
 (defn dispatch-json [session action payload]
   (json/from-string
    (native-rpc/call session

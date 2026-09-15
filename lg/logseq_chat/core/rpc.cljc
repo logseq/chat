@@ -7,7 +7,64 @@
             [logseq-chat.pending-ops :as ops]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
+            [ocaml.Stdlib :as stdlib]
             [logseq-chat.flashcards :as flashcards]))
+
+(defn journal-page-uuid [journal-day]
+  (format "00000001-%04d-%04d-0000-000000000000"
+          (quot journal-day 10000) (rem journal-day 10000)))
+
+(defn journal-day-title [journal-day]
+  (let [months ["Jan" "Feb" "Mar" "Apr" "May" "Jun"
+                "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+        year (quot journal-day 10000)
+        month (rem (quot journal-day 100) 100)
+        day (rem journal-day 100)
+        suffix (if (<= 11 (rem day 100) 13)
+                 "th"
+                 (case (rem day 10) 1 "st" 2 "nd" 3 "rd" "th"))]
+    (if (<= 1 month (count months))
+      (format "%s %d%s, %04d" (nth months (dec month)) day suffix year)
+      (stdlib/invalid-arg "invalid journal month"))))
+
+(defn same-status? [left right]
+  (= (when-some [status left] (:uuid status))
+     (when-some [status right] (:uuid status))))
+
+(defn same-pending-version? [left right]
+  (and (= (:uuid left) (:uuid right))
+       (= (:title left) (:title right))
+       (= (:updated-at left) (:updated-at right))
+       (same-status? (:status left) (:status right))
+       (= (:asset-size left) (:asset-size right))
+       (= (:asset-checksum left) (:asset-checksum right))
+       (= (:local-path left) (:local-path right))))
+
+(defn reconcile-authoritative-blocks [cache blocks]
+  (let [by-uuid (into {} (map (fn [block] (tuple (:uuid block) block)) blocks))]
+    (run! (fn [block]
+            (when-some [authoritative (get by-uuid (:uuid block))]
+              (when (or (= "submitted" (:sync-status block))
+                        (and (= (:title block) (:title authoritative))
+                             (same-status? (:status block) (:status authoritative))))
+                (model/mark-block-synced cache (:uuid block)))))
+          (model/unsynced-blocks cache))))
+
+(defn outliner-structure-source [payload]
+  (match (json/from-string payload)
+    (tag Assoc entries)
+    (let [fields (into {} (reverse entries))]
+      (match (get fields "type")
+        (Some (tag String kind))
+        (when (or (= kind "returnPressed") (= kind "backspacePressed"))
+          (match (get fields "uuid") (Some (tag String uuid)) (Some uuid) _ nil))
+        _ nil))
+    _ nil))
+
+(defn outliner-structure-source-matches? [state payload]
+  (if-some [uuid (outliner-structure-source payload)]
+    (= (outliner/editing-uuid state) (Some uuid))
+    true))
 
 (defn toolbar-action [wire]
   (case wire
