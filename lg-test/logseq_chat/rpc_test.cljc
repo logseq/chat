@@ -1,6 +1,7 @@
 (ns logseq-chat.rpc-test
   (:require [clojure.test :refer [deftest is]]
             [clojure.string :as string]
+            [ocaml.List :as native-list]
             [ocaml.Logseq_chat_lg_core_native :as native-core]
             [logseq-chat.rpc :as rpc]
             [logseq-chat.pending-ops :as ops]
@@ -28,10 +29,9 @@
 
 (deftest move-payloads-preserve-order-and-first-validation-error
   (is (= (Ok []) (rpc/required-moves (json/from-string "{\"moves\":[]}"))))
-  (let [move (record ops/pending-move (uuid "a") (page-uuid "page") (parent-uuid "parent") (order "a0"))]
-    (is (= (Ok [move move])
-           (rpc/required-moves (json/from-string
-             "{\"moves\":[{\"uuid\":\"a\",\"pageUuid\":\"page\",\"parentUuid\":\"parent\",\"order\":\"a0\"},{\"uuid\":\"a\",\"pageUuid\":\"page\",\"parentUuid\":\"parent\",\"order\":\"a0\"}]}")))))
+  (let [move (record ops/pending-move (uuid "a") (page-uuid "page") (parent-uuid "parent") (order "a0"))
+        wire "{\"moves\":[{\"uuid\":\"a\",\"pageUuid\":\"page\",\"parentUuid\":\"parent\",\"order\":\"a0\"},{\"uuid\":\"a\",\"pageUuid\":\"page\",\"parentUuid\":\"parent\",\"order\":\"a0\"}]}"]
+    (is (= (Ok [move move]) (rpc/required-moves (json/from-string wire)))))
   (run! (fn [[wire message]] (is (= (Error message) (rpc/required-moves (json/from-string wire)))))
         [(tuple "{}" "field must be a list: moves")
          (tuple "{\"moves\":[null]}" "moves must contain objects")
@@ -53,7 +53,7 @@
          (tuple "{\"status\":{\"uuid\":\"s\",\"title\":\"Todo\",\"iconColor\":false}}" "field must be a string: iconColor")])
   (let [wire (json/from-string "{\"status\":{\"uuid\":\"s\",\"title\":\"Todo\",\"ident\":\"todo\",\"iconType\":\"tabler-icon\",\"iconId\":\"circle\",\"iconColor\":\"red\"}}")
         expected (record model/status (uuid "s") (title "Todo") (ident (Some "todo"))
-                   (icon-type (Some "tabler-icon")) (icon-id (Some "circle")) (icon-color (Some "red")))]
+                         (icon-type (Some "tabler-icon")) (icon-id (Some "circle")) (icon-color (Some "red")))]
     (is (= (Ok expected) (rpc/status-payload wire)))
     (is (= (Ok (Some expected)) (rpc/optional-status-payload wire))))
   (run! (fn [wire] (is (= (Ok nil) (rpc/optional-status-payload (json/from-string wire)))))
@@ -62,30 +62,114 @@
 
 (deftest status-reference-prefers-nonblank-ident-without-trimming-it
   (let [status (record model/status (uuid "s") (title "Todo") (ident nil)
-                 (icon-type nil) (icon-id nil) (icon-color nil))]
+                       (icon-type nil) (icon-id nil) (icon-color nil))]
     (run! (fn [ident]
             (is (= (ops/Ref-uuid "s") (rpc/status-semantic-ref (assoc status :ident (Some ident))))))
           ["" " \n\t"])
     (is (= (ops/Ref-uuid "s") (rpc/status-semantic-ref status)))
     (is (= (ops/Ref-ident " todo ") (rpc/status-semantic-ref (assoc status :ident (Some " todo ")))))))
 
+(defn dispatch-json [session action payload]
+  (json/from-string
+   (native-rpc/call session
+                    (json/to-string
+                     (rpc/json-object
+                      [(tuple "apiVersion" (tag Int 1)) (tuple "method" (tag String "dispatch"))
+                       (tuple "params" (rpc/json-object
+                                        [(tuple "action" (tag String action))
+                                         (tuple "payload" (tag String payload))]))])))))
+
+(defn pending-request [response]
+  (let [value (json-util/member "pendingSyncRequest" (json-util/member "result" response))]
+    (match value (tag Null) nil _ (Some value))))
+
+(def plain-graph-catalog
+  "{\"graphs\":[{\"graph-id\":\"plain-1\",\"graph-name\":\"Plain\",\"graph-e2ee?\":false,\"graph-ready-for-use?\":true}]}")
+
+(defn plain-session []
+  (let [session (native-rpc/create :load_graph_catalog (fn [] (Some plain-graph-catalog)))]
+    (dispatch-json session "configure"
+                   "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
+    session))
+
+(deftest pending-sync-rejects-stale-completions-and-preserves-failed-block
+  (let [session (plain-session)]
+    (dispatch-json session "send" "{\"text\":\"Retry later\",\"uuid\":\"failed-async\",\"now\":1776000000000}")
+    (dispatch-json session "beginPendingSync" "")
+    (is (not (json-util/to-bool
+              (json-util/member "ok"
+                                (dispatch-json session "completePendingSync"
+                                               "{\"id\":99,\"status\":201,\"body\":\"{}\",\"error\":null}")))))
+    (dispatch-json session "completePendingSync"
+                   "{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}")
+    (if-some [block (native-core/logseq-chat-cache-model-read-block (:model session) "failed-async")]
+      (is (= "failed" (:sync-status block)))
+      (is false))))
+
+(deftest pending-sync-completions-after-cancellation-are-idempotent
+  (let [session (plain-session)]
+    (dispatch-json session "send" "{\"text\":\"Canceled request\",\"uuid\":\"canceled-pending\",\"now\":1776000000000}")
+    (dispatch-json session "beginPendingSync" "")
+    (dispatch-json session "cancelPendingSync" "")
+    (is (json-util/to-bool
+         (json-util/member "ok"
+                           (dispatch-json session "completePendingSync"
+                                          "{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"canceled-pending\\\"}\",\"error\":null}"))))))
+
+(deftest pending-sync-duplicate-completions-are-idempotent
+  (let [session (plain-session)
+        completion "{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"duplicate-pending\\\"}\",\"error\":null}"]
+    (dispatch-json session "send" "{\"text\":\"Duplicate completion\",\"uuid\":\"duplicate-pending\",\"now\":1776000000000}")
+    (dispatch-json session "beginPendingSync" "")
+    (dispatch-json session "completePendingSync" completion)
+    (is (json-util/to-bool
+         (json-util/member "ok" (dispatch-json session "completePendingSync" completion))))))
+
+(deftest task-update-pump-submits-title-before-status
+  (let [status (record native-core/status (uuid "todo") (title "Todo") (ident nil)
+                       (icon-type nil) (icon-id nil) (icon-color nil))
+        block (assoc (native-core/logseq-chat-cache-model-local-block "remote-task" "Old title" "journal-page" nil 1776000000000)
+                     :sync-status "synced" :status (Some status))
+        session (native-rpc/create
+                 :load_graph_catalog (fn [] (Some "{\"graphs\":[{\"graph-id\":\"plain-1\",\"graph-name\":\"Plain\",\"graph-e2ee?\":false,\"graph-ready-for-use?\":true}]}"))
+                 :graph_blocks (fn [] (Some (list block))))]
+    (dispatch-json session "configure" "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
+    (native-core/logseq-chat-cache-model-upsert-blocks
+      (:model session) (tuple native-list/to-seq (list block)) (:updated-at block))
+    (dispatch-json session "updateBlock" "{\"uuid\":\"remote-task\",\"title\":\"New title\",\"status\":{\"uuid\":\"doing\",\"title\":\"Doing\"}}")
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (is (= "PATCH" (json-util/to-string (json-util/member "method" request))))
+      (is false))
+    (if-some [request (pending-request
+                       (dispatch-json session "completePendingSync"
+                                      "{\"id\":1,\"status\":200,\"body\":\"{}\",\"error\":null}"))]
+      (do (is (= "PUT" (json-util/to-string (json-util/member "method" request))))
+          (is (string/ends-with? (json-util/to-string (json-util/member "url" request)) "/properties/Status")))
+      (is false))
+    (is (nil? (pending-request
+               (dispatch-json session "completePendingSync"
+                              "{\"id\":2,\"status\":200,\"body\":\"{}\",\"error\":null}"))))
+    (if-some [updated (native-core/logseq-chat-cache-model-read-block (:model session) "remote-task")]
+      (is (= "submitted" (:sync-status updated)))
+      (is false))))
+
 (deftest graph-creation-stops-after-initial-upload-failure
   (let [discovered (atom false)
         session (native-rpc/create
-                  :send (fn [request]
-                          (cond
-                            (and (= (:method_ request) "POST") (string/ends-with? (:url request) "/graphs"))
-                            (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"upload-fails\"}"))
-                            (string/ends-with? (:url request) "/graphs")
-                            (do (reset! discovered true)
-                                (Ok (native-core/logseq-chat-api-response 200 "{\"graphs\":[]}")))
-                            :else (Error (str "unexpected request: " (:url request)))))
-                  :upload_file (fn [_upload] (Error "offline during initial snapshot upload")))]
+                 :send (fn [request]
+                         (cond
+                           (and (= (:method_ request) "POST") (string/ends-with? (:url request) "/graphs"))
+                           (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"upload-fails\"}"))
+                           (string/ends-with? (:url request) "/graphs")
+                           (do (reset! discovered true)
+                               (Ok (native-core/logseq-chat-api-response 200 "{\"graphs\":[]}")))
+                           :else (Error (str "unexpected request: " (:url request)))))
+                 :upload_file (fn [_upload] (Error "offline during initial snapshot upload")))]
     (native-rpc/call session
-      "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"https://api.example\\\",\\\"graphId\\\":\\\"\\\",\\\"token\\\":\\\"access\\\"}\"}}")
+                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"https://api.example\\\",\\\"graphId\\\":\\\"\\\",\\\"token\\\":\\\"access\\\"}\"}}")
     (let [response (json/from-string
-                     (native-rpc/call session
-                       "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"createSyncGraph\",\"payload\":\"{\\\"name\\\":\\\"Incomplete\\\",\\\"isEncrypted\\\":false}\"}}"))]
+                    (native-rpc/call session
+                                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"createSyncGraph\",\"payload\":\"{\\\"name\\\":\\\"Incomplete\\\",\\\"isEncrypted\\\":false}\"}}"))]
       (is (not (json-util/to-bool (json-util/member "ok" response))))
       (is (= "graph_initial_upload_failed"
              (json-util/to-string (json-util/member "code" (json-util/member "error" response))))))
@@ -93,31 +177,31 @@
 
 (deftest session-rejects-legacy-sync-action
   (let [response (json/from-string
-                   (native-rpc/call (native-rpc/create)
-                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"syncPending\"}}"))]
+                  (native-rpc/call (native-rpc/create)
+                                   "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"syncPending\"}}"))]
     (is (not (json-util/to-bool (json-util/member "ok" response))))
     (is (= "unknown_action"
            (json-util/to-string (json-util/member "code" (json-util/member "error" response)))))))
 
 (deftest session-without-graph-has-no-due-flashcards
   (let [response (json/from-string
-                   (native-rpc/call (native-rpc/create)
-                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"loadFlashcards\",\"payload\":\"1776000000000\"}}"))]
+                  (native-rpc/call (native-rpc/create)
+                                   "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"loadFlashcards\",\"payload\":\"1776000000000\"}}"))]
     (is (json-util/to-bool (json-util/member "ok" response)))
     (is (= "[]" (json/to-string (json-util/member "flashcards" (json-util/member "result" response)))))))
 
 (deftest session-restores-cached-graph-name-without-token
   (let [response (json/from-string
-                   (native-rpc/call (native-rpc/create)
-                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"http://127.0.0.1:8787\\\",\\\"graphId\\\":\\\"cached-graph\\\",\\\"graphName\\\":\\\"Sync 2\\\",\\\"token\\\":\\\"\\\"}\"}}"))
+                  (native-rpc/call (native-rpc/create)
+                                   "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"http://127.0.0.1:8787\\\",\\\"graphId\\\":\\\"cached-graph\\\",\\\"graphName\\\":\\\"Sync 2\\\",\\\"token\\\":\\\"\\\"}\"}}"))
         result (json-util/member "result" response)]
     (is (= "cached-graph" (json-util/to-string (json-util/member "selectedGraphId" result))))
     (is (= "Sync 2" (json-util/to-string (json-util/member "graphName" result))))))
 
 (deftest session-clear-related-exposes-related-blocks
   (let [response (json/from-string
-                   (native-rpc/call (native-rpc/create)
-                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"clearRelated\"}}"))]
+                  (native-rpc/call (native-rpc/create)
+                                   "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"clearRelated\"}}"))]
     (is (= "[]" (json/to-string (json-util/member "relatedBlocks" (json-util/member "result" response)))))))
 
 (deftest rpc-routing-validates-before-executing-actions
@@ -153,13 +237,13 @@
         dispatch (fn [_action payload] (match payload (Some value) value None "nil"))]
     (is (= "first"
            (rpc/call snapshot dispatch
-             "{\"apiVersion\":1,\"apiVersion\":2,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":\"first\",\"payload\":\"second\"}}")))
+                     "{\"apiVersion\":1,\"apiVersion\":2,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":\"first\",\"payload\":\"second\"}}")))
     (is (= "nil"
            (rpc/call snapshot dispatch
-             "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"sync\",\"payload\":null}}")))
+                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"sync\",\"payload\":null}}")))
     (is (= (rpc/failure "invalid_json" "request must be valid JSON")
            (rpc/call (fn [] (json/to-string (json/from-string "{"))) dispatch
-             "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")))))
+                     "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")))))
 
 (deftest capture-payload-supports-plain-text-and-validated-json
   (run! (fn [[payload expected]] (is (= (Ok expected) (rpc/send-payload payload))))
@@ -186,7 +270,7 @@
 
 (deftest pending-request-preserves-body-and-upload-wire-fields
   (let [request (record api/api-request (method_ "POST") (url "https://example.test/api")
-                  (body nil) (token "secret"))
+                        (body nil) (token "secret"))
         encode (fn [body path headers]
                  (rpc/request-json 7 (assoc request :body body) path "application/json" headers))]
     (is (= "{\"id\":7,\"method\":\"POST\",\"url\":\"https://example.test/api\",\"token\":\"secret\",\"contentType\":\"application/json\",\"headers\":{}}"
@@ -204,8 +288,8 @@
           ["" "{" "raw text"])
     (is (= "{\"id\":7,\"method\":\"POST\",\"url\":\"https://example.test/api\",\"token\":\"secret\",\"contentType\":\"application/octet-stream\",\"headers\":{\"X-Key\":\"one\",\"X-Key\":\"two\"},\"filePath\":\"/tmp/a b\"}"
            (json/to-string
-             (rpc/request-json 7 request (Some "/tmp/a b") "application/octet-stream"
-               [(tuple "X-Key" "one") (tuple "X-Key" "two")]))))))
+            (rpc/request-json 7 request (Some "/tmp/a b") "application/octet-stream"
+                              [(tuple "X-Key" "one") (tuple "X-Key" "two")]))))))
 
 (deftest toolbar-wire-actions-preserve-all-public-mappings
   (run! (fn [[wire action]] (is (= (Ok action) (rpc/toolbar-action wire))))
@@ -284,6 +368,135 @@
 
 (defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
 
+(deftest optimistic-intents-preserve-unmodified-block-fields
+  (let [source (assoc (video-block "source" "Before") :sync-status "synced")
+        other (video-block "other" "Other")
+        rename (ops/Save-title (record ops/pending-title
+                                       (uuid "source") (expected-title "Before") (title "After")))
+        insert (ops/Insert-block (record ops/pending-insert
+                                         (uuid "new") (title "New") (page-uuid "page")
+                                         (parent-uuid "source") (order "a1") (created-at 42)))]
+    (is (= [(assoc source :title "After") other]
+           (rpc/project-outliner-intent [source other] rename)))
+    (is (= [] (rpc/project-outliner-intent [] rename)))
+    (is (= [source (assoc (model/local-block "new" "New" "page" (Some "source") 42)
+                          :order (Some "a1"))]
+           (rpc/project-outliner-intent [source] insert)))))
+
+(deftest optimistic-assets-replace-in-place-and-preserve-local-path
+  (let [source (assoc (video-block "asset" "Draft") :local-path (Some "/local/image"))
+        other (video-block "other" "Other")
+        intent (ops/Create-asset (record ops/pending-asset
+                                         (uuid "asset") (title "Image") (page-uuid "page")
+                                         (parent-uuid "parent") (order "a2") (created-at 7)
+                                         (asset-type "image/png") (asset-size 12) (asset-checksum "hash")))
+        asset (assoc (model/local-block "asset" "Image" "page" (Some "parent") 7)
+                     :order (Some "a2") :is-asset true :asset-type (Some "image/png")
+                     :asset-size (Some 12) :asset-checksum (Some "hash"))]
+    (is (= [(assoc asset :local-path (Some "/local/image")) other]
+           (rpc/project-outliner-intent [source other] intent)))
+    (is (= [other asset] (rpc/project-outliner-intent [other] intent)))))
+
+(deftest optimistic-splits-preserve-source-location-and-ignore-missing-source
+  (let [source (assoc (video-block "source" "BeforeAfter")
+                      :parent-id (Some "parent") :order (Some "a0") :sync-status "synced")
+        intent (ops/Split-block (record ops/pending-split
+                                        (uuid "source") (expected-title "BeforeAfter")
+                                        (before "Before") (after "After") (new-uuid "new")
+                                        (new-order "a1") (created-at 10)))]
+    (is (= [] (rpc/project-outliner-intent [] intent)))
+    (is (= [(assoc source :title "Before")
+            (assoc (model/local-block "new" "After" "page" (Some "parent") 10)
+                   :order (Some "a1"))]
+           (rpc/project-outliner-intent [source] intent)))))
+
+(deftest optimistic-merges-use-explicit-title-or-concatenate-without-separator
+  (let [previous (assoc (video-block "previous" "Before") :sync-status "synced")
+        source (video-block "source" "After")
+        payload (record ops/pending-merge
+                        (uuid "source") (expected-title "After") (title "After")
+                        (previous-uuid "previous") (expected-previous-title "Before") (merged-title nil))]
+    (is (= [(assoc previous :title "BeforeAfter" :sync-status "pending")]
+           (rpc/project-outliner-intent [previous source] (ops/Merge-backward payload))))
+    (is (= [(assoc previous :title "" :sync-status "pending")]
+           (rpc/project-outliner-intent [previous source]
+                                        (ops/Merge-backward (assoc payload :merged-title (Some ""))))))
+    (is (= [] (rpc/project-outliner-intent [source] (ops/Merge-backward payload))))))
+
+(deftest optimistic-moves-apply-in-order-and-deletes-only-remove-specified-ids
+  (let [source (video-block "source" "Source")
+        child (assoc (video-block "child" "Child") :parent-id (Some "source"))
+        move (record ops/pending-move (uuid "source") (page-uuid "new-page")
+                     (parent-uuid "parent") (order "a1"))
+        expected (assoc source :page-id "new-page" :parent-id (Some "parent")
+                        :order (Some "a1") :sync-status "pending")]
+    (is (= [expected child] (rpc/project-outliner-intent [source child] (ops/Move-block move))))
+    (is (= [(assoc expected :order (Some "a2")) child]
+           (rpc/project-outliner-intent [source child]
+                                        (ops/Move-blocks (record ops/pending-moves (moves [move (assoc move :order "a2")]))))))
+    (is (= [child] (rpc/project-outliner-intent [source child]
+                                                (ops/Delete-blocks (record ops/pending-delete (uuids ["source" "missing"]))))))))
+
+(deftest optimistic-status-projection-handles-builtins-custom-refs-and-clearing
+  (let [source (assoc (video-block "source" "Task") :sync-status "synced")
+        property (record ops/pending-property (uuid "source")
+                         (attr "logseq.property/status") (expected nil) (value nil))]
+    (run! (fn [[ident uuid title]]
+            (let [status (record model/status (uuid uuid) (title title) (ident (Some ident))
+                                 (icon-type nil) (icon-id nil) (icon-color nil))]
+              (is (= [(assoc source :status (Some status) :sync-status "pending")]
+                     (rpc/project-outliner-intent [source]
+                                                  (ops/Set-property (assoc property :value (Some (ops/Ref-ident ident)))))))))
+          [(tuple "logseq.property/status.backlog" "backlog" "Backlog")
+           (tuple "logseq.property/status.todo" "todo" "Todo")
+           (tuple "logseq.property/status.doing" "doing" "Doing")
+           (tuple "logseq.property/status.in-review" "in-review" "In Review")
+           (tuple "logseq.property/status.done" "done" "Done")
+           (tuple "logseq.property/status.canceled" "canceled" "Canceled")
+           (tuple "custom" "custom" "custom")])
+    (let [status (record model/status (uuid "custom-id") (title "custom-id") (ident nil)
+                         (icon-type nil) (icon-id nil) (icon-color nil))]
+      (is (= [(assoc source :status (Some status) :sync-status "pending")]
+             (rpc/project-outliner-intent [source]
+                                          (ops/Set-property (assoc property :value (Some (ops/Ref-uuid "custom-id"))))))))
+    (let [cleared [(assoc source :status nil :sync-status "pending")]]
+      (is (= cleared (rpc/project-outliner-intent [source] (ops/Set-property property))))
+      (is (= cleared
+             (rpc/project-outliner-intent [source]
+               (ops/Set-property (assoc property :value (Some (ops/String-value "not-a-reference"))))))))
+    (is (= [source] (rpc/project-outliner-intent [source]
+                                                 (ops/Set-property (assoc property :attr "other")))))
+    (is (= [source] (rpc/project-outliner-intent [source]
+                                                 (ops/Create-page (record ops/pending-create (uuid "page") (title "Page") (created-at 0))))))))
+
+(deftest optimistic-overlay-preserves-draft-fields-and-refreshes-live-metadata
+  (let [draft (assoc (video-block "a" "Draft") :parent-id (Some "draft-parent") :order (Some "a1") :created-at 1)
+        summary (record model/entity-summary (uuid "ref") (title "Reference"))
+        status (record model/status (uuid "done") (title "Done") (ident nil)
+                       (icon-type nil) (icon-id nil) (icon-color nil))
+        live (assoc (video-block "a" "Server") :parent-id (Some "server-parent") :order (Some "z9") :created-at 2
+                    :updated-at 99 :sync-status "synced" :tags (list summary) :references (list summary)
+                    :breadcrumbs (list summary) :status (Some status) :is-asset true :asset-type (Some "jpg")
+                    :asset-size (Some 42) :asset-checksum (Some "checksum") :local-path (Some "/tmp/image")
+                    :journal (Some (tuple "Today" 20260916)))
+        expected (assoc live :title "Draft" :parent-id (Some "draft-parent") :order (Some "a1") :created-at 1)]
+    (is (= expected (rpc/merge-live-block-metadata draft live)))
+    (is (= [expected] (rpc/page-blocks-with-optimistic-overlay (Some [draft]) true "page" [live])))))
+
+(deftest optimistic-overlay-only-applies-while-editing-and-keeps-cached-membership
+  (let [draft (video-block "a" "Draft")
+        missing (video-block "missing" "Offline")
+        other (assoc (video-block "other" "Other") :page-id "other-page")
+        live (video-block "a" "Server")
+        newer (assoc live :updated-at 2)
+        added (video-block "new" "New")
+        cached (Some [missing other draft])]
+    (is (= [missing (assoc draft :updated-at 2)]
+           (rpc/page-blocks-with-optimistic-overlay cached true "page" [live newer added])))
+    (is (= [live added] (rpc/page-blocks-with-optimistic-overlay cached false "page" [live added])))
+    (is (= [live] (rpc/page-blocks-with-optimistic-overlay nil true "page" [live])))
+    (is (= [] (rpc/page-blocks-with-optimistic-overlay (Some []) true "page" [live])))))
+
 (deftest outliner-rows-preserve-hierarchy-video-targets-and-serializer
   (let [video (video-block "video" "{{youtube dQw4w9WgXcQ}}")
         child (assoc (video-block "child" "{{youtube-timestamp 00:10}}") :parent-id (Some "video"))
@@ -303,7 +516,7 @@
   (let [candidate (record outliner/outliner-candidate (label "Alpha") (value "page"))
         context (record outliner/outliner-context (blocks (list)) (pages (list candidate)) (tags (list)))
         state (assoc outliner/empty :autocomplete
-                (Some (record outliner/reducer-autocomplete (kind outliner/Node) (query "alp"))))]
+                     (Some (record outliner/reducer-autocomplete (kind outliner/Node) (query "alp"))))]
     (is (= "[]" (json/to-string (rpc/outliner-candidates-json context outliner/empty))))
     (is (= "[{\"label\":\"Alpha\",\"value\":\"page\"}]"
            (json/to-string (rpc/outliner-candidates-json context state))))))
@@ -382,16 +595,16 @@
 
 (deftest outliner-state-serializes-drafts-and-orders-identifiers
   (run!
-    (fn [[kind wire-kind]]
-      (let [state (assoc outliner/empty
-                         :editing (Some (record outliner/editor-draft (uuid "block") (expected-title "Old") (title "New") (caret 2)))
-                         :selected #{"z" "a"} :collapsed #{"y" "b"} :zoomed (list "outer" "inner")
-                         :autocomplete (Some (record outliner/reducer-autocomplete (kind kind) (query "query"))))]
-        (is (= (str "{\"editing\":{\"uuid\":\"block\",\"title\":\"New\",\"caretUTF16Offset\":2},"
-                    "\"selectedBlockIds\":[\"a\",\"z\"],\"collapsedBlockIds\":[\"b\",\"y\"],"
-                    "\"zoomedBlockIds\":[\"outer\",\"inner\"],\"autocomplete\":{\"kind\":\"" wire-kind "\",\"query\":\"query\"}}")
-               (json/to-string (rpc/outliner-state-json state))))))
-    [(tuple outliner/Node "node") (tuple outliner/Tag "tag") (tuple outliner/Property "property")]))
+   (fn [[kind wire-kind]]
+     (let [state (assoc outliner/empty
+                        :editing (Some (record outliner/editor-draft (uuid "block") (expected-title "Old") (title "New") (caret 2)))
+                        :selected #{"z" "a"} :collapsed #{"y" "b"} :zoomed (list "outer" "inner")
+                        :autocomplete (Some (record outliner/reducer-autocomplete (kind kind) (query "query"))))]
+       (is (= (str "{\"editing\":{\"uuid\":\"block\",\"title\":\"New\",\"caretUTF16Offset\":2},"
+                   "\"selectedBlockIds\":[\"a\",\"z\"],\"collapsedBlockIds\":[\"b\",\"y\"],"
+                   "\"zoomedBlockIds\":[\"outer\",\"inner\"],\"autocomplete\":{\"kind\":\"" wire-kind "\",\"query\":\"query\"}}")
+              (json/to-string (rpc/outliner-state-json state))))))
+   [(tuple outliner/Node "node") (tuple outliner/Tag "tag") (tuple outliner/Property "property")]))
 
 (deftest platform-commands-preserve-their-json-wire-format
   (run! (fn [[command expected]]

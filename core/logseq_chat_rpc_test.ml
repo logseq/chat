@@ -231,69 +231,6 @@ let () =
   then failwith "one-item projected pending pump should finish after acceptance"
 ;;
 
-let () =
-  let authoritative =
-    Logseq_chat_lg_core_native.
-      { uuid = "remote-task"
-      ; title = "Old title"
-      ; page_id = "journal-page"
-      ; parent_id = None
-      ; order = None
-      ; created_at = 1_776_000_000_000
-      ; updated_at = 1_776_000_000_000
-      ; sync_status = "synced"
-      ; tags = []
-      ; references = []
-      ; breadcrumbs = []
-      ; status = Some { uuid = "todo"; ident = None; title = "Todo"; icon_type = None; icon_id = None; icon_color = None }
-      ; is_asset = false
-      ; asset_type = None
-      ; asset_size = None
-      ; asset_checksum = None
-      ; local_path = None
-      ; journal = None
-      }
-  in
-  let session =
-    Logseq_chat_rpc.create
-      ~load_graph_catalog:(fun () -> Some plain_graph_catalog)
-      ~graph_blocks:(fun () -> Some [ authoritative ])
-      ()
-  in
-  configure_plain_graph session;
-  (Logseq_chat_lg_core_native.logseq_chat_cache_model_upsert_blocks (session.model) (List.to_seq, ([ authoritative ])) (authoritative.updated_at));
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"updateBlock","payload":"{\"uuid\":\"remote-task\",\"title\":\"New title\",\"status\":{\"uuid\":\"doing\",\"title\":\"Doing\"}}"}}|});
-  let title_request =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|}
-    |> pending_request
-    |> Option.get
-  in
-  assert_equal "update title method" "PATCH" (required_string "method" title_request);
-  let status_request =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":200,\"body\":\"{}\",\"error\":null}"}}|}
-    |> pending_request
-    |> Option.get
-  in
-  assert_equal "update status method" "PUT" (required_string "method" status_request);
-  if not (String.ends_with ~suffix:"/properties/Status" (required_string "url" status_request))
-  then failwith "task update must follow title PATCH with status PUT";
-  let finished =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":2,\"status\":200,\"body\":\"{}\",\"error\":null}"}}|}
-  in
-  if Option.is_some (pending_request finished) then failwith "task update pump did not finish";
-  match Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block session.model "remote-task" with
-  | Some block -> assert_equal "updated task submitted" "submitted" block.sync_status
-  | None -> failwith "updated task disappeared"
-;;
 
 let () =
   let staged = ref [] in
@@ -448,88 +385,8 @@ let () =
   then failwith "successful encrypted asset upload must remove its temporary payload"
 ;;
 
-let () =
-  let session =
-    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
-  in
-  configure_plain_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Retry later\",\"uuid\":\"failed-async\",\"now\":1776000000000}"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
-  let stale =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":99,\"status\":201,\"body\":\"{}\",\"error\":null}"}}|}
-    |> from_string
-  in
-  (match stale with
-   | `Assoc fields ->
-     (match assoc "ok" fields with Some (`Bool false) -> () | _ -> failwith "stale completion must fail")
-   | _ -> failwith "stale completion must return an RPC error");
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}"}}|});
-  match Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block session.model "failed-async" with
-  | Some block -> assert_equal "transport failure status" "failed" block.sync_status
-  | None -> failwith "failed pending block disappeared"
-;;
 
-let () =
-  let session =
-    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
-  in
-  configure_plain_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Canceled request\",\"uuid\":\"canceled-pending\",\"now\":1776000000000}"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"cancelPendingSync"}}|});
-  let late =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"canceled-pending\\\"}\",\"error\":null}"}}|}
-    |> from_string
-  in
-  match late with
-  | `Assoc fields when required_bool "ok" fields -> ()
-  | _ -> failwith "a completion arriving after cancellation must be an idempotent no-op"
-;;
 
-let () =
-  let session =
-    Logseq_chat_rpc.create ~load_graph_catalog:(fun () -> Some plain_graph_catalog) ()
-  in
-  configure_plain_graph session;
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Duplicate completion\",\"uuid\":\"duplicate-pending\",\"now\":1776000000000}"}}|});
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"beginPendingSync"}}|});
-  let completion =
-    {|{"apiVersion":1,"method":"dispatch","params":{"action":"completePendingSync","payload":"{\"id\":1,\"status\":201,\"body\":\"{\\\"uuid\\\":\\\"duplicate-pending\\\"}\",\"error\":null}"}}|}
-  in
-  ignore (Logseq_chat_rpc.call session completion);
-  let duplicate = Logseq_chat_rpc.call session completion |> from_string in
-  match duplicate with
-  | `Assoc fields when required_bool "ok" fields -> ()
-  | _ -> failwith "a duplicate completion must be an idempotent no-op"
-;;
 
 let () =
   let unlocked = ref false in
@@ -3484,23 +3341,6 @@ let () =
   done
 ;;
 
-let () =
-  let source = remote_block "optimistic-task" "Task" in
-  let projected =
-    Logseq_chat_rpc.project_outliner_intent
-      [ source ]
-      (Logseq_chat_lg_core_native.Set_property
-         { uuid = source.uuid
-         ; attr = "logseq.property/status"
-         ; expected = None
-         ; value = Some (Ref_ident "logseq.property/status.todo")
-         })
-  in
-  match projected with
-  | [ { Logseq_chat_lg_core_native.status = Some status; sync_status = "pending"; _ } ]
-    when status.ident = Some "logseq.property/status.todo" && status.title = "Todo" -> ()
-  | _ -> failwith "task status operations must update the optimistic outliner row"
-;;
 
 let () =
   (* Editing keeps local structure, but live properties must replace stale

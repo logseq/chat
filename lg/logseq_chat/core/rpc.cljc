@@ -216,6 +216,103 @@
           (tuple nil []) blocks)]
     targets))
 
+(defn projected-status [value]
+  (match value
+    (Some (ops/Ref-ident ident))
+    (let [[uuid title] (case ident
+                         "logseq.property/status.backlog" (tuple "backlog" "Backlog")
+                         "logseq.property/status.todo" (tuple "todo" "Todo")
+                         "logseq.property/status.doing" (tuple "doing" "Doing")
+                         "logseq.property/status.in-review" (tuple "in-review" "In Review")
+                         "logseq.property/status.done" (tuple "done" "Done")
+                         "logseq.property/status.canceled" (tuple "canceled" "Canceled")
+                         (tuple ident ident))]
+      (Some (record model/status (uuid uuid) (title title) (ident (Some ident))
+              (icon-type nil) (icon-id nil) (icon-color nil))))
+    (Some (ops/Ref-uuid uuid))
+    (Some (record model/status (uuid uuid) (title uuid) (ident nil)
+            (icon-type nil) (icon-id nil) (icon-color nil)))
+    _ nil))
+
+(defn project-outliner-intent [blocks intent]
+  (match intent
+    (ops/Save-title value)
+    (mapv #(if (= (:uuid %) (:uuid value)) (assoc % :title (:title value)) %) blocks)
+
+    (ops/Insert-block value)
+    (conj (vec blocks)
+          (assoc (model/local-block (:uuid value) (:title value) (:page-uuid value)
+                                    (Some (:parent-uuid value)) (:created-at value))
+                 :order (Some (:order value))))
+
+    (ops/Create-asset value)
+    (let [asset (assoc (model/local-block (:uuid value) (:title value) (:page-uuid value)
+                                          (Some (:parent-uuid value)) (:created-at value))
+                       :order (Some (:order value)) :is-asset true
+                       :asset-type (Some (:asset-type value)) :asset-size (Some (:asset-size value))
+                       :asset-checksum (Some (:asset-checksum value)))]
+      (if (some #(= (:uuid %) (:uuid value)) blocks)
+        (mapv #(if (= (:uuid %) (:uuid value)) (assoc asset :local-path (:local-path %)) %) blocks)
+        (conj (vec blocks) asset)))
+
+    (ops/Split-block value)
+    (if-some [source (first (filter #(= (:uuid %) (:uuid value)) blocks))]
+      (conj (mapv #(if (= (:uuid %) (:uuid value)) (assoc % :title (:before value)) %) blocks)
+            (assoc (model/local-block (:new-uuid value) (:after value) (:page-id source)
+                                      (:parent-id source) (:created-at value))
+                   :order (Some (:new-order value)) :journal (:journal source)))
+      (vec blocks))
+
+    (ops/Merge-backward value)
+    (let [previous-title (if-some [previous (first (filter #(= (:uuid %) (:previous-uuid value)) blocks))]
+                           (:title previous) "")
+          title (if-some [merged (:merged-title value)] merged (str previous-title (:title value)))]
+      (mapv #(if (= (:uuid %) (:previous-uuid value))
+               (assoc % :title title :sync-status "pending") %)
+            (remove #(= (:uuid %) (:uuid value)) blocks)))
+
+    (ops/Move-block value)
+    (mapv #(if (= (:uuid %) (:uuid value))
+             (assoc % :page-id (:page-uuid value) :parent-id (Some (:parent-uuid value))
+                      :order (Some (:order value)) :sync-status "pending") %)
+          blocks)
+
+    (ops/Move-blocks value)
+    (reduce (fn [result move] (project-outliner-intent result (ops/Move-block move)))
+            (vec blocks) (:moves value))
+
+    (ops/Delete-blocks value)
+    (let [deleted (set (:uuids value))]
+      (filterv #(not (contains? deleted (:uuid %))) blocks))
+
+    (ops/Set-property value)
+    (if (= (:attr value) "logseq.property/status")
+      (let [status (projected-status (:value value))]
+        (mapv #(if (= (:uuid %) (:uuid value)) (assoc % :status status :sync-status "pending") %) blocks))
+      (vec blocks))
+
+    _ (vec blocks)))
+
+(defn merge-live-block-metadata [optimistic live]
+  (assoc optimistic
+    :updated-at (:updated-at live) :sync-status (:sync-status live)
+    :tags (:tags live) :references (:references live) :breadcrumbs (:breadcrumbs live)
+    :status (:status live) :is-asset (:is-asset live) :asset-type (:asset-type live)
+    :asset-size (:asset-size live) :asset-checksum (:asset-checksum live)
+    :local-path (:local-path live) :journal (:journal live)))
+
+(defn page-blocks-with-optimistic-overlay [cached editing? page-uuid live-blocks]
+  (if editing?
+    (if-some [blocks cached]
+      (let [live-by-uuid (into {} (map (fn [block] (tuple (:uuid block) block)) live-blocks))]
+        (mapv (fn [block]
+                (if-some [live (get live-by-uuid (:uuid block))]
+                  (merge-live-block-metadata block live)
+                  block))
+              (filter #(= (:page-id %) page-uuid) blocks)))
+      (vec live-blocks))
+    (vec live-blocks)))
+
 (defn json-strings [values] (tag List (apply list (map #(tag String %) values))))
 
 (defn json-object [fields]

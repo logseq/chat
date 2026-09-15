@@ -234,45 +234,6 @@ let outliner_context_with_blocks ?sidebar_pages session blocks =
   Outliner_state.{ blocks; pages; tags }
 ;;
 
-let merge_live_block_metadata
-      (optimistic : Model.block)
-      (live : Model.block)
-  =
-  { optimistic with
-    updated_at = live.updated_at
-  ; sync_status = live.sync_status
-  ; tags = live.tags
-  ; references = live.references
-  ; breadcrumbs = live.breadcrumbs
-  ; status = live.status
-  ; is_asset = live.is_asset
-  ; asset_type = live.asset_type
-  ; asset_size = live.asset_size
-  ; asset_checksum = live.asset_checksum
-  ; local_path = live.local_path
-  ; journal = live.journal
-  }
-;;
-
-let page_blocks_with_optimistic_overlay session page_uuid live_blocks =
-  let base =
-    match session.outliner_optimistic_blocks, Outliner_state.logseq_chat_outliner_state_editing_uuid session.outliner_state with
-    | Some cached, Some _ ->
-      let live_by_uuid = Hashtbl.create (List.length live_blocks) in
-      List.iter
-        (fun (block : Model.block) -> Hashtbl.replace live_by_uuid block.uuid block)
-        live_blocks;
-      cached
-      |> List.filter (fun (block : Model.block) -> String.equal block.page_id page_uuid)
-      |> List.map (fun (block : Model.block) ->
-        match Hashtbl.find_opt live_by_uuid block.Model.uuid with
-        | Some live -> merge_live_block_metadata block live
-        | None -> block)
-    | None, _ | Some _, None -> live_blocks
-  in
-  base
-;;
-
 let base_outliner_context_live session =
   let blocks =
     match session.selected_sidebar_page, session.graph_page_blocks, session.graph_blocks with
@@ -290,7 +251,11 @@ let base_outliner_context_with_blocks ?sidebar_pages session blocks =
   | Some page ->
     { context with
       Outliner_state.blocks =
-        page_blocks_with_optimistic_overlay session page.uuid context.blocks
+        LG.logseq_chat_rpc_page_blocks_with_optimistic_overlay
+          (Option.map (fun blocks -> Some List.to_seq, blocks) session.outliner_optimistic_blocks)
+          (Option.is_some, Outliner_state.logseq_chat_outliner_state_editing_uuid session.outliner_state)
+          page.uuid (List.to_seq, context.blocks)
+        |> Rrbvec.to_list
     }
 ;;
 
@@ -301,7 +266,11 @@ let base_outliner_context session =
   | Some page ->
     { context with
       Outliner_state.blocks =
-        page_blocks_with_optimistic_overlay session page.uuid context.blocks
+        LG.logseq_chat_rpc_page_blocks_with_optimistic_overlay
+          (Option.map (fun blocks -> Some List.to_seq, blocks) session.outliner_optimistic_blocks)
+          (Option.is_some, Outliner_state.logseq_chat_outliner_state_editing_uuid session.outliner_state)
+          page.uuid (List.to_seq, context.blocks)
+        |> Rrbvec.to_list
     }
 ;;
 
@@ -318,7 +287,11 @@ let node_route_context session route =
   in
   outliner_context_with_blocks
     session
-    (page_blocks_with_optimistic_overlay session route.page.uuid graph_blocks)
+    (LG.logseq_chat_rpc_page_blocks_with_optimistic_overlay
+       (Option.map (fun blocks -> Some List.to_seq, blocks) session.outliner_optimistic_blocks)
+       (Option.is_some, Outliner_state.logseq_chat_outliner_state_editing_uuid session.outliner_state)
+       route.page.uuid (List.to_seq, graph_blocks)
+     |> Rrbvec.to_list)
 ;;
 
 let active_node_route session =
@@ -429,193 +402,17 @@ let outliner_context session =
   | None -> with_extra_blocks (base_outliner_context session) session.related_blocks
 ;;
 
-let rec project_outliner_intent blocks = function
-  | Pending_ops.Save_title { uuid; title; _ } ->
-    List.map
-      (fun (block : Model.block) ->
-        if String.equal block.uuid uuid then { block with title } else block)
-      blocks
-  | Insert_block { uuid; title; page_uuid; parent_uuid; order; created_at } ->
-    blocks
-    @ [ Model.
-          { uuid
-          ; title
-          ; page_id = page_uuid
-          ; parent_id = Some parent_uuid
-          ; order = Some order
-          ; created_at
-          ; updated_at = created_at
-          ; sync_status = "pending"
-          ; tags = []
-          ; references = []
-          ; breadcrumbs = []
-          ; status = None
-          ; is_asset = false
-          ; asset_type = None
-          ; asset_size = None
-          ; asset_checksum = None
-          ; local_path = None
-          ; journal = None
-          }
-      ]
-  | Create_asset
-      { uuid; title; page_uuid; parent_uuid; order; created_at; asset_type;
-        asset_size; asset_checksum }
-    ->
-    let asset =
-      Model.
-        { uuid
-        ; title
-        ; page_id = page_uuid
-        ; parent_id = Some parent_uuid
-        ; order = Some order
-        ; created_at
-        ; updated_at = created_at
-        ; sync_status = "pending"
-        ; tags = []
-        ; references = []
-        ; breadcrumbs = []
-        ; status = None
-        ; is_asset = true
-        ; asset_type = Some asset_type
-        ; asset_size = Some asset_size
-        ; asset_checksum = Some asset_checksum
-        ; local_path = None
-        ; journal = None
-        }
-    in
-    if List.exists (fun (block : Model.block) -> String.equal block.uuid uuid) blocks
-    then
-      List.map
-        (fun (block : Model.block) ->
-          if String.equal block.uuid uuid
-          then { asset with local_path = block.local_path }
-          else block)
-        blocks
-    else blocks @ [ asset ]
-  | Split_block { uuid; before; after; new_uuid; new_order; created_at; _ } ->
-    (match
-       List.find_opt
-         (fun (block : Model.block) -> String.equal block.uuid uuid)
-         blocks
-     with
-     | None -> blocks
-     | Some source ->
-       List.map
-         (fun (block : Model.block) ->
-           if String.equal block.uuid uuid then { block with title = before } else block)
-         blocks
-       @ [ Model.
-             { uuid = new_uuid
-             ; title = after
-             ; page_id = source.page_id
-             ; parent_id = source.parent_id
-             ; order = Some new_order
-             ; created_at
-             ; updated_at = created_at
-             ; sync_status = "pending"
-             ; tags = []
-             ; references = []
-             ; breadcrumbs = []
-             ; status = None
-             ; is_asset = false
-             ; asset_type = None
-             ; asset_size = None
-             ; asset_checksum = None
-             ; local_path = None
-             ; journal = source.journal
-             }
-         ])
-  | Merge_backward { uuid; title; previous_uuid; merged_title; _ } ->
-    let previous_title =
-      List.find_opt
-        (fun (block : Model.block) -> String.equal block.uuid previous_uuid)
-        blocks
-      |> Option.map (fun (block : Model.block) -> block.title)
-      |> Option.value ~default:""
-    in
-    let title = Option.value merged_title ~default:(previous_title ^ title) in
-    blocks
-    |> List.filter (fun (block : Model.block) -> not (String.equal block.uuid uuid))
-    |> List.map (fun (block : Model.block) ->
-      if String.equal block.uuid previous_uuid
-      then { block with title; sync_status = "pending" }
-      else block)
-  | Move_block move ->
-    List.map
-      (fun (block : Model.block) ->
-        if String.equal block.uuid move.uuid
-        then
-          { block with
-            page_id = move.page_uuid
-          ; parent_id = Some move.parent_uuid
-          ; order = Some move.order
-          ; sync_status = "pending"
-          }
-        else block)
-      blocks
-  | Move_blocks { moves } ->
-    (let moves = Rrbvec.to_list moves in
-     List.fold_left
-       (fun blocks move ->
-          project_outliner_intent blocks (Pending_ops.Move_block move)) blocks
-       moves)
-  | Delete_blocks { uuids } ->
-    (let uuids = Rrbvec.to_list uuids in
-     List.filter (fun (block : Model.block) -> not (List.mem block.uuid uuids))
-       blocks)
-  | Set_property { uuid; attr = "logseq.property/status"; value; _ } ->
-    let status =
-      Option.bind value (function
-        | Pending_ops.Ref_ident ident ->
-          let uuid, title =
-            match ident with
-            | "logseq.property/status.backlog" -> "backlog", "Backlog"
-            | "logseq.property/status.todo" -> "todo", "Todo"
-            | "logseq.property/status.doing" -> "doing", "Doing"
-            | "logseq.property/status.in-review" -> "in-review", "In Review"
-            | "logseq.property/status.done" -> "done", "Done"
-            | "logseq.property/status.canceled" -> "canceled", "Canceled"
-            | _ -> ident, ident
-          in
-          Some Model.
-            { uuid
-            ; ident = Some ident
-            ; title
-            ; icon_type = None
-            ; icon_id = None
-            ; icon_color = None
-            }
-        | Pending_ops.Ref_uuid uuid ->
-          Some Model.
-            { uuid
-            ; ident = None
-            ; title = uuid
-            ; icon_type = None
-            ; icon_id = None
-            ; icon_color = None
-            }
-        | _ -> None)
-    in
-    List.map
-      (fun (block : Model.block) ->
-        if String.equal block.uuid uuid
-        then { block with status; sync_status = "pending" }
-        else block)
-      blocks
-  | Set_property _ | Set_properties _ | Create_tag _ | Create_page _ | Create_journal _ | Add_tag _
-  | Set_favorite _ | Delete_page _ -> blocks
-;;
 
 let project_outliner_operations context operations =
   let blocks =
     List.fold_left
       (fun blocks (operation : Pending_ops.pending_operation) ->
-        project_outliner_intent blocks operation.intent)
-      context.Outliner_state.blocks
+        LG.logseq_chat_rpc_project_outliner_intent
+          (Rrbvec.to_seq, blocks) operation.intent)
+      (Rrbvec.of_list context.Outliner_state.blocks)
       operations
   in
-  { context with Outliner_state.blocks }
+  { context with Outliner_state.blocks = Rrbvec.to_list blocks }
 ;;
 
 let node_routes_json session =
