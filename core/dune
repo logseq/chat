@@ -194,16 +194,6 @@
  (libraries logseq_chat_core))
 
 (test
- (name logseq_chat_outliner_state_test)
- (modules logseq_chat_outliner_state_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_outliner_effects_test)
- (modules logseq_chat_outliner_effects_test)
- (libraries logseq_chat_core))
-
-(test
  (name logseq_chat_graph_runtime_test)
  (modules logseq_chat_graph_runtime_test)
  (libraries logseq_chat_core))
