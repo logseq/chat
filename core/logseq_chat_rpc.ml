@@ -1427,14 +1427,6 @@ let reconcile_authoritative_blocks session =
 
 let now_ms () = int_of_float (Unix.gettimeofday () *. 1000.0)
 
-let flashcard_rating = function
-  | "again" -> Ok LG.Again
-  | "hard" -> Ok LG.Hard
-  | "good" -> Ok LG.Good
-  | "easy" -> Ok LG.Easy
-  | _ -> Error "rating must be again, hard, good, or easy"
-;;
-
 let create
       ?storage
       ?open_graph
@@ -2490,24 +2482,6 @@ let pop_node_route session =
     session.outliner_revision <- session.outliner_revision + 1
 ;;
 
-let toolbar_action = function
-  | "task" -> Ok Outliner_state.Task
-  | "outdent" -> Ok Outdent
-  | "indent" -> Ok Indent
-  | "tag" -> Ok Tag_action
-  | "pageReference" -> Ok Page_reference
-  | "camera" -> Ok Camera
-  | "audio" -> Ok Audio
-  | "attachment" -> Ok Attachment
-  | "hideKeyboard" -> Ok Hide_keyboard
-  | "copy" -> Ok Copy
-  | "delete" -> Ok Delete
-  | "copyReference" -> Ok Copy_reference
-  | "copyURL" -> Ok Copy_url
-  | "unselect" -> Ok Unselect
-  | _ -> Error "unknown outliner toolbar action"
-;;
-
 let outliner_message payload =
   let int fields name =
     match List.assoc_opt name fields with
@@ -2541,7 +2515,7 @@ let outliner_message payload =
          | _ -> Error "backspacePressed title must be a string")
      | Ok "toolbar" ->
        Result.bind (required_string "action" fields) (fun action ->
-         Result.map (fun action -> Outliner_state.Toolbar action) (toolbar_action action))
+         Result.map (fun action -> Outliner_state.Toolbar action) (LG.logseq_chat_rpc_toolbar_action action))
      | Ok "dropBlocks" ->
        (match required_string "targetUuid" fields, required_string "placement" fields with
         | Ok target_uuid, Ok placement ->
@@ -3025,7 +2999,7 @@ let dispatch session action payload =
                  optional_int "now" fields,
                  required_string "operationId" fields with
            | Ok uuid, Ok rating, Ok requested_now, Ok operation_id ->
-             (match flashcard_rating rating with
+             (match LG.logseq_chat_rpc_flashcard_rating rating with
               | Error message -> failure ~code:"invalid_params" ~message
               | Ok rating ->
                 let now = Option.value requested_now ~default:(now_ms ()) in

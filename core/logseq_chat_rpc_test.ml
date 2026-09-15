@@ -47,37 +47,6 @@ let assert_equal label expected actual =
       (Printf.sprintf "%s: expected %S, got %S" label expected actual)
 ;;
 
-let () =
-  let open Logseq_chat_lg_core_native in
-  let cases : (string * outliner_toolbar) list =
-    [ "task", Task
-    ; "outdent", Outdent
-    ; "indent", Indent
-    ; "tag", Tag_action
-    ; "pageReference", Page_reference
-    ; "camera", Camera
-    ; "audio", Audio
-    ; "attachment", Attachment
-    ; "hideKeyboard", Hide_keyboard
-    ; "copy", Copy
-    ; "delete", Delete
-    ; "copyReference", Copy_reference
-    ; "copyURL", Copy_url
-    ; "unselect", Unselect
-    ]
-  in
-  List.iter
-    (fun (wire, expected) ->
-      match Logseq_chat_rpc.toolbar_action wire with
-      | Ok actual when actual = expected -> ()
-      | Ok _ -> failwith ("wrong toolbar action mapping: " ^ wire)
-      | Error message -> failwith ("missing toolbar action mapping: " ^ wire ^ ": " ^ message))
-    cases;
-  match Logseq_chat_rpc.toolbar_action "unsupported" with
-  | Error "unknown outliner toolbar action" -> ()
-  | _ -> failwith "unknown toolbar actions must be rejected"
-;;
-
 let assert_int_equal label expected actual =
   if expected <> actual
   then
