@@ -27,6 +27,20 @@
     (is (json-util/to-bool (json-util/member "ok" response)))
     (is (= "[]" (json/to-string (json-util/member "flashcards" (json-util/member "result" response)))))))
 
+(deftest session-restores-cached-graph-name-without-token
+  (let [response (json/from-string
+                   (native-rpc/call (native-rpc/create)
+                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"http://127.0.0.1:8787\\\",\\\"graphId\\\":\\\"cached-graph\\\",\\\"graphName\\\":\\\"Sync 2\\\",\\\"token\\\":\\\"\\\"}\"}}"))
+        result (json-util/member "result" response)]
+    (is (= "cached-graph" (json-util/to-string (json-util/member "selectedGraphId" result))))
+    (is (= "Sync 2" (json-util/to-string (json-util/member "graphName" result))))))
+
+(deftest session-clear-related-exposes-related-blocks
+  (let [response (json/from-string
+                   (native-rpc/call (native-rpc/create)
+                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"clearRelated\"}}"))]
+    (is (= "[]" (json/to-string (json-util/member "relatedBlocks" (json-util/member "result" response)))))))
+
 (deftest rpc-routing-validates-before-executing-actions
   (let [calls (atom [])
         snapshot (fn [] (swap! calls conj "snapshot") "snapshot-result")

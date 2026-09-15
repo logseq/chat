@@ -726,35 +726,6 @@ let () =
   then failwith "targeted local asset must appear immediately on a selected page"
 ;;
 
-let () =
-  let session = Logseq_chat_rpc.create () in
-  let response =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"cached-graph\",\"graphName\":\"Sync 2\",\"token\":\"\"}"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    let result = required_assoc "result" fields in
-    assert_equal "cached graph id" "cached-graph" (required_string "selectedGraphId" result);
-    assert_equal "cached graph name" "Sync 2" (required_string "graphName" result)
-  | _ -> failwith "configure should restore a cached graph name"
-;;
-
-let () =
-  let session = Logseq_chat_rpc.create () in
-  let response =
-    Logseq_chat_rpc.call session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"clearRelated"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    let result = required_assoc "result" fields in
-    ignore (required_list "relatedBlocks" result)
-  | _ -> failwith "clearRelated should expose related blocks"
-;;
 
 let () =
   let page : Logseq_chat_lg_core_native.entity_summary = Logseq_chat_lg_core_native.{ uuid = "page-1"; title = "Page one" } in
