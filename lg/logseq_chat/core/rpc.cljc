@@ -185,6 +185,25 @@
         _ encoded)
       encoded)))
 
+(defn flashcard-json [due-card]
+  (let [card (:card due-card)]
+    (json-object [(tuple "block" (block-json (:block due-card)))
+                  (tuple "children" (tag List (apply list (map block-json (:children due-card)))))
+                  (tuple "due" (tag Int (:due card))) (tuple "repetitions" (tag Int (:reps card)))
+                  (tuple "lapses" (tag Int (:lapses card)))
+                  (tuple "state" (tag String (flashcards/state-name (:state card))))])))
+
+(defn graph-json [graph]
+  (json-object [(tuple "id" (tag String (:id graph))) (tuple "name" (tag String (:name graph)))
+                (tuple "schemaVersion" (if-some [version (:schema-version graph)] (tag String version) (tag Null)))
+                (tuple "isEncrypted" (tag Bool (:e2ee graph))) (tuple "isReady" (tag Bool (:ready graph)))]))
+
+(defn search-hit-json [hit]
+  (json-object [(tuple "uuid" (tag String (:uuid hit))) (tuple "title" (tag String (:title hit)))
+                (tuple "isPage" (tag Bool (:is-page hit)))
+                (tuple "page" (if-some [page (:page hit)] (summary-json page) (tag Null)))
+                (tuple "breadcrumbs" (tag List (apply list (map summary-json (:breadcrumbs hit)))))]))
+
 (defn autocomplete-kind-json [kind]
   (match kind outliner/Node "node" outliner/Tag "tag" outliner/Property "property"))
 

@@ -3,6 +3,8 @@
             [logseq-chat.rpc :as rpc]
             [logseq-chat.pending-ops :as ops]
             [logseq-chat.cache-model :as model]
+            [logseq-chat.api :as api]
+            [logseq-chat.search-index :as search]
             [logseq-chat.outliner-effects :as effects]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
@@ -87,6 +89,38 @@
 (defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
 
 (defn json-field [value key] (json/to-string (json-util/member key value)))
+
+(deftest graph-json-keeps-null-schema-and-readiness-flags
+  (let [graph (record api/api-graph (id "graph") (name "Graph") (schema-version nil) (e2ee false) (ready true))]
+    (is (= "{\"id\":\"graph\",\"name\":\"Graph\",\"schemaVersion\":null,\"isEncrypted\":false,\"isReady\":true}"
+           (json/to-string (rpc/graph-json graph))))
+    (is (= "{\"id\":\"graph\",\"name\":\"Graph\",\"schemaVersion\":\"v1\",\"isEncrypted\":true,\"isReady\":false}"
+           (json/to-string (rpc/graph-json (assoc graph :schema-version (Some "v1") :e2ee true :ready false)))))))
+
+(deftest search-json-keeps-page-and-breadcrumb-order
+  (let [parent (record model/entity-summary (uuid "parent") (title "Parent"))
+        page (record model/entity-summary (uuid "page") (title "Page"))
+        hit (record search/indexed-search-hit (uuid "hit") (title "Hit") (is-page false) (page nil) (breadcrumbs []))]
+    (is (= "{\"uuid\":\"hit\",\"title\":\"Hit\",\"isPage\":false,\"page\":null,\"breadcrumbs\":[]}"
+           (json/to-string (rpc/search-hit-json hit))))
+    (is (= "{\"uuid\":\"hit\",\"title\":\"Hit\",\"isPage\":true,\"page\":{\"uuid\":\"page\",\"title\":\"Page\"},\"breadcrumbs\":[{\"uuid\":\"parent\",\"title\":\"Parent\"},{\"uuid\":\"page\",\"title\":\"Page\"}]}"
+           (json/to-string (rpc/search-hit-json (assoc hit :is-page true :page (Some page) :breadcrumbs [parent page])))))))
+
+(deftest flashcard-json-keeps-counters-state-and-children
+  (run! (fn [[state wire]]
+          (let [card (assoc (flashcards/new-card 123) :reps 7 :lapses 2 :state state)
+                due (record flashcards/due-card (block (video-block "card" "Question"))
+                            (children (list (video-block "child" "Answer"))) (card card))
+                encoded (rpc/flashcard-json due)]
+            (is (= "123" (json-field encoded "due")))
+            (is (= "7" (json-field encoded "repetitions")))
+            (is (= "2" (json-field encoded "lapses")))
+            (is (= (str "\"" wire "\"") (json-field encoded "state")))
+            (is (= "\"card\"" (json-field (json-util/member "block" encoded) "uuid")))
+            (let [child (json/to-string (rpc/block-json (video-block "child" "Answer")))]
+              (is (= (str "[" child "]") (json-field encoded "children"))))))
+        [(tuple flashcards/New "new") (tuple flashcards/Learning "learning")
+         (tuple flashcards/Review "review") (tuple flashcards/Relearning "relearning")]))
 
 (deftest block-json-publishes-resolved-markup-and-omits-absent-fields
   (let [block (assoc (video-block "source" "See [[target]]")

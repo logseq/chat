@@ -282,45 +282,6 @@ let status_semantic_ref (status : Model.status) =
   | Some _ | None -> Pending_ops.Ref_uuid status.uuid
 ;;
 
-let flashcard_json (due_card : LG.due_card) =
-  `Assoc
-    [ "block", LG.logseq_chat_rpc_block_json due_card.block
-    ; "children", `List (List.map LG.logseq_chat_rpc_block_json due_card.children)
-    ; "due", `Int due_card.card.due
-    ; "repetitions", `Int due_card.card.reps
-    ; "lapses", `Int due_card.card.lapses
-    ; "state", `String (LG.logseq_chat_flashcards_state_name due_card.card.state)
-    ]
-;;
-
-let graph_json (graph : Api.api_graph) =
-  `Assoc
-    [ "id", `String graph.id
-    ; "name", `String graph.name
-    ; "schemaVersion", Option.fold ~none:`Null ~some:(fun value -> `String value) graph.schema_version
-    ; "isEncrypted", `Bool graph.e2ee
-    ; "isReady", `Bool graph.ready
-    ]
-;;
-
-let search_hit_json (hit : Logseq_chat_lg_core_native.indexed_search_hit) =
-  `Assoc
-    [ "uuid", `String hit.uuid
-    ; "title", `String hit.title
-    ; "isPage", `Bool hit.is_page
-    ; ( "page"
-      , match hit.page with
-        | Some page -> LG.logseq_chat_rpc_summary_json page
-        | None -> `Null )
-    ; ( "breadcrumbs"
-      , `List
-          (List.map
-             (fun (summary : Model.entity_summary) ->
-               `Assoc [ "uuid", `String summary.uuid; "title", `String summary.title ])
-             (Rrbvec.to_list hit.breadcrumbs)) )
-    ]
-;;
-
 let pending_request_json session =
   let request_json id (request : Api.api_request) file_path content_type headers =
     let body_fields =
@@ -941,8 +902,8 @@ let snapshot session ~context_blocks blocks =
       ; "selectedPageIsTag", `Bool (selected_page_is_tag session)
       ; "selectedPageIsProperty", `Bool (selected_page_is_property session)
       ; "searchQuery", `String session.search_query
-      ; "searchResults", `List (List.map search_hit_json session.search_results)
-      ; "flashcards", `List (List.map flashcard_json session.flashcards)
+      ; "searchResults", `List (List.map LG.logseq_chat_rpc_search_hit_json session.search_results)
+      ; "flashcards", `List (List.map LG.logseq_chat_rpc_flashcard_json session.flashcards)
       ; "nodeRoutes", node_routes_json session
       ; "lastRefreshAt",
         (match session.model.last_refresh_at with
@@ -956,7 +917,7 @@ let snapshot session ~context_blocks blocks =
         (match session.config with
          | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
          | _ -> `Null)
-      ; "graphs", `List (List.map graph_json session.available_graphs)
+      ; "graphs", `List (List.map LG.logseq_chat_rpc_graph_json session.available_graphs)
       ; "favorites", `List (List.map LG.logseq_chat_rpc_summary_json (Rrbvec.to_list sidebar_pages.favorites))
       ; "recentPages", `List (List.map LG.logseq_chat_rpc_summary_json (Rrbvec.to_list sidebar_pages.recent_pages))
       ; "selectedPage",
@@ -1197,7 +1158,7 @@ let graph_catalog_snapshot session =
         (match session.config with
          | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
          | _ -> `Null)
-      ; "graphs", `List (List.map graph_json session.available_graphs)
+      ; "graphs", `List (List.map LG.logseq_chat_rpc_graph_json session.available_graphs)
       ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
       ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
       ; "isGraphCatalogPatch", `Bool true
