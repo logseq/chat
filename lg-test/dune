@@ -53,6 +53,9 @@
  (name logseq_chat_lui_test)
  (modules logseq_chat_lui_test)
  (flags (:standard -w -27-32-37-39-69))
+ (foreign_stubs
+  (language c)
+  (names logseq_chat_platform_crypto_test_stubs))
  (libraries
   logseq_chat_core
   sqlite3
