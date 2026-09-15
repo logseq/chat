@@ -2482,87 +2482,6 @@ let pop_node_route session =
     session.outliner_revision <- session.outliner_revision + 1
 ;;
 
-let outliner_message payload =
-  let int fields name =
-    match List.assoc_opt name fields with
-    | Some (`Int value) -> Ok value
-    | _ -> Error ("missing integer outliner event field: " ^ name)
-  in
-  match from_string payload with
-  | `Assoc fields ->
-    (match required_string "type" fields with
-     | Error _ as error -> error
-     | Ok "tapBlock" -> Result.map (fun uuid -> Outliner_state.Tap_block uuid) (required_string "uuid" fields)
-     | Ok "longPressBlock" ->
-       Result.map (fun uuid -> Outliner_state.Long_press_block uuid) (required_string "uuid" fields)
-     | Ok "textChanged" ->
-       (match required_string "title" fields, int fields "caretUTF16Offset" with
-        | Ok title, Ok caret -> Ok (Outliner_state.Text_changed { title; caret })
-        | Error message, _ | _, Error message -> Error message)
-     | Ok "caretMoved" -> Result.map (fun caret -> Outliner_state.Caret_moved caret) (int fields "caretUTF16Offset")
-     | Ok "returnPressed" ->
-       (match List.assoc_opt "title" fields, List.assoc_opt "caretUTF16Offset" fields with
-        | Some (`String title), Some (`Int caret) ->
-          Ok (Outliner_state.Return_pressed_with_text { title; caret })
-        | None, None -> Ok Outliner_state.Return_pressed
-        | _ -> Error "returnPressed requires both title and caretUTF16Offset")
-     | Ok "backspacePressed" ->
-       Result.bind (int fields "selectionLength") (fun selection_length ->
-         match List.assoc_opt "title" fields with
-         | Some (`String title) ->
-           Ok (Outliner_state.Backspace_pressed_with_text { title; selection_length })
-         | None -> Ok (Outliner_state.Backspace_pressed { selection_length })
-         | _ -> Error "backspacePressed title must be a string")
-     | Ok "toolbar" ->
-       Result.bind (required_string "action" fields) (fun action ->
-         Result.map (fun action -> Outliner_state.Toolbar action) (LG.logseq_chat_rpc_toolbar_action action))
-     | Ok "dropBlocks" ->
-       (match required_string "targetUuid" fields, required_string "placement" fields with
-        | Ok target_uuid, Ok placement ->
-          let placement =
-            match placement with
-            | "before" -> Ok Outliner_state.Before
-            | "inside" -> Ok Inside
-            | "after" -> Ok After
-            | _ -> Error "unknown outliner drop placement"
-          in
-          Result.map
-            (fun placement -> Outliner_state.Drop_blocks { target_uuid; placement })
-            placement
-        | Error message, _ | _, Error message -> Error message)
-     | Ok "chooseAutocomplete" ->
-       Result.map
-         (fun value -> Outliner_state.Choose_autocomplete value)
-         (required_string "value" fields)
-     | Ok "confirmDelete" -> Ok Outliner_state.Confirm_delete
-     | Ok "saveEditing" -> Ok Outliner_state.Save_editing
-     | Ok "cancelEditing" -> Ok Outliner_state.Cancel_editing
-     | Ok "toggleCollapsed" ->
-       Result.map
-         (fun uuid -> Outliner_state.Toggle_collapsed uuid)
-         (required_string "uuid" fields)
-     | Ok "zoomIn" ->
-       Result.map (fun uuid -> Outliner_state.Zoom_in uuid) (required_string "uuid" fields)
-     | Ok "zoomOut" -> Ok Outliner_state.Zoom_out
-     | Ok "addRootBlock" ->
-       Result.map
-         (fun uuid -> Outliner_state.Add_root_block uuid)
-         (required_string "uuid" fields)
-     | Ok "setTaskStatus" ->
-       (match required_string "uuid" fields,
-              optional_string "statusIdent" fields,
-              optional_string "statusUuid" fields with
-        | Ok uuid, Ok (Some ident), _ ->
-          Ok (Outliner_state.Set_task_status { uuid; status = Ref_ident ident })
-        | Ok uuid, Ok None, Ok (Some status_uuid) ->
-          Ok (Outliner_state.Set_task_status { uuid; status = Ref_uuid status_uuid })
-        | Ok _, Ok None, Ok None -> Error "setTaskStatus requires a status reference"
-        | Error message, _, _ | _, Error message, _ | _, _, Error message -> Error message)
-     | Ok _ -> Error "unknown outliner event type")
-  | _ -> Error "outliner event must be an object"
-  | exception _ -> Error "outliner event must be valid JSON"
-;;
-
 let outliner_structure_source payload =
   match from_string payload with
   | `Assoc fields ->
@@ -2597,7 +2516,7 @@ let aggregate_return_context session payload message =
 ;;
 
 let dispatch_outliner_event session payload =
-  match outliner_message payload with
+  match LG.logseq_chat_rpc_outliner_message payload with
   | Error message -> failure ~code:"invalid_outliner_event" ~message
   | Ok _ when not (outliner_structure_source_matches session.outliner_state payload) ->
     outliner_patch ~changed_uuids:[] session (outliner_context session)
