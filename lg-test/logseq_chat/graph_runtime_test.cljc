@@ -390,3 +390,129 @@
         op (record pending/pending-operation (operation-id "insert") (base-t 41) (state pending/Queued) (intent intent))]
     (is (pending/committed-despite-later-changes? 42 (base-db "Changed later") op))
     (is (not (pending/committed-despite-later-changes? 42 (ds/empty-db :schema (apply list (seq schema))) op)))))
+
+(defn with-search-runtime [db f]
+  (with-store
+    (fn [path]
+      (let [search-path (filename/temp-file "logseq-chat-runtime-search" ".sqlite")
+            conn (ds/conn-from-db db)]
+        (try
+          (let [current (runtime/create :path path :search_index_path search-path :server_t 42 conn)]
+            (f search-path conn current))
+          (finally
+            (run! #(when (sys/file-exists %) (sys/remove %))
+                  [search-path (str search-path "-shm") (str search-path "-wal")])))))))
+
+(deftest search-index-incrementally-follows-edits-and-splits
+  (with-search-runtime
+    (base-db "Old")
+    (fn [_ _ current]
+      (runtime/search current "Old")
+      (is (:search-index-is-fresh current))
+      (is (ok? (runtime/stage current (save-title "search-title" "Old" "Pending"))))
+      (is (:search-index-is-fresh current))
+      (is (some #(= "block" (:uuid %)) (runtime/search current "Pending")))
+      (let [split (native-operation "search-split"
+                    (ops/Split_block (record ops/pending_split (uuid "block") (expected-title "Pending")
+                                      (before "Head") (after "Tail") (new-uuid "search-new") (new-order "a1") (created-at 100))))]
+        (is (ok? (runtime/stage current split)))
+        (is (:search-index-is-fresh current))
+        (is (some #(= "search-new" (:uuid %)) (runtime/search current "Tail")))))))
+
+(deftest remote-search-refresh-preserves-unrelated-index-rows
+  (with-search-runtime
+    (base-db "Old")
+    (fn [search-path conn current]
+      (runtime/search current "Old")
+      (ops/logseq-chat-search-index-search-upsert search-path
+        (list (tuple "search-sentinel" "incremental sentinel" "search-sentinel")))
+      (ds/transact-conn conn (list (add 10 "block/title" (ds/String "Remote"))))
+      (runtime/rebase current :server_t 43 :operation_ids (list) :changed_uuids (list "block"))
+      (is (some #(= "block" (:uuid %)) (runtime/search current "Remote")))
+      (is (if-some [index (:search-index current)]
+            (some #(= "search-sentinel" (:uuid %))
+                  (ops/logseq-chat-search-index-search (fn [_] false) 100 index "incremental sentinel"))
+            false)))))
+
+(deftest referenced-page-renames-reindex-the-page-and-its-referrers
+  (let [db (ds/db-with
+             (list (add 2 "block/uuid" (ds/Uuid "target"))
+                   (add 2 "block/title" (ds/String "Target")) (add 2 "block/name" (ds/String "target"))
+                   (add 10 "block/refs" (ds/Ref 2))) (base-db "[[target]]"))]
+    (with-search-runtime
+      db
+      (fn [_ _ current]
+        (runtime/search current "Target")
+        (let [rename (native-operation "rename"
+                       (ops/Save_title (record ops/pending_title (uuid "target") (expected-title "Target") (title "Renamed"))))]
+          (is (ok? (runtime/stage current rename)))
+          (is (:search-index-is-fresh current))
+          (let [hits (runtime/search current "Renamed")]
+            (run! (fn [uuid] (is (some #(= uuid (:uuid %)) hits))) ["target" "block"])))))))
+
+(defn encrypted-runtime [path conn]
+  (runtime/create :encrypt_title (fn [value] (Ok (str "enc:" value))) :path path :server_t 42 conn))
+
+(deftest encrypted-sync-keeps-projection-and-pending-storage-plaintext
+  (with-store
+    (fn [path]
+      (let [conn (ds/conn-from-db (base-db "Old"))
+            current (encrypted-runtime path conn)
+            op (save-title "encrypted-title" "Old" "Pending")]
+        (is (match (runtime/prepare-sync current op)
+              (Ok ["save-block" wire])
+              (let [values (wire-values (transit/of-string wire))]
+                (and (some #(= (transit/String "enc:Pending") %) values)
+                     (not (some #(or (= (transit/String "Old") %) (= (transit/String "Pending") %)) values))))
+              _ false))
+        (is (ok? (runtime/stage current op)))
+        (is (= "Pending" (title (runtime/db current) "block")))
+        (is (= ["Pending"] (mapv :title (runtime/blocks current))))
+        (let [stored (ops/logseq-chat-pending-ops-list path)]
+          (is (= 1 (count stored)))
+          (is (match (:intent (nth stored 0))
+                (ops/Save_title value) (and (= "Old" (:expected-title value)) (= "Pending" (:title value)))
+                _ false)))))))
+
+(deftest encrypted-merge-encrypts-the-completed-title-once
+  (with-store
+    (fn [path]
+      (let [db (ds/db-with
+                 (list (add 11 "block/uuid" (ds/Uuid "previous")) (add 11 "block/title" (ds/String "Hello"))
+                       (add 11 "block/page" (ds/Ref 1)) (add 11 "block/parent" (ds/Ref 1))
+                       (add 11 "block/order" (ds/String "Zz")) (add 11 "block/created-at" (ds/Int 0))
+                       (add 11 "block/updated-at" (ds/Int 0))) (base-db "Old"))
+            current (encrypted-runtime path (ds/conn-from-db db))
+            op (native-operation "encrypted-merge"
+                 (ops/Merge_backward (record ops/pending_merge (uuid "block") (expected-title "Old") (title " World")
+                                       (previous-uuid "previous") (expected-previous-title "Hello") (merged-title nil))))]
+        (is (match (runtime/prepare-sync current op)
+              (Ok ["merge-blocks" wire])
+              (some #(= (transit/String "enc:Hello World") %) (wire-values (transit/of-string wire)))
+              _ false))
+        (is (ok? (runtime/stage current op)))
+        (is (= "Hello World" (title (runtime/db current) "previous")))
+        (is (nil? (ds/entid (runtime/db current) "block/uuid" (ds/Uuid "block"))))))))
+
+(deftest journal-window-grows-by-two-pages-per-request
+  (with-store
+    (fn [path]
+      (let [tx (mapcat
+                 (fn [index]
+                   (let [page (inc index) block (+ index 101)]
+                     [(add page "block/uuid" (ds/Uuid (str "page-" index)))
+                      (add page "block/title" (ds/String (str "Page " index)))
+                      (add page "block/name" (ds/String (str "page-" index)))
+                      (add page "block/journal-day" (ds/Int (+ 20260801 index)))
+                      (add block "block/uuid" (ds/Uuid (str "block-" index)))
+                      (add block "block/title" (ds/String (str "Block " index)))
+                      (add block "block/page" (ds/Ref page)) (add block "block/parent" (ds/Ref page))
+                      (add block "block/created-at" (ds/Int index))])) (range 8))
+            db (ds/db-with (apply list tx) (ds/empty-db :schema (apply list (seq schema))))
+            current (runtime/create :path path :server_t 42 (ds/conn-from-db db))]
+        (is (= 1 (count (runtime/blocks current))))
+        (is (runtime/has-older-journals current))
+        (run! (fn [expected]
+                (runtime/load-older-journals current)
+                (is (= expected (count (runtime/blocks current))))
+                (is (runtime/has-older-journals current))) [3 5])))))
