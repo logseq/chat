@@ -22,13 +22,13 @@ let transit_field key entries =
 
 let () =
   with_temp_db (fun path ->
-    let session = Logseq_chat_sqlite.open_session path in
+    let session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close session)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close session)
       (fun () ->
-        Logseq_chat_sqlite.store_string session ~address:"metadata" "value";
+        Logseq_chat_lg_core_native.logseq_chat_sqlite_store_string session "metadata" "value";
         let encoded =
-          match Logseq_chat_sqlite.sqlite_restore path "metadata" with
+          match Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_raw session "metadata" with
           | Some encoded -> encoded
           | None -> failwith "versioned metadata value was not stored"
         in
@@ -42,34 +42,36 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    let session = Logseq_chat_sqlite.open_session path in
+    let session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close session)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close session)
       (fun () ->
-        Logseq_chat_sqlite.sqlite_store path [ "legacy", Marshal.to_string "old" [] ];
-        Logseq_chat_sqlite.sqlite_store
-          path
-          [ ( "future"
-            , {|["^ ","~:format-version",2,"~:value-type","~:string","~:value","future"]|} )
-          ];
+        Logseq_chat_lg_core_native.logseq_chat_sqlite_store_raw session
+          (List.to_seq,
+           [ Rrbvec.of_list [ "legacy"; Marshal.to_string "old" [] ]
+           ; Rrbvec.of_list
+               [ "future"
+               ; {|["^ ","~:format-version",2,"~:value-type","~:string","~:value","future"]|}
+               ]
+           ]);
         assert_bool
           "legacy Marshal metadata should be treated as a cache miss"
-          (Option.is_none (Logseq_chat_sqlite.restore_string session ~address:"legacy"));
+          (Option.is_none (Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_string session "legacy"));
         assert_bool
           "unknown metadata versions should be treated as a cache miss"
-          (Option.is_none (Logseq_chat_sqlite.restore_string session ~address:"future"))))
+          (Option.is_none (Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_string session "future"))))
 ;;
 
 let () =
   with_temp_db (fun path ->
-    let session = Logseq_chat_sqlite.open_session path in
+    let session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close session)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close session)
       (fun () ->
-        let storage = Logseq_chat_sqlite.storage session in
+        let storage = Logseq_chat_lg_core_native.logseq_chat_sqlite_storage session in
         storage.storage_store [ "tail", Datascript.Storage_tail [] ];
         let encoded =
-          match Logseq_chat_sqlite.sqlite_restore path "tail" with
+          match Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_raw session "tail" with
           | Some encoded -> encoded
           | None -> failwith "DataScript storage value was not stored"
         in
@@ -80,9 +82,9 @@ let () =
               Some (Transit_core.Json.Keyword "datascript-storage") -> ()
             | _ -> failwith "DataScript value is missing its versioned Transit envelope")
          | _ -> failwith "DataScript value is not a Transit map");
-        Logseq_chat_sqlite.sqlite_store
-          path
-          [ "legacy-tail", Marshal.to_string (Datascript.Storage_tail []) [] ];
+        Logseq_chat_lg_core_native.logseq_chat_sqlite_store_raw session
+          (List.to_seq,
+           [ Rrbvec.of_list [ "legacy-tail"; Marshal.to_string (Datascript.Storage_tail []) [] ] ]);
         assert_bool
           "legacy Marshal DataScript values should be treated as a cache miss"
           (Option.is_none (storage.storage_restore "legacy-tail"))))
@@ -90,9 +92,9 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    let first_session = Logseq_chat_sqlite.open_session path in
+    let first_session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     let first_model =
-      (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage first_session))))
+      (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_lg_core_native.logseq_chat_sqlite_storage first_session))))
     in
     (Logseq_chat_lg_core_native.logseq_chat_cache_model_cache_local_message (first_model) ("local-persisted") ("Persisted offline capture") (1_776_000_000_000));
     (Logseq_chat_lg_core_native.logseq_chat_cache_model_upsert_statuses (first_model) (List.to_seq, ([ { uuid = "status-waiting"
@@ -103,14 +105,14 @@ let () =
         ; icon_color = Some "#7c3aed"
         }
       ])));
-    Logseq_chat_sqlite.close first_session;
+    Logseq_chat_lg_core_native.logseq_chat_sqlite_close first_session;
 
-    let second_session = Logseq_chat_sqlite.open_session path in
+    let second_session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close second_session)
       (fun () ->
         let restored_model =
-          (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage second_session))))
+          (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_lg_core_native.logseq_chat_sqlite_storage second_session))))
         in
         match Logseq_chat_lg_core_native.logseq_chat_cache_model_read_block restored_model "local-persisted" with
         | None -> failwith "expected persisted block after reopening SQLite storage"
@@ -135,15 +137,15 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    let first_store = Logseq_chat_sqlite.open_session path in
+    let first_store = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     let first_rpc =
-      Logseq_chat_rpc.create ~storage:(Logseq_chat_sqlite.storage first_store) ()
+      Logseq_chat_rpc.create ~storage:(Logseq_chat_lg_core_native.logseq_chat_sqlite_storage first_store) ()
     in
     ignore
       (Logseq_chat_rpc.call
          first_rpc
          {|{"apiVersion":1,"method":"dispatch","params":{"action":"send","payload":"{\"text\":\"Survives restart\",\"uuid\":\"local-restart\",\"now\":1776000000000}"}}|});
-    Logseq_chat_sqlite.close first_store;
+    Logseq_chat_lg_core_native.logseq_chat_sqlite_close first_store;
 
     let remote_block =
       Logseq_chat_lg_core_native.
@@ -167,13 +169,13 @@ let () =
         ; journal = None
         }
     in
-    let second_store = Logseq_chat_sqlite.open_session path in
+    let second_store = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close second_store)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close second_store)
       (fun () ->
         let second_rpc =
           Logseq_chat_rpc.create
-            ~storage:(Logseq_chat_sqlite.storage second_store)
+            ~storage:(Logseq_chat_lg_core_native.logseq_chat_sqlite_storage second_store)
             ~graph_blocks:(fun () -> Some [ remote_block ])
             ()
         in
@@ -215,21 +217,21 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    let first_session = Logseq_chat_sqlite.open_session path in
+    let first_session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     let catalog =
       {|{"graphs":[{"graph-id":"plain-graph","graph-name":"Sync 2","graph-e2ee?":false,"graph-ready-for-use?":true},{"graph-id":"encrypted-graph","graph-name":"Private","graph-e2ee?":true,"graph-ready-for-use?":false}]}|}
     in
-    Logseq_chat_sqlite.store_string first_session ~address:"logseq-chat/graph-catalog/v1" catalog;
-    Logseq_chat_sqlite.close first_session;
+    Logseq_chat_lg_core_native.logseq_chat_sqlite_store_string first_session "logseq-chat/graph-catalog/v1" catalog;
+    Logseq_chat_lg_core_native.logseq_chat_sqlite_close first_session;
 
-    let second_session = Logseq_chat_sqlite.open_session path in
+    let second_session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close second_session)
       (fun () ->
         match
-          Logseq_chat_sqlite.restore_string
+          Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_string
             second_session
-            ~address:"logseq-chat/graph-catalog/v1"
+            "logseq-chat/graph-catalog/v1"
         with
         | Some restored ->
           assert_equal "graph catalog should use a dedicated SQLite value" catalog restored
@@ -238,24 +240,24 @@ let () =
 
 let () =
   with_temp_db (fun path ->
-    let first_session = Logseq_chat_sqlite.open_session path in
-    Logseq_chat_sqlite.store_string
+    let first_session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
+    Logseq_chat_lg_core_native.logseq_chat_sqlite_store_string
       first_session
-      ~address:"logseq-chat/graph-catalog/v1"
+      "logseq-chat/graph-catalog/v1"
       {|{"graphs":[{"graph-id":"plain-graph","graph-name":"Sync 2","graph-e2ee?":false,"graph-ready-for-use?":true}]}|};
-    Logseq_chat_sqlite.close first_session;
+    Logseq_chat_lg_core_native.logseq_chat_sqlite_close first_session;
 
-    let second_session = Logseq_chat_sqlite.open_session path in
+    let second_session = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
     Fun.protect
-      ~finally:(fun () -> Logseq_chat_sqlite.close second_session)
+      ~finally:(fun () -> Logseq_chat_lg_core_native.logseq_chat_sqlite_close second_session)
       (fun () ->
         let rpc =
           Logseq_chat_rpc.create
-            ~storage:(Logseq_chat_sqlite.storage second_session)
+            ~storage:(Logseq_chat_lg_core_native.logseq_chat_sqlite_storage second_session)
             ~load_graph_catalog:(fun () ->
-              Logseq_chat_sqlite.restore_string
+              Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_string
                 second_session
-                ~address:"logseq-chat/graph-catalog/v1")
+                "logseq-chat/graph-catalog/v1")
             ()
         in
         let response =
@@ -278,39 +280,39 @@ let () =
 let () =
   with_temp_db (fun source_path ->
     with_temp_db (fun destination_path ->
-      let source = Logseq_chat_sqlite.open_session source_path in
-      let destination = Logseq_chat_sqlite.open_session destination_path in
+      let source = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session source_path in
+      let destination = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session destination_path in
       Fun.protect
         ~finally:(fun () ->
-          Logseq_chat_sqlite.close source;
-          Logseq_chat_sqlite.close destination)
+          Logseq_chat_lg_core_native.logseq_chat_sqlite_close source;
+          Logseq_chat_lg_core_native.logseq_chat_sqlite_close destination)
         (fun () ->
           let catalog = {|{"graphs":[]}|} in
-          Logseq_chat_sqlite.store_string
+          Logseq_chat_lg_core_native.logseq_chat_sqlite_store_string
             source
-            ~address:"logseq-chat/graph-catalog/v1"
+            "logseq-chat/graph-catalog/v1"
             catalog;
           let legacy_model =
-            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage source))))
+            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_lg_core_native.logseq_chat_sqlite_storage source))))
           in
           (Logseq_chat_lg_core_native.logseq_chat_cache_model_cache_local_asset (legacy_model) ("legacy-asset") ("photo.jpg") ("jpg") (4) ("abcd") ("Assets/photo.jpg") (1) None);
-          Logseq_chat_sqlite.migrate_datascript_storage ~source ~destination;
+          Logseq_chat_lg_core_native.logseq_chat_sqlite_migrate_datascript_storage source destination;
           let migrated =
-            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage destination))))
+            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_lg_core_native.logseq_chat_sqlite_storage destination))))
           in
           assert_bool
             "legacy optimistic data should migrate into the graph projection"
             (List.length (Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (migrated))) = 1);
           let emptied_source =
-            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_sqlite.storage source))))
+            (Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some ((Logseq_chat_lg_core_native.logseq_chat_sqlite_storage source))))
           in
           assert_bool
             "legacy optimistic data should be removed from app-level storage"
             ((Rrbvec.to_list (Logseq_chat_lg_core_native.logseq_chat_cache_model_pending_blocks (emptied_source))) = []);
           assert_bool
             "graph catalog metadata should remain in app-level storage"
-            (Logseq_chat_sqlite.restore_string
+            (Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_string
                source
-               ~address:"logseq-chat/graph-catalog/v1"
+               "logseq-chat/graph-catalog/v1"
              = Some catalog))))
 ;;

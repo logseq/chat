@@ -1,5 +1,8 @@
 (ns logseq-chat.sqlite
   (:require [ocaml.package/sqlite3]
+            [ocaml.package/datascript-ocaml-native.sqlite]
+            [ocaml.Datascript :as ds]
+            [ocaml.Datascript_sqlite_codec :as storage-codec]
             [ocaml.Sqlite3 :as db]
             [ocaml.Sqlite3.Rc :as rc]
             [ocaml.Stdlib :as stdlib]
@@ -19,10 +22,11 @@
   (rc/check (db/exec (:connection session) sql)))
 
 (defn close [session]
-  (when-not @(:closed session)
-    (if (db/db-close (:connection session))
-      (reset! (:closed session) true)
-      (stdlib/failwith "SQLite connection is busy"))))
+  (stdlib/ignore
+    (when-not @(:closed session)
+      (if (db/db-close (:connection session))
+        (reset! (:closed session) true)
+        (stdlib/failwith "SQLite connection is busy")))))
 
 (defn open-session [path]
   (let [session (record sqlite-session
@@ -99,3 +103,55 @@
 (defn restore-string [session address]
   (when-some [source (restore-raw session address)]
     (decode-envelope "string" source)))
+
+(defn list-addresses [session]
+  (with-statement session "SELECT address FROM kvs ORDER BY address DESC"
+    (fn [statement]
+      (loop [addresses []]
+        (match (db/step statement)
+          (rc/ROW) (recur (conj addresses (db/column-text statement 0)))
+          (rc/DONE) addresses
+          code (do (rc/check code) addresses))))))
+
+(defn delete-addresses [session addresses]
+  (transaction session
+    (fn []
+      (with-statement session "DELETE FROM kvs WHERE address = ?"
+        (fn [statement]
+          (run! (fn [address]
+                  (rc/check (db/bind-text statement 1 address))
+                  (rc/check (db/step statement))
+                  (rc/check (db/reset statement)))
+                addresses))))))
+
+(defn decode-payload [source]
+  (when-some [encoded (decode-envelope "datascript-storage" source)]
+    (try (Some (storage-codec/decode encoded))
+         (catch (value/Decode_error _) None)
+         (catch (Yojson/Json_error _) None)
+         (catch (Failure _) None)
+         (catch (Invalid_argument _) None))))
+
+(defn storage [session]
+  (record Datascript.storage
+    (storage-store
+      (fn [entries]
+        (store-raw session
+          (mapv (fn [[address payload]]
+                  [address (envelope "datascript-storage" (storage-codec/encode payload))])
+                entries))))
+    (storage-restore
+      (fn [address]
+        (when-some [source (restore-raw session address)] (decode-payload source))))
+    (storage-list-addresses (fn [] (rrbvec/to-list (list-addresses session))))
+    (storage-delete (fn [addresses] (delete-addresses session addresses)))))
+
+(defn migrate-datascript-storage [source destination]
+  (let [entries (vec (keep (fn [address]
+                            (when-some [raw (restore-raw source address)]
+                              (when (some? (decode-payload raw)) [address raw])))
+                          (list-addresses source)))]
+    (stdlib/ignore
+      (when (seq entries)
+        (store-raw destination entries)
+        (delete-addresses source (mapv (fn [[address _]] address) entries))))))

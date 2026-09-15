@@ -28,6 +28,7 @@
  (libraries
   logseq_chat_graph_support
   sqlite3
+  datascript-ocaml-native.sqlite
   datascript-ocaml-native
   datascript-ocaml-lg
   lg.edn-backend.native
@@ -218,8 +219,7 @@
 (test
  (name logseq_chat_sqlite_test)
  (modules
-  logseq_chat_sqlite_test
-  logseq_chat_sqlite)
+  logseq_chat_sqlite_test)
  (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix))
 
 (test

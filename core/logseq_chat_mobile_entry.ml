@@ -27,8 +27,8 @@ type graph_runtime =
   }
 
 let graph_runtime : graph_runtime option ref = ref None
-let projection_session : Logseq_chat_sqlite.session option ref = ref None
-let sqlite_session : Logseq_chat_sqlite.session option ref = ref None
+let projection_session : Logseq_chat_lg_core_native.sqlite_session option ref = ref None
+let sqlite_session : Logseq_chat_lg_core_native.sqlite_session option ref = ref None
 
 let required_string fields name =
   match List.assoc_opt name fields with
@@ -415,19 +415,19 @@ let graph_catalog_address = "logseq-chat/graph-catalog/v1"
 let model_for_graph ~graph_id =
   match !graph_runtime with
   | Some runtime when String.equal runtime.graph_id graph_id ->
-    Option.iter Logseq_chat_sqlite.close !projection_session;
+    Option.iter Logseq_chat_lg_core_native.logseq_chat_sqlite_close !projection_session;
     let path =
       Filename.concat (Filename.dirname runtime.checkpoint_path) "projection.sqlite"
     in
-    let projection = Logseq_chat_sqlite.open_session path in
-    let projection_storage = Logseq_chat_sqlite.storage projection in
+    let projection = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
+    let projection_storage = Logseq_chat_lg_core_native.logseq_chat_sqlite_storage projection in
     if projection_storage.storage_list_addresses () = []
     then
       Option.iter
         (fun catalog ->
-          Logseq_chat_sqlite.migrate_datascript_storage
-            ~source:catalog
-            ~destination:projection)
+          Logseq_chat_lg_core_native.logseq_chat_sqlite_migrate_datascript_storage
+            catalog
+            projection)
         !sqlite_session;
     projection_session := Some projection;
     Logseq_chat_lg_core_native.logseq_chat_cache_model_create (Some projection_storage)
@@ -440,12 +440,12 @@ let create_session ?storage ?catalog_session () =
     ?load_graph_catalog:
       (Option.map
          (fun session () ->
-           Logseq_chat_sqlite.restore_string session ~address:graph_catalog_address)
+           Logseq_chat_lg_core_native.logseq_chat_sqlite_restore_string session graph_catalog_address)
          catalog_session)
     ?save_graph_catalog:
       (Option.map
          (fun session body ->
-           Logseq_chat_sqlite.store_string session ~address:graph_catalog_address body)
+           Logseq_chat_lg_core_native.logseq_chat_sqlite_store_string session graph_catalog_address body)
          catalog_session)
     ~open_graph
     ~import_snapshot
@@ -501,11 +501,11 @@ let open_database request =
      | Some (`String "open"), Some (`Assoc params) ->
        (match assoc "path" params with
         | Some (`String path) ->
-          Option.iter Logseq_chat_sqlite.close !sqlite_session;
-          Option.iter Logseq_chat_sqlite.close !projection_session;
+          Option.iter Logseq_chat_lg_core_native.logseq_chat_sqlite_close !sqlite_session;
+          Option.iter Logseq_chat_lg_core_native.logseq_chat_sqlite_close !projection_session;
           projection_session := None;
           graph_runtime := None;
-          let opened = Logseq_chat_sqlite.open_session path in
+          let opened = Logseq_chat_lg_core_native.logseq_chat_sqlite_open_session path in
           sqlite_session := Some opened;
           session :=
             create_session

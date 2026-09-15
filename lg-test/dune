@@ -55,6 +55,7 @@
  (libraries
   logseq_chat_core
   sqlite3
+  datascript-ocaml-native.sqlite
   datascript-ocaml-native
   lg.edn-backend.native
   lg.runtime
