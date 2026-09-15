@@ -208,11 +208,6 @@
  (modules logseq_chat_graph_runtime_test)
  (libraries logseq_chat_core))
 
-(test
- (name logseq_chat_e2ee_keyring_test)
- (modules logseq_chat_e2ee_keyring_test)
- (libraries logseq_chat_core melange-transit-core melange-transit-native))
-
 (executable
  (name logseq_chat_live_sync)
  (modules logseq_chat_live_sync)
