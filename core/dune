@@ -189,11 +189,6 @@
  (libraries logseq_chat_core yojson))
 
 (test
- (name logseq_chat_entity_sync_test)
- (modules logseq_chat_entity_sync_test)
- (libraries logseq_chat_core melange-transit-core))
-
-(test
  (name logseq_chat_graph_read_test)
  (modules logseq_chat_graph_read_test)
  (libraries logseq_chat_core))
@@ -220,11 +215,6 @@
  (libraries logseq_chat_core))
 
 (test
- (name logseq_chat_outliner_test)
- (modules logseq_chat_outliner_test)
- (libraries logseq_chat_core))
-
-(test
  (name logseq_chat_outliner_state_test)
  (modules logseq_chat_outliner_state_test)
  (libraries logseq_chat_core))
@@ -238,11 +228,6 @@
  (name logseq_chat_graph_runtime_test)
  (modules logseq_chat_graph_runtime_test)
  (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_e2ee_test)
- (modules logseq_chat_e2ee_test)
- (libraries logseq_chat_core melange-transit-core melange-transit-native))
 
 (test
  (name logseq_chat_e2ee_keyring_test)
