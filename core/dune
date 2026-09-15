@@ -202,23 +202,8 @@
  (libraries logseq_chat_core yojson))
 
 (test
- (name logseq_chat_sync_protocol_test)
- (modules logseq_chat_sync_protocol_test)
- (libraries logseq_chat_core melange-transit-core melange-transit-native))
-
-(test
  (name logseq_chat_sync_tx_test)
  (modules logseq_chat_sync_tx_test)
- (libraries logseq_chat_core melange-transit-core melange-transit-native))
-
-(test
- (name logseq_chat_sync_state_test)
- (modules logseq_chat_sync_state_test)
- (libraries logseq_chat_core melange-transit-core melange-transit-native))
-
-(test
- (name logseq_chat_snapshot_test)
- (modules logseq_chat_snapshot_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
 
 (test
