@@ -162,20 +162,6 @@ let fresh_squuid () =
   | _ -> failwith "Datascript.squuid returned a non-UUID value"
 ;;
 
-let success result =
-  to_string (`Assoc [ "apiVersion", `Int 1; "ok", `Bool true; "result", result; "error", `Null ])
-;;
-
-let failure ~code ~message =
-  to_string
-    (`Assoc
-      [ "apiVersion", `Int 1
-      ; "ok", `Bool false
-      ; "result", `Null
-      ; "error", `Assoc [ "code", `String code; "message", `String message ]
-      ])
-;;
-
 let assoc name fields = List.assoc_opt name fields
 
 let required_string name fields =
@@ -243,17 +229,6 @@ let required_moves fields =
     in
     loop [] values
   | _ -> Error "field must be a list: moves"
-;;
-
-let send_payload payload =
-  let raw = Option.value payload ~default:"" in
-  match from_string raw with
-  | `Assoc fields ->
-    (match required_string "text" fields, optional_string "uuid" fields, optional_int "now" fields with
-     | Ok text, Ok uuid, Ok now -> Ok (String.trim text, uuid, now)
-     | Error message, _, _ | _, Error message, _ | _, _, Error message -> Error message)
-  | _ -> Ok (String.trim raw, None, None)
-  | exception _ -> Ok (String.trim raw, None, None)
 ;;
 
 let status_payload fields =
@@ -872,7 +847,7 @@ let snapshot session ~context_blocks blocks =
       Hashtbl.add serialized_blocks block.uuid json;
       json
   in
-  let response = success
+  let response = LG.logseq_chat_rpc_success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List (List.map serialize_block blocks)
@@ -940,7 +915,7 @@ let outliner_patch_result
       ~deleted_block_ids
       ~row_splices
   =
-  success
+  LG.logseq_chat_rpc_success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List (List.map (LG.logseq_chat_rpc_visible_block_json) blocks)
@@ -1132,7 +1107,7 @@ let snapshot_visible session =
 ;;
 
 let graph_catalog_snapshot session =
-  success
+  LG.logseq_chat_rpc_success
     (`Assoc
       [ "graphName",
         (match session.config with
@@ -1150,7 +1125,7 @@ let graph_catalog_snapshot session =
 ;;
 
 let pending_sync_patch session =
-  success
+  LG.logseq_chat_rpc_success
     (`Assoc
       [ "revision", `Int session.model.revision
       ; "blocks", `List []
@@ -1412,12 +1387,12 @@ let refresh_from_remote session (config : Api.api_config) =
         | Ok status_response ->
           (match cache_task_statuses session status_response with
            | Ok () -> snapshot_visible session
-           | Error message -> failure ~code:"remote_statuses_failed" ~message)
-        | Error message -> failure ~code:"remote_statuses_failed" ~message)
-     | Error message -> failure ~code:"remote_refresh_failed" ~message)
+           | Error message -> LG.logseq_chat_rpc_failure "remote_statuses_failed" message)
+        | Error message -> LG.logseq_chat_rpc_failure "remote_statuses_failed" message)
+     | Error message -> LG.logseq_chat_rpc_failure "remote_refresh_failed" message)
   | Error message ->
     debug "remote refresh request failed: %s" message;
-    failure ~code:"remote_refresh_failed" ~message
+    LG.logseq_chat_rpc_failure "remote_refresh_failed" message
 ;;
 
 let resolve_graph _session (config : Api.api_config) =
@@ -2285,7 +2260,7 @@ let aggregate_return_context session payload message =
 
 let dispatch_outliner_event session payload =
   match LG.logseq_chat_rpc_outliner_message payload with
-  | Error message -> failure ~code:"invalid_outliner_event" ~message
+  | Error message -> LG.logseq_chat_rpc_failure "invalid_outliner_event" message
   | Ok _ when not (outliner_structure_source_matches session.outliner_state payload) ->
     outliner_patch ~changed_uuids:[] session (outliner_context session)
   | Ok message ->
@@ -2311,7 +2286,7 @@ let dispatch_outliner_event session payload =
             context
             commands)
      with
-     | Error message -> failure ~code:"outliner_command_failed" ~message
+     | Error message -> LG.logseq_chat_rpc_failure "outliner_command_failed" message
      | Ok interpreted ->
        let enqueue_result =
          match interpreted.operations, session.config, base_t with
@@ -2326,7 +2301,7 @@ let dispatch_outliner_event session payload =
              operations
        in
        (match enqueue_result with
-       | Error message -> failure ~code:"outliner_effect_failed" ~message
+       | Error message -> LG.logseq_chat_rpc_failure "outliner_effect_failed" message
        | Ok () ->
           let projected_context, projected_page_scoped =
             if interpreted.operations = []
@@ -2434,10 +2409,10 @@ let dispatch session action payload =
   | "outlinerEvent" ->
     (match payload with
      | Some payload -> dispatch_outliner_event session payload
-     | None -> failure ~code:"invalid_params" ~message:"outlinerEvent requires a JSON payload")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "outlinerEvent requires a JSON payload")
   | "configure" ->
     (match payload with
-     | None -> failure ~code:"invalid_params" ~message:"configure requires a JSON payload"
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "configure requires a JSON payload"
      | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
@@ -2471,22 +2446,22 @@ let dispatch session action payload =
               | _ -> ());
              snapshot_visible session
            | _ ->
-             failure
-               ~code:"invalid_params"
-               ~message:"configure requires baseUrl and token strings")
-        | _ -> failure ~code:"invalid_params" ~message:"configure payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"configure payload must be valid JSON"))
+             LG.logseq_chat_rpc_failure
+               "invalid_params"
+               "configure requires baseUrl and token strings")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "configure payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "configure payload must be valid JSON"))
   | "refresh" ->
     (match session.config with
      | None -> snapshot_visible session
      | Some config when String.equal (String.trim config.Api.graph_id) "" ->
        (match discover_graphs session config with
         | Ok () -> snapshot_visible session
-        | Error message -> failure ~code:"graph_discovery_failed" ~message)
+        | Error message -> LG.logseq_chat_rpc_failure "graph_discovery_failed" message)
      | Some _config when selected_graph_is_encrypted session ->
        if selected_graph_is_unlocked session
        then snapshot_visible session
-       else failure ~code:"encrypted_graph_locked" ~message:"Unlock the encrypted graph first"
+       else LG.logseq_chat_rpc_failure "encrypted_graph_locked" "Unlock the encrypted graph first"
      | Some config -> refresh_from_remote session config)
   | "refreshGraphCatalog" ->
     (match session.config with
@@ -2539,14 +2514,14 @@ let dispatch session action payload =
                   in
                   (match graph_id, provision_result with
                    | Some _, Error message ->
-                     failure ~code:"graph_key_provision_failed" ~message
+                     LG.logseq_chat_rpc_failure "graph_key_provision_failed" message
                    | Some graph_id, Ok () ->
                      (match upload_initial_graph_snapshot session config ~graph_id ~e2ee:is_encrypted with
                       | Error message ->
-                        failure ~code:"graph_initial_upload_failed" ~message
+                        LG.logseq_chat_rpc_failure "graph_initial_upload_failed" message
                       | Ok () ->
                         (match discover_graphs session config with
-                         | Error message -> failure ~code:"graph_discovery_failed" ~message
+                         | Error message -> LG.logseq_chat_rpc_failure "graph_discovery_failed" message
                          | Ok () ->
                            session.accepted_server_t <- None;
                            session.config <-
@@ -2557,30 +2532,30 @@ let dispatch session action payload =
                                };
                            snapshot_visible session))
                    | None, _ ->
-                     failure ~code:"graph_create_failed" ~message:"Graph creation returned no graph id"
+                     LG.logseq_chat_rpc_failure "graph_create_failed" "Graph creation returned no graph id"
                   )
                 | Ok response ->
-                  failure
-                    ~code:"graph_create_failed"
-                    ~message:(if String.equal response.body "" then "Could not create graph" else response.body)
-                | Error message -> failure ~code:"graph_create_failed" ~message)
+                  LG.logseq_chat_rpc_failure
+                    "graph_create_failed"
+                    (if String.equal response.body "" then "Could not create graph" else response.body)
+                | Error message -> LG.logseq_chat_rpc_failure "graph_create_failed" message)
              | Ok _, Some (`Bool _) ->
-               failure ~code:"invalid_params" ~message:"Graph name cannot be empty"
+               LG.logseq_chat_rpc_failure "invalid_params" "Graph name cannot be empty"
              | _ ->
-               failure
-                 ~code:"invalid_params"
-                 ~message:"createSyncGraph requires a name and isEncrypted flag")
-          | _ -> failure ~code:"invalid_params" ~message:"createSyncGraph payload must be an object"
-        with error -> failure ~code:"invalid_json" ~message:(Printexc.to_string error))
-     | None, _ -> failure ~code:"graph_not_configured" ~message:"Configure Logseq before creating a graph"
-     | _, None -> failure ~code:"invalid_params" ~message:"createSyncGraph requires a payload")
+               LG.logseq_chat_rpc_failure
+                 "invalid_params"
+                 "createSyncGraph requires a name and isEncrypted flag")
+          | _ -> LG.logseq_chat_rpc_failure "invalid_params" "createSyncGraph payload must be an object"
+        with error -> LG.logseq_chat_rpc_failure "invalid_json" (Printexc.to_string error))
+     | None, _ -> LG.logseq_chat_rpc_failure "graph_not_configured" "Configure Logseq before creating a graph"
+     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "createSyncGraph requires a payload")
   | "selectGraph" ->
     (match session.config, payload with
      | Some config, Some graph_id ->
        (match List.find_opt (fun (graph : Api.api_graph) -> String.equal graph.id graph_id) session.available_graphs with
-        | None -> failure ~code:"unknown_graph" ~message:"The selected graph is not available"
+        | None -> LG.logseq_chat_rpc_failure "unknown_graph" "The selected graph is not available"
         | Some graph when not graph.ready ->
-          failure ~code:"graph_not_ready" ~message:"The selected graph is not ready for sync"
+          LG.logseq_chat_rpc_failure "graph_not_ready" "The selected graph is not ready for sync"
         | Some graph ->
           clear_node_navigation session;
           session.selected_sidebar_page <- None;
@@ -2594,7 +2569,7 @@ let dispatch session action payload =
                 Option.iter (fun config -> ignore (load config)) session.config)
               session.load_cached_graph_key;
           snapshot_visible session)
-     | _ -> failure ~code:"invalid_params" ~message:"selectGraph requires a graph id")
+     | _ -> LG.logseq_chat_rpc_failure "invalid_params" "selectGraph requires a graph id")
   | "selectPage" ->
     (match payload, Option.bind session.graph_sidebar_pages (fun load -> load ()) with
      | Some uuid, Some pages ->
@@ -2611,8 +2586,8 @@ let dispatch session action payload =
                |> Option.value ~default:[]);
           reset_outliner session;
           snapshot_visible session
-        | None -> failure ~code:"unknown_page" ~message:"The selected page is not available")
-     | _ -> failure ~code:"invalid_params" ~message:"selectPage requires a page id")
+        | None -> LG.logseq_chat_rpc_failure "unknown_page" "The selected page is not available")
+     | _ -> LG.logseq_chat_rpc_failure "invalid_params" "selectPage requires a page id")
   | "openNode" ->
     (match payload with
      | Some payload ->
@@ -2647,11 +2622,11 @@ let dispatch session action payload =
           in
           push_node_route session route;
           snapshot_visible session
-        | None -> failure ~code:"unknown_node" ~message:"The referenced node is not available")
-           | Error message -> failure ~code:"invalid_params" ~message)
-        | _ -> failure ~code:"invalid_params" ~message:"openNode payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"openNode payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"openNode requires a node id")
+        | None -> LG.logseq_chat_rpc_failure "unknown_node" "The referenced node is not available")
+           | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message)
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "openNode payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "openNode payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "openNode requires a node id")
   | "closeNode" ->
     pop_node_route session;
     snapshot_visible session
@@ -2687,11 +2662,11 @@ let dispatch session action payload =
                  required_string "operationId" fields with
            | Ok uuid, Ok rating, Ok requested_now, Ok operation_id ->
              (match LG.logseq_chat_rpc_flashcard_rating rating with
-              | Error message -> failure ~code:"invalid_params" ~message
+              | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message
               | Ok rating ->
                 let now = Option.value requested_now ~default:(now_ms ()) in
                 (match review ~uuid ~rating ~now ~operation_id with
-                 | Error message -> failure ~code:"flashcard_review_failed" ~message
+                 | Error message -> LG.logseq_chat_rpc_failure "flashcard_review_failed" message
                  | Ok () ->
                    Option.iter (restore_semantic_queue session) session.config;
                    session.flashcards <-
@@ -2702,12 +2677,12 @@ let dispatch session action payload =
                    snapshot_visible session))
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
-             failure ~code:"invalid_params" ~message)
-        | _ -> failure ~code:"invalid_params" ~message:"reviewFlashcard payload must be an object"
+             LG.logseq_chat_rpc_failure "invalid_params" message)
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "reviewFlashcard payload must be an object"
         | exception _ ->
-          failure ~code:"invalid_json" ~message:"reviewFlashcard payload must be valid JSON")
-     | None, _ -> failure ~code:"invalid_params" ~message:"reviewFlashcard requires a payload"
-     | _, None -> failure ~code:"flashcards_unavailable" ~message:"No graph is open")
+          LG.logseq_chat_rpc_failure "invalid_json" "reviewFlashcard payload must be valid JSON")
+     | None, _ -> LG.logseq_chat_rpc_failure "invalid_params" "reviewFlashcard requires a payload"
+     | _, None -> LG.logseq_chat_rpc_failure "flashcards_unavailable" "No graph is open")
   | "setPageFavorite" ->
     (match payload, session.graph_set_page_favorite, session.config with
      | Some payload, Some set_favorite, Some config ->
@@ -2723,16 +2698,16 @@ let dispatch session action payload =
               | Ok () ->
                 restore_semantic_queue session config;
                 snapshot_visible session
-              | Error message -> failure ~code:"set_page_favorite_failed" ~message)
+              | Error message -> LG.logseq_chat_rpc_failure "set_page_favorite_failed" message)
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
-             failure ~code:"invalid_params" ~message)
-        | _ -> failure ~code:"invalid_params" ~message:"setPageFavorite payload must be an object"
+             LG.logseq_chat_rpc_failure "invalid_params" message)
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "setPageFavorite payload must be an object"
         | exception _ ->
-          failure ~code:"invalid_json" ~message:"setPageFavorite payload must be valid JSON")
-     | None, _, _ -> failure ~code:"invalid_params" ~message:"setPageFavorite requires a payload"
-     | _, None, _ -> failure ~code:"set_page_favorite_unavailable" ~message:"No graph is open"
-     | _, _, None -> failure ~code:"graph_not_configured" ~message:"Select a graph first")
+          LG.logseq_chat_rpc_failure "invalid_json" "setPageFavorite payload must be valid JSON")
+     | None, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" "setPageFavorite requires a payload"
+     | _, None, _ -> LG.logseq_chat_rpc_failure "set_page_favorite_unavailable" "No graph is open"
+     | _, _, None -> LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph first")
   | "deletePage" ->
     (match payload, session.graph_delete_page, session.config with
      | Some payload, Some delete_page, Some config ->
@@ -2747,24 +2722,24 @@ let dispatch session action payload =
               | Ok () ->
                 restore_semantic_queue session config;
                 snapshot_visible session
-              | Error message -> failure ~code:"delete_page_failed" ~message)
+              | Error message -> LG.logseq_chat_rpc_failure "delete_page_failed" message)
            | Error message, _, _ | _, Error message, _ | _, _, Error message ->
-             failure ~code:"invalid_params" ~message)
-        | _ -> failure ~code:"invalid_params" ~message:"deletePage payload must be an object"
+             LG.logseq_chat_rpc_failure "invalid_params" message)
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "deletePage payload must be an object"
         | exception _ ->
-          failure ~code:"invalid_json" ~message:"deletePage payload must be valid JSON")
-     | None, _, _ -> failure ~code:"invalid_params" ~message:"deletePage requires a payload"
-     | _, None, _ -> failure ~code:"delete_page_unavailable" ~message:"No graph is open"
-     | _, _, None -> failure ~code:"graph_not_configured" ~message:"Select a graph first")
+          LG.logseq_chat_rpc_failure "invalid_json" "deletePage payload must be valid JSON")
+     | None, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" "deletePage requires a payload"
+     | _, None, _ -> LG.logseq_chat_rpc_failure "delete_page_unavailable" "No graph is open"
+     | _, _, None -> LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph first")
   | "unlockGraph" ->
     (match session.config, session.unlock_graph, payload with
      | Some config, Some unlock_graph, Some password when selected_graph_is_encrypted session ->
        (match unlock_graph config ~password with
         | Ok () -> snapshot_visible session
-        | Error message -> failure ~code:"graph_unlock_failed" ~message)
+        | Error message -> LG.logseq_chat_rpc_failure "graph_unlock_failed" message)
      | Some _, _, _ when not (selected_graph_is_encrypted session) -> snapshot_visible session
-     | _, None, _ -> failure ~code:"graph_unlock_unavailable" ~message:"Graph unlock is unavailable"
-     | _ -> failure ~code:"invalid_params" ~message:"unlockGraph requires a selected graph and password")
+     | _, None, _ -> LG.logseq_chat_rpc_failure "graph_unlock_unavailable" "Graph unlock is unavailable"
+     | _ -> LG.logseq_chat_rpc_failure "invalid_params" "unlockGraph requires a selected graph and password")
   | "importSnapshot" ->
     (match session.import_snapshot, payload with
      | Some import_snapshot, Some payload ->
@@ -2772,10 +2747,10 @@ let dispatch session action payload =
         | Ok () ->
           (match switch_graph_model session payload with
            | Ok () -> snapshot_visible session
-           | Error message -> failure ~code:"graph_projection_failed" ~message)
-        | Error message -> failure ~code:"snapshot_import_failed" ~message)
-     | None, _ -> failure ~code:"snapshot_import_unavailable" ~message:"Snapshot import is unavailable"
-     | _, None -> failure ~code:"invalid_params" ~message:"importSnapshot requires a JSON payload")
+           | Error message -> LG.logseq_chat_rpc_failure "graph_projection_failed" message)
+        | Error message -> LG.logseq_chat_rpc_failure "snapshot_import_failed" message)
+     | None, _ -> LG.logseq_chat_rpc_failure "snapshot_import_unavailable" "Snapshot import is unavailable"
+     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "importSnapshot requires a JSON payload")
   | "openGraph" ->
     (match session.open_graph, payload with
      | Some open_graph, Some payload ->
@@ -2783,10 +2758,10 @@ let dispatch session action payload =
         | Ok () ->
           (match switch_graph_model session payload with
            | Ok () -> snapshot_visible session
-           | Error message -> failure ~code:"graph_projection_failed" ~message)
-        | Error message -> failure ~code:"graph_open_failed" ~message)
-     | None, _ -> failure ~code:"graph_open_unavailable" ~message:"Graph storage is unavailable"
-     | _, None -> failure ~code:"invalid_params" ~message:"openGraph requires a JSON payload")
+           | Error message -> LG.logseq_chat_rpc_failure "graph_projection_failed" message)
+        | Error message -> LG.logseq_chat_rpc_failure "graph_open_failed" message)
+     | None, _ -> LG.logseq_chat_rpc_failure "graph_open_unavailable" "Graph storage is unavailable"
+     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "openGraph requires a JSON payload")
   | "startWebSocket" ->
     session.sync_connected <- true;
     snapshot_visible session
@@ -2804,10 +2779,10 @@ let dispatch session action payload =
             then "snapshot_required"
             else "websocket_apply_failed"
           in
-          failure ~code ~message)
+          LG.logseq_chat_rpc_failure code message)
      | None, _ ->
-       failure ~code:"websocket_unavailable" ~message:"WebSocket sync is unavailable"
-     | _, None -> failure ~code:"invalid_params" ~message:"applySyncEvent requires a payload")
+       LG.logseq_chat_rpc_failure "websocket_unavailable" "WebSocket sync is unavailable"
+     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "applySyncEvent requires a payload")
   | "stopWebSocket" ->
     session.sync_connected <- false;
     snapshot_visible session
@@ -2820,8 +2795,8 @@ let dispatch session action payload =
        else Option.fold ~none:[] ~some:(fun search -> search query) session.graph_search);
     snapshot_visible session
   | "send" ->
-    (match send_payload payload with
-     | Error message -> failure ~code:"invalid_params" ~message
+    (match LG.logseq_chat_rpc_send_payload payload with
+     | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message
      | Ok (text, uuid, now) ->
        if String.equal text ""
        then snapshot_visible session
@@ -2832,7 +2807,7 @@ let dispatch session action payload =
          | Some config, Some _, Some _ ->
            (match enqueue_capture session config ~uuid ~title:text ~now () with
             | Ok () -> snapshot_visible session
-            | Error message -> failure ~code:"capture_failed" ~message)
+            | Error message -> LG.logseq_chat_rpc_failure "capture_failed" message)
          | _ ->
            Model.logseq_chat_cache_model_cache_local_message session.model uuid text now;
            snapshot_visible session))
@@ -2861,16 +2836,16 @@ let dispatch session action payload =
                       ()
                   with
                   | Ok () -> snapshot_visible session
-                  | Error message -> failure ~code:"capture_failed" ~message)
+                  | Error message -> LG.logseq_chat_rpc_failure "capture_failed" message)
                | _ ->
                  Model.logseq_chat_cache_model_cache_local_task session.model uuid text status now;
                  snapshot_visible session)
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
-             failure ~code:"invalid_params" ~message)
-        | _ -> failure ~code:"invalid_params" ~message:"sendTask payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"sendTask payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"sendTask requires a JSON payload")
+             LG.logseq_chat_rpc_failure "invalid_params" message)
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "sendTask payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "sendTask payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "sendTask requires a JSON payload")
   | "addAsset" ->
     (match payload with
      | Some payload ->
@@ -2918,13 +2893,13 @@ let dispatch session action payload =
                  | Ok operation ->
                    (match stage operation with
                    | Ok () -> visible_asset_response ()
-                   | Error message -> failure ~code:"stage_operation_failed" ~message)
-                 | Error message -> failure ~code:"asset_projection_failed" ~message)
+                   | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
+                 | Error message -> LG.logseq_chat_rpc_failure "asset_projection_failed" message)
               | _ -> visible_asset_response ())
-           | _ -> failure ~code:"invalid_params" ~message:"addAsset requires complete file metadata")
-        | _ -> failure ~code:"invalid_params" ~message:"addAsset payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"addAsset payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"addAsset requires a JSON payload")
+           | _ -> LG.logseq_chat_rpc_failure "invalid_params" "addAsset requires complete file metadata")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "addAsset payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "addAsset payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "addAsset requires a JSON payload")
   | "addChildBlock" ->
     (match payload with
      | Some payload ->
@@ -2954,7 +2929,7 @@ let dispatch session action payload =
                      |> function order :: _ -> Some order | [] -> None
                    in
                    (match LG.logseq_chat_fractional_order_between last_order None with
-                    | Error message -> failure ~code:"invalid_params" ~message
+                    | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message
                     | Ok order ->
                       let operation =
                         Pending_ops.
@@ -2971,20 +2946,20 @@ let dispatch session action payload =
                       (match enqueue_semantic session config operation with
                        | Ok () -> snapshot_visible session
                        | Error message ->
-                         failure ~code:"stage_operation_failed" ~message))
-                 | None -> failure ~code:"invalid_params" ~message:"parent block is unavailable")
+                         LG.logseq_chat_rpc_failure "stage_operation_failed" message))
+                 | None -> LG.logseq_chat_rpc_failure "invalid_params" "parent block is unavailable")
               | Some _, None ->
-                failure ~code:"invalid_params" ~message:"A current server cursor is required"
+                LG.logseq_chat_rpc_failure "invalid_params" "A current server cursor is required"
               | None, _ ->
                 (match Model.logseq_chat_cache_model_cache_local_child session.model uuid title parent_id now with
                  | Ok () -> snapshot_visible session
-                 | Error message -> failure ~code:"invalid_params" ~message))
+                 | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message))
            | Error message, _, _, _ | _, Error message, _, _
            | _, _, Error message, _ | _, _, _, Error message ->
-             failure ~code:"invalid_params" ~message)
-        | _ -> failure ~code:"invalid_params" ~message:"addChildBlock payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"addChildBlock payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"addChildBlock requires a JSON payload")
+             LG.logseq_chat_rpc_failure "invalid_params" message)
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "addChildBlock payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "addChildBlock payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "addChildBlock requires a JSON payload")
   | "beginPendingSync" ->
     (match session.config with
      | None -> pending_sync_patch session
@@ -3003,11 +2978,11 @@ let dispatch session action payload =
           if completing_semantic_operation
           then pending_sync_patch session
           else snapshot_visible session
-        | Error message -> failure ~code:"invalid_pending_sync_completion" ~message)
+        | Error message -> LG.logseq_chat_rpc_failure "invalid_pending_sync_completion" message)
      | None ->
-       failure
-         ~code:"invalid_params"
-         ~message:"completePendingSync requires a JSON payload")
+       LG.logseq_chat_rpc_failure
+         "invalid_params"
+         "completePendingSync requires a JSON payload")
   | "cancelPendingSync" ->
     cancel_pending_sync session;
     snapshot_visible session
@@ -3044,7 +3019,7 @@ let dispatch session action payload =
     snapshot_visible session
   | "updateBlockStatus" ->
     (match payload with
-     | None -> failure ~code:"invalid_params" ~message:"updateBlockStatus requires a JSON payload"
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "updateBlockStatus requires a JSON payload"
      | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
@@ -3081,29 +3056,29 @@ let dispatch session action payload =
                 in
                 (match enqueue_semantic session config operation with
                  | Ok () -> snapshot_visible session
-                 | Error message -> failure ~code:"stage_operation_failed" ~message)
+                 | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
               | Error message, _, _, _, _, _, _ | _, Error message, _, _, _, _, _
               | _, _, Error message, _, _, _, _ | _, _, _, Error message, _, _, _
               | _, _, _, _, Error message, _, _ ->
-                failure ~code:"invalid_params" ~message
+                LG.logseq_chat_rpc_failure "invalid_params" message
               | _, _, _, _, _, _, None ->
-                failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+                LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
               | _, _, _, _, _, None, _ ->
-                failure ~code:"graph_not_configured" ~message:"Select a graph before editing")
+                LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before editing")
            | None ->
              (match required_string "uuid" fields, status_payload fields with
               | Ok uuid, Ok status ->
                 (match Model.logseq_chat_cache_model_update_block_status session.model uuid status (now_ms ()) with
-                 | Error message -> failure ~code:"unknown_block" ~message
+                 | Error message -> LG.logseq_chat_rpc_failure "unknown_block" message
                  | Ok () -> snapshot_visible session)
               | Error message, _ | _, Error message ->
-                failure ~code:"invalid_params" ~message))
-        | _ -> failure ~code:"invalid_params" ~message:"updateBlockStatus payload must be an object"
+                LG.logseq_chat_rpc_failure "invalid_params" message))
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "updateBlockStatus payload must be an object"
         | exception _ ->
-          failure ~code:"invalid_json" ~message:"updateBlockStatus payload must be valid JSON"))
+          LG.logseq_chat_rpc_failure "invalid_json" "updateBlockStatus payload must be valid JSON"))
   | "updateBlock" ->
     (match payload with
-     | None -> failure ~code:"invalid_params" ~message:"updateBlock requires a JSON payload"
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "updateBlock requires a JSON payload"
      | Some payload ->
        (match from_string payload with
         | `Assoc fields ->
@@ -3119,7 +3094,7 @@ let dispatch session action payload =
                 Some config, Some base_t ->
                 let title = String.trim title in
                 if String.equal title ""
-                then failure ~code:"invalid_params" ~message:"updateBlock title must not be empty"
+                then LG.logseq_chat_rpc_failure "invalid_params" "updateBlock title must not be empty"
                 else
                   let operation =
                     Pending_ops.
@@ -3131,14 +3106,14 @@ let dispatch session action payload =
                   in
                   (match enqueue_semantic session config operation with
                    | Ok () -> snapshot_visible session
-                   | Error message -> failure ~code:"stage_operation_failed" ~message)
+                   | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
               | Error message, _, _, _, _, _ | _, Error message, _, _, _, _
               | _, _, Error message, _, _, _ | _, _, _, Error message, _, _ ->
-                failure ~code:"invalid_params" ~message
+                LG.logseq_chat_rpc_failure "invalid_params" message
               | _, _, _, _, _, None ->
-                failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+                LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
               | _, _, _, _, None, _ ->
-                failure ~code:"graph_not_configured" ~message:"Select a graph before editing")
+                LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before editing")
            | None ->
              (match
                 required_string "uuid" fields,
@@ -3148,7 +3123,7 @@ let dispatch session action payload =
               | Ok uuid, Ok title, Ok status ->
              let title = String.trim title in
              if String.equal title ""
-             then failure ~code:"invalid_params" ~message:"updateBlock title must not be empty"
+             then LG.logseq_chat_rpc_failure "invalid_params" "updateBlock title must not be empty"
              else (
                match Model.logseq_chat_cache_model_update_block_title session.model uuid title (now_ms ()) with
                | Ok () ->
@@ -3159,11 +3134,11 @@ let dispatch session action payload =
                           session.model uuid status (now_ms ())))
                    status;
                  snapshot_visible session
-               | Error message -> failure ~code:"unknown_block" ~message)
+               | Error message -> LG.logseq_chat_rpc_failure "unknown_block" message)
               | Error message, _, _ | _, Error message, _ | _, _, Error message ->
-                failure ~code:"invalid_params" ~message))
-        | _ -> failure ~code:"invalid_params" ~message:"updateBlock payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"updateBlock payload must be valid JSON"))
+                LG.logseq_chat_rpc_failure "invalid_params" message))
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "updateBlock payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "updateBlock payload must be valid JSON"))
   | "splitBlock" ->
     (match payload with
      | Some payload ->
@@ -3187,7 +3162,7 @@ let dispatch session action payload =
              if String.equal uuid new_uuid
                 || String.equal (String.trim new_uuid) ""
                 || String.equal (String.trim new_order) ""
-             then failure ~code:"invalid_params" ~message:"Invalid split block fragments or identity"
+             then LG.logseq_chat_rpc_failure "invalid_params" "Invalid split block fragments or identity"
              else
                let operation =
                  Pending_ops.
@@ -3201,7 +3176,7 @@ let dispatch session action payload =
                in
                (match enqueue_semantic session config operation with
                 | Ok () -> snapshot_visible session
-                | Error message -> failure ~code:"stage_operation_failed" ~message)
+                | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
            | Error message, _, _, _, _, _, _, _, _, _, _
            | _, Error message, _, _, _, _, _, _, _, _, _
            | _, _, Error message, _, _, _, _, _, _, _, _
@@ -3211,19 +3186,19 @@ let dispatch session action payload =
            | _, _, _, _, _, _, Error message, _, _, _, _
            | _, _, _, _, _, _, _, Error message, _, _, _
            | _, _, _, _, _, _, _, _, Error message, _, _ ->
-             failure ~code:"invalid_params" ~message
+             LG.logseq_chat_rpc_failure "invalid_params" message
            | _, _, Ok None, _, _, _, _, _, _, _, _
            | _, _, _, _, _, _, _, _, Ok None, _, _ ->
-             failure ~code:"invalid_params" ~message:"splitBlock requires integer cursor and timestamp"
+             LG.logseq_chat_rpc_failure "invalid_params" "splitBlock requires integer cursor and timestamp"
            | _, _, _, _, _, _, _, _, _, None, _ ->
-             failure ~code:"graph_not_configured" ~message:"Select a graph before splitting"
+             LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before splitting"
            | _, _, _, _, _, _, _, _, _, _, None ->
-             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
            | _, _, Ok (Some _), _, _, _, _, _, Ok (Some _), Some _, Some _ ->
-             failure ~code:"stale_server_cursor" ~message:"The graph changed before split")
-        | _ -> failure ~code:"invalid_params" ~message:"splitBlock payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"splitBlock payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"splitBlock requires a JSON payload")
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "The graph changed before split")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "splitBlock payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "splitBlock payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "splitBlock requires a JSON payload")
   | "mergeBackward" ->
     (match payload with
      | Some payload ->
@@ -3242,7 +3217,7 @@ let dispatch session action payload =
              Ok title, Ok previous_uuid, Ok expected_previous_title, Some config, Some current_t
              when expected_server_t = current_t ->
              if String.equal uuid previous_uuid
-             then failure ~code:"invalid_params" ~message:"merge source and target must differ"
+             then LG.logseq_chat_rpc_failure "invalid_params" "merge source and target must differ"
              else
                let operation =
                  Pending_ops.
@@ -3262,7 +3237,7 @@ let dispatch session action payload =
                in
                (match enqueue_semantic session config operation with
                 | Ok () -> snapshot_visible session
-                | Error message -> failure ~code:"stage_operation_failed" ~message)
+                | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
            | Error message, _, _, _, _, _, _, _, _
            | _, Error message, _, _, _, _, _, _, _
            | _, _, Error message, _, _, _, _, _, _
@@ -3270,18 +3245,18 @@ let dispatch session action payload =
            | _, _, _, _, Error message, _, _, _, _
            | _, _, _, _, _, Error message, _, _, _
            | _, _, _, _, _, _, Error message, _, _ ->
-             failure ~code:"invalid_params" ~message
+             LG.logseq_chat_rpc_failure "invalid_params" message
            | _, _, Ok None, _, _, _, _, _, _ ->
-             failure ~code:"invalid_params" ~message:"mergeBackward requires expectedServerT"
+             LG.logseq_chat_rpc_failure "invalid_params" "mergeBackward requires expectedServerT"
            | _, _, _, _, _, _, _, None, _ ->
-             failure ~code:"graph_not_configured" ~message:"Select a graph before merging"
+             LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before merging"
            | _, _, _, _, _, _, _, _, None ->
-             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
            | _, _, Ok (Some _), _, _, _, _, Some _, Some _ ->
-             failure ~code:"stale_server_cursor" ~message:"The graph changed before merge")
-        | _ -> failure ~code:"invalid_params" ~message:"mergeBackward payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"mergeBackward payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"mergeBackward requires a JSON payload")
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "The graph changed before merge")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "mergeBackward payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "mergeBackward payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "mergeBackward requires a JSON payload")
   | "moveBlocks" ->
     (match payload with
      | Some payload ->
@@ -3296,7 +3271,7 @@ let dispatch session action payload =
              when expected_server_t = current_t ->
              let identities = List.map (fun (move : Pending_ops.pending_move) -> move.uuid) moves in
              if moves = [] || List.length identities <> List.length (List.sort_uniq String.compare identities)
-             then failure ~code:"invalid_params" ~message:"moveBlocks requires distinct moves"
+             then LG.logseq_chat_rpc_failure "invalid_params" "moveBlocks requires distinct moves"
              else
                let operation =
                  Pending_ops.
@@ -3308,20 +3283,20 @@ let dispatch session action payload =
                in
                (match enqueue_semantic session config operation with
                 | Ok () -> snapshot_visible session
-                | Error message -> failure ~code:"stage_operation_failed" ~message)
+                | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
            | Error message, _, _, _, _ | _, Error message, _, _, _
-           | _, _, Error message, _, _ -> failure ~code:"invalid_params" ~message
+           | _, _, Error message, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" message
            | _, Ok None, _, _, _ ->
-             failure ~code:"invalid_params" ~message:"moveBlocks requires expectedServerT"
+             LG.logseq_chat_rpc_failure "invalid_params" "moveBlocks requires expectedServerT"
            | _, _, _, None, _ ->
-             failure ~code:"graph_not_configured" ~message:"Select a graph before moving"
+             LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before moving"
            | _, _, _, _, None ->
-             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
            | _, Ok (Some _), _, Some _, Some _ ->
-             failure ~code:"stale_server_cursor" ~message:"The graph changed before move")
-        | _ -> failure ~code:"invalid_params" ~message:"moveBlocks payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"moveBlocks payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"moveBlocks requires a JSON payload")
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "The graph changed before move")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "moveBlocks payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "moveBlocks payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "moveBlocks requires a JSON payload")
   | "deleteBlocks" ->
     (match payload with
      | Some payload ->
@@ -3336,7 +3311,7 @@ let dispatch session action payload =
              when expected_server_t = current_t ->
              let uuids = List.sort_uniq String.compare uuids in
              if uuids = []
-             then failure ~code:"invalid_params" ~message:"deleteBlocks requires block ids"
+             then LG.logseq_chat_rpc_failure "invalid_params" "deleteBlocks requires block ids"
              else
                let operation =
                  Pending_ops.
@@ -3348,20 +3323,20 @@ let dispatch session action payload =
                in
                (match enqueue_semantic session config operation with
                 | Ok () -> snapshot_visible session
-                | Error message -> failure ~code:"stage_operation_failed" ~message)
+                | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
            | Error message, _, _, _, _ | _, Error message, _, _, _
-           | _, _, Error message, _, _ -> failure ~code:"invalid_params" ~message
+           | _, _, Error message, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" message
            | _, Ok None, _, _, _ ->
-             failure ~code:"invalid_params" ~message:"deleteBlocks requires expectedServerT"
+             LG.logseq_chat_rpc_failure "invalid_params" "deleteBlocks requires expectedServerT"
            | _, _, _, None, _ ->
-             failure ~code:"graph_not_configured" ~message:"Select a graph before deleting"
+             LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before deleting"
            | _, _, _, _, None ->
-             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
            | _, Ok (Some _), _, Some _, Some _ ->
-             failure ~code:"stale_server_cursor" ~message:"The graph changed before delete")
-        | _ -> failure ~code:"invalid_params" ~message:"deleteBlocks payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"deleteBlocks payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"deleteBlocks requires a JSON payload")
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "The graph changed before delete")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "deleteBlocks payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "deleteBlocks payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "deleteBlocks requires a JSON payload")
   | "deleteBlock" ->
     (match payload with
      | Some payload ->
@@ -3384,31 +3359,31 @@ let dispatch session action payload =
              in
              (match enqueue_semantic session config operation with
               | Ok () -> snapshot_visible session
-              | Error message -> failure ~code:"stage_operation_failed" ~message)
+              | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
            | Error message, _, _, _, _ | _, Error message, _, _, _
-           | _, _, Error message, _, _ -> failure ~code:"invalid_params" ~message
+           | _, _, Error message, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" message
            | _, _, Ok None, _, _ ->
-             failure ~code:"invalid_params" ~message:"deleteBlock requires expectedServerT"
+             LG.logseq_chat_rpc_failure "invalid_params" "deleteBlock requires expectedServerT"
            | _, _, _, None, _ ->
-             failure ~code:"graph_not_configured" ~message:"Select a graph before deleting"
+             LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph before deleting"
            | _, _, _, _, None ->
-             failure ~code:"stale_server_cursor" ~message:"A current server cursor is required"
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "A current server cursor is required"
            | _, _, Ok (Some _), Some _, Some _ ->
-             failure ~code:"stale_server_cursor" ~message:"The graph changed before delete")
-        | _ -> failure ~code:"invalid_params" ~message:"deleteBlock payload must be an object"
-        | exception _ -> failure ~code:"invalid_json" ~message:"deleteBlock payload must be valid JSON")
-     | None -> failure ~code:"invalid_params" ~message:"deleteBlock requires a JSON payload")
+             LG.logseq_chat_rpc_failure "stale_server_cursor" "The graph changed before delete")
+        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "deleteBlock payload must be an object"
+        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "deleteBlock payload must be valid JSON")
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "deleteBlock requires a JSON payload")
   | "select" ->
     (match payload with
      | Some uuid ->
        (match Model.logseq_chat_cache_model_select session.model uuid with
         | Ok () -> snapshot_visible session
-        | Error message -> failure ~code:"unknown_block" ~message)
-     | None -> failure ~code:"invalid_params" ~message:"select requires a block uuid")
+        | Error message -> LG.logseq_chat_rpc_failure "unknown_block" message)
+     | None -> LG.logseq_chat_rpc_failure "invalid_params" "select requires a block uuid")
   | "clearSelection" ->
     Model.logseq_chat_cache_model_clear_selection session.model;
     snapshot_visible session
-  | _ -> failure ~code:"unknown_action" ~message:("unknown action: " ^ action)
+  | _ -> LG.logseq_chat_rpc_failure "unknown_action" ("unknown action: " ^ action)
 ;;
 
 let route session json =
@@ -3417,27 +3392,27 @@ let route session json =
     (match assoc "apiVersion" fields with
      | Some (`Int 1) ->
        (match required_string "method" fields, assoc "params" fields with
-        | Error message, _ -> failure ~code:"invalid_request" ~message
+        | Error message, _ -> LG.logseq_chat_rpc_failure "invalid_request" message
         | _, Some (`Assoc params) ->
           (match required_string "method" fields with
-           | Error message -> failure ~code:"invalid_request" ~message
+           | Error message -> LG.logseq_chat_rpc_failure "invalid_request" message
            | Ok "snapshot" -> snapshot_visible session
            | Ok "dispatch" ->
              (match required_string "action" params, optional_string "payload" params with
               | Ok action, Ok payload -> dispatch session action payload
-              | Error message, _ | _, Error message -> failure ~code:"invalid_params" ~message)
+              | Error message, _ | _, Error message -> LG.logseq_chat_rpc_failure "invalid_params" message)
            | Ok "open" -> snapshot_visible session
            | Ok method_name ->
-             failure ~code:"unknown_method" ~message:("unknown method: " ^ method_name))
-        | _, Some _ -> failure ~code:"invalid_request" ~message:"params must be an object"
-        | _, None -> failure ~code:"invalid_request" ~message:"missing field: params")
-     | Some (`Int _) -> failure ~code:"unsupported_version" ~message:"only API version 1 is supported"
-     | Some _ -> failure ~code:"invalid_request" ~message:"apiVersion must be an integer"
-     | None -> failure ~code:"invalid_request" ~message:"missing field: apiVersion")
-  | _ -> failure ~code:"invalid_request" ~message:"request must be an object"
+             LG.logseq_chat_rpc_failure "unknown_method" ("unknown method: " ^ method_name))
+        | _, Some _ -> LG.logseq_chat_rpc_failure "invalid_request" "params must be an object"
+        | _, None -> LG.logseq_chat_rpc_failure "invalid_request" "missing field: params")
+     | Some (`Int _) -> LG.logseq_chat_rpc_failure "unsupported_version" "only API version 1 is supported"
+     | Some _ -> LG.logseq_chat_rpc_failure "invalid_request" "apiVersion must be an integer"
+     | None -> LG.logseq_chat_rpc_failure "invalid_request" "missing field: apiVersion")
+  | _ -> LG.logseq_chat_rpc_failure "invalid_request" "request must be an object"
 ;;
 
 let call session request =
   try from_string request |> route session with
-  | _ -> failure ~code:"invalid_json" ~message:"request must be valid JSON"
+  | _ -> LG.logseq_chat_rpc_failure "invalid_json" "request must be valid JSON"
 ;;

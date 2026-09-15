@@ -11,6 +11,29 @@
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
+(deftest capture-payload-supports-plain-text-and-validated-json
+  (run! (fn [[payload expected]] (is (= (Ok expected) (rpc/send-payload payload))))
+        [(tuple nil (tuple "" nil nil))
+         (tuple (Some "  hello\n") (tuple "hello" nil nil))
+         (tuple (Some " {broken ") (tuple "{broken" nil nil))
+         (tuple (Some " [1] ") (tuple "[1]" nil nil))
+         (tuple (Some "null") (tuple "null" nil nil))
+         (tuple (Some "\"hello\"") (tuple "\"hello\"" nil nil))
+         (tuple (Some "{\"text\":\" hi \",\"uuid\":\"u\",\"now\":42}") (tuple "hi" (Some "u") (Some 42)))
+         (tuple (Some "{\"text\":\" hi \",\"uuid\":null,\"now\":null}") (tuple "hi" nil nil))
+         (tuple (Some "{\"text\":\"first\",\"text\":\"second\"}") (tuple "first" nil nil))])
+  (run! (fn [[payload message]] (is (= (Error message) (rpc/send-payload (Some payload)))))
+        [(tuple "{}" "missing field: text")
+         (tuple "{\"text\":7,\"uuid\":7,\"now\":false}" "field must be a string: text")
+         (tuple "{\"text\":\"hi\",\"uuid\":7,\"now\":false}" "field must be a string: uuid")
+         (tuple "{\"text\":\"hi\",\"now\":1.5}" "field must be an integer: now")]))
+
+(deftest rpc-response-envelopes-preserve-version-and-error-contract
+  (is (= "{\"apiVersion\":1,\"ok\":true,\"result\":{\"x\":[1,null]},\"error\":null}"
+         (rpc/success (json/from-string "{\"x\":[1,null]}"))))
+  (is (= "{\"apiVersion\":1,\"ok\":false,\"result\":null,\"error\":{\"code\":\"invalid\",\"message\":\"line\\nquoted \\\"text\\\"\"}}"
+         (rpc/failure "invalid" "line\nquoted \"text\""))))
+
 (deftest pending-request-preserves-body-and-upload-wire-fields
   (let [request (record api/api-request (method_ "POST") (url "https://example.test/api")
                   (body nil) (token "secret"))

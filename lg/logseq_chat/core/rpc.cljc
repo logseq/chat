@@ -49,6 +49,25 @@
     None (Ok nil)
     _ (Error (str "field must be a string: " name))))
 
+(defn optional-int [fields name]
+  (match (field fields name)
+    (Some (tag Int value)) (Ok (Some value))
+    (Some (tag Null)) (Ok nil)
+    None (Ok nil)
+    _ (Error (str "field must be an integer: " name))))
+
+(defn send-payload [payload]
+  (let [raw (match payload (Some text) text None "")
+        parsed (try (Some (json/from-string raw)) (catch _ nil))]
+    (match parsed
+      (Some (tag Assoc entries))
+      (let [fields (into {} (reverse entries))]
+        (let* [text (required-string fields "text")
+               uuid (optional-string fields "uuid")
+               now (optional-int fields "now")]
+          (Ok (tuple (string/trim text) uuid now))))
+      _ (Ok (tuple (string/trim raw) nil nil)))))
+
 (defn event-int [fields name]
   (match (field fields name)
     (Some (tag Int value)) (Ok value)
@@ -142,6 +161,18 @@
 
 (defn json-object [fields]
   (let [^:Yojson.Basic.t result (tag Assoc (apply list fields))] result))
+
+(defn success [result]
+  (json/to-string
+    (json-object [(tuple "apiVersion" (tag Int 1)) (tuple "ok" (tag Bool true))
+                  (tuple "result" result) (tuple "error" (tag Null))])))
+
+(defn failure [code message]
+  (json/to-string
+    (json-object [(tuple "apiVersion" (tag Int 1)) (tuple "ok" (tag Bool false))
+                  (tuple "result" (tag Null))
+                  (tuple "error" (json-object [(tuple "code" (tag String code))
+                                                (tuple "message" (tag String message))]))])))
 
 (defn request-json [id request file-path content-type headers]
   (json-object
