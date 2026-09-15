@@ -156,41 +156,6 @@ let () =
    | None -> failwith "new graph must upload an initial snapshot")
 ;;
 
-let () =
-  let discovered = ref false in
-  let session =
-    Logseq_chat_rpc.create
-      ~send:(fun request ->
-        if String.equal request.Logseq_chat_lg_core_native.method_ "POST"
-           && String.ends_with ~suffix:"/graphs" request.url
-        then Ok Logseq_chat_lg_core_native.{ status = 201; body = {|{"graph-id":"upload-fails"}|} }
-        else if String.ends_with ~suffix:"/graphs" request.url
-        then (
-          discovered := true;
-          Ok Logseq_chat_lg_core_native.{ status = 200; body = {|{"graphs":[]}|} })
-        else Error ("unexpected request: " ^ request.url))
-      ~upload_file:(fun _ -> Error "offline during initial snapshot upload")
-      ()
-  in
-  ignore
-    (Logseq_chat_rpc.call
-       session
-       {|{"apiVersion":1,"method":"dispatch","params":{"action":"configure","payload":"{\"baseUrl\":\"https://api.example\",\"graphId\":\"\",\"token\":\"access\"}"}}|});
-  let response =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"createSyncGraph","payload":"{\"name\":\"Incomplete\",\"isEncrypted\":false}"}}|}
-    |> from_string
-  in
-  (match response with
-   | `Assoc fields ->
-     (match assoc "ok" fields, assoc "error" fields with
-      | Some (`Bool false), Some (`Assoc error) ->
-        assert_equal "snapshot upload failure code" "graph_initial_upload_failed" (required_string "code" error)
-      | _ -> failwith "failed initial snapshot upload must fail graph creation")
-   | _ -> failwith "failed initial snapshot upload must return an RPC response");
-  if !discovered then failwith "an incomplete graph must not be discovered or selected"
-;;
 
 let pending_request response =
   match from_string response with

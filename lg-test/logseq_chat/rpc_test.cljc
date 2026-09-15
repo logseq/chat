@@ -1,5 +1,7 @@
 (ns logseq-chat.rpc-test
   (:require [clojure.test :refer [deftest is]]
+            [clojure.string :as string]
+            [ocaml.Logseq_chat_lg_core_native :as native-core]
             [logseq-chat.rpc :as rpc]
             [logseq-chat.pending-ops :as ops]
             [logseq-chat.cache-model :as model]
@@ -11,6 +13,28 @@
             [ocaml.Logseq_chat_rpc :as native-rpc]
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
+
+(deftest graph-creation-stops-after-initial-upload-failure
+  (let [discovered (atom false)
+        session (native-rpc/create
+                  :send (fn [request]
+                          (cond
+                            (and (= (:method_ request) "POST") (string/ends-with? (:url request) "/graphs"))
+                            (Ok (native-core/logseq-chat-api-response 201 "{\"graph-id\":\"upload-fails\"}"))
+                            (string/ends-with? (:url request) "/graphs")
+                            (do (reset! discovered true)
+                                (Ok (native-core/logseq-chat-api-response 200 "{\"graphs\":[]}")))
+                            :else (Error (str "unexpected request: " (:url request)))))
+                  :upload_file (fn [_upload] (Error "offline during initial snapshot upload")))]
+    (native-rpc/call session
+      "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"https://api.example\\\",\\\"graphId\\\":\\\"\\\",\\\"token\\\":\\\"access\\\"}\"}}")
+    (let [response (json/from-string
+                     (native-rpc/call session
+                       "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"createSyncGraph\",\"payload\":\"{\\\"name\\\":\\\"Incomplete\\\",\\\"isEncrypted\\\":false}\"}}"))]
+      (is (not (json-util/to-bool (json-util/member "ok" response))))
+      (is (= "graph_initial_upload_failed"
+             (json-util/to-string (json-util/member "code" (json-util/member "error" response))))))
+    (is (not @discovered))))
 
 (deftest session-rejects-legacy-sync-action
   (let [response (json/from-string
