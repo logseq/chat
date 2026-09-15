@@ -5,6 +5,7 @@
             [logseq-chat.cache-model :as model]
             [logseq-chat.outliner-effects :as effects]
             [ocaml.Yojson.Basic :as json]
+            [ocaml.Yojson.Basic.Util :as json-util]
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
@@ -84,6 +85,42 @@
          (rpc/outliner-message "{\"type\":\"tapBlock\",\"uuid\":\"first\",\"uuid\":\"second\"}"))))
 
 (defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
+
+(defn json-field [value key] (json/to-string (json-util/member key value)))
+
+(deftest block-json-publishes-resolved-markup-and-omits-absent-fields
+  (let [block (assoc (video-block "source" "See [[target]]")
+                     :references (list (record model/entity-summary (uuid "target") (title "Target block"))))
+        result (rpc/block-json block)]
+    (is (= "[{\"type\":\"text\",\"text\":\"See \"},{\"type\":\"nodeReference\",\"uuid\":\"target\",\"title\":\"Target block\"}]"
+           (json-field result "markup")))
+    (is (= ["uuid" "title" "pageId" "createdAt" "updatedAt" "syncStatus" "isAsset" "tags" "references" "breadcrumbs" "markup"]
+           (vec (json-util/keys result))))))
+
+(deftest block-json-preserves-asset-and-journal-fields
+  (let [block (assoc (video-block "asset" "Photo") :order (Some "a1") :parent-id (Some "parent")
+                     :is-asset true :asset-type (Some "png") :asset-size (Some 123)
+                     :asset-checksum (Some "checksum") :local-path (Some "/tmp/photo.png")
+                     :journal (Some (tuple "Journal" 20260816)))
+        result (rpc/visible-block-json block)]
+    (run! (fn [[key expected]] (is (= expected (json-field result key))))
+          [(tuple "order" "\"a1\"") (tuple "parentId" "\"parent\"")
+           (tuple "isAsset" "true") (tuple "assetType" "\"png\"") (tuple "assetSize" "123")
+           (tuple "assetChecksum" "\"checksum\"") (tuple "localPath" "\"/tmp/photo.png\"")
+           (tuple "journalTitle" "\"Journal\"") (tuple "journalDay" "20260816")])
+    (is (= (json/to-string (rpc/block-json (video-block "plain" "Plain")))
+           (json/to-string (rpc/visible-block-json (video-block "plain" "Plain")))))))
+
+(deftest status-json-requires-both-icon-type-and-id
+  (let [status (record model/status (uuid "todo") (title "Todo") (ident nil)
+                       (icon-type nil) (icon-id nil) (icon-color nil))]
+    (is (= "{\"uuid\":\"todo\",\"title\":\"Todo\"}" (json/to-string (rpc/status-response-json status))))
+    (is (= "{\"uuid\":\"todo\",\"title\":\"Todo\"}"
+           (json/to-string (rpc/status-response-json (assoc status :icon-type (Some "emoji") :icon-color (Some "red"))))))
+    (let [rich (assoc status :ident (Some "status.todo") :icon-type (Some "emoji")
+                      :icon-id (Some "check") :icon-color (Some "red"))]
+      (is (= "{\"uuid\":\"todo\",\"title\":\"Todo\",\"ident\":\"status.todo\",\"icon\":{\"type\":\"emoji\",\"id\":\"check\",\"color\":\"red\"}}"
+             (json/to-string (rpc/status-response-json rich)))))))
 
 (deftest empty-outliner-state-keeps-null-and-empty-wire-fields
   (is (= "{\"editing\":null,\"selectedBlockIds\":[],\"collapsedBlockIds\":[],\"zoomedBlockIds\":[],\"autocomplete\":null}"

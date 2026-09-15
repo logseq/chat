@@ -276,88 +276,21 @@ let optional_status_payload fields =
   | Some _ -> Result.map Option.some (status_payload fields)
 ;;
 
-let status_response_json (status : Model.status) =
-  `Assoc
-    ([ "uuid", `String status.uuid; "title", `String status.title ]
-     @ (match status.ident with Some value -> [ "ident", `String value ] | None -> [])
-     @ (match status.icon_type, status.icon_id with
-        | Some icon_type, Some icon_id ->
-          [ "icon", `Assoc
-              ([ "type", `String icon_type; "id", `String icon_id ]
-               @ (match status.icon_color with
-                  | Some color -> [ "color", `String color ]
-                  | None -> [])) ]
-        | _ -> []))
-;;
-
 let status_semantic_ref (status : Model.status) =
   match status.ident with
   | Some ident when not (String.equal (String.trim ident) "") -> Pending_ops.Ref_ident ident
   | Some _ | None -> Pending_ops.Ref_uuid status.uuid
 ;;
 
-let block_json (block : Model.block) =
-  let summary_json (summary : Model.entity_summary) =
-    `Assoc [ "uuid", `String summary.uuid; "title", `String summary.title ]
-  in
-  let status_fields =
-    match block.status with
-    | None -> []
-    | Some status ->
-      [ "status", status_response_json status ]
-  in
-  `Assoc
-    ([ "uuid", `String block.uuid
-     ; "title", `String block.title
-     ; "pageId", `String block.page_id
-     ; "createdAt", `Int block.created_at
-     ; "updatedAt", `Int block.updated_at
-     ; "syncStatus", `String block.sync_status
-     ; "isAsset", `Bool block.is_asset
-     ; "tags", `List (List.map summary_json block.tags)
-     ; "references", `List (List.map summary_json block.references)
-     ; "breadcrumbs", `List (List.map summary_json block.breadcrumbs)
-     ; ( "markup"
-       , LG.logseq_chat_markup_parse
-           block.references
-           block.tags
-           block.title
-         |> fun nodes -> LG.logseq_chat_markup_to_yojson (Rrbvec.to_seq, nodes) )
-     ]
-     @ (match block.order with Some value -> [ "order", `String value ] | None -> [])
-     @ status_fields
-     @ (match block.asset_type with Some value -> [ "assetType", `String value ] | None -> [])
-     @ (match block.asset_size with Some value -> [ "assetSize", `Int value ] | None -> [])
-     @ (match block.asset_checksum with Some value -> [ "assetChecksum", `String value ] | None -> [])
-     @ (match block.local_path with Some value -> [ "localPath", `String value ] | None -> [])
-     @
-     match block.parent_id with
-     | Some parent_id -> [ "parentId", `String parent_id ]
-     | None -> [])
-;;
-
 let flashcard_json (due_card : LG.due_card) =
   `Assoc
-    [ "block", block_json due_card.block
-    ; "children", `List (List.map block_json due_card.children)
+    [ "block", LG.logseq_chat_rpc_block_json due_card.block
+    ; "children", `List (List.map LG.logseq_chat_rpc_block_json due_card.children)
     ; "due", `Int due_card.card.due
     ; "repetitions", `Int due_card.card.reps
     ; "lapses", `Int due_card.card.lapses
     ; "state", `String (LG.logseq_chat_flashcards_state_name due_card.card.state)
     ]
-;;
-
-let visible_block_json _model (block : Model.block) =
-  match block.journal with
-  | Some (journal_title, journal_day) ->
-    (match block_json block with
-     | `Assoc fields ->
-       `Assoc
-         (("journalTitle", `String journal_title)
-          :: ("journalDay", `Int journal_day)
-          :: fields)
-     | json -> json)
-  | None -> block_json block
 ;;
 
 let graph_json (graph : Api.api_graph) =
@@ -370,10 +303,6 @@ let graph_json (graph : Api.api_graph) =
     ]
 ;;
 
-let sidebar_page_json (page : Logseq_chat_lg_core_native.entity_summary) =
-  `Assoc [ "uuid", `String page.uuid; "title", `String page.title ]
-;;
-
 let search_hit_json (hit : Logseq_chat_lg_core_native.indexed_search_hit) =
   `Assoc
     [ "uuid", `String hit.uuid
@@ -381,7 +310,7 @@ let search_hit_json (hit : Logseq_chat_lg_core_native.indexed_search_hit) =
     ; "isPage", `Bool hit.is_page
     ; ( "page"
       , match hit.page with
-        | Some page -> sidebar_page_json page
+        | Some page -> LG.logseq_chat_rpc_summary_json page
         | None -> `Null )
     ; ( "breadcrumbs"
       , `List
@@ -849,7 +778,7 @@ let outliner_row_json_with ?youtube_target_url serialize_block row =
 
 let outliner_rows_json ?serialize_block session context state =
   let serialize_block =
-    Option.value serialize_block ~default:(visible_block_json session.model)
+    Option.value serialize_block ~default:(LG.logseq_chat_rpc_visible_block_json)
   in
   let rows = Outliner_state.logseq_chat_outliner_state_visible_rows context state in
   let targets =
@@ -893,12 +822,12 @@ let node_routes_json session =
       [ "uuid", `String route.uuid
       ; "isTag", `Bool route.is_tag
       ; "isProperty", `Bool route.is_property
-      ; "page", sidebar_page_json route.page
-      ; "blocks", `List (List.map (visible_block_json session.model) context.blocks)
+      ; "page", LG.logseq_chat_rpc_summary_json route.page
+      ; "blocks", `List (List.map (LG.logseq_chat_rpc_visible_block_json) context.blocks)
       ; "relatedBlocks",
-        `List (List.map block_json (node_route_related_blocks session route))
+        `List (List.map LG.logseq_chat_rpc_block_json (node_route_related_blocks session route))
       ; "linkedReferenceBlocks",
-        `List (List.map block_json (node_route_linked_reference_blocks session route))
+        `List (List.map LG.logseq_chat_rpc_block_json (node_route_linked_reference_blocks session route))
       ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json state
       ; "outlinerRows", outliner_rows_json session context state
       ; "outlinerAutocompleteCandidates", outliner_candidates_json context state
@@ -994,7 +923,7 @@ let snapshot session ~context_blocks blocks =
     match Hashtbl.find_opt serialized_blocks block.uuid with
     | Some json -> json
     | None ->
-      let json = visible_block_json session.model block in
+      let json = LG.logseq_chat_rpc_visible_block_json block in
       Hashtbl.add serialized_blocks block.uuid json;
       json
   in
@@ -1004,11 +933,11 @@ let snapshot session ~context_blocks blocks =
       ; "blocks", `List (List.map serialize_block blocks)
       ; "selectedBlock",
         (match Model.logseq_chat_cache_model_selected_block session.model with
-         | Some block -> block_json block
+         | Some block -> LG.logseq_chat_rpc_block_json block
          | None -> `Null)
-      ; "relatedBlocks", `List (List.map block_json (snapshot_related_blocks session))
+      ; "relatedBlocks", `List (List.map LG.logseq_chat_rpc_block_json (snapshot_related_blocks session))
       ; "linkedReferenceBlocks",
-        `List (List.map block_json (snapshot_linked_reference_blocks session))
+        `List (List.map LG.logseq_chat_rpc_block_json (snapshot_linked_reference_blocks session))
       ; "selectedPageIsTag", `Bool (selected_page_is_tag session)
       ; "selectedPageIsProperty", `Bool (selected_page_is_property session)
       ; "searchQuery", `String session.search_query
@@ -1028,18 +957,18 @@ let snapshot session ~context_blocks blocks =
          | Some { Api.graph_id; _ } when not (String.equal graph_id "") -> `String graph_id
          | _ -> `Null)
       ; "graphs", `List (List.map graph_json session.available_graphs)
-      ; "favorites", `List (List.map sidebar_page_json (Rrbvec.to_list sidebar_pages.favorites))
-      ; "recentPages", `List (List.map sidebar_page_json (Rrbvec.to_list sidebar_pages.recent_pages))
+      ; "favorites", `List (List.map LG.logseq_chat_rpc_summary_json (Rrbvec.to_list sidebar_pages.favorites))
+      ; "recentPages", `List (List.map LG.logseq_chat_rpc_summary_json (Rrbvec.to_list sidebar_pages.recent_pages))
       ; "selectedPage",
         (match session.selected_sidebar_page with
-         | Some page -> sidebar_page_json page
+         | Some page -> LG.logseq_chat_rpc_summary_json page
          | None -> `Null)
       ; "isGraphEncrypted", `Bool (selected_graph_is_encrypted session)
       ; "isGraphUnlocked", `Bool (selected_graph_is_unlocked session)
       ; "appliedServerT",
         Option.fold ~none:`Null ~some:(fun value -> `Int value) (projection_server_t session)
       ; "syncConnected", `Bool session.sync_connected
-      ; "taskStatuses", `List (List.map status_response_json (Rrbvec.to_list (Model.logseq_chat_cache_model_all_statuses session.model)))
+      ; "taskStatuses", `List (List.map LG.logseq_chat_rpc_status_response_json (Rrbvec.to_list (Model.logseq_chat_cache_model_all_statuses session.model)))
       ; "pendingSyncRequest", pending_request_json session
       ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json base_state
       ; "outlinerAutocompleteCandidates",
@@ -1069,7 +998,7 @@ let outliner_patch_result
   success
     (`Assoc
       [ "revision", `Int session.model.revision
-      ; "blocks", `List (List.map (visible_block_json session.model) blocks)
+      ; "blocks", `List (List.map (LG.logseq_chat_rpc_visible_block_json) blocks)
       ; "deletedBlockIds", `List (List.map (fun uuid -> `String uuid) deleted_block_ids)
       ; "selectedBlock", `Null
       ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json session.outliner_state
@@ -1175,7 +1104,7 @@ let structural_outliner_patch
           outliner_row_json_with
             ?youtube_target_url:
               (List.assoc_opt row.Outliner_state.block.uuid after_youtube_targets)
-            (visible_block_json session.model)
+            (LG.logseq_chat_rpc_visible_block_json)
             row)
       in
       let position =

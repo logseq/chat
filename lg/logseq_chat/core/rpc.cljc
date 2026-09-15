@@ -3,6 +3,7 @@
             [clojure.string :as string]
             [logseq-chat.markup :as markup]
             [logseq-chat.outliner-effects :as effects]
+            [logseq-chat.cache-model :as model]
             [logseq-chat.pending-ops :as ops]
             [ocaml.Yojson.Basic :as json]
             [logseq-chat.flashcards :as flashcards]))
@@ -141,6 +142,48 @@
 
 (defn json-object [fields]
   (let [^:Yojson.Basic.t result (tag Assoc (apply list fields))] result))
+
+(defn summary-json [^:model/entity-summary summary]
+  (json-object [(tuple "uuid" (tag String (:uuid summary))) (tuple "title" (tag String (:title summary)))]))
+
+(defn status-response-json [^:model/status status]
+  (json-object
+    (concat [(tuple "uuid" (tag String (:uuid status))) (tuple "title" (tag String (:title status)))]
+            (if-some [ident (:ident status)] [(tuple "ident" (tag String ident))] [])
+            (match [(:icon-type status) (:icon-id status)]
+              [(Some kind) (Some id)]
+              [(tuple "icon" (json-object
+                (concat [(tuple "type" (tag String kind)) (tuple "id" (tag String id))]
+                        (if-some [color (:icon-color status)] [(tuple "color" (tag String color))] []))))]
+              _ []))))
+
+(defn block-json [block]
+  (json-object
+    (concat
+      [(tuple "uuid" (tag String (:uuid block))) (tuple "title" (tag String (:title block)))
+       (tuple "pageId" (tag String (:page-id block))) (tuple "createdAt" (tag Int (:created-at block)))
+       (tuple "updatedAt" (tag Int (:updated-at block))) (tuple "syncStatus" (tag String (:sync-status block)))
+       (tuple "isAsset" (tag Bool (:is-asset block)))
+       (tuple "tags" (tag List (apply list (map summary-json (:tags block)))))
+       (tuple "references" (tag List (apply list (map summary-json (:references block)))))
+       (tuple "breadcrumbs" (tag List (apply list (map summary-json (:breadcrumbs block)))))
+       (tuple "markup" (markup/to-yojson (markup/parse (:references block) (:tags block) (:title block))))]
+      (if-some [order (:order block)] [(tuple "order" (tag String order))] [])
+      (if-some [status (:status block)] [(tuple "status" (status-response-json status))] [])
+      (if-some [kind (:asset-type block)] [(tuple "assetType" (tag String kind))] [])
+      (if-some [size (:asset-size block)] [(tuple "assetSize" (tag Int size))] [])
+      (if-some [checksum (:asset-checksum block)] [(tuple "assetChecksum" (tag String checksum))] [])
+      (if-some [path (:local-path block)] [(tuple "localPath" (tag String path))] [])
+      (if-some [parent (:parent-id block)] [(tuple "parentId" (tag String parent))] []))))
+
+(defn visible-block-json [block]
+  (let [encoded (block-json block)]
+    (if-some [[title day] (:journal block)]
+      (match encoded
+        (tag Assoc fields)
+        (json-object (concat [(tuple "journalTitle" (tag String title)) (tuple "journalDay" (tag Int day))] fields))
+        _ encoded)
+      encoded)))
 
 (defn autocomplete-kind-json [kind]
   (match kind outliner/Node "node" outliner/Tag "tag" outliner/Property "property"))

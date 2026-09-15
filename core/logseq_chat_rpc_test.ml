@@ -54,43 +54,6 @@ let assert_int_equal label expected actual =
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
 ;;
 
-let () =
-  let block =
-    Logseq_chat_lg_core_native.
-      { uuid = "source"
-      ; title = "See [[target]]"
-      ; page_id = "page"
-      ; parent_id = None
-      ; order = None
-      ; created_at = 0
-      ; updated_at = 0
-      ; sync_status = "synced"
-      ; tags = []
-      ; references = [ { uuid = "target"; title = "Target block" } ]
-      ; breadcrumbs = []
-      ; status = None
-      ; is_asset = false
-      ; asset_type = None
-      ; asset_size = None
-      ; asset_checksum = None
-      ; local_path = None
-      ; journal = None
-      }
-  in
-  match Logseq_chat_rpc.block_json block with
-  | `Assoc fields ->
-    (match required_list "markup" fields with
-     | [ `Assoc [ "type", `String "text"; "text", `String "See " ]
-       ; `Assoc
-           [ "type", `String "nodeReference"
-           ; "uuid", `String "target"
-           ; "title", `String "Target block"
-           ]
-       ] -> ()
-     | _ -> failwith "block JSON must publish the OCaml mldoc render tree")
-  | _ -> failwith "block JSON must remain an object"
-;;
-
 let contains text fragment =
   try
     ignore (Str.search_forward (Str.regexp_string fragment) text 0);
