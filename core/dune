@@ -353,6 +353,14 @@
  (modules logseq_chat_e2ee_keyring_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))
 
+(test
+ (name logseq_chat_platform_crypto_test)
+ (modules logseq_chat_platform_crypto_test)
+ (libraries logseq_chat_core yojson)
+ (foreign_stubs
+  (language c)
+  (names logseq_chat_platform_crypto_test_stubs)))
+
 (executable
  (name logseq_chat_live_sync)
  (modules logseq_chat_live_sync)

@@ -7,13 +7,15 @@ let () =
 
 let () = Logseq_chat_lui_projection.register_callbacks ()
 
+external crypto_call_raw : string -> string = "logseq_chat_crypto_call"
+
 let e2ee_keyring =
   E2ee_keyring.logseq_chat_e2ee_keyring_create
-    Logseq_chat_platform_crypto.crypto
-    (fun graph_id -> Logseq_chat_platform_crypto.load_graph_key ~graph_id)
-    (fun graph_id key -> Logseq_chat_platform_crypto.save_graph_key ~graph_id ~key)
-    Logseq_chat_platform_crypto.load_e2ee_password
-    (fun password -> Logseq_chat_platform_crypto.save_e2ee_password ~password)
+    (E2ee_keyring.logseq_chat_platform_crypto_crypto crypto_call_raw)
+    (E2ee_keyring.logseq_chat_platform_crypto_load_graph_key crypto_call_raw)
+    (E2ee_keyring.logseq_chat_platform_crypto_save_graph_key crypto_call_raw)
+    (fun () -> E2ee_keyring.logseq_chat_platform_crypto_load_e2ee_password crypto_call_raw)
+    (E2ee_keyring.logseq_chat_platform_crypto_save_e2ee_password crypto_call_raw)
     Logseq_chat_http.send
 ;;
 
