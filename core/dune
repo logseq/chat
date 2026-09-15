@@ -217,12 +217,6 @@
  (libraries logseq_chat_core yojson))
 
 (test
- (name logseq_chat_sqlite_test)
- (modules
-  logseq_chat_sqlite_test)
- (libraries logseq_chat_core datascript-ocaml-native.sqlite threads.posix))
-
-(test
  (name logseq_chat_sync_protocol_test)
  (modules logseq_chat_sync_protocol_test)
  (libraries logseq_chat_core melange-transit-core melange-transit-native))

@@ -1,6 +1,11 @@
 %{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/runtime/lg_test_runtime.cmi
 %{env:OPAM_SWITCH_PREFIX=}/lib/lg-test/alcotest/lg_test_alcotest.cmi
 %{lib:ocaml-fsrs:fsrs.cmi}
+../core/.logseq_chat_core.objs/byte/logseq_chat_rpc.cmi
+../core/.logseq_chat_core.objs/byte/logseq_chat_lg_core_native.cmi
+../core/.logseq_chat_core.objs/byte/logseq_chat_outliner_state.cmi
+../core/.logseq_chat_core.objs/byte/logseq_chat_outliner_effects.cmi
+../core/.logseq_chat_core.objs/byte/logseq_chat_graph_runtime.cmi
 ../duniverse/sqlite3-ocaml/lib/.sqlite3.objs/byte/sqlite3.cmi
 ../duniverse/datascript-ocaml/sqlite/.datascript_sqlite.objs/byte/datascript_sqlite_codec.cmi
 %{lib:mldoc:mldoc.cma}
