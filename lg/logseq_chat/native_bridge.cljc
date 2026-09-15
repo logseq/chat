@@ -7,6 +7,8 @@
             [lui.wire :as wire]
             [logseq-chat.app :as chat]
             [logseq-chat.model :as model]
+            [logseq-chat.snapshot :as snapshot]
+            [logseq-chat.host-update :as host-update]
             [logseq-chat.view :as view]
             [ocaml.Callback :as callback]))
 
@@ -42,6 +44,55 @@
   (driver/send! (app) action)
   (driver/flush! (app))
   (deref latest-patch))
+
+(defn apply-response [encoded]
+  (flush-action!
+   (match (snapshot/decode-response encoded)
+     (Ok projection) (model/ApplyCoreSnapshot projection)
+     (Error message) (model/SyncFailed message))))
+
+(defn session-asset [asset]
+  (record model/composer-asset (uuid (:uuid asset)) (title (:title asset))
+          (local-path (:local-path asset)) (payload (:payload asset))))
+
+(defn host-action [update]
+  (match update
+    (host-update/Settings settings)
+    (model/ApplySettingsSnapshot
+     (record model/settings-projection (appearance (:appearance settings)) (language (:language settings))
+       (spell-check (:spell-check settings)) (auto-correction (:auto-correction settings))
+       (sidebar-tabs (:sidebar-tabs settings)) (base-url (:base-url settings))
+       (version (:version settings)) (revision (:revision settings))))
+    (host-update/Runtime_log records)
+    (model/ApplyRuntimeLog
+     (mapv (fn [record]
+             (record model/runtime-log-record (id (:id record)) (level (:level record))
+               (source (:source record)) (timestamp (:timestamp record)) (message (:message record)))) records))
+    (host-update/Local_graph_ids ids) (model/ApplyLocalGraphIds ids)
+    (host-update/Composer_asset asset) (model/StageComposerAsset (session-asset asset))
+    host-update/Save_ui_session model/SaveUISession
+    (host-update/Restore_ui_session session)
+    (model/RestoreUISession
+     (record model/ui-session (graph-id (:graph-id session))
+       (destination (case (:destination session) "flashcards" model/FlashcardsDestination
+                      "graphs" model/GraphsDestination model/JournalsDestination))
+       (draft (:draft session)) (assets (mapv session-asset (:assets session)))
+       (composer-expanded (:composer-expanded session)) (search-open (:search-open session))
+       (query (:query session)) (app-path (mapv (fn [uuid] (model/NodeRoute uuid)) (:app-path session)))
+       (search-path (mapv (fn [uuid] (model/NodeRoute uuid)) (:search-path session)))
+       (selected-page-id (:selected-page-id session)) (settings-open (:settings-open session))))
+    (host-update/Composer_draft draft) (model/ApplyComposerDraft draft)
+    (host-update/Graph_loading loading) (model/ApplyGraphLoading loading)
+    (host-update/Authentication authentication)
+    (model/ApplyAuthentication (:state authentication) (:error-message authentication))
+    (host-update/Open_quick_action kind) (model/OpenQuickAction kind)
+    host-update/Open_capture model/ExpandComposer))
+
+(defn apply-host-update [kind payload]
+  (flush-action!
+   (match (host-update/decode kind payload)
+     (Ok update) (host-action update)
+     (Error message) (model/SyncFailed message))))
 
 (defn encode-string-vector [values]
   (str "["
@@ -410,3 +461,5 @@
 (callback/register "logseq_chat_lui_root_node" root-node)
 (callback/register "logseq_chat_lui_take_effect" take-effect)
 (callback/register "logseq_chat_lui_resolve_effect" resolve-effect)
+(callback/register "logseq_chat_lui_apply_snapshot" apply-response)
+(callback/register "logseq_chat_lui_apply_host_update" apply-host-update)

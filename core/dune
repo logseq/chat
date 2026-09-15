@@ -114,6 +114,7 @@
   ../lg/logseq_chat/view.cljc
   ../lg/logseq_chat/app.lgi
   ../lg/logseq_chat/app.cljc
+  ../lg/logseq_chat/snapshot.cljc
   ../lg/logseq_chat/native_bridge.lgi
   ../lg/logseq_chat/native_bridge.cljc
   %{bin:lg})
@@ -138,6 +139,7 @@
       ../lg/logseq_chat/view.cljc
       ../lg/logseq_chat/app.lgi
       ../lg/logseq_chat/app.cljc
+      ../lg/logseq_chat/snapshot.cljc
       ../lg/logseq_chat/native_bridge.lgi
       ../lg/logseq_chat/native_bridge.cljc
       -o %{target}))))))
@@ -188,17 +190,12 @@
  (modules logseq_chat_model_test)
  (libraries logseq_chat_core))
 
-(test
- (name logseq_chat_lui_snapshot_test)
- (modules logseq_chat_lui_snapshot_test)
- (libraries logseq_chat_core))
-
-(test
- (name logseq_chat_lui_projection_test)
+(tests
+ (names logseq_chat_lui_snapshot_test logseq_chat_lui_projection_test)
  (modules
+  logseq_chat_lui_snapshot_test
   logseq_chat_lui_projection_test
-  logseq_chat_lui_native
-  logseq_chat_lui_projection)
+  logseq_chat_lui_native)
  (flags (:standard -w -27-32-37-39-69))
  (libraries
   logseq_chat_core

@@ -1,15 +1,14 @@
 module LG = Logseq_chat_lui_native
-module Projection = Logseq_chat_lui_projection
-module Snapshot = Logseq_chat_lui_snapshot
 
 let () =
   let encoded =
     {|{"apiVersion":1,"ok":true,"result":{"outlinerRows":[{"block":{"uuid":"journal","title":"Journal"},"depth":0,"hasChildren":false,"isCollapsed":false}],"nodeRoutes":[{"uuid":"node-a","isTag":false,"isProperty":false,"page":{"uuid":"page-a","title":"Project"},"outlinerState":{"editing":{"uuid":"child","title":"Child","caretUTF16Offset":5},"selectedBlockIds":["child"],"autocomplete":null},"outlinerAutocompleteCandidates":[],"outlinerRows":[{"block":{"uuid":"child","title":"Child"},"depth":1,"hasChildren":false,"isCollapsed":false}]}]}}|}
   in
-  match Snapshot.decode_response encoded with
+  match LG.logseq_chat_snapshot_decode_response encoded with
   | Error message -> failwith message
-  | Ok ({ node_routes = [ route ]; _ } as snapshot) ->
-    let projected = Projection.node_projection route in
+  | Ok snapshot ->
+    if Rrbvec.length snapshot.node_routes <> 1 then failwith "expected one node route";
+    let projected = Rrbvec.get snapshot.node_routes 0 in
     (match Rrbvec.to_list projected.outliner_rows with
      | [ row ] when String.equal row.uuid "child" -> ()
      | _ -> failwith "node route rows were not retained in the LG projection");
@@ -18,16 +17,15 @@ let () =
      | _ -> failwith "node route editor state was not retained in the LG projection");
     if Rrbvec.to_list projected.outliner_selected_block_ids <> [ "child" ]
     then failwith "node route selection was not retained in the LG projection";
-    (match Rrbvec.to_list (Projection.core_projection snapshot).journal_outliner_rows with
+    (match Rrbvec.to_list snapshot.journal_outliner_rows with
      | [ row ] when String.equal row.uuid "journal" -> ()
      | _ -> failwith "journal rows were not retained behind node navigation")
-  | Ok _ -> failwith "expected one node route"
 ;;
 
 let () =
   ignore (LG.logseq_chat_native_bridge_initialize 2 1 0);
   let patch =
-    Projection.apply_response
+    LG.logseq_chat_native_bridge_apply_response
       {|{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"graphName":"Local graph","selectedGraphId":"local","graphs":[{"id":"local","name":"Local graph","schemaVersion":"65.33","isEncrypted":false,"isReady":true}]}}|}
   in
   if String.equal patch "" then
@@ -53,11 +51,11 @@ let () =
   let saved = LG.logseq_chat_model_ui_session original
     |> LG.logseq_chat_native_bridge_encode_ui_session in
   ignore (LG.logseq_chat_native_bridge_initialize 2 1 3);
-  ignore (Projection.apply_response
+  ignore (LG.logseq_chat_native_bridge_apply_response
     {|{"apiVersion":1,"ok":true,"result":{"revision":1,"blocks":[],"selectedBlock":null,"lastRefreshAt":null,"selectedGraphId":"local","graphName":"Local","graphs":[]}}|});
-  ignore (Projection.apply_host_update "restore-ui-session" saved);
+  ignore (LG.logseq_chat_native_bridge_apply_host_update "restore-ui-session" saved);
   (* Save the restored model through the same native effect used by the host. *)
-  ignore (Projection.apply_host_update "save-ui-session" "null");
+  ignore (LG.logseq_chat_native_bridge_apply_host_update "save-ui-session" "null");
   let rec drain remaining =
     if remaining = 0 then failwith "restored session did not emit persistence effect";
     let envelope = LG.logseq_chat_native_bridge_take_effect () |> Yojson.Safe.from_string in
@@ -79,7 +77,7 @@ let () =
 let () =
   List.iter (fun kind ->
     ignore (LG.logseq_chat_native_bridge_initialize 2 1 3);
-    ignore (Projection.apply_host_update "open-quick-action" (Yojson.Safe.to_string (`String kind)));
+    ignore (LG.logseq_chat_native_bridge_apply_host_update "open-quick-action" (Yojson.Safe.to_string (`String kind)));
     let take () =
       let json = LG.logseq_chat_native_bridge_take_effect () |> Yojson.Safe.from_string in
       Yojson.Safe.Util.(json |> member "effect")
