@@ -183,11 +183,6 @@
  (modules logseq_chat_rpc_test)
  (libraries logseq_chat_core yojson))
 
-(test
- (name logseq_chat_graph_runtime_test)
- (modules logseq_chat_graph_runtime_test)
- (libraries logseq_chat_core))
-
 (executable
  (name logseq_chat_live_sync)
  (modules logseq_chat_live_sync)

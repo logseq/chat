@@ -230,7 +230,10 @@
     (fn [_ _ current]
       (let [operations
             [(native-operation "split-1" (native-split "block" "Old" "" "empty-1"))
-             (native-operation "split-2" (native-split "empty-1" "" "" "empty-2"))
+             (native-operation "split-2"
+               (ops/Split_block (record ops/pending_split (uuid "empty-1") (expected-title "")
+                                 (before "") (after "") (new-uuid "empty-2")
+                                 (new-order "a2") (created-at 101))))
              (native-operation "merge-1" (ops/Merge_backward
                                           (record ops/pending_merge (uuid "empty-2") (expected-title "") (title "")
                                             (previous-uuid "empty-1") (expected-previous-title "") (merged-title nil))))
