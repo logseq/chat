@@ -283,34 +283,18 @@ let status_semantic_ref (status : Model.status) =
 ;;
 
 let pending_request_json session =
-  let request_json id (request : Api.api_request) file_path content_type headers =
-    let body_fields =
-      match request.body with
-      | Some body ->
-        (match from_string body with
-         | json -> [ "body", `String body; "bodyObject", json ]
-         | exception _ -> [ "body", `String body ])
-      | None -> []
-    in
-    `Assoc
-      ([ "id", `Int id
-       ; "method", `String request.Api.method_
-       ; "url", `String request.url
-       ; "token", `String request.token
-       ; "contentType", `String content_type
-       ; "headers", `Assoc (List.map (fun (key, value) -> key, `String value) headers)
-       ]
-       @ body_fields
-       @ (match file_path with Some path -> [ "filePath", `String path ] | None -> []))
-  in
   match session.semantic_active, session.pending_sync with
   | Some active, _ ->
-    request_json active.id active.request None "application/json" []
+    LG.logseq_chat_rpc_request_json active.id active.request None "application/json"
+      (Lg_runtime.Runtime_seq.of_list, [])
   | None, Some { active = Some active; _ } ->
     (match active.transport with
-     | Json_request request -> request_json active.id request None "application/json" []
+     | Json_request request ->
+       LG.logseq_chat_rpc_request_json active.id request None "application/json"
+         (Lg_runtime.Runtime_seq.of_list, [])
      | File_upload upload ->
-       request_json active.id upload.request (Some upload.file_path) upload.content_type upload.headers)
+       LG.logseq_chat_rpc_request_json active.id upload.request (Some upload.file_path) upload.content_type
+         (Lg_runtime.Runtime_seq.of_list, upload.headers))
   | None, Some _ | None, None -> `Null
 ;;
 

@@ -11,6 +11,29 @@
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
+(deftest pending-request-preserves-body-and-upload-wire-fields
+  (let [request (record api/api-request (method_ "POST") (url "https://example.test/api")
+                  (body nil) (token "secret"))
+        encode (fn [body path headers]
+                 (rpc/request-json 7 (assoc request :body body) path "application/json" headers))]
+    (is (= "{\"id\":7,\"method\":\"POST\",\"url\":\"https://example.test/api\",\"token\":\"secret\",\"contentType\":\"application/json\",\"headers\":{}}"
+           (json/to-string (encode nil nil []))))
+    (run! (fn [body]
+            (let [encoded (encode (Some body) nil [])]
+              (is (= body (json-util/to-string (json-util/member "body" encoded))))
+              (is (= (json/to-string (json/from-string body))
+                     (json/to-string (json-util/member "bodyObject" encoded))))))
+          ["{\"x\":1}" "[]" "null" "false" "42" "\"hello\""])
+    (run! (fn [body]
+            (let [encoded (encode (Some body) nil [])]
+              (is (= body (json-util/to-string (json-util/member "body" encoded))))
+              (is (= "null" (json/to-string (json-util/member "bodyObject" encoded))))))
+          ["" "{" "raw text"])
+    (is (= "{\"id\":7,\"method\":\"POST\",\"url\":\"https://example.test/api\",\"token\":\"secret\",\"contentType\":\"application/octet-stream\",\"headers\":{\"X-Key\":\"one\",\"X-Key\":\"two\"},\"filePath\":\"/tmp/a b\"}"
+           (json/to-string
+             (rpc/request-json 7 request (Some "/tmp/a b") "application/octet-stream"
+               [(tuple "X-Key" "one") (tuple "X-Key" "two")]))))))
+
 (deftest toolbar-wire-actions-preserve-all-public-mappings
   (run! (fn [[wire action]] (is (= (Ok action) (rpc/toolbar-action wire))))
         [(tuple "task" outliner/Task) (tuple "outdent" outliner/Outdent)

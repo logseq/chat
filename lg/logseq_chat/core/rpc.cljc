@@ -143,6 +143,23 @@
 (defn json-object [fields]
   (let [^:Yojson.Basic.t result (tag Assoc (apply list fields))] result))
 
+(defn request-json [id request file-path content-type headers]
+  (json-object
+    (concat [(tuple "id" (tag Int id))
+             (tuple "method" (tag String (:method_ request)))
+             (tuple "url" (tag String (:url request)))
+             (tuple "token" (tag String (:token request)))
+             (tuple "contentType" (tag String content-type))
+             (tuple "headers" (json-object (map (fn [entry]
+                                                 (match entry (tuple key value) (tuple key (tag String value))))
+                                               headers)))]
+            (if-some [body (:body request)]
+              (let [fields [(tuple "body" (tag String body))]]
+                (try (conj fields (tuple "bodyObject" (json/from-string body)))
+                     (catch _ fields)))
+              [])
+            (if-some [path file-path] [(tuple "filePath" (tag String path))] []))))
+
 (defn summary-json [^:model/entity-summary summary]
   (json-object [(tuple "uuid" (tag String (:uuid summary))) (tuple "title" (tag String (:title summary)))]))
 
