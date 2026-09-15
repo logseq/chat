@@ -1468,64 +1468,13 @@ let finish_pending_block session pump block ~succeeded =
   prepare_pending_next session pump
 ;;
 
-let asset_operation_id uuid = "asset:" ^ uuid
-
 let asset_datoms_operation ?(state = Pending_ops.Queued) session (block : Model.block) =
-  let base_t =
-    projection_server_t session
-    |> Option.to_result ~none:"A current server cursor is required"
-  in
-  Result.bind base_t (fun base_t ->
-    match block.asset_type, block.asset_size, block.asset_checksum with
-    | Some asset_type, Some asset_size, Some asset_checksum ->
-      let context = base_outliner_context session in
-      let destination =
-        match block.parent_id with
-        | Some parent_uuid ->
-          List.find_opt
-            (fun (candidate : Model.block) -> String.equal candidate.uuid parent_uuid)
-            context.blocks
-          |> Option.map (fun (parent : Model.block) -> parent.page_id, parent_uuid)
-        | None ->
-          let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms block.created_at in
-          Option.bind session.journal_page_id (fun find -> find ~journal_day)
-          |> Option.map (fun page_uuid -> page_uuid, page_uuid)
-      in
-      (match destination with
-       | None -> Error "asset destination is not available"
-       | Some (page_uuid, parent_uuid) ->
-         let last_order =
-           context.blocks
-           |> List.filter (fun (candidate : Model.block) ->
-             String.equal candidate.page_id page_uuid
-             && candidate.parent_id = Some parent_uuid
-             && not (String.equal candidate.uuid block.uuid))
-           |> List.filter_map (fun (candidate : Model.block) -> candidate.order)
-           |> List.sort String.compare
-           |> List.rev
-           |> function order :: _ -> Some order | [] -> None
-         in
-         Result.map
-           (fun order ->
-             Pending_ops.
-               { operation_id = asset_operation_id block.uuid
-               ; base_t
-               ; state
-               ; intent =
-                   Create_asset
-                     { uuid = block.uuid
-                     ; title = block.title
-                     ; page_uuid
-                     ; parent_uuid
-                     ; order
-                     ; created_at = block.created_at
-                     ; asset_type
-                     ; asset_size
-                     ; asset_checksum
-                     }
-               })
-           (LG.logseq_chat_fractional_order_between last_order None))
-    | _ -> Error "asset metadata is incomplete")
+  LG.logseq_chat_rpc_asset_datoms_operation
+    (projection_server_t session)
+    state
+    block
+    (fun () -> base_outliner_context session)
+    (Option.map (fun find journal_day -> find ~journal_day) session.journal_page_id)
 ;;
 
 let complete_pending_active session pump (active : pending_active) (response : Api.api_response) =

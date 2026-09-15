@@ -5,6 +5,7 @@
             [logseq-chat.outliner-effects :as effects]
             [logseq-chat.cache-model :as model]
             [logseq-chat.pending-ops :as ops]
+            [logseq-chat.fractional-order :as order]
             [logseq-chat.api :as api]
             [logseq-chat.graph-bootstrap :as bootstrap]
             [ocaml.Yojson.Basic :as json]
@@ -51,6 +52,43 @@
                              (same-status? (:status block) (:status authoritative))))
                 (model/mark-block-synced cache (:uuid block)))))
           (model/unsynced-blocks cache))))
+
+(defn asset-destination [context block journal-page-id]
+  (if-some [parent-uuid (:parent-id block)]
+    (when-some [parent (outliner/find-block context parent-uuid)]
+      (tuple (:page-id parent) parent-uuid))
+    (when-some [find-page journal-page-id]
+      (when-some [page-uuid (find-page (model/journal-day-for-ms (:created-at block)))]
+        (tuple page-uuid page-uuid)))))
+
+(defn asset-datoms-operation [cursor state block load-context journal-page-id]
+  (if-some [base-t cursor]
+    (match (tuple (:asset-type block) (:asset-size block) (:asset-checksum block))
+      (tuple (Some asset-type) (Some asset-size) (Some asset-checksum))
+      (let [context (load-context)]
+        (if-some [[page-uuid parent-uuid] (asset-destination context block journal-page-id)]
+          (let [last-order (->> (:blocks context)
+                                (filter (fn [candidate]
+                                          (and (= (:page-id candidate) page-uuid)
+                                               (= (:parent-id candidate) (Some parent-uuid))
+                                               (not= (:uuid candidate) (:uuid block)))))
+                                (keep :order)
+                                sort
+                                last)]
+            (let* [position (order/between last-order nil)]
+              (Ok (record ops/pending-operation
+                          (operation-id (str "asset:" (:uuid block)))
+                          (base-t base-t) (state state)
+                          (intent (ops/Create-asset
+                                    (record ops/pending-asset
+                                            (uuid (:uuid block)) (title (:title block))
+                                            (page-uuid page-uuid) (parent-uuid parent-uuid)
+                                            (order position) (created-at (:created-at block))
+                                            (asset-type asset-type) (asset-size asset-size)
+                                            (asset-checksum asset-checksum))))))))
+          (Error "asset destination is not available")))
+      _ (Error "asset metadata is incomplete"))
+    (Error "A current server cursor is required")))
 
 (defn outliner-structure-source [payload]
   (match (json/from-string payload)
