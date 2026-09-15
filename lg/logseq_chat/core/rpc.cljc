@@ -1,5 +1,7 @@
 (ns logseq-chat.rpc
   (:require [logseq-chat.outliner-state :as outliner]
+            [clojure.string :as string]
+            [logseq-chat.markup :as markup]
             [logseq-chat.pending-ops :as ops]
             [ocaml.Yojson.Basic :as json]
             [logseq-chat.flashcards :as flashcards]))
@@ -112,3 +114,24 @@
       (decode-outliner-event (into {} (reverse fields)))
       _ (Error "outliner event must be an object"))
     (catch _ (Error "outliner event must be valid JSON"))))
+
+(defn youtube-url? [url]
+  (let [lower (string/lower-case url)]
+    (or (string/includes? lower "youtube.com") (string/includes? lower "youtu.be"))))
+
+(defn youtube-target-urls [blocks]
+  (let [[_ targets]
+        (reduce
+          (fn [[current targets] block]
+            (let [[current target]
+                  (reduce (fn [[current target] node]
+                            (match node
+                              (markup/Markup_video url)
+                              (tuple (if (youtube-url? url) (Some url) current) target)
+                              (markup/Markup_youtube_timestamp _ _)
+                              (tuple current (if-some [url current] (Some url) target))
+                              _ (tuple current target)))
+                          (tuple current nil) (markup/parse (:references block) (:tags block) (:title block)))]
+              (tuple current (if-some [url target] (conj targets (tuple (:uuid block) url)) targets))))
+          (tuple nil []) blocks)]
+    targets))

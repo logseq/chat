@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [logseq-chat.rpc :as rpc]
             [logseq-chat.pending-ops :as ops]
+            [logseq-chat.cache-model :as model]
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
 
@@ -79,3 +80,28 @@
          (rpc/outliner-message "{\"type\":\"setTaskStatus\",\"uuid\":\"x\",\"statusIdent\":7,\"statusUuid\":\"status\"}")))
   (is (= (Ok (outliner/Tap_block "first"))
          (rpc/outliner-message "{\"type\":\"tapBlock\",\"uuid\":\"first\",\"uuid\":\"second\"}"))))
+
+(defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
+
+(deftest youtube-timestamps-follow-the-most-recent-video-across-blocks
+  (is (= [(tuple "time" "https://www.youtube.com/watch?v=dQw4w9WgXcQ")]
+         (rpc/youtube-target-urls [(video-block "video" "{{youtube dQw4w9WgXcQ}}")
+                                   (video-block "time" "{{youtube-timestamp 01:23}}")])))
+  (is (= [] (rpc/youtube-target-urls [(video-block "time" "{{youtube-timestamp 01:23}}")])))
+  (is (= [] (rpc/youtube-target-urls [])))
+  (is (= [(tuple "first" "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+          (tuple "second" "https://www.youtube.com/watch?v=abcdefghijk")]
+         (rpc/youtube-target-urls [(video-block "video" "{{youtube dQw4w9WgXcQ}}")
+                                   (video-block "first" "{{youtube-timestamp 00:10}}")
+                                   (video-block "other" "{{youtube abcdefghijk}}")
+                                   (video-block "second" "{{youtube-timestamp 00:20}}")]))))
+
+(deftest youtube-targets-ignore-other-videos-and-preserve-original-url
+  (is (= [(tuple "time" "https://YouTu.Be/abcdefghijk")]
+         (rpc/youtube-target-urls
+          [(video-block "video" "{{video https://YouTu.Be/abcdefghijk}}")
+           (video-block "other" "{{vimeo 12345}}")
+           (video-block "time" "{{youtube-timestamp 00:10}}")])))
+  (is (= [] (rpc/youtube-target-urls
+             [(video-block "other" "{{vimeo 12345}}")
+              (video-block "time" "{{youtube-timestamp 00:10}}")]))))

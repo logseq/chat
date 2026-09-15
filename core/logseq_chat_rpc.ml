@@ -868,52 +868,6 @@ let outliner_state_json state =
     ]
 ;;
 
-let contains_case_insensitive value fragment =
-  try
-    ignore
-      (Str.search_forward
-         (Str.regexp_string (String.lowercase_ascii fragment))
-         (String.lowercase_ascii value)
-         0);
-    true
-  with
-  | Not_found -> false
-;;
-
-let is_youtube_url url =
-  contains_case_insensitive url "youtube.com"
-  || contains_case_insensitive url "youtu.be"
-;;
-
-let youtube_target_urls (blocks : Model.block list) =
-  let _, targets =
-    List.fold_left
-      (fun (current_url, targets) (block : Model.block) ->
-        let nodes = LG.logseq_chat_markup_parse block.references block.tags block.title in
-        let current_url, target_url =
-          Seq.fold_left
-            (fun (current_url, target_url) node ->
-              match node with
-              | LG.Markup_video url when is_youtube_url url -> Some url, target_url
-              | LG.Markup_youtube_timestamp _ ->
-                current_url,
-                (match current_url with Some _ -> current_url | None -> target_url)
-              | _ -> current_url, target_url)
-            (current_url, None)
-            (Rrbvec.to_seq nodes)
-        in
-        let targets =
-          match target_url with
-          | Some url -> (block.uuid, url) :: targets
-          | None -> targets
-        in
-        current_url, targets)
-      (None, [])
-      blocks
-  in
-  List.rev targets
-;;
-
 let outliner_row_json_with ?youtube_target_url serialize_block row =
   `Assoc
     ([ "block", serialize_block row.Outliner_state.block
@@ -932,7 +886,11 @@ let outliner_rows_json ?serialize_block session context state =
     Option.value serialize_block ~default:(visible_block_json session.model)
   in
   let rows = Outliner_state.logseq_chat_outliner_state_visible_rows context state in
-  let targets = youtube_target_urls (List.map (fun row -> row.Outliner_state.block) rows) in
+  let targets =
+    LG.logseq_chat_rpc_youtube_target_urls
+      (Lg_runtime.Runtime_seq.of_list, List.map (fun row -> row.Outliner_state.block) rows)
+    |> Rrbvec.to_list
+  in
   rows
   |> List.map (fun row ->
     outliner_row_json_with
@@ -1246,7 +1204,8 @@ let structural_outliner_patch
   let after_youtube_targets =
     Array.to_list after_rows
     |> List.map (fun row -> row.Outliner_state.block)
-    |> youtube_target_urls
+    |> fun blocks -> LG.logseq_chat_rpc_youtube_target_urls (Lg_runtime.Runtime_seq.of_list, blocks)
+    |> Rrbvec.to_list
   in
   let before_length = Array.length before_rows in
   let after_length = Array.length after_rows in
