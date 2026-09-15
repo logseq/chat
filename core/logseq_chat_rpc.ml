@@ -683,51 +683,6 @@ let project_outliner_operations context operations =
   { context with Outliner_state.blocks }
 ;;
 
-let outliner_row_json_with ?youtube_target_url serialize_block row =
-  `Assoc
-    ([ "block", serialize_block row.Outliner_state.block
-     ; "depth", `Int row.depth
-     ; "hasChildren", `Bool row.has_children
-     ; "isCollapsed", `Bool row.is_collapsed
-     ]
-     @
-     match youtube_target_url with
-     | Some url -> [ "youtubeTargetURL", `String url ]
-     | None -> [])
-;;
-
-let outliner_rows_json ?serialize_block session context state =
-  let serialize_block =
-    Option.value serialize_block ~default:(LG.logseq_chat_rpc_visible_block_json)
-  in
-  let rows = Outliner_state.logseq_chat_outliner_state_visible_rows context state in
-  let targets =
-    LG.logseq_chat_rpc_youtube_target_urls
-      (Lg_runtime.Runtime_seq.of_list, List.map (fun row -> row.Outliner_state.block) rows)
-    |> Rrbvec.to_list
-  in
-  rows
-  |> List.map (fun row ->
-    outliner_row_json_with
-      ?youtube_target_url:(List.assoc_opt row.Outliner_state.block.uuid targets)
-      serialize_block
-      row)
-  |> fun rows -> `List rows
-;;
-
-let outliner_candidates_json context state =
-  match state.Outliner_state.autocomplete with
-  | None -> `List []
-  | Some request ->
-    Outliner_state.logseq_chat_outliner_state_autocomplete_candidates context request
-    |> List.map (fun candidate ->
-      `Assoc
-        [ "label", `String candidate.Outliner_state.label
-        ; "value", `String candidate.value
-        ])
-    |> fun candidates -> `List candidates
-;;
-
 let node_routes_json session =
   let active = active_node_route session in
   session.node_routes
@@ -749,8 +704,8 @@ let node_routes_json session =
       ; "linkedReferenceBlocks",
         `List (List.map LG.logseq_chat_rpc_block_json (node_route_linked_reference_blocks session route))
       ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json state
-      ; "outlinerRows", outliner_rows_json session context state
-      ; "outlinerAutocompleteCandidates", outliner_candidates_json context state
+      ; "outlinerRows", LG.logseq_chat_rpc_outliner_rows_json LG.logseq_chat_rpc_visible_block_json context state
+      ; "outlinerAutocompleteCandidates", LG.logseq_chat_rpc_outliner_candidates_json context state
       ])
   |> fun routes -> `List routes
 ;;
@@ -892,9 +847,9 @@ let snapshot session ~context_blocks blocks =
       ; "pendingSyncRequest", pending_request_json session
       ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json base_state
       ; "outlinerAutocompleteCandidates",
-        outliner_candidates_json base_context base_state
+        LG.logseq_chat_rpc_outliner_candidates_json base_context base_state
       ; "outlinerRows",
-        outliner_rows_json ~serialize_block session base_context base_state
+        LG.logseq_chat_rpc_outliner_rows_json serialize_block base_context base_state
       ; "outlinerCommandRevision", `Int session.outliner_revision
       ; "outlinerCommands", `List (List.map LG.logseq_chat_rpc_outliner_command_json session.outliner_commands)
       ; "hasPendingSemanticOperations",
@@ -923,7 +878,7 @@ let outliner_patch_result
       ; "selectedBlock", `Null
       ; "outlinerState", LG.logseq_chat_rpc_outliner_state_json session.outliner_state
       ; "outlinerAutocompleteCandidates",
-        outliner_candidates_json context session.outliner_state
+        LG.logseq_chat_rpc_outliner_candidates_json context session.outliner_state
       ; "outlinerRows", `List []
       ; "outlinerRowSplices", `List row_splices
       ; "outlinerCommandRevision", `Int session.outliner_revision
@@ -1021,9 +976,8 @@ let structural_outliner_patch
         Array.sub after_rows start insert_count
         |> Array.to_list
         |> List.map (fun row ->
-          outliner_row_json_with
-            ?youtube_target_url:
-              (List.assoc_opt row.Outliner_state.block.uuid after_youtube_targets)
+          LG.logseq_chat_rpc_outliner_row_json
+            (List.assoc_opt row.Outliner_state.block.uuid after_youtube_targets)
             (LG.logseq_chat_rpc_visible_block_json)
             row)
       in

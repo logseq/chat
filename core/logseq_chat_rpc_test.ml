@@ -204,37 +204,6 @@ let pending_request response =
 ;;
 
 let () =
-  let response =
-    Logseq_chat_rpc.call
-      (Logseq_chat_rpc.create ())
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"syncPending"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    if required_bool "ok" fields then failwith "legacy syncPending action must be rejected";
-    let error = required_assoc "error" fields in
-    assert_equal "legacy syncPending error" "unknown_action" (required_string "code" error)
-  | _ -> failwith "legacy syncPending rejection should return an RPC response"
-;;
-
-let () =
-  let response =
-    Logseq_chat_rpc.call
-      (Logseq_chat_rpc.create ())
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"loadFlashcards","payload":"1776000000000"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    if not (required_bool "ok" fields) then failwith "loading flashcards should succeed";
-    let result = required_assoc "result" fields in
-    if required_list "flashcards" result <> []
-    then failwith "a session without an open graph has no due flashcards"
-  | _ -> failwith "loadFlashcards should return an RPC response"
-;;
-
-let () =
   let legacy_send_count = ref 0 in
   let staged = ref [] in
   let stage (operation : Logseq_chat_lg_core_native.pending_operation) =

@@ -8,8 +8,24 @@
             [logseq-chat.outliner-effects :as effects]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
+            [ocaml.Logseq_chat_rpc :as native-rpc]
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.flashcards :as flashcards]))
+
+(deftest session-rejects-legacy-sync-action
+  (let [response (json/from-string
+                   (native-rpc/call (native-rpc/create)
+                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"syncPending\"}}"))]
+    (is (not (json-util/to-bool (json-util/member "ok" response))))
+    (is (= "unknown_action"
+           (json-util/to-string (json-util/member "code" (json-util/member "error" response)))))))
+
+(deftest session-without-graph-has-no-due-flashcards
+  (let [response (json/from-string
+                   (native-rpc/call (native-rpc/create)
+                     "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"loadFlashcards\",\"payload\":\"1776000000000\"}}"))]
+    (is (json-util/to-bool (json-util/member "ok" response)))
+    (is (= "[]" (json/to-string (json-util/member "flashcards" (json-util/member "result" response)))))))
 
 (deftest rpc-routing-validates-before-executing-actions
   (let [calls (atom [])
@@ -174,6 +190,30 @@
          (rpc/outliner-message "{\"type\":\"tapBlock\",\"uuid\":\"first\",\"uuid\":\"second\"}"))))
 
 (defn video-block [uuid title] (model/local-block uuid title "page" nil 0))
+
+(deftest outliner-rows-preserve-hierarchy-video-targets-and-serializer
+  (let [video (video-block "video" "{{youtube dQw4w9WgXcQ}}")
+        child (assoc (video-block "child" "{{youtube-timestamp 00:10}}") :parent-id (Some "video"))
+        context (record outliner/outliner-context (blocks (list video child)) (pages (list)) (tags (list)))
+        seen (atom [])
+        serialize (fn [block] (swap! seen conj (:uuid block)) (tag String (:uuid block)))
+        encode (fn [state] (json/to-string (rpc/outliner-rows-json serialize context state)))]
+    (is (= "[{\"block\":\"video\",\"depth\":0,\"hasChildren\":true,\"isCollapsed\":false},{\"block\":\"child\",\"depth\":1,\"hasChildren\":false,\"isCollapsed\":false,\"youtubeTargetURL\":\"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"}]"
+           (encode outliner/empty)))
+    (is (= ["video" "child"] @seen))
+    (reset! seen [])
+    (is (= "[{\"block\":\"video\",\"depth\":0,\"hasChildren\":true,\"isCollapsed\":true}]"
+           (encode (assoc outliner/empty :collapsed #{"video"}))))
+    (is (= ["video"] @seen))))
+
+(deftest outliner-candidate-json-preserves-filtering-and-no-request
+  (let [candidate (record outliner/outliner-candidate (label "Alpha") (value "page"))
+        context (record outliner/outliner-context (blocks (list)) (pages (list candidate)) (tags (list)))
+        state (assoc outliner/empty :autocomplete
+                (Some (record outliner/reducer-autocomplete (kind outliner/Node) (query "alp"))))]
+    (is (= "[]" (json/to-string (rpc/outliner-candidates-json context outliner/empty))))
+    (is (= "[{\"label\":\"Alpha\",\"value\":\"page\"}]"
+           (json/to-string (rpc/outliner-candidates-json context state))))))
 
 (defn json-field [value key] (json/to-string (json-util/member key value)))
 

@@ -162,6 +162,9 @@
 (defn json-object [fields]
   (let [^:Yojson.Basic.t result (tag Assoc (apply list fields))] result))
 
+(defn json-list [values]
+  (let [^:Yojson.Basic.t result (tag List (apply list values))] result))
+
 (defn success [result]
   (json/to-string
     (json-object [(tuple "apiVersion" (tag Int 1)) (tuple "ok" (tag Bool true))
@@ -285,6 +288,29 @@
                 (tuple "isPage" (tag Bool (:is-page hit)))
                 (tuple "page" (if-some [page (:page hit)] (summary-json page) (tag Null)))
                 (tuple "breadcrumbs" (tag List (apply list (map summary-json (:breadcrumbs hit)))))]))
+
+(defn outliner-row-json [youtube-target-url serialize-block row]
+  (json-object
+    (concat [(tuple "block" (serialize-block (:block row)))
+             (tuple "depth" (tag Int (:depth row)))
+             (tuple "hasChildren" (tag Bool (:has-children row)))
+             (tuple "isCollapsed" (tag Bool (:is-collapsed row)))]
+            (if-some [url youtube-target-url] [(tuple "youtubeTargetURL" (tag String url))] []))))
+
+(defn outliner-rows-json [serialize-block context state]
+  (let [rows (outliner/visible-rows context state)
+        targets (into {} (reverse (youtube-target-urls (map :block rows))))]
+    (json-list (map (fn [row]
+                     (outliner-row-json (get targets (:uuid (:block row))) serialize-block row)) rows))))
+
+(defn outliner-candidates-json [context state]
+  (json-list
+      (if-some [request (outliner/autocomplete state)]
+        (mapv (fn [candidate]
+                (json-object [(tuple "label" (tag String (:label candidate)))
+                              (tuple "value" (tag String (:value candidate)))]))
+              (outliner/autocomplete-candidates context request))
+        [])))
 
 (defn autocomplete-kind-json [kind]
   (match kind outliner/Node "node" outliner/Tag "tag" outliner/Property "property"))
