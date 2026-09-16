@@ -552,6 +552,40 @@
     (Ok response) response
     (Error (tuple code message)) (failure code message)))
 
+(defn import-snapshot [payload importer project completed]
+  (match (tuple importer payload)
+    (tuple None _) (failure "snapshot_import_unavailable" "Snapshot import is unavailable")
+    (tuple _ None) (failure "invalid_params" "importSnapshot requires a JSON payload")
+    (tuple (Some importer) (Some payload))
+    (action-response
+      (let* [_ (graph-workflow-result "snapshot_import_failed" (importer payload))
+             _ (graph-workflow-result "graph_projection_failed" (project payload))]
+        (Ok (completed))))))
+
+(defn open-graph [payload open-storage project completed]
+  (match (tuple open-storage payload)
+    (tuple None _) (failure "graph_open_unavailable" "Graph storage is unavailable")
+    (tuple _ None) (failure "invalid_params" "openGraph requires a JSON payload")
+    (tuple (Some open-storage) (Some payload))
+    (action-response
+      (let* [_ (graph-workflow-result "graph_open_failed" (open-storage payload))
+             _ (graph-workflow-result "graph_projection_failed" (project payload))]
+        (Ok (completed))))))
+
+(defn apply-sync-event [payload apply-event completed]
+  (match (tuple apply-event payload)
+    (tuple None _) (failure "websocket_unavailable" "WebSocket sync is unavailable")
+    (tuple _ None) (failure "invalid_params" "applySyncEvent requires a payload")
+    (tuple (Some apply-event) (Some event))
+    (match (apply-event event)
+      (Ok _) (completed)
+      (Error message)
+      (failure (if (or (string/starts-with? message "snapshot required:")
+                       (= message "sync schema mismatch"))
+                 "snapshot_required"
+                 "websocket_apply_failed")
+               message))))
+
 (defn required-bool [fields name]
   (match (field fields name)
     (Some (tag Bool value)) (Ok value)

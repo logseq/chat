@@ -1989,48 +1989,19 @@ let dispatch session action payload =
      | _, None, _ -> LG.logseq_chat_rpc_failure "graph_unlock_unavailable" "Graph unlock is unavailable"
      | _ -> LG.logseq_chat_rpc_failure "invalid_params" "unlockGraph requires a selected graph and password")
   | "importSnapshot" ->
-    (match session.import_snapshot, payload with
-     | Some import_snapshot, Some payload ->
-       (match import_snapshot payload with
-        | Ok () ->
-          (match switch_graph_model session payload with
-           | Ok () -> snapshot_visible session
-           | Error message -> LG.logseq_chat_rpc_failure "graph_projection_failed" message)
-        | Error message -> LG.logseq_chat_rpc_failure "snapshot_import_failed" message)
-     | None, _ -> LG.logseq_chat_rpc_failure "snapshot_import_unavailable" "Snapshot import is unavailable"
-     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "importSnapshot requires a JSON payload")
+    LG.logseq_chat_rpc_import_snapshot payload session.import_snapshot
+      (switch_graph_model session) (fun () -> snapshot_visible session)
   | "openGraph" ->
-    (match session.open_graph, payload with
-     | Some open_graph, Some payload ->
-       (match open_graph payload with
-        | Ok () ->
-          (match switch_graph_model session payload with
-           | Ok () -> snapshot_visible session
-           | Error message -> LG.logseq_chat_rpc_failure "graph_projection_failed" message)
-        | Error message -> LG.logseq_chat_rpc_failure "graph_open_failed" message)
-     | None, _ -> LG.logseq_chat_rpc_failure "graph_open_unavailable" "Graph storage is unavailable"
-     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "openGraph requires a JSON payload")
+    LG.logseq_chat_rpc_open_graph payload session.open_graph
+      (switch_graph_model session) (fun () -> snapshot_visible session)
   | "startWebSocket" ->
     session.sync_connected <- true;
     snapshot_visible session
   | "applySyncEvent" ->
-    (match session.apply_sync_event, payload with
-     | Some apply_sync_event, Some event ->
-       (match apply_sync_event event with
-        | Ok () ->
-          reconcile_authoritative_blocks session;
-          snapshot_visible session
-        | Error message ->
-          let code =
-            if String.starts_with ~prefix:"snapshot required:" message
-               || String.equal message "sync schema mismatch"
-            then "snapshot_required"
-            else "websocket_apply_failed"
-          in
-          LG.logseq_chat_rpc_failure code message)
-     | None, _ ->
-       LG.logseq_chat_rpc_failure "websocket_unavailable" "WebSocket sync is unavailable"
-     | _, None -> LG.logseq_chat_rpc_failure "invalid_params" "applySyncEvent requires a payload")
+    LG.logseq_chat_rpc_apply_sync_event payload session.apply_sync_event
+      (fun () ->
+        reconcile_authoritative_blocks session;
+        snapshot_visible session)
   | "stopWebSocket" ->
     session.sync_connected <- false;
     snapshot_visible session

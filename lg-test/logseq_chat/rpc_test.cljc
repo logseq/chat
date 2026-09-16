@@ -280,6 +280,98 @@
     (let [expanded (response-result (dispatch-json session "loadOlderJournals" ""))]
       (is (= (tag Bool false) (json-util/member "hasOlderJournals" expanded))))))
 
+(deftest graph-import-forwards-payload-to-storage
+  (let [imported (atom [])
+        session (native-rpc/create :import_snapshot
+                                   (fn [payload] (swap! imported conj payload) (Ok (stdlib/ignore 0))))]
+    (response-result (dispatch-json session "importSnapshot" "snapshot-payload"))
+    (is (= ["snapshot-payload"] @imported))))
+
+(deftest opening-graph-reads-authoritative-projections-once
+  (let [blocks-read (atom 0)
+        sidebar-read (atom 0)
+        block (assoc (native-core/logseq-chat-cache-model-local-block
+                      "restored-journal-block" "Restored from the graph snapshot" "journal-page" nil 1776000000000)
+                     :parent-id (Some "journal-page") :order (Some "a0") :sync-status "synced"
+                     :journal (Some (tuple "Aug 15th, 2026" 20260815)))
+        session (native-rpc/create
+                 :open_graph (fn [_] (Ok (stdlib/ignore 0)))
+                 :graph_blocks (fn [] (swap! blocks-read inc) (Some (list block)))
+                 :graph_sidebar_pages (fn [] (swap! sidebar-read inc)
+                                        (Some (record native-core/sidebar-pages (favorites []) (recent-pages [])))))
+        result (response-result (dispatch-json session "openGraph" "{}"))
+        blocks (json-items "blocks" result)]
+    (is (= 1 @blocks-read))
+    (is (= 1 @sidebar-read))
+    (is (= 1 (count blocks)))
+    (is (= (tag String "restored-journal-block") (json-util/member "uuid" (nth blocks 0))))
+    (is (= (tag Int 20260815) (json-util/member "journalDay" (nth blocks 0))))))
+
+(deftest graph-storage-errors-preserve-codes-and-payload-priority
+  (let [missing (native-rpc/create)
+        calls (atom [])
+        rejecting (native-rpc/create
+                   :import_snapshot (fn [payload] (swap! calls conj payload) (Error "import rejected"))
+                   :open_graph (fn [payload] (swap! calls conj payload) (Error "open rejected")))]
+    (run! (fn [[action unavailable failed message]]
+            (let [no-payload (str "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"" action "\"}}")
+                  unavailable-error (json-util/member "error" (json/from-string (native-rpc/call missing no-payload)))
+                  required-error (json-util/member "error" (json/from-string (native-rpc/call rejecting no-payload)))
+                  service-error (json-util/member "error" (dispatch-json rejecting action "raw-payload"))]
+              (is (= (tag String unavailable) (json-util/member "code" unavailable-error)))
+              (is (= (tag String "invalid_params") (json-util/member "code" required-error)))
+              (is (= (tag String (str action " requires a JSON payload")) (json-util/member "message" required-error)))
+              (is (= (tag String failed) (json-util/member "code" service-error)))
+              (is (= (tag String message) (json-util/member "message" service-error)))))
+          [(tuple "importSnapshot" "snapshot_import_unavailable" "snapshot_import_failed" "import rejected")
+           (tuple "openGraph" "graph_open_unavailable" "graph_open_failed" "open rejected")])
+    (is (= ["raw-payload" "raw-payload"] @calls))))
+
+(deftest graph-storage-success-can-fail-projection-validation
+  (let [stored (atom [])
+        projected (atom [])
+        session (native-rpc/create
+                 :import_snapshot (fn [payload] (swap! stored conj payload) (Ok (stdlib/ignore 0)))
+                 :open_graph (fn [payload] (swap! stored conj payload) (Ok (stdlib/ignore 0)))
+                 :model_for_graph (fn [graph-id] (swap! projected conj graph-id)
+                                    (native-core/logseq-chat-cache-model-create nil)))]
+    (run! (fn [action]
+            (let [error (json-util/member "error" (dispatch-json session action "{}"))]
+              (is (= (tag String "graph_projection_failed") (json-util/member "code" error)))
+              (is (= (tag String "graph storage payload requires graphId") (json-util/member "message" error)))))
+          ["importSnapshot" "openGraph"])
+    (is (= ["{}" "{}"] @stored))
+    (is (empty? @projected))))
+
+(deftest websocket-lifecycle-applies-events-exactly-once
+  (let [applied (atom [])
+        session (native-rpc/create :apply_sync_event
+                                   (fn [payload] (swap! applied conj payload) (Ok (stdlib/ignore 0))))]
+    (response-result (dispatch-json session "startWebSocket" ""))
+    (response-result (dispatch-json session "applySyncEvent" "wire-event"))
+    (response-result (dispatch-json session "stopWebSocket" ""))
+    (is (= ["wire-event"] @applied))))
+
+(deftest websocket-errors-distinguish-snapshot-recovery-from-apply-failures
+  (run! (fn [[message code]]
+          (let [session (native-rpc/create :apply_sync_event (fn [_] (Error message)))
+                error (json-util/member "error" (dispatch-json session "applySyncEvent" "remote-change"))]
+            (is (= (tag String code) (json-util/member "code" error)))
+            (is (= (tag String message) (json-util/member "message" error)))))
+        [(tuple "sync schema mismatch" "snapshot_required")
+         (tuple "snapshot required: stale cursor" "snapshot_required")
+         (tuple "snapshot required:" "snapshot_required")
+         (tuple "snapshot required" "websocket_apply_failed")
+         (tuple " sync schema mismatch" "websocket_apply_failed")
+         (tuple "offline" "websocket_apply_failed")])
+  (let [wire "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"applySyncEvent\"}}"
+        unavailable (native-rpc/create)
+        available (native-rpc/create :apply_sync_event (fn [_] (Ok (stdlib/ignore 0))))]
+    (is (= (tag String "websocket_unavailable")
+           (json-util/member "code" (json-util/member "error" (json/from-string (native-rpc/call unavailable wire))))))
+    (is (= (tag String "invalid_params")
+           (json-util/member "code" (json-util/member "error" (json/from-string (native-rpc/call available wire))))))))
+
 (defn pending-request [response]
   (let [value (json-util/member "pendingSyncRequest" (json-util/member "result" response))]
     (match value (tag Null) nil _ (Some value))))

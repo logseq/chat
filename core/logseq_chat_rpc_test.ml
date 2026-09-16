@@ -168,94 +168,6 @@ let () =
 
 
 
-let () =
-  let imported = ref None in
-  let session =
-    Logseq_chat_rpc.create
-      ~import_snapshot:(fun payload ->
-        imported := Some payload;
-        Ok ())
-      ()
-  in
-  let response =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"importSnapshot","payload":"snapshot-payload"}}|}
-    |> from_string
-  in
-  (match response with
-   | `Assoc fields ->
-     (match assoc "ok" fields with
-      | Some (`Bool true) -> ()
-      | _ -> failwith "importSnapshot should return success")
-   | _ -> failwith "importSnapshot should return an RPC response");
-  if !imported <> Some "snapshot-payload"
-  then failwith "importSnapshot did not call the native importer"
-;;
-
-let () =
-  let authoritative =
-    Logseq_chat_lg_core_native.
-      { uuid = "restored-journal-block"
-      ; title = "Restored from the graph snapshot"
-      ; page_id = "journal-page"
-      ; parent_id = Some "journal-page"
-      ; order = Some "a0"
-      ; created_at = 1_776_000_000_000
-      ; updated_at = 1_776_000_000_000
-      ; sync_status = "synced"
-      ; tags = []
-      ; references = []
-      ; breadcrumbs = []
-      ; status = None
-      ; is_asset = false
-      ; asset_type = None
-      ; asset_size = None
-      ; asset_checksum = None
-      ; local_path = None
-      ; journal = Some ("Aug 15th, 2026", 20260815)
-      }
-  in
-  let graph_blocks_calls = ref 0 in
-  let graph_sidebar_pages_calls = ref 0 in
-  let session =
-    Logseq_chat_rpc.create
-      ~open_graph:(fun _payload -> Ok ())
-      ~graph_blocks:(fun () ->
-        incr graph_blocks_calls;
-        Some [ authoritative ])
-      ~graph_sidebar_pages:(fun () ->
-        incr graph_sidebar_pages_calls;
-        Some Logseq_chat_lg_core_native.{ favorites = Rrbvec.of_list []; recent_pages = Rrbvec.of_list [] })
-      ()
-  in
-  let response =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"openGraph","payload":"{}"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    assert_int_equal
-      "openGraph reads its visible journal projection once"
-      1
-      !graph_blocks_calls;
-    assert_int_equal
-      "openGraph reads sidebar autocomplete pages once"
-      1
-      !graph_sidebar_pages_calls;
-    let blocks = required_assoc "result" fields |> required_list "blocks" in
-    (match blocks with
-     | [ `Assoc block ] ->
-       assert_equal
-         "restored graph block uuid"
-         "restored-journal-block"
-         (required_string "uuid" block);
-       assert_int_equal "restored graph journal day" 20260815 (required_int "journalDay" block)
-     | _ -> failwith "openGraph should expose restored journal blocks without a local model copy")
-  | _ -> failwith "openGraph should return an RPC response"
-;;
 
 let assert_dispatch_block action payload expected_uuid =
   let session = Logseq_chat_rpc.create () in
@@ -418,46 +330,6 @@ let () =
   then failwith "pending asset sync must resume after authenticated configuration"
 ;;
 
-let () =
-  let applied = ref [] in
-  let session =
-    Logseq_chat_rpc.create
-      ~apply_sync_event:(fun payload ->
-        applied := payload :: !applied;
-        Ok ())
-      ()
-  in
-  let started =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"startWebSocket"}}|}
-    |> from_string
-  in
-  let applied_response =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"wire-event"}}|}
-    |> from_string
-  in
-  let stopped =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"stopWebSocket"}}|}
-    |> from_string
-  in
-  let assert_ok label = function
-    | `Assoc fields ->
-      (match assoc "ok" fields with
-       | Some (`Bool true) -> ()
-       | _ -> failwith (label ^ " should succeed"))
-    | _ -> failwith (label ^ " should return an RPC response")
-  in
-  assert_ok "startWebSocket" started;
-  assert_ok "applySyncEvent" applied_response;
-  assert_ok "stopWebSocket" stopped;
-  if !applied <> [ "wire-event" ]
-  then failwith "applySyncEvent should apply exactly one WebSocket event"
-;;
 
 let () =
   let authoritative_blocks = ref [] in
@@ -605,25 +477,6 @@ let remote_block uuid title =
     }
 ;;
 
-let () =
-  let session =
-    Logseq_chat_rpc.create ~apply_sync_event:(fun _ -> Error "sync schema mismatch") ()
-  in
-  let response =
-    Logseq_chat_rpc.call
-      session
-      {|{"apiVersion":1,"method":"dispatch","params":{"action":"applySyncEvent","payload":"remote-change"}}|}
-    |> from_string
-  in
-  match response with
-  | `Assoc fields ->
-    let error = required_assoc "error" fields in
-    assert_equal
-      "schema mismatch recovery code"
-      "snapshot_required"
-      (required_string "code" error)
-  | _ -> failwith "schema mismatch should request a fresh snapshot"
-;;
 
 let () =
   (* Receiving authoritative sync while the inline editor is active must not
