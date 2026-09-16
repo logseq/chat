@@ -969,8 +969,12 @@ let discover_graphs session config =
 ;;
 
 let refresh_from_remote session config =
+  let send request =
+    session.send request
+    |> Result.map_error (fun message -> ((Fun.id, Printf.sprintf "%S"), message))
+  in
   LG.logseq_chat_rpc_refresh_from_remote
-    session.model config session.send (now_ms ())
+    session.model config send (now_ms ())
     (fun () -> snapshot_visible session)
 ;;
 
