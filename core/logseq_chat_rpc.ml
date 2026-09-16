@@ -2085,65 +2085,10 @@ let dispatch session action payload =
     LG.logseq_chat_rpc_add_asset payload session.model now_ms load_target prepare_view
       (asset_datoms_operation ~state:Applied session) load_stage
   | "addChildBlock" ->
-    (match payload with
-     | Some payload ->
-       (match from_string payload with
-        | `Assoc fields ->
-          (match required_string "uuid" fields, required_string "title" fields,
-                 required_string "parentId" fields, optional_int "now" fields with
-           | Ok uuid, Ok title, Ok parent_id, Ok now ->
-             let now = Option.value now ~default:(now_ms ()) in
-             (match session.config, projection_server_t session with
-              | Some config, Some base_t ->
-                let context = outliner_context session in
-                (match
-                   List.find_opt
-                     (fun (block : Model.block) -> String.equal block.uuid parent_id)
-                     context.blocks
-                 with
-                 | Some parent ->
-                   let last_order =
-                     context.blocks
-                     |> List.filter (fun (block : Model.block) ->
-                       String.equal block.page_id parent.page_id
-                       && block.parent_id = Some parent.uuid)
-                     |> List.filter_map (fun (block : Model.block) -> block.order)
-                     |> List.sort String.compare
-                     |> List.rev
-                     |> function order :: _ -> Some order | [] -> None
-                   in
-                   (match LG.logseq_chat_fractional_order_between last_order None with
-                    | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message
-                    | Ok order ->
-                      let operation =
-                        Pending_ops.
-                          { operation_id = fresh_squuid ()
-                          ; base_t
-                          ; state = Queued
-                          ; intent =
-                              Insert_block
-                                { uuid; title; page_uuid = parent.page_id
-                                ; parent_uuid = parent.uuid; order; created_at = now
-                                }
-                          }
-                      in
-                      (match enqueue_semantic session config operation with
-                       | Ok () -> snapshot_visible session
-                       | Error message ->
-                         LG.logseq_chat_rpc_failure "stage_operation_failed" message))
-                 | None -> LG.logseq_chat_rpc_failure "invalid_params" "parent block is unavailable")
-              | Some _, None ->
-                LG.logseq_chat_rpc_failure "invalid_params" "A current server cursor is required"
-              | None, _ ->
-                (match Model.logseq_chat_cache_model_cache_local_child session.model uuid title parent_id now with
-                 | Ok () -> snapshot_visible session
-                 | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message))
-           | Error message, _, _, _ | _, Error message, _, _
-           | _, _, Error message, _ | _, _, _, Error message ->
-             LG.logseq_chat_rpc_failure "invalid_params" message)
-        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "addChildBlock payload must be an object"
-        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "addChildBlock payload must be valid JSON")
-     | None -> LG.logseq_chat_rpc_failure "invalid_params" "addChildBlock requires a JSON payload")
+    LG.logseq_chat_rpc_add_child_block payload session.model now_ms
+      (fun () -> session.config, projection_server_t session)
+      (fun () -> outliner_context session)
+      (enqueue_semantic session) fresh_squuid (fun () -> snapshot_visible session)
   | "beginPendingSync" ->
     (match session.config with
      | None -> pending_sync_patch session

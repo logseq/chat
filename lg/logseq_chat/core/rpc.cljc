@@ -618,6 +618,43 @@
             _ (Ok (completed))))))
     (failure "invalid_params" "addAsset requires a JSON payload")))
 
+(defn child-operation [base-t context uuid title parent-id now fresh-id]
+  (if-some [parent (outliner/find-block context parent-id)]
+    (let [last-order (->> (:blocks context)
+                          (filter (fn [block]
+                                    (and (= (:page-id block) (:page-id parent))
+                                         (= (:parent-id block) (Some (:uuid parent))))))
+                          (keep :order)
+                          sort
+                          last)]
+      (let* [position (order/between last-order nil)]
+        (Ok (effects/operation base-t fresh-id
+              (ops/Insert-block (record ops/pending-insert
+                                        (uuid uuid) (title title) (page-uuid (:page-id parent))
+                                        (parent-uuid (:uuid parent)) (order position) (created-at now)))))))
+    (Error "parent block is unavailable")))
+
+(defn add-child-block [payload cache clock load-sync-state load-context enqueue fresh-id completed]
+  (if-some [payload payload]
+    (action-response
+      (let* [fields (action-fields "addChildBlock" payload)
+             uuid (graph-workflow-result "invalid_params" (required-string fields "uuid"))
+             title (graph-workflow-result "invalid_params" (required-string fields "title"))
+             parent-id (graph-workflow-result "invalid_params" (required-string fields "parentId"))
+             requested-now (graph-workflow-result "invalid_params" (optional-int fields "now"))]
+        (let [now (if-some [now requested-now] now (clock))]
+          (match (load-sync-state)
+            (tuple (Some config) (Some base-t))
+            (let* [operation (graph-workflow-result "invalid_params"
+                              (child-operation base-t (load-context) uuid title parent-id now fresh-id))
+                   _ (graph-workflow-result "stage_operation_failed" (enqueue config operation))]
+              (Ok (completed)))
+            (tuple (Some _) None) (Error (tuple "invalid_params" "A current server cursor is required"))
+            (tuple None _)
+            (let* [_ (graph-workflow-result "invalid_params" (model/cache-local-child cache uuid title parent-id now))]
+              (Ok (completed)))))))
+    (failure "invalid_params" "addChildBlock requires a JSON payload")))
+
 (defn required-bool [fields name]
   (match (field fields name)
     (Some (tag Bool value)) (Ok value)

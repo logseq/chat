@@ -884,6 +884,83 @@
                                    "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}"))]
       (is (not (some #(= (tag String "legacy-only") (json-util/member "uuid" %)) (json-items "blocks" result)))))))
 
+(deftest child-insertion-validates-fields-before-loading-cursor
+  (let [reads (atom 0)
+        session (native-rpc/create :sync_cursor (fn [] (swap! reads inc) nil))]
+    (reset! reads 0)
+    (run! (fn [[payload message]]
+            (let [error (json-util/member "error" (dispatch-json session "addChildBlock" payload))]
+              (is (= (tag String "invalid_params") (json-util/member "code" error)))
+              (is (= (tag String message) (json-util/member "message" error)))))
+          [(tuple "{}" "missing field: uuid")
+           (tuple "{\"uuid\":1}" "field must be a string: uuid")
+           (tuple "{\"uuid\":\"child\"}" "missing field: title")
+           (tuple "{\"uuid\":\"child\",\"title\":\"Child\"}" "missing field: parentId")
+           (tuple "{\"uuid\":\"child\",\"title\":\"Child\",\"parentId\":false}" "field must be a string: parentId")
+           (tuple "{\"uuid\":\"child\",\"title\":\"Child\",\"parentId\":\"parent\",\"now\":false}" "field must be an integer: now")
+           (tuple "[]" "addChildBlock payload must be an object")])
+    (is (= 0 @reads))
+    (is (= "invalid_json" (response-error-code (dispatch-json session "addChildBlock" "{"))))))
+
+(deftest child-insertion-without-graph-writes-through-local-parent
+  (let [session (native-rpc/create)
+        parent (native-core/logseq-chat-cache-model-local-block "parent" "Parent" "local-page" nil 1)]
+    (native-core/logseq-chat-cache-model-upsert-blocks (:model session) (tuple native-list/to-seq (list parent)) 1)
+    (response-result (dispatch-json session "addChildBlock" "{\"uuid\":\"child\",\"title\":\"Child\",\"parentId\":\"parent\",\"now\":10}"))
+    (if-some [child (native-core/logseq-chat-cache-model-read-block (:model session) "child")]
+      (do (is (= "local-page" (:page-id child)))
+          (is (= (Some "parent") (:parent-id child)))
+          (is (= 10 (:created-at child))))
+      (is false))
+    (let [error (json-util/member "error" (dispatch-json session "addChildBlock"
+                          "{\"uuid\":\"orphan\",\"title\":\"Child\",\"parentId\":\"missing\",\"now\":10}"))]
+      (is (= (tag String "invalid_params") (json-util/member "code" error)))
+      (is (= (tag String "unknown parent block: missing") (json-util/member "message" error))))))
+
+(deftest child-insertion-preserves-cursor-parent-and-staging-errors
+  (run! (fn [[cursor parent? code message]]
+          (let [parent (native-core/logseq-chat-cache-model-local-block "parent" "Parent" "page" nil 1)
+                session (configure-plain-session
+                         (native-rpc/create :sync_cursor (fn [] cursor)
+                          :graph_blocks (fn [] (Some (if parent? (list parent) (list))))
+                          :stage_operation (fn [_] (Error "stage rejected"))
+                          :prepare_operation (fn [_] (Ok (tuple "insert" "[]")))))
+                error (json-util/member "error" (dispatch-json session "addChildBlock"
+                          "{\"uuid\":\"child\",\"title\":\"Child\",\"parentId\":\"parent\",\"now\":10}"))]
+            (is (= (tag String code) (json-util/member "code" error)))
+            (is (= (tag String message) (json-util/member "message" error)))))
+        [(tuple nil true "invalid_params" "A current server cursor is required")
+         (tuple (Some 7) false "invalid_params" "parent block is unavailable")
+         (tuple (Some 7) true "stage_operation_failed" "stage rejected")]))
+
+(deftest child-operation-orders-only-within-the-parent-page
+  (let [parent (model/local-block "parent" "Parent" "page" nil 1)
+        sibling (assoc parent :uuid "sibling" :parent-id (Some "parent") :order (Some "a2"))
+        earlier (assoc sibling :uuid "earlier" :order (Some "a0"))
+        other-page (assoc sibling :uuid "other-page" :page-id "elsewhere" :order (Some "zZ"))
+        other-parent (assoc sibling :uuid "other-parent" :parent-id (Some "elsewhere") :order (Some "zZ"))
+        unordered (assoc sibling :uuid "unordered" :order nil)
+        context (record outliner/outliner-context
+                        (blocks (list parent sibling earlier other-page other-parent unordered))
+                        (pages (list)) (tags (list)))
+        ids (atom 0)
+        fresh-id (fn [] (swap! ids inc) "operation")]
+    (match (rpc/child-operation 7 context "child" "Child" "parent" 10 fresh-id)
+      (Ok operation)
+      (do (is (= "operation" (:operation-id operation)))
+          (is (= 7 (:base-t operation)))
+          (is (= ops/Queued (:state operation)))
+          (match (:intent operation)
+            (ops/Insert-block child)
+            (do (is (= "child" (:uuid child))) (is (= "Child" (:title child)))
+                (is (= "page" (:page-uuid child))) (is (= "parent" (:parent-uuid child)))
+                (is (= "a3" (:order child))) (is (= 10 (:created-at child))))
+            _ (is false)))
+      _ (is false))
+    (is (= (Error "parent block is unavailable")
+           (rpc/child-operation 7 context "child" "Child" "missing" 10 fresh-id)))
+    (is (= 1 @ids))))
+
 (deftest page-favorite-updates-sidebar-and-preserves-operation-fields
   (let [favorite (atom false)
         calls (atom [])
