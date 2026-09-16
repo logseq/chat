@@ -698,6 +698,145 @@
                  "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
   session)
 
+(defn synced-native-block [uuid title]
+  (assoc (native-core/logseq-chat-cache-model-local-block uuid title "page" (Some "page") 1)
+         :order (Some "a0") :sync-status "synced"))
+
+(defn prepare-native-operation [operation]
+  (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))
+
+(defn outliner-event [session payload]
+  (response-result (dispatch-json session "outlinerEvent" payload)))
+
+(deftest autosave-emits-bounded-patches-and-advances-expected-title
+  (let [staged (atom [])
+        projected (atom [(synced-native-block "bounded-save" "Before")])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 91))
+                  :graph_blocks (fn [] (Some (apply list @projected)))
+                  :stage_operation
+                  (fn [operation]
+                    (swap! staged conj operation)
+                    (match (:intent operation)
+                      (native-core/Save_title change)
+                      (swap! projected
+                             (fn [blocks]
+                               (mapv (fn [block]
+                                       (if (= (:uuid block) (:uuid change))
+                                         (assoc block :title (:title change)) block)) blocks)))
+                      _ @projected)
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (outliner-event session "{\"type\":\"tapBlock\",\"uuid\":\"bounded-save\"}")
+    (outliner-event session "{\"type\":\"textChanged\",\"title\":\"After\",\"caretUTF16Offset\":5}")
+    (let [saved (outliner-event session "{\"type\":\"saveEditing\"}")
+          blocks (json-items "blocks" saved)
+          editing (json-util/member "editing" (json-util/member "outlinerState" saved))]
+      (is (= (tag Bool true) (json-util/member "isOutlinerPatch" saved)))
+      (is (= 1 (count blocks)))
+      (is (= (tag String "After") (json-util/member "title" (nth blocks 0))))
+      (is (empty? (json-items "outlinerRows" saved)))
+      (is (empty? (json-items "outlinerRowSplices" saved)))
+      (is (= (tag String "bounded-save") (json-util/member "uuid" editing))))
+    (is (= 1 (count @staged)))
+    (outliner-event session "{\"type\":\"saveEditing\"}")
+    (is (= 1 (count @staged)))))
+
+(deftest confirmed-delete-stages-one-operation-and-removes-only-selected-row
+  (let [staged (atom [])
+        orders (match (native-core/logseq-chat-fractional-order-n-between (Some "a0") nil 100)
+                 (Ok values) values
+                 (Error message) (stdlib/failwith message))
+        tail (mapv (fn [index order]
+                     (assoc (synced-native-block (str "delete-tail-" index) "Unrelated") :order (Some order)))
+                   (range 100) orders)
+        projected (atom (into [(synced-native-block "selected" "Selected")] tail))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 91))
+                  :graph_blocks (fn [] (Some (apply list @projected)))
+                  :stage_operation
+                  (fn [operation]
+                    (swap! staged conj operation)
+                    (match (:intent operation)
+                      (native-core/Delete_blocks change)
+                      (swap! projected (fn [blocks]
+                                         (filterv (fn [block]
+                                                    (not (some #(= % (:uuid block)) (:uuids change)))) blocks)))
+                      _ @projected)
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))
+        selected (outliner-event session "{\"type\":\"longPressBlock\",\"uuid\":\"selected\"}")]
+    (is (= [(tag String "selected")]
+           (json-items "selectedBlockIds" (json-util/member "outlinerState" selected))))
+    (is (= (tag String "haptic") (json-util/member "type" (nth (json-items "outlinerCommands" selected) 0))))
+    (outliner-event session "{\"type\":\"toolbar\",\"action\":\"delete\"}")
+    (let [confirmed (outliner-event session "{\"type\":\"confirmDelete\"}")
+          splices (json-items "outlinerRowSplices" confirmed)]
+      (is (= 1 (count @staged)))
+      (let [operation (nth @staged 0)]
+        (is (= 91 (:base-t operation)))
+        (match (:intent operation)
+          (native-core/Delete_blocks change) (is (= ["selected"] (:uuids change)))
+          _ (is false)))
+      (is (= (tag Bool true) (json-util/member "isOutlinerPatch" confirmed)))
+      (is (empty? (json-items "blocks" confirmed)))
+      (is (empty? (json-items "outlinerRows" confirmed)))
+      (is (= [(tag String "selected")] (json-items "deletedBlockIds" confirmed)))
+      (is (= 1 (count splices)))
+      (is (= (tag Int 0) (json-util/member "start" (nth splices 0))))
+      (is (= (tag Int 1) (json-util/member "deleteCount" (nth splices 0))))
+      (is (empty? (json-items "rows" (nth splices 0))))
+      (is (empty? (json-items "selectedBlockIds" (json-util/member "outlinerState" confirmed)))))))
+
+(deftest task-status-stages-canonical-property-reference
+  (let [staged (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 92))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "task" "Task"))))
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (outliner-event session "{\"type\":\"setTaskStatus\",\"uuid\":\"task\",\"statusIdent\":\"user.status/waiting\"}")
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (is (= 92 (:base-t operation)))
+      (match (:intent operation)
+        (native-core/Set_property change)
+        (do (is (= "task" (:uuid change)))
+            (is (= "logseq.property/status" (:attr change)))
+            (is (nil? (:expected change)))
+            (is (= (Some (native-core/Ref_ident "user.status/waiting")) (:value change))))
+        _ (is false)))))
+
+(deftest collapse-and-zoom-replace-only-affected-row-ranges
+  (let [parent (synced-native-block "parent" "Parent")
+        child (assoc (synced-native-block "child" "Child") :parent-id (Some "parent"))
+        sibling (assoc (synced-native-block "sibling" "Sibling") :order (Some "a1"))
+        session (native-rpc/create :graph_blocks (fn [] (Some (list child sibling parent))))
+        collapsed (outliner-event session "{\"type\":\"toggleCollapsed\",\"uuid\":\"parent\"}")
+        splices (json-items "outlinerRowSplices" collapsed)]
+    (is (empty? (json-items "outlinerRows" collapsed)))
+    (is (= 1 (count splices)))
+    (let [splice (nth splices 0)
+          rows (json-items "rows" splice)]
+      (is (= (tag Int 0) (json-util/member "start" splice)))
+      (is (= (tag Int 2) (json-util/member "deleteCount" splice)))
+      (is (= 1 (count rows)))
+      (is (= (tag String "parent") (json-util/member "uuid" (json-util/member "block" (nth rows 0)))))
+      (is (= (tag Bool true) (json-util/member "isCollapsed" (nth rows 0)))))
+    (let [zoomed (outliner-event session "{\"type\":\"zoomIn\",\"uuid\":\"parent\"}")
+          splices (json-items "outlinerRowSplices" zoomed)]
+      (is (= [(tag String "parent")] (json-items "zoomedBlockIds" (json-util/member "outlinerState" zoomed))))
+      (is (= 1 (count splices)))
+      (is (= (tag Int 1) (json-util/member "start" (nth splices 0))))
+      (is (= (tag Int 1) (json-util/member "deleteCount" (nth splices 0))))
+      (is (empty? (json-items "rows" (nth splices 0)))))))
+
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
         parent (assoc (native-core/logseq-chat-cache-model-local-block
