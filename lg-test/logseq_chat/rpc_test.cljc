@@ -1064,6 +1064,159 @@
               (is (= (tag String operation-id) (json-util/member "tx-id" tx))))))
         [false true]))
 
+(defn staging-native-session [cursor blocks staged]
+  (configure-plain-session
+   (native-rpc/create
+    :load_graph_catalog (fn [] (Some plain-graph-catalog))
+    :sync_cursor (fn [] (Some cursor))
+    :graph_blocks (fn [] (Some (apply list blocks)))
+    :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+    :prepare_operation prepare-native-operation)))
+
+(defn assert-semantic-request [session operation-id outliner-op cursor]
+  (let [request (required-pending-request session)
+        body (json-util/member "bodyObject" request)
+        tx (nth (json-items "txs" body) 0)]
+    (is (= (tag String "POST") (json-util/member "method" request)))
+    (is (= (tag Int cursor) (json-util/member "t-before" body)))
+    (is (= (tag String operation-id) (json-util/member "tx-id" tx)))
+    (is (= (tag String outliner-op) (json-util/member "outliner-op" tx)))))
+
+(deftest delete-block-stages-a-cursor-guarded-semantic-request
+  (let [staged (atom [])
+        session (staging-native-session 77 [(synced-native-block "delete-me" "Delete me")] staged)]
+    (response-result (dispatch-json session "deleteBlock"
+                      "{\"uuid\":\"delete-me\",\"operationId\":\"op-delete\",\"expectedServerT\":77}"))
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (is (= "op-delete" (:operation-id operation)))
+      (is (= 77 (:base-t operation)))
+      (match (:intent operation)
+        (native-core/Delete_blocks deletion) (is (= ["delete-me"] (:uuids deletion)))
+        _ (is false)))
+    (assert-semantic-request session "op-delete" "delete-blocks" 77)))
+
+(deftest split-block-stages-one-atomic-semantic-intent
+  (let [staged (atom [])
+        session (staging-native-session 42 [(synced-native-block "source" "hello world")] staged)]
+    (response-result (dispatch-json session "splitBlock"
+                      "{\"uuid\":\"source\",\"operationId\":\"op-split\",\"expectedServerT\":42,\"expectedTitle\":\"hello world\",\"before\":\"hello\",\"after\":\" world\",\"newUuid\":\"new\",\"newOrder\":\"a1\",\"createdAt\":100}"))
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (is (= "op-split" (:operation-id operation)))
+      (match (:intent operation)
+        (native-core/Split_block split)
+        (do (is (= "source" (:uuid split)))
+            (is (= "hello world" (:expected-title split)))
+            (is (= "hello" (:before split)))
+            (is (= " world" (:after split)))
+            (is (= "new" (:new-uuid split)))
+            (is (= "a1" (:new-order split)))
+            (is (= 100 (:created-at split))))
+        _ (is false)))
+    (assert-semantic-request session "op-split" "split-block" 42)))
+
+(deftest accepted-edit-immediately-releases-next-durable-operation
+  (let [persisted (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "source" "Old"))))
+                  :stage_operation
+                  (fn [operation]
+                    (swap! persisted (fn [pending]
+                                       (conj (filterv #(not= (:operation-id %) (:operation-id operation)) pending)
+                                             operation)))
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation
+                  :pending_operations (fn [] (apply list (filterv retryable-native-operation? @persisted)))))]
+    (reset! persisted
+      (mapv (fn [[operation-id expected-title title]]
+              (record native-core/pending-operation
+                (operation-id operation-id) (base-t 42) (state (native-core/Queued))
+                (intent (native-core/Save_title
+                         (record native-core/pending-title
+                           (uuid "source") (expected-title expected-title) (title title))))))
+            [(tuple "first" "Old" "First") (tuple "second" "First" "Second")]))
+    (let [completion (complete-native-request session (required-pending-request session) "{\"t\":43}")
+          request (json-util/member "pendingSyncRequest" completion)
+          tx (nth (json-items "txs" (json-util/member "bodyObject" request)) 0)]
+      (is (= (tag String "second") (json-util/member "tx-id" tx))))))
+
+(deftest merge-backward-stages-one-atomic-semantic-intent
+  (let [staged (atom [])
+        session (staging-native-session 43 [(synced-native-block "previous" "hello")
+                                            (synced-native-block "source" " world")] staged)]
+    (response-result (dispatch-json session "mergeBackward"
+                      "{\"uuid\":\"source\",\"operationId\":\"op-merge\",\"expectedServerT\":43,\"expectedTitle\":\" world\",\"title\":\" world\",\"previousUuid\":\"previous\",\"expectedPreviousTitle\":\"hello\"}"))
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (is (= "op-merge" (:operation-id operation)))
+      (match (:intent operation)
+        (native-core/Merge_backward merge)
+        (do (is (= "source" (:uuid merge)))
+            (is (= " world" (:expected-title merge)))
+            (is (= " world" (:title merge)))
+            (is (= "previous" (:previous-uuid merge)))
+            (is (= "hello" (:expected-previous-title merge)))
+            (is (nil? (:merged-title merge))))
+        _ (is false)))))
+
+(deftest move-blocks-stages-one-ordered-batch
+  (let [staged (atom [])
+        session (staging-native-session 50 [(synced-native-block "first" "First")
+                                            (synced-native-block "second" "Second")] staged)]
+    (response-result (dispatch-json session "moveBlocks"
+                      "{\"operationId\":\"op-move-batch\",\"expectedServerT\":50,\"moves\":[{\"uuid\":\"first\",\"pageUuid\":\"page\",\"parentUuid\":\"target\",\"order\":\"a0\"},{\"uuid\":\"second\",\"pageUuid\":\"page\",\"parentUuid\":\"target\",\"order\":\"a1\"}]}"))
+    (is (= 1 (count @staged)))
+    (match (:intent (nth @staged 0))
+      (native-core/Move_blocks batch)
+      (is (= ["first" "second"] (mapv :uuid (:moves batch))))
+      _ (is false))
+    (assert-semantic-request session "op-move-batch" "move-blocks" 50)))
+
+(deftest delete-blocks-stages-one-deduplicated-batch
+  (let [staged (atom [])
+        session (staging-native-session 51 [(synced-native-block "first" "First")
+                                            (synced-native-block "second" "Second")] staged)]
+    (response-result (dispatch-json session "deleteBlocks"
+                      "{\"operationId\":\"op-delete-batch\",\"expectedServerT\":51,\"uuids\":[\"second\",\"first\",\"first\"]}"))
+    (is (= 1 (count @staged)))
+    (match (:intent (nth @staged 0))
+      (native-core/Delete_blocks deletion) (is (= ["first" "second"] (:uuids deletion)))
+      _ (is false))))
+
+(deftest status-update-stages-a-typed-property-intent
+  (let [staged (atom [])
+        session (staging-native-session 88 [(synced-native-block "task" "Task")] staged)]
+    (response-result (dispatch-json session "updateBlockStatus"
+                      "{\"uuid\":\"task\",\"operationId\":\"op-status\",\"expectedStatusUuid\":null,\"status\":{\"uuid\":\"doing\",\"title\":\"Doing\"}}"))
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (is (= "op-status" (:operation-id operation)))
+      (match (:intent operation)
+        (native-core/Set_property property)
+        (do (is (= "task" (:uuid property)))
+            (is (= "logseq.property/status" (:attr property)))
+            (is (nil? (:expected property)))
+            (is (= (Some (native-core/Ref_uuid "doing")) (:value property))))
+        _ (is false)))
+    (assert-semantic-request session "op-status" "save-block" 88)))
+
+(deftest delete-without-authoritative-cursor-does-not-stage
+  (let [session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] nil)
+                  :graph_blocks (fn [] (Some (list (synced-native-block "delete-me" "Delete me"))))
+                  :stage_operation (fn [_] (stdlib/failwith "delete without cursor must not stage"))
+                  :prepare_operation prepare-native-operation))
+        response (dispatch-json session "deleteBlock"
+                   "{\"uuid\":\"delete-me\",\"operationId\":\"op-delete\",\"expectedServerT\":77}")]
+    (is (= (tag Bool false) (json-util/member "ok" response)))
+    (is (= (tag String "stale_server_cursor") (json-util/member "code" (json-util/member "error" response))))))
+
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
         parent (assoc (native-core/logseq-chat-cache-model-local-block
