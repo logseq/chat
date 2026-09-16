@@ -837,6 +837,119 @@
       (is (= (tag Int 1) (json-util/member "deleteCount" (nth splices 0))))
       (is (empty? (json-items "rows" (nth splices 0)))))))
 
+(defn queued-native-title-operation [operation-id title]
+  (record native-core/pending-operation
+          (operation-id operation-id) (base-t 42) (state (native-core/Queued))
+          (intent (native-core/Save_title
+                   (record native-core/pending-title
+                           (uuid "remote") (expected-title "Old") (title title))))))
+
+(deftest projected-title-updates-stage-semantic-transactions
+  (let [staged (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "remote" "Old"))))
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (response-result (dispatch-json session "updateBlock"
+                      "{\"uuid\":\"remote\",\"operationId\":\"op-title\",\"expectedTitle\":\"Old\",\"title\":\"Pending\",\"status\":null}"))
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (is (= "op-title" (:operation-id operation)))
+      (is (= 42 (:base-t operation)))
+      (match (:intent operation)
+        (native-core/Save_title change)
+        (do (is (= "remote" (:uuid change)))
+            (is (= "Old" (:expected-title change)))
+            (is (= "Pending" (:title change))))
+        _ (is false)))
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (let [body (json-util/member "bodyObject" request)
+            tx (nth (json-items "txs" body) 0)]
+        (is (= (tag String "POST") (json-util/member "method" request)))
+        (is (= (tag Int 42) (json-util/member "t-before" body)))
+        (is (= (tag String "op-title") (json-util/member "tx-id" tx)))
+        (is (= (tag String "save-block") (json-util/member "outliner-op" tx))))
+      (is false))))
+
+(deftest startup-restores-durable-operations-without-restaging-each-edit
+  (let [stage-calls (atom 0)
+        pending (mapv (fn [index]
+                        (queued-native-title-operation (str "restored-" index) (str "Pending " index)))
+                      (range 200))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "remote" "Old"))))
+                  :stage_operation (fn [_] (swap! stage-calls inc) (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation
+                  :pending_operations (fn [] (apply list pending))))]
+    (is (some? (pending-request (dispatch-json session "beginPendingSync" ""))))
+    (is (= 0 @stage-calls))))
+
+(deftest stale-queue-head-waits-for-reconciliation-before-advancing
+  (let [stale (queued-native-title-operation "stale-head" "Stale")
+        valid (queued-native-title-operation "valid-after-stale" "Valid")
+        pending (atom [stale valid])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "remote" "Old"))))
+                  :stage_operation (fn [_] (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (if (= "stale-head" (:operation-id operation))
+                                         (Error "block no longer exists")
+                                         (prepare-native-operation operation)))
+                  :pending_operations (fn [] (apply list @pending))))]
+    (is (nil? (pending-request (dispatch-json session "beginPendingSync" ""))))
+    (reset! pending [valid])
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (let [tx (nth (json-items "txs" (json-util/member "bodyObject" request)) 0)]
+        (is (= (tag String "valid-after-stale") (json-util/member "tx-id" tx))))
+      (is false))))
+
+(deftest pending-sync-response-is-bounded-independently-of-page-size
+  (let [pending (queued-native-title-operation "bounded-pending" "Pending")
+        blocks (into [(synced-native-block "remote" "Old")]
+                     (mapv (fn [index] (synced-native-block (str "tail-" index) (str "Tail " index)))
+                           (range 500)))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (apply list blocks)))
+                  :stage_operation (fn [_] (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation
+                  :pending_operations (fn [] (list pending))))
+        response (native-rpc/call session
+                   "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"beginPendingSync\"}}")
+        result (response-result (json/from-string response))]
+    (is (= (tag Bool true) (json-util/member "isPendingSyncPatch" result)))
+    (is (empty? (json-items "blocks" result)))
+    (is (< (count response) 5000))))
+
+(deftest semantic-completion-persists-accepted-server-cursor
+  (let [staged (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "remote" "Old"))))
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (dispatch-json session "updateBlock"
+      "{\"uuid\":\"remote\",\"operationId\":\"op-accepted\",\"expectedTitle\":\"Old\",\"title\":\"Pending\",\"status\":null}")
+    (dispatch-json session "beginPendingSync" "")
+    (dispatch-json session "completePendingSync"
+      "{\"id\":1,\"status\":200,\"body\":\"{\\\"type\\\":\\\"tx/batch/ok\\\",\\\"t\\\":44}\",\"error\":null}")
+    (let [operation (nth @staged (dec (count @staged)))]
+      (is (= "op-accepted" (:operation-id operation)))
+      (is (= (native-core/Accepted 44) (:state operation))))))
+
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
         parent (assoc (native-core/logseq-chat-cache-model-local-block
