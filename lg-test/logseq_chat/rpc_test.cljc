@@ -412,6 +412,51 @@
                          (= (tag String "After") (json-util/member "title" block)))))
                 (json-items "outlinerRows" result))))))
 
+(deftest journal-pagination-preserves-editor-selection-and-zoom
+  (let [parent (assoc (native-core/logseq-chat-cache-model-local-block "parent-window" "Parent" "page" (Some "page") 1)
+                      :order (Some "a0") :sync-status "synced")
+        child (assoc parent :uuid "child-window" :title "Child" :parent-id (Some "parent-window"))]
+    (run! (fn [event]
+            (let [session (native-rpc/create :graph_blocks (fn [] (Some (list parent child)))
+                                             :load_older_journals (fn [] (stdlib/ignore 0))
+                                             :has_older_journals (fn [] true))
+                  before (response-result (dispatch-json session "outlinerEvent" event))
+                  after (response-result (dispatch-json session "loadOlderJournals" ""))]
+              (is (= (json-util/member "outlinerState" before) (json-util/member "outlinerState" after)))))
+          ["{\"type\":\"tapBlock\",\"uuid\":\"child-window\"}"
+           "{\"type\":\"longPressBlock\",\"uuid\":\"child-window\"}"
+           "{\"type\":\"zoomIn\",\"uuid\":\"parent-window\"}"])))
+
+(deftest outliner-editing-and-autocomplete-remain-owned-by-core
+  (let [block (assoc (native-core/logseq-chat-cache-model-local-block "editable" "Hello" "page" (Some "page") 1)
+                     :order (Some "a0") :sync-status "synced")
+        session (native-rpc/create :graph_blocks (fn [] (Some (list block))))
+        tapped (response-result (dispatch-json session "outlinerEvent" "{\"type\":\"tapBlock\",\"uuid\":\"editable\"}"))
+        editing (json-util/member "editing" (json-util/member "outlinerState" tapped))]
+    (is (= (tag String "editable") (json-util/member "uuid" editing)))
+    (is (= (tag String "Hello") (json-util/member "title" editing)))
+    (is (empty? (json-items "outlinerCommands" tapped)))
+    (let [changed (response-result (dispatch-json session "outlinerEvent"
+                                       "{\"type\":\"textChanged\",\"title\":\"Hello [[Pro\",\"caretUTF16Offset\":11}"))
+          state (json-util/member "outlinerState" changed)
+          autocomplete (json-util/member "autocomplete" state)]
+      (is (= (tag String "Hello [[Pro") (json-util/member "title" (json-util/member "editing" state))))
+      (is (= (tag String "node") (json-util/member "kind" autocomplete)))
+      (is (= (tag String "Pro") (json-util/member "query" autocomplete))))))
+
+(deftest tag-autocomplete-candidates-use-canonical-graph-identity
+  (let [tag-page (record native-core/entity-summary (uuid "tag-uuid") (title "Project"))
+        block (assoc (native-core/logseq-chat-cache-model-local-block "tag-editable" "Hello" "page" (Some "page") 1)
+                     :order (Some "a0") :sync-status "synced")
+        session (native-rpc/create :graph_blocks (fn [] (Some (list block)))
+                                   :graph_tag_pages (fn [] (Some (list tag-page))))]
+    (response-result (dispatch-json session "outlinerEvent" "{\"type\":\"tapBlock\",\"uuid\":\"tag-editable\"}"))
+    (let [result (response-result (dispatch-json session "outlinerEvent" "{\"type\":\"toolbar\",\"action\":\"tag\"}"))
+          candidates (json-items "outlinerAutocompleteCandidates" result)]
+      (is (= 1 (count candidates)))
+      (is (= (tag String "Project") (json-util/member "label" (nth candidates 0))))
+      (is (= (tag String "tag-uuid") (json-util/member "value" (nth candidates 0)))))))
+
 (deftest websocket-errors-distinguish-snapshot-recovery-from-apply-failures
   (run! (fn [[message code]]
           (let [session (native-rpc/create :apply_sync_event (fn [_] (Error message)))
@@ -960,6 +1005,114 @@
     (is (= (Error "parent block is unavailable")
            (rpc/child-operation 7 context "child" "Child" "missing" 10 fresh-id)))
     (is (= 1 @ids))))
+
+(deftest plain-assets-project-before-upload-and-queue-stable-datom-transactions
+  (let [uuid "2f659891-3fbc-492c-8943-9e08de2ed949"
+        staged (atom [])
+        target (assoc (native-core/logseq-chat-cache-model-local-block
+                       "editing-block" "Editing" "target-page" (Some "target-page") 1)
+                      :order (Some "a0") :sync-status "synced")
+        projected (atom [target])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 41))
+                  :graph_blocks (fn [] (Some (apply list @projected)))
+                  :authoritative_graph_blocks (fn [] (Some (list target)))
+                  :journal_page_id (fn [_] (Some "journal-page"))
+                  :stage_operation (fn [operation]
+                                     (swap! staged conj operation)
+                                     (match (:intent operation)
+                                       (native-core/Create_asset asset)
+                                       (reset! projected
+                                               [target (assoc (native-core/logseq-chat-cache-model-local-block
+                                                               (:uuid asset) (:title asset) "page" (Some "page") 1)
+                                                              :is-asset true :order (Some "a0") :sync-status "synced")])
+                                       _ @projected)
+                                     (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))))]
+    (dispatch-json session "addAsset"
+                   (str "{\"uuid\":\"" uuid "\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}"))
+    (is (= 1 (count @staged)))
+    (let [operation (nth @staged 0)]
+      (match (:intent operation)
+        (native-core/Create_asset asset) (is (= uuid (:uuid asset)))
+        _ (is false))
+      (is (= (native-core/Applied) (:state operation))))
+    (if-some [upload (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (do (is (= (tag String "PUT") (json-util/member "method" upload)))
+          (is (= (tag String (str "http://127.0.0.1:8787/assets/plain-1/" uuid ".m4a")) (json-util/member "url" upload))))
+      (is false))
+    (if-some [request (pending-request (dispatch-json session "completePendingSync"
+                                        "{\"id\":1,\"status\":200,\"body\":\"{\\\"ok\\\":true}\",\"error\":null}"))]
+      (let [transactions (json-items "txs" (json-util/member "bodyObject" request))]
+        (is (= (tag String "http://127.0.0.1:8787/sync/plain-1/tx/batch") (json-util/member "url" request)))
+        (is (= 1 (count transactions)))
+        (is (= (tag String uuid) (json-util/member "tx-id" (nth transactions 0)))))
+      (is false))
+    (is (= 2 (count @staged)))
+    (let [operation (nth @staged 1)]
+      (match (:intent operation)
+        (native-core/Create_asset asset)
+        (do (is (= uuid (:uuid asset))) (is (= "target-page" (:page-uuid asset)))
+            (is (= "editing-block" (:parent-uuid asset))) (is (not= "" (:order asset))))
+        _ (is false))
+      (is (= (native-core/Queued) (:state operation))))))
+
+(deftest failed-raw-uploads-retry-without-queuing-datoms
+  (let [staged (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 41))
+                  :journal_page_id (fn [_] (Some "journal-page"))
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))))]
+    (dispatch-json session "addAsset"
+                   "{\"uuid\":\"retry-asset\",\"title\":\"photo.png\",\"now\":2,\"assetType\":\"png\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/photo.png\"}")
+    (if-some [first-request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (do
+        (dispatch-json session "completePendingSync" "{\"id\":1,\"status\":null,\"body\":null,\"error\":\"offline\"}")
+        (is (= 1 (count @staged)))
+        (let [operation (nth @staged 0)]
+          (match (:intent operation)
+            (native-core/Create_asset asset) (is (= "retry-asset" (:uuid asset)))
+            _ (is false))
+          (is (= (native-core/Applied) (:state operation))))
+        (if-some [retry (pending-request (dispatch-json session "beginPendingSync" ""))]
+          (is (= (json-util/member "url" first-request) (json-util/member "url" retry)))
+          (is false)))
+      (is false))))
+
+(deftest encrypted-capture-stages-persistent-insert-and-uses-datom-endpoint
+  (let [staged (atom [])
+        existing (assoc (native-core/logseq-chat-cache-model-local-block
+                         "existing-journal-block" "Existing" "journal-page" (Some "journal-page") 1)
+                        :order (Some "a0") :sync-status "synced")
+        session (native-rpc/create
+                  :load_graph_catalog (fn [] (Some encrypted-graph-catalog))
+                  :graph_unlocked (fn [_] true)
+                  :sync_cursor (fn [] (Some 91))
+                  :graph_blocks (fn [] (Some (list existing)))
+                  :journal_page_id (fn [_] (Some "journal-page"))
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]"))))]
+    (configure-encrypted-session session)
+    (dispatch-json session "selectGraph" "encrypted-1")
+    (dispatch-json session "send" "{\"text\":\"Encrypted capture\",\"uuid\":\"encrypted-capture\",\"now\":1776000000000}")
+    (is (= 1 (count @staged)))
+    (match (:intent (nth @staged 0))
+      (native-core/Insert_block block)
+      (do (is (= "encrypted-capture" (:uuid block))) (is (= "Encrypted capture" (:title block)))
+          (is (= "journal-page" (:page-uuid block))) (is (= "journal-page" (:parent-uuid block)))
+          (is (> (compare (:order block) "a0") 0)))
+      _ (is false))
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (is (= (tag String "http://127.0.0.1:8787/sync/encrypted-1/tx/batch") (json-util/member "url" request)))
+      (is false))))
 
 (deftest page-favorite-updates-sidebar-and-preserves-operation-fields
   (let [favorite (atom false)
