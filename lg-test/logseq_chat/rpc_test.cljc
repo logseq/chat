@@ -352,6 +352,66 @@
     (response-result (dispatch-json session "stopWebSocket" ""))
     (is (= ["wire-event"] @applied))))
 
+(deftest websocket-self-echo-clears-local-pending-capture
+  (let [authoritative (atom [])
+        block (assoc (native-core/logseq-chat-cache-model-local-block
+                      "local-self-echo" "Synced capture" "journal/2026-08-15" nil 1776000000000)
+                     :sync-status "synced")
+        session (native-rpc/create
+                 :graph_blocks (fn [] (Some (apply list @authoritative)))
+                 :apply_sync_event (fn [_] (reset! authoritative [block]) (Ok (stdlib/ignore 0))))]
+    (dispatch-json session "send" "{\"text\":\"Synced capture\",\"uuid\":\"local-self-echo\",\"now\":1776000000000}")
+    (is (= 1 (count (native-core/logseq-chat-cache-model-pending-blocks (:model session)))))
+    (response-result (dispatch-json session "applySyncEvent" "self-echo"))
+    (is (empty? (native-core/logseq-chat-cache-model-pending-blocks (:model session))))))
+
+(deftest authoritative-assets-retain-cached-local-file-path
+  (let [authoritative (atom [])
+        session (native-rpc/create :graph_blocks (fn [] (Some (apply list @authoritative))))]
+    (dispatch-json session "addAsset"
+                   "{\"uuid\":\"synced-asset\",\"title\":\"photo.png\",\"now\":1776000000001,\"assetType\":\"png\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/photo.png\"}")
+    (native-core/logseq-chat-cache-model-mark-block-synced (:model session) "synced-asset")
+    (reset! authoritative [(assoc (native-core/logseq-chat-cache-model-local-block
+                                  "synced-asset" "photo.png" "journal/2026-08-15" nil 1776000000001)
+                                 :sync-status "synced" :journal (Some (tuple "Aug 15th, 2026" 20260815)))])
+    (let [blocks (json-items "blocks" (response-result (dispatch-json session "clearRelated" "")))]
+      (is (= 1 (count blocks)))
+      (is (= (tag String "/documents/photo.png") (json-util/member "localPath" (nth blocks 0)))))))
+
+(deftest task-status-updates-preserve-custom-icon-color
+  (let [session (native-rpc/create)]
+    (dispatch-json session "sendTask"
+                   "{\"text\":\"Follow up\",\"uuid\":\"task-status-local\",\"now\":1776000000000,\"status\":{\"uuid\":\"todo\",\"ident\":\"logseq.property/status.todo\",\"title\":\"Todo\"}}")
+    (let [result (response-result
+                  (dispatch-json session "updateBlockStatus"
+                    "{\"uuid\":\"task-status-local\",\"status\":{\"uuid\":\"custom-waiting\",\"ident\":\"user.status/waiting\",\"title\":\"Waiting\",\"iconType\":\"tabler-icon\",\"iconId\":\"clock\",\"iconColor\":\"#7c3aed\"}}"))
+          blocks (json-items "blocks" result)
+          status (json-util/member "status" (nth blocks 0))]
+      (is (= 1 (count blocks)))
+      (is (= (tag String "custom-waiting") (json-util/member "uuid" status)))
+      (is (= (tag String "#7c3aed") (json-util/member "color" (json-util/member "icon" status)))))))
+
+(deftest authoritative-sync-preserves-editor-and-updates-visible-remote-block
+  (let [editing (assoc (native-core/logseq-chat-cache-model-local-block
+                        "editing-sync" "Local draft" "page" (Some "page") 1)
+                       :order (Some "a0") :sync-status "synced")
+        remote (assoc editing :uuid "remote-sync" :title "Before")
+        authoritative (atom [editing remote])
+        session (native-rpc/create
+                 :graph_blocks (fn [] (Some (apply list @authoritative)))
+                 :apply_sync_event (fn [_]
+                                     (reset! authoritative [editing (assoc remote :title "After")])
+                                     (Ok (stdlib/ignore 0))))]
+    (dispatch-json session "outlinerEvent" "{\"type\":\"tapBlock\",\"uuid\":\"editing-sync\"}")
+    (let [result (response-result (dispatch-json session "applySyncEvent" "remote-change"))
+          active-editor (json-util/member "editing" (json-util/member "outlinerState" result))]
+      (is (= (tag String "editing-sync") (json-util/member "uuid" active-editor)))
+      (is (some (fn [row]
+                  (let [block (json-util/member "block" row)]
+                    (and (= (tag String "remote-sync") (json-util/member "uuid" block))
+                         (= (tag String "After") (json-util/member "title" block)))))
+                (json-items "outlinerRows" result))))))
+
 (deftest websocket-errors-distinguish-snapshot-recovery-from-apply-failures
   (run! (fn [[message code]]
           (let [session (native-rpc/create :apply_sync_event (fn [_] (Error message)))
@@ -762,6 +822,67 @@
           (is (= (Some "parent") (:parent-id asset)))
           (is (= (Some "png") (:asset-type asset))))
       (is false))))
+
+(deftest local-insertions-share-projection-with-journals-nodes-and-editor
+  (run! (fn [[capture? page-id parent-id uuid]]
+          (let [page (record native-core/entity-summary (uuid page-id) (title "Aug 23rd, 2026"))
+                journal (if capture? (Some (tuple "Aug 23rd, 2026" 20260823)) nil)
+                parent (assoc (native-core/logseq-chat-cache-model-local-block
+                               parent-id "Parent" page-id (Some page-id) 1)
+                              :sync-status "synced" :order (Some "a0") :journal journal)
+                projected (atom [parent])
+                staged (atom [])
+                session (configure-plain-session
+                         (native-rpc/create
+                          :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                          :sync_cursor (fn [] (Some 5))
+                          :journal_page_id (fn [_] (Some page-id))
+                          :graph_blocks (fn [] (Some (apply list @projected)))
+                          :graph_page_blocks (fn [id] (Some (apply list (filter #(= (:page-id %) id) @projected))))
+                          :graph_node_destination (fn [id] (when (= id page-id) (Some (tuple page false))))
+                          :stage_operation
+                          (fn [operation]
+                            (match (:intent operation)
+                              (native-core/Insert_block value)
+                              (do
+                                (swap! staged conj (tuple (:uuid value) (:page-uuid value) (:parent-uuid value)))
+                                (swap! projected conj
+                                       (assoc (native-core/logseq-chat-cache-model-local-block
+                                               (:uuid value) (:title value) (:page-uuid value)
+                                               (Some (:parent-uuid value)) (:created-at value))
+                                              :order (Some (:order value)) :journal journal)))
+                              _ (stdlib/failwith "local insertion must stage Insert_block"))
+                            (Ok (stdlib/ignore 0)))
+                          :prepare_operation (fn [operation]
+                                               (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))))
+                result (response-result
+                        (if capture?
+                          (dispatch-json session "send" "{\"text\":\"hello\",\"uuid\":\"local-hello\",\"now\":1787469000000}")
+                          (dispatch-json session "addChildBlock" "{\"uuid\":\"local-child\",\"title\":\"Child\",\"parentId\":\"child-parent\",\"now\":10}")))]
+            (is (= [(tuple uuid page-id (if capture? page-id parent-id))] @staged))
+            (is (some #(= (tag String uuid) (json-util/member "uuid" %)) (json-items "blocks" result)))
+            (when capture?
+              (let [opened (response-result (dispatch-json session "openNode" "{\"uuid\":\"journal-page\"}"))
+                    route (nth (json-items "nodeRoutes" opened) 0)]
+                (is (some #(= (tag String uuid) (json-util/member "uuid" %)) (json-items "blocks" route))))
+              (let [tapped (response-result (dispatch-json session "outlinerEvent" "{\"type\":\"tapBlock\",\"uuid\":\"local-hello\"}"))
+                    route (nth (json-items "nodeRoutes" tapped) 0)
+                    editing (json-util/member "editing" (json-util/member "outlinerState" route))]
+                (is (= (tag String uuid) (json-util/member "uuid" editing)))))))
+        [(tuple true "journal-page" "world" "local-hello")
+         (tuple false "child-page" "child-parent" "local-child")]))
+
+(deftest graph-projection-does-not-leak-legacy-cache-blocks
+  (let [projected (assoc (native-core/logseq-chat-cache-model-local-block
+                         "projected-only" "Projected" "page" (Some "page") 1)
+                        :sync-status "synced" :order (Some "a0"))
+        session (native-rpc/create :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                                   :graph_blocks (fn [] (Some (list projected))))]
+    (native-core/logseq-chat-cache-model-cache-local-message (:model session) "legacy-only" "Must not leak" 10)
+    (configure-plain-session session)
+    (let [result (response-result (dispatch-json session "configure"
+                                   "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}"))]
+      (is (not (some #(= (tag String "legacy-only") (json-util/member "uuid" %)) (json-items "blocks" result)))))))
 
 (deftest page-favorite-updates-sidebar-and-preserves-operation-fields
   (let [favorite (atom false)
