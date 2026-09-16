@@ -51,7 +51,7 @@ opam install . --deps-only --yes --with-test
 
 `opam init` on this VM must use `--disable-sandboxing`. New shells need `eval $(opam env --switch=5.5.0)` unless `.bashrc` already loads it.
 
-A representative core action is the Swift FFI RPC `dispatch` / `send`, which optimistic-captures a journal block (see `core/logseq_chat_rpc_test.ml` and `dune runtest`).
+A representative core action is the Swift FFI RPC `dispatch` / `send`, which optimistic-captures a journal block (see `lg-test/logseq_chat/rpc_test.cljc` and `dune build @core/runtest`).
 
 ### iOS / Android
 

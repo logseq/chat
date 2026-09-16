@@ -178,11 +178,6 @@
  (name runtest)
  (deps (alias ../lg-test/runtest)))
 
-(test
- (name logseq_chat_rpc_test)
- (modules logseq_chat_rpc_test)
- (libraries logseq_chat_core yojson))
-
 (executable
  (name logseq_chat_live_sync)
  (modules logseq_chat_live_sync)

@@ -11,6 +11,13 @@
             [logseq-chat.api :as api]
             [logseq-chat.search-index :as search]
             [logseq-chat.outliner-effects :as effects]
+            [logseq-chat.sync-session :as sync-session]
+            [logseq-chat.sync-protocol :as protocol]
+            [logseq-chat.entity-sync :as entity-sync]
+            [logseq-chat.storage-codec :as storage]
+            [ocaml.Datascript :as ds]
+            [ocaml.Datascript.Db :as db-api]
+            [ocaml.Transit_core.Json :as transit]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Logseq_chat_rpc :as native-rpc]
@@ -1518,6 +1525,191 @@
       (let [splice (nth splices 0)]
         (is (= (tag String (:uuid child)) (json-util/member "afterBlockId" splice)))
         (is (= 1 (count (json-items "rows" splice))))))))
+
+(deftest graph-switching-keeps-optimistic-models-isolated
+  (let [graph-a (native-core/logseq-chat-cache-model-create nil)
+        graph-b (native-core/logseq-chat-cache-model-create nil)
+        session (native-rpc/create
+                 :open_graph (fn [_] (Ok (stdlib/ignore 0)))
+                 :model_for_graph (fn [graph-id] (if (= graph-id "graph-a") graph-a graph-b)))
+        open-graph (fn [graph-id]
+                     (response-result
+                      (dispatch-json session "openGraph"
+                                     (json/to-string
+                                      (rpc/json-object
+                                       [(tuple "graphId" (tag String graph-id))
+                                        (tuple "activePath" (tag String (str "/graphs/" graph-id "/graph.sqlite")))
+                                        (tuple "checkpointPath" (tag String (str "/graphs/" graph-id "/sync.checkpoint")))])))))]
+    (open-graph "graph-a")
+    (response-result
+     (dispatch-json session "addAsset"
+                    "{\"uuid\":\"graph-a-asset\",\"title\":\"photo.jpg\",\"now\":1,\"assetType\":\"jpg\",\"assetSize\":4,\"assetChecksum\":\"abcd\",\"localPath\":\"Assets/photo.jpg\"}"))
+    (is (= 1 (count (native-core/logseq-chat-cache-model-pending-blocks (:model session)))))
+    (open-graph "graph-b")
+    (is (empty? (native-core/logseq-chat-cache-model-pending-blocks (:model session))))
+    (open-graph "graph-a")
+    (is (= 1 (count (native-core/logseq-chat-cache-model-pending-blocks (:model session)))))))
+
+(deftest collapse-finishes-editor-and-saves-title-exactly-once
+  (let [staged (atom [])
+        parent (synced-native-block "parent" "Parent")
+        child (assoc (synced-native-block "child" "Child") :parent-id (Some "parent"))
+        session (staging-native-session 92 [parent child] staged)]
+    (outliner-block-event session "tapBlock" "parent")
+    (outliner-event session "{\"type\":\"textChanged\",\"title\":\"Changed parent\",\"caretUTF16Offset\":14}")
+    (let [result (outliner-block-event session "toggleCollapsed" "parent")]
+      (is (= (tag Null) (json-util/member "editing" (json-util/member "outlinerState" result))))
+      (is (not (empty? (json-items "outlinerRowSplices" result))))
+      (is (= 1 (count @staged))))))
+
+(deftest autocomplete-creates-page-without-saving-block-draft
+  (let [staged (atom [])
+        session (staging-native-session 92 [(synced-native-block "editing" "Original")] staged)]
+    (outliner-block-event session "tapBlock" "editing")
+    (outliner-event session "{\"type\":\"textChanged\",\"title\":\"Draft [[Novel]]\",\"caretUTF16Offset\":13}")
+    (let [result (outliner-event session "{\"type\":\"chooseAutocomplete\",\"value\":\"Novel\"}")
+          editing (json-util/member "editing" (json-util/member "outlinerState" result))]
+      (is (= (tag String "Draft [[Novel]]") (json-util/member "title" editing)))
+      (is (= 1 (count @staged)))
+      (match (native-core/logseq-chat-pending-ops-intent-json (:intent (nth @staged 0)))
+        (tag Assoc fields)
+        (is (some (fn [[key value]] (and (= key "type") (= value (tag String "create-page")))) fields))
+        _ (is false)))))
+
+(defn contains-node-reference? [value]
+  (match value
+    (tag Assoc fields)
+    (or (= (tag String "nodeReference") (json-util/member "type" value))
+        (boolean (some (fn [[_ child]] (contains-node-reference? child)) fields)))
+    (tag List values) (boolean (some contains-node-reference? values))
+    _ false))
+
+(deftest saved-title-immediately-renders-new-reference-metadata
+  (let [live (atom (synced-native-block "source" "Original"))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 92))
+                  :graph_blocks (fn [] (Some (list @live)))
+                  :stage_operation
+                  (fn [operation]
+                    (match (:intent operation)
+                      (native-core/Save_title fields)
+                      (reset! live (assoc @live :title (:title fields)
+                                          :references (list (record native-core/entity-summary
+                                                                    (uuid "target") (title "New page")))))
+                      _ @live)
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (outliner-block-event session "tapBlock" "source")
+    (outliner-event session "{\"type\":\"textChanged\",\"title\":\"See [[target]]\",\"caretUTF16Offset\":14}")
+    (is (contains-node-reference? (outliner-event session "{\"type\":\"saveEditing\"}")))))
+
+(defn asset-replay-uuid [index]
+  (str "00000000-0000-4000-8000-00000000000" index))
+
+(defn asset-replay-change [before accepted]
+  (record protocol/sync-change-set
+          (format-version 1) (graph-id "plain-1") (schema-version "65.33")
+          (t-before before) (t accepted)
+          (upserts
+           (apply list
+                  (mapv (fn [index]
+                          (let [uuid (asset-replay-uuid index)]
+                            (record protocol/sync-entity
+                                    (id (transit/Array (list (transit/Keyword "block/uuid") (transit/Uuid uuid))))
+                                    (attrs (list (tuple (transit/Keyword "block/uuid") (transit/Uuid uuid))
+                                                 (tuple (transit/Keyword "block/title") (transit/String "photo.jpg")))))))
+                        (range (- before 41) (- accepted 41)))))
+          (deleted (list)) (operation-ids (list))))
+
+(defn replay-assets [session before accepted]
+  (response-result
+   (dispatch-json session "applySyncEvent"
+                  (json/to-string (rpc/json-object [(tuple "before" (tag Int before))
+                                                    (tuple "t" (tag Int accepted))])))))
+
+(deftest asset-acknowledgements-preserve-applied-cursor-across-replay-timings
+  (run!
+   (fn [timing]
+     (let [state (sync-session/create-state "plain-1" "65.33" 42)
+           schema (assoc storage/default-schema-attr :value-type (Some (ds/UuidType))
+                         :unique (Some (ds/Identity)) :indexed true)
+           conn (ds/create-conn :schema (list (tuple "block/uuid" schema)))
+           applied (atom 0)
+           session (configure-plain-session
+                    (native-rpc/create
+                     :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                     :sync_cursor (fn [] (Some (sync-session/applied-server-t state)))
+                     :graph_blocks (fn [] (Some (list)))
+                     :journal_page_id (fn [_] (Some "journal-page"))
+                     :stage_operation (fn [_] (Ok (stdlib/ignore 0)))
+                     :prepare_operation prepare-native-operation
+                     :apply_sync_event
+                     (fn [payload]
+                       (let [input (json/from-string payload)
+                             change (asset-replay-change
+                                     (json-util/to-int (json-util/member "before" input))
+                                     (json-util/to-int (json-util/member "t" input)))]
+                         (match (sync-session/apply-validated-change-set
+                                 state change
+                                 (fn [change]
+                                   (match (entity-sync/apply-change-set #(Ok %) conn change)
+                                     (Error message) (Error message)
+                                     (Ok _) (do (swap! applied inc) (Ok (stdlib/ignore 0))))))
+                           (Ok _) (Ok (stdlib/ignore 0))
+                           (Error _) (Error "sync cursor mismatch"))))))]
+       (run! (fn [index]
+               (response-result
+                (dispatch-json session "addAsset"
+                               (json/to-string
+                                (rpc/json-object
+                                 [(tuple "uuid" (tag String (asset-replay-uuid index)))
+                                  (tuple "title" (tag String "photo.jpg")) (tuple "now" (tag Int (+ 1788000000000 index)))
+                                  (tuple "assetType" (tag String "jpg")) (tuple "assetSize" (tag Int 4))
+                                  (tuple "assetChecksum" (tag String "abcd"))
+                                  (tuple "localPath" (tag String "Assets/photo.jpg"))])))))
+             [1 2 3])
+       (run! (fn [index]
+               (let [upload (required-pending-request session)]
+                 (is (= (tag String "PUT") (json-util/member "method" upload)))
+                 (let [transaction (json-util/member "pendingSyncRequest"
+                                                     (complete-native-request session upload "{\"ok\":true}"))
+                       before (sync-session/applied-server-t state)
+                       accepted (+ 42 index)]
+                   (when (= timing :replay-first) (replay-assets session before accepted))
+                   (let [completion (complete-native-request session transaction
+                                                             (json/to-string
+                                                              (rpc/json-object [(tuple "type" (tag String "tx/batch/ok"))
+                                                                                (tuple "t" (tag Int accepted))])))
+                         visible (json-util/to-int (json-util/member "appliedServerT" completion))
+                         snapshot (response-result (dispatch-json session "startWebSocket" ""))
+                         cursor (json-util/to-int (json-util/member "appliedServerT" snapshot))]
+                     (is (= (sync-session/applied-server-t state) visible))
+                     (is (= visible cursor))
+                     (when (= timing :ack-first) (replay-assets session cursor accepted))))))
+             [1 2 3])
+       (when (= timing :deferred) (replay-assets session 42 45))
+       (is (= (if (= timing :deferred) 1 3) @applied))
+       (is (= 45 (sync-session/applied-server-t state)))
+       (is (= 3 (count (db-api/datoms (ds/conn-db conn) (ds/Aevt) :a "block/uuid"))))))
+   [:ack-first :replay-first :deferred]))
+
+(deftest late-http-acknowledgement-cannot-rewind-transport-cursor
+  (let [session (configure-plain-session
+                 (native-rpc/create :sync_cursor (fn [] (Some 60))
+                                    :prepare_operation prepare-native-operation))
+        operation (assoc (queued-native-title-operation "late-ack" "New") :base-t 60)]
+    (set! (.-semantic-queue session) (list (record native-rpc/semantic-pending (operation operation))))
+    (match (:config session)
+      (Some config) (native-rpc/activate-semantic-request :t_before 43 session config)
+      None (stdlib/failwith "expected configured session"))
+    (match (:semantic-active session)
+      (Some active)
+      (match (:body (:request active))
+        (Some body) (is (= (tag Int 60) (json-util/member "t-before" (json/from-string body))))
+        None (is false))
+      None (is false))))
 
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
