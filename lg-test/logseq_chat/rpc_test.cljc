@@ -950,6 +950,120 @@
       (is (= "op-accepted" (:operation-id operation)))
       (is (= (native-core/Accepted 44) (:state operation))))))
 
+(defn retryable-native-operation? [operation]
+  (match (:state operation)
+    (native-core/Queued) true
+    (native-core/Retryable) true
+    (native-core/Submitted) true
+    _ false))
+
+(defn required-pending-request [session]
+  (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+    request
+    (stdlib/failwith "expected a pending sync request")))
+
+(defn complete-native-request [session request body]
+  (response-result
+   (dispatch-json session "completePendingSync"
+                  (json/to-string
+                   (rpc/json-object [(tuple "id" (json-util/member "id" request))
+                                     (tuple "status" (tag Int 200)) (tuple "body" (tag String body))
+                                     (tuple "error" (tag Null))])))))
+
+(deftest http-acceptance-advances-submission-but-not-applied-cursor
+  (let [staged (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list (synced-native-block "remote" "Old"))))
+                  :stage_operation
+                  (fn [operation]
+                    (swap! staged (fn [pending]
+                                    (conj (filterv #(not= (:operation-id %) (:operation-id operation)) pending)
+                                          operation)))
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation
+                  :pending_operations (fn [] (apply list (filterv retryable-native-operation? @staged)))))]
+    (response-result (dispatch-json session "updateBlock"
+                                    "{\"uuid\":\"remote\",\"operationId\":\"first-after-response\",\"expectedTitle\":\"Old\",\"title\":\"First\",\"status\":null}"))
+    (let [completion (complete-native-request session (required-pending-request session)
+                                              "{\"type\":\"tx/batch/ok\",\"t\":43}")]
+      (is (= (tag Int 42) (json-util/member "appliedServerT" completion))))
+    (response-result (dispatch-json session "updateBlock"
+                                    "{\"uuid\":\"remote\",\"operationId\":\"second-after-response\",\"expectedTitle\":\"First\",\"title\":\"Second\",\"status\":null}"))
+    (is (= (tag Int 43) (json-util/member "t-before" (json-util/member "bodyObject" (required-pending-request session)))))))
+
+(deftest captures-after-acceptance-still-stage-against-authoritative-cursor
+  (let [staged (atom [])
+        source (synced-native-block "accepted-before-sse" "First")
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (Some (list source)))
+                  :stage_operation
+                  (fn [operation]
+                    (if (and (or (= (native-core/Queued) (:state operation))
+                                 (= (native-core/Applied) (:state operation)))
+                             (not= 42 (:base-t operation)))
+                      (Error "operation was created against a stale server cursor")
+                      (do (swap! staged (fn [pending]
+                                          (conj (filterv #(not= (:operation-id %) (:operation-id operation)) pending)
+                                                operation)))
+                          (Ok (stdlib/ignore 0)))))
+                  :prepare_operation prepare-native-operation
+                  :pending_operations (fn [] (apply list (filterv retryable-native-operation? @staged)))))]
+    (response-result (dispatch-json session "updateBlock"
+                                    "{\"uuid\":\"accepted-before-sse\",\"operationId\":\"accepted-first\",\"expectedTitle\":\"First\",\"title\":\"Updated\",\"status\":null}"))
+    (complete-native-request session (required-pending-request session) "{\"type\":\"tx/batch/ok\",\"t\":43}")
+    (run! (fn [[action payload]] (response-result (dispatch-json session action payload)))
+          [(tuple "send" "{\"text\":\"After acceptance\",\"uuid\":\"capture-after-acceptance\",\"now\":1788000000000}")
+           (tuple "sendTask" "{\"text\":\"Task after acceptance\",\"uuid\":\"task-after-acceptance\",\"now\":1788000000001,\"status\":{\"uuid\":\"todo\",\"ident\":\"logseq.property/status.todo\",\"title\":\"Todo\"}}")
+           (tuple "addAsset" "{\"uuid\":\"2f659891-3fbc-492c-8943-9e08de2ed949\",\"title\":\"photo.jpg\",\"now\":1788000000002,\"assetType\":\"jpg\",\"assetSize\":4,\"assetChecksum\":\"abcd\",\"localPath\":\"Assets/photo.jpg\",\"targetBlockId\":\"accepted-before-sse\"}")])
+    (outliner-event session "{\"type\":\"tapBlock\",\"uuid\":\"accepted-before-sse\"}")
+    (outliner-event session "{\"type\":\"returnPressed\",\"uuid\":\"accepted-before-sse\"}")
+    (let [operation (nth @staged (dec (count @staged)))]
+      (is (= (native-core/Queued) (:state operation)))
+      (is (= 42 (:base-t operation))))))
+
+(deftest rejected-and-offline-transactions-remain-retryable-with-stable-identity
+  (run! (fn [offline?]
+          (let [persisted (atom [])
+                operation-id (if offline? "op-retry" "op-rejected")
+                session (configure-plain-session
+                         (native-rpc/create
+                          :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                          :sync_cursor (fn [] (Some 42))
+                          :graph_blocks (fn [] (Some (list (synced-native-block "remote" "Old"))))
+                          :stage_operation
+                          (fn [operation]
+                            (swap! persisted (fn [pending]
+                                               (conj (filterv #(not= (:operation-id %) (:operation-id operation)) pending)
+                                                     operation)))
+                            (Ok (stdlib/ignore 0)))
+                          :prepare_operation prepare-native-operation
+                          :pending_operations (fn [] (apply list (filterv retryable-native-operation? @persisted)))))]
+            (response-result (dispatch-json session "updateBlock"
+                                            (str "{\"uuid\":\"remote\",\"operationId\":\"" operation-id
+                                                 "\",\"expectedTitle\":\"Old\",\"title\":\"Pending\",\"status\":null}")))
+            (let [request (required-pending-request session)]
+              (if offline?
+                (response-result
+                 (dispatch-json session "completePendingSync"
+                                (json/to-string (rpc/json-object
+                                                 [(tuple "id" (json-util/member "id" request))
+                                                  (tuple "status" (tag Null)) (tuple "body" (tag Null))
+                                                  (tuple "error" (tag String "offline"))]))))
+                (complete-native-request session request "{\"type\":\"tx/reject\",\"reason\":\"stale\",\"t\":43}")))
+            (is (= 1 (count @persisted)))
+            (let [operation (nth @persisted 0)]
+              (is (= operation-id (:operation-id operation)))
+              (is (= (native-core/Retryable) (:state operation))))
+            (let [tx (nth (json-items "txs" (json-util/member "bodyObject" (required-pending-request session))) 0)]
+              (is (= (tag String operation-id) (json-util/member "tx-id" tx))))))
+        [false true]))
+
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
         parent (assoc (native-core/logseq-chat-cache-model-local-block
