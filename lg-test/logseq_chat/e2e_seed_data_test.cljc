@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is]]
             [clojure.string :as string]
             [logseq-chat.e2e-seed-data :as seed]
+            [logseq-chat.e2e-seed-cli :as cli]
             [logseq-chat.journal :as journal]
             [logseq-chat.graph-read :as graph]
             [logseq-chat.markup :as markup]
@@ -9,6 +10,20 @@
             [logseq-chat.storage-codec :as codec]
             [ocaml.Datascript :as ds]
             [ocaml.Stdlib :as stdlib]))
+
+(deftest command-line-validation-preserves-modes-and-exit-codes
+  (is (= (Ok (tuple "graph.sqlite" :default)) (cli/parse-args ["seed" "graph.sqlite"])))
+  (run! (fn [[flag mode]]
+          (is (= (Ok (tuple "graph.sqlite" mode)) (cli/parse-args ["seed" "graph.sqlite" flag]))))
+        [(tuple "--inspect" :inspect) (tuple "--header-navigation" :header-navigation)
+         (tuple "--composer" :composer) (tuple "--outliner" :outliner)
+         (tuple "--fixture" :fixture) (tuple "--performance" :performance)])
+  (run! (fn [args] (is (= (Error (tuple 2 cli/usage)) (cli/parse-args args))))
+        [[] ["seed"] ["seed" "graph.sqlite" "--inspect" "extra"]])
+  (is (= (Error (tuple 2 "unknown seed mode: --unknown"))
+         (cli/parse-args ["seed" "graph.sqlite" "--unknown"])))
+  (is (= (tuple 2 "unknown seed mode: --unknown")
+         (cli/run ["seed" "/nonexistent/graph.sqlite" "--unknown"]))))
 
 (defn expect-ok [result]
   (match result (Ok value) value (Error message) (stdlib/failwith message)))
@@ -30,7 +45,9 @@
             "db/ident" (assoc one :unique (Some (ds/Identity)) :value-type (Some (ds/KeywordType)) :indexed true)})))
 
 (defn plain [value] (Ok value))
+
 (defn visible [db] (graph/blocks plain 7 db))
+
 (defn exists? [db uuid] (some? (ds/entid db "block/uuid" (ds/Uuid uuid))))
 
 (deftest standard-fixture-links-tags-rich-blocks-and-cards
