@@ -184,13 +184,6 @@ let optional_int name fields =
   | Some _ -> Error ("field must be an integer: " ^ name)
 ;;
 
-let required_bool name fields =
-  match assoc name fields with
-  | Some (`Bool value) -> Ok value
-  | Some _ -> Error ("field must be a boolean: " ^ name)
-  | None -> Error ("missing field: " ^ name)
-;;
-
 let pending_request_json session =
   match session.semantic_active, session.pending_sync with
   | Some active, _ ->
@@ -1953,85 +1946,39 @@ let dispatch session action payload =
     debug "loadFlashcards count=%d now=%d" (List.length session.flashcards) now;
     snapshot_visible session
   | "reviewFlashcard" ->
-    (match payload, session.graph_review_flashcard with
-     | Some payload, Some review ->
-       (match from_string payload with
-        | `Assoc fields ->
-          (match required_string "uuid" fields,
-                 required_string "rating" fields,
-                 optional_int "now" fields,
-                 required_string "operationId" fields with
-           | Ok uuid, Ok rating, Ok requested_now, Ok operation_id ->
-             (match LG.logseq_chat_rpc_flashcard_rating rating with
-              | Error message -> LG.logseq_chat_rpc_failure "invalid_params" message
-              | Ok rating ->
-                let now = Option.value requested_now ~default:(now_ms ()) in
-                (match review ~uuid ~rating ~now ~operation_id with
-                 | Error message -> LG.logseq_chat_rpc_failure "flashcard_review_failed" message
-                 | Ok () ->
-                   Option.iter (restore_semantic_queue session) session.config;
-                   session.flashcards <-
-                     Option.fold
-                       ~none:[]
-                       ~some:(fun load -> load ~now)
-                       session.graph_due_flashcards;
-                   snapshot_visible session))
-           | Error message, _, _, _ | _, Error message, _, _
-           | _, _, Error message, _ | _, _, _, Error message ->
-             LG.logseq_chat_rpc_failure "invalid_params" message)
-        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "reviewFlashcard payload must be an object"
-        | exception _ ->
-          LG.logseq_chat_rpc_failure "invalid_json" "reviewFlashcard payload must be valid JSON")
-     | None, _ -> LG.logseq_chat_rpc_failure "invalid_params" "reviewFlashcard requires a payload"
-     | _, None -> LG.logseq_chat_rpc_failure "flashcards_unavailable" "No graph is open")
+    let review =
+      Option.map
+        (fun review uuid rating now operation_id -> review ~uuid ~rating ~now ~operation_id)
+        session.graph_review_flashcard
+    in
+    LG.logseq_chat_rpc_review_flashcard payload review now_ms
+      (fun now ->
+        Option.iter (restore_semantic_queue session) session.config;
+        session.flashcards <-
+          Option.fold ~none:[] ~some:(fun load -> load ~now) session.graph_due_flashcards;
+        snapshot_visible session)
   | "setPageFavorite" ->
-    (match payload, session.graph_set_page_favorite, session.config with
-     | Some payload, Some set_favorite, Some config ->
-       (match from_string payload with
-        | `Assoc fields ->
-          (match required_string "pageUuid" fields,
-                 required_bool "favorite" fields,
-                 required_string "operationId" fields,
-                 optional_int "now" fields with
-           | Ok page_uuid, Ok favorite, Ok operation_id, Ok requested_now ->
-             let now = Option.value requested_now ~default:(now_ms ()) in
-             (match set_favorite ~page_uuid ~favorite ~operation_id ~now with
-              | Ok () ->
-                restore_semantic_queue session config;
-                snapshot_visible session
-              | Error message -> LG.logseq_chat_rpc_failure "set_page_favorite_failed" message)
-           | Error message, _, _, _ | _, Error message, _, _
-           | _, _, Error message, _ | _, _, _, Error message ->
-             LG.logseq_chat_rpc_failure "invalid_params" message)
-        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "setPageFavorite payload must be an object"
-        | exception _ ->
-          LG.logseq_chat_rpc_failure "invalid_json" "setPageFavorite payload must be valid JSON")
-     | None, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" "setPageFavorite requires a payload"
-     | _, None, _ -> LG.logseq_chat_rpc_failure "set_page_favorite_unavailable" "No graph is open"
-     | _, _, None -> LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph first")
+    let config = session.config in
+    let set_favorite =
+      Option.map
+        (fun set page_uuid favorite operation_id now -> set ~page_uuid ~favorite ~operation_id ~now)
+        session.graph_set_page_favorite
+    in
+    LG.logseq_chat_rpc_set_page_favorite payload set_favorite (Option.is_some config) now_ms
+      (fun () ->
+        Option.iter (restore_semantic_queue session) config;
+        snapshot_visible session)
   | "deletePage" ->
-    (match payload, session.graph_delete_page, session.config with
-     | Some payload, Some delete_page, Some config ->
-       (match from_string payload with
-        | `Assoc fields ->
-          (match required_string "pageUuid" fields,
-                 required_string "operationId" fields,
-                 optional_int "now" fields with
-           | Ok page_uuid, Ok operation_id, Ok requested_now ->
-             let now = Option.value requested_now ~default:(now_ms ()) in
-             (match delete_page ~page_uuid ~operation_id ~now with
-              | Ok () ->
-                restore_semantic_queue session config;
-                snapshot_visible session
-              | Error message -> LG.logseq_chat_rpc_failure "delete_page_failed" message)
-           | Error message, _, _ | _, Error message, _ | _, _, Error message ->
-             LG.logseq_chat_rpc_failure "invalid_params" message)
-        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "deletePage payload must be an object"
-        | exception _ ->
-          LG.logseq_chat_rpc_failure "invalid_json" "deletePage payload must be valid JSON")
-     | None, _, _ -> LG.logseq_chat_rpc_failure "invalid_params" "deletePage requires a payload"
-     | _, None, _ -> LG.logseq_chat_rpc_failure "delete_page_unavailable" "No graph is open"
-     | _, _, None -> LG.logseq_chat_rpc_failure "graph_not_configured" "Select a graph first")
+    let config = session.config in
+    let delete =
+      Option.map
+        (fun delete page_uuid operation_id now -> delete ~page_uuid ~operation_id ~now)
+        session.graph_delete_page
+    in
+    LG.logseq_chat_rpc_delete_page payload delete (Option.is_some config) now_ms
+      (fun () ->
+        Option.iter (restore_semantic_queue session) config;
+        snapshot_visible session)
   | "unlockGraph" ->
     (match session.config, session.unlock_graph, payload with
      | Some config, Some unlock_graph, Some password when selected_graph_is_encrypted session ->

@@ -350,6 +350,157 @@
 (defn response-error-code [response]
   (json-util/to-string (json-util/member "code" (json-util/member "error" response))))
 
+(defn configure-plain-session [session]
+  (dispatch-json session "configure"
+                 "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
+  session)
+
+(deftest page-favorite-updates-sidebar-and-preserves-operation-fields
+  (let [favorite (atom false)
+        calls (atom [])
+        page (record native-core/entity-summary (uuid "page-favorite") (title "Favorite me"))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :graph_sidebar_pages
+                  (fn [] (Some (record native-core/sidebar-pages
+                                       (favorites (if @favorite [page] [])) (recent-pages [page]))))
+                  :graph_set_page_favorite
+                  (fn [page-uuid value operation-id now]
+                    (swap! calls conj (tuple page-uuid value operation-id now))
+                    (reset! favorite value)
+                    (Ok (stdlib/ignore 0)))))]
+    (let [response (dispatch-json session "setPageFavorite"
+                                  "{\"pageUuid\":\"page-favorite\",\"favorite\":true,\"operationId\":\"favorite-op\",\"now\":100}")]
+      (is (json-util/to-bool (json-util/member "ok" response)))
+      (is (= 1 (count (json-util/to-list (json-util/member "favorites" (json-util/member "result" response)))))))
+    (dispatch-json session "setPageFavorite"
+                   "{\"pageUuid\":\"page-favorite\",\"favorite\":false,\"operationId\":\"unfavorite-op\",\"now\":100}")
+    (is (= [(tuple "page-favorite" true "favorite-op" 100)
+            (tuple "page-favorite" false "unfavorite-op" 100)] @calls))))
+
+(deftest page-deletion-updates-sidebar-and-preserves-operation-fields
+  (let [deleted (atom [])
+        page (record native-core/entity-summary (uuid "page-delete") (title "Delete me"))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :graph_sidebar_pages
+                  (fn [] (Some (record native-core/sidebar-pages
+                                  (favorites []) (recent-pages (if (empty? @deleted) [page] [])))))
+                  :graph_delete_page
+                  (fn [page-uuid operation-id now]
+                     (swap! deleted conj (tuple page-uuid operation-id now))
+                    (Ok (stdlib/ignore 0)))))
+        response (dispatch-json session "deletePage"
+                                "{\"pageUuid\":\"page-delete\",\"operationId\":\"delete-page-op\",\"now\":100}")]
+    (is (json-util/to-bool (json-util/member "ok" response)))
+    (is (empty? (json-util/to-list (json-util/member "recentPages" (json-util/member "result" response)))))
+    (is (= [(tuple "page-delete" "delete-page-op" 100)] @deleted))))
+
+(deftest flashcard-review-removes-due-card-and-preserves-operation-fields
+  (let [now 1776000000000
+        reviewed (atom [])
+        due-card (record native-core/due-card
+                         (block (native-core/logseq-chat-cache-model-local-block
+                                 "flashcard" "Question {{cloze answer}}" "page" nil now))
+                   (children (list)) (card (native-core/logseq-chat-flashcards-new-card now)))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                   :graph_due_flashcards (fn [_] (if (empty? @reviewed) (list due-card) (list)))
+                  :graph_review_flashcard
+                  (fn [uuid rating at operation-id]
+                     (swap! reviewed conj (tuple uuid rating at operation-id))
+                    (Ok (stdlib/ignore 0)))))]
+    (dispatch-json session "loadFlashcards" "1776000000000")
+    (let [response (dispatch-json session "reviewFlashcard"
+                                  "{\"uuid\":\"flashcard\",\"rating\":\"good\",\"now\":1776000000000,\"operationId\":\"review-op\"}")]
+      (is (json-util/to-bool (json-util/member "ok" response)))
+      (is (empty? (json-util/to-list (json-util/member "flashcards" (json-util/member "result" response))))))
+    (is (= [(tuple "flashcard" (native-core/Good) now "review-op")] @reviewed))))
+
+(deftest page-and-review-actions-validate-before-calling-services
+  (let [calls (atom 0)
+        session (configure-plain-session
+                 (native-rpc/create
+                  :graph_set_page_favorite (fn [_ _ _ _] (swap! calls inc) (Ok (stdlib/ignore 0)))
+                  :graph_delete_page (fn [_ _ _] (swap! calls inc) (Ok (stdlib/ignore 0)))
+                  :graph_review_flashcard (fn [_ _ _ _] (swap! calls inc) (Ok (stdlib/ignore 0)))))]
+    (run! (fn [[action wire message]]
+            (let [response (dispatch-json session action wire)]
+              (is (= "invalid_params" (response-error-code response)))
+              (is (= message (json-util/to-string (json-util/member "message" (json-util/member "error" response)))))))
+          [(tuple "setPageFavorite" "{}" "missing field: pageUuid")
+           (tuple "setPageFavorite" "{\"pageUuid\":1,\"favorite\":1}" "field must be a string: pageUuid")
+           (tuple "setPageFavorite" "{\"pageUuid\":\"p\"}" "missing field: favorite")
+           (tuple "setPageFavorite" "{\"pageUuid\":\"p\",\"favorite\":null}" "field must be a boolean: favorite")
+           (tuple "setPageFavorite" "{\"pageUuid\":\"p\",\"favorite\":true}" "missing field: operationId")
+           (tuple "setPageFavorite" "{\"pageUuid\":\"p\",\"favorite\":true,\"operationId\":\"op\",\"now\":false}" "field must be an integer: now")
+           (tuple "deletePage" "{}" "missing field: pageUuid")
+           (tuple "deletePage" "{\"pageUuid\":\"p\"}" "missing field: operationId")
+           (tuple "deletePage" "{\"pageUuid\":\"p\",\"operationId\":\"op\",\"now\":false}" "field must be an integer: now")
+           (tuple "reviewFlashcard" "{}" "missing field: uuid")
+           (tuple "reviewFlashcard" "{\"uuid\":\"c\"}" "missing field: rating")
+           (tuple "reviewFlashcard" "{\"uuid\":\"c\",\"rating\":\"bad\",\"now\":false}" "field must be an integer: now")
+           (tuple "reviewFlashcard" "{\"uuid\":\"c\",\"rating\":\"bad\"}" "missing field: operationId")
+           (tuple "reviewFlashcard" "{\"uuid\":\"c\",\"rating\":\"bad\",\"operationId\":\"op\"}" "rating must be again, hard, good, or easy")])
+    (run! (fn [action]
+            (is (= "invalid_json" (response-error-code (dispatch-json session action "{"))))
+            (is (= "invalid_params" (response-error-code (dispatch-json session action "[]")))))
+          ["setPageFavorite" "deletePage" "reviewFlashcard"])
+    (is (= 0 @calls))))
+
+(deftest page-and-review-actions-preserve-service-errors
+  (let [session (configure-plain-session
+                 (native-rpc/create
+                  :graph_set_page_favorite (fn [_ _ _ _] (Error "favorite rejected"))
+                  :graph_delete_page (fn [_ _ _] (Error "delete rejected"))
+                  :graph_review_flashcard (fn [_ _ _ _] (Error "review rejected"))))]
+    (run! (fn [[action wire code message]]
+            (let [response (dispatch-json session action wire)]
+              (is (= code (response-error-code response)))
+              (is (= message (json-util/to-string (json-util/member "message" (json-util/member "error" response)))))))
+          [(tuple "setPageFavorite" "{\"pageUuid\":\"p\",\"favorite\":true,\"operationId\":\"op\"}" "set_page_favorite_failed" "favorite rejected")
+           (tuple "deletePage" "{\"pageUuid\":\"p\",\"operationId\":\"op\"}" "delete_page_failed" "delete rejected")
+           (tuple "reviewFlashcard" "{\"uuid\":\"c\",\"rating\":\"good\",\"operationId\":\"op\"}" "flashcard_review_failed" "review rejected")]))
+  (let [session (native-rpc/create)]
+    (run! (fn [[action code]]
+            (is (= code (response-error-code (dispatch-json session action "{}")))))
+          [(tuple "setPageFavorite" "set_page_favorite_unavailable")
+           (tuple "deletePage" "delete_page_unavailable")
+           (tuple "reviewFlashcard" "flashcards_unavailable")])))
+
+(deftest page-and-review-actions-preserve-precondition-priority
+  (let [calls (atom 0)
+        session (native-rpc/create
+                 :graph_set_page_favorite (fn [_ _ _ _] (swap! calls inc) (Ok (stdlib/ignore 0)))
+                 :graph_delete_page (fn [_ _ _] (swap! calls inc) (Ok (stdlib/ignore 0))))]
+    (run! (fn [action]
+            (is (= "graph_not_configured" (response-error-code (dispatch-json session action "{")))))
+          ["setPageFavorite" "deletePage"])
+    (run! (fn [action]
+            (let [response (json/from-string
+                            (native-rpc/call session
+                                             (json/to-string
+                                              (rpc/json-object
+                                               [(tuple "apiVersion" (tag Int 1)) (tuple "method" (tag String "dispatch"))
+                                                (tuple "params" (rpc/json-object [(tuple "action" (tag String action))]))]))))]
+              (is (= "invalid_params" (response-error-code response)))
+              (is (= (str action " requires a payload")
+                     (json-util/to-string (json-util/member "message" (json-util/member "error" response)))))))
+          ["setPageFavorite" "deletePage" "reviewFlashcard"])
+    (is (= 0 @calls))))
+
+(deftest page-service-exceptions-are-not-reclassified-as-payload-json-errors
+  (let [session (configure-plain-session
+                 (native-rpc/create
+                  :graph_delete_page (fn [_ _ _] (throw (Failure "service crashed")))))
+        response (dispatch-json session "deletePage" "{\"pageUuid\":\"p\",\"operationId\":\"op\"}")]
+    (is (= "invalid_json" (response-error-code response)))
+    (is (= "request must be valid JSON"
+           (json-util/to-string (json-util/member "message" (json-util/member "error" response)))))))
+
 (def remote-feed
   "{\"blocks\":[{\"uuid\":\"remote\",\"title\":\"Remote text\",\"page-id\":\"journal\",\"parent-id\":\"journal\",\"created-at\":10,\"updated-at\":20}],\"journals\":[{\"uuid\":\"journal\",\"title\":\"Today\",\"journal-day\":20260916}]}")
 

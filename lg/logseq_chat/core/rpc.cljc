@@ -540,6 +540,71 @@
     (Ok value) (Ok value)
     (Error message) (Error (tuple code message))))
 
+(defn action-fields [action payload]
+  (try
+    (match (json/from-string payload)
+      (tag Assoc entries) (Ok (into {} (reverse entries)))
+      _ (Error (tuple "invalid_params" (str action " payload must be an object"))))
+    (catch _ (Error (tuple "invalid_json" (str action " payload must be valid JSON"))))))
+
+(defn action-response [result]
+  (match result
+    (Ok response) response
+    (Error (tuple code message)) (failure code message)))
+
+(defn required-bool [fields name]
+  (match (field fields name)
+    (Some (tag Bool value)) (Ok value)
+    None (Error (str "missing field: " name))
+    _ (Error (str "field must be a boolean: " name))))
+
+(defn review-flashcard [payload review clock completed]
+  (match (tuple payload review)
+    (tuple None _) (failure "invalid_params" "reviewFlashcard requires a payload")
+    (tuple _ None) (failure "flashcards_unavailable" "No graph is open")
+    (tuple (Some payload) (Some review))
+    (action-response
+      (let* [fields (action-fields "reviewFlashcard" payload)
+             uuid (graph-workflow-result "invalid_params" (required-string fields "uuid"))
+             rating (graph-workflow-result "invalid_params" (required-string fields "rating"))
+             requested-now (graph-workflow-result "invalid_params" (optional-int fields "now"))
+             operation-id (graph-workflow-result "invalid_params" (required-string fields "operationId"))
+             rating (graph-workflow-result "invalid_params" (flashcard-rating rating))]
+        (let [now (match requested-now (Some now) now None (clock))]
+          (let* [_ (graph-workflow-result "flashcard_review_failed" (review uuid rating now operation-id))]
+            (Ok (completed now))))))))
+
+(defn set-page-favorite [payload set-favorite configured? clock completed]
+  (match (tuple payload set-favorite configured?)
+    (tuple None _ _) (failure "invalid_params" "setPageFavorite requires a payload")
+    (tuple _ None _) (failure "set_page_favorite_unavailable" "No graph is open")
+    (tuple _ _ false) (failure "graph_not_configured" "Select a graph first")
+    (tuple (Some payload) (Some set-favorite) true)
+    (action-response
+      (let* [fields (action-fields "setPageFavorite" payload)
+             page-uuid (graph-workflow-result "invalid_params" (required-string fields "pageUuid"))
+             favorite (graph-workflow-result "invalid_params" (required-bool fields "favorite"))
+             operation-id (graph-workflow-result "invalid_params" (required-string fields "operationId"))
+             requested-now (graph-workflow-result "invalid_params" (optional-int fields "now"))]
+        (let [now (match requested-now (Some now) now None (clock))]
+          (let* [_ (graph-workflow-result "set_page_favorite_failed" (set-favorite page-uuid favorite operation-id now))]
+            (Ok (completed))))))))
+
+(defn delete-page [payload delete configured? clock completed]
+  (match (tuple payload delete configured?)
+    (tuple None _ _) (failure "invalid_params" "deletePage requires a payload")
+    (tuple _ None _) (failure "delete_page_unavailable" "No graph is open")
+    (tuple _ _ false) (failure "graph_not_configured" "Select a graph first")
+    (tuple (Some payload) (Some delete) true)
+    (action-response
+      (let* [fields (action-fields "deletePage" payload)
+             page-uuid (graph-workflow-result "invalid_params" (required-string fields "pageUuid"))
+             operation-id (graph-workflow-result "invalid_params" (required-string fields "operationId"))
+             requested-now (graph-workflow-result "invalid_params" (optional-int fields "now"))]
+        (let [now (match requested-now (Some now) now None (clock))]
+          (let* [_ (graph-workflow-result "delete_page_failed" (delete page-uuid operation-id now))]
+            (Ok (completed))))))))
+
 (defn debug [message]
   (stdlib/prerr-endline (str "LogseqChat core " message)))
 
