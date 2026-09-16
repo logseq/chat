@@ -134,6 +134,152 @@
                                         [(tuple "action" (tag String action))
                                          (tuple "payload" (tag String payload))]))])))))
 
+(defn response-result [response]
+  (is (json-util/to-bool (json-util/member "ok" response)))
+  (json-util/member "result" response))
+
+(defn json-items [key value]
+  (vec (json-util/to-list (json-util/member key value))))
+
+(deftest node-navigation-preserves-independent-projections-and-editing
+  (let [page (record native-core/entity-summary (uuid "page-1") (title "Page one"))
+        block (assoc (native-core/logseq-chat-cache-model-local-block
+                      "block-1" "Referenced block" "page-1" nil 1)
+                     :parent-id (Some "page-1") :order (Some "a0")
+                     :sync-status "synced" :breadcrumbs (list page))
+        session (native-rpc/create
+                 :graph_node_destination
+                 (fn [uuid] (cond (= uuid "block-1") (Some (tuple page true))
+                                  (or (= uuid "page-1") (= uuid "tag-1")) (Some (tuple page false))
+                                  :else nil))
+                 :graph_page_blocks (fn [uuid] (when (= uuid "page-1") (Some (list block))))
+                 :graph_tag_pages (fn [] (Some (list (record native-core/entity-summary
+                                                             (uuid "tag-1") (title "Tag one")))))
+                 :graph_node_is_tag #(= % "tag-1")
+                 :graph_node_references (fn [uuid] (when (= uuid "block-1") (Some (list block))))
+                 :graph_tag_objects (fn [uuid] (when (= uuid "tag-1") (Some (list block)))))]
+    (let [result (response-result (dispatch-json session "openNode" "{\"uuid\":\"block-1\"}"))
+          route (nth (json-items "nodeRoutes" result) 0)
+          related (nth (json-items "relatedBlocks" route) 0)]
+      (is (= (tag Null) (json-util/member "selectedPage" result)))
+      (is (= (tag String "block-1") (json-util/member "uuid" route)))
+      (is (= (tag String "page-1") (json-util/member "uuid" (json-util/member "page" route))))
+      (is (= [(tag String "block-1")] (json-items "zoomedBlockIds" (json-util/member "outlinerState" route))))
+      (is (= (tag String "block-1") (json-util/member "uuid" related)))
+      (is (= 1 (count (json-items "breadcrumbs" related)))))
+    (let [result (response-result (dispatch-json session "outlinerEvent" "{\"type\":\"tapBlock\",\"uuid\":\"block-1\"}"))
+          route (nth (json-items "nodeRoutes" result) 0)]
+      (is (= (tag Bool false) (json-util/member "isOutlinerPatch" result)))
+      (is (= (tag String "block-1")
+             (json-util/member "uuid" (json-util/member "editing" (json-util/member "outlinerState" route))))))
+    (let [result (response-result (dispatch-json session "openNode" "{\"uuid\":\"tag-1\"}"))
+          routes (json-items "nodeRoutes" result)
+          route (nth routes 1)
+          related (nth (json-items "relatedBlocks" route) 0)]
+      (is (= 2 (count routes)))
+      (is (= (tag Bool true) (json-util/member "isTag" route)))
+      (is (= (tag String "block-1") (json-util/member "uuid" related)))
+      (is (= 1 (count (json-items "breadcrumbs" related)))))
+    (let [routes (json-items "nodeRoutes" (response-result (dispatch-json session "closeNode" "")))]
+      (is (= 1 (count routes)))
+      (is (= (tag String "block-1") (json-util/member "uuid" (nth routes 0)))))))
+
+(deftest sidebar-tag-selection-projects-objects-and-linked-references
+  (let [page (record native-core/entity-summary (uuid "tag-1") (title "Task"))
+        tagged (assoc (native-core/logseq-chat-cache-model-local-block
+                       "task-1" "Do the thing" "page-1" nil 1)
+                      :parent-id (Some "page-1") :order (Some "a0") :sync-status "synced")
+        linked (assoc tagged :uuid "reference-1" :title "Links Task")
+        session (native-rpc/create
+                 :graph_sidebar_pages (fn [] (Some (record native-core/sidebar-pages
+                                                           (favorites [page]) (recent-pages []))))
+                 :graph_page_blocks (fn [_] (Some (list)))
+                 :graph_node_is_tag #(= % "tag-1")
+                 :graph_tag_objects (fn [uuid] (when (= uuid "tag-1") (Some (list tagged))))
+                 :graph_node_references (fn [uuid] (when (= uuid "tag-1") (Some (list linked)))))
+        result (response-result (dispatch-json session "selectPage" "tag-1"))]
+    (is (= (tag Bool true) (json-util/member "selectedPageIsTag" result)))
+    (is (= (tag String "task-1") (json-util/member "uuid" (nth (json-items "relatedBlocks" result) 0))))
+    (is (= (tag String "reference-1") (json-util/member "uuid" (nth (json-items "linkedReferenceBlocks" result) 0))))))
+
+(deftest sidebar-page-selection-projects-references-without-node-routes
+  (let [page (record native-core/entity-summary (uuid "page-1") (title "Page one"))
+        reference (assoc (native-core/logseq-chat-cache-model-local-block
+                          "reference-1" "Links Page one" "journal-1" nil 1)
+                         :parent-id (Some "journal-1") :order (Some "a0") :sync-status "synced")
+        session (native-rpc/create
+                 :graph_sidebar_pages (fn [] (Some (record native-core/sidebar-pages
+                                                           (favorites [page]) (recent-pages []))))
+                 :graph_page_blocks (fn [_] (Some (list)))
+                 :graph_node_references (fn [uuid] (when (= uuid "page-1") (Some (list reference)))))
+        result (response-result (dispatch-json session "selectPage" "page-1"))]
+    (is (= (tag Bool false) (json-util/member "selectedPageIsTag" result)))
+    (is (= (tag String "reference-1") (json-util/member "uuid" (nth (json-items "relatedBlocks" result) 0))))
+    (is (empty? (json-items "nodeRoutes" result)))))
+
+(deftest search-projects-page-context-and-clears-blank-queries
+  (let [page (record native-core/entity-summary (uuid "page-1") (title "Page one"))
+        hit (record native-core/indexed-search-hit (uuid "block-1") (title "Search me")
+                    (is-page false) (page (Some page)) (breadcrumbs [page]))
+        session (native-rpc/create :graph_search (fn [query] (if (= query "search") (list hit) (list))))
+        result (response-result (dispatch-json session "searchNodes" "search"))
+        found (nth (json-items "searchResults" result) 0)]
+    (is (= (tag String "search") (json-util/member "searchQuery" result)))
+    (is (= (tag String "block-1") (json-util/member "uuid" found)))
+    (is (= (tag String "Search me") (json-util/member "title" found)))
+    (is (= (tag Bool false) (json-util/member "isPage" found)))
+    (is (= (tag String "page-1") (json-util/member "uuid" (json-util/member "page" found))))
+    (is (= 1 (count (json-items "breadcrumbs" found))))
+    (is (= (tag String "Page one") (json-util/member "title" (nth (json-items "breadcrumbs" found) 0))))
+    (is (empty? (json-items "searchResults" (response-result (dispatch-json session "searchNodes" "")))))))
+
+(deftest node-navigation-resolves-projected-pages-and-blocks
+  (let [page (record native-core/entity-summary (uuid "projected-page") (title "Projected page"))
+        block (assoc (native-core/logseq-chat-cache-model-local-block
+                      "projected-block" "Projected block" "projected-page" nil 1)
+                     :parent-id (Some "projected-page") :order (Some "a0") :breadcrumbs (list page))
+        session (native-rpc/create
+                 :graph_blocks (fn [] (Some (list block)))
+                 :graph_page_blocks (fn [uuid] (Some (if (= uuid "projected-page") (list block) (list))))
+                 :graph_node_destination (fn [_] nil))]
+    (native-rpc/call session "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")
+    (run! (fn [[uuid zoomed]]
+            (let [result (response-result (dispatch-json session "openNode" (str "{\"uuid\":\"" uuid "\"}")))
+                  route (nth (json-items "nodeRoutes" result) 0)]
+              (is (= (tag String uuid) (json-util/member "uuid" route)))
+              (is (= (tag String "projected-page") (json-util/member "uuid" (json-util/member "page" route))))
+              (is (= zoomed (json-items "zoomedBlockIds" (json-util/member "outlinerState" route))))
+              (dispatch-json session "closeNode" "")))
+          [(tuple "projected-page" []) (tuple "projected-block" [(tag String "projected-block")])])))
+
+(deftest offline-node-navigation-uses-pending-projection-and-journal-title
+  (let [block (assoc (native-core/logseq-chat-cache-model-local-block
+                      "cached-block" "Cached offline block" "journal/2026-08-15" nil 1)
+                     :parent-id (Some "journal/2026-08-15") :order (Some "a0")
+                     :journal (Some (tuple "Aug 15th, 2026" 20260815)))
+        session (native-rpc/create
+                 :graph_blocks (fn [] (Some (list block)))
+                 :graph_page_blocks (fn [uuid] (Some (if (= uuid "journal/2026-08-15") (list block) (list))))
+                 :graph_node_destination (fn [_] nil))
+        result (response-result (dispatch-json session "openNode" "{\"uuid\":\"cached-block\"}"))
+        route (nth (json-items "nodeRoutes" result) 0)]
+    (is (= (tag String "cached-block") (json-util/member "uuid" route)))
+    (is (= (tag String "journal/2026-08-15") (json-util/member "uuid" (json-util/member "page" route))))
+    (is (= (tag String "Aug 15th, 2026") (json-util/member "title" (json-util/member "page" route))))
+    (is (= [(tag String "cached-block")] (json-items "zoomedBlockIds" (json-util/member "outlinerState" route))))
+    (is (= (tag String "cached-block") (json-util/member "uuid" (nth (json-items "blocks" route) 0))))
+    (is (= (tag String "unknown_node")
+           (json-util/member "code" (json-util/member "error" (dispatch-json session "openNode" "{\"uuid\":\"missing-block\"}")))))))
+
+(deftest loading-older-journals-expands-core-owned-window
+  (let [window (atom 7)
+        session (native-rpc/create :load_older_journals (fn [] (swap! window + 7) (stdlib/ignore 0))
+                                   :has_older_journals (fn [] (< @window 14)))
+        initial (response-result (json/from-string (native-rpc/call session "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}")))]
+    (is (= (tag Bool true) (json-util/member "hasOlderJournals" initial)))
+    (let [expanded (response-result (dispatch-json session "loadOlderJournals" ""))]
+      (is (= (tag Bool false) (json-util/member "hasOlderJournals" expanded))))))
+
 (defn pending-request [response]
   (let [value (json-util/member "pendingSyncRequest" (json-util/member "result" response))]
     (match value (tag Null) nil _ (Some value))))
