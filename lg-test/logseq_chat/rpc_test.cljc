@@ -1406,6 +1406,119 @@
                   (is (= @expected (node-row-ids (outliner-event session "{\"type\":\"caretMoved\",\"caretUTF16Offset\":0}"))))))
               (range 20))))))
 
+(defn native-todo-status []
+  (record native-core/status (uuid "status-todo") (title "Todo")
+          (ident (Some "logseq.property/status.todo")) (icon-type nil) (icon-id nil) (icon-color nil)))
+
+(deftest editing-status-uses-live-properties-instead-of-stale-overlay
+  (let [page (record native-core/entity-summary (uuid "status-page") (title "Status page"))
+        source (assoc (synced-native-block "status-source" "Task") :page-id (:uuid page) :parent-id (Some (:uuid page)))
+        live-blocks (atom [source])
+        staged (atom [])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_sidebar_pages (fn [] (Some (record native-core/sidebar-pages (favorites [page]) (recent-pages []))))
+                  :graph_page_blocks (fn [uuid] (when (= uuid (:uuid page)) (Some (apply list @live-blocks))))
+                  :stage_operation (fn [operation] (swap! staged conj operation) (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (response-result (dispatch-json session "selectPage" "status-page"))
+    (outliner-block-event session "tapBlock" (:uuid source))
+    (reset! live-blocks [(assoc source :status (Some (native-todo-status)))])
+    (outliner-event session "{\"type\":\"setTaskStatus\",\"uuid\":\"status-source\",\"statusIdent\":\"logseq.property/status.doing\"}")
+    (is (= 1 (count @staged)))
+    (match (:intent (nth @staged 0))
+      (native-core/Set_property change)
+      (is (= (Some (native-core/Ref_ident "logseq.property/status.todo")) (:expected change)))
+      _ (is false))))
+
+(deftest split-block-does-not-inherit-task-or-asset-metadata
+  (let [page (record native-core/entity-summary (uuid "task-page") (title "Task page"))
+        source (assoc (synced-native-block "task-source" "Todo")
+                      :page-id (:uuid page) :parent-id (Some (:uuid page)) :status (Some (native-todo-status))
+                      :tags (list (record native-core/entity-summary (uuid "tag-card") (title "Card")))
+                      :references (list (record native-core/entity-summary (uuid "reference") (title "Reference")))
+                      :breadcrumbs (list (record native-core/entity-summary (uuid "ancestor") (title "Ancestor")))
+                      :is-asset true :asset-type (Some "image/jpeg") :asset-size (Some 42)
+                      :asset-checksum (Some "checksum") :local-path (Some "/tmp/source.jpg"))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_sidebar_pages (fn [] (Some (record native-core/sidebar-pages (favorites [page]) (recent-pages []))))
+                  :graph_page_blocks (fn [uuid] (when (= uuid (:uuid page)) (Some (list source))))
+                  :stage_operation (fn [_] (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (response-result (dispatch-json session "selectPage" "task-page"))
+    (outliner-block-event session "tapBlock" (:uuid source))
+    (let [response (outliner-block-event session "returnPressed" (:uuid source))
+          inserted (filterv #(not= (tag String (:uuid source)) (json-util/member "uuid" %)) (json-items "blocks" response))]
+      (is (= 1 (count inserted)))
+      (let [block (nth inserted 0)]
+        (is (= (tag Null) (json-util/member "status" block)))
+        (run! (fn [key] (is (empty? (json-items key block)))) ["tags" "references" "breadcrumbs"])
+        (is (= (tag Bool false) (json-util/member "isAsset" block)))))))
+
+(deftest journal-split-reads-one-page-and-inserts-after-source-subtree
+  (let [page (record native-core/entity-summary (uuid "journal-today") (title "Today"))
+        source (assoc (synced-native-block "journal-source" "Hello")
+                      :page-id (:uuid page) :parent-id (Some (:uuid page)) :journal (Some (tuple "Today" 20260818)))
+        child (assoc source :uuid "journal-child" :title "Child" :parent-id (Some (:uuid source)))
+        orders (match (native-core/logseq-chat-fractional-order-n-between (Some "a0") nil 20)
+                 (Ok values) values
+                 (Error message) (stdlib/failwith message))
+        distant (into []
+                  (mapcat (fn [journal-index]
+                            (let [page-id (str "journal-" journal-index)]
+                              (mapv (fn [block-index order]
+                                      (assoc (synced-native-block (str page-id "-block-" block-index) "Unrelated")
+                                             :page-id page-id :parent-id (Some page-id) :order (Some order)
+                                             :journal (Some (tuple page-id (+ 20260700 journal-index)))))
+                                    (range 20) orders)))
+                          (range 100)))
+        today-blocks (atom [source child])
+        full-graph-reads (atom 0)
+        page-reads (atom 0)
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_blocks (fn [] (swap! full-graph-reads inc) (Some (apply list (into distant @today-blocks))))
+                  :graph_page_blocks
+                  (fn [uuid]
+                    (is (= (:uuid page) uuid))
+                    (swap! page-reads inc)
+                    (Some (apply list @today-blocks)))
+                  :graph_node_destination (fn [uuid] (when (= uuid (:uuid source)) (Some (tuple page true))))
+                  :stage_operation
+                  (fn [operation]
+                    (match (:intent operation)
+                      (native-core/Split_block change)
+                      (swap! today-blocks
+                        (fn [blocks]
+                          (let [original (required-matching-item #(= (:uuid %) (:uuid change)) blocks)]
+                            (conj (mapv (fn [block]
+                                          (if (= (:uuid block) (:uuid change))
+                                            (assoc block :title (:before change)) block)) blocks)
+                                  (assoc original :uuid (:new-uuid change) :title (:after change)
+                                         :order (Some (:new-order change))
+                                         :created-at (:created-at change) :updated-at (:created-at change))))))
+                      _ @today-blocks)
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (outliner-block-event session "tapBlock" (:uuid source))
+    (reset! full-graph-reads 0)
+    (reset! page-reads 0)
+    (let [split (outliner-event session "{\"type\":\"returnPressed\",\"uuid\":\"journal-source\",\"title\":\"Hello\",\"caretUTF16Offset\":5}")
+          splices (json-items "outlinerRowSplices" split)]
+      (is (= 0 @full-graph-reads))
+      (is (= 1 @page-reads))
+      (is (= 1 (count splices)))
+      (let [splice (nth splices 0)]
+        (is (= (tag String (:uuid child)) (json-util/member "afterBlockId" splice)))
+        (is (= 1 (count (json-items "rows" splice))))))))
+
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
         parent (assoc (native-core/logseq-chat-cache-model-local-block
