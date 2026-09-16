@@ -1217,6 +1217,195 @@
     (is (= (tag Bool false) (json-util/member "ok" response)))
     (is (= (tag String "stale_server_cursor") (json-util/member "code" (json-util/member "error" response))))))
 
+(defn outliner-block-event [session event uuid]
+  (outliner-event session
+    (json/to-string
+     (rpc/json-object
+      (cond-> [(tuple "type" (tag String event)) (tuple "uuid" (tag String uuid))]
+        (= event "backspacePressed") (conj (tuple "selectionLength" (tag Int 0))))))))
+
+(defn editing-uuid [response]
+  (json-util/to-string (json-util/member "uuid" (json-util/member "editing" (json-util/member "outlinerState" response)))))
+
+(defn assert-bounded-structural-patch [response]
+  (is (= (tag Bool true) (json-util/member "isOutlinerPatch" response)))
+  (is (empty? (json-items "outlinerRows" response)))
+  (is (<= (count (json-items "blocks" response)) 2))
+  (let [splices (json-items "outlinerRowSplices" response)]
+    (is (= 1 (count splices)))
+    (is (<= (count (json-items "rows" (nth splices 0))) 2))))
+
+(defn required-matching-item [pred items]
+  (if-some [item (first (filterv pred items))]
+    item
+    (stdlib/failwith "missing projected item")))
+
+(deftest offline-title-edits-remain-visible-over-authoritative-blocks
+  (let [block (assoc (native-core/logseq-chat-cache-model-local-block
+                      "offline-edit" "Server title" "journal/2026-08-15" nil 1776000000000)
+                    :sync-status "synced")
+        projected (atom [block])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 5))
+                  :graph_blocks (fn [] (Some (apply list @projected)))
+                  :stage_operation
+                  (fn [operation]
+                    (match (:intent operation)
+                      (native-core/Save_title change)
+                      (swap! projected (fn [blocks]
+                                         (mapv (fn [block]
+                                                 (if (= (:uuid block) (:uuid change))
+                                                   (assoc block :title (:title change) :sync-status "pending") block)) blocks)))
+                      _ (stdlib/failwith "offline edit must stage Save_title"))
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))
+        result (response-result (dispatch-json session "updateBlock"
+                                  "{\"uuid\":\"offline-edit\",\"operationId\":\"offline-edit-op\",\"expectedTitle\":\"Server title\",\"title\":\"Edited offline\"}"))
+        blocks (json-items "blocks" result)]
+    (is (= 1 (count blocks)))
+    (is (= (tag String "Edited offline") (json-util/member "title" (nth blocks 0))))
+    (is (= (tag String "pending") (json-util/member "syncStatus" (nth blocks 0))))))
+
+(deftest consecutive-structural-edits-stay-local-and-submit-in-dependency-order
+  (let [orders (match (native-core/logseq-chat-fractional-order-n-between (Some "a0") nil 100)
+                 (Ok values) values
+                 (Error message) (stdlib/failwith message))
+        tail (mapv (fn [index order]
+                     (assoc (synced-native-block (str "unrelated-" index) "Unrelated") :order (Some order)))
+                   (range 100) orders)
+        projected (atom (into [(synced-native-block "source" "Hello")] tail))
+        server-t (atom 42)
+        authoritative (atom #{"source"})
+        prepare-calls (atom 0)
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some @server-t))
+                  :graph_blocks (fn [] (Some (apply list @projected)))
+                  :stage_operation
+                  (fn [operation]
+                    (match (:intent operation)
+                      (native-core/Split_block change)
+                      (swap! projected
+                        (fn [blocks]
+                          (let [original (required-matching-item #(= (:uuid %) (:uuid change)) blocks)]
+                            (conj (mapv (fn [block]
+                                          (if (= (:uuid block) (:uuid change))
+                                            (assoc block :title (:before change)) block)) blocks)
+                                  (assoc original :uuid (:new-uuid change) :title (:after change)
+                                         :order (Some (:new-order change))
+                                         :created-at (:created-at change) :updated-at (:created-at change))))))
+                      (native-core/Merge_backward change)
+                      (swap! projected
+                        (fn [blocks]
+                          (let [previous (required-matching-item #(= (:uuid %) (:previous-uuid change)) blocks)]
+                            (filterv #(not= (:uuid %) (:uuid change))
+                                     (mapv (fn [block]
+                                             (if (= (:uuid block) (:previous-uuid change))
+                                               (assoc block :title (str (:title previous) (:title change))) block)) blocks)))))
+                      _ @projected)
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation
+                  (fn [operation]
+                    (swap! prepare-calls inc)
+                    (let [ready? (match (:intent operation)
+                                   (native-core/Split_block change) (contains? @authoritative (:uuid change))
+                                   (native-core/Merge_backward change)
+                                   (and (contains? @authoritative (:uuid change))
+                                        (contains? @authoritative (:previous-uuid change)))
+                                   _ true)]
+                      (if ready? (prepare-native-operation operation) (Error "block no longer exists"))))))]
+    (outliner-block-event session "tapBlock" "source")
+    (outliner-event session "{\"type\":\"textChanged\",\"title\":\"Hello\",\"caretUTF16Offset\":5}")
+    (let [first-split (outliner-block-event session "returnPressed" "source")
+          first-uuid (editing-uuid first-split)
+          second-split (outliner-block-event session "returnPressed" first-uuid)
+          second-uuid (editing-uuid second-split)
+          merged (outliner-block-event session "backspacePressed" second-uuid)
+          stale-repeat (outliner-block-event session "backspacePressed" second-uuid)
+          merged-again (outliner-block-event session "backspacePressed" first-uuid)]
+      (run! assert-bounded-structural-patch [first-split second-split merged merged-again])
+      (is (= first-uuid (editing-uuid merged)))
+      (is (= first-uuid (editing-uuid stale-repeat)))
+      (is (= "source" (editing-uuid merged-again)))
+      (is (= 0 @prepare-calls))
+      (let [first-request (required-pending-request session)]
+        (swap! authoritative conj first-uuid)
+        (reset! server-t 43)
+        (complete-native-request session first-request "{\"t\":43}"))
+      (let [second-request (required-pending-request session)
+            body (json-util/member "bodyObject" second-request)
+            tx (nth (json-items "txs" body) 0)]
+        (is (= (tag Int 43) (json-util/member "t-before" body)))
+        (is (= (tag String "split-block") (json-util/member "outliner-op" tx)))
+        (swap! authoritative conj second-uuid)
+        (reset! server-t 44)
+        (complete-native-request session second-request "{\"t\":44}"))
+      (let [body (json-util/member "bodyObject" (required-pending-request session))
+            tx (nth (json-items "txs" body) 0)]
+        (is (= (tag Int 44) (json-util/member "t-before" body)))
+        (is (= (tag String "merge-blocks") (json-util/member "outliner-op" tx)))))))
+
+(deftest page-scoped-deletes-preserve-optimistic-blocks-with-a-lagging-reader
+  (let [page (record native-core/entity-summary (uuid "page-lag") (title "Lagging page"))
+        source (assoc (synced-native-block "page-source" "Hello") :page-id (:uuid page) :parent-id (Some (:uuid page)))
+        reference (assoc (synced-native-block "other-page-reference" "Links lagging page")
+                         :page-id "other-page" :parent-id (Some "other-page") :order (Some "a1"))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_sidebar_pages (fn [] (Some (record native-core/sidebar-pages (favorites [page]) (recent-pages []))))
+                  :graph_page_blocks (fn [uuid] (when (= uuid (:uuid page)) (Some (list source))))
+                  :graph_node_references (fn [uuid] (when (= uuid (:uuid page)) (Some (list reference))))
+                  :stage_operation (fn [_] (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (response-result (dispatch-json session "selectPage" "page-lag"))
+    (outliner-block-event session "tapBlock" (:uuid source))
+    (let [first-empty (editing-uuid (outliner-block-event session "returnPressed" (:uuid source)))
+          second-empty (editing-uuid (outliner-block-event session "returnPressed" first-empty))]
+      (set! (.-semantic-queue session) (list))
+      (set! (.-semantic-active session) nil)
+      (let [previous (editing-uuid (outliner-block-event session "backspacePressed" second-empty))]
+        (is (= first-empty previous))
+        (is (= (:uuid source) (editing-uuid (outliner-block-event session "backspacePressed" previous))))))))
+
+(defn first-node-route [response]
+  (nth (json-items "nodeRoutes" response) 0))
+
+(defn node-row-ids [response]
+  (mapv (fn [row] (json-util/to-string (json-util/member "uuid" (json-util/member "block" row))))
+        (json-items "outlinerRows" (first-node-route response))))
+
+(deftest node-route-insertion-preserves-order-with-a-lagging-reader
+  (let [page (record native-core/entity-summary (uuid "node-lag-page") (title "Node lag page"))
+        source (assoc (synced-native-block "node-lag-source" "Hello") :page-id (:uuid page) :parent-id (Some (:uuid page)))
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 42))
+                  :graph_page_blocks (fn [uuid] (when (= uuid (:uuid page)) (Some (list source))))
+                  :graph_node_destination (fn [uuid] (when (= uuid (:uuid page)) (Some (tuple page false))))
+                  :stage_operation (fn [_] (Ok (stdlib/ignore 0)))
+                  :prepare_operation prepare-native-operation))]
+    (response-result (dispatch-json session "openNode" "{\"uuid\":\"node-lag-page\"}"))
+    (outliner-block-event session "tapBlock" (:uuid source))
+    (let [first-empty (editing-uuid (first-node-route (outliner-block-event session "returnPressed" (:uuid source))))
+          second-empty (editing-uuid (first-node-route (outliner-block-event session "returnPressed" first-empty)))]
+      (is (not= first-empty second-empty))
+      (outliner-block-event session "tapBlock" (:uuid source))
+      (let [inserted (editing-uuid (first-node-route (outliner-block-event session "returnPressed" (:uuid source))))
+            expected (atom [(:uuid source) inserted first-empty second-empty])]
+        (is (= @expected (node-row-ids (outliner-event session "{\"type\":\"caretMoved\",\"caretUTF16Offset\":0}"))))
+        (run! (fn [_]
+                (outliner-block-event session "tapBlock" (:uuid source))
+                (let [inserted (editing-uuid (first-node-route (outliner-block-event session "returnPressed" (:uuid source))))]
+                  (swap! expected (fn [ids] (into [(:uuid source) inserted] (rest ids))))
+                  (is (= @expected (node-row-ids (outliner-event session "{\"type\":\"caretMoved\",\"caretUTF16Offset\":0}"))))))
+              (range 20))))))
+
 (deftest targeted-assets-appear-immediately-in-selected-page-projection
   (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
         parent (assoc (native-core/logseq-chat-cache-model-local-block
