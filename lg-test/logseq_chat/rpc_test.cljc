@@ -593,6 +593,106 @@
                  "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
   session)
 
+(deftest targeted-assets-appear-immediately-in-selected-page-projection
+  (let [page (record native-core/entity-summary (uuid "selected-page") (title "Selected page"))
+        parent (assoc (native-core/logseq-chat-cache-model-local-block
+                       "page-parent" "Parent" "selected-page" nil 1)
+                      :parent-id (Some "selected-page") :order (Some "a0") :sync-status "synced")
+        projected (atom [parent])
+        session (configure-plain-session
+                 (native-rpc/create
+                  :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                  :sync_cursor (fn [] (Some 5))
+                  :graph_sidebar_pages (fn [] (Some (record native-core/sidebar-pages
+                                                           (favorites [page]) (recent-pages []))))
+                  :graph_page_blocks (fn [uuid] (Some (if (= uuid "selected-page") (apply list @projected) (list))))
+                  :stage_operation
+                  (fn [operation]
+                    (match (:intent operation)
+                      (native-core/Create_asset asset)
+                      (swap! projected conj
+                             (assoc (native-core/logseq-chat-cache-model-local-block
+                                     (:uuid asset) (:title asset) (:page-uuid asset) (Some (:parent-uuid asset)) (:created-at asset))
+                                    :order (Some (:order asset)) :is-asset true
+                                    :asset-type (Some (:asset-type asset)) :asset-size (Some (:asset-size asset))
+                                    :asset-checksum (Some (:asset-checksum asset))))
+                      _ (stdlib/failwith "asset projection must stage Create_asset"))
+                    (Ok (stdlib/ignore 0)))
+                  :prepare_operation (fn [operation]
+                                       (Ok (tuple (native-core/logseq-chat-pending-ops-outliner-op (:intent operation)) "[]")))))]
+    (response-result (dispatch-json session "selectPage" "selected-page"))
+    (let [result (response-result
+                  (dispatch-json session "addAsset"
+                                 "{\"uuid\":\"visible-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"page-parent\"}"))]
+      (is (some #(= (tag String "visible-asset") (json-util/member "uuid" (json-util/member "block" %)))
+                (json-items "outlinerRows" result))))))
+
+(deftest task-and-asset-capture-return-optimistic-blocks
+  (run! (fn [[action payload uuid]]
+          (let [result (response-result (dispatch-json (native-rpc/create) action payload))
+                blocks (json-items "blocks" result)]
+            (is (= (tag String uuid) (json-util/member "uuid" (nth blocks 0))))))
+        [(tuple "sendTask"
+                "{\"text\":\"Follow up\",\"uuid\":\"task-local\",\"now\":1776000000000,\"status\":{\"uuid\":\"status-waiting\",\"ident\":\"user.status/waiting\",\"title\":\"Waiting\",\"iconType\":\"tabler-icon\",\"iconId\":\"clock\"}}"
+                "task-local")
+         (tuple "addAsset"
+                "{\"uuid\":\"asset-local\",\"title\":\"photo.jpg\",\"now\":1776000000001,\"assetType\":\"jpg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/photo.jpg\"}"
+                "asset-local")]))
+
+(deftest targeted-assets-retain-parent-and-page-from-cached-block
+  (let [session (native-rpc/create)
+        target (assoc (native-core/logseq-chat-cache-model-local-block
+                       "editing-block" "Editing" "target-page" nil 1)
+                      :parent-id (Some "target-page") :sync-status "synced")]
+    (native-core/logseq-chat-cache-model-upsert-blocks (:model session) (tuple native-list/to-seq (list target)) 1)
+    (dispatch-json session "addAsset"
+                   "{\"uuid\":\"targeted-asset\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}")
+    (if-some [asset (native-core/logseq-chat-cache-model-read-block (:model session) "targeted-asset")]
+      (do (is (= "target-page" (:page-id asset)))
+          (is (= (Some "editing-block") (:parent-id asset))))
+      (is false))))
+
+(deftest targeted-asset-upload-uses-stable-block-uuid
+  (let [target (assoc (native-core/logseq-chat-cache-model-local-block
+                       "editing-block" "Editing" "local-page" nil 1)
+                      :parent-id (Some "local-page") :sync-status "synced")
+        session (configure-plain-session
+                 (native-rpc/create :load_graph_catalog (fn [] (Some plain-graph-catalog))
+                                    :graph_blocks (fn [] (Some (list target)))))]
+    (dispatch-json session "addAsset"
+                   "{\"uuid\":\"targeted-upload\",\"title\":\"Audio.m4a\",\"now\":2,\"assetType\":\"m4a\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"/documents/Audio.m4a\",\"targetBlockId\":\"editing-block\"}")
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (is (= (tag String "http://127.0.0.1:8787/assets/plain-1/targeted-upload.m4a") (json-util/member "url" request)))
+      (is false))))
+
+(deftest shared-images-insert-bounded-row-patches-and-normalize-upload-type
+  (let [session (configure-plain-session (native-rpc/create :load_graph_catalog (fn [] (Some plain-graph-catalog))))
+        result (response-result
+                (dispatch-json session "addAsset"
+                               "{\"uuid\":\"shared-image\",\"title\":\"IMG_0002\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}"))
+        splices (json-items "outlinerRowSplices" result)
+        rows (json-items "rows" (nth splices 0))]
+    (is (= (tag Bool true) (json-util/member "isOutlinerPatch" result)))
+    (is (= 1 (count splices)))
+    (is (= 1 (count rows)))
+    (is (= (tag String "shared-image") (json-util/member "uuid" (json-util/member "block" (nth rows 0)))))
+    (if-some [asset (native-core/logseq-chat-cache-model-read-block (:model session) "shared-image")]
+      (is (= (Some "jpeg") (:asset-type asset)))
+      (is false))
+    (if-some [request (pending-request (dispatch-json session "beginPendingSync" ""))]
+      (do (is (= (tag String "http://127.0.0.1:8787/assets/plain-1/shared-image.jpeg") (json-util/member "url" request)))
+          (is (= (tag String "image/jpeg") (json-util/member "contentType" request))))
+      (is false))))
+
+(deftest pending-assets-wait-for-authentication-and-resume-after-configuration
+  (let [session (native-rpc/create)]
+    (dispatch-json session "configure" "{\"baseUrl\":\"https://api.example\",\"graphId\":\"plain-1\",\"token\":\"\"}")
+    (dispatch-json session "addAsset"
+                   "{\"uuid\":\"offline-shared-image\",\"title\":\"IMG_0002.JPG\",\"now\":2,\"assetType\":\"image/jpeg\",\"assetSize\":2048,\"assetChecksum\":\"abc\",\"localPath\":\"Assets/shared-IMG_0002.JPG\"}")
+    (is (nil? (pending-request (dispatch-json session "beginPendingSync" ""))))
+    (configure-plain-session session)
+    (is (some? (pending-request (dispatch-json session "beginPendingSync" ""))))))
+
 (deftest page-favorite-updates-sidebar-and-preserves-operation-fields
   (let [favorite (atom false)
         calls (atom [])
