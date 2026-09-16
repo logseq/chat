@@ -359,55 +359,16 @@ let pending_operations () =
   | Some runtime -> Logseq_chat_graph_runtime.pending_operations runtime.read_runtime
 ;;
 
-let read_file path =
-  try
-    let channel = open_in_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_in_noerr channel)
-      (fun () -> Ok (really_input_string channel (in_channel_length channel)))
-  with
-  | error -> Error ("read asset for encryption: " ^ Printexc.to_string error)
-;;
-
-let write_file path contents =
-  try
-    let channel = open_out_bin path in
-    Fun.protect
-      ~finally:(fun () -> close_out_noerr channel)
-      (fun () -> output_string channel contents);
-    Ok ()
-  with
-  | error -> Error ("write encrypted asset: " ^ Printexc.to_string error)
-;;
-
 let resolve_asset_path source_path =
-  if Filename.is_relative source_path
-  then
-    match !graph_runtime with
-    | Some runtime ->
-      let documents_dir =
-        runtime.checkpoint_path |> Filename.dirname |> Filename.dirname |> Filename.dirname
-      in
-      Filename.concat documents_dir source_path
-    | None -> source_path
-  else source_path
+  Logseq_chat_lg_core_native.logseq_chat_asset_files_resolve_path
+    (Option.map (fun runtime -> runtime.checkpoint_path) !graph_runtime)
+    source_path
 ;;
 
 let encrypt_asset_file ~graph_id ~source_path =
-  let bind result f = match result with Ok value -> f value | Error _ as error -> error in
-  bind (read_file source_path) (fun bytes ->
-    bind (E2ee_keyring.logseq_chat_e2ee_keyring_encrypt_asset e2ee_keyring graph_id bytes) (fun encrypted ->
-      let path =
-        Filename.temp_file
-          ~temp_dir:(Filename.dirname source_path)
-          "logseq-chat-e2ee-"
-          ".transit"
-      in
-      match write_file path encrypted with
-      | Ok () -> Ok (path, String.length encrypted)
-      | Error _ as error ->
-        (try Sys.remove path with _ -> ());
-        error))
+  Logseq_chat_lg_core_native.logseq_chat_asset_files_encrypt_file
+    (E2ee_keyring.logseq_chat_e2ee_keyring_encrypt_asset e2ee_keyring)
+    graph_id source_path
 ;;
 
 let graph_catalog_address = "logseq-chat/graph-catalog/v1"
