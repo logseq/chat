@@ -350,6 +350,82 @@
 (defn response-error-code [response]
   (json-util/to-string (json-util/member "code" (json-util/member "error" response))))
 
+(def remote-feed
+  "{\"blocks\":[{\"uuid\":\"remote\",\"title\":\"Remote text\",\"page-id\":\"journal\",\"parent-id\":\"journal\",\"created-at\":10,\"updated-at\":20}],\"journals\":[{\"uuid\":\"journal\",\"title\":\"Today\",\"journal-day\":20260916}]}")
+
+(defn refresh-session [send]
+  (let [session (native-rpc/create :load_graph_catalog (fn [] (Some plain-graph-catalog)) :send send)]
+    (dispatch-json session "configure" "{\"baseUrl\":\"http://127.0.0.1:8787\",\"graphId\":\"plain-1\",\"token\":\"access\"}")
+    session))
+
+(deftest refresh-caches-blocks-journals-and-statuses-in-request-order
+  (let [requests (atom [])
+        session (refresh-session
+                  (fn [request]
+                    (swap! requests conj (:url request))
+                    (is (= "GET" (:method_ request)))
+                    (is (= "access" (:token request)))
+                    (Ok (native-core/logseq-chat-api-response 200
+                          (if (= 1 (count @requests)) remote-feed
+                            "{\"choices\":[{\"uuid\":\"todo\",\"title\":\"Todo\",\"ident\":\"logseq.property/status.todo\"}]}")))))
+        response (dispatch-json session "refresh" "")]
+    (is (json-util/to-bool (json-util/member "ok" response)))
+    (is (= 2 (count @requests)))
+    (is (string/includes? (nth @requests 0) "/blocks?journal-only=true&journal-day-at-most="))
+    (is (string/ends-with? (nth @requests 1) "/search?q=Status&types=properties&limit=100"))
+    (if-some [block (native-core/logseq-chat-cache-model-read-block (:model session) "remote")]
+      (do (is (= "Remote text" (:title block)))
+          (is (= "synced" (:sync-status block)))
+          (is (= 20 (:updated-at block))))
+      (is false))
+    (is (= (Some (tuple "Today" 20260916))
+           (native-core/logseq-chat-cache-model-journal-metadata (:model session) "journal")))
+    (is (= ["todo"] (mapv :uuid (native-core/logseq-chat-cache-model-all-statuses (:model session)))))))
+
+(deftest refresh-stops-before-status-request-when-blocks-request-fails
+  (run! (fn [transport-failure?]
+          (let [requests (atom 0)
+                session (refresh-session
+                          (fn [_]
+                            (swap! requests inc)
+                            (if transport-failure? (Error "offline")
+                              (Ok (native-core/logseq-chat-api-response 503 "bad gateway")))))
+                response (dispatch-json session "refresh" "")]
+            (is (= "remote_refresh_failed" (response-error-code response)))
+            (is (= 1 @requests))
+            (is (nil? (native-core/logseq-chat-cache-model-read-block (:model session) "remote")))))
+        [true false]))
+
+(deftest refresh-status-failure-preserves-already-cached-blocks
+  (run! (fn [transport-failure?]
+          (let [requests (atom 0)
+                session (refresh-session
+                          (fn [_]
+                            (if (= 1 (swap! requests inc))
+                              (Ok (native-core/logseq-chat-api-response 200 remote-feed))
+                              (if transport-failure? (Error "offline")
+                                (Ok (native-core/logseq-chat-api-response 503 "bad gateway"))))))
+                response (dispatch-json session "refresh" "")]
+            (is (= "remote_statuses_failed" (response-error-code response)))
+            (is (= 2 @requests))
+            (is (some? (native-core/logseq-chat-cache-model-read-block (:model session) "remote")))))
+        [true false]))
+
+(deftest refresh-malformed-json-preserves-error-and-partial-cache-semantics
+  (run! (fn [malformed-blocks?]
+          (let [requests (atom 0)
+                session (refresh-session
+                          (fn [_]
+                            (let [first? (= 1 (swap! requests inc))]
+                              (Ok (native-core/logseq-chat-api-response 200
+                                    (if (and first? (not malformed-blocks?)) remote-feed "not json"))))))
+                response (dispatch-json session "refresh" "")]
+            (is (= "invalid_json" (response-error-code response)))
+            (is (= (if malformed-blocks? 1 2) @requests))
+            (is (= (not malformed-blocks?)
+                   (some? (native-core/logseq-chat-cache-model-read-block (:model session) "remote"))))))
+        [true false]))
+
 (deftest optimistic-capture-is-returned-before-sync
   (let [session (native-rpc/create)
         response (dispatch-json session "send"

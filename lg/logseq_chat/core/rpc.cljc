@@ -540,6 +540,50 @@
     (Ok value) (Ok value)
     (Error message) (Error (tuple code message))))
 
+(defn debug [message]
+  (stdlib/prerr-endline (str "LogseqChat core " message)))
+
+(defn cache-remote-blocks [cache response now]
+  (if (<= 200 (:status response) 299)
+    (let [[blocks journals]
+          (try (api/feed-from-body (:body response))
+               (catch error
+                 (let [message (Printexc/to-string error)]
+                   (debug (str "remote refresh parse failed: " message))
+                   (throw (Failure (str "Could not parse Logseq search response: " message))))))]
+      (run! (fn [journal]
+              (model/upsert-journal-page cache (:uuid journal) (:journal-day journal) (:title journal)))
+            journals)
+      (debug (format "remote refresh parsed blocks=%d" (count blocks)))
+      (model/upsert-blocks cache blocks now)
+      (Ok (stdlib/ignore 0)))
+    (do (debug (format "remote refresh HTTP failed status=%d" (:status response)))
+        (Error (format "Logseq API returned HTTP %d" (:status response))))))
+
+(defn cache-task-statuses [cache response]
+  (if (<= 200 (:status response) 299)
+    (let [statuses (api/statuses-from-property-body (:body response))]
+      (debug (format "remote task statuses parsed count=%d" (count statuses)))
+      (model/upsert-statuses cache statuses)
+      (Ok (stdlib/ignore 0)))
+    (Error (format "Logseq status property returned HTTP %d" (:status response)))))
+
+(defn refresh-from-remote [cache config send now snapshot]
+  (debug (str "remote refresh started graph=" (:graph-id config)))
+  (let [result
+        (let* [response (graph-workflow-result "remote_refresh_failed"
+                          (match (send (api/recent-blocks-request config (model/journal-day-for-ms now)))
+                            (Error message)
+                            (do (debug (str "remote refresh request failed: " message)) (Error message))
+                            (Ok response) (Ok response)))
+               _ (graph-workflow-result "remote_refresh_failed" (cache-remote-blocks cache response now))
+               statuses (graph-workflow-result "remote_statuses_failed" (send (api/task-statuses-request config)))
+               _ (graph-workflow-result "remote_statuses_failed" (cache-task-statuses cache statuses))]
+          (Ok (snapshot)))]
+    (match result
+      (Ok response) response
+      (Error (tuple code message)) (failure code message))))
+
 (defn create-sync-graph [config payload send provision initialize discover created]
   (match (tuple config payload)
     (tuple None _) (failure "graph_not_configured" "Configure Logseq before creating a graph")

@@ -968,59 +968,10 @@ let discover_graphs session config =
      with exn -> Error ("Could not parse Logseq graphs response: " ^ Printexc.to_string exn))
 ;;
 
-let cache_remote_blocks session (response : Api.api_response) ~now =
-  if response.Api.status >= 200 && response.Api.status < 300
-  then (
-    let blocks, journals =
-      match Api.logseq_chat_api_feed_from_body response.body with
-      | feed -> feed
-      | exception exn ->
-        let message = Printexc.to_string exn in
-        debug "remote refresh parse failed: %s" message;
-        raise (Failure ("Could not parse Logseq search response: " ^ message))
-    in
-    List.iter
-      (fun (journal : Api.api_journal) ->
-        Model.logseq_chat_cache_model_upsert_journal_page
-          session.model
-          journal.uuid journal.journal_day journal.title)
-      journals;
-    debug "remote refresh parsed blocks=%d" (List.length blocks);
-    Model.logseq_chat_cache_model_upsert_blocks session.model (List.to_seq, blocks) now;
-    Ok ())
-  else (
-    debug "remote refresh HTTP failed status=%d" response.Api.status;
-    Error ("Logseq API returned HTTP " ^ string_of_int response.Api.status))
-;;
-
-let cache_task_statuses session (response : Api.api_response) =
-  if response.Api.status >= 200 && response.Api.status < 300
-  then (
-    let statuses = Api.logseq_chat_api_statuses_from_property_body response.body in
-    debug "remote task statuses parsed count=%d" (List.length statuses);
-    Model.logseq_chat_cache_model_upsert_statuses session.model (List.to_seq, statuses);
-    Ok ())
-  else Error ("Logseq status property returned HTTP " ^ string_of_int response.Api.status)
-;;
-
-let refresh_from_remote session (config : Api.api_config) =
-  let now = now_ms () in
-  debug "remote refresh started graph=%s" config.Api.graph_id;
-  let journal_day = Model.logseq_chat_cache_model_journal_day_for_ms now in
-  match session.send (Api.logseq_chat_api_recent_blocks_request config journal_day) with
-  | Ok response ->
-    (match cache_remote_blocks session response ~now with
-     | Ok () ->
-       (match session.send (Api.logseq_chat_api_task_statuses_request config) with
-        | Ok status_response ->
-          (match cache_task_statuses session status_response with
-           | Ok () -> snapshot_visible session
-           | Error message -> LG.logseq_chat_rpc_failure "remote_statuses_failed" message)
-        | Error message -> LG.logseq_chat_rpc_failure "remote_statuses_failed" message)
-     | Error message -> LG.logseq_chat_rpc_failure "remote_refresh_failed" message)
-  | Error message ->
-    debug "remote refresh request failed: %s" message;
-    LG.logseq_chat_rpc_failure "remote_refresh_failed" message
+let refresh_from_remote session config =
+  LG.logseq_chat_rpc_refresh_from_remote
+    session.model config session.send (now_ms ())
+    (fun () -> snapshot_visible session)
 ;;
 
 let resolve_graph _session (config : Api.api_config) =
