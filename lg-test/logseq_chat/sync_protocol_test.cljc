@@ -10,9 +10,13 @@
             [ocaml.Stdlib :as stdlib]))
 
 (def uuid "7b45785d-710c-47f8-9e7e-e9c4f5229830")
+
 (def second-uuid "7b45785d-710c-47f8-9e7e-e9c4f5229831")
+
 (defn identity-value [uuid] (value/Array (list (value/Keyword "block/uuid") (value/Uuid uuid))))
+
 (def task-tag (value/Set (list (value/Array (list (value/Keyword "db/ident") (value/Keyword "logseq.class/Task"))))))
+
 (def payload
   (value/Map
    (list (tuple (value/Keyword "format-version") (value/Int 1))

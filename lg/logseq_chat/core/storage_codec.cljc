@@ -12,6 +12,7 @@
             [ocaml.Rrbvec :as rrbvec]))
 
 (type-record storage-index-metadata (count :int) (shift :int))
+
 (type-record storage-root-index-metadata
   (eavt :storage-index-metadata)
   (aevt :storage-index-metadata)

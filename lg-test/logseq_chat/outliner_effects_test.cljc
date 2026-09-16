@@ -10,20 +10,28 @@
   (record model/block (uuid uuid) (title title) (page-id "page") (parent-id (Some "page")) (order order)
     (created-at 0) (updated-at 0) (sync-status "synced") (tags (list)) (references (list)) (breadcrumbs (list))
     (status None) (is-asset false) (asset-type None) (asset-size None) (asset-checksum None) (local-path None) (journal None)))
+
 (defn context-for [blocks]
   (record state/outliner-context (blocks (apply list blocks)) (pages (list)) (tags (list))))
+
 (def context (context-for [(block "first" "First" (Some "a0")) (block "second" "Second" (Some "a1"))
                           (block "third" "Third" (Some "a2"))]))
+
 (defn fresh-values [values]
   (let [index (atom 0)]
     (fn [] (let [value (nth values @index)] (swap! index inc) value))))
+
 (defn interpret-in [context ids commands]
   (effects/interpret 42 (fn [] 100) (fresh-values ids) context (apply list commands)))
+
 (defn interpret [commands] (interpret-in context ["operation"] commands))
+
 (defn expect-ok [result] (match result (Ok value) value (Error message) (stdlib/failwith message)))
+
 (defn only-operation [result]
   (is (= 1 (count (:operations result))))
   (or (first (:operations result)) (stdlib/failwith "missing operation")))
+
 (defn split [uuid before after]
   (state/Split_at (record state/outliner-split (uuid uuid) (expected-title "Second") (before before) (after after))))
 
@@ -115,6 +123,7 @@
 
 (defn status [uuid ident]
   (record model/status (uuid uuid) (ident ident) (title uuid) (icon-type None) (icon-id None) (icon-color None)))
+
 (deftest task-cycle-preserves-guards-for-built-in-custom-and-uuid-statuses
   (run! (fn [[current expected value]]
           (let [context (context-for [(assoc (block "task" "Task" (Some "a0")) :status (Some current))])

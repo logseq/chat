@@ -15,10 +15,15 @@
             [ocaml.Stdlib :as stdlib]))
 
 (def one (assoc storage/default-schema-attr :indexed true))
+
 (def string-attr (assoc one :value-type (Some (ds/StringType))))
+
 (def ref-attr (assoc one :value-type (Some (ds/RefType))))
+
 (def number-attr (assoc one :value-type (Some (ds/NumberType))))
+
 (def many-ref (assoc ref-attr :cardinality (ds/Many)))
+
 (def schema
   {"block/uuid" (assoc one :value-type (Some (ds/UuidType)) :unique (Some (ds/Identity)))
    "db/ident" (assoc one :value-type (Some (ds/KeywordType)) :unique (Some (ds/Identity)))
@@ -38,7 +43,9 @@
    "user.property/enabled" one})
 
 (defn add [id attr value] (ds/Add (ds/Entity_id id) attr value))
+
 (defn with-tx [db tx] (ds/db-with (apply list tx) db))
+
 (defn base-db []
   (with-tx (ds/empty-db :schema (apply list (seq schema)))
     [(add 1 "block/uuid" (ds/Uuid "page")) (add 1 "block/title" (ds/String "Page"))
@@ -56,24 +63,34 @@
      (add 10 "block/page" (ds/Ref 1)) (add 10 "block/parent" (ds/Ref 1))
      (add 10 "block/order" (ds/String "a0")) (add 10 "block/refs" (ds/Ref 3))
      (add 10 "block/tags" (ds/Ref 5))]))
+
 (defn value [db uuid attr] (projection/one-value db (projection/lookup uuid) attr))
+
 (defn title [db uuid]
   (match (value db uuid "block/title")
     (Some (ds/String text)) text _ (stdlib/failwith (str "missing title: " uuid))))
+
 (defn operation [id intent]
   (record ops/pending-operation (operation-id id) (base-t 42) (state ops/Queued) (intent intent)))
+
 (defn save-title [uuid before after]
   (ops/Save-title (record ops/pending-title (uuid uuid) (expected-title before) (title after))))
+
 (defn property [uuid attr expected value]
   (ops/Set-property (record ops/pending-property (uuid uuid) (attr attr) (expected expected) (value value))))
+
 (defn insert [uuid title parent order]
   (ops/Insert-block (record ops/pending-insert (uuid uuid) (title title) (page-uuid "page")
                             (parent-uuid parent) (order order) (created-at 100))))
+
 (defn move [uuid parent order]
   (ops/Move-block (record ops/pending-move (uuid uuid) (page-uuid "page") (parent-uuid parent) (order order))))
+
 (defn delete-blocks [uuids] (ops/Delete-blocks (record ops/pending-delete (uuids uuids))))
+
 (defn apply-intent [db intent]
   (match (projection/compile db intent) (Ok tx) (with-tx db tx) (Error message) (stdlib/failwith message)))
+
 (defn conflict? [snapshot id]
   (boolean (some (fn [[key state]] (and (= key id) (match state (ops/Conflicted _) true _ false))) (:statuses snapshot))))
 

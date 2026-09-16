@@ -28,9 +28,13 @@
               (ds/empty-db :schema schema)))
 
 (defn array [values] (transit/Array (apply list values)))
+
 (def stable-ref (array [(transit/Keyword "block/uuid") (transit/Uuid "stable-uuid")]))
+
 (defn entity [id attrs] (record Datascript.tx_entity (db-id id) (attrs (apply list attrs))))
+
 (defn child [title] (entity None [(tuple "block/title" (ds/One_value (ds/String title)))]))
+
 (defn encode [db tx] (sync/encode #(Ok %) db (apply list tx)))
 
 (deftest transaction-wire-preserves-local-ids-and-stable-parent-references

@@ -2,8 +2,11 @@
   (:require [clojure.string :as string]))
 
 (def digits "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+
 (def zero "0")
+
 (def lowercase "abcdefghijklmnopqrstuvwxyz")
+
 (def uppercase "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 (type-record digit-run

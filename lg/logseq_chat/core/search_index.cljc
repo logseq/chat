@@ -24,8 +24,10 @@
   {:ocaml "logseq_chat_search_index_query"})
 
 (type-record search-index (path :string))
+
 (type-record search-result
   (uuid :string) (title :string) (page-uuid :string) (is-page :bool) (score :float))
+
 (type-record indexed-search-hit
   (uuid :string) (title :string) (is-page :bool)
   (page :option<model/entity-summary>) (breadcrumbs :vector<model/entity-summary>))
@@ -71,17 +73,23 @@
         :else (recur query-index (inc target-index) 1 (- acc 0.1))))))
 
 (defn fts-phrase-input [input] (str "\"" (string/replace input "\"" "\"\"") "\"*"))
+
 (defn matches-regex? [pattern input]
   (try (do (regex/search-forward (regex/regexp pattern) input 0) true)
        (catch Not_found false)))
+
 (defn dangling-boolean-operator [input] (matches-regex? "\\(^\\| \\)\\(AND\\|OR\\|NOT\\) *$" input))
+
 (defn whitespace-char [value] (contains? #{\space \tab \newline \return} value))
+
 (defn word-char [value]
   (let [code (char/code value)]
     (or (and (>= code 97) (<= code 122)) (and (>= code 65) (<= code 90))
         (and (>= code 48) (<= code 57)) (= code 95))))
+
 (defn has-punctuation [query]
   (bytes/exists (fn [ch] (and (not (word-char ch)) (not (whitespace-char ch)))) query))
+
 (defn get-match-input [query]
   (let [input (reduce (fn [input [from to]] (string/replace input from to)) query
                       [(tuple " and " " AND ") (tuple " & " " AND ")
@@ -121,10 +129,13 @@
                   title (if-some [day (graph/int-value (graph/value db eid "block/journal-day"))]
                           (str title " " day) title)]
               (tuple uuid title page-uuid))))))))
+
 (defn row-for-uuid [db uuid]
   (when-some [eid (ds/entid db "block/uuid" (ds/Uuid uuid))] (row-of-eid db eid)))
+
 (defn rows-of-db [db]
   (vec (keep (fn [datom] (row-of-eid db (:e datom))) (db-api/datoms db (ds/Aevt) :a "block/uuid"))))
+
 (defn referring-uuids [db uuid]
   (if-some [eid (ds/entid db "block/uuid" (ds/Uuid uuid))]
     (vec (keep (fn [datom] (graph/uuid-value (graph/value db (:e datom) "block/uuid")))
@@ -148,19 +159,26 @@
     (stdlib/ignore (when (not (empty? changed)) (search-upsert (:path index) (rrbvec/to-list changed))))))
 
 (defn like-escape [value] (if (contains? #{"%" "_" "\\"} value) (str "\\" value) value))
+
 (defn fuzzy-like-pattern [query] (str "%" (string/join "%" (map like-escape (utf8-chars query))) "%"))
+
 (defn fuzzy-candidate-limit [limit] (min 400 (max 40 (* 4 limit))))
+
 (defn exact-title-query [query] (not (bytes/exists whitespace-char query)))
+
 (defn multi-term-query [query] (matches-regex? "[^ \t\n][ \t\n]+[^ \t\n]" query))
+
 (defn query-rows [index sql binds]
   (try (vec (search-query (:path index) sql (rrbvec/to-list (vec binds))))
        (catch (Failure _) [])))
+
 (defn scored [query rows]
   (mapv (fn [row]
           (match row
             (tuple id page title)
             (record search-result (uuid id) (title title) (page-uuid page)
                     (is-page (= id page)) (score (fuzzy-score query title))))) rows))
+
 (defn fuzzy-rows [index query limit]
   (let [normalized (clean-str query)
         normalized (if (string/starts-with? normalized "#") (subs normalized 1) normalized)]

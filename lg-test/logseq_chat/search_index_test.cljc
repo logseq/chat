@@ -8,6 +8,7 @@
             [ocaml.Unix :as unix]))
 
 (def one storage/default-schema-attr)
+
 (def schema
   (list (tuple "block/uuid" (assoc one :unique (Some (ds/Identity)) :indexed true :value-type (Some (ds/UuidType))))
         (tuple "block/name" (assoc one :value-type (Some (ds/StringType))))
@@ -18,13 +19,19 @@
         (tuple "logseq.property/hide?" one)))
 
 (def page-uuid "018f7850-0000-7da0-8b3f-6dbb64aa4ec1")
+
 (def block-uuid "018f7850-0000-7da0-8b3f-6dbb64aa4ec2")
+
 (def ref-block-uuid "018f7850-0000-7da0-8b3f-6dbb64aa4ec3")
+
 (def journal-uuid "018f7850-0000-7da0-8b3f-6dbb64aa4ec4")
+
 (def hidden-uuid "018f7850-0000-7da0-8b3f-6dbb64aa4ec5")
+
 (def cjk-uuid "018f7850-0000-7da0-8b3f-6dbb64aa4ec6")
 
 (defn add [eid attr value] (ds/Add (ds/Entity_id eid) attr value))
+
 (defn seeded-conn []
   (let [conn (ds/create-conn :schema schema)]
     (ds/transact-conn conn
@@ -61,6 +68,7 @@
            (unix/rmdir root)))))
 
 (defn results [index query] (search/search (fn [_] false) 100 index query))
+
 (defn find-result [index query uuid]
   (some #(when (= (:uuid %) uuid) %) (results index query)))
 

@@ -11,22 +11,29 @@
   (reduce (fn [fields entry]
             (match entry (tuple name value)
               (if (contains? fields name) fields (assoc fields name value)))) {} entries))
+
 (defn object-fields [input]
   (match input (tag Assoc _) (fields-from-entries (json-util/to-assoc input)) _ {}))
+
 (defn object-member [name fields]
   (if-some [value (get fields name)] (object-fields value) {}))
+
 (defn string-member [name fields]
   (when-some [value (get fields name)]
     (match value (tag String _) (Some (json-util/to-string value)) _ nil)))
+
 (defn bool-member [name fields]
   (if-some [value (get fields name)]
     (match value (tag Bool _) (json-util/to-bool value) _ false) false))
+
 (defn int-member [name fields]
   (when-some [value (get fields name)]
     (match value (tag Int _) (Some (json-util/to-int value)) _ nil)))
+
 (defn list-member [name fields]
   (if-some [value (get fields name)]
     (match value (tag List _) (vec (json-util/to-list value)) _ []) []))
+
 (defn string-list-member [name fields]
   (vec (keep (fn [value] (match value (tag String text) (Some text) _ nil))
              (list-member name fields))))
@@ -36,25 +43,31 @@
     (when-some [uuid (string-member "uuid" fields)]
       (when-some [title (string-member "title" fields)]
         (record model/sidebar-page (uuid uuid) (title title))))))
+
 (defn sidebar-pages-member [name fields]
   (vec (keep sidebar-page (list-member name fields))))
+
 (defn breadcrumbs [fields] (sidebar-pages-member "breadcrumbs" fields))
+
 (defn breadcrumb [fields]
   (let [titles (mapv :title (breadcrumbs fields))]
     (if (empty? titles) (or (string-member "title" (object-member "page" fields)) "")
         (string/join " › " titles))))
+
 (defn search-hit [input]
   (let [fields (object-fields input)]
     (when-some [uuid (string-member "uuid" fields)]
       (when-some [title (string-member "title" fields)]
         (record model/search-hit (uuid uuid) (title title) (breadcrumb (breadcrumb fields))
                 (breadcrumbs (breadcrumbs fields)) (is-page (bool-member "isPage" fields)))))))
+
 (defn graph [input]
   (let [fields (object-fields input)]
     (when-some [id (string-member "id" fields)]
       (when-some [name (string-member "name" fields)]
         (record model/graph (id id) (name name) (is-encrypted (bool-member "isEncrypted" fields))
                 (is-ready (bool-member "isReady" fields)))))))
+
 (defn task-status [input]
   (let [fields (object-fields input) icon (object-member "icon" fields)]
     (when-some [uuid (string-member "uuid" fields)]
@@ -77,15 +90,18 @@
       "emphasis" children
       "quote" children
       (or (string-member "text" fields) children))))
+
 (defn markup-has-cloze [input]
   (let [fields (object-fields input)]
     (or (= (string-member "type" fields) (Some "cloze"))
         (boolean (some markup-has-cloze (list-member "children" fields))))))
+
 (defn inline-tag-ids [input]
   (let [fields (object-fields input)
         ids (if (= (string-member "type" fields) (Some "tagReference"))
               (if-some [uuid (string-member "uuid" fields)] [uuid] []) [])]
     (into ids (mapcat inline-tag-ids (list-member "children" fields)))))
+
 (defn trailing-tags [fields]
   (let [inline-ids (set (mapcat inline-tag-ids (list-member "markup" fields)))
         [_ tags] (reduce (fn [[seen result] tag]
@@ -100,6 +116,7 @@
     (cond (> (+ index (count pattern)) (count value)) nil
           (= (subs value index (+ index (count pattern))) pattern) (Some index)
           :else (recur (inc index)))))
+
 (defn legacy-cloze-text [reveal value]
   (let [result (buffer/create (count value))]
     (loop [offset 0 has-cloze false]
@@ -116,14 +133,17 @@
                   (tuple (buffer/contents result) has-cloze))))
         (do (buffer/add-substring result value offset (- (count value) offset))
             (tuple (buffer/contents result) has-cloze))))))
+
 (defn block-markup-text [reveal fields]
   (let [markup (list-member "markup" fields)]
     (if (empty? markup) (first (legacy-cloze-text reveal (or (string-member "title" fields) "")))
         (string/join "" (map (fn [node] (markup-text reveal node)) markup)))))
+
 (defn flashcard-answer [input]
   (let [fields (object-fields input)]
     (when-some [uuid (string-member "uuid" fields)]
       (record model/flashcard-answer-row (uuid uuid) (index 0) (text (block-markup-text true fields))))))
+
 (defn flashcard [input]
   (let [fields (object-fields input) block (object-member "block" fields)]
     (when-some [uuid (string-member "uuid" block)]
@@ -147,17 +167,21 @@
         (tags (trailing-tags fields)) (sync-status (string-member "syncStatus" fields))
         (page-id (or (string-member "pageId" fields) "")) (journal-title (string-member "journalTitle" fields))
         (journal-day (int-member "journalDay" fields))))))
+
 (defn outline-row [input]
   (let [fields (object-fields input)]
     (when-some [depth (int-member "depth" fields)]
       (outline-row-from-block (string-member "youtubeTargetURL" fields) false depth
         (bool-member "hasChildren" fields) (bool-member "isCollapsed" fields) (object-member "block" fields)))))
+
 (defn related-row [input]
   (let [fields (object-fields input)
         opens-as-page (if-some [uuid (string-member "uuid" fields)]
                         (= (string-member "pageId" fields) (Some uuid)) false)]
     (outline-row-from-block (string-member "youtubeTargetURL" fields) opens-as-page 0 false false fields)))
+
 (defn outliner-rows-member [name fields] (vec (keep outline-row (list-member name fields))))
+
 (defn related-rows-member [name fields] (vec (keep related-row (list-member name fields))))
 
 (defn outliner-editing [input]
@@ -166,6 +190,7 @@
       (when-some [title (string-member "title" fields)]
         (when-some [caret (int-member "caretUTF16Offset" fields)]
           (record model/outliner-editing (uuid uuid) (title title) (caret-utf16-offset caret)))))))
+
 (defn outliner-autocomplete [input]
   (let [fields (object-fields input)
         kind (case (or (string-member "kind" fields) "")
@@ -174,20 +199,26 @@
     (when-some [kind kind]
       (when-some [query (string-member "query" fields)]
         (record model/outliner-autocomplete (kind kind) (query query))))))
+
 (defn autocomplete-candidate [input]
   (let [fields (object-fields input)]
     (when-some [label (string-member "label" fields)]
       (when-some [value (string-member "value" fields)]
         (record model/outliner-autocomplete-candidate (index 0) (label label) (value value))))))
+
 (defn autocomplete-candidates-member [fields]
   (vec (map-indexed (fn [index candidate] (assoc candidate :index index))
                    (keep autocomplete-candidate (list-member "outlinerAutocompleteCandidates" fields)))))
+
 (defn editing-member [fields]
   (when-some [value (get (object-member "outlinerState" fields) "editing")] (outliner-editing value)))
+
 (defn autocomplete-member [fields]
   (when-some [value (get (object-member "outlinerState" fields) "autocomplete")] (outliner-autocomplete value)))
+
 (defn selection-member [fields]
   (string-list-member "selectedBlockIds" (object-member "outlinerState" fields)))
+
 (defn outliner-row-splice [input]
   (let [fields (object-fields input)]
     (when-some [delete-count (int-member "deleteCount" fields)]
@@ -202,6 +233,7 @@
                     (let [block (object-fields block)]
                       (when (= (string-member "uuid" block) (Some uuid)) (string-member "title" block))))
                   (list-member "blocks" fields)) title))))
+
 (defn node-route [input]
   (let [fields (object-fields input)]
     (when-some [uuid (string-member "uuid" fields)]
@@ -215,6 +247,7 @@
           (outliner-editing (editing-member fields)) (outliner-autocomplete (autocomplete-member fields))
           (outliner-autocomplete-candidates (autocomplete-candidates-member fields))
           (outliner-selected-block-ids (selection-member fields)))))))
+
 (defn sidebar-projection [fields]
   (record model/sidebar-projection
     (favorites (sidebar-pages-member "favorites" fields)) (recent-pages (sidebar-pages-member "recentPages" fields))
@@ -223,6 +256,7 @@
     (selected-page-is-property (bool-member "selectedPageIsProperty" fields))
     (related-rows (related-rows-member "relatedBlocks" fields))
     (linked-reference-rows (related-rows-member "linkedReferenceBlocks" fields))))
+
 (defn core-projection [fields]
   (let [is-patch (bool-member "isOutlinerPatch" fields)
         rows (outliner-rows-member "outlinerRows" fields)
@@ -248,10 +282,12 @@
       (has-pending-semantic-operations (bool-member "hasPendingSemanticOperations" fields))
       (has-pending-sync-request (match (get fields "pendingSyncRequest") None false (Some (tag Null)) false _ true))
       (is-pending-sync-patch (bool-member "isPendingSyncPatch" fields)) (is-graph-catalog-patch (bool-member "isGraphCatalogPatch" fields)))))
+
 (defn error-message [fields]
   (let [error (object-member "error" fields)]
     (str (or (string-member "code" error) "core_request_failed") "\n"
          (or (string-member "message" error) "Core request failed"))))
+
 (defn decode-response [encoded]
   (try
     (match (json/from-string encoded)

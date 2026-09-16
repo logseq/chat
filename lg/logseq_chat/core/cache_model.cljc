@@ -37,26 +37,44 @@
 
 (defn text-attribute [name indexed]
   (attribute/make name codec/string (one (ds/StringType) indexed nil)))
+
 (defn number-attribute [name indexed]
   (attribute/make name codec/int (one (ds/NumberType) indexed nil)))
 
 (def block-uuid (attribute/make "block/uuid" codec/string (one (ds/StringType) true (Some (ds/Identity)))))
+
 (def block-title (text-attribute "block/title" false))
+
 (def block-page-id (text-attribute "block/page-id" true))
+
 (def block-parent-id (text-attribute "block/parent-id" false))
+
 (def block-order (text-attribute "block/order" true))
+
 (def block-created-at (number-attribute "block/created-at" true))
+
 (def block-updated-at (number-attribute "block/updated-at" true))
+
 (def block-sync-status (text-attribute "block/sync-status" true))
+
 (def block-tags-json (text-attribute "block/tags-json" false))
+
 (def block-references-json (text-attribute "block/references-json" false))
+
 (def block-breadcrumbs-json (text-attribute "block/breadcrumbs-json" false))
+
 (def block-status-json (text-attribute "block/status-json" false))
+
 (def block-asset-type (text-attribute "block/asset-type" true))
+
 (def block-asset-size (number-attribute "block/asset-size" false))
+
 (def block-asset-checksum (text-attribute "block/asset-checksum" false))
+
 (def block-local-path (text-attribute "block/local-path" false))
+
 (def page-journal-day (number-attribute "page/journal-day" true))
+
 (def page-title (text-attribute "page/title" false))
 
 (def schema
@@ -164,7 +182,9 @@
 (defn all-block-uuids [model]
   (vec (keep (fn [datom] (match (:v datom) (ds/String uuid) (Some uuid) _ nil))
              (db-api/datoms (.-db model) (ds/Aevt) :a "block/uuid"))))
+
 (defn all-blocks [model] (vec (keep (fn [uuid] (read-block model uuid)) (all-block-uuids model))))
+
 (defn all-statuses [model]
   (vec (keep (fn [uuid]
                (when (and (> (count uuid) 15) (string/starts-with? uuid "status-catalog/"))
@@ -172,22 +192,29 @@
              (all-block-uuids model))))
 
 (defn local-time [now] (unix/localtime (/ (double now) 1000.0)))
+
 (defn journal-day-for-ms [now]
   (let [tm (local-time now)] (+ (* (+ (:tm-year tm) 1900) 10000) (* (inc (:tm-mon tm)) 100) (:tm-mday tm))))
+
 (defn journal-page-id-for-ms [now]
   (let [tm (local-time now)]
     (format "journal/%04d-%02d-%02d" (+ (:tm-year tm) 1900) (inc (:tm-mon tm)) (:tm-mday tm))))
+
 (defn block-journal-metadata [model block]
   (or (:journal block) (journal-metadata model (:page-id block))))
+
 (defn journal-feed-block? [model block]
   (and (not= (:page-id block) "")
        (if-some [[_ day] (block-journal-metadata model block)]
          (<= day (journal-day-for-ms (long (* (unix/gettimeofday) 1000.0)))) false)))
+
 (defn recent-feed-block? [model block]
   (and (not= (string/trim (:title block)) "") (journal-feed-block? model block)))
+
 (defn compare-recent [left right]
   (let [order (compare (:created-at right) (:created-at left))]
     (if (zero? order) (compare (:uuid left) (:uuid right)) order)))
+
 (defn compare-outliner [left right]
   (match (tuple (:order left) (:order right))
     [(Some left-order) (Some right-order)]
@@ -230,9 +257,12 @@
 (defn recent-blocks [model]
   (journal-blocks false model (take 100 (sort compare-recent (filter (fn [block] (recent-feed-block? model block))
                                                                   (all-blocks model))))))
+
 (defn visible-blocks [model] (recent-blocks model))
+
 (defn visible-from [model blocks]
   (journal-blocks true model (take 100 (sort compare-recent (filter (fn [block] (journal-feed-block? model block)) blocks)))))
+
 (defn selected-block [model]
   (when-some [uuid (.-selected-block-uuid model)] (read-block model uuid)))
 
@@ -292,11 +322,14 @@
     (when (seq transactions) (commit model transactions))
     (set! (.-last-refresh-at model) (Some refresh-time))
     (stdlib/ignore 0)))
+
 (defn select [model uuid]
   (if (block-exists? model uuid)
     (do (set! (.-selected-block-uuid model) (Some uuid)) (Ok (stdlib/ignore 0)))
     (Error (str "unknown block: " uuid))))
+
 (defn clear-selection [model] (set! (.-selected-block-uuid model) nil) (stdlib/ignore 0))
+
 (defn upsert-journal-page [model uuid day title]
   (let [entity (if (block-exists? model uuid) (block-ref uuid) (ds/Temp_id (str "page-" uuid)))]
     (commit model [(add block-uuid entity uuid) (add page-journal-day entity day) (add page-title entity title)])))
@@ -306,12 +339,16 @@
     (created-at now) (updated-at now) (sync-status "pending") (tags (list)) (references (list))
     (breadcrumbs (list)) (status nil) (is-asset false) (asset-type nil) (asset-size nil)
     (asset-checksum nil) (local-path nil) (journal nil)))
+
 (defn local-journal [model now]
   (let [page-id (journal-page-id-for-ms now)] (upsert-journal-page model page-id (journal-day-for-ms now) "") page-id))
+
 (defn cache-local-message [model uuid title now]
   (upsert-blocks model [(local-block uuid title (local-journal model now) nil now)] now))
+
 (defn cache-local-task [model uuid title status now]
   (upsert-blocks model [(assoc (local-block uuid title (local-journal model now) nil now) :status (Some status))] now))
+
 (defn cache-local-asset [model uuid title asset-type asset-size asset-checksum local-path now target-block-id]
   (let [target (when-some [uuid target-block-id] (read-block model uuid))
         page-id (if-some [target target] (:page-id target) (local-journal model now))
@@ -319,21 +356,29 @@
     (upsert-blocks model [(assoc (local-block uuid title page-id parent-id now)
                                 :is-asset true :asset-type (Some asset-type) :asset-size (Some asset-size)
                                 :asset-checksum (Some asset-checksum) :local-path (Some local-path))] now)))
+
 (defn cache-local-child [model uuid title parent-id now]
   (if-some [parent (read-block model parent-id)]
     (do (upsert-blocks model [(local-block uuid title (:page-id parent) (Some parent-id) now)] now) (Ok (stdlib/ignore 0)))
     (Error (str "unknown parent block: " parent-id))))
+
 (defn pending-blocks [model]
   (vec (sort compare-recent (filter (fn [block] (contains? #{"pending" "failed"} (:sync-status block))) (all-blocks model)))))
+
 (defn unsynced-blocks [model]
   (vec (sort compare-recent (filter (fn [block] (not= (:sync-status block) "synced")) (all-blocks model)))))
+
 (defn update-sync-status [model uuid sync-status]
   (if (block-exists? model uuid)
     (do (commit model [(add block-sync-status (block-ref uuid) sync-status)]) (Ok (stdlib/ignore 0)))
     (Error (str "unknown block: " uuid))))
+
 (defn mark-block-synced [model uuid] (update-sync-status model uuid "synced"))
+
 (defn mark-block-submitted [model uuid] (update-sync-status model uuid "submitted"))
+
 (defn mark-block-sync-failed [model uuid] (update-sync-status model uuid "failed"))
+
 (defn reconcile-created-block [model local-uuid remote-uuid sync-status]
   (if-some [local (read-block model local-uuid)]
     (if (= local-uuid remote-uuid)
@@ -344,12 +389,14 @@
         (commit model [(ds/RetractEntity (block-ref local-uuid))])
         (Ok (stdlib/ignore 0))))
     (Error (str "unknown block: " local-uuid))))
+
 (defn update-block-title [model uuid title now]
   (if (block-exists? model uuid)
     (let [entity (block-ref uuid)]
       (commit model [(add block-title entity title) (add block-updated-at entity now) (add block-sync-status entity "pending")])
       (Ok (stdlib/ignore 0)))
     (Error (str "unknown block: " uuid))))
+
 (defn update-block-status [model uuid status now]
   (if (block-exists? model uuid)
     (let [entity (block-ref uuid)]

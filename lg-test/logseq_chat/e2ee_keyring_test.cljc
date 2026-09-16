@@ -10,7 +10,9 @@
             [ocaml.Stdlib :as stdlib]))
 
 (def success (Ok (stdlib/ignore 0)))
+
 (defn expect-ok [result] (match result (Ok value) value (Error message) (stdlib/failwith message)))
+
 (def crypto
   (record e2ee/e2ee-crypto
     (decrypt-private-key (fn [_ _ _ _ _] (Ok "private-key")))
@@ -19,14 +21,20 @@
     (random-bytes (fn [_] (Error "unused")))
     (encrypt-aes-gcm (fn [_ _] (Ok (tuple "iv" "ciphertext"))))
     (decrypt-aes-gcm (fn [_ _ _] (Ok (codec/to-string (transit/String "decrypted title")))))))
+
 (def config (record api/api-config (base-url "https://api.example") (graph-id "encrypted-graph")
                     (graph-name (Some "Private")) (token "access-token")))
+
 (def private-package (codec/to-string (transit/Array (list (transit/String "20251210") (transit/Binary "salt")
                                                          (transit/Binary "private-iv") (transit/Binary "encrypted-private")))))
+
 (def graph-package (codec/to-string (transit/Binary "encrypted-graph-key")))
+
 (defn response [status body] (Ok (record api/api-response (status status) (body body))))
+
 (defn json-body [entries]
   (json/to-string (tag Assoc (apply list (map (fn [entry] (tuple (key entry) (tag String (val entry)))) entries)))))
+
 (defn fetch [request]
   (response 200 (json-body (if (string/ends-with? (:url request) "/user-keys")
                             [(tuple "public-key" "public") (tuple "encrypted-private-key" private-package)]
@@ -102,7 +110,9 @@
 (def provision-crypto
   (assoc crypto :random-bytes (fn [count] (Ok (apply str (repeat count "a"))))
                 :encrypt-graph-key (fn [public plaintext] (Ok (string/join "" [public plaintext])))))
+
 (def public-package (codec/to-string (transit/Binary "public")))
+
 (defn public-response []
   (response 200 (json-body [(tuple "public-key" public-package) (tuple "encrypted-private-key" "unused")])))
 

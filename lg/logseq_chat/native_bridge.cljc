@@ -13,6 +13,7 @@
             [ocaml.Callback :as callback]))
 
 (def latest-patch (atom ""))
+
 (def current-app (atom None))
 
 (defn send-patch! [json]
@@ -385,17 +386,26 @@
 (defn linked [] true)
 
 (defn press [node] (flush-event! (proto/Press node)))
+
 (defn appear [node] (flush-event! (proto/Appear node)))
+
 (defn long-press [node] (flush-event! (proto/LongPress node)))
+
 (defn text-changed [node text]
   (flush-event! (proto/TextChanged node text)))
+
 (defn submit [node] (flush-event! (proto/Submit node)))
+
 (defn toggle-changed [node checked]
   (flush-event! (proto/ToggleChanged node checked)))
+
 (defn change [node] (flush-event! (proto/Change node)))
+
 (defn value-changed [node value]
   (flush-event! (proto/ValueChanged node value)))
+
 (defn dismiss [node] (flush-event! (proto/Dismiss node)))
+
 (defn double-press [node] (flush-event! (proto/DoublePress node)))
 
 (defn extension-event [node identifier name text value]

@@ -8,18 +8,31 @@
             [ocaml.Printexc :as exception]))
 
 (def tag-uuid "e2e00000-0000-4000-8000-000000000001")
+
 (def source-uuid "e2e00000-0000-4000-8000-000000000002")
+
 (def older-block-uuid "e2e00000-0000-4000-8000-000000000003")
+
 (def trailing-tag-uuid "e2e00000-0000-4000-8000-000000000004")
+
 (def child-tag-uuid "e2e00000-0000-4000-8000-000000000005")
+
 (def flashcard-uuid "e2e00000-0000-4000-8000-000000000020")
+
 (def flashcard-answer-uuid "e2e00000-0000-4000-8000-000000000021")
+
 (def header-navigation-page-uuid "e2e00000-0000-4000-8000-000000000030")
+
 (def header-navigation-block-uuid "e2e00000-0000-4000-8000-000000000031")
+
 (def composer-page-uuid "e2e30000-0000-4000-8000-000000000001")
+
 (def composer-block-uuid "e2e30000-0000-4000-8000-000000000002")
+
 (def outliner-page-uuid "e2e30000-0000-4000-8000-000000000003")
+
 (def outliner-block-uuid "e2e30000-0000-4000-8000-000000000004")
+
 (def outliner-tag-uuid "e2e30000-0000-4000-8000-000000000005")
 
 (defn entity-has-attr? [db eid attr]
@@ -44,9 +57,13 @@
     (when (seq operations) (transact! conn operations))))
 
 (defn uuid-attr [value] (ds/One_value (ds/Uuid value)))
+
 (defn string-attr [value] (ds/One_value (ds/String value)))
+
 (defn int-attr [value] (ds/One_value (ds/Int value)))
+
 (defn ref-attr [id] (ds/One_value (ds/Ref_to (ds/Temp_id id))))
+
 (defn many-refs [ids] (ds/Many_values (apply list (map #(ds/Ref_to (ds/Temp_id %)) ids))))
 
 (defn entity [id attrs]
@@ -80,6 +97,7 @@
                (seed-current-journal conn now composer-page-uuid composer-block-uuid "E2E Composer Fixture"))))
 
 (defn page-uuid [index] (format "e2e10000-0000-4000-8000-%012d" index))
+
 (defn block-uuid [index] (format "e2e20000-0000-4000-8000-%012d" index))
 
 (defn seed-header-navigation [conn]
@@ -177,6 +195,7 @@
   (seed conn))
 
 (defn performance-page-uuid [index] (format "e2f10000-0000-4000-8000-%012x" (inc index)))
+
 (defn performance-block-uuid [page-index block-index]
   (format "e2f20000-0000-4000-8000-%012x" (+ (* (inc page-index) 100) block-index 1)))
 

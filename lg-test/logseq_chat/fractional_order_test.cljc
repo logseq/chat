@@ -5,9 +5,13 @@
 
 (defn value [result]
   (match result (Ok value) value (Error message) (throw (Failure message))))
+
 (defn error? [result] (match result (Error _) true (Ok _) false))
+
 (def minimum (str "A" (string/join "" (repeat 26 "0"))))
+
 (def maximum (string/join "" (repeat 27 "z")))
+
 (defn inside? [lower key upper]
   (and (neg? (compare lower key)) (neg? (compare key upper)) (nil? (order/validate-error key))))
 

@@ -9,11 +9,14 @@
               (Platform_haptic :state/outliner-haptic) (Focus_block :string) (Confirm_delete :list<string>)
               (Set_clipboard_text :string) (Set_clipboard_references :list<string>) (Set_clipboard_urls :list<string>)
               (Platform_pick_attachment :string) (Platform_take_photo :string) (Platform_record_audio :string))
+
 (type-record outliner-effects (operations :list<ops/pending-operation>) (platform :list<outliner-platform-command>))
 
 (defn result [operations platform]
   (record outliner-effects (operations (apply list operations)) (platform (apply list platform))))
+
 (defn find-block [context uuid] (state/find-block context uuid))
+
 (defn ^:list<model/block> sorted-siblings [^:state/outliner-context context ^:option<string> parent]
   (apply list
          (sort (fn [left right]
@@ -22,6 +25,7 @@
                    (tuple (Some _) None) -1 (tuple None (Some _)) 1
                    _ (compare (:uuid left) (:uuid right))))
                (filter #(= (:parent-id %) parent) (:blocks context)))))
+
 (defn next-order [context block]
   (let [siblings (vec (sorted-siblings context (:parent-id block)))]
     (when-some [index (state/index-of-uuid (:uuid block) (apply list siblings))]
@@ -29,18 +33,23 @@
               (match (tuple (:order block) (:order candidate))
                 (tuple (Some lower) (Some upper)) (when (pos? (compare upper lower)) upper)
                 _ nil)) (drop (inc index) siblings)))))
+
 (defn operation [base-t fresh-uuid intent]
   (record ops/pending-operation (operation-id (fresh-uuid)) (base-t base-t) (state ops/Queued) (intent intent)))
+
 (defn status-reference [status]
   (if-some [ident (:ident status)] (ops/Ref-ident ident) (ops/Ref-uuid (:uuid status))))
+
 (defn next-status-value [block]
   (match (some-> (:status block) :ident)
     (Some "logseq.property/status.todo") (Some (ops/Ref-ident "logseq.property/status.doing"))
     (Some "logseq.property/status.doing") (Some (ops/Ref-ident "logseq.property/status.done"))
     (Some "logseq.property/status.done") nil
     _ (Some (ops/Ref-ident "logseq.property/status.todo"))))
+
 (defn append-result [left right]
   (result (concat (:operations left) (:operations right)) (concat (:platform left) (:platform right))))
+
 (defn command [base-t now fresh-uuid context cmd]
   (match cmd
     (state/Haptic haptic) (Ok (result [] [(Platform_haptic haptic)]))
@@ -108,6 +117,7 @@
     (state/Copy_text text) (Ok (result [] [(Set_clipboard_text text)]))
     (state/Copy_references uuids) (Ok (result [] [(Set_clipboard_references uuids)]))
     (state/Copy_urls uuids) (Ok (result [] [(Set_clipboard_urls uuids)]))))
+
 (defn interpret [base-t now fresh-uuid context ^:list<state/outliner-command> commands]
   (let [commands (vec commands)]
     (loop [index 0 operations [] platform []]

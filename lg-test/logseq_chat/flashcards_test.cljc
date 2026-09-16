@@ -6,6 +6,7 @@
             [ocaml.Float :as float]))
 
 (def now 1776000000000)
+
 (def day 86400000)
 
 (deftest again-starts-learning-with-the-upstream-fsrs-parameters
@@ -53,6 +54,7 @@
     (is (= (cards/Review) (:state card)))))
 
 (def one (assoc storage/default-schema-attr :indexed true))
+
 (def schema
   (apply list
          (concat
@@ -67,11 +69,13 @@
                ["block/tags" "logseq.property.class/extends"]))))
 
 (defn add [eid attr value] (ds/Add (ds/Entity_id eid) attr value))
+
 (defn block-tx [eid uuid title parent order created-at]
   [(add eid "block/uuid" (ds/Uuid uuid)) (add eid "block/title" (ds/String title))
    (add eid "block/page" (ds/Ref 10)) (add eid "block/parent" (ds/Ref parent))
    (add eid "block/order" (ds/String order)) (add eid "block/created-at" (ds/Int created-at))
    (add eid "block/updated-at" (ds/Int created-at))])
+
 (defn ordered-uuids [db] (mapv #(-> % :block :uuid) (cards/due-cards db now)))
 
 (deftest due-cards-include-subclasses-answers-and-stable-due-ordering

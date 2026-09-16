@@ -20,6 +20,7 @@
                      (match addresses None (value/Null) (Some text) (value/String text)))))
 
 (def root "[\"^ \",\"~:schema\",[\"^ \",\"~:block/title\",[\"^ \",\"~:db/valueType\",\"~:db.type/string\"]]]")
+
 (def wire (frame (value/Array (list (row 0 root None) (row 1 "[]" None) (row 7 "[\"^ \",\"~:keys\",[]]" (Some "[3,4]"))))))
 
 (deftest partial-prefix-payload-and-import-metadata

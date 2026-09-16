@@ -7,7 +7,9 @@
             [ocaml.In_channel :as input]))
 
 (defn move-value [uuid] (record ops/pending-move (uuid uuid) (page-uuid "page") (parent-uuid "parent") (order "a0")))
+
 (defn move [uuid] (ops/Move-block (move-value uuid)))
+
 (def intents
   [(ops/Save-title (record ops/pending-title (uuid "block") (expected-title "Old") (title "New")))
    (ops/Set-property (record ops/pending-property (uuid "block") (attr "user.property/effort") (expected (Some (ops/Int-value 1))) (value (Some (ops/Int-value 2)))))
@@ -167,6 +169,7 @@
 
 (defn invalid-value? [input]
   (try (do (ops/semantic-value-of-json input) false) (catch (Invalid_argument _) true)))
+
 (defn invalid-intent? [input]
   (try (do (ops/intent-of-json input) false) (catch (Invalid_argument _) true)))
 

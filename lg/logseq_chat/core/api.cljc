@@ -15,15 +15,21 @@
 
 (type-record api-config
   (base-url :string) (graph-id :string) (graph-name :option<string>) (token :string))
+
 (type-record api-request
   (method_ :string) (url :string) (body :option<string>) (token :string))
+
 (type-record api-response (status :int) (body :string))
+
 (type-record api-file-upload
   (request :api-request) (file-path :string) (content-type :string)
   (headers :list<tuple<string;string>>))
+
 (type-record api-journal (uuid :string) (title :string) (journal-day :int))
+
 (type-record api-graph
   (id :string) (name :string) (schema-version :option<string>) (e2ee :bool) (ready :bool))
+
 (type-record api-user-keys (public-key :string) (encrypted-private-key :string))
 
 (defn response [status body]
@@ -95,7 +101,9 @@
 (defn user-keys-request [config] (request config "GET" "/e2ee/user-keys" None))
 
 (defn graph-key-path [config] (str "/e2ee/graphs/" (url-encode (:graph-id config)) "/aes-key"))
+
 (defn graph-key-request [config] (request config "GET" (graph-key-path config) None))
+
 (defn upsert-graph-key-request [config encrypted-key]
   (request config "POST" (graph-key-path config)
     (json-body [(tuple "encrypted-aes-key" (tag String encrypted-key))])))
@@ -108,8 +116,11 @@
 (defn related-request [config resource uuid collection]
   (request config "GET"
     (graph-path config (str "/" resource "/" (url-encode uuid) "/" collection "?limit=100")) None))
+
 (defn block-references-request [config uuid] (related-request config "blocks" uuid "references"))
+
 (defn page-references-request [config uuid] (related-request config "pages" uuid "references"))
+
 (defn tag-objects-request [config uuid] (related-request config "tags" uuid "objects"))
 
 (defn page-fields [page-id]
@@ -160,10 +171,13 @@
 
 (defn option-string-member [name input]
   (match (member name input) (tag String value) (Some value) _ None))
+
 (defn string-member [name input]
   (match (option-string-member name input) (Some value) value None ""))
+
 (defn int-member [name input]
   (match (member name input) (tag Int value) value _ 0))
+
 (defn list-member [name input]
   (match (member name input) (tag List values) values _ (list)))
 
@@ -280,6 +294,7 @@
 
 (defn blocks-member [key input]
   (rrbvec/to-list (vec (keep (fn [value] (block-of-json 0 value)) (list-member key input)))))
+
 (defn blocks-from-list-body [key body] (blocks-member key (json/from-string body)))
 
 (defn journal-of-json [input]

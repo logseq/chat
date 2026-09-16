@@ -11,7 +11,9 @@
 (ffi call-raw [:string] :string {:ocaml "logseq_chat_crypto_call"})
 
 (def response (atom "{\"ok\":true,\"value\":\"00ff\"}"))
+
 (def request (atom (json/from-string "{}")))
+
 (def transport-failure (atom false))
 
 (callback/register "platform_crypto_test_call"
@@ -25,6 +27,7 @@
   (reset! response "{\"ok\":true,\"value\":\"00ff\"}"))
 
 (defn field [name] (json-util/member name @request))
+
 (defn operation [name] (is (= (tag String name) (field "operation"))))
 
 (deftest binary-hex-roundtrip

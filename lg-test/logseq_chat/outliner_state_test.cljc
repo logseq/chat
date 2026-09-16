@@ -10,31 +10,48 @@
   (record model/block (uuid uuid) (title title) (page-id "page") (parent-id (Some "page")) (order (Some "a0"))
           (created-at 0) (updated-at 0) (sync-status "synced") (tags (list)) (references (list)) (breadcrumbs (list))
           (status None) (is-asset false) (asset-type None) (asset-size None) (asset-checksum None) (local-path None) (journal None)))
+
 (defn row [uuid parent order] (assoc (block uuid uuid) :parent-id (Some parent) :order (Some order)))
+
 (defn context-for [blocks]
   (record state/outliner-context (blocks (apply list blocks)) (pages (list)) (tags (list))))
+
 (def context (context-for [(block "a" "Alpha") (assoc (block "b" "Beta") :order (Some "a1"))]))
+
 (defn candidate [label value] (record state/outliner-candidate (label label) (value value)))
+
 (defn request [kind query] (record state/reducer-autocomplete (kind kind) (query query)))
+
 (defn text [title caret] (record state/outliner-text (title title) (caret caret)))
+
 (defn step [ctx current message]
   (let [[next commands] (state/update ctx current message)] (tuple next (vec commands))))
+
 (defn advance [ctx current messages]
   (reduce (fn [current message] (key (step ctx current message))) current messages))
+
 (defn start [ctx uuid title caret]
   (advance ctx state/empty [(state/Tap_block uuid) (state/Text_changed (text title caret))]))
+
 (defn commit [uuid expected title]
   (state/Commit_title (record ops/pending-title (uuid uuid) (expected-title expected) (title title))))
+
 (defn split [uuid expected before after]
   (state/Split_at (record state/outliner-split (uuid uuid) (expected-title expected) (before before) (after after))))
+
 (defn merge-command [title]
   (state/Merge_into_previous (record state/outliner-merge (uuid "b") (expected-title "Beta") (title title)
                                      (previous-uuid "a") (expected-previous-title "Alpha"))))
+
 (defn backspace [selection] (state/Backspace_pressed (record state/outliner-selection (selection-length selection))))
+
 (defn atomic-backspace [title selection]
   (state/Backspace_pressed_with_text (record state/outliner-backspace (title title) (selection-length selection))))
+
 (defn visible-ids [ctx current] (mapv (fn [row] (:uuid (:block row))) (state/visible-rows ctx current)))
+
 (defn selected [current] (vec (state/selected-uuids current)))
+
 (defn zoom-path [current] (vec (state/zoom-path current)))
 
 (deftest journal-roots-stay-grouped-newest-first
@@ -66,6 +83,7 @@
         [(tuple "Project" "Alpha #Pro") (tuple "favorite book" "Alpha #fav")]))
 
 (defn summary [uuid title] (record model/entity-summary (uuid uuid) (title title)))
+
 (deftest display-references-resolve-names-but-preserve-ambiguous-uuids
   (let [stored (assoc (block "a" "Ship [[page-uuid-1]] with #[[tag-uuid-1]] and #[[tag-uuid-2]]")
                       :references (list (summary "page-uuid-1" "Roadmap"))
@@ -80,6 +98,7 @@
 
 (def tree (context-for [(block "parent" "Parent") (assoc (block "child" "Child") :parent-id (Some "parent"))
                         (assoc (block "sibling" "Sibling") :order (Some "a1"))]))
+
 (deftest collapse-and-zoom-own-visible-subtrees
   (let [[collapsed commands] (step tree state/empty (state/Toggle_collapsed "parent"))
         [zoomed zoom-commands] (step tree collapsed (state/Zoom_in "parent"))
@@ -164,6 +183,7 @@
 (defn moves [commands]
   (match (vec commands) [(state/Reparent_blocks values) (state/Haptic state/Impact)] (vec values)
          _ (stdlib/failwith "expected one move batch and impact haptic")))
+
 (deftest selected-indent-and-outdent-stay-atomic-and-preserve-selection
   (let [ctx (context-for [(row "first" "page" "a0") (row "second" "page" "a1") (row "third" "page" "a2")])
         current (advance ctx state/empty [(state/Long_press_block "second") (state/Tap_block "third")])
@@ -193,6 +213,7 @@
 
 (defn drop-message [uuid placement]
   (state/Drop_blocks (record state/outliner-drop (target-uuid uuid) (placement placement))))
+
 (deftest drop-rejects-descendants-and-valid-drop-clears-selection
   (let [ctx (context-for [(row "parent" "page" "a0") (row "child" "parent" "a0") (row "target" "page" "a1")])
         current (key (step ctx state/empty (state/Long_press_block "parent")))
@@ -303,6 +324,7 @@
 
 (defn editing [title]
   (record state/editor-draft (uuid "a") (expected-title title) (title title) (caret (state/utf16-length title))))
+
 (deftest completion-and-caret-insertion-preserve-literal-text
   (run! (fn [[kind title value expected]]
           (is (= (Some expected) (some-> (state/complete context (editing title) kind value) :title))))

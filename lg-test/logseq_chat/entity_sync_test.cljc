@@ -10,24 +10,33 @@
             [ocaml.Stdlib :as stdlib]))
 
 (def one storage/default-schema-attr)
+
 (def uuid-schema (assoc one :value-type (Some (ds/UuidType)) :unique (Some (ds/Identity)) :indexed true))
+
 (def string-schema (assoc one :value-type (Some (ds/StringType))))
+
 (def ref-schema (assoc one :value-type (Some (ds/RefType))))
 
 (defn wire-identity [uuid] (transit/Array (list (transit/Keyword "block/uuid") (transit/Uuid uuid))))
+
 (defn wire-block [uuid title]
   [(tuple (transit/Keyword "block/uuid") (transit/Uuid uuid))
    (tuple (transit/Keyword "block/title") (transit/String title))])
+
 (defn entity [uuid attrs]
   (record protocol/sync-entity (id (wire-identity uuid)) (attrs (apply list attrs))))
+
 (defn change-set [upserts deleted]
   (record protocol/sync-change-set
           (format-version 1) (graph-id "graph-1") (schema-version "65.33") (t-before 7) (t 8)
           (upserts (apply list upserts)) (deleted (apply list deleted)) (operation-ids (list))))
+
 (defn eid [db uuid]
   (match (ds/entid db "block/uuid" (ds/Uuid uuid))
     (Some eid) eid None (stdlib/failwith (str "missing entity: " uuid))))
+
 (defn values [db eid attr] (mapv :v (db-api/datoms db (ds/Eavt) :e eid :a attr)))
+
 (defn ok? [result] (match result (Ok _) true (Error _) false))
 
 (deftest authoritative-changes-replace-retract-and-resolve-reference-identities

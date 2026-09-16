@@ -11,6 +11,7 @@
 
 (type-variant pending-state
   Queued Submitted (Accepted :int) Retryable Applied (Conflicted :string))
+
 (type-variant semantic-value
   (String-value :string) (Int-value :int) (Instant-value :int)
   (Float-value :float) (Bool-value :bool) (Keyword-value :string)
@@ -40,35 +41,51 @@
 
 (type-record property-change
   (attr :string) (expected :option<semantic-value>) (value :option<semantic-value>))
+
 (type-record pending-move
   (uuid :string) (page-uuid :string) (parent-uuid :string) (order :string))
+
 (type-record pending-title
   (uuid :string) (expected-title :string) (title :string))
+
 (type-record pending-property
   (uuid :string) (attr :string) (expected :option<semantic-value>) (value :option<semantic-value>))
+
 (type-record pending-properties (uuid :string) (changes :vector<property-change>))
+
 (type-record pending-insert
   (uuid :string) (title :string) (page-uuid :string) (parent-uuid :string)
   (order :string) (created-at :int))
+
 (type-record pending-asset
   (uuid :string) (title :string) (page-uuid :string) (parent-uuid :string)
   (order :string) (created-at :int) (asset-type :string)
   (asset-size :int) (asset-checksum :string))
+
 (type-record pending-moves (moves :vector<pending-move>))
+
 (type-record pending-split
   (uuid :string) (expected-title :string) (before :string) (after :string)
   (new-uuid :string) (new-order :string) (created-at :int))
+
 (type-record pending-merge
   (uuid :string) (expected-title :string) (title :string)
   (previous-uuid :string) (expected-previous-title :string) (merged-title :option<string>))
+
 (type-record pending-delete (uuids :vector<string>))
+
 (type-record pending-create (uuid :string) (title :string) (created-at :int))
+
 (type-record pending-journal
   (page-uuid :string) (block-uuid :string) (title :string) (journal-day :int) (created-at :int))
+
 (type-record pending-tag (uuid :string) (tag-uuid :string))
+
 (type-record pending-favorite
   (page-uuid :string) (favorite-uuid :string) (favorite :bool) (order :string) (created-at :int))
+
 (type-record pending-page-delete (page-uuid :string) (order :string) (deleted-at :int))
+
 (type-variant pending-intent
   (Save-title :pending-title) (Set-property :pending-property)
   (Set-properties :pending-properties) (Insert-block :pending-insert)
@@ -76,6 +93,7 @@
   (Split-block :pending-split) (Merge-backward :pending-merge) (Delete-blocks :pending-delete)
   (Create-tag :pending-create) (Create-page :pending-create) (Create-journal :pending-journal)
   (Add-tag :pending-tag) (Set-favorite :pending-favorite) (Delete-page :pending-page-delete))
+
 (type-record pending-operation
   (operation-id :string) (base-t :int) (state :pending-state) (intent :pending-intent))
 
@@ -246,8 +264,11 @@
     :else Retryable))
 
 (defn json-object [entries] (tag Assoc (rrbvec/to-list entries)))
+
 (defn json-array [values] (tag List (rrbvec/to-list values)))
+
 (defn option-json [f value] (match value (Some value) (f value) _ (tag Null)))
+
 (defn option-value [f value] (match value (tag Null) nil _ (Some (f value))))
 
 (defn semantic-value-json [value]
@@ -297,20 +318,26 @@
 
 (defn field [fields key]
   (some (fn [entry] (match entry (tuple name value) (when (= name key) value))) fields))
+
 (defn required-field [fields key]
   (match (field fields key) (Some value) value _ (throw (stdlib/Not_found))))
+
 (defn string-field [fields key]
   (match (field fields key) (Some (tag String value)) value
     _ (stdlib/invalid-arg (str "invalid pending intent field: " key))))
+
 (defn int-field [fields key]
   (match (field fields key) (Some (tag Int value)) value
     _ (stdlib/invalid-arg (str "invalid pending intent field: " key))))
+
 (defn bool-field [fields key]
   (match (field fields key) (Some (tag Bool value)) value
     _ (stdlib/invalid-arg (str "invalid pending intent field: " key))))
+
 (defn array-field [fields key]
   (match (field fields key) (Some (tag List values)) values
     _ (stdlib/invalid-arg (str "invalid pending intent field: " key))))
+
 (defn semantic-field [fields key]
   (option-value semantic-value-of-json (required-field fields key)))
 
@@ -319,15 +346,18 @@
                 (tuple "pageUuid" (tag String (:page-uuid value)))
                 (tuple "parentUuid" (tag String (:parent-uuid value)))
                 (tuple "order" (tag String (:order value)))]))
+
 (defn move-of-json [input]
   (let [fields (object-fields input "invalid pending move")]
     (record pending-move (uuid (string-field fields "uuid"))
       (page-uuid (string-field fields "pageUuid"))
       (parent-uuid (string-field fields "parentUuid")) (order (string-field fields "order")))))
+
 (defn change-json [value]
   (json-object [(tuple "attr" (tag String (:attr value)))
                 (tuple "expected" (option-json semantic-value-json (:expected value)))
                 (tuple "value" (option-json semantic-value-json (:value value)))]))
+
 (defn change-of-json [input]
   (let [fields (object-fields input "invalid pending property change")]
     (record property-change (attr (string-field fields "attr"))
@@ -336,11 +366,13 @@
 (defn creation-fields [value]
   [(tuple "uuid" (tag String (:uuid value))) (tuple "title" (tag String (:title value)))
    (tuple "createdAt" (tag Int (:created-at value)))])
+
 (defn insert-fields [value]
   [(tuple "uuid" (tag String (:uuid value))) (tuple "title" (tag String (:title value)))
    (tuple "pageUuid" (tag String (:page-uuid value)))
    (tuple "parentUuid" (tag String (:parent-uuid value)))
    (tuple "order" (tag String (:order value))) (tuple "createdAt" (tag Int (:created-at value)))])
+
 (defn intent-json [intent]
   (let [[kind fields]
         (match intent
@@ -410,12 +442,14 @@
 (defn create-of-fields [fields]
   (record pending-create (uuid (string-field fields "uuid"))
     (title (string-field fields "title")) (created-at (int-field fields "createdAt"))))
+
 (defn merged-title [fields]
   (match (field fields "mergedTitle")
     (Some (tag String value)) (Some value)
     (Some (tag Null)) nil
     None nil
     _ (stdlib/invalid-arg "invalid pending intent field: mergedTitle")))
+
 (defn intent-of-json [input]
   (let [fields (object-fields input "pending intent must be an object")]
     (case (string-field fields "type")
@@ -479,13 +513,17 @@
 (defn save [path operation]
   (store-raw path (:operation-id operation) (:base-t operation)
              (state-string (:state operation)) (json/to-string (intent-json (:intent operation)))))
+
 (defn list [path]
   (mapv (fn [[id cursor state intent]]
           (record pending-operation (operation-id id) (base-t cursor)
             (state (state-of-string state)) (intent (intent-of-json (json/from-string intent)))))
         (list-raw path)))
+
 (defn set-state [path operation-id state]
   (set-state-raw path operation-id (state-string state)))
+
 (defn remove [path operation-id] (remove-raw path operation-id))
+
 (defn confirm [path operation-ids]
   (run! (fn [operation-id] (remove path operation-id)) operation-ids))

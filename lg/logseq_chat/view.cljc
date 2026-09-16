@@ -1499,9 +1499,13 @@
     (retained-outliner-rows current)))
 
 (defn retained-row-value [retained] (:value retained))
+
 (defn retained-row-identifier [retained] (:render-key retained))
+
 (defn retained-row-editing? [retained] (:is-editing retained))
+
 (defn retained-row-editing-title [retained] (:editing-title retained))
+
 (defn retained-row-editing-caret [retained] (:editing-caret retained))
 
 (defn outliner-tag-identifier [tag]
@@ -2518,7 +2522,9 @@
       "Capture"])))
 
 (defn composer-asset-title [asset] (:title asset))
+
 (defn composer-asset-path [asset] (:local-path asset))
+
 (defn composer-asset-identifier [asset] (str "composer.asset." (:uuid asset)))
 
 (defn composer-asset-preview [ui-context asset-source]

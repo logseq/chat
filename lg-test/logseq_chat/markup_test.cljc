@@ -5,7 +5,9 @@
             [ocaml.Yojson.Basic :as json]))
 
 (defn summary [uuid title] (record model/entity-summary (uuid uuid) (title title)))
+
 (defn parse [source] (markup/parse (list) (list) source))
+
 (defn markup-json [source] (markup/to-yojson (parse source)))
 
 (deftest rich-node-semantics

@@ -16,6 +16,7 @@
                          (transit/Binary "encrypted-private-key")])))))
 
 (def encrypted-graph-key (codec/to-string (transit/Binary "encrypted-graph-key")))
+
 (def status-value (transit/Keyword "logseq.property/status.todo"))
 
 (defn crypto [^:ref<vector<string>> calls]

@@ -7,6 +7,7 @@
             [ocaml.Stdlib :as stdlib]))
 
 (def now 1776000000000)
+
 (defn block [uuid title page created]
   (record model/block
     (uuid uuid) (title title) (page-id page) (parent-id None) (order None)
@@ -14,9 +15,12 @@
     (tags (list)) (references (list)) (breadcrumbs (list)) (status None)
     (is-asset false) (asset-type None) (asset-size None) (asset-checksum None)
     (local-path None) (journal None)))
+
 (defn read-block [cache uuid]
   (or (model/read-block cache uuid) (stdlib/failwith (str "missing block " uuid))))
+
 (defn ok? [result] (match result (Ok _) true (Error _) false))
+
 (defn ids [blocks] (mapv :uuid blocks))
 
 (deftest recent-captures-keep-the-newest-hundred-in-order

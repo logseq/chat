@@ -18,6 +18,7 @@
 (type-record prepared-snapshot (file-path :string) (row-count :int) (checksum :string))
 
 (def schema-version data/schema-version)
+
 (def initial-checksum "0000000000000000")
 
 (defn fresh-local-graph-uuid []

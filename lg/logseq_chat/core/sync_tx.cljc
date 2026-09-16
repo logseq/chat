@@ -11,8 +11,11 @@
             [ocaml.Transit_native.Transit.Json :as codec]))
 
 (def ^:vector<Datascript.value> empty-value-vector [])
+
 (def ^:vector<Datascript.tx_entity> empty-entity-vector [])
+
 (def ^:vector<tuple<string;Datascript.tx_value>> empty-entity-attrs-vector [])
+
 (def ^:vector<Transit_core.Json.value> empty-transit-vector [])
 
 (defn lookup-value [entity attr]

@@ -12,10 +12,15 @@
             [ocaml.Stdlib :as stdlib]))
 
 (def one storage/default-schema-attr)
+
 (def string-attr (assoc one :value-type (Some (ds/StringType))))
+
 (def ref-attr (assoc one :value-type (Some (ds/RefType))))
+
 (def instant-attr (assoc one :value-type (Some (ds/InstantType))))
+
 (def many-ref (assoc ref-attr :cardinality (ds/Many) :indexed true))
+
 (def schema
   {"block/uuid" (assoc one :value-type (Some (ds/UuidType)) :unique (Some (ds/Identity)) :indexed true)
    "block/name" (assoc string-attr :unique (Some (ds/Identity)) :indexed true)
@@ -26,39 +31,56 @@
    "logseq.property/deleted-at" instant-attr "logseq.property/view-for" ref-attr
    "logseq.property.class/hide-from-node" one
    "db/ident" (assoc one :value-type (Some (ds/KeywordType)) :unique (Some (ds/Identity)) :indexed true)})
+
 (defn new-conn [attributes overrides]
   (ds/create-conn :schema
     (apply list (seq (merge (select-keys schema ["block/uuid" "block/name" "block/title"])
                            (select-keys schema attributes) overrides)))))
+
 (defn field [name value] (tuple name (ds/One_value value)))
+
 (defn refs [name ids]
   (tuple name (ds/Many_values (apply list (map #(ds/Ref_to (ds/Temp_id %)) ids)))))
+
 (defn entity-input [id attributes]
   (ds/Entity (record Datascript.tx_entity (db-id (Some id)) (attrs (apply list attributes)))))
+
 (defn entity [id title attributes]
   (entity-input (ds/Temp_id id)
     (into [(field "block/uuid" (ds/Uuid id)) (field "block/title" (ds/String title))] attributes)))
+
 (defn page [id name title attributes]
   (entity id title (into [(field "block/name" (ds/String name))] attributes)))
+
 (defn journal [id title day]
   (page id id title [(field "block/journal-day" (ds/Int day))]))
+
 (defn block [id title page parent created attributes]
   (entity id title (into [(field "block/page" (ds/Ref_to (ds/Temp_id page)))
                          (field "block/parent" (ds/Ref_to (ds/Temp_id parent)))
                          (field "block/created-at" (ds/Instant created))] attributes)))
+
 (defn transact [conn entities] (ds/transact-conn conn (apply list entities)))
+
 (defn add [conn uuid attr value]
   (transact conn [(ds/Add (ds/Lookup_ref "block/uuid" (ds/Uuid uuid)) attr value)]))
+
 (defn eid [db uuid]
   (or (ds/entid db "block/uuid" (ds/Uuid uuid)) (stdlib/failwith (str "missing entity: " uuid))))
+
 (defn wire-id [uuid] (transit/Array (list (transit/Keyword "block/uuid") (transit/Uuid uuid))))
+
 (defn wire-entity [uuid attr value]
   (record protocol/sync-entity (id (wire-id uuid)) (attrs (list (tuple (transit/Keyword attr) value)))))
+
 (defn change [t upserts deleted]
   (record protocol/sync-change-set (format-version 1) (graph-id "graph-1") (schema-version "65.33")
     (t-before (dec t)) (t t) (upserts (apply list upserts)) (deleted (apply list deleted)) (operation-ids (list))))
+
 (defn uuids [blocks] (mapv :uuid blocks))
+
 (defn summaries [values] (vec (sort (map #(tuple (:uuid %) (:title %)) values))))
+
 (defn find-block [uuid ^:seq<model/block> blocks]
   (if-some [block (some #(when (= uuid (:uuid %)) %) blocks)]
     block
@@ -291,6 +313,7 @@
     (into [(field "block/uuid" (ds/Uuid (str "recent-" eid)))
                              (field "block/name" (ds/String (str "recent-" eid)))
            (field "block/title" (ds/String title)) (field "block/updated-at" (ds/Instant eid))] attributes)))
+
 (deftest recent-window-fills-past-hidden-and-blank-pages-without-decrypting-older-pages
   (let [conn (ds/create-conn) decrypted (atom []) decrypt (fn [title] (swap! decrypted conj title) (Ok title))]
     (transact conn (into (mapv #(recent-page % (str %) []) (range 1 101))
