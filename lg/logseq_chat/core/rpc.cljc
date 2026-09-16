@@ -586,6 +586,38 @@
                  "websocket_apply_failed")
                message))))
 
+(defn asset-metadata [fields]
+  (match (tuple (required-string fields "uuid") (required-string fields "title")
+                (optional-int fields "now") (required-string fields "assetType")
+                (optional-int fields "assetSize") (required-string fields "assetChecksum")
+                (required-string fields "localPath") (optional-string fields "targetBlockId"))
+    (tuple (Ok uuid) (Ok title) (Ok now) (Ok asset-type) (Ok (Some asset-size))
+           (Ok checksum) (Ok local-path) (Ok target))
+    (Ok (tuple uuid title now asset-type asset-size checksum local-path target))
+    _ (Error (tuple "invalid_params" "addAsset requires complete file metadata"))))
+
+(defn add-asset [payload cache clock load-target prepare-view prepare-operation load-stage]
+  (if-some [payload payload]
+    (action-response
+      (let* [fields (action-fields "addAsset" payload)
+             metadata (asset-metadata fields)]
+        (let [[uuid title requested-now asset-type asset-size checksum local-path target] metadata
+              now (if-some [now requested-now] now (clock))
+              asset-type (api/normalize-asset-type asset-type)
+              completed (prepare-view)]
+          (when-some [uuid target]
+            (when (nil? (model/read-block cache uuid))
+              (when-some [block (load-target uuid)]
+                (model/upsert-blocks cache [block] now))))
+          (model/cache-local-asset cache uuid title asset-type asset-size checksum local-path now target)
+          (match (tuple (load-stage) (model/read-block cache uuid))
+            (tuple (Some stage) (Some block))
+            (let* [operation (graph-workflow-result "asset_projection_failed" (prepare-operation block))
+                   _ (graph-workflow-result "stage_operation_failed" (stage operation))]
+              (Ok (completed)))
+            _ (Ok (completed))))))
+    (failure "invalid_params" "addAsset requires a JSON payload")))
+
 (defn required-bool [fields name]
   (match (field fields name)
     (Some (tag Bool value)) (Ok value)

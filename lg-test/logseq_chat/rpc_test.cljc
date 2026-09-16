@@ -693,6 +693,76 @@
     (configure-plain-session session)
     (is (some? (pending-request (dispatch-json session "beginPendingSync" ""))))))
 
+(deftest asset-payload-errors-do-not-create-local-blocks
+  (let [session (native-rpc/create)]
+    (run! (fn [payload]
+            (let [error (json-util/member "error" (dispatch-json session "addAsset" payload))]
+              (is (= (tag String "invalid_params") (json-util/member "code" error)))
+              (is (= (tag String "addAsset requires complete file metadata") (json-util/member "message" error)))))
+          ["{}"
+           "{\"uuid\":\"bad\",\"title\":\"Photo\",\"assetType\":\"png\",\"assetChecksum\":\"hash\",\"localPath\":\"file\"}"
+           "{\"uuid\":\"bad\",\"title\":\"Photo\",\"assetType\":\"png\",\"assetSize\":null,\"assetChecksum\":\"hash\",\"localPath\":\"file\"}"
+           "{\"uuid\":\"bad\",\"title\":\"Photo\",\"assetType\":\"png\",\"assetSize\":\"12\",\"assetChecksum\":\"hash\",\"localPath\":\"file\"}"
+           "{\"uuid\":\"bad\",\"title\":\"Photo\",\"assetType\":\"png\",\"assetSize\":12,\"assetChecksum\":\"hash\",\"localPath\":\"file\",\"now\":false}"
+           "{\"uuid\":\"bad\",\"title\":\"Photo\",\"assetType\":\"png\",\"assetSize\":12,\"assetChecksum\":\"hash\",\"localPath\":\"file\",\"targetBlockId\":3}"])
+    (is (nil? (native-core/logseq-chat-cache-model-read-block (:model session) "bad")))
+    (run! (fn [[payload code message]]
+            (let [error (json-util/member "error" (dispatch-json session "addAsset" payload))]
+              (is (= (tag String code) (json-util/member "code" error)))
+              (is (= (tag String message) (json-util/member "message" error)))))
+          [(tuple "[]" "invalid_params" "addAsset payload must be an object")
+           (tuple "{" "invalid_json" "addAsset payload must be valid JSON")])
+    (let [error (json-util/member "error" (json/from-string (native-rpc/call session
+                         "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"addAsset\"}}")))]
+      (is (= (tag String "invalid_params") (json-util/member "code" error)))
+      (is (= (tag String "addAsset requires a JSON payload") (json-util/member "message" error))))))
+
+(deftest asset-staging-errors-preserve-cached-file-and-error-category
+  (run! (fn [[cursor code message]]
+          (let [staged (atom 0)
+                session (configure-plain-session
+                         (native-rpc/create
+                          :sync_cursor (fn [] cursor)
+                          :journal_page_id (fn [_] (Some "journal"))
+                          :stage_operation (fn [_] (swap! staged inc) (Error "stage rejected"))))
+                error (json-util/member "error"
+                        (dispatch-json session "addAsset"
+                          "{\"uuid\":\"staged-asset\",\"title\":\"Photo\",\"now\":1776000000000,\"assetType\":\"png\",\"assetSize\":12,\"assetChecksum\":\"hash\",\"localPath\":\"/local/photo.png\"}"))]
+            (is (= (tag String code) (json-util/member "code" error)))
+            (is (= (tag String message) (json-util/member "message" error)))
+            (is (= (if (some? cursor) 1 0) @staged))
+            (if-some [asset (native-core/logseq-chat-cache-model-read-block (:model session) "staged-asset")]
+              (is (= (Some "/local/photo.png") (:local-path asset)))
+              (is false))))
+        [(tuple nil "asset_projection_failed" "A current server cursor is required")
+         (tuple (Some 7) "stage_operation_failed" "stage rejected")]))
+
+(deftest asset-workflow-captures-view-before-caching-and-loads-stage-afterward
+  (let [cache (model/create nil)
+        events (atom [])
+        parent (model/local-block "parent" "Parent" "page" nil 1)
+        result (rpc/add-asset
+                (Some "{\"uuid\":\"asset\",\"title\":\"Photo\",\"now\":2,\"assetType\":\"image/png\",\"assetSize\":12,\"assetChecksum\":\"hash\",\"localPath\":\"/photo.png\",\"targetBlockId\":\"parent\"}")
+                cache (fn [] 2)
+                (fn [uuid] (swap! events conj "target") (is (= "parent" uuid)) (Some parent))
+                (fn []
+                  (swap! events conj "view")
+                  (is (nil? (model/read-block cache "asset")))
+                  (fn [] (swap! events conj "complete") "done"))
+                (fn [asset] (swap! events conj "prepare") (is (= "asset" (:uuid asset))) (Ok "operation"))
+                (fn []
+                  (swap! events conj "load-stage")
+                  (is (some? (model/read-block cache "asset")))
+                  (Some (fn [operation] (swap! events conj "stage")
+                            (is (= "operation" operation)) (Ok (stdlib/ignore 0))))))]
+    (is (= "done" result))
+    (is (= ["view" "target" "load-stage" "prepare" "stage" "complete"] @events))
+    (if-some [asset (model/read-block cache "asset")]
+      (do (is (= "page" (:page-id asset)))
+          (is (= (Some "parent") (:parent-id asset)))
+          (is (= (Some "png") (:asset-type asset))))
+      (is false))))
+
 (deftest page-favorite-updates-sidebar-and-preserves-operation-fields
   (let [favorite (atom false)
         calls (atom [])

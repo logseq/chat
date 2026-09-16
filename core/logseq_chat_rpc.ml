@@ -2066,59 +2066,24 @@ let dispatch session action payload =
         | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "sendTask payload must be valid JSON")
      | None -> LG.logseq_chat_rpc_failure "invalid_params" "sendTask requires a JSON payload")
   | "addAsset" ->
-    (match payload with
-     | Some payload ->
-       (match from_string payload with
-        | `Assoc fields ->
-          (match required_string "uuid" fields, required_string "title" fields,
-                 optional_int "now" fields, required_string "assetType" fields,
-                 optional_int "assetSize" fields, required_string "assetChecksum" fields,
-                 required_string "localPath" fields, optional_string "targetBlockId" fields with
-           | Ok uuid, Ok title, Ok now, Ok asset_type, Ok (Some asset_size),
-             Ok asset_checksum, Ok local_path, Ok target_block_id ->
-             let now = Option.value now ~default:(now_ms ()) in
-             let asset_type = Api.logseq_chat_api_normalize_asset_type asset_type in
-             let before_context = outliner_context session in
-             let before_state = session.outliner_state in
-             Option.iter
-               (fun target_uuid ->
-                 if Option.is_none (Model.logseq_chat_cache_model_read_block session.model target_uuid)
-                 then
-                   let context = base_outliner_context session in
-                   match
-                     List.find_opt
-                       (fun (block : Model.block) -> String.equal block.uuid target_uuid)
-                       context.blocks
-                   with
-                   | Some target -> Model.logseq_chat_cache_model_upsert_blocks session.model (List.to_seq, [ target ]) now
-                   | None -> ())
-               target_block_id;
-             Model.logseq_chat_cache_model_cache_local_asset session.model uuid title asset_type asset_size
-               asset_checksum local_path now target_block_id;
-             let visible_asset_response () =
-               match session.selected_sidebar_page, session.node_routes with
-               | None, [] ->
-                 structural_outliner_patch
-                   session
-                   ~before_context
-                   ~before_state
-                   ~after_context:(outliner_context session)
-               | Some _, _ | None, _ :: _ -> snapshot_visible session
-             in
-             (match session.config, session.stage_operation,
-                    Model.logseq_chat_cache_model_read_block session.model uuid with
-              | Some _, Some stage, Some block ->
-                (match asset_datoms_operation ~state:Applied session block with
-                 | Ok operation ->
-                   (match stage operation with
-                   | Ok () -> visible_asset_response ()
-                   | Error message -> LG.logseq_chat_rpc_failure "stage_operation_failed" message)
-                 | Error message -> LG.logseq_chat_rpc_failure "asset_projection_failed" message)
-              | _ -> visible_asset_response ())
-           | _ -> LG.logseq_chat_rpc_failure "invalid_params" "addAsset requires complete file metadata")
-        | _ -> LG.logseq_chat_rpc_failure "invalid_params" "addAsset payload must be an object"
-        | exception _ -> LG.logseq_chat_rpc_failure "invalid_json" "addAsset payload must be valid JSON")
-     | None -> LG.logseq_chat_rpc_failure "invalid_params" "addAsset requires a JSON payload")
+    let prepare_view () =
+      let before_context = outliner_context session in
+      let before_state = session.outliner_state in
+      fun () ->
+        match session.selected_sidebar_page, session.node_routes with
+        | None, [] ->
+          structural_outliner_patch session ~before_context ~before_state
+            ~after_context:(outliner_context session)
+        | Some _, _ | None, _ :: _ -> snapshot_visible session
+    in
+    let load_target uuid =
+      List.find_opt
+        (fun (block : Model.block) -> String.equal block.uuid uuid)
+        (base_outliner_context session).blocks
+    in
+    let load_stage () = Option.bind session.config (fun _ -> session.stage_operation) in
+    LG.logseq_chat_rpc_add_asset payload session.model now_ms load_target prepare_view
+      (asset_datoms_operation ~state:Applied session) load_stage
   | "addChildBlock" ->
     (match payload with
      | Some payload ->
