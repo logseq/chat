@@ -8,6 +8,7 @@
             [logseq-chat.fractional-order :as order]
             [logseq-chat.api :as api]
             [logseq-chat.graph-bootstrap :as bootstrap]
+            [ocaml.package/yojson]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Stdlib :as stdlib]
@@ -224,7 +225,7 @@
             (Ok []) values)
     _ (Error (str "field must be a list: " name))))
 
-(defn decode-move [input]
+(defn decode-move [^:Yojson.Basic.t input]
   (match input
     (tag Assoc entries)
     (let [fields (into {} (reverse entries))]

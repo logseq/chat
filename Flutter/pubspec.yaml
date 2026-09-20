@@ -14,8 +14,8 @@ dependencies:
   highlighter: ^0.1.1
   lui_flutter_backend:
     git:
-      url: ssh://git@github.com/tiensonqin/lui.git
-      ref: ff4bb07c2e6802e67152b68a75d809b57dff7c39
+      url: https://github.com/logseq/lui.git
+      ref: 0c65fb0f12d28db1302fc9fdbc0cbb6a981cfd3e
       path: platform/flutter
   webview_flutter: ^4.14.1
 

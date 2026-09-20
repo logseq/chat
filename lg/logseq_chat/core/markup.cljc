@@ -1,6 +1,8 @@
 (ns logseq-chat.markup
   (:require [clojure.string :as string]
             [logseq-chat.cache-model :as model]
+            [ocaml.package/mldoc]
+            [ocaml.package/angstrom]
             [ocaml.Mldoc.Inline :as inline]
             [ocaml.Mldoc.Conf :as conf]
             [ocaml.Angstrom :as angstrom]

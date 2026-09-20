@@ -1,5 +1,6 @@
 (ns logseq-chat.cache-model
   (:require [clojure.string :as string]
+            [ocaml.package/datascript-ocaml-lg]
             [ocaml.Datascript :as ds]
             [ocaml.Datascript.Db :as db-api]
             [ocaml.Datascript_lg :as typed-db]
