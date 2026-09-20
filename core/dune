@@ -110,14 +110,14 @@
   (:include lg_native_cmi_deps.sexp)
   lg_native_include_path
   (source_tree ../lg/logseq_chat/core)
-  ../lg/logseq_chat/model.lgi
+  ../lg/logseq_chat/model.mli
   ../lg/logseq_chat/model.cljc
-  ../lg/logseq_chat/view.lgi
+  ../lg/logseq_chat/view.mli
   ../lg/logseq_chat/view.cljc
-  ../lg/logseq_chat/app.lgi
+  ../lg/logseq_chat/app.mli
   ../lg/logseq_chat/app.cljc
   ../lg/logseq_chat/snapshot.cljc
-  ../lg/logseq_chat/native_bridge.lgi
+  ../lg/logseq_chat/native_bridge.mli
   ../lg/logseq_chat/native_bridge.cljc
   ../lg/logseq_chat/native_crypto.cljc
   ../lg/logseq_chat/entry/mobile.cljc
@@ -137,14 +137,14 @@
       --target native
       --compile-files-from %{lib:lui.states:lui_native_backends.state}
       ../lg/logseq_chat/core
-      ../lg/logseq_chat/model.lgi
+      ../lg/logseq_chat/model.mli
       ../lg/logseq_chat/model.cljc
-      ../lg/logseq_chat/view.lgi
+      ../lg/logseq_chat/view.mli
       ../lg/logseq_chat/view.cljc
-      ../lg/logseq_chat/app.lgi
+      ../lg/logseq_chat/app.mli
       ../lg/logseq_chat/app.cljc
       ../lg/logseq_chat/snapshot.cljc
-      ../lg/logseq_chat/native_bridge.lgi
+      ../lg/logseq_chat/native_bridge.mli
       ../lg/logseq_chat/native_bridge.cljc
       ../lg/logseq_chat/native_crypto.cljc
       ../lg/logseq_chat/entry/mobile.cljc

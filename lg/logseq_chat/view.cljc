@@ -680,7 +680,7 @@
          :on-press (fn [_event] (send model/ShowGraphs))}
         "Graphs"]))))
 
-(defui sidebar-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui sidebar-view [model-source send]
   [:column
    {:accessibility-identifier "sidebar.navigation"
     :grow 1.0
@@ -697,7 +697,7 @@
        :accessibility-identifier "menu.graph-switch"
        :on-dismiss (fn [_event] (send model/DismissGraphMenu))}
       [:keyed
-       {:source (reactive (fn [^:chat-model current] (:graphs current)) model-source)
+       {:source (reactive (fn [current] (:graphs current)) model-source)
         :key sidebar-graph-identifier
         :compare compare
         :as graph-source}
@@ -1343,7 +1343,7 @@
   (let [search-open (:search-open (signal/sample model-source))]
     (breadcrumb-button ui-context breadcrumb-source search-open send)))
 
-(defui node-breadcrumbs [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui node-breadcrumbs [model-source send]
   [:breadcrumb {:gap 5 :main "start"
                 :accessibility-identifier "breadcrumb.node"}
    [:keyed
@@ -2003,7 +2003,7 @@
                (model/ChooseOutlinerAutocomplete
                 (:value current-candidate))))}])))
 
-(defui outliner-autocomplete-bar [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui outliner-autocomplete-bar [model-source send]
   [:scroll
    {:max-height 220
     :accessibility-identifier "toolbar.outliner.autocomplete"
@@ -2250,7 +2250,7 @@
            :accessibility-identifier "title.related-section"}
     title]])
 
-(defui node-related-section [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui node-related-section [model-source send]
   [:column
    {:gap 0
     :accessibility-identifier "section.node.linked-references"}
@@ -2265,7 +2265,7 @@
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
-(defui node-tagged-section [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui node-tagged-section [model-source send]
   [:column
    {:gap 0
     :accessibility-identifier "section.tag.tagged-nodes"}
@@ -2283,7 +2283,7 @@
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
-(defui node-linked-reference-section [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui node-linked-reference-section [model-source send]
   [:column
    {:gap 0
     :accessibility-identifier "section.node.linked-references"}
@@ -2298,7 +2298,7 @@
       :as row-source}
      [node-related-row model-source row-source send]]]])
 
-(defui add-first-block-button [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui add-first-block-button [model-source send]
   [:box {:padding-horizontal 8}
    [:button
     {:label "Add first block"
@@ -2308,7 +2308,7 @@
             (send (model/AddRootBlock (active-node-page-uuid current))))}
     "Add first block"]])
 
-(defui node-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui node-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.node"
     :grow (if (host? proto/FlutterHost) 1.0 0.0)}
@@ -2564,7 +2564,7 @@
 (defn composer-autofocus? [current]
   (:composer-autofocus current))
 
-(defui composer-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui composer-view [model-source send]
   [:box
    {:accessibility-identifier "surface.composer.root"
     :grow 1.0
@@ -2640,7 +2640,7 @@
        (event [current-status status-source]
               (send (model/ChooseTaskStatus (:uuid current-status))))}])))
 
-(defui task-status-picker-dialog [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui task-status-picker-dialog [model-source send]
   [:dropdown-menu
    {:anchor "above"
     :anchor-alignment "start"
@@ -2762,7 +2762,7 @@
     :on-press (fn [_event] (send (model/ReviewFlashcard rating)))}
    title])
 
-(defui flashcard-review-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui flashcard-review-content [model-source send]
   [:column
    {:accessibility-identifier "layout.flashcards.review"
     :grow 1.0
@@ -2854,7 +2854,7 @@
     {:height 24
      :accessibility-identifier "spacer.flashcards.bottom"}]])
 
-(defui flashcard-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui flashcard-screen [model-source send]
   [:column
    {:accessibility-identifier "screen.flashcards"
     :grow 1.0
@@ -3080,7 +3080,7 @@
           :on-press (fn [_event] (send (model/RequestDeleteGraph graph-id)))}
          "Delete local graph"]]]])))
 
-(defui graph-create-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui graph-create-sheet [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3206,7 +3206,7 @@
          :on-press (fn [_event] (send model/SubmitCreateGraph))}
         "Add"]]])))
 
-(defui graph-delete-dialog [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui graph-delete-dialog [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3336,7 +3336,7 @@
      {:value (reactive graph-picker-error-message model-source)
       :accessibility-identifier "error.banner.message"}]]])
 
-(defui graph-password-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui graph-password-sheet [model-source send]
   [:sheet
    {:text "Unlock encrypted graphs"
     :on-dismiss (fn [_event] (send model/CancelGraphUnlock))}
@@ -3366,7 +3366,7 @@
       :on-press (fn [_event] (send model/SubmitGraphPassword))}
      "Unlock"]]])
 
-(defui graphs-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui graphs-screen [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3497,7 +3497,7 @@
       :on-press (fn [_event] (send model/RefreshGraphs))}
      "Refresh"]]])
 
-(defui flutter-graph-picker-catalog [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui flutter-graph-picker-catalog [model-source send]
   [:column
    {:grow 1.0
     :gap 16}
@@ -3516,7 +3516,7 @@
        :as graph-source}
       [graph-row model-source graph-source false send]]]]])
 
-(defui graph-picker-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui graph-picker-screen [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3652,7 +3652,7 @@
        :on-press
        (fn [_event] (send (model/ChooseSettingsLanguage (:id choice))))}])))
 
-(defui settings-language-control [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-language-control [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3688,7 +3688,7 @@
         :as choice-source}
        [settings-language-choice-radio model-source choice-source send]]])))
 
-(defui settings-appearance-control [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-appearance-control [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -3917,21 +3917,21 @@
             :class "caption"}]
     [:separator]]))
 
-(defn settings-tab-row [ui-context ^:signal<chat-model> model-source tab title send]
+(defn settings-tab-row [ui-context model-source tab title send]
   (let [label-source
-        (reactive (fn [^:chat-model current] (tab-toggle-label current tab)) model-source)
+        (reactive (fn [current] (tab-toggle-label current tab)) model-source)
         toggle-disabled-source
-        (reactive (fn [^:chat-model _current] (model/required-sidebar-tab? tab)) model-source)
+        (reactive (fn [_current] (model/required-sidebar-tab? tab)) model-source)
         movement-visible-source
-        (reactive (fn [^:chat-model current] (tab-movement-visible? current tab)) model-source)
+        (reactive (fn [current] (tab-movement-visible? current tab)) model-source)
         up-disabled-source
-        (reactive (fn [^:chat-model current] (tab-move-up-disabled? current tab)) model-source)
+        (reactive (fn [current] (tab-move-up-disabled? current tab)) model-source)
         down-disabled-source
-        (reactive (fn [^:chat-model current] (tab-move-down-disabled? current tab)) model-source)
+        (reactive (fn [current] (tab-move-down-disabled? current tab)) model-source)
         selection-glyph-source
-        (reactive (fn [^:chat-model current] (tab-selection-glyph current tab)) model-source)
+        (reactive (fn [current] (tab-selection-glyph current tab)) model-source)
         selection-icon-source
-        (reactive (fn [^:chat-model current] (tab-selection-icon-name current tab)) model-source)]
+        (reactive (fn [current] (tab-selection-icon-name current tab)) model-source)]
     (if (= (ui/host ui-context) proto/FlutterHost)
       (elements/element
        ui-context nil
@@ -4006,7 +4006,7 @@
             (fn [_event] (send (model/MoveSidebarTab tab 1)))}
            "↓"]]]]))))
 
-(defui settings-tabs-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-tabs-screen [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4059,7 +4059,7 @@
       [:if {:test (reactive settings-available-tabs-present? model-source)}
        [settings-tab-row model-source "flashcards" "Flashcards" send]]])))
 
-(defui runtime-log-toolbar [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui runtime-log-toolbar [model-source send]
   (if (host? proto/FlutterHost)
      (elements/element
       ui-context nil
@@ -4134,7 +4134,7 @@
          :on-press (fn [_event] (send model/CopyRuntimeLog))}
         "Copy"]])))
 
-(defui runtime-log-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui runtime-log-screen [model-source send]
   [:column {:gap 12
             :padding 16
             :grow 1.0
@@ -4164,7 +4164,7 @@
     (send (model/ToggleAutoCorrection enabled))
     _ true))
 
-(defui settings-general-card [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-general-card [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4326,7 +4326,7 @@
        :on-press (fn [_event] (send model/SignOut))}
       "Sign Out"])))
 
-(defui settings-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-screen [model-source send]
   [:column
    {:gap 18
     :padding 20
@@ -4442,7 +4442,7 @@
      :corner-radius 14}
     [settings-sign-out-row send]]])
 
-(defui settings-main-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-main-sheet [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4505,7 +4505,7 @@
          :on-press (fn [_event] (send model/ApplySettings))}
         "Apply"]]])))
 
-(defui settings-tabs-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-tabs-sheet [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4588,7 +4588,7 @@
         :on-press (fn [_event] (send model/DismissRuntimeLog))}
        "Done"]])))
 
-(defui runtime-log-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui runtime-log-sheet [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4613,7 +4613,7 @@
       [runtime-log-screen model-source send]
       [runtime-log-actions send]])))
 
-(defui settings-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui settings-sheet [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element ui-context nil
      [:stack
@@ -4652,7 +4652,7 @@
     (FailedState reason) reason
     _ ""))
 
-(defui sync-status-sheet [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui sync-status-sheet [model-source send]
   [:sheet
    {:text "Sync status"
     :class "navigation-form"
@@ -4718,7 +4718,7 @@
       :on-press (fn [_event] (send model/CloseSyncDetails))}
      "Done"]]])
 
-(defui search-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui search-screen [model-source send]
   [:column
    {:grow 1.0
     :accessibility-identifier "screen.search"}
@@ -4773,7 +4773,7 @@
        :as hit-source}
       [search-result-row hit-source send]]]]])
 
-(defui capture-and-search-row [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui capture-and-search-row [model-source send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
     (elements/element
      ui-context nil
@@ -4810,7 +4810,7 @@
         :accessibility-identifier "button.search"
         :on-press (fn [_event] (send model/OpenSearch))}]])))
 
-(defui main-bottom-chrome [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui main-bottom-chrome [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4948,7 +4948,7 @@
        [node-linked-reference-section model-source send]]]
      [:box {:height 120}]]])
 
-(defui retained-journal-pane [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui retained-journal-pane [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -4972,7 +4972,7 @@
         model-source)
        send]])))
 
-(defui journal-tree-panes [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui journal-tree-panes [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -5052,7 +5052,7 @@
      [:column {:accessibility-identifier "journals.loading"}
       [:text {:value (reactive graph-loading-message model-source)}]])))
 
-(defui chat-main-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui chat-main-view [model-source send]
   [:stack {:grow 1.0}
    [:if {:test (reactive journal-tree-retained? model-source)}
     ;; Keep the journal home mounted while the drawer replaces the detail pane.
@@ -5071,7 +5071,7 @@
       :accessibility-identifier "journals.graph-loaded"}
      ""]]])
 
-(defui main-header-leading [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui main-header-leading [model-source send]
   [:stack
    [:if {:test (reactive
                  (fn [current]
@@ -5095,7 +5095,7 @@
       :disabled (reactive sidebar-drag-disabled? model-source)
       :on-press (fn [_event] (send model/OpenSidebar))}]]])
 
-(defui main-header-title [^:signal<chat-model> model-source]
+(defui main-header-title [model-source]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -5110,13 +5110,13 @@
        :class "headline"
        :accessibility-identifier "title.main"}])))
 
-(defui main-header-sync [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui main-header-sync [model-source send]
   [:stack
    [:if {:test (reactive connection-control-visible? model-source)}
     [:button
      {:icon (if (host? proto/FlutterHost)
-              (reactive (fn [^:chat-model _current] "app:sync-status") model-source)
-              (reactive (fn [^:chat-model _current] "app:status-dot") model-source))
+              (reactive (fn [_current] "app:sync-status") model-source)
+              (reactive (fn [_current] "app:status-dot") model-source))
       :variant "ghost"
       :size "icon"
       :foreground-signal (reactive sync-indicator-foreground model-source)
@@ -5125,7 +5125,7 @@
       (reactive sync-accessibility-identifier model-source)
       :on-press (fn [_event] (send model/OpenSyncDetails))}]]])
 
-(defui active-overflow-menu [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui active-overflow-menu [model-source send]
   (let [node (ui/extension! ui-context "native-overflow-menu")
         page-actions-source
         (reactive active-page-actions-visible? model-source)
@@ -5151,7 +5151,7 @@
        (handle-native-overflow-menu-event input-event send)))
     node))
 
-(defui main-header-connection [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui main-header-connection [model-source send]
   [:stack
    [:if {:test (reactive connection-control-visible? model-source)}
     [active-overflow-menu model-source send]]])
@@ -5237,7 +5237,7 @@
        ui-context nil
        [node-screen route-model-source send]))))
 
-(defui native-search-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui native-search-view [model-source send]
   (let [node (ui/extension! ui-context "native-search-presentation")
         presented-source (reactive model-search-open? model-source)
         depth-source (reactive search-navigation-depth model-source)
@@ -5299,7 +5299,7 @@
         node))
     node))
 
-(defui native-navigation-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui native-navigation-view [model-source send]
   (let [node (ui/extension! ui-context "native-navigation-stack")
         depth-source (reactive app-navigation-depth model-source)
         depth-value-source (reactive int-wire-value depth-source)
@@ -5407,7 +5407,7 @@
       (authentication-screen-visible? current)
       (sidebar-drag-disabled? current)))
 
-(defui authentication-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui authentication-content [model-source send]
   [:column
    {:cross "center"
     :gap 0}
@@ -5438,7 +5438,7 @@
        :text-alignment "center"
        :accessibility-identifier "text.authentication-error"}]]]])
 
-(defui authentication-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui authentication-screen [model-source send]
   (if (host? proto/FlutterHost)
     (elements/element
      ui-context nil
@@ -5460,7 +5460,7 @@
        :padding 32}
       [authentication-content model-source send]])))
 
-(defui application-main-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui application-main-content [model-source send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
     (if (host? proto/FlutterHost)
       (elements/element
@@ -5526,7 +5526,7 @@
       [:if {:test (reactive model-sync-details-open? model-source)}
        [sync-status-sheet model-source send]]])))
 
-(defui chat-view [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+(defui chat-view [model-source send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
     (if (host? proto/FlutterHost)
       (elements/element

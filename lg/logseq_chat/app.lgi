@@ -1,6 +1,0 @@
-(ns logseq-chat.app)
-
-(signature logseq-chat.app/create
-  :fn<backend;reducer-app<chat-model;chat-action>>)
-(signature logseq-chat.app/model
-  :fn<reducer-app<chat-model;chat-action>;chat-model>)

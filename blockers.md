@@ -402,9 +402,9 @@ Entries stay concise so work can continue on the highest-signal path.
   frame instead of a nested 16x16 icon accessibility target.
 
 - 2026-08-28 03:49 CST — Adding a reactive task-status label initially produced
-  misleading signal/function type errors because `view.lgi` still declared the
+  misleading signal/function type errors because `view.mli` still declared the
   old one-argument toolbar signature. Updating the implementation and interface
-  together restores correct signal binding. Treat `.cljc`/`.lgi` signature
+  together restores correct signal binding. Treat `.cljc`/`.mli` signature
   changes as one edit in future iterations.
 - 2026-08-28 03:46 CST — `toolbar.outliner.editor` was overwritten by the
   identifier on the internal `chrome.bottom` layout slot. Removing the redundant
