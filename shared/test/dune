@@ -56,6 +56,9 @@
  (name logseq_chat_lui_test)
  (modules logseq_chat_lui_test)
  (flags (:standard -w -27-32-37-39-69))
+ ; This generated test module contains the application and all test namespaces.
+ ; Avoid cross-function inlining on the cold test build, retaining debug info.
+ (ocamlopt_flags (:standard -Oclassic -inline 0))
  (instrumentation
   (backend bisect_ppx))
  (foreign_stubs
