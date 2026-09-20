@@ -5407,6 +5407,35 @@
       (authentication-screen-visible? current)
       (sidebar-drag-disabled? current)))
 
+(defui authentication-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
+  [:column
+   {:cross "center"
+    :gap 0}
+   [:row {:width 96 :height 96 :main "center" :cross "center"
+          :background "secondary" :corner-radius 24}
+    [:icon {:name "app:graph-remote" :width 44 :height 44 :foreground "accent"}]]
+   [:box {:height 28}]
+   [:heading {:level 1} "Logseq Chat"]
+   [:box {:height 10}]
+   [:text {:foreground "muted-foreground" :text-alignment "center"}
+    "Capture, sync, and review your notes anywhere."]
+   [:box {:height 36}]
+   [:button
+    {:accessibility-identifier "button.hosted-sign-in"
+     :variant "primary"
+     :disabled (reactive authentication-signing-in? model-source)
+     :on-press (fn [_event] (send model/SignIn))}
+    "Sign in"]
+   [:if {:test (reactive authentication-error-present? model-source)}
+    [:column {:cross "center"}
+     [:box {:height 16}]
+     [:text
+      {:value (reactive authentication-error-message model-source)
+       :class "caption"
+       :foreground "destructive"
+       :text-alignment "center"
+       :accessibility-identifier "text.authentication-error"}]]]])
+
 (defui authentication-screen [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (host? proto/FlutterHost)
     (elements/element
@@ -5417,21 +5446,7 @@
        :main "center"
        :cross "stretch"
        :padding 32}
-      [:column
-       {:cross "center"
-        :gap 20}
-       [:heading {:level 1} "Logseq Chat"]
-       [:text "Sign in to connect your sync graphs."]
-       [:button
-        {:accessibility-identifier "button.hosted-sign-in"
-         :variant "primary"
-         :disabled (reactive authentication-signing-in? model-source)
-         :on-press (fn [_event] (send model/SignIn))}
-        "Sign in"]
-       [:if {:test (reactive authentication-error-present? model-source)}
-        [:text
-         {:value (reactive authentication-error-message model-source)
-          :accessibility-identifier "text.authentication-error"}]]]])
+      [authentication-content model-source send]])
     (elements/element
      ui-context nil
      [:column
@@ -5440,20 +5455,8 @@
        :container-relative-frame "vertical"
        :main "center"
        :cross "center"
-       :gap 20
        :padding 32}
-      [:heading {:level 1} "Logseq Chat"]
-      [:text "Sign in to connect your sync graphs."]
-      [:button
-       {:accessibility-identifier "button.hosted-sign-in"
-        :variant "primary"
-        :disabled (reactive authentication-signing-in? model-source)
-        :on-press (fn [_event] (send model/SignIn))}
-       "Sign in"]
-      [:if {:test (reactive authentication-error-present? model-source)}
-       [:text
-        {:value (reactive authentication-error-message model-source)
-         :accessibility-identifier "text.authentication-error"}]]])))
+      [authentication-content model-source send]])))
 
 (defui application-main-content [^:signal<chat-model> model-source ^:fn<chat-action;bool> send]
   (if (= (ui/platform ui-context) proto/AndroidOS)
