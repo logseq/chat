@@ -84,9 +84,9 @@
 
 (defn editing-title [^:outliner-state state] (some-> (:editing state) :title))
 
-(defn selected-uuids [^:outliner-state state] (apply list (sort (:selected state))))
+(defn selected-uuids [^:outliner-state state] (sort (:selected state)))
 
-(defn collapsed-uuids [^:outliner-state state] (apply list (sort (:collapsed state))))
+(defn collapsed-uuids [^:outliner-state state] (sort (:collapsed state)))
 
 (defn autocomplete [^:outliner-state state] (:autocomplete state))
 
@@ -283,7 +283,7 @@
     _ (compare-blocks left right)))
 
 (defn ^:list<model/block> sorted-siblings [^:outliner-context context parent]
-  (apply list (sort compare-blocks (filter #(= (:parent-id %) parent) (:blocks context)))))
+  (sort compare-blocks (filter #(= (:parent-id %) parent) (:blocks context))))
 
 (defn visible-rows [^:outliner-context context ^:outliner-state state]
   (let [ids (set (map :uuid (:blocks context)))
@@ -332,7 +332,7 @@
                                 (parent-uuid parent-uuid) (order value)))
                       roots orders)))))
 
-(defn index-of-uuid [uuid ^:list<model/block> blocks]
+(defn index-of-uuid [uuid ^:seqable<model/block> blocks]
   (some (fn [[index block]] (when (= (:uuid block) uuid) index)) (map-indexed (fn [index block] (tuple index block)) blocks)))
 
 (defn selection-indices [^:seq<model/block> roots ^:seq<model/block> siblings]
@@ -362,7 +362,7 @@
         (when-some [parent (some-> (:parent-id first) ((fn [uuid] (find-block context uuid))))]
           (when (selection-is-contiguous roots (sorted-siblings context (Some (:uuid parent))))
             (let [parent-uuid (or (:parent-id parent) (:page-id parent)) siblings (vec (sorted-siblings context (Some parent-uuid)))]
-              (when-some [index (index-of-uuid (:uuid parent) (apply list siblings))]
+              (when-some [index (index-of-uuid (:uuid parent) siblings)]
                 (moves-with-orders roots parent-uuid (:order parent)
                                    (when (< (inc index) (count siblings)) (:order (nth siblings (inc index)))))))))))))
 
@@ -383,7 +383,7 @@
             (moves-with-orders roots (:uuid target) (some-> (last (sorted-siblings context (Some (:uuid target)))) :order) nil)
             (let [parent (or (:parent-id target) (:page-id target))
                   siblings (vec (remove #(contains? ids (:uuid %)) (sorted-siblings context (Some parent))))]
-              (when-some [index (index-of-uuid target-uuid (apply list siblings))]
+              (when-some [index (index-of-uuid target-uuid siblings)]
                 (if (= placement Before)
                   (moves-with-orders roots parent (when (pos? index) (:order (nth siblings (dec index)))) (:order target))
                   (moves-with-orders roots parent (:order target) (when (< (inc index) (count siblings)) (:order (nth siblings (inc index))))))))))))))

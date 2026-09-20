@@ -18,17 +18,16 @@
 (defn find-block [context uuid] (state/find-block context uuid))
 
 (defn ^:list<model/block> sorted-siblings [^:state/outliner-context context ^:option<string> parent]
-  (apply list
-         (sort (fn [left right]
-                 (match (tuple (:order left) (:order right))
-                   (tuple (Some a) (Some b)) (if (not= a b) (compare a b) (compare (:uuid left) (:uuid right)))
-                   (tuple (Some _) None) -1 (tuple None (Some _)) 1
-                   _ (compare (:uuid left) (:uuid right))))
-               (filter #(= (:parent-id %) parent) (:blocks context)))))
+  (sort (fn [left right]
+          (match (tuple (:order left) (:order right))
+            (tuple (Some a) (Some b)) (if (not= a b) (compare a b) (compare (:uuid left) (:uuid right)))
+            (tuple (Some _) None) -1 (tuple None (Some _)) 1
+            _ (compare (:uuid left) (:uuid right))))
+        (filter #(= (:parent-id %) parent) (:blocks context))))
 
 (defn next-order [context block]
   (let [siblings (vec (sorted-siblings context (:parent-id block)))]
-    (when-some [index (state/index-of-uuid (:uuid block) (apply list siblings))]
+    (when-some [index (state/index-of-uuid (:uuid block) siblings)]
       (some (fn [candidate]
               (match (tuple (:order block) (:order candidate))
                 (tuple (Some lower) (Some upper)) (when (pos? (compare upper lower)) upper)

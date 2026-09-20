@@ -48,15 +48,15 @@
     (Apply_failed (str "Unknown LG sync-state error: " code))))
 
 (defn apply-validated-change-set [state change apply]
-  (match (sync-state/apply-change-set-error
-           (:graph-id state) (:schema-version state) (applied-server-t state)
-           (:format-version change) (:graph-id change) (:schema-version change)
-           (:t-before change) (:t change))
-    (Some code) (Error (sync-error-of-code code))
-    None (match (apply change)
-           (Error message) (Error (Apply_failed message))
-           (Ok _) (do (reset! (:applied-server-t state) (:t change))
-                      (Ok (stdlib/ignore 0))))))
+  (if-some [code (sync-state/apply-change-set-error
+                  (:graph-id state) (:schema-version state) (applied-server-t state)
+                  (:format-version change) (:graph-id change) (:schema-version change)
+                  (:t-before change) (:t change))]
+    (Error (sync-error-of-code code))
+    (match (apply change)
+      (Error message) (Error (Apply_failed message))
+      (Ok _) (do (reset! (:applied-server-t state) (:t change))
+                 (Ok (stdlib/ignore 0))))))
 
 (defn string-field [name input]
   (match (json-util/member name input)
@@ -103,19 +103,21 @@
       (when (sys/file-exists path) (sys/remove path)))
     (catch _ nil)))
 
+(defn- plaintext-datom [decrypt ^:Datascript.datom datom]
+  (if (entity-sync/protected-attr? (:a datom))
+    (match (:v datom)
+      (ds/String ciphertext)
+      (let* [value (decrypt ciphertext)]
+        (Ok (assoc datom :v (ds/String value))))
+      _ (Error (str "protected snapshot attribute " (:a datom) " must be a string")))
+    (Ok datom)))
+
 (defn plaintext-snapshot-db [decrypt db]
-  (let [datoms (vec (db-api/datoms db (ds/Eavt)))]
-    (loop [index 0 plaintext []]
-      (if (= index (count datoms))
-        (Ok (ds/init-db :schema (ds/schema db) (rrbvec/to-list plaintext)))
-        (let [datom (nth datoms index)]
-          (if (entity-sync/protected-attr? (:a datom))
-            (match (:v datom)
-              (ds/String ciphertext)
-              (let* [value (decrypt ciphertext)]
-                (recur (inc index) (conj plaintext (assoc datom :v (ds/String value)))))
-              _ (Error (str "protected snapshot attribute " (:a datom) " must be a string")))
-            (recur (inc index) (conj plaintext datom))))))))
+  (loop [remaining (seq (db-api/datoms db (ds/Eavt))) plaintext []]
+    (if-some [datom (first remaining)]
+      (let* [datom (plaintext-datom decrypt datom)]
+        (recur (rest remaining) (conj plaintext datom)))
+      (Ok (ds/init-db :schema (ds/schema db) (rrbvec/to-list plaintext))))))
 
 (defn materialize-plaintext-snapshot [active-path decrypt encrypted-db]
   (let* [db (plaintext-snapshot-db decrypt encrypted-db)]
@@ -149,9 +151,9 @@
            _ (snapshot/finish-parser parser)
            completed (snapshot/finish-import import)
            db (store/restore-db (store/staging-path active-path))
-           _ (match decrypt
-               None (Ok (stdlib/ignore 0))
-               (Some decrypt) (materialize-plaintext-snapshot active-path decrypt db))
+           _ (if-some [decrypt decrypt]
+               (materialize-plaintext-snapshot active-path decrypt db)
+               (Ok (stdlib/ignore 0)))
            _ (store/restore-db (store/staging-path active-path))
            _ (store/activate active-path)
            _ (checkpoint/save-checkpoint-atomic

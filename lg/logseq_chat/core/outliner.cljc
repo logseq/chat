@@ -99,38 +99,38 @@
     (tuple None _) (Error "merge source no longer exists")
     (tuple _ None) (Error "merge target no longer exists")
     (tuple (Some source) (Some previous))
-    (if (= (:uuid source) (:uuid previous))
+    (cond
+      (= (:uuid source) (:uuid previous))
       (Error "merge source and target must be different blocks")
-      (if (not= (:title source) (:expected-source-title request))
-        (Error "merge source title changed on the server")
-        (if (not= (:title previous) (:expected-previous-title request))
-          (Error "merge target title changed on the server")
-          (if (not= (:page-uuid source) (:page-uuid previous))
-            (Error "merge source and target must belong to the same page")
-            (let [direct-children (children (:uuid source))]
-              (if (contains-block? direct-children (:uuid previous))
-                (Error "merge target cannot be a child of the source")
-                (Ok
-                 (list/of-seq
-                  (concat
-                   (list
-                    (Set_title
-                     (record title-mutation
-                       (uuid (:uuid previous))
-                       (title
-                        (match (:merged-title request)
-                          (Some title) title
-                          None (str (:title previous) (:source-title request)))))))
-                   (map
-                    (fn [child]
-                      (Reparent
-                       (record reparent-mutation
-                         (uuid (:uuid child))
-                         (page-uuid (:page-uuid previous))
-                         (parent-uuid (:uuid previous)))))
-                    direct-children)
-                   (list (Delete (record delete-mutation
-                                   (uuid (:uuid source))))))))))))))))
+
+      (not= (:title source) (:expected-source-title request))
+      (Error "merge source title changed on the server")
+
+      (not= (:title previous) (:expected-previous-title request))
+      (Error "merge target title changed on the server")
+
+      (not= (:page-uuid source) (:page-uuid previous))
+      (Error "merge source and target must belong to the same page")
+
+      :else
+      (let [direct-children (children (:uuid source))]
+        (if (contains-block? direct-children (:uuid previous))
+          (Error "merge target cannot be a child of the source")
+          (Ok
+           (list/of-seq
+            (concat
+             [(Set_title
+               (record title-mutation
+                 (uuid (:uuid previous))
+                 (title (or (:merged-title request)
+                            (str (:title previous) (:source-title request))))))]
+             (map (fn [child]
+                    (Reparent (record reparent-mutation
+                                (uuid (:uuid child))
+                                (page-uuid (:page-uuid previous))
+                                (parent-uuid (:uuid previous)))))
+                  direct-children)
+             [(Delete (record delete-mutation (uuid (:uuid source))))]))))))))
 
 (defn plan [find
             children

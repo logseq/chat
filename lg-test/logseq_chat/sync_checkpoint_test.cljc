@@ -1,9 +1,27 @@
 (ns logseq-chat.sync-checkpoint-test
   (:require [clojure.test :refer [deftest is]]
             [logseq-chat.sync-checkpoint :as checkpoint]
+            [ocaml.Transit_core.Json :as value]
             [ocaml.Filename :as filename]
             [ocaml.Sys :as sys]
             [ocaml.Unix :as unix]))
+
+(defn decode-fields [fields]
+  (checkpoint/decode-map
+   (apply list (map (fn [[key value]] (tuple (value/Keyword key) value)) fields))))
+
+(deftest checkpoint-validates-every-required-field
+  (let [fields {"format-version" (value/Int 1)
+                "graph-id" (value/String "graph")
+                "schema-version" (value/String "1")
+                "applied-server-t" (value/Int 0)}
+        invalid (Error "invalid graph sync checkpoint")]
+    (is (= (Ok (checkpoint/create "graph" "1" 0)) (decode-fields fields)))
+    (doseq [field (keys fields)]
+      (is (= invalid (decode-fields (dissoc fields field))))
+      (is (= invalid (decode-fields (assoc fields field (value/Bool false))))))
+    (is (= invalid (decode-fields (assoc fields "format-version" (value/Int 2)))))
+    (is (= invalid (decode-fields (assoc fields "applied-server-t" (value/Int -1)))))))
 
 (defn remove-file! [path]
   (when (sys/file-exists path) (sys/remove path)))

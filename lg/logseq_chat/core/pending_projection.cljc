@@ -146,12 +146,8 @@
 (defn inline-tag-names [title] (delimited-names title "#[["))
 
 (defn eid-for-node [db value]
-  (match
-    (ds/entid db "block/uuid" (ds/Uuid value))
-    (Some eid)
-    (Some eid)
-    None
-    (named-page-eid db (bytes/lowercase-ascii value))))
+  (or (ds/entid db "block/uuid" (ds/Uuid value))
+      (named-page-eid db (bytes/lowercase-ascii value))))
 
 (defn refs-for-title [db title]
   (vec (sort (distinct (keep (fn [name] (eid-for-node db name)) (page-names title))))))
@@ -300,11 +296,8 @@
   (boolean (some (fn [eid] (= eid parent-eid)) (subtree db [moving-eid]))))
 
 (defn property-tx [uuid attr value]
-  (match
-    value
-    (Some value)
+  (if-some [value value]
     (ds/Add (lookup uuid) attr (datascript-value value))
-    None
     (ds/RetractAttr (lookup uuid) attr)))
 
 (defn create-attrs [uuid title created-at]

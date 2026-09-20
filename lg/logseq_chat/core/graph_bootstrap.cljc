@@ -258,9 +258,8 @@
   (try
     (ds/store db)
     (if-some [storage (ds/storage db)]
-      (Ok (rrbvec/to-list
-            (vec (sort-by :addr (mapv (fn [address] (storage-row db storage address))
-                                     ((:storage-list-addresses storage)))))))
+      (Ok (sort-by :addr (mapv (fn [address] (storage-row db storage address))
+                              ((:storage-list-addresses storage)))))
       (Error "canonical graph has no DataScript storage"))
     (catch error (Error (str "encode canonical graph snapshot: " (Printexc/to-string error))))))
 

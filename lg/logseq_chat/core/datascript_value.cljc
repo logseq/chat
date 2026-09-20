@@ -5,24 +5,17 @@
             [ocaml.Datascript.Schema :as schema]
             [ocaml.Hashtbl :as hashtbl]))
 
+(def built-in-ref-attrs
+  #{"block/parent" "block/page" "block/refs" "block/tags"
+    "block/link" "block/alias" "block/closed-value-property"})
+
 (defn built-in-ref-attr? [attr]
-  (or (= attr "block/parent")
-      (= attr "block/page")
-      (= attr "block/refs")
-      (= attr "block/tags")
-      (= attr "block/link")
-      (= attr "block/alias")
-      (= attr "block/closed-value-property")))
+  (contains? built-in-ref-attrs attr))
 
 (defn value-type-is-ref [db value]
   (match value
     (ds/Keyword "db.type/ref") true
-    (ds/Ref eid)
-    (some
-     (fn [datom]
-       (= (:v datom) (ds/Keyword "db.type/ref")))
-     (db-api/datoms db (ds/Eavt) :e eid :a "db/ident"))
-    (ds/Int eid)
+    (or (ds/Ref eid) (ds/Int eid))
     (some
      (fn [datom]
        (= (:v datom) (ds/Keyword "db.type/ref")))
@@ -30,13 +23,12 @@
     _ false))
 
 (defn entity-declares-ref [db attr]
-  (match (ds/entid db "db/ident" (ds/Keyword attr))
-    (Some eid)
+  (if-some [eid (ds/entid db "db/ident" (ds/Keyword attr))]
     (some
      (fn [datom]
        (value-type-is-ref db (:v datom)))
      (db-api/datoms db (ds/Eavt) :e eid :a "db/valueType"))
-    None false))
+    false))
 
 (defn is-ref-attr [db attr]
   (or (built-in-ref-attr? attr)
@@ -46,13 +38,11 @@
 (defn ref-eid [db attr value]
   (match value
     (ds/Ref eid) (Some eid)
-    (ds/Int eid) (if (is-ref-attr db attr) (Some eid) None)
-    _ None))
+    (ds/Int eid) (when (is-ref-attr db attr) eid)
+    _ nil))
 
 (defn optional-ref-eid [db attr value]
-  (match value
-    (Some value) (ref-eid db attr value)
-    None None))
+  (when-some [value value] (ref-eid db attr value)))
 
 (defn datoms-by-ref [db index attr eid]
   (let [seen-entities (hashtbl/create 8)

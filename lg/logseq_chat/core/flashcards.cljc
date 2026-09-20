@@ -291,20 +291,12 @@
     None None))
 
 (defn int-compare [left right]
-  (if (< left right)
-    -1
-    (if (> left right) 1 0)))
+  (compare left right))
 
 (defn due-card-for-eid [page-blocks-cache db now eid]
-  (match (graph-read/uuid-for-eid db eid)
-    None None
-    (Some uuid)
-    (match (card-for-eid page-blocks-cache db now uuid eid)
-      None None
-      (Some due-card)
-      (if (> (:due (:card due-card)) now)
-        None
-        (Some due-card)))))
+  (when-some [uuid (graph-read/uuid-for-eid db eid)]
+    (when-some [due-card (card-for-eid page-blocks-cache db now uuid eid)]
+      (when (<= (:due (:card due-card)) now) due-card))))
 
 (defn due-cards [db now]
   (match (ds/entid db "db/ident" (ds/Keyword "logseq.class/Card"))
@@ -317,11 +309,8 @@
                            (ds-value/datoms-by-ref db (ds/Aevt) "block/tags" class-eid))
                          class-eids)
           tagged-eids (map (fn [datom] (:e datom)) tagged-datoms)
-          unique-eids (list/sort_uniq int-compare (list/of_seq tagged-eids))
-          due (list/of-seq
-               (keep
-                (fn [eid] (due-card-for-eid page-blocks-cache db now eid))
-                unique-eids))]
+          unique-eids (sort (distinct tagged-eids))
+          due (keep #(due-card-for-eid page-blocks-cache db now %) unique-eids)]
       (sort-by (fn [due-card]
                  (tuple (:due (:card due-card)) (:uuid (:block due-card))))
                due))))

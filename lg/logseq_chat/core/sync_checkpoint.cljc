@@ -40,36 +40,23 @@
     (value/Int value)
     (Some value)
     (value/Int64 value)
-    (if (and (>= value int64/zero)
-             (<= value (int64/of-int Stdlib/max_int)))
-      (Some (int64/to-int value))
-      None)
-    _ None))
+    (when (and (>= value int64/zero)
+               (<= value (int64/of-int Stdlib/max_int)))
+      (int64/to-int value))
+    _ nil))
 
 (defn decode-map [entries]
-  (match (field "format-version" entries)
-    (Some (value/Int 1))
-    (match (field "graph-id" entries)
-      (Some (value/String graph-id))
-      (match (field "schema-version" entries)
-        (Some (value/String schema-version))
-        (match (field "applied-server-t" entries)
-          (Some applied-server-t)
-          (match (int-value applied-server-t)
-            (Some applied-server-t)
-            (if (>= applied-server-t 0)
-              (Ok (create graph-id schema-version applied-server-t))
-              (Error "invalid graph sync checkpoint"))
-            None
-            (Error "invalid graph sync checkpoint"))
-          None
-          (Error "invalid graph sync checkpoint"))
-        _
-        (Error "invalid graph sync checkpoint"))
-      _
-      (Error "invalid graph sync checkpoint"))
-    _
-    (Error "invalid graph sync checkpoint")))
+  (let [format (field "format-version" entries)
+        graph-id (field "graph-id" entries)
+        schema-version (field "schema-version" entries)
+        server-t (some-> (field "applied-server-t" entries) int-value)]
+    (match (tuple format graph-id schema-version server-t)
+      (tuple (Some (value/Int 1)) (Some (value/String graph-id))
+             (Some (value/String schema-version)) (Some server-t))
+      (if (neg? server-t)
+        (Error "invalid graph sync checkpoint")
+        (Ok (create graph-id schema-version server-t)))
+      _ (Error "invalid graph sync checkpoint"))))
 
 (defn decode [source]
   (try

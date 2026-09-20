@@ -629,65 +629,71 @@
   (reset! (:active pump) nil)
   (prepare-pending-next! session pump))
 
-(defn complete-pending-active! [session pump active response]
-  (let [succeeded (<= 200 (:status response) 299)]
-    (match (:operation active)
-      (Update-title block)
-      (if succeeded
-        (if-some [status (:status block)]
-          (do (set-pending-active! session pump
-                                   (Json-request (api/update-block-status-request (:config pump) (:uuid block) (:uuid status)))
-                                   (Update-status block) nil) (stdlib/ignore 0))
-          (finish-pending-block! session pump block true))
-        (finish-pending-block! session pump block false))
-      (Update-status block) (finish-pending-block! session pump block succeeded)
-      (Create-journal journal)
-      (if succeeded
-        (do (swap! (:resolved-journal-pages pump) assoc (:journal-day journal) (:page-id journal))
-            (reset! (:active pump) nil)
-            (match (prepare-pending-create-request session pump (:block journal) (:encrypted-title journal) (Some (:page-id journal)))
-              (Ok _) (stdlib/ignore 0)
-              (Error message)
-              (do (debug (str "prepare pending create after journal failed uuid=" (:uuid (:block journal)) " message=" message))
-                  (mark-pending-failed! session (:block journal)) (prepare-pending-next! session pump))))
-        (finish-pending-block! session pump (:block journal) false))
-      (Upload-asset block)
-      (if succeeded
-        (match (asset-datoms-operation session block ops/Queued)
-          (Error message) (do (debug (str "prepare asset datoms failed uuid=" (:uuid block) " message=" message))
-                              (finish-pending-block! session pump block false))
-          (Ok operation)
-          (match (enqueue-semantic session operation)
-            (Error message) (do (debug (str "stage asset datoms failed uuid=" (:uuid block) " message=" message))
-                                (finish-pending-block! session pump block false))
-            (Ok _)
-            (let [queue (:semantic-queue (state session))
-                  asset? (fn [pending] (= (:operation-id (:operation pending)) (:operation-id operation)))]
-              (swap! (:state session) assoc :semantic-queue (into (filterv asset? queue) (remove asset? queue)))
-              (finish-pending-block! session pump block true)
-              (activate-semantic-request session (:config pump) nil))))
-        (finish-pending-block! session pump block false))
-      (Create-block block)
-      (if succeeded
-        (match (try (Ok (api/created-block-uuid-from-body (:body response))) (catch error (Error (exceptions/to-string error))))
-          (Error message) (do (debug (str "pending creation response failed uuid=" (:uuid block) " message=" message))
-                              (finish-pending-block! session pump block false))
-          (Ok remote)
-          (match (tuple (:local-path block) (:parent-id block))
-            (tuple (Some _) (Some parent))
-            (do (set-pending-active! session pump (Json-request (api/move-block-request (:config pump) remote parent))
-                                     (Move-created-asset (record moved-asset (block block) (remote-uuid remote))) nil)
-                (stdlib/ignore 0))
-            _ (reconcile-created-block! session pump block remote)))
-        (finish-pending-block! session pump block false))
-      (Move-created-asset moved)
-      (if succeeded (reconcile-created-block! session pump (:block moved) (:remote-uuid moved))
-          (finish-pending-block! session pump (:block moved) false)))))
-
 (defn transport-operation-block [operation]
   (match operation
-    (Create-block block) block (Upload-asset block) block (Update-title block) block (Update-status block) block
-    (Move-created-asset moved) (:block moved) (Create-journal journal) (:block journal)))
+    (Create-block block) block (Upload-asset block) block
+    (Update-title block) block (Update-status block) block
+    (Move-created-asset moved) (:block moved)
+    (Create-journal journal) (:block journal)))
+
+(defn complete-pending-active! [session pump active response]
+  (if-not (<= 200 (:status response) 299)
+    (finish-pending-block! session pump (transport-operation-block (:operation active)) false)
+    (match (:operation active)
+      (Update-title block)
+      (if-some [status (:status block)]
+        (do (set-pending-active! session pump
+                                (Json-request (api/update-block-status-request (:config pump) (:uuid block) (:uuid status)))
+                                (Update-status block) nil)
+            (stdlib/ignore 0))
+        (finish-pending-block! session pump block true))
+
+      (Update-status block)
+      (finish-pending-block! session pump block true)
+
+      (Create-journal journal)
+      (do (swap! (:resolved-journal-pages pump) assoc (:journal-day journal) (:page-id journal))
+          (reset! (:active pump) nil)
+          (match (prepare-pending-create-request session pump (:block journal) (:encrypted-title journal) (Some (:page-id journal)))
+            (Ok _) (stdlib/ignore 0)
+            (Error message)
+            (do (debug (str "prepare pending create after journal failed uuid=" (:uuid (:block journal)) " message=" message))
+                (mark-pending-failed! session (:block journal))
+                (prepare-pending-next! session pump))))
+
+      (Upload-asset block)
+      (match (asset-datoms-operation session block ops/Queued)
+        (Error message)
+        (do (debug (str "prepare asset datoms failed uuid=" (:uuid block) " message=" message))
+            (finish-pending-block! session pump block false))
+        (Ok operation)
+        (match (enqueue-semantic session operation)
+          (Error message)
+          (do (debug (str "stage asset datoms failed uuid=" (:uuid block) " message=" message))
+              (finish-pending-block! session pump block false))
+          (Ok _)
+          (do (let [queue (:semantic-queue (state session))
+                    asset? (fn [pending] (= (:operation-id (:operation pending)) (:operation-id operation)))]
+                (swap! (:state session) assoc :semantic-queue (into (filterv asset? queue) (remove asset? queue))))
+              (finish-pending-block! session pump block true)
+              (activate-semantic-request session (:config pump) nil))))
+
+      (Create-block block)
+      (match (try (Ok (api/created-block-uuid-from-body (:body response)))
+                  (catch error (Error (exceptions/to-string error))))
+        (Error message)
+        (do (debug (str "pending creation response failed uuid=" (:uuid block) " message=" message))
+            (finish-pending-block! session pump block false))
+        (Ok remote)
+        (match (tuple (:local-path block) (:parent-id block))
+          (tuple (Some _) (Some parent))
+          (do (set-pending-active! session pump (Json-request (api/move-block-request (:config pump) remote parent))
+                                  (Move-created-asset (record moved-asset (block block) (remote-uuid remote))) nil)
+              (stdlib/ignore 0))
+          _ (reconcile-created-block! session pump block remote)))
+
+      (Move-created-asset moved)
+      (reconcile-created-block! session pump (:block moved) (:remote-uuid moved)))))
 
 (defn accepted-transaction [body]
   (try
@@ -706,39 +712,59 @@
     (tag String message) (when (not= message "") (Some message))
     _ nil))
 
-(defn parse-semantic-completion [input expected-id]
+(defn- validate-completion-id [input expected-id]
   (match input
     (tag Assoc _)
     (match (json-util/member "id" input)
       (tag Int id)
-      (if (not= id expected-id) (Error "pending sync request id does not match")
-          (if-some [_ (completion-error input)]
-            (Ok (tuple false nil))
-            (match (json-util/member "status" input)
-                  (tag Int status)
-                  (let [[rejected accepted] (match (json-util/member "body" input)
-                                              (tag String body) (accepted-transaction body) _ (tuple false nil))]
-                    (Ok (tuple (and (<= 200 status 299) (not rejected)) (if rejected nil accepted))))
-                  _ (Error "pending transport returned no HTTP status"))))
+      (if (= id expected-id)
+        (Ok id)
+        (Error "pending sync request id does not match"))
       _ (Error "pending sync completion requires id"))
     _ (Error "pending sync completion must be an object")))
 
+(defn parse-semantic-completion [input expected-id]
+  (let* [_ (validate-completion-id input expected-id)]
+    (if (some? (completion-error input))
+      (Ok (tuple false nil))
+      (match (json-util/member "status" input)
+        (tag Int status)
+        (let [[rejected accepted] (match (json-util/member "body" input)
+                                    (tag String body) (accepted-transaction body)
+                                    _ (tuple false nil))]
+          (Ok (tuple (and (<= 200 status 299) (not rejected))
+                     (if rejected nil accepted))))
+        _ (Error "pending transport returned no HTTP status")))))
+
 (defn parse-transport-completion [input expected-id]
-  (match input
-    (tag Assoc _)
-    (match (json-util/member "id" input)
-      (tag Int id)
-      (if (not= id expected-id) (Error "pending sync request id does not match")
-          (let [response
-                (if-some [message (completion-error input)]
-                  (Error message)
-                  (match (json-util/member "status" input)
-                      (tag Int status) (Ok (record api/api-response (status status)
-                                                   (body (match (json-util/member "body" input) (tag String body) body _ ""))))
-                      _ (Error "pending transport returned no HTTP status")))]
-            (Ok response)))
-      _ (Error "pending sync completion requires id"))
-    _ (Error "pending sync completion must be an object")))
+  (let* [_ (validate-completion-id input expected-id)]
+    (Ok (if-some [message (completion-error input)]
+          (Error message)
+          (match (json-util/member "status" input)
+            (tag Int status)
+            (Ok (record api/api-response
+                  (status status)
+                  (body (match (json-util/member "body" input) (tag String body) body _ ""))))
+            _ (Error "pending transport returned no HTTP status"))))))
+
+(defn- complete-semantic-response! [session active input]
+  (try
+    (let* [[succeeded accepted] (parse-semantic-completion input (:id active))]
+      (finish-semantic-active! session active succeeded accepted)
+      (Ok (stdlib/ignore 0)))
+    (catch error (Error (str "invalid pending sync completion: " (exceptions/to-string error))))))
+
+(defn- complete-transport-response! [session pump active input]
+  (try
+    (let* [response (parse-transport-completion input (:id active))]
+      (cleanup-pending-active! session active)
+      (match response
+        (Ok response) (complete-pending-active! session pump active response)
+        (Error message)
+        (do (debug (str "pending transport failed id=" (:id active) " message=" message))
+            (finish-pending-block! session pump (transport-operation-block (:operation active)) false)))
+      (Ok (stdlib/ignore 0)))
+    (catch error (Error (str "invalid pending sync completion: " (exceptions/to-string error))))))
 
 (defn complete-pending-sync [session payload]
   (let [input (json/from-string payload)
@@ -746,22 +772,14 @@
         stale? (fn [expected] (if-some [id id] (< id expected) false))
         finished? (if-some [id id] (<= id (:next-pending-request-id (state session))) false)]
     (if-some [active (:semantic-active (state session))]
-      (if (stale? (:id active)) (Ok (stdlib/ignore 0))
-          (try (let* [[succeeded accepted] (parse-semantic-completion input (:id active))]
-                 (finish-semantic-active! session active succeeded accepted) (Ok (stdlib/ignore 0)))
-               (catch error (Error (str "invalid pending sync completion: " (exceptions/to-string error))))))
+      (if (stale? (:id active))
+        (Ok (stdlib/ignore 0))
+        (complete-semantic-response! session active input))
       (if-some [pump (:pending-sync (state session))]
         (if-some [active @(:active pump)]
-          (if (stale? (:id active)) (Ok (stdlib/ignore 0))
-              (try
-                (let* [response (parse-transport-completion input (:id active))]
-                  (cleanup-pending-active! session active)
-                  (match response
-                    (Ok response) (complete-pending-active! session pump active response)
-                    (Error message) (do (debug (str "pending transport failed id=" (:id active) " message=" message))
-                                        (finish-pending-block! session pump (transport-operation-block (:operation active)) false)))
-                  (Ok (stdlib/ignore 0)))
-                (catch error (Error (str "invalid pending sync completion: " (exceptions/to-string error))))))
+          (if (stale? (:id active))
+            (Ok (stdlib/ignore 0))
+            (complete-transport-response! session pump active input))
           (if finished? (Ok (stdlib/ignore 0)) (Error "pending sync has no active request")))
         (if finished? (Ok (stdlib/ignore 0)) (Error "pending sync is not active"))))))
 

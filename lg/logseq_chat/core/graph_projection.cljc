@@ -7,8 +7,7 @@
             [logseq-chat.graph-read :as graph-read]
             [logseq-chat.cache-model :as model]
             [ocaml.Transit_core.Json :as transit]
-            [ocaml.Stdlib :as stdlib]
-            [ocaml.Rrbvec :as rrbvec]))
+            [ocaml.Stdlib :as stdlib]))
 
 (type-record graph-projection
   (decrypt-title :fn<string;result<string;string>>)
@@ -35,31 +34,23 @@
     (blocks-by-uuid (atom (read-blocks decrypt-title db)))))
 
 (defn blocks [projection]
-  (rrbvec/to-list
-   (vec (sort (fn [left right] (graph-read/compare-journal-blocks left right))
-              (vals @(:blocks-by-uuid projection))))))
+  (sort graph-read/compare-journal-blocks
+        (vals @(:blocks-by-uuid projection))))
 
 (defn identity [value]
   (match value
     (transit/Array [(transit/Keyword "block/uuid") (transit/Uuid uuid)]) (Some (tuple :uuid uuid))
     (transit/Array [(transit/Keyword "db/ident") (transit/Keyword ident)]) (Some (tuple :ident ident))
-    _ None))
+    _ nil))
 
 (defn refresh-block [projection db uuid]
-  (let [block
-        (match (ds/entid db "block/uuid" (ds/Uuid uuid))
-          None None
-          (Some eid)
-          (match (ds-value/optional-ref-eid db "block/page" (graph-read/value db eid "block/page"))
-            (Some page-eid)
-            (if (contains? @(:recent-pages projection) page-eid)
-              (graph-read/block (:decrypt-title projection) db eid)
-              None)
-            None None))]
-    (reset! (:blocks-by-uuid projection)
-            (match block
-              (Some block) (assoc @(:blocks-by-uuid projection) uuid block)
-              None (dissoc @(:blocks-by-uuid projection) uuid)))
+  (let [block (when-some [eid (ds/entid db "block/uuid" (ds/Uuid uuid))]
+                (when-some [page-eid (ds-value/optional-ref-eid db "block/page" (graph-read/value db eid "block/page"))]
+                  (when (contains? @(:recent-pages projection) page-eid)
+                    (graph-read/block (:decrypt-title projection) db eid))))]
+    (if-some [block block]
+      (swap! (:blocks-by-uuid projection) assoc uuid block)
+      (swap! (:blocks-by-uuid projection) dissoc uuid))
     (stdlib/ignore 0)))
 
 (defn changed-identities [change]
@@ -76,13 +67,10 @@
       (some (fn [summary] (contains? changed-uuids (:uuid summary))) (:references block))))
 
 (defn status-changed? [changed-uuids changed-idents block]
-  (match (:status block)
-    None false
-    (Some status)
+  (if-some [status (:status block)]
     (or (contains? changed-uuids (:uuid status))
-        (match (:ident status)
-          None false
-          (Some ident) (contains? changed-idents ident)))))
+        (boolean (some->> (:ident status) (contains? changed-idents))))
+    false))
 
 (defn update [projection db change]
   (if (not= @(:recent-pages projection) (recent-pages db))
