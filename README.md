@@ -65,7 +65,8 @@ Do not run `swift test` in this repository because the XCTest bridge hangs in
 the current environment. Use the supported gates instead:
 
 ```sh
-swift build --disable-sandbox
+swift build --disable-sandbox --triple arm64-apple-ios17.0-simulator \
+  --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)"
 cd Flutter && flutter analyze && flutter test
 opam exec --switch=5.5.0 -- dune build @lg-test/runtest
 opam exec --switch=5.5.0 -- dune build @core/runtest
