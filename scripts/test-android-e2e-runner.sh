@@ -13,109 +13,109 @@ die() {
 list_output=$($runner --list) || die "Android E2E runner could not list modules"
 grep -Fq "Modules: all signed-out connect capture composer autocomplete outliner hierarchy audio navigation graphs settings flashcards search rich-content youtube node-tag page-actions shortcuts sharing editor-regressions sharing-image" <<<"$list_output" \
   || die "Android E2E runner did not list every module"
-grep -Fq ".maestro/android-staging-connect.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-staging-connect.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the connection flow"
-grep -Fq 'file: "android-graph-picker-sheet.yaml"' "$repo_root/.maestro/android-staging-connect.yaml" \
+grep -Fq 'file: "android-graph-picker-sheet.yaml"' "$repo_root/tests/e2e/android-staging-connect.yaml" \
   || die "Android connection flow did not cover the Add sync graph sheet"
-grep -Fq 'file: "android-graph-picker-settings.yaml"' "$repo_root/.maestro/android-staging-connect.yaml" \
+grep -Fq 'file: "android-graph-picker-settings.yaml"' "$repo_root/tests/e2e/android-staging-connect.yaml" \
   || die "Android connection flow did not cover graph-picker Settings"
-grep -Fq 'file: "android-graph-picker-open.yaml"' "$repo_root/.maestro/android-staging-connect.yaml" \
+grep -Fq 'file: "android-graph-picker-open.yaml"' "$repo_root/tests/e2e/android-staging-connect.yaml" \
   || die "Android connection flow did not verify graph download and open"
-grep -Fq 'id: "button.composer.expand"' "$repo_root/.maestro/android-graph-picker-open.yaml" \
+grep -Fq 'id: "button.composer.expand"' "$repo_root/tests/e2e/android-graph-picker-open.yaml" \
   || die "Android graph-picker open flow did not verify the downloaded graph"
-grep -Fq ".maestro/android-signed-out.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-signed-out.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the signed-out flow"
-grep -Fq ".maestro/android-capture-search.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-capture-search.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the capture flow"
-grep -Fq 'id: "button.block-task-status"' "$repo_root/.maestro/android-capture-search.yaml" \
+grep -Fq 'id: "button.block-task-status"' "$repo_root/tests/e2e/android-capture-search.yaml" \
   || die "Android capture E2E does not preserve task status through search navigation"
-grep -Fq ".maestro/android-composer-lifecycle.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-composer-lifecycle.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the composer lifecycle flow"
-grep -Fq ".maestro/android-outliner-autocomplete-completion.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-outliner-autocomplete-completion.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the autocomplete flow"
-grep -Fq ".maestro/android-outliner-interactions.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-outliner-interactions.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the outliner interaction flow"
-grep -Fq 'Collapse Android E2E continuous first' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'Collapse Android E2E continuous first' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not cover collapsing a hierarchy"
-grep -Fq 'Expand Android E2E continuous first' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'Expand Android E2E continuous first' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not cover expanding a hierarchy"
-grep -Fq ".maestro/android-audio-recording.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-audio-recording.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the audio recording flow"
-grep -Fq 'toggle.audio.transcription' "$repo_root/.maestro/android-audio-recording.yaml" \
+grep -Fq 'toggle.audio.transcription' "$repo_root/tests/e2e/android-audio-recording.yaml" \
   || die "Android audio E2E does not cover the iOS transcription preference"
-grep -Fq ".maestro/android-material-navigation.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-material-navigation.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the Material navigation flow"
-grep -Fq 'id: "section.sidebar.favorites"' "$repo_root/.maestro/android-material-navigation.yaml" \
+grep -Fq 'id: "section.sidebar.favorites"' "$repo_root/tests/e2e/android-material-navigation.yaml" \
   || die "Material navigation does not cover sidebar favorites"
-grep -Fq 'id: "pane.selected-page"' "$repo_root/.maestro/android-material-navigation.yaml" \
+grep -Fq 'id: "pane.selected-page"' "$repo_root/tests/e2e/android-material-navigation.yaml" \
   || die "Material navigation does not cover the selected-page pane"
-grep -Fq 'id: "button.journal.e2e10000-0000-4000-8000-000000000001"' "$repo_root/.maestro/android-material-navigation.yaml" \
+grep -Fq 'id: "button.journal.e2e10000-0000-4000-8000-000000000001"' "$repo_root/tests/e2e/android-material-navigation.yaml" \
   || die "Material navigation does not cover journal header navigation"
-grep -Fq 'id: "journal.divider"' "$repo_root/.maestro/android-material-navigation.yaml" \
+grep -Fq 'id: "journal.divider"' "$repo_root/tests/e2e/android-material-navigation.yaml" \
   || die "Material navigation does not cover journal day separation"
 grep -Fq 'elif [[ $flow == "$navigation_flow" ]]; then' "$runner" \
   || die "Android E2E runner does not seed the navigation fixture"
-grep -Fq ".maestro/android-graphs.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-graphs.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the graph presentation flow"
-grep -Fq 'button.graphs.refresh' "$repo_root/.maestro/android-graphs.yaml" \
+grep -Fq 'button.graphs.refresh' "$repo_root/tests/e2e/android-graphs.yaml" \
   || die "Android graph E2E does not cover refresh"
-grep -Fq 'button.graph-delete.confirm' "$repo_root/.maestro/android-graphs.yaml" \
+grep -Fq 'button.graph-delete.confirm' "$repo_root/tests/e2e/android-graphs.yaml" \
   || die "Android graph E2E does not cover delete confirmation"
-grep -Fq ".maestro/android-settings.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-settings.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the settings parity flow"
-grep -Fq 'android-settings-material-icons' "$repo_root/.maestro/android-settings.yaml" \
+grep -Fq 'android-settings-material-icons' "$repo_root/tests/e2e/android-settings.yaml" \
   || die "Android settings E2E does not retain a Material icon screenshot"
-grep -Fq 'android-settings-dark-theme' "$repo_root/.maestro/android-settings.yaml" \
+grep -Fq 'android-settings-dark-theme' "$repo_root/tests/e2e/android-settings.yaml" \
   || die "Android settings E2E does not verify the applied Material theme"
-grep -Fq 'id: "picker.settings.appearance"' "$repo_root/.maestro/android-settings.yaml" \
+grep -Fq 'id: "picker.settings.appearance"' "$repo_root/tests/e2e/android-settings.yaml" \
   || die "Android settings E2E does not operate the Theme select"
-grep -Fq 'id: "field.base-url"' "$repo_root/.maestro/android-settings.yaml" \
+grep -Fq 'id: "field.base-url"' "$repo_root/tests/e2e/android-settings.yaml" \
   || die "Android settings E2E does not cover the server URL form"
-grep -Fq 'id: "switch.settings.spell-check"' "$repo_root/.maestro/android-settings.yaml" \
+grep -Fq 'id: "switch.settings.spell-check"' "$repo_root/tests/e2e/android-settings.yaml" \
   || die "Android settings E2E does not cover native editor switches"
-grep -Fq 'id: "link.settings.community.github"' "$repo_root/.maestro/android-settings.yaml" \
+grep -Fq 'id: "link.settings.community.github"' "$repo_root/tests/e2e/android-settings.yaml" \
   || die "Android settings E2E does not cover community links"
-grep -Fq ".maestro/android-flashcards-regression.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-flashcards-regression.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the flashcards parity flow"
-grep -Fq ".maestro/android-search-navigation.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-search-navigation.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the search and node parity flow"
-grep -Fq ".maestro/android-rich-block-rendering.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-rich-block-rendering.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the rich content parity flow"
-grep -Fq ".maestro/android-youtube-playback.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-youtube-playback.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the YouTube playback flow"
-grep -Fq ".maestro/android-node-tag-navigation.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-node-tag-navigation.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the node and tag parity flow"
-grep -Fq ".maestro/android-page-actions.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-page-actions.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the page actions parity flow"
-grep -Fq ".maestro/android-shortcut-deep-links.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-shortcut-deep-links.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the shortcut deep-link parity flow"
-grep -Fq ".maestro/android-share-capture.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-share-capture.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the inbound share parity flow"
-grep -Fq ".maestro/android-rapid-enter-delete-regression.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-rapid-enter-delete-regression.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the rapid editor regression flow"
-grep -Fq 'Android keyboard remains active' "$repo_root/.maestro/android-rapid-enter-delete-regression.yaml" \
+grep -Fq 'Android keyboard remains active' "$repo_root/tests/e2e/android-rapid-enter-delete-regression.yaml" \
   || die "Android rapid editor regression did not verify continued input"
-grep -Fq ".maestro/android-outliner-hierarchy-navigation.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-outliner-hierarchy-navigation.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list hierarchy navigation parity"
-grep -Fq ".maestro/android-share-image.yaml" <<<"$list_output" \
+grep -Fq "tests/e2e/android-share-image.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the inbound image-share parity flow"
-grep -Fq 'button.outliner.selection.indent' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'button.outliner.selection.indent' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not cover selection indent"
-grep -Fq 'button.outliner.selection.outdent' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'button.outliner.selection.outdent' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not cover selection outdent"
-grep -Fq 'toolbars/editor-trailing' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'toolbars/editor-trailing' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not retain editor toolbar visual evidence"
-grep -Fq 'toolbars/selection-trailing' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'toolbars/selection-trailing' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not retain selection toolbar visual evidence"
-grep -Fq 'id: "button.outliner-delete.confirm"' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'id: "button.outliner-delete.confirm"' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not confirm block deletion"
-grep -Fq 'assertNotVisible: "Android E2E continuous second"' "$repo_root/.maestro/android-outliner-interactions.yaml" \
+grep -Fq 'assertNotVisible: "Android E2E continuous second"' "$repo_root/tests/e2e/android-outliner-interactions.yaml" \
   || die "Android outliner E2E does not verify confirmed block deletion"
-grep -Fq 'assertVisible: "Card"' "$repo_root/.maestro/android-outliner-autocomplete-completion.yaml" \
+grep -Fq 'assertVisible: "Card"' "$repo_root/tests/e2e/android-outliner-autocomplete-completion.yaml" \
   || die "Android autocomplete E2E does not cover the built-in Card tag"
-grep -Fq 'openLink: "logseqchat://capture"' "$repo_root/.maestro/android-shortcut-deep-links.yaml" \
+grep -Fq 'openLink: "logseqchat://capture"' "$repo_root/tests/e2e/android-shortcut-deep-links.yaml" \
   || die "Android shortcut E2E does not cover Capture"
-grep -Fq 'openLink: "logseqchat://journal"' "$repo_root/.maestro/android-shortcut-deep-links.yaml" \
+grep -Fq 'openLink: "logseqchat://journal"' "$repo_root/tests/e2e/android-shortcut-deep-links.yaml" \
   || die "Android shortcut E2E does not cover Journal"
 
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-android-e2e.XXXXXX")
@@ -241,7 +241,7 @@ expected_connect_args=$(printf '%s\n' \
   --device test-device test \
   -e USERNAME=test-user \
   -e PASSWORD=test-password \
-  "$repo_root/.maestro/android-staging-connect.yaml")
+  "$repo_root/tests/e2e/android-staging-connect.yaml")
 [[ $(<"$maestro_args") == "$expected_connect_args" ]] \
   || die "Android E2E runner passed Maestro environment options outside the test command"
 
@@ -268,7 +268,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" navigation >/dev/null
 expected_navigation_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-material-navigation.yaml")
+  "$repo_root/tests/e2e/android-material-navigation.yaml")
 [[ $(<"$maestro_args") == "$expected_navigation_args" ]] \
   || die "Android E2E runner did not preserve the Material navigation flow"
 
@@ -280,7 +280,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" graphs >/dev/null
 expected_graphs_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-graphs.yaml")
+  "$repo_root/tests/e2e/android-graphs.yaml")
 [[ $(<"$maestro_args") == "$expected_graphs_args" ]] \
   || die "Android E2E runner did not preserve the graph presentation flow"
 
@@ -292,7 +292,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" settings >/dev/null
 expected_settings_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-settings.yaml")
+  "$repo_root/tests/e2e/android-settings.yaml")
 [[ $(<"$maestro_args") == "$expected_settings_args" ]] \
   || die "Android E2E runner did not preserve the settings parity flow"
 
@@ -305,7 +305,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" flashcards >/dev/null
 expected_flashcards_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-flashcards-regression.yaml")
+  "$repo_root/tests/e2e/android-flashcards-regression.yaml")
 [[ $(<"$maestro_args") == "$expected_flashcards_args" ]] \
   || die "Android E2E runner did not preserve the flashcards parity flow"
 
@@ -318,7 +318,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" search >/dev/null
 expected_search_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-search-navigation.yaml")
+  "$repo_root/tests/e2e/android-search-navigation.yaml")
 [[ $(<"$maestro_args") == "$expected_search_args" ]] \
   || die "Android E2E runner did not preserve the search and node parity flow"
 
@@ -331,7 +331,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" outliner >/dev/null
 expected_outliner_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-outliner-interactions.yaml")
+  "$repo_root/tests/e2e/android-outliner-interactions.yaml")
 [[ $(<"$maestro_args") == "$expected_outliner_args" ]] \
   || die "Android E2E runner did not preserve the outliner interaction flow"
 
@@ -343,7 +343,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" composer >/dev/null
 expected_composer_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-composer-lifecycle.yaml")
+  "$repo_root/tests/e2e/android-composer-lifecycle.yaml")
 [[ $(<"$maestro_args") == "$expected_composer_args" ]] \
   || die "Android E2E runner did not preserve the composer lifecycle flow"
 
@@ -356,7 +356,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" audio >/dev/null
 expected_audio_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-audio-recording.yaml")
+  "$repo_root/tests/e2e/android-audio-recording.yaml")
 [[ $(<"$maestro_args") == "$expected_audio_args" ]] \
   || die "Android E2E runner did not preserve the audio recording flow"
 
@@ -369,7 +369,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" rich-content >/dev/null
 expected_rich_content_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-rich-block-rendering.yaml")
+  "$repo_root/tests/e2e/android-rich-block-rendering.yaml")
 [[ $(<"$maestro_args") == "$expected_rich_content_args" ]] \
   || die "Android E2E runner did not preserve the rich content parity flow"
 
@@ -382,7 +382,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" youtube >/dev/null
 expected_youtube_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-youtube-playback.yaml")
+  "$repo_root/tests/e2e/android-youtube-playback.yaml")
 [[ $(<"$maestro_args") == "$expected_youtube_args" ]] \
   || die "Android E2E runner did not preserve the YouTube playback flow"
 
@@ -395,7 +395,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" node-tag >/dev/null
 expected_node_tag_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-node-tag-navigation.yaml")
+  "$repo_root/tests/e2e/android-node-tag-navigation.yaml")
 [[ $(<"$maestro_args") == "$expected_node_tag_args" ]] \
   || die "Android E2E runner did not preserve the node and tag parity flow"
 
@@ -408,7 +408,7 @@ PATH="$mock_bin:$PATH" \
   "$runner" page-actions >/dev/null
 expected_page_actions_args=$(printf '%s\n' \
   --device test-device test \
-  "$repo_root/.maestro/android-page-actions.yaml")
+  "$repo_root/tests/e2e/android-page-actions.yaml")
 [[ $(<"$maestro_args") == "$expected_page_actions_args" ]] \
   || die "Android E2E runner did not preserve the page actions parity flow"
 

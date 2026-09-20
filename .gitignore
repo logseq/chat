@@ -15,8 +15,8 @@ local.properties
 Android/app/keystore.jks
 Android/app/keystore.properties
 Android/app/src/main/jniLibs/
-Flutter/android/app/src/main/jniLibs/
-.maestro/screenshots/
+flutter/android/app/src/main/jniLibs/
+tests/e2e/screenshots/
 
 xcodebuild*.log
 
@@ -73,7 +73,7 @@ playground.xcworkspace
 Packages/
 Package.pins
 Package.resolved
-!/Package.resolved
+!/apple/Package.resolved
 #*.xcodeproj
 
 Carthage/Build/

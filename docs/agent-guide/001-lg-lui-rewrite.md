@@ -32,7 +32,7 @@ baseline on iOS and Android.
 The rewrite must preserve behavior, not merely expose similarly named
 features. The following are authoritative evidence:
 
-1. Every existing `.maestro/*.yaml` flow runs unchanged against the rewritten
+1. Every existing `tests/e2e/*.yaml` flow runs unchanged against the rewritten
    application on its declared platform.
 2. Existing unit and policy tests remain green or are replaced by equivalent
    LG tests that exercise the same public behavior. Removing a test requires a

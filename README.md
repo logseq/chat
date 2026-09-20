@@ -4,18 +4,30 @@ Logseq Chat is a native SwiftUI app for iOS and a Flutter Material app for
 Android. Both clients share an LG application model and core, compiled to
 OCaml and backed by the OCaml DataScript library.
 
-Shared core sources live in `lg/logseq_chat/core`, with executable entry points
-in `lg/logseq_chat/entry`. The `core` directory contains Dune configuration and
+Shared core sources live in `shared/src/logseq_chat/core`, with executable entry points
+in `shared/src/logseq_chat/entry`. The `shared/native` directory contains Dune configuration and
 native platform bridges; generated OCaml stays under `_build`. Core tests live
-in `lg-test/logseq_chat`, retaining one LG test module for each original OCaml
+in `shared/test/logseq_chat`, retaining one LG test module for each original OCaml
 test module. The core test gate also builds the seed and live-sync executables.
+
+## Repository layout
+
+- `apple/`: Swift package, app, extensions, Xcode workspace, and Apple tests.
+- `flutter/`: Flutter Android app and its platform integration.
+- `shared/src/`: LG application and core sources.
+- `shared/test/`: LG tests.
+- `shared/native/`: Dune configuration and native bridges.
+- `tests/e2e/`: Maestro flows and fixtures.
+- `scripts/`: build and validation commands, run from the repository root.
+- `docs/`: design and development documentation.
+- `duniverse/`: fetched OCaml dependencies; ignored by Git.
 
 ## iOS
 
-Open `Project.xcworkspace` and run the `LogseqChat App` scheme in Xcode.
+Open `apple/Project.xcworkspace` and run the `LogseqChat App` scheme in Xcode.
 
 The Apple backend comes from the `LUIAppleBackendStatic` product of the LUI
-Swift package, pinned by Git revision in `Package.swift` and `Package.resolved`.
+Swift package, pinned by Git revision in `apple/Package.swift` and `apple/Package.resolved`.
 Use Swift 6.2 or later. Backend changes belong in the LUI repository.
 
 The first iOS build creates a deployment-targeted OCaml 5.5 toolchain under
@@ -30,7 +42,7 @@ directly.
 Android is built exclusively from the Flutter project:
 
 ```sh
-cd Flutter
+cd flutter
 flutter pub get
 flutter run
 ```
@@ -38,7 +50,7 @@ flutter run
 Build a debug APK or Play Store app bundle with:
 
 ```sh
-cd Flutter
+cd flutter
 flutter build apk --debug
 flutter build appbundle --release
 ```
@@ -69,11 +81,11 @@ Do not run `swift test` in this repository because the XCTest bridge hangs in
 the current environment. Use the supported gates instead:
 
 ```sh
-swift build --disable-sandbox --triple arm64-apple-ios17.0-simulator \
+swift build --package-path apple --disable-sandbox --triple arm64-apple-ios17.0-simulator \
   --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)"
-cd Flutter && flutter analyze && flutter test
-opam exec --switch=5.5.0 -- dune build @lg-test/runtest
-opam exec --switch=5.5.0 -- dune build @core/runtest
+(cd flutter && flutter analyze && flutter test)
+opam exec --switch=5.5.0 -- dune build @shared/test/runtest
+opam exec --switch=5.5.0 -- dune build @shared/native/runtest
 ./scripts/test-android-e2e-runner.sh
 ```
 

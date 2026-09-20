@@ -18,12 +18,12 @@ signing_keychain_password=${LOGSEQ_CHAT_IOS_KEYCHAIN_PASSWORD-}
 sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}"
 target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build/ios-device}
+swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build/ios-device}
 swift_build_dir="$swift_scratch_dir/arm64-apple-ios/$build_configuration"
 core_build_dir="$repo_root/_build/ios-core/device"
 https_object="$core_build_dir/logseq_chat_https_darwin.o"
 crypto_object="$core_build_dir/logseq_chat_crypto_darwin.o"
-app_dir="$repo_root/.build/LogseqChat-device.app"
+app_dir="$repo_root/apple/.build/LogseqChat-device.app"
 profile_plist="$core_build_dir/profile.plist"
 entitlements="$core_build_dir/entitlements.plist"
 
@@ -105,7 +105,7 @@ for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
     -fobjc-arc \
     -fPIC \
     -I "$ocaml_lib" \
-    -c "$repo_root/core/$source" \
+    -c "$repo_root/shared/native/$source" \
     -o "$core_build_dir/${source%.m}.o"
 done
 
@@ -124,7 +124,7 @@ swift build \
   -c "$build_configuration" \
   --scratch-path "$swift_scratch_dir" \
   --disable-keychain \
-  --package-path "$repo_root" \
+  --package-path "$repo_root/apple" \
   --product LogseqChatShell \
   --triple "$triple" \
   --sdk "$sdk_path"
@@ -134,7 +134,7 @@ if [[ -d $app_dir ]]; then
   rm -rf "$app_dir"
 fi
 mkdir -p "$app_dir"
-cp "$repo_root/Darwin/Info.plist" "$app_dir/Info.plist"
+cp "$repo_root/apple/App/Info.plist" "$app_dir/Info.plist"
 cp "$profile" "$app_dir/embedded.mobileprovision"
 "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "$bundle_id" "$deployment_target" "iPhoneOS"
 cp "$swift_build_dir/LogseqChatShell" "$app_dir/LogseqChat"
@@ -152,8 +152,8 @@ if [[ -d $logseq_resource_bundle ]]; then
     --minimum-deployment-target "$deployment_target" \
     --target-device iphone \
     --target-device ipad \
-    "$repo_root/Sources/LogseqChat/Resources/Icons.xcassets" \
-    "$repo_root/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
+    "$repo_root/apple/Sources/LogseqChat/Resources/Icons.xcassets" \
+    "$repo_root/apple/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
 fi
 
 # SwiftPM does not run Xcode's App Intents metadata build phase.
@@ -161,8 +161,8 @@ fi
   "$deployment_target" "$app_dir" \
   -I "$swift_build_dir/Modules" \
   -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
-  -I "$repo_root/Sources/LogseqChatCoreABI/include" \
-  "$repo_root/Darwin/Sources/Main.swift" "$repo_root/Darwin/Sources/QuickActions.swift"
+  -I "$repo_root/apple/Sources/LogseqChatCoreABI/include" \
+  "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 
 widget_bundle_id="$bundle_id.widgets"
 widget_profile=$(python3 "$repo_root/scripts/select-widget-profile.py" \
@@ -172,10 +172,10 @@ widget_profile_plist="$core_build_dir/widget-profile.plist"
 widget_entitlements="$core_build_dir/widget-entitlements.plist"
 # Use Xcode's extension build pipeline so WidgetKit receives the same platform
 # metadata and linker settings as an extension built from the project.
-widget_build_dir="$repo_root/.build/ios-device-extensions"
+widget_build_dir="$repo_root/apple/.build/ios-device-extensions"
 configuration_name=Debug
 [[ $build_configuration == release ]] && configuration_name=Release
-xcodebuild -project "$repo_root/Darwin/LogseqChat.xcodeproj" \
+xcodebuild -project "$repo_root/apple/App/LogseqChat.xcodeproj" \
   -target LogseqChatWidgets -configuration "$configuration_name" \
   -sdk iphoneos -arch arm64 ONLY_ACTIVE_ARCH=YES \
   IPHONEOS_DEPLOYMENT_TARGET="$deployment_target" \

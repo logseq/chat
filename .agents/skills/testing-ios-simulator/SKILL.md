@@ -14,7 +14,7 @@ description: Build and launch the Logseq Chat iOS app in an iOS simulator on mac
 ## Build steps
 1. `scripts/bootstrap-ios-ocaml.sh simulator` — builds host + cross OCaml 5.5.0 under
    `_build/apple-toolchains/ios/` (long first run; stamps skip rebuilds).
-2. `scripts/build-mobile-ios-simulator.sh` — builds `core/logseq_chat_mobile_entry.exe.o`
+2. `scripts/build-mobile-ios-simulator.sh` — builds `shared/native/logseq_chat_mobile_entry.exe.o`
    via dune context `ios_simulator`, then `swift build` (product `LogseqChatShell`),
    xcodebuild for the share/widget extensions, and assembles+codesigns
    `.build/LogseqChat.app`. Note: the script can exit non-zero at the end even when all

@@ -15,37 +15,37 @@ for path in \
   "$repo_root/Skip.env" \
   "$repo_root/Android/settings.gradle.kts" \
   "$repo_root/Android/app/build.gradle.kts" \
-  "$repo_root/Sources/LogseqChat/Skip" \
-  "$repo_root/Sources/LogseqChatModel/Skip" \
-  "$repo_root/Tests/LogseqChatTests/Skip" \
-  "$repo_root/Tests/LogseqChatModelTests/Skip"; do
+  "$repo_root/apple/Sources/LogseqChat/Skip" \
+  "$repo_root/apple/Sources/LogseqChatModel/Skip" \
+  "$repo_root/apple/Tests/LogseqChatTests/Skip" \
+  "$repo_root/apple/Tests/LogseqChatModelTests/Skip"; do
   [[ ! -e "$path" ]] || die "legacy Skip artifact remains: ${path#"$repo_root/"}"
 done
 
-if grep -Eq 'source\.skip\.tools|Skip(UI|Foundation|Model|FFI|Test)|skipstone' "$repo_root/Package.swift"; then
+if grep -Eq 'source\.skip\.tools|Skip(UI|Foundation|Model|FFI|Test)|skipstone' "$repo_root/apple/Package.swift"; then
   die "Package.swift still depends on Skip"
 fi
 
 if grep -REn '#(if|elseif).*(^|[^A-Za-z])!?SKIP([^A-Za-z]|$)' \
-  "$repo_root/Sources" "$repo_root/Tests" \
+  "$repo_root/apple/Sources" "$repo_root/apple/Tests" \
   --include='*.swift' >/dev/null; then
   die "Swift sources still contain Skip conditional compilation"
 fi
 
 if grep -Fq '(proto/profile proto/AndroidOS proto/SwiftUIHost)' \
-  "$repo_root/lg/logseq_chat/view.cljc"; then
+  "$repo_root/shared/src/logseq_chat/view.cljc"; then
   die "LG still registers the removed Android SwiftUI host"
 fi
 
 if grep -Eq 'SkipStone|Run skip gradle|Skip\.env|skip gradle' \
-  "$repo_root/Darwin/LogseqChat.xcodeproj/project.pbxproj" \
-  "$repo_root/Darwin/LogseqChat.xcconfig"; then
+  "$repo_root/apple/App/LogseqChat.xcodeproj/project.pbxproj" \
+  "$repo_root/apple/App/LogseqChat.xcconfig"; then
   die "the Apple project still invokes Skip"
 fi
 
-manifest="$repo_root/Flutter/android/app/src/main/AndroidManifest.xml"
-shortcuts="$repo_root/Flutter/android/app/src/main/res/xml/shortcuts.xml"
-widgets="$repo_root/Flutter/android/app/src/main/kotlin/com/logseq/chat/AndroidWidgets.kt"
+manifest="$repo_root/flutter/android/app/src/main/AndroidManifest.xml"
+shortcuts="$repo_root/flutter/android/app/src/main/res/xml/shortcuts.xml"
+widgets="$repo_root/flutter/android/app/src/main/kotlin/com/logseq/chat/AndroidWidgets.kt"
 
 grep -Fq 'android.app.shortcuts' "$manifest" \
   || die "Flutter Android manifest lost app shortcuts"

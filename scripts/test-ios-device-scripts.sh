@@ -83,11 +83,11 @@ if grep -Fq 'api-staging.logseq.io' "$ios_e2e_script"; then
 fi
 
 for required_flow in \
-  '.maestro/ios-outliner-editor-toolbar.yaml' \
-  '.maestro/ios-outliner-continuous-editing.yaml' \
-  '.maestro/ios-outliner-selection-toolbar.yaml' \
-  '.maestro/ios-outliner-hierarchy-navigation.yaml' \
-  '.maestro/ios-graphs-lifecycle.yaml'; do
+  'tests/e2e/ios-outliner-editor-toolbar.yaml' \
+  'tests/e2e/ios-outliner-continuous-editing.yaml' \
+  'tests/e2e/ios-outliner-selection-toolbar.yaml' \
+  'tests/e2e/ios-outliner-hierarchy-navigation.yaml' \
+  'tests/e2e/ios-graphs-lifecycle.yaml'; do
   if ! grep -Fq "$required_flow" "$ios_e2e_suite_script"; then
     echo "error: iOS E2E suite is missing $required_flow" >&2
     exit 1
@@ -95,7 +95,7 @@ for required_flow in \
 done
 
 for marker in \
-  '.maestro/ios-local-graph-setup.yaml' \
+  'tests/e2e/ios-local-graph-setup.yaml' \
   '__LOGSEQ_CHAT_E2E_SETUP_FLOW__' \
   'sync.checkpoint' \
   'waiting for the graph snapshot import to finish'; do
@@ -116,7 +116,7 @@ for marker in \
   'native_link_fingerprint=$(' \
   'native-link-inputs/$native_link_fingerprint' \
   'native_link_inputs=' \
-  'swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build/ios-device}' \
+  'swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build/ios-device}' \
   '--scratch-path "$swift_scratch_dir"'; do
   if ! grep -Fq -- "$marker" "$device_build_script"; then
     echo "not ok - device build does not content-address native link inputs: $marker" >&2
@@ -229,14 +229,14 @@ check_succeeds \
 
 check_succeeds \
   "device build selects release configuration" \
-  "configuration=release swift-build-dir=$repo_root/.build/ios-device/arm64-apple-ios/release" \
+  "configuration=release swift-build-dir=$repo_root/apple/.build/ios-device/arm64-apple-ios/release" \
   env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=release \
     LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"
 
 check_succeeds \
   "device build keeps debug configuration available" \
-  "configuration=debug swift-build-dir=$repo_root/.build/ios-device/arm64-apple-ios/debug" \
+  "configuration=debug swift-build-dir=$repo_root/apple/.build/ios-device/arm64-apple-ios/debug" \
   env LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION=debug \
     LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
     "$repo_root/scripts/build-mobile-ios-device.sh"

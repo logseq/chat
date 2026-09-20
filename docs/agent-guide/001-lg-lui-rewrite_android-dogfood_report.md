@@ -141,7 +141,7 @@ candidate event cannot overtake pending or in-flight text changes.
    intermittently missing.
 
 The failed run is retained in
-`~/.maestro/tests/2026-09-01_094845/android-node-tag-navigation/`.
+`~/tests/e2e/tests/2026-09-01_094845/android-node-tag-navigation/`.
 
 **Fix Verification**
 
@@ -760,7 +760,7 @@ area, full-width compact tab rows, stable semantics, and native Android touch
 targets.
 
 Evidence: Android Settings E2E artifact
-`~/.maestro/tests/2026-09-01_192731/android-settings/screenshots/step-037-assertCondition-toggle.settings.tab.jour.png`.
+`~/tests/e2e/tests/2026-09-01_192731/android-settings/screenshots/step-037-assertCondition-toggle.settings.tab.jour.png`.
 
 **Fix Verification**
 
@@ -773,7 +773,7 @@ LG regression covers layout, navigation, accessibility validation, and leading
 alignment; all 145 LG tests pass. The rebuilt debug APK completed the full
 Settings E2E, including toggling Flashcards off/on, returning to Settings, and
 the Runtime log flow. Final screenshot artifact:
-`~/.maestro/tests/2026-09-01_195644/android-settings/takeScreenshot/android-settings-material-icons.png`.
+`~/tests/e2e/tests/2026-09-01_195644/android-settings/takeScreenshot/android-settings-material-icons.png`.
 
 ### ISSUE-024: Search returns data but renders an empty results surface
 

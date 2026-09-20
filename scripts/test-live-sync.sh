@@ -82,7 +82,7 @@ if ! curl -fsS "$base_url/health" >/dev/null 2>&1; then
   fi
 fi
 
-dune build --root "$repo_root" core/logseq_chat_live_sync.exe
+dune build --root "$repo_root" shared/native/logseq_chat_live_sync.exe
 LOGSEQ_CHAT_LIVE_TOKEN=$token \
   LOGSEQ_CHAT_LIVE_BASE_URL=$base_url \
-  dune exec --root "$repo_root" core/logseq_chat_live_sync.exe
+  dune exec --root "$repo_root" shared/native/logseq_chat_live_sync.exe

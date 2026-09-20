@@ -1,0 +1,38 @@
+appId: com.logseq.chat
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+    timeout: 30000
+- assertNotVisible:
+    id: "screen.graph-picker"
+- scrollUntilVisible:
+    element:
+      text: "__LOGSEQ_CHAT_E2E_EXISTING_BLOCK__"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "button.composer.expand"
+- tapOn:
+    id: "field.composer"
+- inputText: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
+- tapOn:
+    id: "button.send"
+- extendedWaitUntil:
+    visible: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
+    timeout: 30000
+- assertVisible: "Syncing"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+    timeout: 30000
+- assertNotVisible:
+    id: "screen.graph-picker"
+- scrollUntilVisible:
+    element:
+      text: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Syncing"
+- takeScreenshot: tests/e2e/screenshots/ios-offline-restart

@@ -723,6 +723,6 @@ The ADR is complete when automated tests demonstrate:
 - `../logseq-1/deps/outliner/src/logseq/outliner/recycle.cljs`
 - `../logseq-1/src/main/frontend/handler/editor.cljs`
 - `../logseq-1/src/main/frontend/modules/outliner/op.cljs`
-- `Sources/LogseqChatModel/Models.swift`
-- `Sources/LogseqChatModel/ViewModel.swift`
-- `Sources/LogseqChat/ContentView.swift`
+- `apple/Sources/LogseqChatModel/Models.swift`
+- `apple/Sources/LogseqChatModel/ViewModel.swift`
+- `apple/Sources/LogseqChat/ContentView.swift`

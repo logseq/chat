@@ -4,27 +4,27 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 app_id=com.logseq.chat
-signed_out_flow=.maestro/android-signed-out.yaml
-connect_flow=.maestro/android-staging-connect.yaml
-capture_flow=.maestro/android-capture-search.yaml
-composer_flow=.maestro/android-composer-lifecycle.yaml
-autocomplete_flow=.maestro/android-outliner-autocomplete-completion.yaml
-outliner_flow=.maestro/android-outliner-interactions.yaml
-hierarchy_flow=.maestro/android-outliner-hierarchy-navigation.yaml
-audio_flow=.maestro/android-audio-recording.yaml
-navigation_flow=.maestro/android-material-navigation.yaml
-graphs_flow=.maestro/android-graphs.yaml
-settings_flow=.maestro/android-settings.yaml
-flashcards_flow=.maestro/android-flashcards-regression.yaml
-search_flow=.maestro/android-search-navigation.yaml
-rich_content_flow=.maestro/android-rich-block-rendering.yaml
-youtube_flow=.maestro/android-youtube-playback.yaml
-node_tag_flow=.maestro/android-node-tag-navigation.yaml
-page_actions_flow=.maestro/android-page-actions.yaml
-shortcuts_flow=.maestro/android-shortcut-deep-links.yaml
-sharing_flow=.maestro/android-share-capture.yaml
-editor_regressions_flow=.maestro/android-rapid-enter-delete-regression.yaml
-sharing_image_flow=.maestro/android-share-image.yaml
+signed_out_flow=tests/e2e/android-signed-out.yaml
+connect_flow=tests/e2e/android-staging-connect.yaml
+capture_flow=tests/e2e/android-capture-search.yaml
+composer_flow=tests/e2e/android-composer-lifecycle.yaml
+autocomplete_flow=tests/e2e/android-outliner-autocomplete-completion.yaml
+outliner_flow=tests/e2e/android-outliner-interactions.yaml
+hierarchy_flow=tests/e2e/android-outliner-hierarchy-navigation.yaml
+audio_flow=tests/e2e/android-audio-recording.yaml
+navigation_flow=tests/e2e/android-material-navigation.yaml
+graphs_flow=tests/e2e/android-graphs.yaml
+settings_flow=tests/e2e/android-settings.yaml
+flashcards_flow=tests/e2e/android-flashcards-regression.yaml
+search_flow=tests/e2e/android-search-navigation.yaml
+rich_content_flow=tests/e2e/android-rich-block-rendering.yaml
+youtube_flow=tests/e2e/android-youtube-playback.yaml
+node_tag_flow=tests/e2e/android-node-tag-navigation.yaml
+page_actions_flow=tests/e2e/android-page-actions.yaml
+shortcuts_flow=tests/e2e/android-shortcut-deep-links.yaml
+sharing_flow=tests/e2e/android-share-capture.yaml
+editor_regressions_flow=tests/e2e/android-rapid-enter-delete-regression.yaml
+sharing_image_flow=tests/e2e/android-share-image.yaml
 
 die() {
   echo "error: $*" >&2
@@ -275,7 +275,7 @@ if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
 fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
-  apk="$repo_root/Flutter/build/app/outputs/flutter-apk/app-debug.apk"
+  apk="$repo_root/flutter/build/app/outputs/flutter-apk/app-debug.apk"
   [[ -f $apk ]] || die "Android debug APK was not produced at $apk"
   adb -s "$device" install -r "$apk" >/dev/null
 fi
@@ -348,10 +348,10 @@ seed_android_fixture() {
   adb -s "$device" exec-out run-as "$app_id" cat "$graph_database" >"$local_database"
   if [[ -n $seed_mode ]]; then
     opam exec --switch=5.5.0 -- \
-      dune exec core/logseq_chat_e2e_seed.exe -- "$local_database" "$seed_mode"
+      dune exec shared/native/logseq_chat_e2e_seed.exe -- "$local_database" "$seed_mode"
   else
     opam exec --switch=5.5.0 -- \
-      dune exec core/logseq_chat_e2e_seed.exe -- "$local_database"
+      dune exec shared/native/logseq_chat_e2e_seed.exe -- "$local_database"
   fi
 
   local remote_database="/data/local/tmp/logseq-chat-android-graph-$$.sqlite"
@@ -402,7 +402,7 @@ for flow in "${flows[@]}"; do
       --es android.intent.extra.TITLE 'Android\ share' \
       "$app_id/.MainActivity" >/dev/null
   elif [[ $flow == "$sharing_image_flow" ]]; then
-    share_image="$repo_root/Darwin/Assets.xcassets/AppIcon.appiconset/AppIcon-20~ipad.png"
+    share_image="$repo_root/apple/App/Assets.xcassets/AppIcon.appiconset/AppIcon-20~ipad.png"
     [[ -f $share_image ]] || die "Android image-share fixture is missing"
     remote_share_image="/data/local/tmp/logseq-chat-e2e-share.png"
     app_share_image="files/logseq-chat-e2e-share.png"

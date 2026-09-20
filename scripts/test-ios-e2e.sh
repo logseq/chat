@@ -3,10 +3,10 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-flow=${LOGSEQ_CHAT_IOS_E2E_FLOW:-.maestro/ios-capture-responsive.yaml}
+flow=${LOGSEQ_CHAT_IOS_E2E_FLOW:-tests/e2e/ios-capture-responsive.yaml}
 app_id=${LOGSEQ_CHAT_IOS_APP_ID:-com.logseq.chat}
-app_path=${LOGSEQ_CHAT_IOS_APP_PATH:-$repo_root/.build/LogseqChat.app}
-screenshots_dir="$repo_root/.maestro/screenshots"
+app_path=${LOGSEQ_CHAT_IOS_APP_PATH:-$repo_root/apple/.build/LogseqChat.app}
+screenshots_dir="$repo_root/tests/e2e/screenshots"
 username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
 password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
 e2ee_password=${LOGSEQ_CHAT_E2EE_PASSWORD:-$password}
@@ -95,12 +95,12 @@ sed \
   -e "s|__LOGSEQ_CHAT_E2E_PASSWORD__|$password|g" \
   -e "s|__LOGSEQ_CHAT_E2EE_PASSWORD__|$e2ee_password|g" \
   -e "s|__LOGSEQ_CHAT_E2E_GRAPH_NAME__|$graph_name|g" \
-  "$repo_root/.maestro/ios-local-graph-setup.yaml" > "$rendered_setup"
+  "$repo_root/tests/e2e/ios-local-graph-setup.yaml" > "$rendered_setup"
 sed \
   -e "s|__LOGSEQ_CHAT_E2E_RUN_ID__|$run_id|g" \
-  "$repo_root/.maestro/ios-outliner-anchor-setup.yaml" > "$rendered_outliner_anchor"
+  "$repo_root/tests/e2e/ios-outliner-anchor-setup.yaml" > "$rendered_outliner_anchor"
 cp \
-  "$repo_root/.maestro/ios-graphs-lifecycle-fixture-setup.yaml" \
+  "$repo_root/tests/e2e/ios-graphs-lifecycle-fixture-setup.yaml" \
   "$rendered_graphs_lifecycle_fixture"
 sed \
   -e "s|__LOGSEQ_CHAT_E2E_USERNAME__|$username|g" \
@@ -127,9 +127,9 @@ if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; the
   xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
   if [[ -n $fixture_seed_mode ]]; then
     opam exec --switch=5.5.0 -- \
-      dune exec core/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+      dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
   else
-    opam exec --switch=5.5.0 -- dune exec core/logseq_chat_e2e_seed.exe -- "$graph_database"
+    opam exec --switch=5.5.0 -- dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database"
   fi
 fi
 if [[ ${flow##*/} == ios-graphs-lifecycle.yaml ]]; then

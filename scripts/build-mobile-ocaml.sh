@@ -10,7 +10,7 @@ fi
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 target_prefix=$(cd "$1" && pwd)
 context=$2
-target="_build/$context/core/logseq_chat_mobile_entry.exe.o"
+target="_build/$context/shared/native/logseq_chat_mobile_entry.exe.o"
 dune=${DUNE:-$(opam exec --switch=5.5.0 -- which dune)}
 profile=${DUNE_PROFILE:-dev}
 

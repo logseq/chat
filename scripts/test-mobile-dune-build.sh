@@ -5,7 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 workspace="$repo_root/dune-workspace.mobile"
 builder="$repo_root/scripts/build-mobile-ocaml.sh"
-core_dune="$repo_root/core/dune"
+core_dune="$repo_root/shared/native/dune"
 dune_project="$repo_root/dune-project"
 lockfile="$repo_root/logseq_chat.opam.locked"
 legacy_builder="$repo_root/scripts/build-mobile-ocaml-deps.sh"
@@ -39,7 +39,7 @@ if grep -Fq "(name macos_arm64)" "$workspace"; then
   exit 1
 fi
 grep -Fq '"$dune" build' "$builder"
-grep -Fq 'target="_build/$context/core/logseq_chat_mobile_entry.exe.o"' "$builder"
+grep -Fq 'target="_build/$context/shared/native/logseq_chat_mobile_entry.exe.o"' "$builder"
 grep -Fq '(modes object)' "$core_dune"
 
 if grep -Eq '\(modes[^)]*(exe|shared_object)' "$core_dune"; then

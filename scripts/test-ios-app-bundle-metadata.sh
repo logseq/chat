@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-app_dir=${LOGSEQ_CHAT_IOS_APP_DIR:-$repo_root/.build/LogseqChat-device.app}
+app_dir=${LOGSEQ_CHAT_IOS_APP_DIR:-$repo_root/apple/.build/LogseqChat-device.app}
 info_plist="$app_dir/Info.plist"
 failures=0
 

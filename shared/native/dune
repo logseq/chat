@@ -1,0 +1,212 @@
+(env
+ (android
+  (link_flags
+   (:standard -runtime-variant _pic))))
+
+(library
+ (name logseq_chat_graph_support)
+ (wrapped false)
+ (modules
+  (:include dune_modules/graph_support.sexp))
+ (libraries
+  datascript-ocaml-native
+  datascript-ocaml-lg
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  yojson
+  unix)
+ (flags (:standard -w -27-32-37-39-69))
+ (instrumentation
+  (backend bisect_ppx)))
+
+(library
+ (name logseq_chat_core)
+ (wrapped false)
+ (modules
+  (:include dune_modules/core.sexp))
+ (libraries
+  logseq_chat_graph_support
+  sqlite3
+  datascript-ocaml-native.sqlite
+  datascript-ocaml-native
+  datascript-ocaml-lg
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  melange-edn-native
+  melange-transit-core
+  melange-transit-native
+  ocaml-fsrs
+  yojson
+  mldoc
+  str
+  unix)
+ (flags (:standard -w -27-32-37-39-69))
+ (instrumentation
+  (backend bisect_ppx))
+ (foreign_stubs
+  (language c)
+  (names logseq_chat_https_stub))
+  (c_library_flags
+  (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
+
+(rule
+ (target logseq_chat_lg_graph_support_native.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
+  ../src/logseq_chat/core/datascript_value.cljc
+  ../src/logseq_chat/core/ref_text.cljc
+  %{bin:lg})
+(action
+  (setenv
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
+   (setenv
+    LG_OCAML_INCLUDE_PATH
+    %{read-lines:lg_native_include_path}
+    (setenv
+     OCAMLPATH
+     %{read-lines:lg_native_include_path}
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      ../src/logseq_chat/core/datascript_value.cljc
+      ../src/logseq_chat/core/ref_text.cljc
+      -o %{target}))))))
+
+(rule
+ (target logseq_chat_lg_core_native.ml)
+ (deps
+  %{lib:signal-lg.states:signal_native.state}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
+  (source_tree ../src/logseq_chat/core)
+  %{bin:lg})
+(action
+  (setenv
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
+   (setenv
+    LG_OCAML_INCLUDE_PATH
+    %{read-lines:lg_native_include_path}
+    (setenv
+     OCAMLPATH
+     %{read-lines:lg_native_include_path}
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      ../src/logseq_chat/core
+      -o %{target}))))))
+
+(rule
+ (target logseq_chat_mobile_entry.ml)
+ (deps
+  %{lib:lui.states:lui_native_backends.state}
+  (:include lg_native_cmi_deps.sexp)
+  lg_native_include_path
+  (source_tree ../src/logseq_chat/core)
+  ../src/logseq_chat/model.mli
+  ../src/logseq_chat/model.cljc
+  ../src/logseq_chat/view.mli
+  ../src/logseq_chat/view.cljc
+  ../src/logseq_chat/app.mli
+  ../src/logseq_chat/app.cljc
+  ../src/logseq_chat/snapshot.cljc
+  ../src/logseq_chat/native_bridge.mli
+  ../src/logseq_chat/native_bridge.cljc
+  ../src/logseq_chat/native_crypto.cljc
+  ../src/logseq_chat/entry/mobile.cljc
+  %{bin:lg})
+(action
+  (setenv
+   LG_OCAML_INCLUDE_PATH_AUTHORITATIVE
+   1
+   (setenv
+    LG_OCAML_INCLUDE_PATH
+    %{read-lines:lg_native_include_path}
+    (setenv
+     OCAMLPATH
+     %{read-lines:lg_native_include_path}
+     (run
+      %{bin:lg}
+      --target native
+      --compile-files-from %{lib:lui.states:lui_native_backends.state}
+      ../src/logseq_chat/core
+      ../src/logseq_chat/model.mli
+      ../src/logseq_chat/model.cljc
+      ../src/logseq_chat/view.mli
+      ../src/logseq_chat/view.cljc
+      ../src/logseq_chat/app.mli
+      ../src/logseq_chat/app.cljc
+      ../src/logseq_chat/snapshot.cljc
+      ../src/logseq_chat/native_bridge.mli
+      ../src/logseq_chat/native_bridge.cljc
+      ../src/logseq_chat/native_crypto.cljc
+      ../src/logseq_chat/entry/mobile.cljc
+      -o %{target}))))))
+
+(rule
+ (targets logseq_chat_e2e_seed.ml logseq_chat_live_sync.ml)
+ (deps
+  %{lib:lg:stdlib/lg_stdlib_native.state}
+  .logseq_chat_core.objs/byte/logseq_chat_lg_core_native.cmi
+  lg_native_include_path
+  ../src/logseq_chat/entry/e2e_seed.cljc
+  ../src/logseq_chat/entry/live_sync.cljc
+  %{bin:lg})
+ (action
+  (setenv LG_OCAML_INCLUDE_PATH_AUTHORITATIVE 1
+   (setenv LG_OCAML_INCLUDE_PATH ".logseq_chat_core.objs/byte:%{read-lines:lg_native_include_path}"
+    (setenv OCAMLPATH ".logseq_chat_core.objs/byte:%{read-lines:lg_native_include_path}"
+     (progn
+      (run %{bin:lg} --target native --compile-files-from %{lib:lg:stdlib/lg_stdlib_native.state}
+       ../src/logseq_chat/entry/e2e_seed.cljc -o logseq_chat_e2e_seed.ml)
+      (run %{bin:lg} --target native --compile-files-from %{lib:lg:stdlib/lg_stdlib_native.state}
+       ../src/logseq_chat/entry/live_sync.cljc -o logseq_chat_live_sync.ml)))))))
+
+(executable
+ (name logseq_chat_mobile_entry)
+ (modules
+  (:include dune_modules/mobile_entry.sexp))
+ (modes object)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries
+  logseq_chat_core
+  datascript-ocaml-native.sqlite
+  lg.edn-backend.native
+  lg.runtime
+  lg.rrbvec
+  threads.posix)
+ (foreign_stubs
+  (language c)
+  (names logseq_chat_core_ffi))
+ (link_deps
+  %{env:LOGSEQ_CHAT_SQLITE_LINK_FILE=./libsqlite3.a})
+ (link_flags
+  :standard
+  -cclib
+  -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.}))
+
+(executable
+ (name logseq_chat_e2e_seed)
+ (modules logseq_chat_e2e_seed)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries logseq_chat_core))
+
+(alias
+ (name runtest)
+ (deps
+  (alias ../test/runtest)
+  logseq_chat_e2e_seed.exe
+  logseq_chat_live_sync.exe))
+
+(executable
+ (name logseq_chat_live_sync)
+ (modules logseq_chat_live_sync)
+ (flags (:standard -w -27-32-37-39-69))
+ (libraries logseq_chat_core yojson unix))

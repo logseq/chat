@@ -10,7 +10,7 @@ cd "$repo_root"
 
 BISECT_FILE="$coverage_dir/bisect" \
   opam exec --switch=5.5.0 -- \
-  dune runtest core --instrument-with bisect_ppx --force
+  dune runtest shared/native --instrument-with bisect_ppx --force
 
 # Tests execute their compiled LG definitions, not the separate core archive.
 # Measure only production graph-runtime definitions in that generated module.
@@ -25,6 +25,6 @@ opam exec --switch=5.5.0 -- ocamlfind ocamlopt \
   -package compiler-libs.common -linkpkg -o "$coverage_dir/check.exe" \
   "$coverage_dir/check.cmx"
 "$coverage_dir/check.exe" \
-  _build/default/lg-test/logseq_chat_lui_test.ml \
-  lg-test/logseq_chat_lui_test.ml \
+  _build/default/shared/test/logseq_chat_lui_test.ml \
+  shared/test/logseq_chat_lui_test.ml \
   logseq_chat_graph_runtime_ 7558 "$coverage_dir/merged.coverage"

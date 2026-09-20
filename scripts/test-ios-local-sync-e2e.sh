@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source_flow="$repo_root/.maestro/ios-local-realtime-sync.yaml"
+source_flow="$repo_root/tests/e2e/ios-local-realtime-sync.yaml"
 username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
 password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
 graph_name=${LOGSEQ_CHAT_E2E_GRAPH_NAME:?set LOGSEQ_CHAT_E2E_GRAPH_NAME to the graph created by the desktop test}

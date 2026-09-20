@@ -5,35 +5,35 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 all_flows=(
-  .maestro/ios-capture-responsive.yaml
-  .maestro/ios-chat-send-regression.yaml
-  .maestro/ios-cold-start-composer.yaml
-  .maestro/ios-outliner-mode.yaml
-  .maestro/ios-page-outliner-only.yaml
-  .maestro/ios-search-status-regression.yaml
-  .maestro/sidebar.yaml
-  .maestro/ios-outliner-interactions.yaml
-  .maestro/ios-outliner-editor-toolbar.yaml
-  .maestro/ios-outliner-autocomplete-completion.yaml
-  .maestro/ios-outliner-continuous-editing.yaml
-  .maestro/ios-outliner-empty-block-caret.yaml
-  .maestro/ios-outliner-fixture-edit-baseline.yaml
-  .maestro/ios-invalid-order-bounds-regression.yaml
-  .maestro/ios-outliner-selection-toolbar.yaml
-  .maestro/ios-outliner-hierarchy-navigation.yaml
-  .maestro/ios-node-tag-navigation.yaml
-  .maestro/ios-native-header-navigation.yaml
-  .maestro/ios-sidebar-node-navigation.yaml
-  .maestro/ios-page-share.yaml
-  .maestro/ios-page-favorite.yaml
-  .maestro/ios-settings-theme-parity.yaml
-  .maestro/ios-settings-tabs.yaml
-  .maestro/ios-sidebar-page-empty-block-delete.yaml
-  .maestro/ios-rich-block-rendering.yaml
-  .maestro/ios-outliner-drag.yaml
-  .maestro/ios-graphs.yaml
-  .maestro/ios-graphs-lifecycle.yaml
-  .maestro/ios-sync-graph-create-regression.yaml
+  tests/e2e/ios-capture-responsive.yaml
+  tests/e2e/ios-chat-send-regression.yaml
+  tests/e2e/ios-cold-start-composer.yaml
+  tests/e2e/ios-outliner-mode.yaml
+  tests/e2e/ios-page-outliner-only.yaml
+  tests/e2e/ios-search-status-regression.yaml
+  tests/e2e/sidebar.yaml
+  tests/e2e/ios-outliner-interactions.yaml
+  tests/e2e/ios-outliner-editor-toolbar.yaml
+  tests/e2e/ios-outliner-autocomplete-completion.yaml
+  tests/e2e/ios-outliner-continuous-editing.yaml
+  tests/e2e/ios-outliner-empty-block-caret.yaml
+  tests/e2e/ios-outliner-fixture-edit-baseline.yaml
+  tests/e2e/ios-invalid-order-bounds-regression.yaml
+  tests/e2e/ios-outliner-selection-toolbar.yaml
+  tests/e2e/ios-outliner-hierarchy-navigation.yaml
+  tests/e2e/ios-node-tag-navigation.yaml
+  tests/e2e/ios-native-header-navigation.yaml
+  tests/e2e/ios-sidebar-node-navigation.yaml
+  tests/e2e/ios-page-share.yaml
+  tests/e2e/ios-page-favorite.yaml
+  tests/e2e/ios-settings-theme-parity.yaml
+  tests/e2e/ios-settings-tabs.yaml
+  tests/e2e/ios-sidebar-page-empty-block-delete.yaml
+  tests/e2e/ios-rich-block-rendering.yaml
+  tests/e2e/ios-outliner-drag.yaml
+  tests/e2e/ios-graphs.yaml
+  tests/e2e/ios-graphs-lifecycle.yaml
+  tests/e2e/ios-sync-graph-create-regression.yaml
 )
 
 selector=${1:-${LOGSEQ_CHAT_IOS_E2E_MODULE:-all}}
@@ -43,59 +43,59 @@ case $selector in
     ;;
   smoke)
     flows=(
-      .maestro/ios-capture-responsive.yaml
-      .maestro/ios-cold-start-composer.yaml
-      .maestro/ios-search-status-regression.yaml
-      .maestro/sidebar.yaml
+      tests/e2e/ios-capture-responsive.yaml
+      tests/e2e/ios-cold-start-composer.yaml
+      tests/e2e/ios-search-status-regression.yaml
+      tests/e2e/sidebar.yaml
     )
     ;;
   composer)
     flows=(
-      .maestro/ios-capture-responsive.yaml
-      .maestro/ios-chat-send-regression.yaml
-      .maestro/ios-cold-start-composer.yaml
+      tests/e2e/ios-capture-responsive.yaml
+      tests/e2e/ios-chat-send-regression.yaml
+      tests/e2e/ios-cold-start-composer.yaml
     )
     ;;
   outliner)
     flows=(
-      .maestro/ios-outliner-mode.yaml
-      .maestro/ios-page-outliner-only.yaml
-      .maestro/ios-outliner-interactions.yaml
-      .maestro/ios-outliner-editor-toolbar.yaml
-      .maestro/ios-outliner-autocomplete-completion.yaml
-      .maestro/ios-outliner-continuous-editing.yaml
-      .maestro/ios-outliner-empty-block-caret.yaml
-      .maestro/ios-outliner-fixture-edit-baseline.yaml
-      .maestro/ios-invalid-order-bounds-regression.yaml
-      .maestro/ios-outliner-selection-toolbar.yaml
-      .maestro/ios-outliner-hierarchy-navigation.yaml
-      .maestro/ios-sidebar-page-empty-block-delete.yaml
-      .maestro/ios-outliner-drag.yaml
+      tests/e2e/ios-outliner-mode.yaml
+      tests/e2e/ios-page-outliner-only.yaml
+      tests/e2e/ios-outliner-interactions.yaml
+      tests/e2e/ios-outliner-editor-toolbar.yaml
+      tests/e2e/ios-outliner-autocomplete-completion.yaml
+      tests/e2e/ios-outliner-continuous-editing.yaml
+      tests/e2e/ios-outliner-empty-block-caret.yaml
+      tests/e2e/ios-outliner-fixture-edit-baseline.yaml
+      tests/e2e/ios-invalid-order-bounds-regression.yaml
+      tests/e2e/ios-outliner-selection-toolbar.yaml
+      tests/e2e/ios-outliner-hierarchy-navigation.yaml
+      tests/e2e/ios-sidebar-page-empty-block-delete.yaml
+      tests/e2e/ios-outliner-drag.yaml
     )
     ;;
   navigation)
     flows=(
-      .maestro/ios-node-tag-navigation.yaml
-      .maestro/ios-native-header-navigation.yaml
-      .maestro/ios-sidebar-node-navigation.yaml
-      .maestro/ios-page-share.yaml
-      .maestro/ios-page-favorite.yaml
+      tests/e2e/ios-node-tag-navigation.yaml
+      tests/e2e/ios-native-header-navigation.yaml
+      tests/e2e/ios-sidebar-node-navigation.yaml
+      tests/e2e/ios-page-share.yaml
+      tests/e2e/ios-page-favorite.yaml
     )
     ;;
   settings)
     flows=(
-      .maestro/ios-settings-theme-parity.yaml
-      .maestro/ios-settings-tabs.yaml
+      tests/e2e/ios-settings-theme-parity.yaml
+      tests/e2e/ios-settings-tabs.yaml
     )
     ;;
   content)
-    flows=(.maestro/ios-rich-block-rendering.yaml)
+    flows=(tests/e2e/ios-rich-block-rendering.yaml)
     ;;
   graphs)
     flows=(
-      .maestro/ios-graphs.yaml
-      .maestro/ios-graphs-lifecycle.yaml
-      .maestro/ios-sync-graph-create-regression.yaml
+      tests/e2e/ios-graphs.yaml
+      tests/e2e/ios-graphs-lifecycle.yaml
+      tests/e2e/ios-sync-graph-create-regression.yaml
     )
     ;;
   --list)
@@ -135,16 +135,16 @@ fi
 for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
   flow=${flows[$flow_index]}
   echo "==> $flow"
-  if [[ $flow == .maestro/ios-page-outliner-only.yaml \
-     || $flow == .maestro/ios-invalid-order-bounds-regression.yaml \
-     || $flow == .maestro/ios-outliner-empty-block-caret.yaml \
-     || $flow == .maestro/ios-outliner-fixture-edit-baseline.yaml \
-     || $flow == .maestro/ios-node-tag-navigation.yaml \
-     || $flow == .maestro/ios-sidebar-node-navigation.yaml \
-     || $flow == .maestro/ios-page-share.yaml \
-     || $flow == .maestro/ios-page-favorite.yaml \
-     || $flow == .maestro/ios-sidebar-page-empty-block-delete.yaml \
-     || $flow == .maestro/ios-rich-block-rendering.yaml ]]; then
+  if [[ $flow == tests/e2e/ios-page-outliner-only.yaml \
+     || $flow == tests/e2e/ios-invalid-order-bounds-regression.yaml \
+     || $flow == tests/e2e/ios-outliner-empty-block-caret.yaml \
+     || $flow == tests/e2e/ios-outliner-fixture-edit-baseline.yaml \
+     || $flow == tests/e2e/ios-node-tag-navigation.yaml \
+     || $flow == tests/e2e/ios-sidebar-node-navigation.yaml \
+     || $flow == tests/e2e/ios-page-share.yaml \
+     || $flow == tests/e2e/ios-page-favorite.yaml \
+     || $flow == tests/e2e/ios-sidebar-page-empty-block-delete.yaml \
+     || $flow == tests/e2e/ios-rich-block-rendering.yaml ]]; then
     LOGSEQ_CHAT_IOS_SKIP_BUILD=1 \
       LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH=1 \
       LOGSEQ_CHAT_IOS_E2E_FLOW="$flow" \

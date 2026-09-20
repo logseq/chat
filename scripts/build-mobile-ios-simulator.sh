@@ -29,7 +29,7 @@ configuration=${LOGSEQ_CHAT_IOS_CONFIGURATION:-debug}
 sdk_path=$(xcrun --sdk iphonesimulator --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}-simulator"
 target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/.build}
+swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build}
 swift_build_dir="$swift_scratch_dir/arm64-apple-ios-simulator/$configuration"
 core_build_dir="$repo_root/_build/ios-core/simulator"
 https_object="$core_build_dir/logseq_chat_https_darwin.o"
@@ -37,8 +37,8 @@ crypto_object="$core_build_dir/logseq_chat_crypto_darwin.o"
 simulator_entitlements="$core_build_dir/simulator-entitlements.plist"
 signature_entitlements="$core_build_dir/simulator-signature-entitlements.plist"
 extension_build_dir="$core_build_dir/extensions/$configuration_name"
-app_dir="$repo_root/.build/LogseqChat.app"
-xcode_app_dir="$repo_root/.build/Darwin/DerivedData/Build/Products/$configuration_name-iphonesimulator/LogseqChat.app"
+app_dir="$repo_root/apple/.build/LogseqChat.app"
+xcode_app_dir="$repo_root/apple/.build/App/DerivedData/Build/Products/$configuration_name-iphonesimulator/LogseqChat.app"
 
 if [[ ${LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
   echo "configuration=$configuration ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix"
@@ -71,7 +71,7 @@ for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
     -fobjc-arc \
     -fPIC \
     -I "$ocaml_lib" \
-    -c "$repo_root/core/$source" \
+    -c "$repo_root/shared/native/$source" \
     -o "$core_build_dir/${source%.m}.o"
 done
 
@@ -90,13 +90,13 @@ LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS="$simulator_entitlements" \
 swift build \
   --configuration "$configuration" \
   --disable-keychain \
-  --package-path "$repo_root" \
+  --package-path "$repo_root/apple" \
   --product LogseqChatShell \
   --triple "$triple" \
   --sdk "$sdk_path"
 
 xcodebuild \
-  -project "$repo_root/Darwin/LogseqChat.xcodeproj" \
+  -project "$repo_root/apple/App/LogseqChat.xcodeproj" \
   -target LogseqChatShareExtension \
   -target LogseqChatWidgets \
   -configuration "$configuration_name" \
@@ -116,7 +116,7 @@ mkdir -p "$app_dir"
 if [[ -f "$xcode_app_dir/Info.plist" ]]; then
   cp "$xcode_app_dir/Info.plist" "$app_dir/Info.plist"
 else
-  cp "$repo_root/Darwin/Info.plist" "$app_dir/Info.plist"
+  cp "$repo_root/apple/App/Info.plist" "$app_dir/Info.plist"
   "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "com.logseq.chat" "$deployment_target" "iPhoneSimulator"
 fi
 cp "$swift_build_dir/LogseqChatShell" "$app_dir/LogseqChat"
@@ -133,7 +133,7 @@ for extension in LogseqChatShareExtension LogseqChatWidgets; do
   [[ -d $extension_product ]] || die "missing simulator extension: $extension_product"
   cp -R "$extension_product" "$plugins_dir/"
 done
-codesign --force --sign - --entitlements "$repo_root/Darwin/ShareExtension/ShareExtension.entitlements" \
+codesign --force --sign - --entitlements "$repo_root/apple/App/ShareExtension/ShareExtension.entitlements" \
   --timestamp=none --generate-entitlement-der "$plugins_dir/LogseqChatShareExtension.appex"
 codesign --force --sign - --timestamp=none --generate-entitlement-der \
   "$plugins_dir/LogseqChatWidgets.appex"
@@ -146,16 +146,16 @@ if [[ -d $logseq_resource_bundle ]]; then
     --minimum-deployment-target "$deployment_target" \
     --target-device iphone \
     --target-device ipad \
-    "$repo_root/Sources/LogseqChat/Resources/Icons.xcassets" \
-    "$repo_root/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
+    "$repo_root/apple/Sources/LogseqChat/Resources/Icons.xcassets" \
+    "$repo_root/apple/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
 fi
 
 "$repo_root/scripts/extract-app-intents.sh" LogseqChatShell "$sdk_path" "$triple" \
   "$deployment_target" "$app_dir" \
   -I "$swift_build_dir/Modules" \
   -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
-  -I "$repo_root/Sources/LogseqChatCoreABI/include" \
-  "$repo_root/Darwin/Sources/Main.swift" "$repo_root/Darwin/Sources/QuickActions.swift"
+  -I "$repo_root/apple/Sources/LogseqChatCoreABI/include" \
+  "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 
 codesign --force --sign - --entitlements "$signature_entitlements" \
   --timestamp=none --generate-entitlement-der "$app_dir"

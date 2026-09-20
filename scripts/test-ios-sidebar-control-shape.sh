@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 control_source="$(rtk sed -n '/^(defui main-header-leading /,/^(defui main-header-title /p' \
-  "${repo_root}/lg/logseq_chat/view.cljc")"
+  "${repo_root}/shared/src/logseq_chat/view.cljc")"
 if printf '%s\n' "${control_source}" | rtk rg -q ':corner-radius'; then
   echo "main-header-leading overrides the native toolbar button shape" >&2
   exit 1

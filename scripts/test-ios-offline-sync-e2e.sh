@@ -67,8 +67,8 @@ render_flow() {
     "$source" > "$destination"
 }
 
-render_flow "$repo_root/.maestro/ios-offline-restart.yaml" "$offline_flow"
-render_flow "$repo_root/.maestro/ios-offline-reconnect.yaml" "$reconnect_flow"
+render_flow "$repo_root/tests/e2e/ios-offline-restart.yaml" "$offline_flow"
+render_flow "$repo_root/tests/e2e/ios-offline-reconnect.yaml" "$reconnect_flow"
 
 xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults write "$app_id" logseq.baseURL "$offline_base_url"
