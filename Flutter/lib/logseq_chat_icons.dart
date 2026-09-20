@@ -21,6 +21,7 @@ const logseqChatAppIcons = <String, IconData>{
   'graph-local': Icons.storage_rounded,
   'graph-remote': Icons.cloud_outlined,
   'history': Icons.history_rounded,
+  'logo': Icons.hub_rounded,
   'navigation-back': Icons.arrow_back_rounded,
   'open-external': Icons.open_in_new_rounded,
   'refresh': Icons.refresh_rounded,

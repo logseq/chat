@@ -60,6 +60,7 @@ enum LGChatIconPolicy {
             "disclosure-down": .assetName("disclosure_down"),
             "disclosure-right": .assetName("disclosure_right"),
             "refresh": .systemName("arrow.clockwise"),
+            "logo": .assetName("logo"),
             "graph-locked": .systemName("lock"),
             "flashcards": .assetName("flashcards"),
             "folder": .assetName("folder"),

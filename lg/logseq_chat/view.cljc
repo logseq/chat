@@ -5411,9 +5411,8 @@
   [:column
    {:cross "center"
     :gap 0}
-   [:row {:width 96 :height 96 :main "center" :cross "center"
-          :background "secondary" :corner-radius 24}
-    [:icon {:name "app:graph-remote" :width 44 :height 44 :foreground "accent"}]]
+   [:row {:width 96 :height 96 :corner-radius 22}
+    [:icon {:name "app:logo" :width 96 :height 96}]]
    [:box {:height 28}]
    [:heading {:level 1} "Logseq Chat"]
    [:box {:height 10}]
@@ -5423,6 +5422,9 @@
    [:button
     {:accessibility-identifier "button.hosted-sign-in"
      :variant "primary"
+     :size "lg"
+     :grow 1.0
+     :text-alignment "center"
      :disabled (reactive authentication-signing-in? model-source)
      :on-press (fn [_event] (send model/SignIn))}
     "Sign in"]
