@@ -77,6 +77,7 @@ build_host_compiler() {
       --disable-ocamldoc \
       --disable-ocamltest \
       --disable-stdlib-manpages \
+      --without-zstd \
       --prefix="$host_prefix"
     make -j"$jobs"
     make install
@@ -89,6 +90,7 @@ build_target_compiler() {
     cd "$target_source"
     PATH="$host_prefix/bin:$PATH" ./configure \
       --disable-function-sections \
+      --without-zstd \
       --prefix="$target_prefix" \
       --target="$target" \
       TARGET_LIBDIR=/dummy/directory \

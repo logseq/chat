@@ -69,7 +69,22 @@ cd "$build_dir"
 "$ndk_bin/llvm-nm" sqlite3.o | grep "sqlite3Fts5Init" >/dev/null
 "$ndk_bin/llvm-ar" rcs libsqlite3.a sqlite3.o
 
+mkdir -p "$build_dir/pkgconfig"
+cat > "$build_dir/pkgconfig/sqlite3.pc" <<EOF
+prefix=$build_dir
+libdir=\${prefix}
+includedir=$sqlite_source_dir
+
+Name: SQLite
+Description: Self-contained SQLite amalgamation built for $target
+Version: 3
+Libs: -L\${libdir} -lsqlite3
+Cflags: -I\${includedir}
+EOF
+
 runtime_object=$(C_INCLUDE_PATH="$sqlite_source_dir${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}" \
+  PKG_CONFIG_PATH="$build_dir/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+  SQLITE3_DISABLE_LOADABLE_EXTENSIONS=1 \
   DATASCRIPT_SQLITE_LIB_DIR="$build_dir" \
   DUNE_PROFILE=android \
   LOGSEQ_CHAT_SQLITE_LIB_DIR="$build_dir" \

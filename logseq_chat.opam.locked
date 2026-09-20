@@ -1,0 +1,1727 @@
+opam-version: "2.0"
+synopsis: "opam-monorepo generated lockfile"
+maintainer: "opam-monorepo"
+depends: [
+  "alcotest" {= "1.9.1" & ?vendor}
+  "angstrom" {= "dev" & ?vendor}
+  "astring" {= "0.8.5+dune" & ?vendor}
+  "async" {= "v0.17.0" & ?vendor}
+  "async_kernel" {= "v0.17.0" & ?vendor}
+  "async_log" {= "v0.17.0" & ?vendor}
+  "async_rpc_kernel" {= "v0.17.0" & ?vendor}
+  "async_unix" {= "v0.17.0" & ?vendor}
+  "base" {= "v0.17.3" & ?vendor}
+  "base-bigarray" {= "base"}
+  "base-bytes" {= "base+dune" & ?vendor}
+  "base-domains" {= "base"}
+  "base-effects" {= "base"}
+  "base-nnp" {= "base"}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "base_bigstring" {= "v0.17.0" & ?vendor}
+  "base_quickcheck" {= "v0.17.1" & ?vendor}
+  "bigstringaf" {= "0.10.0" & ?vendor}
+  "bin_prot" {= "v0.17.0-1" & ?vendor}
+  "capitalization" {= "v0.17.0" & ?vendor}
+  "cmdliner" {= "2.1.1+dune" & ?vendor}
+  "compiler-cloning" {= "enabled"}
+  "conf-libffi" {= "2.0.0"}
+  "conf-pkg-config" {= "5"}
+  "conf-sqlite3" {= "1"}
+  "core" {= "v0.17.2" & ?vendor}
+  "core_bench" {= "v0.17.0" & ?vendor}
+  "core_extended" {= "v0.17.0" & ?vendor}
+  "core_kernel" {= "v0.17.0" & ?vendor}
+  "core_unix" {= "v0.17.1" & ?vendor}
+  "cppo" {= "1.8.0" & ?vendor}
+  "csexp" {= "1.5.2" & ?vendor}
+  "cstruct" {= "6.3.0" & ?vendor}
+  "ctypes" {= "0.24.0" & ?vendor}
+  "ctypes-foreign" {= "0.24.0" & ?vendor}
+  "datascript-ocaml-lg" {= "dev" & ?vendor}
+  "datascript-ocaml-native" {= "dev" & ?vendor}
+  "datascript_ocaml" {= "dev" & ?vendor}
+  "delimited_parsing" {= "v0.17.0" & ?vendor}
+  "dune" {= "3.24.2"}
+  "dune-build-info" {= "3.24.2" & ?vendor}
+  "dune-compiledb" {= "0.6.0" & ?vendor}
+  "dune-configurator" {= "3.24.2" & ?vendor}
+  "expect_test_helpers_core" {= "v0.17.0" & ?vendor}
+  "ezjsonm" {= "1.3.0" & ?vendor}
+  "fieldslib" {= "v0.17.0" & ?vendor}
+  "findlib" {= "1.9.5+dune" & ?vendor}
+  "fix" {= "20250919" & ?vendor}
+  "fmt" {= "0.11.0+dune" & ?vendor}
+  "fpath" {= "0.7.3+dune" & ?vendor}
+  "gel" {= "v0.17.0" & ?vendor}
+  "gen" {= "1.1" & ?vendor}
+  "hex" {= "1.5.0" & ?vendor}
+  "int_repr" {= "v0.17.0" & ?vendor}
+  "integers" {= "0.8.0" & ?vendor}
+  "jane-street-headers" {= "v0.17.0" & ?vendor}
+  "js_of_ocaml" {= "6.4.1" & ?vendor}
+  "js_of_ocaml-compiler" {= "6.4.1" & ?vendor}
+  "js_of_ocaml-ppx" {= "6.4.1" & ?vendor}
+  "jsonm" {= "1.0.2+dune" & ?vendor}
+  "jst-config" {= "v0.17.0" & ?vendor}
+  "lg" {= "dev" & ?vendor}
+  "lg-test" {= "dev" & ?vendor}
+  "lui" {= "0.1.0" & ?vendor}
+  "lwt" {= "6.1.2" & ?vendor}
+  "melange" {= "7.0.1-55" & ?vendor}
+  "melange-edn-core" {= "0.5.0" & ?vendor}
+  "melange-edn-melange" {= "0.5.0" & ?vendor}
+  "melange-edn-native" {= "0.5.0" & ?vendor}
+  "melange-fetch" {= "0.2.0" & ?vendor}
+  "melange-transit-core" {= "0.1.2" & ?vendor}
+  "melange-transit-melange" {= "0.1.2" & ?vendor}
+  "melange-transit-native" {= "0.1.2" & ?vendor}
+  "melange-webapi" {= "0.22.0" & ?vendor}
+  "menhir" {= "20260209" & ?vendor}
+  "menhirCST" {= "20260209" & ?vendor}
+  "menhirGLR" {= "20260209" & ?vendor}
+  "menhirLib" {= "20260209" & ?vendor}
+  "menhirSdk" {= "20260209" & ?vendor}
+  "merlin-extend" {= "0.6.2" & ?vendor}
+  "mldoc" {= "dev" & ?vendor}
+  "num" {= "1.4+dune2" & ?vendor}
+  "ocaml" {= "5.5.1"}
+  "ocaml-base-compiler" {= "5.5.1"}
+  "ocaml-compiler" {= "5.5.1"}
+  "ocaml-compiler-libs" {= "v0.17.0" & ?vendor}
+  "ocaml-fsrs" {= "0.1.0-alpha3" & ?vendor}
+  "ocaml-options-vanilla" {= "1"}
+  "ocaml-syntax-shims" {= "1.0.0" & ?vendor}
+  "ocaml_intrinsics_kernel" {= "v0.17.2" & ?vendor}
+  "ocamlfind" {= "1.9.5+dune" & ?vendor}
+  "ocplib-endian" {= "1.2" & ?vendor}
+  "parsexp" {= "v0.17.0" & ?vendor}
+  "persistent_sorted_set_ocaml" {= "dev" & ?vendor}
+  "ppx_assert" {= "v0.17.0" & ?vendor}
+  "ppx_base" {= "v0.17.0" & ?vendor}
+  "ppx_bench" {= "v0.17.1" & ?vendor}
+  "ppx_bin_prot" {= "v0.17.1" & ?vendor}
+  "ppx_cold" {= "v0.17.0" & ?vendor}
+  "ppx_compare" {= "v0.17.0" & ?vendor}
+  "ppx_custom_printf" {= "v0.17.0" & ?vendor}
+  "ppx_derivers" {= "1.2.1" & ?vendor}
+  "ppx_deriving" {= "6.2.0" & ?vendor}
+  "ppx_deriving_yojson" {= "3.10.0" & ?vendor}
+  "ppx_diff" {= "v0.17.1" & ?vendor}
+  "ppx_disable_unused_warnings" {= "v0.17.0" & ?vendor}
+  "ppx_enumerate" {= "v0.17.0" & ?vendor}
+  "ppx_expect" {= "v0.17.3" & ?vendor}
+  "ppx_fields_conv" {= "v0.17.0" & ?vendor}
+  "ppx_fixed_literal" {= "v0.17.0" & ?vendor}
+  "ppx_globalize" {= "v0.17.2" & ?vendor}
+  "ppx_hash" {= "v0.17.0" & ?vendor}
+  "ppx_here" {= "v0.17.0" & ?vendor}
+  "ppx_ignore_instrumentation" {= "v0.17.0" & ?vendor}
+  "ppx_inline_test" {= "v0.17.1" & ?vendor}
+  "ppx_jane" {= "v0.17.0" & ?vendor}
+  "ppx_let" {= "v0.17.1" & ?vendor}
+  "ppx_log" {= "v0.17.0" & ?vendor}
+  "ppx_module_timer" {= "v0.17.0" & ?vendor}
+  "ppx_optcomp" {= "v0.17.1" & ?vendor}
+  "ppx_optional" {= "v0.17.0" & ?vendor}
+  "ppx_pipebang" {= "v0.17.0" & ?vendor}
+  "ppx_sexp_conv" {= "v0.17.1" & ?vendor}
+  "ppx_sexp_message" {= "v0.17.0" & ?vendor}
+  "ppx_sexp_value" {= "v0.17.0" & ?vendor}
+  "ppx_stable" {= "v0.17.1" & ?vendor}
+  "ppx_stable_witness" {= "v0.17.0" & ?vendor}
+  "ppx_string" {= "v0.17.0" & ?vendor}
+  "ppx_string_conv" {= "v0.17.0" & ?vendor}
+  "ppx_tydi" {= "v0.17.1" & ?vendor}
+  "ppx_typerep_conv" {= "v0.17.1" & ?vendor}
+  "ppx_variants_conv" {= "v0.17.1" & ?vendor}
+  "ppxlib" {= "0.38.0" & ?vendor}
+  "ppxlib_jane" {= "v0.17.4" & ?vendor}
+  "protocol_version_header" {= "v0.17.0" & ?vendor}
+  "ptime" {= "1.2.0+dune" & ?vendor}
+  "re" {= "1.14.0" & ?vendor}
+  "reason" {= "3.18.0" & ?vendor}
+  "record_builder" {= "v0.17.0" & ?vendor}
+  "result" {= "1.5" & ?vendor}
+  "sedlex" {= "3.7" & ?vendor}
+  "seq" {= "base+dune" & ?vendor}
+  "sexp_pretty" {= "v0.17.0" & ?vendor}
+  "sexplib" {= "v0.17.0" & ?vendor}
+  "sexplib0" {= "v0.17.0" & ?vendor}
+  "signal-lg" {= "0.1.0" & ?vendor}
+  "spawn" {= "v0.17.0" & ?vendor}
+  "splittable_random" {= "v0.17.0" & ?vendor}
+  "sqlite3" {= "5.4.2" & ?vendor}
+  "stdio" {= "v0.17.0" & ?vendor}
+  "stdlib-shims" {= "0.3.0" & ?vendor}
+  "stringext" {= "1.6.0" & ?vendor}
+  "textutils" {= "v0.17.0" & ?vendor}
+  "time_now" {= "v0.17.0" & ?vendor}
+  "timedesc" {= "3.1.2" & ?vendor}
+  "timedesc-tzdb" {= "3.1.2" & ?vendor}
+  "timedesc-tzlocal" {= "3.1.2" & ?vendor}
+  "timezone" {= "v0.17.0" & ?vendor}
+  "typerep" {= "v0.17.1" & ?vendor}
+  "uopt" {= "v0.17.0" & ?vendor}
+  "uri" {= "4.4.0" & ?vendor}
+  "uutf" {= "1.0.3+dune" & ?vendor}
+  "variantslib" {= "v0.17.0" & ?vendor}
+  "xmlm" {= "dev" & ?vendor}
+  "yojson" {= "3.0.0" & ?vendor}
+]
+depexts: [
+  ["database/sqlite3"] {os = "openbsd"}
+  ["libffi"] {os = "freebsd"}
+  ["libffi"] {os-distribution = "nixos"}
+  ["libffi"] {os = "macos" & os-distribution = "homebrew"}
+  ["libffi"] {os = "macos" & os-distribution = "macports"}
+  ["libffi"] {os = "win32" & os-distribution = "cygwinports"}
+  ["libffi-dev"] {os-distribution = "alpine"}
+  ["libffi-dev"] {os-family = "debian"}
+  ["libffi-dev"] {os-family = "ubuntu"}
+  ["libffi-devel"] {os-distribution = "centos"}
+  ["libffi-devel"] {os-distribution = "mageia"}
+  ["libffi-devel"] {os-distribution = "ol"}
+  ["libffi-devel"] {os-family = "fedora"}
+  ["libffi-devel"] {os-family = "suse" | os-family = "opensuse"}
+  ["libsqlite3-dev"] {os-family = "debian"}
+  ["libsqlite3-dev"] {os-family = "ubuntu"}
+  ["linux-headers"] {os-family = "alpine"}
+  ["pkg-config"] {os-distribution = "nixos"}
+  ["pkg-config"] {os-family = "debian" | os-family = "ubuntu"}
+  ["pkgconf"] {os = "freebsd"}
+  ["pkgconf"] {os-distribution = "alpine"}
+  ["pkgconf"] {os-distribution = "arch"}
+  ["pkgconf"] {os-distribution = "cygwin"}
+  ["pkgconf"] {os = "macos" & os-distribution = "homebrew"}
+  ["pkgconf-pkg-config"] {os-distribution = "mageia"}
+  ["pkgconf-pkg-config"] {os-family = "fedora"}
+  ["pkgconf-pkg-config"] {os-distribution = "centos" & os-version >= "8"}
+  ["pkgconf-pkg-config"] {os-distribution = "ol" & os-version >= "8"}
+  ["pkgconf-pkg-config"] {os-distribution = "rhel" & os-version >= "8"}
+  ["pkgconfig"] {os = "macos" & os-distribution = "macports"}
+  ["pkgconfig"] {os-distribution = "centos" & os-version <= "7"}
+  ["pkgconfig"] {os-distribution = "ol" & os-version <= "7"}
+  ["pkgconfig"] {os-distribution = "rhel" & os-version <= "7"}
+  ["sqlite"] {os-distribution = "nixos"}
+  ["sqlite"] {os = "macos" & os-distribution = "homebrew"}
+  ["sqlite-dev"] {os-distribution = "alpine"}
+  ["sqlite-devel"] {os-distribution = "centos"}
+  ["sqlite-devel"] {os-distribution = "ol"}
+  ["sqlite-devel"] {os-distribution = "rhel"}
+  ["sqlite-devel"] {os-family = "fedora"}
+  ["sqlite3"] {os = "freebsd"}
+  ["sqlite3"] {os = "macos" & os-distribution = "macports"}
+  ["sqlite3"] {os = "win32" & os-distribution = "cygwinports"}
+  ["sqlite3-devel"] {os-family = "suse" | os-family = "opensuse"}
+  ["system:pkgconf"] {os = "win32" & os-distribution = "cygwinports"}
+]
+pin-depends: [
+  [
+    "alcotest.1.9.1"
+    "https://github.com/mirage/alcotest/releases/download/1.9.1/alcotest-1.9.1.tbz"
+  ]
+  [
+    "angstrom.dev"
+    "git+https://github.com/logseq/angstrom#3be9b966dc2bc9ccf9948d17a7b0df1cb526de15"
+  ]
+  [
+    "astring.0.8.5+dune"
+    "https://github.com/dune-universe/astring/archive/v0.8.5+dune.tar.gz"
+  ]
+  [
+    "async.v0.17.0"
+    "https://github.com/janestreet/async/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "async_kernel.v0.17.0"
+    "https://github.com/janestreet/async_kernel/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "async_log.v0.17.0"
+    "https://github.com/janestreet/async_log/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "async_rpc_kernel.v0.17.0"
+    "https://github.com/janestreet/async_rpc_kernel/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "async_unix.v0.17.0"
+    "https://github.com/janestreet/async_unix/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "base.v0.17.3"
+    "https://github.com/janestreet/base/archive/refs/tags/v0.17.3.tar.gz"
+  ]
+  [
+    "base-bytes.base+dune"
+    "https://github.com/kit-ty-kate/bytes/archive/v0.1.0.tar.gz"
+  ]
+  [
+    "base_bigstring.v0.17.0"
+    "https://github.com/janestreet/base_bigstring/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "base_quickcheck.v0.17.1"
+    "https://github.com/janestreet/base_quickcheck/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "bigstringaf.0.10.0"
+    "https://github.com/inhabitedtype/bigstringaf/archive/0.10.0.tar.gz"
+  ]
+  [
+    "bin_prot.v0.17.0-1"
+    "https://github.com/janestreet/bin_prot/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "capitalization.v0.17.0"
+    "https://github.com/janestreet/capitalization/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "cmdliner.2.1.1+dune"
+    "https://github.com/dune-universe/cmdliner/releases/download/v2.1.1%2Bdune/cmdliner-2.1.1.dune.tbz"
+  ]
+  [
+    "core.v0.17.2"
+    "https://github.com/janestreet/core/archive/refs/tags/v0.17.2.tar.gz"
+  ]
+  [
+    "core_bench.v0.17.0"
+    "https://github.com/janestreet/core_bench/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "core_extended.v0.17.0"
+    "https://github.com/janestreet/core_extended/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "core_kernel.v0.17.0"
+    "https://github.com/janestreet/core_kernel/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "core_unix.v0.17.1"
+    "https://github.com/janestreet/core_unix/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "cppo.1.8.0"
+    "https://github.com/ocaml-community/cppo/archive/v1.8.0.tar.gz"
+  ]
+  [
+    "csexp.1.5.2"
+    "https://github.com/ocaml-dune/csexp/releases/download/1.5.2/csexp-1.5.2.tbz"
+  ]
+  [
+    "cstruct.6.3.0"
+    "https://github.com/mirage/ocaml-cstruct/releases/download/v6.3.0/cstruct-6.3.0.tbz"
+  ]
+  [
+    "ctypes.0.24.0"
+    "https://github.com/yallop/ocaml-ctypes/archive/refs/tags/0.24.0.tar.gz"
+  ]
+  [
+    "ctypes-foreign.0.24.0"
+    "https://github.com/yallop/ocaml-ctypes/archive/refs/tags/0.24.0.tar.gz"
+  ]
+  [
+    "delimited_parsing.v0.17.0"
+    "https://github.com/janestreet/delimited_parsing/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "dune-build-info.3.24.2"
+    "https://github.com/ocaml/dune/releases/download/3.24.2/dune-3.24.2.tbz"
+  ]
+  [
+    "dune-compiledb.0.6.0"
+    "https://github.com/edwintorok/dune-compiledb/releases/download/0.6.0/dune-compiledb-0.6.0.tbz"
+  ]
+  [
+    "dune-configurator.3.24.2"
+    "https://github.com/ocaml/dune/releases/download/3.24.2/dune-3.24.2.tbz"
+  ]
+  [
+    "expect_test_helpers_core.v0.17.0"
+    "https://github.com/janestreet/expect_test_helpers_core/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ezjsonm.1.3.0"
+    "https://github.com/mirage/ezjsonm/releases/download/v1.3.0/ezjsonm-1.3.0.tbz"
+  ]
+  [
+    "fieldslib.v0.17.0"
+    "https://github.com/janestreet/fieldslib/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "findlib.1.9.5+dune"
+    "https://github.com/dune-universe/lib-findlib/releases/download/1.9.5%2Bdune/findlib-1.9.5.dune.tbz"
+  ]
+  [
+    "fix.20250919"
+    "https://gitlab.inria.fr/fpottier/fix/-/archive/20250919/archive.tar.gz"
+  ]
+  [
+    "fmt.0.11.0+dune"
+    "https://github.com/dune-universe/fmt/releases/download/v0.11.0%2Bdune/fmt-0.11.0.dune.tbz"
+  ]
+  [
+    "fpath.0.7.3+dune"
+    "https://github.com/dune-universe/fpath/archive/v0.7.3+dune.tar.gz"
+  ]
+  [
+    "gel.v0.17.0"
+    "https://github.com/janestreet/gel/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  ["gen.1.1" "https://github.com/c-cube/gen/archive/v1.1.tar.gz"]
+  [
+    "hex.1.5.0"
+    "https://github.com/mirage/ocaml-hex/releases/download/v1.5.0/hex-1.5.0.tbz"
+  ]
+  [
+    "int_repr.v0.17.0"
+    "https://github.com/janestreet/int_repr/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "integers.0.8.0"
+    "https://github.com/yallop/ocaml-integers/archive/0.8.0.tar.gz"
+  ]
+  [
+    "jane-street-headers.v0.17.0"
+    "https://github.com/janestreet/jane-street-headers/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "js_of_ocaml.6.4.1"
+    "https://github.com/ocsigen/js_of_ocaml/releases/download/6.4.1/js_of_ocaml-6.4.1.tbz"
+  ]
+  [
+    "js_of_ocaml-compiler.6.4.1"
+    "https://github.com/ocsigen/js_of_ocaml/releases/download/6.4.1/js_of_ocaml-6.4.1.tbz"
+  ]
+  [
+    "js_of_ocaml-ppx.6.4.1"
+    "https://github.com/ocsigen/js_of_ocaml/releases/download/6.4.1/js_of_ocaml-6.4.1.tbz"
+  ]
+  [
+    "jsonm.1.0.2+dune"
+    "https://github.com/dune-universe/jsonm/releases/download/v1.0.2%2Bdune/jsonm-1.0.2.dune.tbz"
+  ]
+  [
+    "jst-config.v0.17.0"
+    "https://github.com/janestreet/jst-config/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "lwt.6.1.2"
+    "https://github.com/ocsigen/lwt/archive/refs/tags/6.1.2.tar.gz"
+  ]
+  [
+    "melange.7.0.1-55"
+    "https://github.com/melange-re/melange/releases/download/7.0.1-55/melange-7.0.1-55.tbz"
+  ]
+  [
+    "melange-edn-core.0.5.0"
+    "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"
+  ]
+  [
+    "melange-edn-melange.0.5.0"
+    "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"
+  ]
+  [
+    "melange-edn-native.0.5.0"
+    "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"
+  ]
+  [
+    "melange-fetch.0.2.0"
+    "https://github.com/melange-community/melange-fetch/releases/download/0.2.0/melange-fetch-0.2.0.tbz"
+  ]
+  [
+    "melange-transit-core.0.1.2"
+    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+  ]
+  [
+    "melange-transit-melange.0.1.2"
+    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+  ]
+  [
+    "melange-transit-native.0.1.2"
+    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+  ]
+  [
+    "melange-webapi.0.22.0"
+    "https://github.com/melange-community/melange-webapi/releases/download/0.22.0/melange-webapi-0.22.0.tbz"
+  ]
+  [
+    "menhir.20260209"
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20260209/archive.tar.gz"
+  ]
+  [
+    "menhirCST.20260209"
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20260209/archive.tar.gz"
+  ]
+  [
+    "menhirGLR.20260209"
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20260209/archive.tar.gz"
+  ]
+  [
+    "menhirLib.20260209"
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20260209/archive.tar.gz"
+  ]
+  [
+    "menhirSdk.20260209"
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20260209/archive.tar.gz"
+  ]
+  [
+    "merlin-extend.0.6.2"
+    "https://github.com/let-def/merlin-extend/releases/download/v0.6.2/merlin-extend-0.6.2.tbz"
+  ]
+  [
+    "num.1.4+dune2"
+    "https://github.com/dune-universe/num/releases/download/v1.4%2Bdune2/num-v1.4.dune2.tbz"
+  ]
+  [
+    "ocaml-compiler-libs.v0.17.0"
+    "https://github.com/janestreet/ocaml-compiler-libs/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ocaml-fsrs.0.1.0-alpha3"
+    "git+https://github.com/logseq/ocaml-fsrs.git#0ac7779062df50e7a9760d926ee215ed52c73194"
+  ]
+  [
+    "ocaml-syntax-shims.1.0.0"
+    "https://github.com/ocaml-ppx/ocaml-syntax-shims/releases/download/1.0.0/ocaml-syntax-shims-1.0.0.tbz"
+  ]
+  [
+    "ocaml_intrinsics_kernel.v0.17.2"
+    "https://github.com/janestreet/ocaml_intrinsics_kernel/archive/refs/tags/v0.17.2.tar.gz"
+  ]
+  [
+    "ocamlfind.1.9.5+dune"
+    "https://github.com/dune-universe/lib-findlib/releases/download/1.9.5%2Bdune/findlib-1.9.5.dune.tbz"
+  ]
+  [
+    "ocplib-endian.1.2"
+    "https://github.com/OCamlPro/ocplib-endian/archive/refs/tags/1.2.tar.gz"
+  ]
+  [
+    "parsexp.v0.17.0"
+    "https://github.com/janestreet/parsexp/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_assert.v0.17.0"
+    "https://github.com/janestreet/ppx_assert/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_base.v0.17.0"
+    "https://github.com/janestreet/ppx_base/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_bench.v0.17.1"
+    "https://github.com/janestreet/ppx_bench/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_bin_prot.v0.17.1"
+    "https://github.com/janestreet/ppx_bin_prot/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_cold.v0.17.0"
+    "https://github.com/janestreet/ppx_cold/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_compare.v0.17.0"
+    "https://github.com/janestreet/ppx_compare/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_custom_printf.v0.17.0"
+    "https://github.com/janestreet/ppx_custom_printf/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_derivers.1.2.1"
+    "https://github.com/ocaml-ppx/ppx_derivers/archive/1.2.1.tar.gz"
+  ]
+  [
+    "ppx_deriving.6.2.0"
+    "https://github.com/ocaml-ppx/ppx_deriving/releases/download/6.2.0/ppx_deriving-6.2.0.tbz"
+  ]
+  [
+    "ppx_deriving_yojson.3.10.0"
+    "https://github.com/ocaml-ppx/ppx_deriving_yojson/releases/download/v3.10.0/ppx_deriving_yojson-3.10.0.tbz"
+  ]
+  [
+    "ppx_diff.v0.17.1"
+    "https://github.com/janestreet/ppx_diff/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_disable_unused_warnings.v0.17.0"
+    "https://github.com/janestreet/ppx_disable_unused_warnings/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_enumerate.v0.17.0"
+    "https://github.com/janestreet/ppx_enumerate/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_expect.v0.17.3"
+    "https://github.com/janestreet/ppx_expect/archive/refs/tags/v0.17.3.tar.gz"
+  ]
+  [
+    "ppx_fields_conv.v0.17.0"
+    "https://github.com/janestreet/ppx_fields_conv/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_fixed_literal.v0.17.0"
+    "https://github.com/janestreet/ppx_fixed_literal/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_globalize.v0.17.2"
+    "https://github.com/janestreet/ppx_globalize/archive/refs/tags/v0.17.2.tar.gz"
+  ]
+  [
+    "ppx_hash.v0.17.0"
+    "https://github.com/janestreet/ppx_hash/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_here.v0.17.0"
+    "https://github.com/janestreet/ppx_here/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_ignore_instrumentation.v0.17.0"
+    "https://github.com/janestreet/ppx_ignore_instrumentation/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_inline_test.v0.17.1"
+    "https://github.com/janestreet/ppx_inline_test/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_jane.v0.17.0"
+    "https://github.com/janestreet/ppx_jane/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_let.v0.17.1"
+    "https://github.com/janestreet/ppx_let/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_log.v0.17.0"
+    "https://github.com/janestreet/ppx_log/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_module_timer.v0.17.0"
+    "https://github.com/janestreet/ppx_module_timer/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_optcomp.v0.17.1"
+    "https://github.com/janestreet/ppx_optcomp/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_optional.v0.17.0"
+    "https://github.com/janestreet/ppx_optional/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_pipebang.v0.17.0"
+    "https://github.com/janestreet/ppx_pipebang/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_sexp_conv.v0.17.1"
+    "https://github.com/janestreet/ppx_sexp_conv/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_sexp_message.v0.17.0"
+    "https://github.com/janestreet/ppx_sexp_message/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_sexp_value.v0.17.0"
+    "https://github.com/janestreet/ppx_sexp_value/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_stable.v0.17.1"
+    "https://github.com/janestreet/ppx_stable/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_stable_witness.v0.17.0"
+    "https://github.com/janestreet/ppx_stable_witness/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_string.v0.17.0"
+    "https://github.com/janestreet/ppx_string/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_string_conv.v0.17.0"
+    "https://github.com/janestreet/ppx_string_conv/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ppx_tydi.v0.17.1"
+    "https://github.com/janestreet/ppx_tydi/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_typerep_conv.v0.17.1"
+    "https://github.com/janestreet/ppx_typerep_conv/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppx_variants_conv.v0.17.1"
+    "https://github.com/janestreet/ppx_variants_conv/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "ppxlib.0.38.0"
+    "https://github.com/ocaml-ppx/ppxlib/releases/download/0.38.0/ppxlib-0.38.0.tbz"
+  ]
+  [
+    "ppxlib_jane.v0.17.4"
+    "https://github.com/janestreet/ppxlib_jane/archive/refs/tags/v0.17.4.tar.gz"
+  ]
+  [
+    "protocol_version_header.v0.17.0"
+    "https://github.com/janestreet/protocol_version_header/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "ptime.1.2.0+dune"
+    "https://github.com/dune-universe/ptime/releases/download/v1.2.0%2Bdune/ptime-1.2.0.dune.tbz"
+  ]
+  [
+    "re.1.14.0"
+    "https://github.com/ocaml/ocaml-re/archive/refs/tags/1.14.0.tar.gz"
+  ]
+  [
+    "reason.3.18.0"
+    "https://github.com/reasonml/reason/releases/download/3.18.0/reason-3.18.0.tbz"
+  ]
+  [
+    "record_builder.v0.17.0"
+    "https://github.com/janestreet/record_builder/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "result.1.5"
+    "https://github.com/janestreet/result/releases/download/1.5/result-1.5.tbz"
+  ]
+  [
+    "sedlex.3.7"
+    "https://github.com/ocaml-community/sedlex/archive/refs/tags/v3.7.tar.gz"
+  ]
+  ["seq.base+dune" "https://github.com/c-cube/seq/archive/0.2.2.tar.gz"]
+  [
+    "sexp_pretty.v0.17.0"
+    "https://github.com/janestreet/sexp_pretty/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "sexplib.v0.17.0"
+    "https://github.com/janestreet/sexplib/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "sexplib0.v0.17.0"
+    "https://github.com/janestreet/sexplib0/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "spawn.v0.17.0"
+    "https://github.com/janestreet/spawn/releases/download/v0.17.0/spawn-v0.17.0.tbz"
+  ]
+  [
+    "splittable_random.v0.17.0"
+    "https://github.com/janestreet/splittable_random/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "sqlite3.5.4.2"
+    "https://github.com/mmottl/sqlite3-ocaml/releases/download/5.4.2/sqlite3-5.4.2.tbz"
+  ]
+  [
+    "stdio.v0.17.0"
+    "https://github.com/janestreet/stdio/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "stdlib-shims.0.3.0"
+    "https://github.com/ocaml/stdlib-shims/releases/download/0.3.0/stdlib-shims-0.3.0.tbz"
+  ]
+  [
+    "stringext.1.6.0"
+    "https://github.com/rgrinberg/stringext/releases/download/1.6.0/stringext-1.6.0.tbz"
+  ]
+  [
+    "textutils.v0.17.0"
+    "https://github.com/janestreet/textutils/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "time_now.v0.17.0"
+    "https://github.com/janestreet/time_now/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "timedesc.3.1.2"
+    "https://github.com/daypack-dev/timere/releases/download/timedesc-3.1.2/timedesc-3.1.2.tar.gz"
+  ]
+  [
+    "timedesc-tzdb.3.1.2"
+    "https://github.com/daypack-dev/timere/releases/download/timedesc-3.1.2/timedesc-3.1.2.tar.gz"
+  ]
+  [
+    "timedesc-tzlocal.3.1.2"
+    "https://github.com/daypack-dev/timere/releases/download/timedesc-3.1.2/timedesc-3.1.2.tar.gz"
+  ]
+  [
+    "timezone.v0.17.0"
+    "https://github.com/janestreet/timezone/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "typerep.v0.17.1"
+    "https://github.com/janestreet/typerep/archive/refs/tags/v0.17.1.tar.gz"
+  ]
+  [
+    "uopt.v0.17.0"
+    "https://github.com/janestreet/uopt/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "uri.4.4.0"
+    "https://github.com/mirage/ocaml-uri/releases/download/v4.4.0/uri-4.4.0.tbz"
+  ]
+  [
+    "uutf.1.0.3+dune"
+    "https://github.com/dune-universe/uutf/releases/download/v1.0.3%2Bdune/uutf-1.0.3.dune.tbz"
+  ]
+  [
+    "variantslib.v0.17.0"
+    "https://github.com/janestreet/variantslib/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "xmlm.dev"
+    "git+https://github.com/logseq/xmlm#eb469d536e98c98f2754c0ff8813c92b3a17fe9f"
+  ]
+  [
+    "yojson.3.0.0"
+    "https://github.com/ocaml-community/yojson/releases/download/3.0.0/yojson-3.0.0.tbz"
+  ]
+]
+x-opam-monorepo-duniverse-dirs: [
+  [
+    "https://github.com/OCamlPro/ocplib-endian/archive/refs/tags/1.2.tar.gz"
+    "ocplib-endian"
+    [
+      "md5=8d5492eeb7c6815ade72a7415ea30949"
+      "sha512=2e70be5f3d6e377485c60664a0e235c3b9b24a8d6b6a03895d092c6e40d53810bfe1f292ee69e5181ce6daa8a582bfe3d59f3af889f417134f658812be5b8b85"
+    ]
+  ]
+  [
+    "git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956"
+    "melange-edn"
+  ]
+  [
+    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+    "melange-transit"
+  ]
+  [
+    "https://github.com/c-cube/gen/archive/v1.1.tar.gz"
+    "gen"
+    [
+      "md5=fa8066511b693815fe659fd022f4c6bc"
+      "sha512=71a4b5c3666a7c11935398a78feea7383f61d2c549dfb96e324d40783ffa87b5ec492c5ec468803aabfb9b48e7d0ebaa30b24d2b974540afc7cca5feea3121c1"
+    ]
+  ]
+  [
+    "https://github.com/c-cube/seq/archive/0.2.2.tar.gz"
+    "seq"
+    [
+      "md5=9033e02283aa3bde9f97f24e632902e3"
+      "sha512=cab0eb4cb6d9788b7cbd7acbefefc15689d706c97ff7f75dd97faf3c21e466af4d0ff110541a24729db587e7172b1a30a3c2967e17ec2e49cbd923360052c07c"
+    ]
+  ]
+  [
+    "https://github.com/daypack-dev/timere/releases/download/timedesc-3.1.2/timedesc-3.1.2.tar.gz"
+    "timere"
+    [
+      "sha256=8577628c6634aaefa92d1d97b4afca2fd817bc2b2d6d979da35dfbf65a80d6bd"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/astring/archive/v0.8.5+dune.tar.gz"
+    "astring"
+    [
+      "sha256=11327c202fd0115f3a2bf7710c9c603b979a32ba9b16c1a64ba155857233acc8"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/cmdliner/releases/download/v2.1.1%2Bdune/cmdliner-2.1.1.dune.tbz"
+    "cmdliner"
+    [
+      "sha256=ff11b7206e0a8469b73b9f419cf59bb386a3b2cd815366fcc5cbaf3283952fd6"
+      "sha512=4e9534d0d2896cc80ae0e3aaa9a64b09044be16f0c571118d8f4367009b912f6d3ebeeeddab2ac4567ec9339d365f9f97802858acf86753e90e500301d019f77"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/fmt/releases/download/v0.11.0%2Bdune/fmt-0.11.0.dune.tbz"
+    "fmt"
+    [
+      "sha256=1df182f0851793f2a250ac6d957d188eb5c37d658a7bfd29a6498bce022fec30"
+      "sha512=d1a91b65752977f2492abf39f43d121559d50da822e6c1f3b641240e203db45dca6b1e2bc6c4adbf39d59e81ad80d61963ac7ce17ac7ba8317e433967a99d00f"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/fpath/archive/v0.7.3+dune.tar.gz"
+    "fpath"
+    [
+      "sha256=792ecf88d2a311596106e30775864629558ed0c2d0501590fda55f363dbb6ebc"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/jsonm/releases/download/v1.0.2%2Bdune/jsonm-1.0.2.dune.tbz"
+    "jsonm"
+    [
+      "sha256=43e70a4b10a3de38512c7e350d7f6508c806f9937a44c67ad9cdb1c97b28f479"
+      "sha512=432f7ad66045f285f337c91660fc04bec1773243cd22e108aa682ad7c960b340c35f6685818d2c39f6213fa475b4805272cdef1b3e62e88b4c4b534077ddf3b3"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/lib-findlib/releases/download/1.9.5%2Bdune/findlib-1.9.5.dune.tbz"
+    "lib-findlib"
+    [
+      "sha256=5242e5a0cfb2af52d6b596767513d80d2a3588608b366c759f9df0841736a228"
+      "sha512=1b39aedd0cbf623acb9abca88e65e5114f44524f3443f45def184663da76db515e791bee625282a69d20d88e7bc7d4522dbd142e551e09bd7a4cf99d1eabfe95"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/num/releases/download/v1.4%2Bdune2/num-v1.4.dune2.tbz"
+    "num"
+    [
+      "sha256=ec52dcab09b6b638d1a2048e733ec402ee687e89383c3a62d7c0e12f8ed661ad"
+      "sha512=7d6035bd96a71d248c31662b877330656cd29040f45a143695bfa96765b91cea2f4c04b6ff78fdfa5876c1032c3baf4fd22c679b0ae09858d93cf46c1474b5cb"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/ptime/releases/download/v1.2.0%2Bdune/ptime-1.2.0.dune.tbz"
+    "ptime"
+    [
+      "sha256=594296fccd06b94e09378356613b0dd3917218882b7d21cc0bb9c35c17b3c6ec"
+      "sha512=2cbe42776cb4f41908c5ec1dd8b7bb1dac9ad49713c4a8ffc24b2315f64e6c0ffd643a8934ee61cc3c91b568aa6e0f857a4f5da9a39f3f8bdaeba4dc909d251a"
+    ]
+  ]
+  [
+    "https://github.com/dune-universe/uutf/releases/download/v1.0.3%2Bdune/uutf-1.0.3.dune.tbz"
+    "uutf"
+    [
+      "sha256=a207104302c6025b32377e6b4f046a037c56e3de12ce7eacd44c2f31ce71649d"
+      "sha512=7f8904668a37f39a0a61d63539c0afb55d5127e57e0b4ea7ce944216d8d299e44b0f13972ad55f973c93a659ee0f97cf0f1421a7012a15be4c719ee9f9cd857d"
+    ]
+  ]
+  [
+    "https://github.com/edwintorok/dune-compiledb/releases/download/0.6.0/dune-compiledb-0.6.0.tbz"
+    "dune-compiledb"
+    [
+      "sha256=f5e74fd4c2af89df731f53832d8388592d44fed9f50d6d82ba8f71ea1e8ff9ff"
+      "sha512=74e50c759ef50ce13d0f1a424f91176f1327349d6c1b97d0a20c848417920c1490ff7d5a8cabc541b1409a6a6e488f807e34c3cf7ac0d9866938bd43eab08de8"
+    ]
+  ]
+  [
+    "https://github.com/inhabitedtype/bigstringaf/archive/0.10.0.tar.gz"
+    "bigstringaf"
+    [
+      "sha512=b51c756925d7016ffd7eac49e69393a1897391ca2685a8c30c7b6e3917b4d66c9400b49e8986d0f03329197b95ad52e096ff83dea5e03571cb5bc3d9a5170602"
+      "sha256=ed92f5b05fbc11b9defcec734d59b1068f3717a9ae4f9705c16c7f7ac3729f28"
+      "md5=be0a44416840852777651150757a0a3b"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/async/archive/refs/tags/v0.17.0.tar.gz"
+    "async"
+    [
+      "sha256=3edbaa62a7ea910da0d5c06974da9b2b7e14a9e2648596bc7c9f09c89970b5f8"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/async_kernel/archive/refs/tags/v0.17.0.tar.gz"
+    "async_kernel"
+    [
+      "sha256=01ced973dbc70535f692f38bed524ae82dba17e26e58791b2fbf0d647b160d2e"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/async_log/archive/refs/tags/v0.17.0.tar.gz"
+    "async_log"
+    [
+      "sha256=2dae248d74c23aa6a1e0bc38d5b34c975eb4dfbdf32f0970641b5befd8385720"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/async_rpc_kernel/archive/refs/tags/v0.17.0.tar.gz"
+    "async_rpc_kernel"
+    [
+      "sha256=5ca176611c83a32de5e9731ab5d2d920c974ff1e9c9814785b3bfb444911a654"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/async_unix/archive/refs/tags/v0.17.0.tar.gz"
+    "async_unix"
+    [
+      "sha256=814d3a9997ec1316b8b2a601b24471740641647a25002761f7df7869c3ac9e33"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/base/archive/refs/tags/v0.17.3.tar.gz"
+    "base"
+    [
+      "md5=2100b0ed13fecf43be86ed45c5b2cc4d"
+      "sha512=628610caff7e124631870fa1e29661caac28bdfdb18750ee43b868037da3d65d6dd9023b4be7c4c52405679efb5e865a6632d95606a22b28a36636a6bf706ef3"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/base_bigstring/archive/refs/tags/v0.17.0.tar.gz"
+    "base_bigstring"
+    [
+      "sha256=0c77edb9db4f29797cd5c22dd07fdbe4ff668715be870b86dcc1d849730b8562"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/base_quickcheck/archive/refs/tags/v0.17.1.tar.gz"
+    "base_quickcheck"
+    [
+      "md5=df06909b62c9e34e9e5436993d6d998d"
+      "sha512=d345b0333508f6f49fe636455139e563b0594bd2cf56534d2f42ed083906e41bb4e009996ed7db8989d8409899d25cfcdbd71021260486c310f7e0fd63df56d9"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/bin_prot/archive/refs/tags/v0.17.0.tar.gz"
+    "bin_prot"
+    [
+      "sha256=0e6c61aff150d19a0f89cb3e354ab36189e4bc23e28ab8bce03b6c6b6004f237"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/capitalization/archive/refs/tags/v0.17.0.tar.gz"
+    "capitalization"
+    [
+      "sha256=f71d45ec929c9fc9b08e07723c15b6663b0143c4465b5d93038f653258cd5c6f"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/core/archive/refs/tags/v0.17.2.tar.gz"
+    "core"
+    [
+      "md5=6f07bb82d51d695ac4e76c8ac7f55902"
+      "sha512=c3c401fded188f74cf7ce6b1b07e7bc59fe18441eec602d174bfd48db13370fda986dd9f66d4ff9c26254ea2b381e7c51b366df9d2dfbf66fda281b4def3166a"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/core_bench/archive/refs/tags/v0.17.0.tar.gz"
+    "core_bench"
+    [
+      "sha256=a093a77179629a8baef03f58947aac9cf5da37cc0ed7fabdd651832c4fe4cfe5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/core_extended/archive/refs/tags/v0.17.0.tar.gz"
+    "core_extended"
+    [
+      "sha256=17de5f7cf59818d757bb0625c55f0afc84509122645b7782fb522ac98c3be446"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/core_kernel/archive/refs/tags/v0.17.0.tar.gz"
+    "core_kernel"
+    [
+      "sha256=fd2b8c6715794df7a810a62b226f53720f211cd344b4afc9fab0498796d6b466"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/core_unix/archive/refs/tags/v0.17.1.tar.gz"
+    "core_unix"
+    [
+      "md5=9370dca36f518fcea046d2752e3de22b"
+      "sha512=c4e8ce9d5885ac8fa8d554a97e1857f3a1c933e0eb5dfd4fe874412b9d09e6d0a2973b644733855553f33f5c859719228f0e6aaf3a2b7eb5befb46fc513750de"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/delimited_parsing/archive/refs/tags/v0.17.0.tar.gz"
+    "delimited_parsing"
+    [
+      "sha256=fb9251ba0d024506a02b68606ceb5490a8373f346d2e0329e8c0db7d19d2b0de"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/expect_test_helpers_core/archive/refs/tags/v0.17.0.tar.gz"
+    "expect_test_helpers_core"
+    [
+      "sha256=c8380970589385b459413824ea3b2c959ed0a6600fe088f56eda0e16070880bf"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/fieldslib/archive/refs/tags/v0.17.0.tar.gz"
+    "fieldslib"
+    [
+      "sha256=3d6001f7355d2dfb0f33fb7e64f39e34bda0917277609f5ec9a0703aa17b7dfa"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/gel/archive/refs/tags/v0.17.0.tar.gz"
+    "gel"
+    [
+      "sha256=80e3c39fa654d770329d8e2e1bb792e8eb18ceb2dd16fb2d9037830ad73c434f"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/int_repr/archive/refs/tags/v0.17.0.tar.gz"
+    "int_repr"
+    [
+      "sha256=84834341ee55934dec68f3fb6ea9328092eece8ec7f079ac3eee2a11d08c52df"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/jane-street-headers/archive/refs/tags/v0.17.0.tar.gz"
+    "jane-street-headers"
+    [
+      "sha256=78fa6084cd067b7a7d930d1fe1cb7eb9dcd1a90c73017e570213b47a3762eb4f"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/jst-config/archive/refs/tags/v0.17.0.tar.gz"
+    "jst-config"
+    [
+      "sha256=2cf345e33bed0ee4c325667e77dfc5bee8f12afd56318b7c9acf81ec875ecf6e"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ocaml-compiler-libs/archive/refs/tags/v0.17.0.tar.gz"
+    "ocaml-compiler-libs"
+    [
+      "md5=aaf66efea8752475c25a942443579b41"
+      "sha512=c5cd418b0eb74e00c3f63235754bbdb3a3328ac743d6ae885424d8c50b4edaa7068572e689cb3456d222793283927f2984a1ff840b1bc3817f810b5314faf897"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ocaml_intrinsics_kernel/archive/refs/tags/v0.17.2.tar.gz"
+    "ocaml_intrinsics_kernel"
+    [
+      "md5=94d4734d6844417053e93ef0e3b26e33"
+      "sha512=21397340656d9fbe8dc079d5772bb4ca3e9c8c9c235fe2bddbbabe75fff7d38afc95f10d16f71ad0ab67f9e6fcb4ce08bece8b56cb2b37904c7210c45aa44bb5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/parsexp/archive/refs/tags/v0.17.0.tar.gz"
+    "parsexp"
+    [
+      "sha256=a3d10edbc4f98d16357b644d550fd1c06f4d9aa4990ab8ee6da01276c24d55b5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_assert/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_assert"
+    [
+      "sha256=94c47289a6393642b1cca7d2cdb8decdbf387c3cee4faf50d9b00efc871cce8b"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_base/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_base"
+    [
+      "sha256=80e7e6c6a704114d1d0989ee9bc01bca45278096c0caf3f2c4ef28d3c12ae61c"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_bench/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_bench"
+    [
+      "md5=496d7d989656c95860cf2434e1d8e0e0"
+      "sha512=7492c19b408709368f5a1ed020bea2c439ff562f765cd706637dbfb7ecdfc33478f9dd814fcf195292bf634769ae95f8b89b5b33b714e0fd6248f0754e1d37a4"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_bin_prot/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_bin_prot"
+    [
+      "md5=17521ea48abfdb8d433f1f8822791289"
+      "sha512=b5fd4b5718a1486b3f6e5c3ae424a254e30776499ed1d64df7679b7d3f30c1155cfeff0abe29b1426a3b0b58a7bb1bb9fdfb04076bcd6be8ce093c882bae8bf7"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_cold/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_cold"
+    [
+      "sha256=670ee6f4efef2020a4bedf91b72cc2cd97ea0d74b47dad2f8f6b72d722a7452d"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_compare/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_compare"
+    [
+      "sha256=f0b23eb78082ef4dc71a66939bbc63c6b0cc2cf6a4744a906b7a2c016cbe3098"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_custom_printf/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_custom_printf"
+    [
+      "sha256=cd3cf73c31f6b0e18677ce92ce0e6f866b0596d5ea1fc540212c422930a730a0"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_diff/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_diff"
+    [
+      "md5=cfec5d638a1bf1ea77707d10eed5d2d7"
+      "sha512=5848274cb0c5acd1ee3f29318e6111c5fef4b357aeda78120e0370067b9b23f62bb57e1e0be948c3af385b5900a3e0fb657f26dd4fe7ee95cd7002b9d8b68547"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_disable_unused_warnings/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_disable_unused_warnings"
+    [
+      "sha256=af5dfa6bb51aa90f5c322ab4920fb46583cffc9460f583439afb2ef851310fbf"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_enumerate/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_enumerate"
+    [
+      "sha256=a27f1797b1315bdf7678fde783dff493bd348f1c5b644d7616b660bd295dad36"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_expect/archive/refs/tags/v0.17.3.tar.gz"
+    "ppx_expect"
+    [
+      "md5=a7daa59114638fd80f52b6adbb0db7ed"
+      "sha512=d26364f2c7c0a3d83e5ecc144f77875a00887853c72c03e0122d658acb4d1cb4c6d77fabc1222d775663db74f0345be2a33518dffac9feef57ece5e9e40dc709"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_fields_conv/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_fields_conv"
+    [
+      "sha256=f22ce415852181fbea91b344f4ce4dcddbfab584741924d21ad78db25eb8e16a"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_fixed_literal/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_fixed_literal"
+    [
+      "sha256=8523872846b1e5ee7461eb55c912be4039b183de1cf2768045a6d51701a08400"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_globalize/archive/refs/tags/v0.17.2.tar.gz"
+    "ppx_globalize"
+    [
+      "md5=9df1288f1113c1daffd13cfced63a77e"
+      "sha512=9eb4908e8cd92ed79a73fb82a70d9f68fcdeec58e7b2e4e37b536716f4bf4f31866376cb1102cb44e62a40b4ead3c6d5d448872a62803ebb3ea7284c9d082b4a"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_hash/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_hash"
+    [
+      "sha256=8c8acae276a349d412eab9112cc3afa996d26ad4a01f2882121fc0adee0dd05e"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_here/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_here"
+    [
+      "sha256=27ac69db34a5ff0efbf6e3c52d52dda46d1e5d5db4d14fb4d8c20370b932a913"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_ignore_instrumentation/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_ignore_instrumentation"
+    [
+      "sha256=529aa92cc08a2ccb76fa361326fa7d4bbdfa2a7489c4f1c3a295658d3c758311"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_inline_test/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_inline_test"
+    [
+      "md5=38196081de2fab8321b71addbe769b73"
+      "sha512=e5c2dc8e519bbdadb5b1472ee5c5d08c547395e46c294962f1ac830461bb2d30d16894395ba95866713a099ef3565d83e67dda48d6ed26b55ad7cb36a8f7f6aa"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_jane/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_jane"
+    [
+      "sha256=4dcf29dbb093f57fdda18b659739b255b66dc5566b6c4c8a35caa3ce8666fa65"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_let/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_let"
+    [
+      "md5=e9f7f37e7d73e131ed3664da66e09a46"
+      "sha512=bd08d0bc7f37dff97a1500fdd145e978e9693382c5ac11305751a60d11f0ecea4afc319920c804f5e7b8ebadde365c31564851a14c41e9cac2956fc7b5a71a9d"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_log/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_log"
+    [
+      "sha256=2208f047b699d0661e94415868e8e9e4a6e5287a8eceaf7318f572ccd622859a"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_module_timer/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_module_timer"
+    [
+      "sha256=fcc39a8623f7c4e1bb40ce6ed5e9af596938f88f5718f01417ed39b11fc5e264"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_optcomp/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_optcomp"
+    [
+      "md5=0bf43393409414c655c4473d79480fdf"
+      "sha512=2e7c41f168c004cf3be1cd768a5406c61af135c0b084ffdfc39555b4be8c21a227c56cffbfb66de8dc3de35f735277d330f3cc6762e6ba8708deebb78f9fd49b"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_optional/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_optional"
+    [
+      "sha256=809acb833048508f48c74422a5f74e4ef621807376eb5753b98bbd8f3df409bc"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_pipebang/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_pipebang"
+    [
+      "sha256=b50995e2e31fa1f93c2468780f5f082e0859782f8826cc05ad3ec2ad4f8c02ff"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_sexp_conv/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_sexp_conv"
+    [
+      "md5=acbe8a2727a29c8f2fa8da42046f5861"
+      "sha512=036582cbcd49aad0737bbbdf5f680192e55a9f3051c8dece439a6c6ea989b59077c88130d833b01a38d990e563f7dde9f5be7e1cd0ffaaf59bd913d6fbd63bb3"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_sexp_message/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_sexp_message"
+    [
+      "sha256=2a02e4943106f4e87a3b2e17e5127859a4d01a4bdbe477f2084858a9962c47ee"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_sexp_value/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_sexp_value"
+    [
+      "sha256=599e72775285dc5a3042e4717d79f6ff1cb713ef5d7b2c46c5ee2443ad2d6e3c"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_stable/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_stable"
+    [
+      "md5=5a651fd55763fbdb58385dd232c1d222"
+      "sha512=aff081814ac95dc4ebcaa275ccd6fb4e6d7de5de4ef3fc6a633debeeae213136d46c526fb8dc33896542dcde0319957d04308f4a5b8012342fc6a9ccfb5dc072"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_stable_witness/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_stable_witness"
+    [
+      "sha256=052db5d52ccacaab30ead1a4192ad021ee00c235a73c09b7918acabcee4a0cda"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_string/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_string"
+    [
+      "sha256=06b4e061fb5e2b2a85298c9829cc31a1af0a9b8e63fdee9048c76ec8d52d16ef"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_string_conv/archive/refs/tags/v0.17.0.tar.gz"
+    "ppx_string_conv"
+    [
+      "sha256=2e43def9a3f13f46ac8465fa81d51784d080083539b88d3c6e8a649d5ae0fdb0"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_tydi/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_tydi"
+    [
+      "md5=6adffe5f073bc33bbbdbf3c39fe36959"
+      "sha512=f4af5b32a537cb72ffc6a331f73e90eb650e6116ca130d785eda78fb9de5764a1d990ff6929fd6fb695bfeb35d2685f4b35c344125208733b08953ca13410cc5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_typerep_conv/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_typerep_conv"
+    [
+      "md5=1b1e21a87c3f4cef7852733f2c7db3f5"
+      "sha512=8184722762d1e848b16f5409ecf478d0e60fadac590fba1d9355bd7efa09c25e4b87cdc0d117a77386b8da6fcf2bf13c7cf6150f3090686e354a2354ad52e1c5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppx_variants_conv/archive/refs/tags/v0.17.1.tar.gz"
+    "ppx_variants_conv"
+    [
+      "md5=b9c62fd9b545437fe5ed24ceaa1b485b"
+      "sha512=23c9866b2f07e8e55fb7c19bbddbd1c424410fcb590c2b5039b0d194274fd5cfe6a58da55db83cfaddc698c00e42cad95756f49ef0f3d3163fd5f362ebd5e25a"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/ppxlib_jane/archive/refs/tags/v0.17.4.tar.gz"
+    "ppxlib_jane"
+    [
+      "md5=d572c6d6c3b4da9e480c65ba85d3c50a"
+      "sha512=e2931de633d9dcce2ca121e1cf117e159af4ccc52a7e420c328021da0145b6b90194e4545f97afe9cd032c04c6bc2563faa2d852ad45b041b014c688153799d6"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/protocol_version_header/archive/refs/tags/v0.17.0.tar.gz"
+    "protocol_version_header"
+    [
+      "sha256=18b0838b2d92e4b367b157b0ced6dec9d09c31a5e81a299a1bf25853a490adfd"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/record_builder/archive/refs/tags/v0.17.0.tar.gz"
+    "record_builder"
+    [
+      "sha256=cef79df7f3626255f8452ed6235377be9eae0503fec4ffd111447e43450de6e2"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/result/releases/download/1.5/result-1.5.tbz"
+    "result"
+    [
+      "sha256=7c3a5e238558f4c1a4f5acca816bc705a0e12f68dc0005c61ddbf2e6cab8ee32"
+      "md5=1b82dec78849680b49ae9a8a365b831b"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/sexp_pretty/archive/refs/tags/v0.17.0.tar.gz"
+    "sexp_pretty"
+    [
+      "sha256=48caa552235e331f349a70580e756cea0d8335d9cccc46f3fe47142e04bad2f8"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/sexplib/archive/refs/tags/v0.17.0.tar.gz"
+    "sexplib"
+    [
+      "sha256=da863b42b81235fdcf45eb32c04fb8bde22ff446a779cfb6f989730a35103160"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/sexplib0/archive/refs/tags/v0.17.0.tar.gz"
+    "sexplib0"
+    [
+      "md5=abafe8fd1d6302e55a315f4d78960d2a"
+      "sha512=ad387e40789fe70a11473db7e85fe017b801592624414e9030730b2e92ea08f98095fb6e9236430f33c801605ebee0a2a6284e0f618a26a7da4599d4fd9d395d"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/spawn/releases/download/v0.17.0/spawn-v0.17.0.tbz"
+    "spawn"
+    [
+      "sha256=33fbb5cd4c3387a6829095cfa73d5fc2eff572be61647e6052010bfbd0c2df49"
+      "sha512=bb85d1f706774793170f2d52ccbeeeaf67558046b8012bdd8a9cefc46215522a4d59a4a6f21296b0825158e6853a2430f2642ee714e1d1d8b726442d52006fc1"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/splittable_random/archive/refs/tags/v0.17.0.tar.gz"
+    "splittable_random"
+    [
+      "sha256=4f8adcade214d1f84e1073a35f4751154e73853649df581cce68d20dc6337ad2"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/stdio/archive/refs/tags/v0.17.0.tar.gz"
+    "stdio"
+    [
+      "sha256=e7cb473d4bffcf419f307c658cf2599fab03a2b4fe655bfd0be699f8f7af176e"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/textutils/archive/refs/tags/v0.17.0.tar.gz"
+    "textutils"
+    [
+      "sha256=b2681af1f4029245a5c187c4f0834ac470ada6ffc69db7c7e219b3244f88b3d5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/time_now/archive/refs/tags/v0.17.0.tar.gz"
+    "time_now"
+    [
+      "sha256=fc85d6e46c4eb9370de9385f7bbfa6d57b4e48a9e96b20009007226b73f9530c"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/timezone/archive/refs/tags/v0.17.0.tar.gz"
+    "timezone"
+    [
+      "sha256=43026ee35551b996c627b0759e20da1a01609a3fd999eb6ba3149632dd625adf"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/typerep/archive/refs/tags/v0.17.1.tar.gz"
+    "typerep"
+    [
+      "md5=1123cda36764ea0a286af25308d1c3e4"
+      "sha512=e81434ced58ab1cf3cb61d0e2c2106d81c81fe040130cfe07bb79dc3dcc834b1f51dec0faf50e06ccf8cac831e39f31a2ff4ca3dabef7bbaa61f85f13d7f44f5"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/uopt/archive/refs/tags/v0.17.0.tar.gz"
+    "uopt"
+    [
+      "sha256=a6534df59d54cfa50ac22c4406d425b098e94b198cee48c3d82e15a348577cc6"
+    ]
+  ]
+  [
+    "https://github.com/janestreet/variantslib/archive/refs/tags/v0.17.0.tar.gz"
+    "variantslib"
+    [
+      "sha256=9874b69aec9cfe6331970eb2271f7c24e5433ba696c1a9ea5a429862b62338ab"
+    ]
+  ]
+  [
+    "https://github.com/kit-ty-kate/bytes/archive/v0.1.0.tar.gz"
+    "bytes"
+    [
+      "sha256=795b9bf545841714aaf0e517b62834a589937f65ad815ed4589ea56fa614d238"
+    ]
+  ]
+  [
+    "https://github.com/let-def/merlin-extend/releases/download/v0.6.2/merlin-extend-0.6.2.tbz"
+    "merlin-extend"
+    [
+      "sha256=47558e7f30b64462f2b9c82fb7f787133acfa0d5132452b6ad7848e0b0f4d779"
+      "sha512=50696cb2099b84d4a5497fb778c969ca446e5639a91bcde6e2177588fbf72fe4f7a3c27b62384292ad873291719c5893673f1acce4755e81b5e05f9fd3e45b65"
+    ]
+  ]
+  [
+    "git+https://github.com/logseq/angstrom#3be9b966dc2bc9ccf9948d17a7b0df1cb526de15"
+    "angstrom"
+  ]
+  [
+    "git+https://github.com/logseq/ocaml-fsrs.git#0ac7779062df50e7a9760d926ee215ed52c73194"
+    "ocaml-fsrs"
+  ]
+  [
+    "git+https://github.com/logseq/xmlm#eb469d536e98c98f2754c0ff8813c92b3a17fe9f"
+    "xmlm"
+  ]
+  [
+    "https://github.com/melange-community/melange-fetch/releases/download/0.2.0/melange-fetch-0.2.0.tbz"
+    "melange-fetch"
+    [
+      "sha256=c92c5bb7b3d19b43177e86c10fcab2694cdca981d065ae4ebc7234aa811665ef"
+      "sha512=8a989b972aff865fa796e203ba19604e122ddb1fc555fe71b295dbf158055f6253a64a709014cfe55b1200fcc72793a438db41997ce28bf47cad6a6214c7655d"
+    ]
+  ]
+  [
+    "https://github.com/melange-community/melange-webapi/releases/download/0.22.0/melange-webapi-0.22.0.tbz"
+    "melange-webapi"
+    [
+      "sha256=47ec671e619decb2eb2cd5c313b1d9f16a38f667033de22dda00501e7e47be07"
+      "sha512=22a2dafe5b541f0e18844d655413b91b11aa748d303350ed20e6c7987b4c8106ece7abc8551cb3fe7036aeb7063361649261e3deb543467cb7620a8b4e81a483"
+    ]
+  ]
+  [
+    "https://github.com/melange-re/melange/releases/download/7.0.1-55/melange-7.0.1-55.tbz"
+    "melange"
+    [
+      "sha256=8377c0860da82528ebde16a0133f270c1a03de35036bd44bbd8cfb87070a7afb"
+      "sha512=a33c1979f9928c9189d519cbc367b40cc9c0735f29735ef0f1ee5e66c204cf73b8a418ed85cb39442637a3369d3287a8c712a9e747c22bb7d0ac3daae59e6bd8"
+    ]
+  ]
+  [
+    "https://github.com/mirage/alcotest/releases/download/1.9.1/alcotest-1.9.1.tbz"
+    "alcotest"
+    [
+      "sha256=1e29c3b41d4329062105b723dfda3aff86b8cef5e7c7500d0e491fc5fd78e482"
+      "sha512=c49d402fa636dcf11f81917610dd1d2eca8606c8919aede4db23710d071f6046a8f93c78de9fbfee26637a53ca67f71fad500bfa2478b7f0f059608a492dd0a5"
+    ]
+  ]
+  [
+    "https://github.com/mirage/ezjsonm/releases/download/v1.3.0/ezjsonm-1.3.0.tbz"
+    "ezjsonm"
+    [
+      "sha256=08633e0f0e767a8ae81935ca7e74f1693b85a79c4502d568eedff5170f0cd77b"
+      "sha512=b731036384115603af9187464695418d27b7cf6f763c8dbc0812db62a7657cac1b6019d3b205b1c95ae81b7dab0bd4037390d977ee8c122bef29a9ddef771e18"
+    ]
+  ]
+  [
+    "https://github.com/mirage/ocaml-cstruct/releases/download/v6.3.0/cstruct-6.3.0.tbz"
+    "ocaml-cstruct"
+    [
+      "sha256=956b249ddfb55fd23584c1767af28f6487033d364888217a14275d898ebd7754"
+      "sha512=71a503c7017f2d143ec8af2b8f132d1f59a0526ee4602b9a3e307e904bc18867755f87f445e4a49d995c7ca0002adfc2e3dae2f5fa6e22fb71fe85db774dede1"
+    ]
+  ]
+  [
+    "https://github.com/mirage/ocaml-hex/releases/download/v1.5.0/hex-1.5.0.tbz"
+    "ocaml-hex"
+    [
+      "sha256=2e67eeca1b03049307a30831b5cd694bcb2d3e7f2a6b4fb597fbdb647351b4dc"
+      "sha512=baa09b47a90f0a54ad2becfb272f0674219e4fc0c03559deff26aaf13ccd59258b31bf98e56c44a5a8fa03437e3eba2bf5f0cd76e52d184d26cfb1170c490462"
+    ]
+  ]
+  [
+    "https://github.com/mirage/ocaml-uri/releases/download/v4.4.0/uri-4.4.0.tbz"
+    "ocaml-uri"
+    [
+      "sha256=cdabaf6ef5cd2161e59cc7b74c6e4a68ecb80a9f4e96002e338e1b6bf17adec4"
+      "sha512=88374143e0d8aaf6d40aa3cbd7593f9832e9c9727738c6e651498125150c83d5646e13b5737d5c3e81484dd041127f67f8acea13fdc0300ac4e46107559f8ae2"
+    ]
+  ]
+  [
+    "https://github.com/mmottl/sqlite3-ocaml/releases/download/5.4.2/sqlite3-5.4.2.tbz"
+    "sqlite3-ocaml"
+    [
+      "sha256=32f68f078f4beaed51ebc279fef46145205fd98cf6c79fe955218601f202621c"
+      "sha512=92835354d7343ee8c26e574e555b1e83b936f2ccf41e53a64f4b29edb53d38254dd7e570e95ee0b11bf808ad16d78a4b3ba393fc48d0ff2ed51f0e86913fbc07"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-community/cppo/archive/v1.8.0.tar.gz"
+    "cppo"
+    [
+      "md5=a197cb393b84f6b30e0ff55080ac429b"
+      "sha512=3840725b767a0300bdc48f11d26d798bdcae0a764ed6798df3a08dfc8cc76fe124b14a19d47c9b5ea8e229d68b0311510afce77c0e4d9131fbda5116dc2689a2"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-community/sedlex/archive/refs/tags/v3.7.tar.gz"
+    "sedlex"
+    [
+      "md5=893790268f68a1bb60dcc139f390a2d3"
+      "sha512=053bceea4944309705e6b8014381711a2c4f7f0ab235cd239e2d2f5a2dbd3efe1b1c2d533631a8545dacf563cdb5b7469fe53982ef79ace270ee8a4a471f1fe2"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-community/yojson/releases/download/3.0.0/yojson-3.0.0.tbz"
+    "yojson"
+    [
+      "sha256=99414da7609b92a02474ef4b49ecda15edc8cbba5229341b124e7e4695c39610"
+      "sha512=896d0ea829a36ccadba6628800369c1a3ab9e7c64dbda8b76331889c9db481cd64e137f467481ae80a8dd5fca45d748bfa71f58641806cc1bb1a007f8291789f"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-dune/csexp/releases/download/1.5.2/csexp-1.5.2.tbz"
+    "csexp"
+    [
+      "sha256=1a14dd04bb4379a41990248550628c77913a9c07f3c35c1370b6960e697787ff"
+      "sha512=be281018bcfc20d4db14894ef51c4b836d6338d2fdfe22e63d46f405f8dea7349e16f1c0ecd65f73d4c85a2a80e618cdbb8c9dafcbb9f229f04f1adca5b1973c"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-ppx/ocaml-syntax-shims/releases/download/1.0.0/ocaml-syntax-shims-1.0.0.tbz"
+    "ocaml-syntax-shims"
+    [
+      "sha256=89b2e193e90a0c168b6ec5ddf6fef09033681bdcb64e11913c97440a2722e8c8"
+      "sha512=75c4c6b0bfa1267a8a49a82ba494d08cf0823fc8350863d6d3d4971528cb09e5a2a29e2981d04c75e76ad0f49360b05a432c9efeff9a4fbc1ec6b28960399852"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-ppx/ppx_derivers/archive/1.2.1.tar.gz"
+    "ppx_derivers"
+    [
+      "sha256=b6595ee187dea792b31fc54a0e1524ab1e48bc6068d3066c45215a138cc73b95"
+      "md5=5dc2bf130c1db3c731fe0fffc5648b41"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-ppx/ppx_deriving/releases/download/6.2.0/ppx_deriving-6.2.0.tbz"
+    "ppx_deriving"
+    [
+      "sha256=93fd48d5ac52bb0d0eda8d4fb7037808be57dafc5981db4e662eb916c70df9b1"
+      "sha512=664ad073ec248f5e292af6979bd17da97d5b11fee95da7a83314eb831b51db9cb333435678e565e084d90dc3aa2ad7cd9587646d34bb26f6f310e7630954bdde"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-ppx/ppx_deriving_yojson/releases/download/v3.10.0/ppx_deriving_yojson-3.10.0.tbz"
+    "ppx_deriving_yojson"
+    [
+      "sha256=ced3d265e4287f1f18b09df6446a24444fad52b2a3054cbcbe0c9494d0e89b3f"
+      "sha512=038752a73690dc1b55031c119f57ee27fbee0d51a4a541d2f31ad1baf8b05637396c0b97a7dbfd77db600b689e90a62bfff7ca3fcf74545bd5b32dc3dabff511"
+    ]
+  ]
+  [
+    "https://github.com/ocaml-ppx/ppxlib/releases/download/0.38.0/ppxlib-0.38.0.tbz"
+    "ppxlib"
+    [
+      "sha256=89e049b3102f6670a213d34d802ea3ab0fc530a8959d2f1a1e8db830063429a3"
+      "sha512=2fbbf124fc61e1f22242d13505e9af39d4a3c7cf03def1c33ee8bd915195be9b817636667302e9c6ceddc74a9a4a54926340e21c96fd770a2bc6752400315cfd"
+    ]
+  ]
+  [
+    "https://github.com/ocaml/dune/releases/download/3.24.2/dune-3.24.2.tbz"
+    "dune_"
+    [
+      "sha256=472798691b0216daf538709f0f4703b3617ef24ad0866c9096068baaba4d762a"
+      "sha512=13082a66a28e940d4b3c9f78b556f6c1455987cd522355ba4502e01e60a3d002d3101b51284726ae21aa87494efa2dc54d016173f05b616bbc5dad714d5714a3"
+    ]
+  ]
+  [
+    "https://github.com/ocaml/ocaml-re/archive/refs/tags/1.14.0.tar.gz"
+    "ocaml-re"
+    [
+      "md5=03f4a83100cb9229a796b85c698076e1"
+      "sha512=cd2cc39f951ca6b7be631bbb5531ed13bc040e629842671bf6fef3911b20ef1653fa9a1f0aa23b094d252cffc9a9efe7ffca69e50d362ab935bc0cc447548124"
+    ]
+  ]
+  [
+    "https://github.com/ocaml/stdlib-shims/releases/download/0.3.0/stdlib-shims-0.3.0.tbz"
+    "stdlib-shims"
+    [
+      "sha256=babf72d3917b86f707885f0c5528e36c63fccb698f4b46cf2bab5c7ccdd6d84a"
+      "sha512=1151d7edc8923516e9a36995a3f8938d323aaade759ad349ed15d6d8501db61ffbe63277e97c4d86149cf371306ac23df0f581ec7e02611f58335126e1870980"
+    ]
+  ]
+  [
+    "https://github.com/ocsigen/js_of_ocaml/releases/download/6.4.1/js_of_ocaml-6.4.1.tbz"
+    "js_of_ocaml"
+    [
+      "sha256=e59bbffcaefaba3191620556514b7f53bb3249e3f881a070d72724234dffd819"
+      "sha512=bb470f316f9c81a3b2b8dedd0b0f18f8e06beb48dd70df1d9f846de90ffab439cab5ef7a93a8166af0998068b06097e8319bc0d9f4f23a7159b0de8b3b515746"
+    ]
+  ]
+  [
+    "https://github.com/ocsigen/lwt/archive/refs/tags/6.1.2.tar.gz"
+    "lwt"
+    [
+      "md5=00bc7eb2772a28530f7365a7040f0c4f"
+      "sha512=a4737a2fc44aaeedca46ec6134c07013d5cf44039a988a6e79a40715a53e43601d4c91bbf11a8e89540528d912b8fa487e3068465c136c1156a872258eb3443b"
+    ]
+  ]
+  [
+    "https://github.com/reasonml/reason/releases/download/3.18.0/reason-3.18.0.tbz"
+    "reason"
+    [
+      "sha256=4fba6a16f54551b78e1d90eb2c167f6ee964caf5383bc2d2f93ceccc7e64dc44"
+      "sha512=b43e9245c79c3aaef494ba55027187f86884fbcff87aca77743b5c3d81ef7d5156f34c650c3cfb40719cf7ca87750c591fe338b21f82d4feed7092e47cb6880d"
+    ]
+  ]
+  [
+    "https://github.com/rgrinberg/stringext/releases/download/1.6.0/stringext-1.6.0.tbz"
+    "stringext"
+    [
+      "sha256=db41f5d52e9eab17615f110b899dfeb27dd7e7f89cd35ae43827c5119db206ea"
+      "sha512=d8ebe40f42b598a9bd99f1ef4b00ba93458385a4accd121af66a0bf3b3f8d7135f576740adf1a43081dd409977c2219fd4bdbb5b3d1308890d301d553ed49900"
+    ]
+  ]
+  [
+    "https://github.com/yallop/ocaml-ctypes/archive/refs/tags/0.24.0.tar.gz"
+    "ocaml-ctypes"
+    [
+      "sha256=249c5604c8554659761a7282db4ad200aa8c0fdc408cdb53102bd70feeb51955"
+      "md5=064316aaf508a9db203f114bb8401dee"
+    ]
+  ]
+  [
+    "https://github.com/yallop/ocaml-integers/archive/0.8.0.tar.gz"
+    "ocaml-integers"
+    [
+      "sha256=04a1a6d5cc1ecfd3f354a83caed27e59995bb26adec64d88193ccc36268929fa"
+      "md5=5155b252a1143ebe7f895003a7103f5e"
+    ]
+  ]
+  [
+    "https://gitlab.inria.fr/fpottier/fix/-/archive/20250919/archive.tar.gz"
+    "fix"
+    [
+      "md5=af7099d1cf24654bd379953b8e3d063f"
+      "sha512=147bde60a96191f5f0090842df37a12509d78cf6e9dda482fbd000f61215c3d12115854fc331ae39009f26948d6d527187adade160e7ab27a6c4f0d8b324490a"
+    ]
+  ]
+  [
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20260209/archive.tar.gz"
+    "menhir"
+    [
+      "md5=e993231085db95ab011ffe0cd606d9dd"
+      "sha512=aafad186f328ae8dd4cc69af0f30c1a0b208cf5148a7a94c150099be03838503c5ec12918de26cd7f794b5a72f114bc1bae8d81058bd0ea10372a3b06818687e"
+    ]
+  ]
+]
+x-opam-monorepo-root-packages: ["logseq_chat"]
+x-opam-monorepo-version: "0.3"
