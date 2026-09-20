@@ -1,5 +1,6 @@
 (ns logseq-chat.platform-crypto
   (:require [logseq-chat.e2ee :as e2ee]
+            [logseq-chat.e2ee-keyring :as keyring]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Rrbvec :as rrbvec]
@@ -119,3 +120,11 @@
 (defn load-e2ee-password [call]
   (let* [fields (invoke call "loadE2EEPassword" [])]
     (cached-value fields "platform crypto returned invalid cached E2EE password")))
+
+(defn create-keyring [call fetch]
+  (keyring/create (crypto call)
+                  #(load-graph-key call %)
+                  #(save-graph-key call %1 %2)
+                  #(load-e2ee-password call)
+                  #(save-e2ee-password call %)
+                  fetch))

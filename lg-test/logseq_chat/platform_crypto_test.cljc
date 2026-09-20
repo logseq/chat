@@ -1,6 +1,9 @@
 (ns logseq-chat.platform-crypto-test
   (:require [clojure.test :refer [deftest is]]
             [logseq-chat.platform-crypto :as platform]
+            [logseq-chat.native-crypto :as native]
+            [logseq-chat.e2ee-keyring :as keyring]
+            [logseq-chat.api :as api]
             [ocaml.Callback :as callback]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
@@ -8,7 +11,7 @@
             [ocaml.Char :as char]
             [ocaml.Stdlib :as stdlib]))
 
-(ffi call-raw [:string] :string {:ocaml "logseq_chat_crypto_call"})
+(def call-raw native/call-raw)
 
 (def response (atom "{\"ok\":true,\"value\":\"00ff\"}"))
 
@@ -29,6 +32,40 @@
 (defn field [name] (json-util/member name @request))
 
 (defn operation [name] (is (= (tag String name) (field "operation"))))
+
+(def config
+  (record api/api-config (base-url "https://api.example") (graph-id "graph")
+          (graph-name nil) (token "token")))
+
+(deftest native-keyring-loads-offline-and-keeps-graph-keys-isolated
+  (reset-transport)
+  (let [requests (atom 0)
+        ring (platform/create-keyring call-raw
+               (fn [_] (swap! requests inc) (Error "offline")))
+        key (str (bytes/make 1 (char/chr 0)) (bytes/make 1 (char/chr 255)))]
+    (is (= (Ok key) (keyring/load-cached ring config)))
+    (operation "loadGraphKey")
+    (is (= (tag String "graph") (field "graphID")))
+    (is (= (Ok key) (keyring/graph-key ring "graph")))
+    (is (= (Error "encrypted graph is locked") (keyring/graph-key ring "other")))
+    (reset! response "{\"ok\":false,\"error\":\"locked\"}")
+    (is (= (Ok key) (keyring/load-cached ring config)))
+    (is (= (Error "locked") (keyring/load-cached ring (assoc config :graph-id "other"))))
+    (is (= 0 @requests))))
+
+(deftest native-keyring-preserves-cache-misses-and-transport-errors
+  (reset-transport)
+  (let [requests (atom 0)
+        ring (platform/create-keyring call-raw
+               (fn [_] (swap! requests inc) (Error "offline")))]
+    (reset! response "{\"ok\":true,\"value\":null}")
+    (is (= (Error "E2EE password is not cached") (keyring/load-cached ring config)))
+    (operation "loadE2EEPassword")
+    (reset! transport-failure true)
+    (try
+      (is (= (Error "Failure(\"native crypto unavailable\")") (keyring/load-cached ring config)))
+      (is (= 0 @requests))
+      (finally (reset-transport)))))
 
 (deftest binary-hex-roundtrip
   (let [all-bytes (bytes/init 256 char/chr)]

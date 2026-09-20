@@ -39,6 +39,21 @@
 
 (defn ok? [result] (match result (Ok _) true (Error _) false))
 
+(deftest pending-identities-retain-new-entities-and-skip-existing-ones
+  (let [conn (ds/create-conn :schema (list (tuple "block/uuid" uuid-schema)))]
+    (ds/transact-conn conn (list (ds/Add (ds/Entity_id 1) "block/uuid" (ds/Uuid "existing"))))
+    (match (sync/pending-temp-ids (ds/conn-db conn)
+                                (list (entity "existing" [])
+                                      (entity "child" [])
+                                      (entity "parent" [])))
+      (Ok pending)
+      (do
+        (is (= 2 (count pending)))
+        (is (= #{(ds/Uuid "child") (ds/Uuid "parent")} (set (map :identity-value pending))))
+        (is (= #{(ds/Temp_id "remote:block/uuid:child") (ds/Temp_id "remote:block/uuid:parent")}
+               (set (map :entity-ref pending)))))
+      (Error message) (stdlib/failwith message))))
+
 (deftest authoritative-changes-replace-retract-and-resolve-reference-identities
   (let [schema (list (tuple "block/uuid" uuid-schema) (tuple "block/title" string-schema)
                      (tuple "block/collapsed?" one) (tuple "block/parent" ref-schema)

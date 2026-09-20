@@ -8,7 +8,10 @@
             [logseq-chat.markup :as markup]
             [logseq-chat.flashcards :as cards]
             [logseq-chat.storage-codec :as codec]
+            [logseq-chat.graph-store :as store]
             [ocaml.Datascript :as ds]
+            [ocaml.Filename :as filename]
+            [ocaml.Sys :as sys]
             [ocaml.Stdlib :as stdlib]))
 
 (deftest command-line-validation-preserves-modes-and-exit-codes
@@ -49,6 +52,22 @@
 (defn visible [db] (graph/blocks plain 7 db))
 
 (defn exists? [db uuid] (some? (ds/entid db "block/uuid" (ds/Uuid uuid))))
+
+(deftest command-line-fixture-persists-and-can-be-inspected-and-reseeded
+  (let [path (filename/temp-file "chat-lg-seed" ".sqlite")]
+    (sys/remove path)
+    (try
+      (store/prepare-staging path)
+      (ds/store :storage (store/storage path) (ds/conn-db (ds/create-conn :schema schema)))
+      (run! (fn [mode]
+              (let [[code message] (cli/run ["seed" path mode])]
+                (is (= 0 code))
+                (is (string/includes? message "journals=8 visible-blocks=18"))
+                (let [db (expect-ok (store/restore-db path))]
+                  (is (= 8 (graph/journal-page-count db)))
+                  (is (= 18 (count (visible db)))))))
+            ["--fixture" "--inspect" "--fixture"])
+      (finally (when (sys/file-exists path) (sys/remove path))))))
 
 (deftest standard-fixture-links-tags-rich-blocks-and-cards
   (let [conn (ds/create-conn :schema schema)]

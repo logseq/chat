@@ -1,6 +1,7 @@
 (ns logseq-chat.pending-ops
   (:refer-clojure :exclude [list remove])
   (:require [clojure.string :as string]
+            [logseq-chat.graph-sqlite :as sql]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Stdlib :as stdlib]
@@ -220,13 +221,13 @@
           (Conflicted "split block UUID already exists") (split-result-exists? db intent)
           _ false))))
 
-(ffi store-raw [:string :string :int :string :string] :unit
-  {:ocaml "logseq_chat_pending_ops_store"})
-(ffi list-raw [:string] :list<tuple<string;int;string;string>>
-  {:ocaml "logseq_chat_pending_ops_list"})
-(ffi set-state-raw [:string :string :string] :unit
-  {:ocaml "logseq_chat_pending_ops_set_state"})
-(ffi remove-raw [:string :string] :unit {:ocaml "logseq_chat_pending_ops_remove"})
+(def store-raw sql/store-pending)
+
+(def list-raw sql/list-pending)
+
+(def set-state-raw sql/set-pending-state)
+
+(def remove-raw sql/remove-pending)
 
 (defn outliner-op [intent]
   (match intent

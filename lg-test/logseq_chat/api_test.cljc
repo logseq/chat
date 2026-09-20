@@ -86,6 +86,24 @@
     (is (= "https://api.example/assets/graph-1/encrypted-asset.jpg" (:url (:request encrypted))))
     (is (= "text/plain" (:content-type encrypted)))))
 
+(deftest asset-upload-query-parameters
+  (let [plain (api/asset-upload-request None config "asset/1" "photo 1.jpg" 0 "a+b"
+                                       "/tmp/photo.jpg" "image/jpeg")
+        paged (api/asset-upload-request (Some "page/1") config "asset" "photo.jpg" 2048 "hash"
+                                       "/tmp/photo.jpg" "image/jpeg")
+        encrypted (api/encrypted-asset-upload-request config "asset" "photo.jpg" "cipher+text"
+                                                      "page/1" 2048 4096 "hash" "/tmp/encrypted")]
+    (is (= "https://api.example/api/v1/graphs/graph-1/assets?uuid=asset%2F1&file-name=photo%201.jpg&size=0&checksum=a%2Bb"
+           (:url (:request plain))))
+    (is (= "https://api.example/api/v1/graphs/graph-1/assets?uuid=asset&file-name=photo.jpg&size=2048&checksum=hash&page-id=page%2F1"
+           (:url (:request paged))))
+    (is (= "https://api.example/api/v1/graphs/graph-1/assets?uuid=asset&file-name=photo.jpg&size=2048&upload-size=4096&checksum=hash&title=cipher%2Btext&page-id=page%2F1"
+           (:url (:request encrypted))))
+    (is (= "POST" (:method_ (:request encrypted))))
+    (is (= "text/plain" (:content-type encrypted)))
+    (is (= "/tmp/encrypted" (:file-path encrypted)))
+    (is (nil? (:body (:request encrypted))))))
+
 (deftest creation-responses-and-feed
   (run! (fn [[body expected]] (is (= expected (api/created-block-uuid-from-body body))))
         [["{\"uuid\":\"server-asset\",\"title\":\"photo.jpg\",\"type\":\"jpg\",\"size\":2048,\"checksum\":\"abc123\"}" "server-asset"]

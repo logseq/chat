@@ -3,8 +3,7 @@
             [logseq-chat.sqlite :as sqlite]
             [logseq-chat.cache-model :as model]
             [clojure.string :as string]
-            [ocaml.Logseq_chat_rpc :as rpc]
-            [ocaml.Logseq_chat_lg_core_native :as native]
+            [logseq-chat.rpc-session :as rpc-session]
             [ocaml.Yojson.Basic :as json]
             [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Marshal :as marshal]
@@ -39,12 +38,30 @@
       (let [session (sqlite/open-session path)]
         (try
           (sqlite/store-raw session
-            [["broken" "not transit"]
-             ["legacy" (marshal/to-string "old" (list))]
-             ["future" "[\"^ \",\"~:format-version\",2,\"~:value-type\",\"~:string\",\"~:value\",\"future\"]"]])
+                            [["broken" "not transit"]
+                             ["legacy" (marshal/to-string "old" (list))]
+                             ["future" "[\"^ \",\"~:format-version\",2,\"~:value-type\",\"~:string\",\"~:value\",\"future\"]"]])
           (is (nil? (sqlite/restore-string session "broken")))
           (is (nil? (sqlite/restore-string session "legacy")))
           (is (nil? (sqlite/restore-string session "future")))
+          (finally (sqlite/close session)))))))
+
+(deftest opening-errors-preserve-failure-contract
+  (with-database
+    (fn [path]
+      (is (thrown? Failure (sqlite/open-session (filename/concat path "child.sqlite")))))))
+
+(deftest sqlite-errors-preserve-failure-contract
+  (with-database
+    (fn [path]
+      (let [session (sqlite/open-session path)]
+        (try
+          (is (thrown-with-msg? Failure #"no such table"
+                (sqlite/execute session "INSERT INTO missing_table VALUES (1)")))
+          (is (thrown-with-msg? Failure #"no such table"
+                (sqlite/with-statement session "SELECT * FROM missing_table" (fn [_] nil))))
+          (sqlite/store-string session "after-error" "usable")
+          (is (= (Some "usable") (sqlite/restore-string session "after-error")))
           (finally (sqlite/close session)))))))
 
 (deftest datascript-storage-roundtrip-and-format
@@ -127,7 +144,8 @@
       (let [session (sqlite/open-session path)]
         (try
           (sqlite/execute session "CREATE TRIGGER reject_bad BEFORE INSERT ON kvs WHEN NEW.address = 'bad' BEGIN SELECT RAISE(ABORT, 'rejected'); END")
-          (is (thrown? Failure (sqlite/store-raw session [["first" "one"] ["bad" "two"]])))
+          (is (thrown-with-msg? Failure #"rejected"
+                (sqlite/store-raw session [["first" "one"] ["bad" "two"]])))
           (is (nil? (sqlite/restore-raw session "first")))
           (sqlite/store-raw session [["next" "three"]])
           (is (= (Some "three") (sqlite/restore-raw session "next")))
@@ -150,11 +168,12 @@
     (fn [path]
       (let [session (sqlite/open-session path)]
         (try
-          (let [app (rpc/create :storage (sqlite/storage session))]
-            (rpc/call app "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":\"{\\\"text\\\":\\\"Survives restart\\\",\\\"uuid\\\":\\\"local-restart\\\",\\\"now\\\":1776000000000}\"}}"))
+          (let [app (rpc-session/create-session (assoc rpc-session/default-options
+                                                       :storage (Some (sqlite/storage session))))]
+            (rpc-session/call app "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"send\",\"payload\":\"{\\\"text\\\":\\\"Survives restart\\\",\\\"uuid\\\":\\\"local-restart\\\",\\\"now\\\":1776000000000}\"}}"))
           (finally (sqlite/close session))))
       (let [session (sqlite/open-session path)
-            remote (record Logseq_chat_lg_core_native.block
+            remote (record model/block
                            (uuid "remote-existing") (title "Existing server block")
                            (page-id "journal/2026-04-13") (parent-id None) (order None)
                            (created-at 1776000000001) (updated-at 1776000000001)
@@ -163,10 +182,11 @@
                            (asset-type None) (asset-size None) (asset-checksum None)
                            (local-path None) (journal None))]
         (try
-          (let [app (rpc/create :storage (sqlite/storage session)
-                                :graph_blocks (fn [] (Some (list remote))))]
-            (native/logseq-chat-cache-model-upsert-journal-page (:model app) "journal/2026-04-13" 20260413 "")
-            (let [response (json/from-string (rpc/call app "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}"))
+          (let [app (rpc-session/create-session (assoc rpc-session/default-options
+                                                       :storage (Some (sqlite/storage session))
+                                                       :graph-blocks (Some (fn [] (Some (list remote))))))]
+            (model/upsert-journal-page (:model (rpc-session/state app)) "journal/2026-04-13" 20260413 "")
+            (let [response (json/from-string (rpc-session/call app "{\"apiVersion\":1,\"method\":\"snapshot\",\"params\":{}}"))
                   blocks (json-util/to-list (json-util/member "blocks" (json-util/member "result" response)))
                   uuids (mapv (fn [block] (json-util/to-string (json-util/member "uuid" block))) blocks)]
               (is (not-any? #(= % "local-restart") uuids))
@@ -184,9 +204,10 @@
       (let [session (sqlite/open-session path)]
         (try
           (is (= (Some catalog) (sqlite/restore-string session "logseq-chat/graph-catalog/v1")))
-          (let [app (rpc/create :storage (sqlite/storage session)
-                                :load_graph_catalog (fn [] (sqlite/restore-string session "logseq-chat/graph-catalog/v1")))
-                response (json/from-string (rpc/call app "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"http://127.0.0.1:8787\\\",\\\"graphId\\\":\\\"plain-graph\\\",\\\"token\\\":\\\"\\\"}\"}}"))
+          (let [app (rpc-session/create-session (assoc rpc-session/default-options
+                                                       :storage (Some (sqlite/storage session))
+                                                       :load-graph-catalog (Some (fn [] (sqlite/restore-string session "logseq-chat/graph-catalog/v1")))))
+                response (json/from-string (rpc-session/call app "{\"apiVersion\":1,\"method\":\"dispatch\",\"params\":{\"action\":\"configure\",\"payload\":\"{\\\"baseUrl\\\":\\\"http://127.0.0.1:8787\\\",\\\"graphId\\\":\\\"plain-graph\\\",\\\"token\\\":\\\"\\\"}\"}}"))
                 result (json-util/member "result" response)]
             (is (= "Sync 2" (json-util/to-string (json-util/member "graphName" result))))
             (is (= 1 (count (json-util/to-list (json-util/member "graphs" result))))))

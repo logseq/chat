@@ -1,5 +1,6 @@
 (ns logseq-chat.graph-store
   (:require [logseq-chat.snapshot :as snapshot]
+            [logseq-chat.graph-sqlite :as sql]
             [logseq-chat.storage-codec :as codec]
             [ocaml.package/datascript-ocaml-native]
             [ocaml.package/unix]
@@ -10,18 +11,21 @@
             [ocaml.String :as byte-string]
             [ocaml.Rrbvec :as rrbvec]))
 
-(extern-type graph-reader)
-(ffi open-reader [:string] :graph-reader {:ocaml "logseq_chat_graph_reader_open"})
-(ffi reader-row [:graph-reader :int] :option<tuple<string;option<string>>>
-  {:ocaml "logseq_chat_graph_reader_read"})
-(ffi prepare-staging [:string] :unit {:ocaml "logseq_chat_graph_store_prepare"})
-(ffi append-staging [:string :list<snapshot/snapshot-row>] :unit
-  {:ocaml "logseq_chat_graph_store_append"})
-(ffi copy-app-tables [:string :string] :unit {:ocaml "logseq_chat_graph_store_copy_app_tables"})
-(ffi read-stored-row [:string :int] :option<tuple<string;option<string>>>
-  {:ocaml "logseq_chat_graph_store_read_row"})
-(ffi list-stored-addresses [:string] :list<int> {:ocaml "logseq_chat_graph_store_list_addresses"})
-(ffi delete-stored-addresses [:string :list<int>] :unit {:ocaml "logseq_chat_graph_store_delete"})
+(def open-reader sql/open-reader)
+
+(def reader-row sql/reader-row)
+
+(def prepare-staging sql/prepare-staging)
+
+(def append-staging sql/append-staging)
+
+(def copy-app-tables sql/copy-app-tables)
+
+(def read-stored-row sql/read-stored-row)
+
+(def list-stored-addresses sql/list-stored-addresses)
+
+(def delete-stored-addresses sql/delete-stored-addresses)
 
 (defn staging-path [active-path]
   (byte-string/cat active-path ".import"))
@@ -40,7 +44,7 @@
                (prepare-staging staging)
                (when (sys/file-exists active-path) (copy-app-tables active-path staging))))))
 
-(defn append-rows [active-path ^:list<snapshot/snapshot-row> rows]
+(defn append-rows [active-path rows]
   (try
     (when (not (empty? rows)) (append-staging (staging-path active-path) rows))
     (Ok (stdlib/ignore 0))
@@ -71,12 +75,11 @@
        (fn [entries]
          (append-staging
           write-path
-          (rrbvec/to-list
-           (mapv (fn [[address payload]]
+          (mapv (fn [[address payload]]
                    (let [[content addresses] (codec/encode None payload)]
                      (record snapshot/snapshot-row
                        (addr (int-of-address address)) (content content) (addresses addresses))))
-                 entries)))))
+                 entries))))
       (storage-restore
        (fn [address]
          (match (reader-row (force reader) (int-of-address address))
@@ -85,7 +88,7 @@
       (storage-list-addresses
        (fn [] (rrbvec/to-list (mapv stdlib/string-of-int (list-stored-addresses read-path)))))
       (storage-delete
-       (fn [addresses] (delete-stored-addresses write-path (rrbvec/to-list (mapv int-of-address addresses))))))))
+       (fn [addresses] (delete-stored-addresses write-path (mapv int-of-address addresses)))))))
 
 (defn storage [path]
   (storage-with-paths path path))

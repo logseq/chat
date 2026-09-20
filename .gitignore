@@ -34,6 +34,8 @@ default.profraw
 _build/
 _coverage/
 .lg-cache/
+.clj-kondo/.cache/
+.lsp/.cache/
 /*.install
 build/
 DerivedData/

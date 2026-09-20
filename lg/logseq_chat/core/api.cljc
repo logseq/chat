@@ -71,10 +71,10 @@
 (defn graph-path [config suffix]
   (str "/api/v1/graphs/" (url-encode (:graph-id config)) suffix))
 
-(defn json-body [^:vector<tuple<string;Yojson.Basic.t>> fields]
+(defn json-body [fields]
   (Some (json/to-string (tag Assoc (rrbvec/to-list fields)))))
 
-(defn recent-blocks-request [config ^:int journal-day]
+(defn recent-blocks-request [config journal-day]
   (request config "GET"
     (graph-path config (str "/blocks?journal-only=true&journal-day-at-most=" journal-day
                             "&sort=created-at-desc&limit=100")) None))
@@ -143,7 +143,7 @@
     (json-body (into [(tuple "uuid" (tag String uuid)) (tuple "title" (tag String text))
                       (tuple "status" (tag String status))] (page-fields page-id)))))
 
-(defn asset-upload-request [page-id config uuid file-name ^:int size checksum file-path content-type]
+(defn asset-upload-request [page-id config uuid file-name size checksum file-path content-type]
   (record api-file-upload
     (request (request config "POST"
                (graph-path config
@@ -157,7 +157,7 @@
     (json-body [(tuple "block-ids" (tag List (list (tag String uuid))))
                 (tuple "target-id" (tag String target-uuid)) (tuple "position" (tag String "last-child"))])))
 
-(defn encrypted-asset-upload-request [config uuid file-name title page-id ^:int size ^:int upload-size checksum file-path]
+(defn encrypted-asset-upload-request [config uuid file-name title page-id size upload-size checksum file-path]
   (record api-file-upload
     (request (request config "POST"
                (graph-path config

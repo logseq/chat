@@ -905,6 +905,61 @@
     (json-list (map (fn [row]
                      (outliner-row-json (get targets (:uuid (:block row))) serialize-block row)) rows))))
 
+(defn common-row-prefix [before after]
+  (loop [index 0]
+    (if (and (< index (count before)) (< index (count after))
+             (= (nth before index) (nth after index)))
+      (recur (inc index))
+      index)))
+
+(defn common-row-suffix [before after start]
+  (loop [length 0]
+    (let [before-index (- (count before) length 1)
+          after-index (- (count after) length 1)]
+      (if (and (>= before-index start) (>= after-index start)
+               (= (nth before before-index) (nth after after-index)))
+        (recur (inc length))
+        length))))
+
+(defn row-splice-position [anchored before start]
+  (if anchored
+    (let [anchors
+          (concat
+           (if (> start 0)
+             [(tuple "afterBlockId" (tag String (:uuid (:block (nth before (dec start))))))] [])
+           (if (< start (count before))
+             [(tuple "beforeBlockId" (tag String (:uuid (:block (nth before start)))))] []))]
+      (if (empty? anchors) [(tuple "start" (tag Int 0))] (vec anchors)))
+    [(tuple "start" (tag Int start))]))
+
+(defn structural-outliner-delta [anchored before-context before-state after-context after-state]
+  (let [before-rows (vec (outliner/visible-rows before-context before-state))
+        after-rows (vec (outliner/visible-rows after-context after-state))
+        before-blocks (zipmap (map :uuid (:blocks before-context)) (:blocks before-context))
+        after-ids (set (map :uuid (:blocks after-context)))
+        blocks (filterv (fn [block] (not= (get before-blocks (:uuid block)) (Some block)))
+                        (:blocks after-context))
+        deleted (vec (keep (fn [block] (when (not (contains? after-ids (:uuid block))) (:uuid block)))
+                           (:blocks before-context)))
+        start (common-row-prefix before-rows after-rows)
+        suffix (common-row-suffix before-rows after-rows start)
+        delete-count (- (count before-rows) start suffix)
+        insert-count (- (count after-rows) start suffix)
+        targets (into {} (reverse (youtube-target-urls (map :block after-rows))))
+        splices
+        (if (and (= delete-count 0) (= insert-count 0))
+          []
+          [(json-object
+            (concat
+             (row-splice-position anchored before-rows start)
+             [(tuple "deleteCount" (tag Int delete-count))
+              (tuple "rows"
+                     (json-list
+                      (map (fn [row]
+                             (outliner-row-json (get targets (:uuid (:block row))) visible-block-json row))
+                           (subvec after-rows start (+ start insert-count)))))]))])]
+    (tuple blocks deleted splices)))
+
 (defn outliner-candidates-json [context state]
   (json-list
       (if-some [request (outliner/autocomplete state)]
@@ -948,3 +1003,19 @@
           (effects/Platform_take_photo uuid) (tuple "takePhoto" "uuid" (tag String uuid))
           (effects/Platform_record_audio uuid) (tuple "recordAudio" "uuid" (tag String uuid)))]
     (json-object [(tuple "type" (tag String kind)) (tuple key value)])))
+
+(defn outliner-patch-result [revision context state command-revision commands pending blocks deleted splices]
+  (success
+   (json-object
+    [(tuple "revision" (tag Int revision))
+     (tuple "blocks" (json-list (map visible-block-json blocks)))
+     (tuple "deletedBlockIds" (json-strings deleted))
+     (tuple "selectedBlock" (tag Null))
+     (tuple "outlinerState" (outliner-state-json state))
+     (tuple "outlinerAutocompleteCandidates" (outliner-candidates-json context state))
+     (tuple "outlinerRows" (json-list []))
+     (tuple "outlinerRowSplices" (json-list splices))
+     (tuple "outlinerCommandRevision" (tag Int command-revision))
+     (tuple "outlinerCommands" (json-list (map outliner-command-json commands)))
+     (tuple "hasPendingSemanticOperations" (tag Bool pending))
+     (tuple "isOutlinerPatch" (tag Bool true))])))

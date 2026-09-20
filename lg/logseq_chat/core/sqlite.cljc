@@ -17,9 +17,15 @@
 (defn ensure-open [session]
   (when @(:closed session) (stdlib/invalid-arg "SQLite session is closed")))
 
+(defn check-result [session context result]
+  (stdlib/ignore
+    (when-not (rc/is-success result)
+      (stdlib/failwith (str "SQLite error while running " context ": "
+                           (db/errmsg (:connection session)))))))
+
 (defn execute [session sql]
   (ensure-open session)
-  (rc/check (db/exec (:connection session) sql)))
+  (check-result session sql (db/exec (:connection session) sql)))
 
 (defn close [session]
   (stdlib/ignore
@@ -30,7 +36,10 @@
 
 (defn open-session [path]
   (let [session (record sqlite-session
-                  (connection (db/db-open path))
+                  (connection
+                    (try (db/db-open path)
+                         (catch (db/Error message)
+                           (raise (Failure (str "SQLite error while running open database: " message))))))
                   (closed (atom false)))]
     (try
       (execute session "CREATE TABLE IF NOT EXISTS kvs (address TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL)")
@@ -39,7 +48,9 @@
 
 (defn with-statement [session sql f]
   (ensure-open session)
-  (let [statement (db/prepare (:connection session) sql)]
+  (let [statement (try (db/prepare (:connection session) sql)
+                       (catch (db/Error message)
+                         (raise (Failure (str "SQLite error while running " sql ": " message)))))]
     (try (f statement)
          (finally (stdlib/ignore (db/finalize statement))))))
 
@@ -58,20 +69,20 @@
       (with-statement session "INSERT OR REPLACE INTO kvs (address, payload) VALUES (?, ?)"
         (fn [statement]
           (run! (fn [[address payload]]
-                  (rc/check (db/bind-text statement 1 address))
-                  (rc/check (db/bind-text statement 2 payload))
-                  (rc/check (db/step statement))
-                  (rc/check (db/reset statement)))
+                  (check-result session "bind address" (db/bind-text statement 1 address))
+                  (check-result session "bind payload" (db/bind-text statement 2 payload))
+                  (check-result session "store value" (db/step statement))
+                  (check-result session "reset store" (db/reset statement)))
                 entries))))))
 
 (defn restore-raw [session address]
   (with-statement session "SELECT payload FROM kvs WHERE address = ?"
     (fn [statement]
-      (rc/check (db/bind-text statement 1 address))
+      (check-result session "bind address" (db/bind-text statement 1 address))
       (match (db/step statement)
         (rc/ROW) (Some (db/column-text statement 0))
         (rc/DONE) None
-        code (do (rc/check code) None)))))
+        code (do (check-result session "restore value" code) None)))))
 
 (defn envelope [value-type text]
   (codec/to-string
@@ -111,7 +122,7 @@
         (match (db/step statement)
           (rc/ROW) (recur (conj addresses (db/column-text statement 0)))
           (rc/DONE) addresses
-          code (do (rc/check code) addresses))))))
+          code (do (check-result session "list addresses" code) addresses))))))
 
 (defn delete-addresses [session addresses]
   (transaction session
@@ -119,9 +130,9 @@
       (with-statement session "DELETE FROM kvs WHERE address = ?"
         (fn [statement]
           (run! (fn [address]
-                  (rc/check (db/bind-text statement 1 address))
-                  (rc/check (db/step statement))
-                  (rc/check (db/reset statement)))
+                  (check-result session "bind address" (db/bind-text statement 1 address))
+                  (check-result session "delete value" (db/step statement))
+                  (check-result session "reset delete" (db/reset statement)))
                 addresses))))))
 
 (defn decode-payload [source]

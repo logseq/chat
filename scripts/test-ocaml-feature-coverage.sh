@@ -12,36 +12,19 @@ BISECT_FILE="$coverage_dir/bisect" \
   opam exec --switch=5.5.0 -- \
   dune runtest core --instrument-with bisect_ppx --force
 
-summary=$(
-  opam exec --switch=5.5.0 -- \
-    bisect-ppx-report summary --coverage-path "$coverage_dir" --per-file
-)
-
-# These exact basis-point floors preserve the coverage of the current feature
-# surface. Raise them whenever tests add coverage; never lower them to land code.
-# Outliner and pending ops now live in LG. Their regression suites still run
-# above; these per-file floors only apply to the remaining handwritten OCaml.
-awk '
-  BEGIN {
-    minimum["core/logseq_chat_graph_runtime.ml"] = 7558
-  }
-  $4 in minimum {
-    print
-    seen[$4] = 1
-    actual = int(($1 * 100) + 0.5)
-    if (actual < minimum[$4]) {
-      printf "error: coverage for %s regressed below %.2f%%\n", \
-        $4, minimum[$4] / 100 > "/dev/stderr"
-      failed = 1
-    }
-  }
-  END {
-    for (file in minimum) {
-      if (!(file in seen)) {
-        print "error: missing OCaml coverage data for " file > "/dev/stderr"
-        failed = 1
-      }
-    }
-    if (failed) exit 1
-  }
-' <<<"$summary"
+# Tests execute their compiled LG definitions, not the separate core archive.
+# Measure only production graph-runtime definitions in that generated module.
+# This is generated execution-point coverage, not CLJC source-line coverage.
+# Keep the original 75.58% floor; never lower it to land a migration.
+opam exec --switch=5.5.0 -- \
+  bisect-ppx-report merge "$coverage_dir/merged.coverage" --coverage-path "$coverage_dir"
+opam exec --switch=5.5.0 -- ocamlfind ocamlopt -w -24 \
+  -package compiler-libs.common -c -o "$coverage_dir/check.cmx" \
+  -impl scripts/lg-coverage.ml
+opam exec --switch=5.5.0 -- ocamlfind ocamlopt \
+  -package compiler-libs.common -linkpkg -o "$coverage_dir/check.exe" \
+  "$coverage_dir/check.cmx"
+"$coverage_dir/check.exe" \
+  _build/default/lg-test/logseq_chat_lui_test.ml \
+  lg-test/logseq_chat_lui_test.ml \
+  logseq_chat_graph_runtime_ 7558 "$coverage_dir/merged.coverage"

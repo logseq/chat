@@ -1,5 +1,6 @@
 (ns logseq-chat.search-index
   (:require [clojure.string :as string]
+            [logseq-chat.graph-sqlite :as sql]
             [logseq-chat.cache-model :as model]
             [logseq-chat.graph-read :as graph]
             [logseq-chat.datascript-value :as ds-value]
@@ -13,15 +14,15 @@
             [ocaml.Sys :as sys]
             [ocaml.Unix :as unix]
             [ocaml.Filename :as filename]
-            [ocaml.Stdlib :as stdlib]
-            [ocaml.Rrbvec :as rrbvec]))
+            [ocaml.Stdlib :as stdlib]))
 
-(ffi search-open [:string] :unit {:ocaml "logseq_chat_search_index_open"})
-(ffi search-upsert [:string :list<tuple<string;string;string>>] :unit
-  {:ocaml "logseq_chat_search_index_upsert"})
-(ffi search-delete [:string :list<string>] :unit {:ocaml "logseq_chat_search_index_delete"})
-(ffi search-query [:string :string :list<string>] :list<tuple<string;string;string>>
-  {:ocaml "logseq_chat_search_index_query"})
+(def search-open sql/search-open)
+
+(def search-upsert sql/search-upsert)
+
+(def search-delete sql/search-delete)
+
+(def search-query sql/search-query)
 
 (type-record search-index (path :string))
 
@@ -145,18 +146,18 @@
   (let [affected (vec (distinct (mapcat (fn [uuid] (concat [uuid] (referring-uuids before uuid)
                                                          (referring-uuids after uuid))) uuids)))
         wanted (vec (keep (fn [uuid] (row-for-uuid after uuid)) affected))]
-    (when (not (empty? affected)) (search-delete (:path index) (rrbvec/to-list affected)))
-    (stdlib/ignore (when (not (empty? wanted)) (search-upsert (:path index) (rrbvec/to-list wanted))))))
+    (when (not (empty? affected)) (search-delete (:path index) affected))
+    (stdlib/ignore (when (not (empty? wanted)) (search-upsert (:path index) wanted)))))
 
 (defn refresh [index db]
   (let [wanted (rows-of-db db)
-        stored (search-query (:path index) "select id, page, title from blocks" (list))
+        stored (search-query (:path index) "select id, page, title from blocks" [])
         stored-by-id (into {} (map (fn [[id page title]] (tuple id (tuple title page))) stored))
         wanted-ids (set (map (fn [[id _ _]] id) wanted))
         changed (vec (filter (fn [[id title page]] (not= (get stored-by-id id) (Some (tuple title page)))) wanted))
         stale (vec (keep (fn [[id _ _]] (when (not (contains? wanted-ids id)) id)) stored))]
-    (when (not (empty? stale)) (search-delete (:path index) (rrbvec/to-list stale)))
-    (stdlib/ignore (when (not (empty? changed)) (search-upsert (:path index) (rrbvec/to-list changed))))))
+    (when (not (empty? stale)) (search-delete (:path index) stale))
+    (stdlib/ignore (when (not (empty? changed)) (search-upsert (:path index) changed)))))
 
 (defn like-escape [value] (if (contains? #{"%" "_" "\\"} value) (str "\\" value) value))
 
@@ -169,7 +170,7 @@
 (defn multi-term-query [query] (matches-regex? "[^ \t\n][ \t\n]+[^ \t\n]" query))
 
 (defn query-rows [index sql binds]
-  (try (vec (search-query (:path index) sql (rrbvec/to-list (vec binds))))
+  (try (search-query (:path index) sql binds)
        (catch (Failure _) [])))
 
 (defn scored [query rows]

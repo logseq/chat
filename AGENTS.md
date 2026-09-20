@@ -16,8 +16,9 @@ Logseq Chat uses native SwiftUI on iOS and Flutter Material on Android, backed b
 
 - Use `dune build @core/runtest` for core validation. The mobile entry object
   also needs platform libraries and FFI symbols supplied by the mobile build.
-  Crypto protocol handling lives in `lg/logseq_chat/core/platform_crypto.cljc`;
-  the mobile entry declares the native `logseq_chat_crypto_call` boundary.
+  Crypto protocol handling lives in `lg/logseq_chat/core/platform_crypto.cljc`.
+  The mobile-only `logseq_chat_crypto_call` FFI declaration lives in
+  `lg/logseq_chat/native_crypto.cljc` so CLI builds do not require mobile symbols.
 - Mobile OCaml builds use the thin `scripts/build-mobile-ocaml.sh` Dune wrapper.
   Native module membership lives in `core/dune_modules/*.sexp`. Core LG sources
   are discovered from `lg/logseq_chat/core`; adding one needs no per-file rule.
