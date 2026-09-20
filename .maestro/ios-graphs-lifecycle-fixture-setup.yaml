@@ -12,7 +12,8 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.graphs.refresh"
 - extendedWaitUntil:
-    visible: "Remote graphs:"
+    visible:
+      id: "screen.graphs"
     timeout: 15000
 - runFlow:
     when:

@@ -63,17 +63,19 @@ appId: com.logseq.chat
 - tapOn:
     id: "button.outliner.editor.camera"
 - extendedWaitUntil:
-    visible: "Chrome.DismissImagePicker.axLabel"
+    visible: "Back to Capture"
     timeout: 10000
-- tapOn: "Chrome.DismissImagePicker.axLabel"
+- tapOn: "Back to Capture"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - tapOn:
-    id: "button.outliner.editor.attachment"
+    id: "button.outliner.editor.camera"
+- tapOn: "Attachment source"
+- tapOn: "Photos"
 - extendedWaitUntil:
-    visible: "Cancel"
+    visible: "All Photos"
     timeout: 10000
-- tapOn: "Cancel"
+- tapOn: "Back to Capture"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - tapOn: "Hide keyboard"

@@ -1653,6 +1653,47 @@
     (outliner-event session "{\"type\":\"textChanged\",\"title\":\"See [[target]]\",\"caretUTF16Offset\":14}")
     (is (contains-node-reference? (outliner-event session "{\"type\":\"saveEditing\"}")))))
 
+(deftest tag-completion-immediately-publishes-tag-metadata
+  (run!
+   (fn [selected-page?]
+     (let [tag-page (record model/entity-summary (uuid "tag-uuid") (title "Project"))
+           live (atom (synced-block "source" "Original"))
+           session (configure-plain-session
+                    (rpc-session/create-session
+                     (assoc rpc-session/default-options
+                            :load-graph-catalog (Some (fn [] (Some plain-graph-catalog)))
+                            :sync-cursor (Some (fn [] (Some 92)))
+                            :graph-blocks (Some (fn [] (Some (list @live))))
+                            :graph-page-blocks (Some (fn [_] (Some (list @live))))
+                            :graph-tag-pages (Some (fn [] (Some (list tag-page))))
+                            :stage-operation
+                            (Some (fn [operation]
+                                    (match (:intent operation)
+                                      (ops/Add-tag value)
+                                      (do (is (= "tag-uuid" (:tag-uuid value)))
+                                          (swap! live assoc :tags (list tag-page)))
+                                      _ @live)
+                                    (Ok (stdlib/ignore 0))))
+                            :prepare-operation (Some prepare-operation))))]
+       (when selected-page?
+         (swap! (:state session) assoc :selected-sidebar-page
+                (Some (record model/entity-summary (uuid (:page-id @live)) (title "Page")))))
+       (outliner-block-event session "tapBlock" "source")
+       (outliner-event session "{\"type\":\"textChanged\",\"title\":\"Original #Pro\",\"caretUTF16Offset\":13}")
+       (let [result (outliner-event session "{\"type\":\"chooseAutocomplete\",\"value\":\"tag-uuid\"}")
+             blocks (json-items "blocks" result)]
+         (is (= 1 (count blocks)))
+         (when (= 1 (count blocks))
+           (let [tags (json-items "tags" (nth blocks 0))]
+             (is (= 1 (count tags)))
+             (when (= 1 (count tags))
+               (is (= (tag String "tag-uuid") (json-util/member "uuid" (nth tags 0)))))))
+         (is (= (tag String "Original")
+                (json-util/member "title" (json-util/member "editing" (json-util/member "outlinerState" result))))))
+       (outliner-event session "{\"type\":\"toolbar\",\"action\":\"hideKeyboard\"}")
+       (is (= (list tag-page) (:tags (first (:blocks (rpc-session/outliner-context session))))))))
+   [false true]))
+
 (defn asset-replay-uuid [index]
   (str "00000000-0000-4000-8000-00000000000" index))
 

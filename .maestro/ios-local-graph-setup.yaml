@@ -20,7 +20,7 @@ appId: com.logseq.chat
       - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
       - pressKey: Enter
       - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
-      - hideKeyboard
+      - tapOn: "Sign in with your username and password"
       - extendedWaitUntil:
           visible: "submit"
           timeout: 10000
@@ -56,6 +56,10 @@ appId: com.logseq.chat
       - inputText: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
       - tapOn:
           id: "toggle.graph-encryption"
+          point: "90%,50%"
+      - assertVisible:
+          id: "toggle.graph-encryption"
+          checked: false
       - tapOn:
           id: "button.graph-add.confirm"
 - runFlow:

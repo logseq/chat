@@ -853,7 +853,7 @@
         :else nil)))
 
 (defn refresh-reference-metadata [session aggregate projected operations]
-  (if (some #(match (:intent %) (ops/Save-title _) true _ false) operations)
+  (if (some #(match (:intent %) (ops/Save-title _) true (ops/Add-tag _) true _ false) operations)
     (let [live (if-some [uuid aggregate] (or (page-outliner-context session uuid) (outliner-context session))
                         (outliner-context session))
           by-id (zipmap (map :uuid (:blocks live)) (:blocks live))]
