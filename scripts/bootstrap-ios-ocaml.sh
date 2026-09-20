@@ -66,6 +66,7 @@ if [[ ! -f $host_stamp ]]; then
       --disable-ocamldoc \
       --disable-ocamltest \
       --disable-stdlib-manpages \
+      --without-zstd \
       --prefix="$host_prefix"
     make -j"$jobs"
     make install
@@ -82,7 +83,14 @@ if [[ ! -f $target_stamp ]]; then
   (
     cd "$target_source"
     PATH="$host_prefix/bin:$PATH" \
+      ac_cv_func___secure_getenv=no \
+      ac_cv_func_accept4=no \
+      ac_cv_func_dup3=no \
+      ac_cv_func_execvpe=no \
       ac_cv_func_getentropy=no \
+      ac_cv_func_pipe2=no \
+      ac_cv_func_prctl=no \
+      ac_cv_func_secure_getenv=no \
       ac_cv_func_system=no \
       ./configure \
       --disable-dependency-generation \
