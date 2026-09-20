@@ -8,6 +8,9 @@ die() {
   exit 1
 }
 
+[[ ! -e "$repo_root/Vendor/LUIAppleBackend" ]] \
+  || die "Apple backend must come from the LUI package, not a local copy"
+
 for path in \
   "$repo_root/Skip.env" \
   "$repo_root/Android/settings.gradle.kts" \
@@ -24,7 +27,7 @@ if grep -Eq 'source\.skip\.tools|Skip(UI|Foundation|Model|FFI|Test)|skipstone' "
 fi
 
 if grep -REn '#(if|elseif).*(^|[^A-Za-z])!?SKIP([^A-Za-z]|$)' \
-  "$repo_root/Sources" "$repo_root/Tests" "$repo_root/Vendor" \
+  "$repo_root/Sources" "$repo_root/Tests" \
   --include='*.swift' >/dev/null; then
   die "Swift sources still contain Skip conditional compilation"
 fi

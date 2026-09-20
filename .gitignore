@@ -73,6 +73,7 @@ playground.xcworkspace
 Packages/
 Package.pins
 Package.resolved
+!/Package.resolved
 #*.xcodeproj
 
 Carthage/Build/

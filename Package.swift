@@ -26,13 +26,14 @@ let logseqChatShellLinkerSettings: [LinkerSetting] = logseqChatSimulatorEntitlem
 let package = Package(
     name: "logseq-chat",
     defaultLocalization: "en",
-    platforms: [.iOS(.v17)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .executable(name: "LogseqChatShell", targets: ["LogseqChatShell"]),
         .library(name: "LogseqChat", type: .static, targets: ["LogseqChat"]),
         .library(name: "LogseqChatModel", type: .dynamic, targets: ["LogseqChatModel"]),
     ],
     dependencies: [
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "b1cb9e12659285ae78f973545d840444a439d9b3"),
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],
@@ -43,14 +44,9 @@ let package = Package(
             path: "Darwin/Sources",
             linkerSettings: logseqChatShellLinkerSettings
         ),
-        .target(
-            name: "LUIAppleBackend",
-            path: "Vendor/LUIAppleBackend",
-            exclude: ["UPSTREAM.md"]
-        ),
         .target(name: "LogseqChat", dependencies: [
             "LogseqChatModel",
-            "LUIAppleBackend",
+            .product(name: "LUIAppleBackendStatic", package: "lui"),
             .product(
                 name: "SwiftUIMath",
                 package: "swiftui-math",
@@ -66,7 +62,7 @@ let package = Package(
         linkerSettings: logseqChatLinkerSettings),
         .testTarget(
             name: "LogseqChatTests",
-            dependencies: ["LogseqChat"],
+            dependencies: ["LogseqChat", .product(name: "LUIAppleBackendStatic", package: "lui")],
             resources: [.process("Resources")]
         ),
         .target(name: "LogseqChatModel", dependencies: [

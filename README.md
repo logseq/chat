@@ -14,6 +14,10 @@ test module. The core test gate also builds the seed and live-sync executables.
 
 Open `Project.xcworkspace` and run the `LogseqChat App` scheme in Xcode.
 
+The Apple backend comes from the `LUIAppleBackendStatic` product of the LUI
+Swift package, pinned by Git revision in `Package.swift` and `Package.resolved`.
+Use Swift 6.2 or later. Backend changes belong in the LUI repository.
+
 The first iOS build creates a deployment-targeted OCaml 5.5 toolchain under
 `_build/apple-toolchains`. Native dependencies and core objects are keyed by
 compiler, target, and source fingerprints, so later builds reuse them. Set

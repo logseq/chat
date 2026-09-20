@@ -1,0 +1,32 @@
+{
+  "originHash" : "d7405797ce43310a5bfab7b0e752daff53aa5ff04bcb8f5ee9a805ef6013825b",
+  "pins" : [
+    {
+      "identity" : "highlightswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/appstefan/highlightswift.git",
+      "state" : {
+        "revision" : "784ca3ccfc8a2cf724fbb2f06cb6ec3329424da3",
+        "version" : "1.1.0"
+      }
+    },
+    {
+      "identity" : "lui",
+      "kind" : "remoteSourceControl",
+      "location" : "ssh://git@github.com/logseq/lui.git",
+      "state" : {
+        "revision" : "b1cb9e12659285ae78f973545d840444a439d9b3"
+      }
+    },
+    {
+      "identity" : "swiftui-math",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gonzalezreal/swiftui-math",
+      "state" : {
+        "revision" : "0b5c2cfaaec8d6193db206f675048eeb5ce95f71",
+        "version" : "0.1.0"
+      }
+    }
+  ],
+  "version" : 3
+}
