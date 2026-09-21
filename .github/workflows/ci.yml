@@ -65,16 +65,17 @@ jobs:
           opam monorepo pull -y
           for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[0-9a-f]{40}' logseq_chat.opam | sort -u); do
             url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
-            if [ ! -d "duniverse/$name" ]; then
-              git clone --quiet "https://github.com/$url" "duniverse/$name"
+            # opam monorepo pull already vendors lockfile entries at the right
+            # commits (without .git dirs — `git -C` there would hit the parent
+            # repo and detach the whole checkout). Only clone what's missing.
+            if [ -d "duniverse/$name" ]; then
+              continue
             fi
-            # opam-monorepo may have already vendored this package at a
-            # different ref with a partial clone lacking the pinned commit.
-            if ! git -C "duniverse/$name" cat-file -e "$sha^{commit}" 2>/dev/null; then
-              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha" || \
-                git -C "duniverse/$name" fetch --quiet "https://github.com/$url"
+            git clone --quiet "https://github.com/$url" "duniverse/$name"
+            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
+              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
+              git -C "duniverse/$name" checkout --quiet "$sha"
             fi
-            git -C "duniverse/$name" checkout --quiet "$sha"
           done
 
       - name: Save duniverse
