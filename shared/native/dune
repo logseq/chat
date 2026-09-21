@@ -51,11 +51,39 @@
   (c_library_flags
   (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
 
+; Force the vendored duniverse libraries' compiled interfaces to exist before
+; lg runs: its typecheck path (lg_native_include_path) lists these .objs dirs,
+; and without a real dependency the dirs are empty so lg falls back to the
+; same-named opam-installed cmis, which makes inconsistent assumptions with
+; the vendored lg runtime cmis.
+(alias
+ (name lg-native-cmi-deps)
+ (deps
+  ../../duniverse/mldoc/lib/.mldoc.objs/byte/mldoc.cmi
+  ../../duniverse/angstrom/lib/.angstrom.objs/byte/angstrom.cmi
+  ../../duniverse/lg/runtime/.lg_runtime.objs/byte/lg_runtime.cmi
+  ../../duniverse/lg/runtime_edn_backend_native/.lg_edn_backend_native.objs/byte/lg_edn_backend.cmi
+  ../../duniverse/lg/vendor/rrbvec/.rrbvec.objs/byte/rrbvec.cmi
+  ../../duniverse/yojson/lib/.yojson.objs/byte/yojson__T.cmi
+  ../../duniverse/datascript-ocaml/type/.datascript_types.objs/byte/datascript_types.cmi
+  ../../duniverse/datascript-ocaml/impl/.datascript.objs/byte/datascript.cmi
+  ../../duniverse/datascript-ocaml/lg/.datascript_lg.objs/byte/datascript_lg.cmi
+  ../../duniverse/persistent-sorted-set-ocaml/lib/.persistent_sorted_set.objs/byte/persistent_sorted_set.cmi
+  ../../duniverse/melange-edn/lib_native/.melange_edn_native.objs/byte/melange_edn_native.cmi
+  ../../duniverse/melange-transit/lib/common/.transit_core.objs/byte/transit_core.cmi
+  ../../duniverse/melange-transit/lib/native/.transit_native.objs/byte/transit_native.cmi
+  ../../duniverse/ocaml-fsrs/src/.fsrs.objs/byte/fsrs.cmi
+  ../../duniverse/timere/timedesc/.timedesc.objs/byte/timedesc.cmi
+  ../../duniverse/timere/timedesc-tzdb/.timedesc_tzdb.objs/byte/timedesc_tzdb.cmi
+  ../../duniverse/timere/timedesc-tzlocal/.timedesc_tzlocal.objs/byte/timedesc_tzlocal.cmi
+  ../../duniverse/sqlite3-ocaml/lib/.sqlite3.objs/byte/sqlite3.cmi
+  ../../duniverse/datascript-ocaml/sqlite/.datascript_sqlite.objs/byte/datascript_sqlite_codec.cmi))
+
 (rule
  (target logseq_chat_lg_graph_support_native.ml)
  (deps
   %{lib:signal-lg.states:signal_native.state}
-  (:include lg_native_cmi_deps.sexp)
+  (alias lg-native-cmi-deps)
   lg_native_include_path
   ../src/logseq_chat/core/datascript_value.cljc
   ../src/logseq_chat/core/ref_text.cljc
@@ -79,10 +107,10 @@
       -o %{target}))))))
 
 (rule
- (target logseq_chat_lg_core_native.ml)
+ (targets logseq_chat_lg_core_native.ml logseq_chat_lg_core_native.state)
  (deps
   %{lib:signal-lg.states:signal_native.state}
-  (:include lg_native_cmi_deps.sexp)
+  (alias lg-native-cmi-deps)
   lg_native_include_path
   (source_tree ../src/logseq_chat/core)
   %{bin:lg})
@@ -100,14 +128,15 @@
       %{bin:lg}
       --target native
       --compile-files-from %{lib:signal-lg.states:signal_native.state}
+      --emit-state logseq_chat_lg_core_native.state
       ../src/logseq_chat/core
-      -o %{target}))))))
+      -o logseq_chat_lg_core_native.ml))))))
 
 (rule
  (target logseq_chat_mobile_entry.ml)
  (deps
   %{lib:lui.states:lui_native_backends.state}
-  (:include lg_native_cmi_deps.sexp)
+  (alias lg-native-cmi-deps)
   lg_native_include_path
   (source_tree ../src/logseq_chat/core)
   ../src/logseq_chat/model.mli
