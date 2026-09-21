@@ -36,6 +36,8 @@ pin-depends: [
   ["lui.0.1.0" "git+ssh://git@github.com/logseq/lui.git#b1cb9e12659285ae78f973545d840444a439d9b3"]
   ["signal-lg.0.1.0" "git+https://github.com/logseq/signal-lg.git#ed2e6c68322316d64bf41644480a5f8901940a02"]
   ["mldoc.dev" "git+https://github.com/logseq/mldoc.git#fd1e83ed72faf8aa83b9d9a5cec2b87943403c0b"]
+  ["angstrom.dev" "git+https://github.com/logseq/angstrom.git#3be9b966dc2bc9ccf9948d17a7b0df1cb526de15"]
+  ["xmlm.dev" "git+https://github.com/logseq/xmlm.git#eb469d536e98c98f2754c0ff8813c92b3a17fe9f"]
   ["ocaml-fsrs.0.1.0-alpha3" "git+https://github.com/logseq/ocaml-fsrs.git#54d30651b01081d9d7bcfc6d473b7338bfb6c278"]
 ]
 build: [
