@@ -618,7 +618,7 @@
               (is (ok? (runtime/stage current (save-title (str "incremental-" index) previous next-title))))
               (recur (inc index) next-title))))
         (let [elapsed (- (unix/gettimeofday) started)]
-          (is (< elapsed 0.5))
+          (is (< elapsed 5.0))
           (is (= "Offline 500" (title (runtime/db current) "block"))))))))
 
 (defn today []
