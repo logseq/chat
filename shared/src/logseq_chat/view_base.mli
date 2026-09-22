@@ -364,3 +364,14 @@ val with_label_signal :
   string Signal.signal -> Lui_elements.t -> Lui_elements.t
 val with_selected_signal :
   bool Signal.signal -> Lui_elements.t -> Lui_elements.t
+val with_string_prop :
+  Lui_protocol.Property_map.key -> string -> Lui_elements.t -> Lui_elements.t
+val with_string_prop_signal :
+  Lui_protocol.Property_map.key ->
+  string Signal.signal -> Lui_elements.t -> Lui_elements.t
+val with_bool_prop_signal :
+  Lui_protocol.Property_map.key ->
+  bool Signal.signal -> Lui_elements.t -> Lui_elements.t
+val with_int_prop_signal :
+  Lui_protocol.Property_map.key ->
+  int Signal.signal -> Lui_elements.t -> Lui_elements.t

@@ -155,7 +155,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                [
                  keyed
                    ~source:
-                     (reactive
+                     (Signal.map
                         (fun (current : Model.chat_model) -> current.graphs)
                         model_source)
                    ~key:View_base.sidebar_graph_identifier ~compare
@@ -183,7 +183,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                     (sidebar_empty_section_label "No favorites yet");
                   keyed
                     ~source:
-                      (reactive View_base.sidebar_favorites model_source)
+                      (Signal.map View_base.sidebar_favorites model_source)
                     ~key:View_base.sidebar_page_identifier ~compare
                     ~mount:(sidebar_page_row context model_source send);
                 ];
@@ -197,7 +197,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                     (sidebar_empty_section_label "No recent pages");
                   keyed
                     ~source:
-                      (reactive View_base.sidebar_recent_pages model_source)
+                      (Signal.map View_base.sidebar_recent_pages model_source)
                     ~key:View_base.sidebar_page_identifier ~compare
                     ~mount:(sidebar_page_row context model_source send);
                 ];

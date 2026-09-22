@@ -1380,3 +1380,30 @@ let with_selected_signal selected (elem : Lui_elements.t) : Lui_elements.t =
    let node = elem context parent in
    Lui_ui.bool_property_signal context node Selected selected;
    node
+
+let with_string_prop prop value (elem : Lui_elements.t) : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.string_property context node prop value;
+   node
+
+let with_string_prop_signal prop signal_ (elem : Lui_elements.t)
+    : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.string_property_signal context node prop signal_;
+   node
+
+let with_bool_prop_signal prop signal_ (elem : Lui_elements.t)
+    : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.bool_property_signal context node prop signal_;
+   node
+
+let with_int_prop_signal prop signal_ (elem : Lui_elements.t)
+    : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.int_property_signal context node prop signal_;
+   node

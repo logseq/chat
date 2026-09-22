@@ -1,0 +1,939 @@
+open Lui_protocol
+open Lui_elements
+
+let outliner_editor_view block_id_source title_source caret_source send : t
+    =
+ fun context parent ->
+   let node = Lui_ui.extension context "outliner-editor" in
+   attach context parent node;
+   Lui_ui.extension_property_signal context node "block-id"
+     (reactive View_base.string_wire_value block_id_source);
+   Lui_ui.extension_property_signal context node "title"
+     (reactive View_base.string_wire_value title_source);
+   Lui_ui.extension_property_signal context node "caret-utf16-offset"
+     (reactive View_base.int_wire_value caret_source);
+   Lui_ui.on_event context node (fun input_event ->
+       ignore
+         (View_base.handle_outliner_editor_event input_event
+            block_id_source send));
+   node
+
+let outliner_rich_block_view model_source title_source markup_source
+    youtube_target_source is_asset_source row_source asset_type_source
+    local_path_source send : t =
+ fun context parent ->
+   let node = Lui_ui.extension context "outliner-block-content" in
+   attach context parent node;
+   Lui_ui.extension_property_signal context node "block-id"
+     (reactive View_base.outliner_row_id_wire_value row_source);
+   Lui_ui.extension_property_signal context node "title"
+     (reactive View_base.string_wire_value title_source);
+   Lui_ui.extension_property_signal context node "markup-json"
+     (reactive View_base.string_wire_value markup_source);
+   Lui_ui.extension_property_signal context node "youtube-target-url"
+     (reactive View_base.string_wire_value youtube_target_source);
+   Lui_ui.extension_property_signal context node "is-asset"
+     (reactive View_base.bool_wire_value is_asset_source);
+   Lui_ui.extension_property_signal context node "is-completed"
+     (reactive View_base.outliner_row_completed_wire_value row_source);
+   Lui_ui.extension_property_signal context node "asset-type"
+     (reactive View_base.string_wire_value asset_type_source);
+   Lui_ui.extension_property_signal context node "local-path"
+     (reactive View_base.string_wire_value local_path_source);
+   Lui_ui.on_event context node (fun input_event ->
+       ignore
+         (View_base.handle_outliner_block_content_event input_event
+            model_source send));
+   node
+
+let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
+    t =
+  let row = Signal.sample row_source in
+  if Lui_ui.host context = FlutterHost then
+    View_base.with_label_signal
+      (reactive View_base.outliner_row_collapse_label row_source)
+      (View_base.with_string_prop_signal IconName
+         (Signal.map
+            (fun (current_row : Model.outline_row) ->
+              View_base.outliner_collapse_icon_name
+                current_row.is_collapsed)
+            row_source)
+         (button ~variant:"ghost" ~width:28 ~height:28
+            ~accessibility_identifier:
+              (View_base.outliner_collapse_identifier row)
+            ~on_press:(fun _ ->
+              ignore
+                (send
+                   (Model.ToggleOutlinerCollapsed
+                      (Signal.sample row_source : Model.outline_row).row_uuid)))
+            []))
+  else
+    View_base.with_label_signal
+      (reactive View_base.outliner_row_collapse_label row_source)
+      (View_base.with_string_prop_signal IconName
+         (Signal.map
+            (fun (current_row : Model.outline_row) ->
+              if current_row.is_collapsed then "app:disclosure-right"
+              else "app:disclosure-down")
+            row_source)
+         (button ~size:"icon" ~style_class:"body-line"
+            ~foreground:"secondary" ~variant:"ghost" ~width:28 ~height:24
+            ~accessibility_identifier:
+              (View_base.outliner_collapse_identifier row)
+            ~on_press:(fun _ ->
+              ignore
+                (send
+                   (Model.ToggleOutlinerCollapsed
+                      (Signal.sample row_source : Model.outline_row).row_uuid)))
+            []))
+
+let outliner_indent_view width_source : t =
+ fun context parent ->
+   let node = Lui_ui.text context "" in
+   attach context parent node;
+   Lui_ui.int_property_signal context node WidthValue width_source;
+   node
+
+let breadcrumb_button breadcrumb_source search_open send : t =
+  let breadcrumb = Signal.sample breadcrumb_source in
+  button
+    ~text_signal:(reactive View_base.breadcrumb_title breadcrumb_source)
+    ~variant:"ghost" ~style_class:"caption" ~foreground:"muted-foreground"
+    ~accessibility_identifier:(View_base.breadcrumb_identifier breadcrumb)
+    ~on_press:(fun _ ->
+      ignore
+        (send
+           (if search_open then
+              Model.RequestSearchNode
+                (Signal.sample breadcrumb_source : Model.sidebar_page).uuid
+            else
+              Model.RequestAppNode
+                (Signal.sample breadcrumb_source : Model.sidebar_page).uuid)))
+    []
+
+let node_breadcrumb_button model_source breadcrumb_source send : t =
+  let search_open = (Signal.sample model_source : Model.chat_model).search_open in
+  breadcrumb_button breadcrumb_source search_open send
+
+let node_breadcrumbs model_source send : t =
+  breadcrumb ~gap:5 ~main:"start"
+    ~accessibility_identifier:"breadcrumb.node"
+    [
+      keyed
+        ~source:(Signal.map View_base.active_node_breadcrumbs model_source)
+        ~key:View_base.breadcrumb_identifier ~compare:compare
+        ~mount:(fun breadcrumb_source ->
+          node_breadcrumb_button model_source breadcrumb_source send);
+    ]
+
+let related_row_breadcrumbs row_source send : t =
+  breadcrumb ~gap:5 ~main:"start"
+    ~accessibility_identifier:"breadcrumb.related-blocks"
+    [
+      keyed
+        ~source:(Signal.map View_base.outliner_row_breadcrumbs row_source)
+        ~key:View_base.breadcrumb_identifier ~compare:compare
+        ~mount:(fun breadcrumb_source ->
+          breadcrumb_button breadcrumb_source false send);
+    ]
+
+let outliner_tag tag_source send : t =
+  let tag = Signal.sample tag_source in
+  View_base.with_label_signal
+    (reactive View_base.outliner_tag_title tag_source)
+    (button
+       ~text_signal:(reactive View_base.outliner_tag_title tag_source)
+       ~style_class:"caption" ~variant:"ghost" ~foreground:"accent"
+       ~accessibility_identifier:(View_base.outliner_tag_identifier tag)
+       ~on_press:(fun _ ->
+         ignore
+           (send
+              (Model.RequestAppNode (Signal.sample tag_source : Model.sidebar_page).uuid)))
+       [])
+
+let outliner_zoom_control (context : Lui_ui.ui_context) model_source
+    row_source send search_open : t =
+  let current = Signal.sample model_source in
+  let row = Signal.sample row_source in
+  if (not search_open) && View_base.outliner_row_journal_ current row
+  then
+    if Lui_ui.host context = FlutterHost then
+      row ~width:24 ~height:24 ~main:"center" ~cross:"center"
+        [
+          box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
+            ~accessibility_identifier:
+              ("outliner.bullet-glyph."
+               ^ View_base.outliner_row_uuid row)
+            [];
+        ]
+    else
+      icon ~name:"app:outliner-bullet" ~style_class:"body-line"
+        ~foreground:"border" ~width:24 ~height:24
+        ~accessibility_identifier_signal:
+          (reactive View_base.outliner_row_zoom_identifier row_source)
+        []
+  else if Lui_ui.host context = FlutterHost then
+    stack ~width:24 ~height:24
+      [
+        row ~width:24 ~height:24 ~main:"center" ~cross:"center"
+          [
+            box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
+              ~accessibility_identifier:
+                ("outliner.bullet-glyph."
+                 ^ View_base.outliner_row_uuid row)
+              [];
+          ];
+        View_base.with_label_signal
+          (reactive View_base.outliner_row_zoom_label row_source)
+          (button ~variant:"ghost" ~width:24 ~height:24
+             ~accessibility_identifier_signal:
+               (reactive View_base.outliner_row_zoom_identifier
+                  row_source)
+             ~on_press:(fun _ ->
+               ignore
+                 (send
+                    (if search_open then
+                       Model.RequestSearchNode
+                         (Signal.sample row_source : Model.outline_row).row_uuid
+                     else
+                       Model.RequestAppNode
+                         (Signal.sample row_source : Model.outline_row).row_uuid)))
+             []);
+      ]
+  else
+    View_base.with_label_signal
+      (reactive View_base.outliner_row_zoom_label row_source)
+      (button ~icon:"app:outliner-bullet" ~size:"icon"
+         ~style_class:"body-line" ~variant:"ghost" ~foreground:"border"
+         ~width:24 ~height:24
+         ~accessibility_identifier_signal:
+           (reactive View_base.outliner_row_zoom_identifier row_source)
+         ~on_press:(fun _ ->
+           ignore
+             (send
+                (if search_open then
+                   Model.RequestSearchNode
+                     (Signal.sample row_source : Model.outline_row).row_uuid
+                 else
+                   Model.RequestAppNode
+                     (Signal.sample row_source : Model.outline_row).row_uuid)))
+         [])
+
+let outliner_status_icon identifier test name row_source : t =
+  if_ ~test:(reactive test row_source)
+    (icon ~name ~size:"lg" ~width:22 ~height:22 ~foreground:"foreground"
+       ~accessibility_identifier:identifier [])
+
+let outliner_status_control (context : Lui_ui.ui_context) model_source
+    row_source send : t =
+  let row = Signal.sample row_source in
+  let status_menu =
+    context_menu
+      [
+        keyed
+          ~source:(Signal.map View_base.model_task_statuses model_source)
+          ~key:View_base.task_status_identifier ~compare:compare
+          ~mount:(fun status_source ->
+            View_composer.outliner_task_status_row
+              (View_base.outliner_row_uuid row) status_source send);
+      ]
+  in
+  if Lui_ui.host context = FlutterHost then
+    stack ~width:24 ~height:24
+      [
+        row ~width:24 ~height:24 ~main:"center" ~cross:"center"
+          [
+            stack ~width:22 ~height:22
+              [
+                outliner_status_icon
+                  ("outliner.task-status-icon."
+                   ^ View_base.outliner_row_uuid row)
+                  View_base.outliner_task_status_backlog_
+                  "app:task-backlog" row_source;
+                outliner_status_icon
+                  ("outliner.task-status-icon."
+                   ^ View_base.outliner_row_uuid row)
+                  View_base.outliner_task_status_todo_ "app:task-todo"
+                  row_source;
+                outliner_status_icon
+                  ("outliner.task-status-icon."
+                   ^ View_base.outliner_row_uuid row)
+                  View_base.outliner_task_status_doing_ "app:task-doing"
+                  row_source;
+                outliner_status_icon
+                  ("outliner.task-status-icon."
+                   ^ View_base.outliner_row_uuid row)
+                  View_base.outliner_task_status_review_
+                  "app:task-review" row_source;
+                outliner_status_icon
+                  ("outliner.task-status-icon."
+                   ^ View_base.outliner_row_uuid row)
+                  View_base.outliner_task_status_done_ "app:task-done"
+                  row_source;
+                outliner_status_icon
+                  ("outliner.task-status-icon."
+                   ^ View_base.outliner_row_uuid row)
+                  View_base.outliner_task_status_canceled_
+                  "app:task-canceled" row_source;
+              ];
+          ];
+        View_base.with_label_signal
+          (reactive View_base.outliner_row_status_title row_source)
+          (button ~variant:"ghost" ~size:"icon" ~width:24 ~height:24
+             ~accessibility_identifier:"button.block-task-status"
+             [ status_menu ]);
+      ]
+  else
+    View_base.with_label_signal
+      (reactive View_base.outliner_row_status_title row_source)
+      (View_base.with_string_prop_signal IconName
+         (reactive View_base.outliner_task_status_icon row_source)
+         (button ~variant:"ghost" ~style_class:"body-line"
+            ~foreground:"secondary" ~size:"icon" ~width:22 ~height:24
+            ~accessibility_identifier:"button.block-task-status"
+            [ status_menu ]))
+
+let outliner_row_main_content (context : Lui_ui.ui_context) model_source
+    retained_row_source row_source send : t =
+  let _ = context in
+  let row = Signal.sample row_source in
+  let block_id_source =
+    reactive View_base.outliner_row_uuid row_source
+  in
+  let title_source = reactive View_base.outliner_row_title row_source in
+  let markup_source =
+    reactive (fun (r : Model.outline_row) -> r.markup_json) row_source
+  in
+  let youtube_target_source =
+    reactive View_base.outliner_row_youtube_target row_source
+  in
+  let is_asset_source =
+    reactive (fun (r : Model.outline_row) -> r.is_asset) row_source
+  in
+  let asset_type_source =
+    reactive View_base.outliner_row_asset_type row_source
+  in
+  let local_path_source =
+    reactive View_base.outliner_row_local_path row_source
+  in
+  let editing_title_source =
+    reactive View_rows.retained_row_editing_title retained_row_source
+  in
+  let editing_caret_source =
+    reactive View_rows.retained_row_editing_caret retained_row_source
+  in
+  let editing_source =
+    reactive View_rows.retained_row_editing_ retained_row_source
+  in
+  let not_editing_source =
+    Signal.map2
+      (fun (current : Model.chat_model) (r : Model.outline_row) ->
+        View_base.row_not_editing_ current r)
+      model_source row_source
+  in
+  let has_children_source =
+    reactive View_base.outliner_row_has_children row_source
+  in
+  let has_status_source =
+    reactive View_base.outliner_row_has_status_ row_source
+  in
+  let has_tags_source =
+    reactive View_base.outliner_row_has_tags_ row_source
+  in
+  let sync_failed_source =
+    reactive View_base.outliner_row_sync_failed_ row_source
+  in
+  row ~gap:7 ~cross:"start" ~grow:1.0
+    [
+      if_ ~test:has_status_source
+        (column ~cross:"start"
+           [ outliner_status_control context model_source row_source send ]);
+      column ~grow:1.0 ~cross:"start"
+        [
+          if_ ~test:editing_source
+            (outliner_editor_view block_id_source editing_title_source
+               editing_caret_source send);
+          if_ ~test:not_editing_source
+            (outliner_rich_block_view model_source title_source
+               markup_source youtube_target_source is_asset_source
+               row_source asset_type_source local_path_source send);
+          if_ ~test:has_tags_source
+            (row ~gap:6
+               [
+                 keyed
+                   ~source:
+                     (Signal.map View_base.outliner_row_tags row_source)
+                   ~key:View_base.outliner_tag_identifier ~compare:compare
+                   ~mount:(fun tag_source -> outliner_tag tag_source send);
+               ]);
+          if_ ~test:sync_failed_source
+            (text
+               ~accessibility_identifier:
+                 ("outliner.sync-failed."
+                  ^ View_base.outliner_row_uuid row)
+               ~value:"Sync failed" []);
+        ];
+      if_ ~test:has_children_source
+        (column ~cross:"start"
+           [ outliner_collapse_button context row_source send ]);
+    ]
+
+let outliner_row_content context model_source retained_row_source
+    row_source send search_open : t =
+  row ~gap:0 ~cross:"start" ~padding_vertical:5
+    [
+      outliner_indent_view
+        (reactive View_base.outliner_row_indent row_source);
+      outliner_zoom_control context model_source row_source send
+        search_open;
+      box ~width:2 [];
+      outliner_row_main_content context model_source retained_row_source
+        row_source send;
+    ]
+
+let outliner_row (context : Lui_ui.ui_context) model_source
+    retained_row_source row_source send : t =
+  let row = Signal.sample row_source in
+  let search_open = (Signal.sample model_source : Model.chat_model).search_open in
+  let selected_source =
+    Signal.map2
+      (fun (current : Model.chat_model) (r : Model.outline_row) ->
+        View_base.row_selected_ current r)
+      model_source row_source
+  in
+  if
+    View_base.outliner_row_list_item_press_enabled_
+      (Lui_ui.host context) row
+  then
+    box
+      ~accessibility_identifier_signal:
+        (reactive View_base.outliner_row_identifier row_source)
+      ~padding:0 ~corner_radius:10
+      [
+        row ~gap:0 ~cross:"start" ~padding_vertical:5
+          [
+            outliner_indent_view
+              (reactive View_base.outliner_row_indent row_source);
+            outliner_zoom_control context model_source row_source send
+              search_open;
+            box ~width:2 [];
+            View_base.with_bool_prop_signal Selected selected_source
+              (View_base.with_label_signal
+                 (Signal.map2
+                    (fun (current : Model.chat_model)
+                         (r : Model.outline_row) ->
+                      View_base.outliner_row_action_label current r)
+                    model_source row_source)
+                 (list_item
+                    ~accessibility_identifier_signal:
+                      (reactive View_base.outliner_row_action_identifier
+                         row_source)
+                    ~padding:0 ~grow:1.0
+                    ~on_press:(fun _ ->
+                      ignore
+                        (let current_row = Signal.sample row_source in
+                         send
+                           (if (current_row : Model.outline_row).is_asset then
+                              Model.OpenOutlinerAsset
+                                current_row.row_uuid
+                            else if current_row.opens_as_page then
+                              if search_open then
+                                Model.RequestSearchNode
+                                  current_row.row_uuid
+                              else
+                                Model.RequestAppNode current_row.row_uuid
+                            else
+                              Model.BeginOutlinerEdit
+                                current_row.row_uuid)))
+                    ~on_long_press:(fun _ ->
+                      ignore
+                        (send
+                           (Model.LongPressOutlinerBlock
+                              (Signal.sample row_source : Model.outline_row).row_uuid)))
+                    [
+                      outliner_row_main_content context model_source
+                        retained_row_source row_source send;
+                    ]));
+          ];
+      ]
+  else
+    View_base.with_bool_prop_signal Selected selected_source
+      (View_base.with_label_signal
+         (Signal.map2
+            (fun (current : Model.chat_model) (r : Model.outline_row) ->
+              View_base.outliner_row_action_label current r)
+            model_source row_source)
+         (box
+            ~accessibility_identifier_signal:
+              (reactive View_base.outliner_row_identifier row_source)
+            ~padding:0 ~corner_radius:10
+            [
+              outliner_row_content context model_source
+                retained_row_source row_source send search_open;
+            ]))
+
+let outliner_entry context model_source retained_row_source row_source
+    send : t =
+  column ~padding_horizontal:8
+    [
+      if_
+        ~test:
+          (Signal.map2
+             (fun (current : Model.chat_model) (r : Model.outline_row) ->
+               View_base.outliner_journal_divider_visible_ current r)
+             model_source row_source)
+        (separator ~accessibility_identifier:"journal.divider" []);
+      if_
+        ~test:
+          (Signal.map2
+             (fun (current : Model.chat_model) (r : Model.outline_row) ->
+               View_base.outliner_journal_heading_visible_ current r)
+             model_source row_source)
+        (box ~padding:0
+           ~accessibility_identifier_signal:
+             (Signal.map2
+                (fun (current : Model.chat_model)
+                     (r : Model.outline_row) ->
+                  View_base.outliner_journal_button_identifier current r)
+                model_source row_source)
+           [
+             box ~padding_horizontal:8 ~padding_vertical:12
+               [
+                 box ~height:14 [];
+                 heading ~level:3 ~style_class:"scroll-section-title"
+                   ~value_signal:
+                     (Signal.map2
+                        (fun (current : Model.chat_model)
+                             (r : Model.outline_row) ->
+                          View_base.outliner_journal_title current r)
+                        model_source row_source)
+                   [];
+               ];
+           ]);
+      outliner_row context model_source retained_row_source row_source
+        send;
+    ]
+
+let outliner_first_journal_section (context : Lui_ui.ui_context)
+    model_source send : t =
+  if Lui_ui.host context = FlutterHost then
+    column
+      ~accessibility_identifier:
+        (View_rows.first_journal_section_identifier
+           (Signal.sample model_source))
+      [
+        keyed
+          ~source:(Signal.map View_rows.first_journal_retained_rows
+                     model_source)
+          ~key:View_rows.retained_row_identifier ~compare:compare
+          ~mount:(fun retained_row_source ->
+            outliner_entry context model_source retained_row_source
+              (reactive View_rows.retained_row_value retained_row_source)
+              send);
+      ]
+  else
+    column ~container_relative_frame:"min-vertical"
+      ~container_relative_frame_inset:136
+      ~accessibility_identifier:
+        (View_rows.first_journal_section_identifier
+           (Signal.sample model_source))
+      [
+        keyed
+          ~source:(Signal.map View_rows.first_journal_retained_rows
+                     model_source)
+          ~key:View_rows.retained_row_identifier ~compare:compare
+          ~mount:(fun retained_row_source ->
+            outliner_entry context model_source retained_row_source
+              (reactive View_rows.retained_row_value retained_row_source)
+              send);
+      ]
+
+let toolbar_button icon label identifier action send : t =
+  button ~icon ~variant:"ghost" ~size:"icon" ~width:48 ~height:48
+    ~foreground:"muted-foreground" ~label ~accessibility_identifier:identifier
+    ~on_press:(fun _ ->
+      ignore (send (Model.PerformOutlinerToolbarAction action)))
+    []
+
+let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
+  if Lui_ui.host context = FlutterHost then
+    box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
+      ~background:"surface-container-high" ~corner_radius:20
+      ~accessibility_identifier:"surface.outliner.selection-toolbar"
+      [
+        toolbar ~orientation:"horizontal" ~label:"Outliner selection"
+          ~accessibility_identifier:"toolbar.outliner.selection"
+          ~style_class:"scroll-leading" ~toolbar_gap:4
+          [
+            toolbar_button "app:toolbar-copy" "Copy"
+              "button.outliner.selection.copy" "copy" send;
+            toolbar_button "app:toolbar-outdent" "Outdent"
+              "button.outliner.selection.outdent" "outdent" send;
+            toolbar_button "app:toolbar-indent" "Indent"
+              "button.outliner.selection.indent" "indent" send;
+            toolbar_button "app:toolbar-delete" "Delete"
+              "button.outliner.selection.delete" "delete" send;
+            toolbar_button "app:toolbar-copy-reference" "Copy reference"
+              "button.outliner.selection.copyReference" "copyReference"
+              send;
+            toolbar_button "app:toolbar-copy-url" "Copy URL"
+              "button.outliner.selection.copyURL" "copyURL" send;
+            toolbar_button "app:toolbar-unselect" "Unselect"
+              "button.outliner.selection.unselect" "unselect" send;
+          ];
+      ]
+  else
+    let apple_button icon label identifier action : t =
+      button ~icon ~variant:"ghost" ~width:58 ~height:46
+        ~icon_placement:"top" ~label
+        ~accessibility_identifier:identifier
+        ~on_press:(fun _ ->
+          ignore (send (Model.PerformOutlinerToolbarAction action)))
+        [ text ~value:label [] ]
+    in
+    toolbar ~orientation:"horizontal" ~label:"Outliner selection"
+      ~accessibility_identifier:"toolbar.outliner.selection"
+      ~style_class:"scroll-leading leading-inset-12" ~height:54
+      ~toolbar_gap:6
+      [
+        apple_button "app:toolbar-copy" "Copy"
+          "button.outliner.selection.copy" "copy";
+        apple_button "app:toolbar-outdent" "Outdent"
+          "button.outliner.selection.outdent" "outdent";
+        apple_button "app:toolbar-indent" "Indent"
+          "button.outliner.selection.indent" "indent";
+        apple_button "app:toolbar-delete" "Delete"
+          "button.outliner.selection.delete" "delete";
+        apple_button "app:toolbar-copy-reference" "Copy reference"
+          "button.outliner.selection.copyReference" "copyReference";
+        apple_button "app:toolbar-copy-url" "Copy URL"
+          "button.outliner.selection.copyURL" "copyURL";
+        button ~icon:"app:toolbar-unselect" ~variant:"ghost" ~width:70
+          ~height:46 ~icon_placement:"top" ~label:"Unselect"
+          ~accessibility_identifier:"button.outliner.selection.unselect"
+          ~on_press:(fun _ ->
+            ignore
+              (send (Model.PerformOutlinerToolbarAction "unselect")))
+          [ text ~value:"Unselect" [] ];
+      ]
+
+let outliner_autocomplete_row (context : Lui_ui.ui_context)
+    candidate_source send : t =
+  let candidate = Signal.sample candidate_source in
+  View_base.with_label_signal
+    (reactive View_base.outliner_autocomplete_label candidate_source)
+    (button
+       ~text_signal:
+         (reactive View_base.outliner_autocomplete_label candidate_source)
+       ~variant:"ghost"
+       ~grow:(if Lui_ui.host context = FlutterHost then 0.0 else 1.0)
+       ~height:44 ~padding_horizontal:10
+       ~background:"autocomplete-row-background" ~foreground:"foreground"
+       ~corner_radius:8 ~text_alignment:"start"
+       ~accessibility_identifier:
+         (View_base.outliner_autocomplete_identifier candidate)
+       ~on_press:(fun _ ->
+         ignore
+           (send
+              (Model.ChooseOutlinerAutocomplete
+                 (Signal.sample candidate_source : Model.outliner_autocomplete_candidate).candidate_value)))
+       [])
+
+let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
+    send : t =
+  scroll ~max_height:220
+    ~accessibility_identifier:"toolbar.outliner.autocomplete"
+    ~style_class:"outliner-autocomplete"
+    [
+      column ~gap:2 ~padding:8
+        ~cross:
+          (if Lui_ui.host context = FlutterHost then "stretch" else "center")
+        ~grow:(if Lui_ui.host context = FlutterHost then 0.0 else 1.0)
+        [
+          keyed
+            ~source:
+              (Signal.map
+                 View_base.model_outliner_autocomplete_candidates
+                 model_source)
+            ~key:View_base.outliner_autocomplete_identifier
+            ~compare:compare
+            ~mount:(fun candidate_source ->
+              outliner_autocomplete_row context candidate_source send);
+        ];
+    ]
+
+let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
+    : t =
+  if Lui_ui.host context = FlutterHost then
+    box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
+      ~accessibility_identifier:"surface.outliner.editor-toolbar"
+      [
+        toolbar ~orientation:"horizontal" ~label:"Outliner editor"
+          ~accessibility_identifier:"toolbar.outliner.editor"
+          ~style_class:"scroll-leading" ~toolbar_gap:4
+          [
+            View_base.with_label_signal
+              (reactive View_base.outliner_editor_task_label model_source)
+              (button ~icon:"app:toolbar-task" ~variant:"ghost"
+                 ~size:"icon" ~width:48 ~height:48
+                 ~foreground:"muted-foreground"
+                 ~accessibility_identifier:"button.outliner.editor.task"
+                 ~on_press:(fun _ ->
+                   ignore
+                     (send
+                        (Model.PerformOutlinerToolbarAction "task")))
+                 []);
+            toolbar_button "app:toolbar-outdent" "Outdent"
+              "button.outliner.editor.outdent" "outdent" send;
+            toolbar_button "app:toolbar-indent" "Indent"
+              "button.outliner.editor.indent" "indent" send;
+            toolbar_button "app:toolbar-tag" "Tag"
+              "button.outliner.editor.tag" "tag" send;
+            toolbar_button "app:toolbar-camera" "Photo"
+              "button.outliner.editor.camera" "camera" send;
+            toolbar_button "app:toolbar-audio" "Record audio"
+              "button.outliner.editor.audio" "audio" send;
+            toolbar_button "app:toolbar-attachment" "Upload asset"
+              "button.outliner.editor.attachment" "attachment" send;
+            button ~variant:"ghost" ~size:"icon" ~width:48 ~height:48
+              ~foreground:"muted-foreground" ~label:"Page reference"
+              ~accessibility_identifier:
+                "button.outliner.editor.pageReference"
+              ~on_press:(fun _ ->
+                ignore
+                  (send
+                     (Model.PerformOutlinerToolbarAction "pageReference")))
+              [ text ~value:"[[]]" [] ];
+            toolbar_button "app:toolbar-hide-keyboard" "Hide keyboard"
+              "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
+          ];
+      ]
+  else
+    let apple_button label identifier action : t =
+      button ~variant:"ghost" ~width:38 ~height:42 ~label
+        ~accessibility_identifier:identifier
+        ~on_press:(fun _ ->
+          ignore (send (Model.PerformOutlinerToolbarAction action)))
+        []
+    in
+    let apple_icon_button icon label identifier action : t =
+      button ~icon ~variant:"ghost" ~width:38 ~height:42 ~label
+        ~accessibility_identifier:identifier
+        ~on_press:(fun _ ->
+          ignore (send (Model.PerformOutlinerToolbarAction action)))
+        []
+    in
+    toolbar ~orientation:"horizontal" ~label:"Outliner editor"
+      ~accessibility_identifier:"toolbar.outliner.editor"
+      ~style_class:"scroll-leading leading-inset-8" ~height:50
+      ~toolbar_gap:4
+      [
+        View_base.with_label_signal
+          (reactive View_base.outliner_editor_task_label model_source)
+          (apple_icon_button "app:toolbar-task" ""
+             "button.outliner.editor.task" "task");
+        apple_icon_button "app:toolbar-outdent" "Outdent"
+          "button.outliner.editor.outdent" "outdent";
+        apple_icon_button "app:toolbar-indent" "Indent"
+          "button.outliner.editor.indent" "indent";
+        apple_icon_button "app:toolbar-tag" "Tag"
+          "button.outliner.editor.tag" "tag";
+        apple_icon_button "app:toolbar-camera" "Photo"
+          "button.outliner.editor.camera" "camera";
+        apple_icon_button "app:toolbar-audio" "Record audio"
+          "button.outliner.editor.audio" "audio";
+        button ~variant:"ghost" ~width:38 ~height:42
+          ~label:"Page reference"
+          ~accessibility_identifier:"button.outliner.editor.pageReference"
+          ~on_press:(fun _ ->
+            ignore
+              (send
+                 (Model.PerformOutlinerToolbarAction "pageReference")))
+          [ text ~value:"[[]]" [] ];
+        apple_icon_button "app:toolbar-hide-keyboard" "Hide keyboard"
+          "button.outliner.editor.hideKeyboard" "hideKeyboard";
+      ]
+
+let node_related_row context model_source row_source send : t =
+  let structured_breadcrumb_source =
+    reactive View_base.outliner_row_structured_breadcrumb_ row_source
+  in
+  let fallback_breadcrumb_source =
+    reactive View_base.outliner_row_fallback_breadcrumb_ row_source
+  in
+  let retained_row_source =
+    Signal.map2
+      (fun (current : Model.chat_model) (r : Model.outline_row) ->
+        View_rows.make_retained_outline_row current r)
+      model_source row_source
+  in
+  column ~gap:0
+    [
+      if_ ~test:structured_breadcrumb_source
+        (box ~padding_horizontal:8
+           [ box ~height:10 []; related_row_breadcrumbs row_source send ]);
+      if_ ~test:fallback_breadcrumb_source
+        (box ~padding_horizontal:8
+           [
+             box ~height:10 [];
+             text
+               ~value_signal:
+                 (reactive View_base.outliner_row_breadcrumb row_source)
+               ~style_class:"caption" ~foreground:"muted-foreground" [];
+           ]);
+      outliner_row context model_source retained_row_source row_source
+        send;
+    ]
+
+let related_section_heading title : t =
+  box ~padding_horizontal:8
+    [
+      text ~style_class:"subheadline" ~foreground:"muted-foreground"
+        ~accessibility_identifier:"title.related-section" ~value:title [];
+    ]
+
+let node_related_section context model_source send : t =
+  column ~gap:0 ~accessibility_identifier:"section.node.linked-references"
+    [
+      box ~height:26 [];
+      related_section_heading "Linked references";
+      box ~height:8 [];
+      column ~accessibility_identifier:"list.node.related"
+        [
+          keyed
+            ~source:(Signal.map View_base.active_node_related_rows
+                       model_source)
+            ~key:View_base.outliner_row_identifier ~compare:compare
+            ~mount:(fun row_source ->
+              node_related_row context model_source row_source send);
+        ];
+    ]
+
+let node_tagged_section context model_source send : t =
+  column ~gap:0 ~accessibility_identifier:"section.tag.tagged-nodes"
+    [
+      box ~height:26 [];
+      related_section_heading "Tagged nodes";
+      box ~height:8 [];
+      if_
+        ~test:(reactive View_base.node_tag_section_empty_ model_source)
+        (box ~padding_horizontal:8
+           [ text ~foreground:"muted-foreground" ~value:"No tagged nodes" [] ]);
+      column ~accessibility_identifier:"list.node.tagged"
+        [
+          keyed
+            ~source:(Signal.map View_base.active_node_related_rows
+                       model_source)
+            ~key:View_base.outliner_row_identifier ~compare:compare
+            ~mount:(fun row_source ->
+              node_related_row context model_source row_source send);
+        ];
+    ]
+
+let node_linked_reference_section context model_source send : t =
+  column ~gap:0
+    ~accessibility_identifier:"section.node.linked-references"
+    [
+      box ~height:26 [];
+      related_section_heading "Linked references";
+      box ~height:8 [];
+      column ~accessibility_identifier:"list.node.linked-references"
+        [
+          keyed
+            ~source:
+              (Signal.map View_base.active_node_linked_reference_rows
+                 model_source)
+            ~key:View_base.outliner_row_identifier ~compare:compare
+            ~mount:(fun row_source ->
+              node_related_row context model_source row_source send);
+        ];
+    ]
+
+let add_first_block_button model_source send : t =
+  box ~padding_horizontal:8
+    [
+      button ~label:"Add first block"
+        ~accessibility_identifier:"button.outliner.add-first-block"
+        ~on_press:(fun _ ->
+          ignore
+            (send
+               (Model.AddRootBlock
+                  (View_base.active_node_page_uuid
+                     (Signal.sample model_source)))))
+        [ text ~value:"Add first block" [] ];
+    ]
+
+let node_screen (context : Lui_ui.ui_context) model_source send : t =
+  column ~accessibility_identifier:"screen.node"
+    ~grow:(if Lui_ui.host context = FlutterHost then 1.0 else 0.0)
+    [
+      scroll ~grow:1.0 ~accessibility_identifier:"scroll.outliner"
+        [
+          column ~gap:0 ~padding_horizontal:8
+            [
+              box ~height:16 [];
+              if_
+                ~test:
+                  (reactive View_base.active_node_has_breadcrumbs_
+                     model_source)
+                (box ~padding_horizontal:8
+                   [ node_breadcrumbs model_source send ]);
+              if_
+                ~test:(reactive View_base.node_title_visible_ model_source)
+                (column ~gap:0
+                   [
+                     box ~height:26 [];
+                     box ~padding_horizontal:8
+                       ~accessibility_identifier:"layout.node.title"
+                       [
+                         heading ~level:3
+                           ~value_signal:
+                             (reactive View_base.active_node_title
+                                model_source)
+                           ~accessibility_identifier:"title.node" [];
+                       ];
+                     box ~height:12 [];
+                   ]);
+              if_
+                ~test:
+                  (reactive View_base.node_outliner_visible_ model_source)
+                (column ~accessibility_identifier:"list.outliner"
+                   [
+                     keyed
+                       ~source:
+                         (Signal.map View_rows.retained_outliner_rows
+                            model_source)
+                       ~key:View_rows.retained_row_identifier
+                       ~compare:compare
+                       ~mount:(fun retained_row_source ->
+                         outliner_row context model_source
+                           retained_row_source
+                           (reactive View_rows.retained_row_value
+                              retained_row_source)
+                           send);
+                   ]);
+              if_
+                ~test:
+                  (reactive View_base.node_can_add_first_block_
+                     model_source)
+                (add_first_block_button model_source send);
+              if_
+                ~test:
+                  (reactive View_base.node_related_section_visible_
+                     model_source)
+                (node_related_section context model_source send);
+              if_
+                ~test:
+                  (reactive View_base.node_tag_section_visible_
+                     model_source)
+                (node_tagged_section context model_source send);
+              if_
+                ~test:
+                  (reactive
+                     View_base.node_linked_reference_section_visible_
+                     model_source)
+                (node_linked_reference_section context model_source send);
+              box ~height:120 [];
+            ];
+        ];
+    ]
