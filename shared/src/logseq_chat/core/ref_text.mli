@@ -6,6 +6,7 @@ type text_step =
   }
 
 val is_uuid : string -> bool
+val plain_tag_label : string -> bool
 val to_text :
   (string -> string option) -> (string -> string option) -> string -> string
 val to_ids :
