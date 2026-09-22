@@ -14,7 +14,7 @@
 (defn row [uuid parent order] (assoc (block uuid uuid) :parent-id (Some parent) :order (Some order)))
 
 (defn context-for [blocks]
-  (record state/outliner-context (blocks (apply list blocks)) (pages (list)) (tags (list))))
+  (state/context blocks (list) (list)))
 
 (def context (context-for [(block "a" "Alpha") (assoc (block "b" "Beta") :order (Some "a1"))]))
 

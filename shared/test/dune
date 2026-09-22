@@ -74,6 +74,15 @@
       ../../duniverse/lui/lg/lui/backend/flutter
       ../src/logseq_chat/model.mli
       ../src/logseq_chat/model.cljc
+      ../src/logseq_chat/view_base.cljc
+      ../src/logseq_chat/view_rows.cljc
+      ../src/logseq_chat/view_sidebar.cljc
+      ../src/logseq_chat/view_composer.cljc
+      ../src/logseq_chat/view_outliner.cljc
+      ../src/logseq_chat/view_flashcards.cljc
+      ../src/logseq_chat/view_graphs.cljc
+      ../src/logseq_chat/view_settings.cljc
+      ../src/logseq_chat/view_screens.cljc
       ../src/logseq_chat/view.mli
       ../src/logseq_chat/view.cljc
       ../src/logseq_chat/app.mli

@@ -1,10 +1,4 @@
-type retained_outline_row = {
-  render_key : string;
-  value : outline_row;
-  is_editing : bool;
-  editing_title : string;
-  editing_caret : int;
-}
+type retained_outline_row
 
 val outliner_editor_schema : unit -> extension_component_schema
 

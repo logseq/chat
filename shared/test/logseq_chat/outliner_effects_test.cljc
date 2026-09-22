@@ -12,7 +12,7 @@
     (status None) (is-asset false) (asset-type None) (asset-size None) (asset-checksum None) (local-path None) (journal None)))
 
 (defn context-for [blocks]
-  (record state/outliner-context (blocks (apply list blocks)) (pages (list)) (tags (list))))
+  (state/context blocks (list) (list)))
 
 (def context (context-for [(block "first" "First" (Some "a0")) (block "second" "Second" (Some "a1"))
                           (block "third" "Third" (Some "a2"))]))

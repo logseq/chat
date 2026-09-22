@@ -6,6 +6,7 @@
             [logseq-chat.e2ee-keyring :as keyring]
             [logseq-chat.asset-files :as assets]
             [logseq-chat.rpc-session :as rpc]
+            [logseq-chat.session-types :as types]
             [logseq-chat.sqlite :as sqlite]
             [logseq-chat.http :as http]
             [ocaml.Callback :as callback]
@@ -14,7 +15,7 @@
 (type-record mobile-session
   (database :database/mobile-database)
   (keyring :keyring/e2ee-keyring)
-  (session :ref<rpc/session>))
+  (session :ref<types/session>))
 
 (def graph-catalog-address "logseq-chat/graph-catalog/v1")
 
