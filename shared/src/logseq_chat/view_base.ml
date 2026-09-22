@@ -1362,3 +1362,21 @@ let drawer_disabled_ (current : Model.chat_model) =
   graph_picker_visible_ current
   || authentication_screen_visible_ current
   || sidebar_drag_disabled_ current
+
+let with_label label (elem : Lui_elements.t) : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.string_property context node AccessibilityLabel label;
+   node
+
+let with_label_signal label (elem : Lui_elements.t) : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.string_property_signal context node AccessibilityLabel label;
+   node
+
+let with_selected_signal selected (elem : Lui_elements.t) : Lui_elements.t =
+ fun context parent ->
+   let node = elem context parent in
+   Lui_ui.bool_property_signal context node Selected selected;
+   node

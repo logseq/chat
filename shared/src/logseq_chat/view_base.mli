@@ -1,26 +1,25 @@
-open Lui_protocol
-val string_wire_value : string -> wire_value
-val int_wire_value : int -> wire_value
-val bool_wire_value : bool -> wire_value
+val string_wire_value : string -> Lui_protocol.wire_value
+val int_wire_value : int -> Lui_protocol.wire_value
+val bool_wire_value : bool -> Lui_protocol.wire_value
 val outliner_row_completed_ : Model.outline_row -> bool
-val outliner_row_id_wire_value : Model.outline_row -> wire_value
+val outliner_row_id_wire_value : Model.outline_row -> Lui_protocol.wire_value
 val outliner_row_completed_wire_value :
-  Model.outline_row -> wire_value
+  Model.outline_row -> Lui_protocol.wire_value
 val extension_string :
-  wire_value String_map.t ->
-  String_map.key -> string
+  Lui_protocol.wire_value Lui_protocol.String_map.t ->
+  Lui_protocol.String_map.key -> string
 val extension_int :
-  wire_value String_map.t ->
-  String_map.key -> int
+  Lui_protocol.wire_value Lui_protocol.String_map.t ->
+  Lui_protocol.String_map.key -> int
 val navigation_path_depth : 'a list -> int
 val handle_native_navigation_event :
-  event -> (Model.chat_action -> bool) -> bool
+  Lui_protocol.event -> (Model.chat_action -> bool) -> bool
 val handle_native_search_event :
-  event -> (Model.chat_action -> bool) -> bool
+  Lui_protocol.event -> (Model.chat_action -> bool) -> bool
 val handle_native_overflow_menu_event :
-  event -> (Model.chat_action -> bool) -> bool
+  Lui_protocol.event -> (Model.chat_action -> bool) -> bool
 val handle_outliner_editor_event :
-  event ->
+  Lui_protocol.event ->
   string Signal.signal -> (Model.chat_action -> bool) -> bool
 val optional_string : string option -> string
 val outliner_row_youtube_target : Model.outline_row -> string
@@ -29,7 +28,7 @@ val outliner_row_local_path : Model.outline_row -> string
 val outliner_row_uuid : Model.outline_row -> string
 val request_node_action : Model.chat_model -> string -> Model.chat_action
 val handle_outliner_block_content_event :
-  event ->
+  Lui_protocol.event ->
   Model.chat_model Signal.signal -> (Model.chat_action -> bool) -> bool
 val graph_label : Model.chat_model -> string
 val sync_label : Model.chat_model -> string
@@ -226,7 +225,7 @@ val outliner_editor_task_label : Model.chat_model -> string
 val outliner_row_has_tags_ : Model.outline_row -> bool
 val outliner_row_sync_failed_ : Model.outline_row -> bool
 val outliner_row_list_item_press_enabled_ :
-  host_kind -> Model.outline_row -> bool
+  Lui_protocol.host_kind -> Model.outline_row -> bool
 val outliner_tag_identifier : Model.sidebar_page -> string
 val outliner_tag_title : Model.sidebar_page -> string
 val outliner_row_journal_ : Model.chat_model -> Model.outline_row -> bool
@@ -360,3 +359,8 @@ val main_screen_visible_ : Model.chat_model -> bool
 val application_shell_visible_ : Model.chat_model -> bool
 val drawer_selected_ : Model.chat_model -> bool
 val drawer_disabled_ : Model.chat_model -> bool
+val with_label : string -> Lui_elements.t -> Lui_elements.t
+val with_label_signal :
+  string Signal.signal -> Lui_elements.t -> Lui_elements.t
+val with_selected_signal :
+  bool Signal.signal -> Lui_elements.t -> Lui_elements.t
