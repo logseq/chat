@@ -25,10 +25,16 @@
   (asset-size :option<int>) (asset-checksum :option<string>) (local-path :option<string>)
   (journal :option<tuple<string;int>>))
 
+(type-record model-caches
+  (revision :ref<int>)
+  (blocks :ref<map<string;option<block>>>)
+  (journals :ref<map<string;option<tuple<string;int>>>>))
+
 (deftype CacheModel [^:mutable ^:Datascript.db db
                      ^:mutable ^:option<string> selected-block-uuid
                      ^:mutable ^:option<int> last-refresh-at
-                     ^:mutable ^:int revision])
+                     ^:mutable ^:int revision
+                     ^:model-caches caches])
 
 (defn one [value-type indexed unique]
   (record Datascript.schema_attr
@@ -104,7 +110,8 @@
                  (ds/store :storage storage db)
                  db))
              (ds/empty-db :schema (rrbvec/to-list schema)))]
-    (CacheModel. db nil nil 0)))
+    (CacheModel. db nil nil 0
+                 (record model-caches (revision (atom -1)) (blocks (atom {})) (journals (atom {}))))))
 
 (defn summaries-json [^:list<entity-summary> summaries]
   (json/to-string
@@ -158,7 +165,14 @@
 (defn block-exists? [model uuid]
   (some? (read block-uuid (ds/entity (.-db model) (block-ref uuid)))))
 
-(defn read-block [model uuid]
+(defn- ensure-cache-revision [model]
+  (let [caches (.-caches model)]
+    (when (not= @(:revision caches) (.-revision model))
+      (reset! (:revision caches) (.-revision model))
+      (reset! (:blocks caches) {})
+      (reset! (:journals caches) {}))))
+
+(defn- materialize-block [model uuid]
   (let [entity (ds/entity (.-db model) (block-ref uuid))]
     (when-some [uuid (read block-uuid entity)]
       (let [asset-type (read block-asset-type entity)]
@@ -175,10 +189,25 @@
           (asset-checksum (read block-asset-checksum entity)) (local-path (read block-local-path entity))
           (journal nil))))))
 
+(defn read-block [model uuid]
+  (ensure-cache-revision model)
+  (match (get @(:blocks (.-caches model)) uuid)
+    (Some cached) cached
+    None
+    (let [block (materialize-block model uuid)]
+      (swap! (:blocks (.-caches model)) assoc uuid block)
+      block)))
+
 (defn journal-metadata [model page-id]
-  (let [entity (ds/entity (.-db model) (block-ref page-id))
-        day (or (read page-journal-day entity) 0)]
-    (when (pos? day) (tuple (or (read page-title entity) "") day))))
+  (ensure-cache-revision model)
+  (match (get @(:journals (.-caches model)) page-id)
+    (Some cached) cached
+    None
+    (let [entity (ds/entity (.-db model) (block-ref page-id))
+          day (or (read page-journal-day entity) 0)
+          metadata (when (pos? day) (tuple (or (read page-title entity) "") day))]
+      (swap! (:journals (.-caches model)) assoc page-id metadata)
+      metadata)))
 
 (defn all-block-uuids [model]
   (vec (keep (fn [datom] (match (:v datom) (ds/String uuid) (Some uuid) _ nil))

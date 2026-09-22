@@ -1,297 +1,96 @@
 (ns logseq-chat.rpc-session
   (:require [clojure.string :as string]
+            [logseq-chat.session-types :as types]
+            [logseq-chat.session-outliner :as so]
+            [logseq-chat.pending-pump :as pump]
             [logseq-chat.rpc :as rpc]
             [logseq-chat.cache-model :as model]
             [logseq-chat.api :as api]
-            [logseq-chat.http :as http]
             [logseq-chat.pending-ops :as ops]
             [logseq-chat.outliner-state :as outliner]
             [logseq-chat.outliner-effects :as effects]
-            [logseq-chat.graph-read :as graph]
-            [logseq-chat.search-index :as search]
-            [logseq-chat.flashcards :as cards]
-            [ocaml.Datascript :as ds]
             [ocaml.Yojson.Basic :as json]
-            [ocaml.Yojson.Basic.Util :as json-util]
             [ocaml.Unix :as unix]
             [ocaml.Sys :as sys]
             [ocaml.Printexc :as exceptions]
             [ocaml.Stdlib :as stdlib]))
 
-(type-variant pending-transport (Json-request :api/api-request) (File-upload :api/api-file-upload))
+(def default-options types/default-options)
+(def create-session types/create-session)
+(def state types/state)
+(def host types/host)
+(def now-ms types/now-ms)
+(def debug types/debug)
+(def fresh-squuid types/fresh-squuid)
+(def projection-server-t types/projection-server-t)
+(def submission-server-t types/submission-server-t)
+(def record-accepted-server-t! types/record-accepted-server-t!)
+(def transport-operation-block types/transport-operation-block)
+(def empty-sidebar types/empty-sidebar)
+(def sidebar-pages so/sidebar-pages)
+(def outliner-context-with-blocks so/outliner-context-with-blocks)
+(def base-outliner-context-live so/base-outliner-context-live)
+(def page-overlay so/page-overlay)
+(def scope-selected-page so/scope-selected-page)
+(def base-outliner-context-with-blocks so/base-outliner-context-with-blocks)
+(def base-outliner-context so/base-outliner-context)
+(def page-outliner-context so/page-outliner-context)
+(def node-route-context so/node-route-context)
+(def active-node-route so/active-node-route)
+(def node-route-related-blocks so/node-route-related-blocks)
+(def node-route-linked-reference-blocks so/node-route-linked-reference-blocks)
+(def page-for-visible-block so/page-for-visible-block)
+(def projected-node-destination so/projected-node-destination)
+(def with-extra-blocks so/with-extra-blocks)
+(def outliner-context so/outliner-context)
+(def project-outliner-operations so/project-outliner-operations)
+(def selected-graph so/selected-graph)
+(def selected-graph-is-encrypted so/selected-graph-is-encrypted)
+(def selected-graph-is-unlocked so/selected-graph-is-unlocked)
+(def selected-page-is-tag so/selected-page-is-tag)
+(def selected-page-is-property so/selected-page-is-property)
+(def snapshot-related-blocks so/snapshot-related-blocks)
+(def snapshot-linked-reference-blocks so/snapshot-linked-reference-blocks)
+(def has-pending-operations so/has-pending-operations)
+(def reset-outliner! so/reset-outliner!)
+(def clear-node-navigation! so/clear-node-navigation!)
+(def persist-active-node-state! so/persist-active-node-state!)
+(def initial-node-state so/initial-node-state)
+(def push-node-route! so/push-node-route!)
+(def pop-node-route! so/pop-node-route!)
+(def aggregate-return-context so/aggregate-return-context)
+(def refresh-reference-metadata so/refresh-reference-metadata)
+(def event-patch-plan so/event-patch-plan)
+(def pending-request-json pump/pending-request-json)
+(def pending-block-unchanged pump/pending-block-unchanged)
+(def mark-pending-failed! pump/mark-pending-failed!)
+(def set-pending-active! pump/set-pending-active!)
+(def encrypted-title pump/encrypted-title)
+(def prepare-pending-create-request pump/prepare-pending-create-request)
+(def prepare-pending-creation pump/prepare-pending-creation)
+(def prepare-pending-block pump/prepare-pending-block)
+(def prepare-pending-next! pump/prepare-pending-next!)
+(def activate-semantic-request pump/activate-semantic-request)
+(def enqueue-semantic pump/enqueue-semantic)
+(def normalize-operation-titles pump/normalize-operation-titles)
+(def capture-operations pump/capture-operations)
+(def enqueue-capture pump/enqueue-capture)
+(def restore-semantic-queue! pump/restore-semantic-queue!)
+(def begin-pending-sync! pump/begin-pending-sync!)
+(def finish-semantic-active! pump/finish-semantic-active!)
+(def cleanup-pending-active! pump/cleanup-pending-active!)
+(def finish-pending-block! pump/finish-pending-block!)
+(def asset-datoms-operation pump/asset-datoms-operation)
+(def reconcile-created-block! pump/reconcile-created-block!)
+(def complete-pending-active! pump/complete-pending-active!)
+(def accepted-transaction pump/accepted-transaction)
+(def completion-error pump/completion-error)
+(def parse-semantic-completion pump/parse-semantic-completion)
+(def parse-transport-completion pump/parse-transport-completion)
+(def complete-pending-sync pump/complete-pending-sync)
+(def cancel-pending-sync! pump/cancel-pending-sync!)
 
-(type-record moved-asset (block :model/block) (remote-uuid :string))
-
-(type-record created-journal
-             (block :model/block) (encrypted-title :string) (page-id :string) (journal-day :int))
-
-(type-variant transport-operation
-              (Create-block :model/block) (Upload-asset :model/block) (Move-created-asset :moved-asset)
-              (Update-title :model/block) (Update-status :model/block) (Create-journal :created-journal))
-
-(type-record pending-active
-             (id :int) (transport :pending-transport) (operation :transport-operation) (cleanup-path :option<string>))
-
-(type-record pending-sync
-             (config :api/api-config) (remaining :ref<vector<model/block>>) (authoritative :set<string>)
-             (resolved-journal-pages :ref<map<int;string>>) (active :ref<option<pending-active>>))
-
-(type-record semantic-pending (operation :ops/pending-operation))
-
-(type-record semantic-active (id :int) (pending :semantic-pending) (request :api/api-request))
-
-(type-record node-route
-             (uuid :string) (is-tag :bool) (is-property :bool) (page :model/entity-summary)
-             (zoom-to-block :bool) (related-blocks :vector<model/block>) (state :outliner/outliner-state))
-
-(type-record host-options
-             (storage :option<Datascript.storage>)
-             (open-graph :option<fn<string;result<unit;string>>>)
-             (import-snapshot :option<fn<string;result<unit;string>>>)
-             (model-for-graph :option<fn<string;model/CacheModel>>)
-             (apply-sync-event :option<fn<string;result<unit;string>>>)
-             (sync-cursor :option<fn<option<int>>>)
-             (graph-blocks :option<fn<option<list<model/block>>>>)
-             (authoritative-graph-blocks :option<fn<option<list<model/block>>>>)
-             (graph-sidebar-pages :option<fn<option<graph/sidebar-pages>>>)
-             (graph-tag-pages :option<fn<option<list<model/entity-summary>>>>)
-             (graph-node-is-tag :option<fn<string;bool>>)
-             (graph-node-is-property :option<fn<string;bool>>)
-             (graph-page-blocks :option<fn<string;option<list<model/block>>>>)
-             (graph-node-destination :option<fn<string;option<tuple<model/entity-summary;bool>>>>)
-             (graph-node-references :option<fn<string;option<list<model/block>>>>)
-             (graph-tag-objects :option<fn<string;option<list<model/block>>>>)
-             (graph-normalize-titles :option<fn<string;list<string>;tuple<list<string>;list<tuple<string;string>>>>>)
-             (graph-search :option<fn<string;list<search/indexed-search-hit>>>)
-             (graph-due-flashcards :option<fn<int;list<cards/due-card>>>)
-             (graph-review-flashcard :option<fn<string;cards/flashcard-rating;int;string;result<unit;string>>>)
-             (graph-set-page-favorite :option<fn<string;bool;string;int;result<unit;string>>>)
-             (graph-delete-page :option<fn<string;string;int;result<unit;string>>>)
-             (load-older-journals :option<fn<unit>>) (has-older-journals :option<fn<bool>>)
-             (load-cached-graph-key :option<fn<api/api-config;result<unit;string>>>)
-             (unlock-graph :option<fn<api/api-config;string;result<unit;string>>>)
-             (provision-graph-key :option<fn<api/api-config;result<unit;string>>>)
-             (graph-unlocked :option<fn<string;bool>>)
-             (encrypt-title :option<fn<string;string;result<string;string>>>)
-             (resolve-asset-path :fn<string;string>)
-             (encrypt-asset-file :option<fn<string;string;result<tuple<string;int>;string>>>)
-             (journal-page-id :option<fn<int;option<string>>>)
-             (send :fn<api/api-request;result<api/api-response;string>>)
-             (upload-file :fn<api/api-file-upload;result<api/api-response;string>>)
-             (cleanup-file :fn<string;unit>)
-             (stage-operation :option<fn<ops/pending-operation;result<unit;string>>>)
-             (prepare-operation :option<fn<ops/pending-operation;result<tuple<string;string>;string>>>)
-             (pending-operations :option<fn<list<ops/pending-operation>>>)
-             (load-graph-catalog :option<fn<option<string>>>) (save-graph-catalog :option<fn<string;unit>>))
-
-(type-record session-state
-             (model :model/CacheModel) (config :option<api/api-config>) (available-graphs :vector<api/api-graph>)
-             (related-blocks :vector<model/block>) (selected-sidebar-page :option<model/entity-summary>)
-             (node-routes :vector<node-route>) (node-base-state :option<outliner/outliner-state>)
-             (accepted-server-t :option<int>) (flashcards :vector<cards/due-card>)
-             (search-results :vector<search/indexed-search-hit>) (search-query :string)
-             (sync-connected :bool) (pending-sync :option<pending-sync>) (next-pending-request-id :int)
-             (semantic-queue :vector<semantic-pending>) (semantic-active :option<semantic-active>)
-             (outliner-state :outliner/outliner-state) (outliner-optimistic-blocks :option<vector<model/block>>)
-             (outliner-commands :vector<effects/outliner-platform-command>) (outliner-revision :int))
-
-(type-record session (host :host-options) (state :ref<session-state>))
-
-(def default-options
-  (record host-options
-          (storage nil) (open-graph nil) (import-snapshot nil) (model-for-graph nil) (apply-sync-event nil)
-          (sync-cursor nil) (graph-blocks nil) (authoritative-graph-blocks nil) (graph-sidebar-pages nil)
-          (graph-tag-pages nil) (graph-node-is-tag nil) (graph-node-is-property nil) (graph-page-blocks nil)
-          (graph-node-destination nil) (graph-node-references nil) (graph-tag-objects nil)
-          (graph-normalize-titles nil) (graph-search nil) (graph-due-flashcards nil) (graph-review-flashcard nil)
-          (graph-set-page-favorite nil) (graph-delete-page nil) (load-older-journals nil) (has-older-journals nil)
-          (load-cached-graph-key nil) (unlock-graph nil) (provision-graph-key nil) (graph-unlocked nil)
-          (encrypt-title nil) (resolve-asset-path identity) (encrypt-asset-file nil) (journal-page-id nil)
-          (send http/send) (upload-file http/upload-file)
-          (cleanup-file (fn [path] (try (sys/remove path) (catch _ (stdlib/ignore 0)))))
-          (stage-operation nil) (prepare-operation nil) (pending-operations nil)
-          (load-graph-catalog nil) (save-graph-catalog nil)))
-
-(defn state [session] @(:state session))
-
-(defn host [session] (:host session))
-
-(defn now-ms [] (int (* (unix/gettimeofday) 1000.0)))
-
-(defn debug [message] (stdlib/prerr-endline (str "LogseqChat core " message)))
-
-(defn fresh-squuid []
-  (match (ds/squuid) (ds/Uuid uuid) uuid _ (stdlib/failwith "Datascript.squuid returned a non-UUID value")))
-
-(defn projection-server-t [session] (when-some [cursor (:sync-cursor (host session))] (cursor)))
-
-(defn submission-server-t [session]
-  (match (tuple (projection-server-t session) (:accepted-server-t (state session)))
-    (tuple (Some applied) (Some accepted)) (Some (max applied accepted))
-    (tuple (Some applied) None) (Some applied)
-    (tuple None accepted) accepted))
-
-(defn record-accepted-server-t! [session accepted]
-  (swap! (:state session) assoc :accepted-server-t
-         (Some (if-some [previous (:accepted-server-t (state session))] (max previous accepted) accepted))))
-
-(defn create-session [options]
-  (let [options (assoc options :authoritative-graph-blocks
-                       (or (:authoritative-graph-blocks options) (:graph-blocks options)))
-        catalog (when-some [load (:load-graph-catalog options)] (load))
-        graphs (if-some [body catalog] (try (vec (api/graphs-from-graphs-body body)) (catch _ [])) [])]
-    (record session
-            (host options)
-            (state (atom (record session-state
-                                 (model (model/create (:storage options))) (config nil) (available-graphs graphs)
-                                 (related-blocks []) (selected-sidebar-page nil) (node-routes []) (node-base-state nil)
-                                 (accepted-server-t nil) (flashcards []) (search-results []) (search-query "")
-                                 (sync-connected false) (pending-sync nil) (next-pending-request-id 0)
-                                 (semantic-queue []) (semantic-active nil) (outliner-state outliner/empty)
-                                 (outliner-optimistic-blocks nil) (outliner-commands []) (outliner-revision 0)))))))
-
-(defn pending-request-json [session]
-  (if-some [active (:semantic-active (state session))]
-    (rpc/request-json (:id active) (:request active) nil "application/json" [])
-    (if-some [pump (:pending-sync (state session))]
-      (if-some [active @(:active pump)]
-        (match (:transport active)
-          (Json-request request) (rpc/request-json (:id active) request nil "application/json" [])
-          (File-upload upload) (rpc/request-json (:id active) (:request upload) (Some (:file-path upload))
-                                                 (:content-type upload) (:headers upload)))
-        (tag Null))
-      (tag Null))))
-
-(def empty-sidebar (record graph/sidebar-pages (favorites []) (recent-pages [])))
-
-(defn sidebar-pages [session]
-  (or (when-some [load (:graph-sidebar-pages (host session))] (load)) empty-sidebar))
-
-(defn outliner-context-with-blocks [session sidebar blocks]
-  (let [sidebar (or sidebar (sidebar-pages session))
-        pages (mapv (fn [page] (record outliner/outliner-candidate (label (:title page)) (value (:uuid page))))
-                    (concat (:favorites sidebar) (:recent-pages sidebar)))
-        tags (if-some [load (:graph-tag-pages (host session))]
-               (mapv (fn [page] (record outliner/outliner-candidate (label (:title page)) (value (:uuid page))))
-                     (or (load) (list))) [])]
-    (record outliner/outliner-context (blocks (apply list blocks)) (pages (apply list pages)) (tags (apply list tags)))))
-
-(defn base-outliner-context-live [session]
-  (let [s (state session) h (host session)
-        blocks (match (tuple (:selected-sidebar-page s) (:graph-page-blocks h) (:graph-blocks h))
-                 (tuple (Some page) (Some load) _) (vec (or (load (:uuid page)) (list)))
-                 (tuple _ _ (Some load)) (vec (or (load) (list)))
-                 _ (model/visible-blocks (:model s)))]
-    (outliner-context-with-blocks session nil blocks)))
-
-(defn page-overlay [session page-id blocks]
-  (rpc/page-blocks-with-optimistic-overlay (:outliner-optimistic-blocks (state session))
-                                           (outliner/editing-uuid (:outliner-state (state session))) page-id blocks))
-
-(defn scope-selected-page [session context]
-  (if-some [page (:selected-sidebar-page (state session))]
-    (assoc context :blocks (apply list (page-overlay session (:uuid page) (:blocks context)))) context))
-
-(defn base-outliner-context-with-blocks [session sidebar blocks]
-  (scope-selected-page session (outliner-context-with-blocks session sidebar blocks)))
-
-(defn base-outliner-context [session] (scope-selected-page session (base-outliner-context-live session)))
-
-(defn page-outliner-context [session uuid]
-  (when-some [load (:graph-page-blocks (host session))]
-    (when-some [blocks (load uuid)] (Some (outliner-context-with-blocks session nil blocks)))))
-
-(defn node-route-context [session route]
-  (let [blocks (if-some [load (:graph-page-blocks (host session))] (or (load (:uuid (:page route))) (list)) (list))]
-    (outliner-context-with-blocks session nil (page-overlay session (:uuid (:page route)) blocks))))
-
-(defn active-node-route [session] (last (:node-routes (state session))))
-
-(defn node-route-related-blocks [session route]
-  (let [loader (if (:is-tag route) (:graph-tag-objects (host session)) (:graph-node-references (host session)))]
-    (if-some [blocks (when-some [load loader] (load (:uuid route)))] (vec blocks) (:related-blocks route))))
-
-(defn node-route-linked-reference-blocks [session route]
-  (if (:is-tag route)
-    (vec (or (when-some [load (:graph-node-references (host session))] (load (:uuid route))) (list))) []))
-
-(defn page-for-visible-block [block]
-  (let [title (match (:journal block)
-                (Some (tuple title _)) (when (not (string/blank? title)) (Some title))
-                None nil)
-        title (or title (when-some [page (first (filter #(= (:uuid %) (:page-id block)) (:breadcrumbs block)))]
-                          (Some (:title page))) (:title block))]
-    (record model/entity-summary (uuid (:page-id block)) (title title))))
-
-(defn projected-node-destination [session uuid]
-  (let [s (state session) h (host session)
-        graph-blocks (or (when-some [load (:graph-blocks h)] (load)) (list))
-        selected-blocks (match (tuple (:selected-sidebar-page s) (:graph-page-blocks h))
-                          (tuple (Some page) (Some load)) (or (load (:uuid page)) (list)) _ (list))
-        blocks (vec (concat graph-blocks selected-blocks
-                            (mapcat #(vec (:blocks (node-route-context session %))) (:node-routes s))
-                            (:related-blocks s) (or (:outliner-optimistic-blocks s) [])))
-        candidate (if-some [block (first (filter #(= (:uuid %) uuid) blocks))]
-                    (Some (tuple block true))
-                    (when-some [block (first (filter #(= (:page-id %) uuid) blocks))] (Some (tuple block false))))]
-    (when-some [[block zoom] candidate]
-      (when (not= (:page-id block) "") (Some (tuple (page-for-visible-block block) zoom))))))
-
-(defn with-extra-blocks [context extra]
-  (let [present (set (map :uuid (:blocks context)))]
-    (assoc context :blocks (apply list (concat (:blocks context) (filter #(not (contains? present (:uuid %))) extra))))))
-
-(defn outliner-context [session]
-  (if-some [route (active-node-route session)]
-    (with-extra-blocks (node-route-context session route)
-      (concat (node-route-related-blocks session route) (node-route-linked-reference-blocks session route)))
-    (with-extra-blocks (base-outliner-context session) (:related-blocks (state session)))))
-
-(defn project-outliner-operations [context operations]
-  (assoc context :blocks
-         (apply list (reduce (fn [blocks operation] (rpc/project-outliner-intent blocks (:intent operation)))
-                             (vec (:blocks context)) operations))))
-
-(defn selected-graph [session]
-  (when-some [config (:config (state session))]
-    (first (filter #(= (:id %) (:graph-id config)) (:available-graphs (state session))))))
-
-(defn selected-graph-is-encrypted [session]
-  (if-some [graph (selected-graph session)] (:e2ee graph) false))
-
-(defn selected-graph-is-unlocked [session]
-  (match (tuple (:config (state session)) (selected-graph session))
-    (tuple config (Some graph))
-    (if (not (:e2ee graph)) true
-        (match (tuple config (:graph-unlocked (host session)))
-          (tuple (Some config) (Some unlocked)) (unlocked (:graph-id config)) _ false))
-    _ false))
-
-(defn selected-page-is-tag [session]
-  (match (tuple (:selected-sidebar-page (state session)) (:graph-node-is-tag (host session)))
-    (tuple (Some page) (Some check)) (check (:uuid page)) _ false))
-
-(defn selected-page-is-property [session]
-  (match (tuple (:selected-sidebar-page (state session)) (:graph-node-is-property (host session)))
-    (tuple (Some page) (Some check)) (check (:uuid page)) _ false))
-
-(defn snapshot-related-blocks [session]
-  (if (selected-page-is-tag session)
-    (match (tuple (:selected-sidebar-page (state session)) (:graph-tag-objects (host session)))
-      (tuple (Some page) (Some load)) (vec (or (load (:uuid page)) (list))) _ [])
-    (:related-blocks (state session))))
-
-(defn snapshot-linked-reference-blocks [session]
-  (if (selected-page-is-tag session)
-    (match (tuple (:selected-sidebar-page (state session)) (:graph-node-references (host session)))
-      (tuple (Some page) (Some load)) (vec (or (load (:uuid page)) (list))) _ []) []))
-
-(defn has-pending-operations [session]
-  (let [s (state session)]
-    (or (not (empty? (:semantic-queue s))) (some? (:semantic-active s)) (some? (:pending-sync s))
-        (not (empty? (model/pending-blocks (:model s)))))))
-
-(defn node-routes-json [session]
+(defn node-routes-json [session ^:fn<model/block;Yojson.Basic.t> serialize ^:fn<model/block;Yojson.Basic.t> serialize-plain]
   (let [active (active-node-route session)]
     (rpc/json-list
      (map (fn [route]
@@ -301,11 +100,11 @@
               (rpc/json-object
                [(tuple "uuid" (tag String (:uuid route))) (tuple "isTag" (tag Bool (:is-tag route)))
                 (tuple "isProperty" (tag Bool (:is-property route))) (tuple "page" (rpc/summary-json (:page route)))
-                (tuple "blocks" (rpc/json-list (map rpc/visible-block-json (:blocks context))))
-                (tuple "relatedBlocks" (rpc/json-list (map rpc/block-json (node-route-related-blocks session route))))
-                (tuple "linkedReferenceBlocks" (rpc/json-list (map rpc/block-json (node-route-linked-reference-blocks session route))))
+                (tuple "blocks" (rpc/json-list (map serialize (:blocks context))))
+                (tuple "relatedBlocks" (rpc/json-list (map serialize-plain (node-route-related-blocks session route))))
+                (tuple "linkedReferenceBlocks" (rpc/json-list (map serialize-plain (node-route-linked-reference-blocks session route))))
                 (tuple "outlinerState" (rpc/outliner-state-json current))
-                (tuple "outlinerRows" (rpc/outliner-rows-json rpc/visible-block-json context current))
+                (tuple "outlinerRows" (rpc/outliner-rows-json serialize context current))
                 (tuple "outlinerAutocompleteCandidates" (rpc/outliner-candidates-json context current))])))
           (:node-routes (state session))))))
 
@@ -327,6 +126,11 @@
                     (if-some [value (get @serialized (:uuid block))] value
                              (let [value (rpc/visible-block-json block)]
                                (swap! serialized assoc (:uuid block) value) value)))
+        serialized-plain (atom {})
+        serialize-plain (fn [block]
+                          (if-some [value (get @serialized-plain (:uuid block))] value
+                                   (let [value (rpc/block-json block)]
+                                     (swap! serialized-plain assoc (:uuid block) value) value)))
         config (:config s)
         response
         (rpc/success
@@ -341,7 +145,7 @@
            (tuple "searchQuery" (tag String (:search-query s)))
            (tuple "searchResults" (rpc/json-list (map rpc/search-hit-json (:search-results s))))
            (tuple "flashcards" (rpc/json-list (map rpc/flashcard-json (:flashcards s))))
-           (tuple "nodeRoutes" (node-routes-json session))
+           (tuple "nodeRoutes" (node-routes-json session serialize serialize-plain))
            (tuple "lastRefreshAt" (if-some [value (.-last-refresh-at (:model s))] (tag Int value) (tag Null)))
            (tuple "graphName" (if-some [name (when-some [config config] (:graph-name config))] (tag String name) (tag Null)))
            (tuple "selectedGraphId" (match config (Some config) (if (= (:graph-id config) "") (tag Null) (tag String (:graph-id config))) None (tag Null)))
@@ -447,351 +251,6 @@
     (do (debug (str "graph discovery skipped graph=" (:graph-id config))) (Ok config))
     (Error "Select a Logseq graph before syncing")))
 
-(defn pending-block-unchanged [session sent]
-  (if-some [current (model/read-block (:model (state session)) (:uuid sent))] (rpc/same-pending-version? sent current) false))
-
-(defn mark-pending-failed! [session block]
-  (when (pending-block-unchanged session block) (model/mark-block-sync-failed (:model (state session)) (:uuid block))))
-
-(defn set-pending-active! [session pump transport operation cleanup]
-  (let [next-id (inc (:next-pending-request-id (state session)))]
-    (swap! (:state session) assoc :next-pending-request-id next-id)
-    (reset! (:active pump) (Some (record pending-active (id next-id) (transport transport) (operation operation) (cleanup-path cleanup))))))
-
-(defn encrypted-title [session config title]
-  (if-some [encrypt (:encrypt-title (host session))] (encrypt (:graph-id config) title)
-           (Error "encrypted graph title encryption is unavailable")))
-
-(defn prepare-pending-create-request [session pump block title page-id]
-  (let [config (:config pump)]
-    (match (tuple (:status block) (:local-path block) (:asset-type block) (:asset-size block) (:asset-checksum block))
-      (tuple (Some status) _ _ _ _)
-      (do (set-pending-active! session pump (Json-request (api/task-request page-id config (:uuid block) (:uuid status) title))
-                               (Create-block block) nil)
-          (Ok (stdlib/ignore 0)))
-      (tuple None (Some source) (Some asset-type) (Some _) (Some checksum))
-      (let [source ((:resolve-asset-path (host session)) source)]
-        (if (selected-graph-is-encrypted session)
-          (if-some [encrypt (:encrypt-asset-file (host session))]
-            (let* [[path _] (encrypt (:graph-id config) source)]
-              (set-pending-active! session pump
-                                   (File-upload (api/raw-asset-upload-request config (:uuid block) asset-type checksum path "text/plain"))
-                                   (Upload-asset block) (Some path))
-              (Ok (stdlib/ignore 0)))
-            (Error "encrypted asset encryption is unavailable"))
-          (do (set-pending-active! session pump
-                                   (File-upload (api/raw-asset-upload-request config (:uuid block) asset-type checksum source
-                                                                              (api/content-type-for-asset-type asset-type)))
-                                   (Upload-asset block) nil)
-              (Ok (stdlib/ignore 0)))))
-      (tuple None None None None None)
-      (let [request (match (:parent-id block)
-                      (Some parent) (if (not= parent (:page-id block))
-                                      (api/child-block-request config parent (:uuid block) title)
-                                      (api/capture-request page-id config (:uuid block) title))
-                      None (api/capture-request page-id config (:uuid block) title))]
-        (set-pending-active! session pump (Json-request request) (Create-block block) nil)
-        (Ok (stdlib/ignore 0)))
-      _ (Error "pending block has incomplete semantic REST metadata"))))
-
-(defn prepare-pending-creation [session pump block]
-  (if (selected-graph-is-encrypted session)
-    (let* [title (encrypted-title session (:config pump) (:title block))]
-      (let [day (model/journal-day-for-ms (:created-at block))
-            page (or (get @(:resolved-journal-pages pump) day)
-                     (when-some [find (:journal-page-id (host session))] (find day)))]
-        (if-some [page page]
-          (prepare-pending-create-request session pump block title (Some page))
-          (let [page (rpc/journal-page-uuid day) journal-title (rpc/journal-day-title day)
-                encrypted-journal-title (encrypted-title session (:config pump) journal-title)
-                encrypted-name (encrypted-title session (:config pump) (string/lower-case journal-title))]
-            (let* [journal-title encrypted-journal-title journal-name encrypted-name]
-              (set-pending-active! session pump
-                                   (Json-request (api/encrypted-journal-page-request (:config pump) page journal-title journal-name day))
-                                   (Create-journal (record created-journal (block block) (encrypted-title title) (page-id page) (journal-day day))) nil)
-              (Ok (stdlib/ignore 0)))))))
-    (prepare-pending-create-request session pump block (:title block)
-                                    (when (some? (:parent-id block)) (Some (:page-id block))))))
-
-(defn prepare-pending-block [session pump block]
-  (if (contains? (:authoritative pump) (:uuid block))
-    (let* [title (if (selected-graph-is-encrypted session) (encrypted-title session (:config pump) (:title block)) (Ok (:title block)))]
-      (set-pending-active! session pump (Json-request (api/update-block-request (:config pump) (:uuid block) title))
-                           (Update-title block) nil)
-      (Ok (stdlib/ignore 0)))
-    (prepare-pending-creation session pump block)))
-
-(defn prepare-pending-next! [session pump]
-  (if-some [block (first @(:remaining pump))]
-    (do (swap! (:remaining pump) #(subvec % 1))
-        (match (prepare-pending-block session pump block)
-          (Ok _) (stdlib/ignore 0)
-          (Error message)
-          (do (debug (str "prepare pending block failed uuid=" (:uuid block) " message=" message))
-              (mark-pending-failed! session block)
-              (prepare-pending-next! session pump))))
-    (do (reset! (:active pump) nil) (swap! (:state session) assoc :pending-sync nil) (stdlib/ignore 0))))
-
-(defn activate-semantic-request [session config accepted]
-  (let [s (state session)]
-    (when (nil? (:semantic-active s))
-      (when-some [pending (first (:semantic-queue s))]
-        (when-some [prepare (:prepare-operation (host session))]
-          (match (prepare (:operation pending))
-            (Error message) (debug (str "semantic operation id=" (:operation-id (:operation pending))
-                                        " is waiting for authoritative dependencies: " message))
-            (Ok (tuple outliner-op tx))
-            (let [operation (:operation pending)
-                  latest (or (submission-server-t session) (:base-t operation))
-                  before (if-some [accepted accepted] (max latest accepted) latest)
-                  tx-id (match (:intent operation) (ops/Create-asset asset) (:uuid asset) _ (:operation-id operation))
-                  request (api/tx-batch-request config before tx-id outliner-op tx)
-                  next-id (inc (:next-pending-request-id s))]
-              (stdlib/ignore
-               (swap! (:state session) assoc :next-pending-request-id next-id
-                      :semantic-queue (subvec (:semantic-queue s) 1)
-                      :semantic-active (Some (record semantic-active (id next-id) (pending pending) (request request)))))))))))
-  (stdlib/ignore 0))
-
-(defn enqueue-semantic [session operation]
-  (match (tuple (:stage-operation (host session)) (:prepare-operation (host session)))
-    (tuple (Some stage) (Some _))
-    (let* [_ (stage operation)]
-      (swap! (:state session) update :semantic-queue conj (record semantic-pending (operation operation)))
-      (Ok (stdlib/ignore 0)))
-    _ (Error "projected graph operations are unavailable")))
-
-(defn normalize-operation-titles [session operation]
-  (let [normalizer (when-some [normalize (:graph-normalize-titles (host session))]
-                     (Some (fn [uuid titles]
-                             (let [[titles tags] (normalize uuid (apply list titles))]
-                               (tuple (vec titles) (mapv (fn [[uuid title]] [uuid title]) tags))))))]
-    (rpc/normalize-operation-titles normalizer fresh-squuid now-ms operation)))
-
-(defn capture-operations [session uuid title now status]
-  (rpc/capture-operations (projection-server-t session) uuid title now status
-                          #(base-outliner-context session) (:journal-page-id (host session)) fresh-squuid
-                          #(normalize-operation-titles session %)))
-
-(defn enqueue-capture [session uuid title now status]
-  (let* [operations (capture-operations session uuid title now status)]
-    (reduce (fn [result operation] (let* [_ result] (enqueue-semantic session operation))) (Ok (stdlib/ignore 0)) operations)))
-
-(defn restore-semantic-queue! [session]
-  (when-some [pending (:pending-operations (host session))]
-    (let [active (when-some [active (:semantic-active (state session))] (Some (:operation-id (:operation (:pending active)))))]
-      (swap! (:state session) assoc :semantic-queue
-             (mapv (fn [operation] (record semantic-pending (operation operation)))
-                   (filter #(not= active (Some (:operation-id %))) (pending)))))))
-
-(defn begin-pending-sync! [session config]
-  (when (not (string/blank? (:token config)))
-    (restore-semantic-queue! session)
-    (let [pending (model/pending-blocks (:model (state session)))
-          assets (filterv :is-asset pending)]
-      (when (empty? assets) (activate-semantic-request session config nil))
-      (let [s (state session)]
-        (when (and (nil? (:semantic-active s)) (nil? (:pending-sync s)))
-          (let [authoritative (set (map :uuid (or (when-some [load (:authoritative-graph-blocks (host session))] (load)) (list))))
-                pump (record pending-sync (config config) (remaining (atom (if (empty? assets) pending assets)))
-                             (authoritative authoritative) (resolved-journal-pages (atom {})) (active (atom nil)))]
-            (swap! (:state session) assoc :pending-sync (Some pump))
-            (prepare-pending-next! session pump))))))
-  (stdlib/ignore 0))
-
-(defn finish-semantic-active! [session active succeeded accepted]
-  (let [next-state (cond (not succeeded) ops/Retryable
-                         (some? accepted) (match accepted (Some t) (ops/Accepted t) None ops/Submitted)
-                         :else ops/Submitted)]
-    (when-some [stage (:stage-operation (host session))] (stage (assoc (:operation (:pending active)) :state next-state)))
-    (when succeeded (when-some [accepted accepted] (record-accepted-server-t! session accepted)))
-    (swap! (:state session) assoc :semantic-active nil)
-    (when succeeded (when-some [config (:config (state session))] (activate-semantic-request session config accepted)))
-    (stdlib/ignore 0)))
-
-(defn cleanup-pending-active! [session active]
-  (when-some [path (:cleanup-path active)] ((:cleanup-file (host session)) path)))
-
-(defn finish-pending-block! [session pump block succeeded]
-  (if succeeded
-    (when (pending-block-unchanged session block) (model/mark-block-submitted (:model (state session)) (:uuid block)))
-    (mark-pending-failed! session block))
-  (reset! (:active pump) nil)
-  (prepare-pending-next! session pump))
-
-(defn asset-datoms-operation [session block status]
-  (rpc/asset-datoms-operation (projection-server-t session) status block #(base-outliner-context session)
-                              (:journal-page-id (host session))))
-
-(defn reconcile-created-block! [session pump block remote-uuid]
-  (model/reconcile-created-block (:model (state session)) (:uuid block) remote-uuid
-                                 (if (pending-block-unchanged session block) "submitted" "pending"))
-  (reset! (:active pump) nil)
-  (prepare-pending-next! session pump))
-
-(defn transport-operation-block [operation]
-  (match operation
-    (Create-block block) block (Upload-asset block) block
-    (Update-title block) block (Update-status block) block
-    (Move-created-asset moved) (:block moved)
-    (Create-journal journal) (:block journal)))
-
-(defn complete-pending-active! [session pump active response]
-  (if-not (<= 200 (:status response) 299)
-    (finish-pending-block! session pump (transport-operation-block (:operation active)) false)
-    (match (:operation active)
-      (Update-title block)
-      (if-some [status (:status block)]
-        (do (set-pending-active! session pump
-                                (Json-request (api/update-block-status-request (:config pump) (:uuid block) (:uuid status)))
-                                (Update-status block) nil)
-            (stdlib/ignore 0))
-        (finish-pending-block! session pump block true))
-
-      (Update-status block)
-      (finish-pending-block! session pump block true)
-
-      (Create-journal journal)
-      (do (swap! (:resolved-journal-pages pump) assoc (:journal-day journal) (:page-id journal))
-          (reset! (:active pump) nil)
-          (match (prepare-pending-create-request session pump (:block journal) (:encrypted-title journal) (Some (:page-id journal)))
-            (Ok _) (stdlib/ignore 0)
-            (Error message)
-            (do (debug (str "prepare pending create after journal failed uuid=" (:uuid (:block journal)) " message=" message))
-                (mark-pending-failed! session (:block journal))
-                (prepare-pending-next! session pump))))
-
-      (Upload-asset block)
-      (match (asset-datoms-operation session block ops/Queued)
-        (Error message)
-        (do (debug (str "prepare asset datoms failed uuid=" (:uuid block) " message=" message))
-            (finish-pending-block! session pump block false))
-        (Ok operation)
-        (match (enqueue-semantic session operation)
-          (Error message)
-          (do (debug (str "stage asset datoms failed uuid=" (:uuid block) " message=" message))
-              (finish-pending-block! session pump block false))
-          (Ok _)
-          (do (let [queue (:semantic-queue (state session))
-                    asset? (fn [pending] (= (:operation-id (:operation pending)) (:operation-id operation)))]
-                (swap! (:state session) assoc :semantic-queue (into (filterv asset? queue) (remove asset? queue))))
-              (finish-pending-block! session pump block true)
-              (activate-semantic-request session (:config pump) nil))))
-
-      (Create-block block)
-      (match (try (Ok (api/created-block-uuid-from-body (:body response)))
-                  (catch error (Error (exceptions/to-string error))))
-        (Error message)
-        (do (debug (str "pending creation response failed uuid=" (:uuid block) " message=" message))
-            (finish-pending-block! session pump block false))
-        (Ok remote)
-        (match (tuple (:local-path block) (:parent-id block))
-          (tuple (Some _) (Some parent))
-          (do (set-pending-active! session pump (Json-request (api/move-block-request (:config pump) remote parent))
-                                  (Move-created-asset (record moved-asset (block block) (remote-uuid remote))) nil)
-              (stdlib/ignore 0))
-          _ (reconcile-created-block! session pump block remote)))
-
-      (Move-created-asset moved)
-      (reconcile-created-block! session pump (:block moved) (:remote-uuid moved)))))
-
-(defn accepted-transaction [body]
-  (try
-    (let [body (json/from-string body)]
-      (match body
-        (tag Assoc _)
-        (let [rejected (= (json-util/member "type" body) (tag String "tx/reject"))
-              accepted (match (tuple (json-util/member "acceptedT" body) (json-util/member "t" body))
-                         (tuple (tag Int t) _) (Some t) (tuple _ (tag Int t)) (Some t) _ nil)]
-          (tuple rejected accepted))
-        _ (tuple false nil)))
-    (catch _ (tuple false nil))))
-
-(defn completion-error [input]
-  (match (json-util/member "error" input)
-    (tag String message) (when (not= message "") (Some message))
-    _ nil))
-
-(defn- validate-completion-id [input expected-id]
-  (match input
-    (tag Assoc _)
-    (match (json-util/member "id" input)
-      (tag Int id)
-      (if (= id expected-id)
-        (Ok id)
-        (Error "pending sync request id does not match"))
-      _ (Error "pending sync completion requires id"))
-    _ (Error "pending sync completion must be an object")))
-
-(defn parse-semantic-completion [input expected-id]
-  (let* [_ (validate-completion-id input expected-id)]
-    (if (some? (completion-error input))
-      (Ok (tuple false nil))
-      (match (json-util/member "status" input)
-        (tag Int status)
-        (let [[rejected accepted] (match (json-util/member "body" input)
-                                    (tag String body) (accepted-transaction body)
-                                    _ (tuple false nil))]
-          (Ok (tuple (and (<= 200 status 299) (not rejected))
-                     (if rejected nil accepted))))
-        _ (Error "pending transport returned no HTTP status")))))
-
-(defn parse-transport-completion [input expected-id]
-  (let* [_ (validate-completion-id input expected-id)]
-    (Ok (if-some [message (completion-error input)]
-          (Error message)
-          (match (json-util/member "status" input)
-            (tag Int status)
-            (Ok (record api/api-response
-                  (status status)
-                  (body (match (json-util/member "body" input) (tag String body) body _ ""))))
-            _ (Error "pending transport returned no HTTP status"))))))
-
-(defn- complete-semantic-response! [session active input]
-  (try
-    (let* [[succeeded accepted] (parse-semantic-completion input (:id active))]
-      (finish-semantic-active! session active succeeded accepted)
-      (Ok (stdlib/ignore 0)))
-    (catch error (Error (str "invalid pending sync completion: " (exceptions/to-string error))))))
-
-(defn- complete-transport-response! [session pump active input]
-  (try
-    (let* [response (parse-transport-completion input (:id active))]
-      (cleanup-pending-active! session active)
-      (match response
-        (Ok response) (complete-pending-active! session pump active response)
-        (Error message)
-        (do (debug (str "pending transport failed id=" (:id active) " message=" message))
-            (finish-pending-block! session pump (transport-operation-block (:operation active)) false)))
-      (Ok (stdlib/ignore 0)))
-    (catch error (Error (str "invalid pending sync completion: " (exceptions/to-string error))))))
-
-(defn complete-pending-sync [session payload]
-  (let [input (json/from-string payload)
-        id (match input (tag Assoc _) (match (json-util/member "id" input) (tag Int id) (when (> id 0) (Some id)) _ nil) _ nil)
-        stale? (fn [expected] (if-some [id id] (< id expected) false))
-        finished? (if-some [id id] (<= id (:next-pending-request-id (state session))) false)]
-    (if-some [active (:semantic-active (state session))]
-      (if (stale? (:id active))
-        (Ok (stdlib/ignore 0))
-        (complete-semantic-response! session active input))
-      (if-some [pump (:pending-sync (state session))]
-        (if-some [active @(:active pump)]
-          (if (stale? (:id active))
-            (Ok (stdlib/ignore 0))
-            (complete-transport-response! session pump active input))
-          (if finished? (Ok (stdlib/ignore 0)) (Error "pending sync has no active request")))
-        (if finished? (Ok (stdlib/ignore 0)) (Error "pending sync is not active"))))))
-
-(defn cancel-pending-sync! [session]
-  (when-some [active (:semantic-active (state session))]
-    (swap! (:state session) update :semantic-queue #(into [(:pending active)] %))
-    (swap! (:state session) assoc :semantic-active nil))
-  (when-some [pump (:pending-sync (state session))]
-    (when-some [active @(:active pump)] (cleanup-pending-active! session active)))
-  (swap! (:state session) assoc :pending-sync nil)
-  (stdlib/ignore 0))
-
 (defn load-related [session request key]
   (let [blocks (match ((:send (host session)) request)
                  (Ok response) (if (<= 200 (:status response) 299) (vec (api/blocks-from-list-body key (:body response)))
@@ -799,87 +258,6 @@
                  (Error message) (do (debug (str "related blocks request failed message=" message)) []))]
     (swap! (:state session) assoc :related-blocks blocks)
     (snapshot-visible session)))
-
-(defn reset-outliner! [session]
-  (swap! (:state session) assoc :outliner-state outliner/empty :outliner-optimistic-blocks nil
-         :outliner-commands [] :outliner-revision (inc (:outliner-revision (state session))))
-  (stdlib/ignore 0))
-
-(defn clear-node-navigation! [session]
-  (when-some [base (:node-base-state (state session))] (swap! (:state session) assoc :outliner-state base))
-  (swap! (:state session) assoc :node-routes [] :node-base-state nil)
-  (stdlib/ignore 0))
-
-(defn persist-active-node-state! [session]
-  (let [s (state session) routes (:node-routes s)]
-    (when (not (empty? routes))
-      (swap! (:state session) assoc :node-routes
-             (assoc routes (dec (count routes)) (assoc (nth routes (dec (count routes))) :state (:outliner-state s))))))
-  (stdlib/ignore 0))
-
-(defn initial-node-state [session route]
-  (if (:zoom-to-block route)
-    (let [[state _] (outliner/update (node-route-context session route) outliner/empty (outliner/Zoom_in (:uuid route)))] state)
-    outliner/empty))
-
-(defn push-node-route! [session route]
-  (persist-active-node-state! session)
-  (when (empty? (:node-routes (state session)))
-    (swap! (:state session) assoc :node-base-state (Some (:outliner-state (state session)))))
-  (let [current (initial-node-state session route)]
-    (swap! (:state session) update :node-routes conj (assoc route :state current))
-    (swap! (:state session) assoc :outliner-state current :outliner-commands []
-           :outliner-revision (inc (:outliner-revision (state session)))))
-  (stdlib/ignore 0))
-
-(defn pop-node-route! [session]
-  (persist-active-node-state! session)
-  (let [routes (:node-routes (state session))]
-    (when (not (empty? routes))
-      (swap! (:state session) assoc :node-routes (subvec routes 0 (dec (count routes))))
-      (if-some [route (active-node-route session)]
-        (swap! (:state session) assoc :outliner-state (:state route))
-        (swap! (:state session) assoc :outliner-state (or (:node-base-state (state session)) outliner/empty) :node-base-state nil))
-      (swap! (:state session) assoc :outliner-commands [] :outliner-revision (inc (:outliner-revision (state session))))))
-  (stdlib/ignore 0))
-
-(defn aggregate-return-context [session payload message]
-  (let [s (state session)
-        return? (match message outliner/Return_pressed true (outliner/Return_pressed_with_text _) true _ false)]
-    (when (and (nil? (:selected-sidebar-page s)) (empty? (:node-routes s)) return?)
-      (when-some [source (rpc/outliner-structure-source payload)]
-        (when-some [destination (:graph-node-destination (host session))]
-          (when-some [[page _] (destination source)]
-            (when-some [context (page-outliner-context session (:uuid page))]
-              (Some (tuple context (:uuid page))))))))))
-
-(defn event-patch-ids [message operations]
-  (match message
-    (outliner/Toggle_collapsed _) nil
-    _ (cond
-        (= (count operations) 1)
-        (match (:intent (nth operations 0))
-          (ops/Save-title title) (Some [(:uuid title)])
-          (ops/Set-property property) (Some [(:uuid property)])
-          _ nil)
-        (empty? operations)
-        (match message
-          (outliner/Tap_block _) (Some []) (outliner/Long_press_block _) (Some [])
-          (outliner/Text_changed _) (Some []) (outliner/Caret_moved _) (Some [])
-          (outliner/Choose_autocomplete _) (Some []) outliner/Save_editing (Some [])
-          outliner/Cancel_editing (Some []) (outliner/Toolbar _) (Some []) _ nil)
-        :else nil)))
-
-(defn refresh-reference-metadata [session aggregate projected operations]
-  (if (some #(match (:intent %) (ops/Save-title _) true (ops/Add-tag _) true _ false) operations)
-    (let [live (if-some [uuid aggregate] (or (page-outliner-context session uuid) (outliner-context session))
-                        (outliner-context session))
-          by-id (zipmap (map :uuid (:blocks live)) (:blocks live))]
-      (assoc projected :blocks
-             (apply list (map (fn [block]
-                                (if-some [current (get by-id (:uuid block))]
-                                  (assoc block :references (:references current) :tags (:tags current)) block)) (:blocks projected)))))
-    projected))
 
 (defn dispatch-outliner-event [session payload]
   (match (rpc/outliner-message payload)
@@ -916,8 +294,9 @@
                        :outliner-commands (vec (:platform interpreted))
                        :outliner-revision (inc (:outliner-revision (state session))))
                 (if (not (empty? (:node-routes (state session)))) (snapshot-visible session)
-                    (if-some [changed (event-patch-ids message operations)]
-                      (outliner-patch session projected changed)
+                    (match (event-patch-plan message operations)
+                      (so/Patch-blocks changed) (outliner-patch session projected changed)
+                      so/Structural-diff
                       (if (and (some? aggregate) (not page-scoped)) (snapshot-visible session)
                           (structural-outliner-patch page-scoped session context previous projected))))))))))))
 
@@ -1025,7 +404,7 @@
             property? (if-some [check (:graph-node-is-property (host session))] (check uuid) false)
             loader (if tag? (:graph-tag-objects (host session)) (:graph-node-references (host session)))
             related (vec (or (when-some [load loader] (load uuid)) (list)))
-            route (record node-route (uuid uuid) (is-tag tag?) (is-property property?) (page page)
+            route (record types/node-route (uuid uuid) (is-tag tag?) (is-property property?) (page page)
                           (zoom-to-block zoom) (related-blocks related) (state outliner/empty))]
         (push-node-route! session route) (snapshot-visible session))
       (rpc/failure "unknown_node" "The referenced node is not available"))))

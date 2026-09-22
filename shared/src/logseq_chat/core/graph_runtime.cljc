@@ -17,9 +17,20 @@
              (encrypt-title :fn<string;result<string;string>>)
              (search-index-path :option<string>) (auto-create-today :bool))
 
+(type-record read-caches
+             (blocks :ref<map<int;vector<model/block>>>)
+             (page-blocks :ref<map<string;vector<model/block>>>)
+             (node-blocks :ref<map<string;vector<model/block>>>)
+             (node-destinations :ref<map<string;option<tuple<model/entity-summary;bool>>>>)
+             (node-kind :ref<map<string;tuple<bool;bool>>>)
+             (journal-page-uuids :ref<map<int;option<string>>>)
+             (tag-pages :ref<option<vector<model/entity-summary>>>)
+             (journal-page-count :ref<option<int>>))
+
 (type-record runtime-state
              (server-t :int) (snapshot :projection/pending-projection-snapshot)
              (sidebar-cache :option<tuple<Datascript.db;read/sidebar-pages>>)
+             (read-cache :option<tuple<Datascript.db;read-caches>>)
              (prepared :map<string;ops/pending-operation>)
              (journal-limit :int) (search-index-is-fresh :bool))
 
@@ -35,6 +46,21 @@
 (defn state [runtime] @(:state runtime))
 
 (defn db [runtime] (:db (:snapshot (state runtime))))
+
+(defn- new-read-caches []
+  (record read-caches (blocks (atom {})) (page-blocks (atom {})) (node-blocks (atom {}))
+          (node-destinations (atom {})) (node-kind (atom {})) (journal-page-uuids (atom {}))
+          (tag-pages (atom nil)) (journal-page-count (atom nil))))
+
+(defn- caches-for-db [runtime database]
+  (match (:read-cache (state runtime))
+    (Some (tuple cached caches))
+    (if (identical? cached database) caches
+        (let [caches (new-read-caches)]
+          (swap! (:state runtime) assoc :read-cache (Some (tuple database caches))) caches))
+    None
+    (let [caches (new-read-caches)]
+      (swap! (:state runtime) assoc :read-cache (Some (tuple database caches))) caches)))
 
 (defn operation-statuses [runtime] (:statuses (:snapshot (state runtime))))
 
@@ -141,7 +167,7 @@
                                              (server-t server-t)
                                              (snapshot (record projection/pending-projection-snapshot
                                                                (db (ds/conn-db conn)) (server-t server-t) (statuses [])))
-                                             (sidebar-cache nil) (prepared {}) (journal-limit 1) (search-index-is-fresh false)))))]
+                                             (sidebar-cache nil) (read-cache nil) (prepared {}) (journal-limit 1) (search-index-is-fresh false)))))]
     (trace-stage "LOGSEQ_RUNTIME_METRIC" started "search")
     (rebase runtime server-t [] [])
     runtime))
@@ -235,7 +261,13 @@
              (Error message) (throw (Failure (str "create today's journal: " message)))))
     runtime))
 
-(defn blocks [runtime] (read/blocks #(Ok %) (:journal-limit (state runtime)) (db runtime)))
+(defn blocks [runtime]
+  (let [caches (caches-for-db runtime (db runtime)) limit (:journal-limit (state runtime))]
+    (match (get @(:blocks caches) limit)
+      (Some blocks) blocks
+      None
+      (let [blocks (read/blocks #(Ok %) limit (db runtime))]
+        (swap! (:blocks caches) assoc limit blocks) blocks))))
 
 (defn due-flashcards [runtime now] (vec (cards/due-cards (db runtime) now)))
 
@@ -262,13 +294,25 @@
       (Error "block is not a flashcard"))))
 
 (defn has-older-journals [runtime]
-  (< (:journal-limit (state runtime)) (read/journal-page-count (db runtime))))
+  (let [caches (caches-for-db runtime (db runtime))]
+    (match @(:journal-page-count caches)
+      (Some count) (< (:journal-limit (state runtime)) count)
+      None
+      (let [count (read/journal-page-count (db runtime))]
+        (reset! (:journal-page-count caches) (Some count))
+        (< (:journal-limit (state runtime)) count)))))
 
 (defn load-older-journals [runtime]
   (swap! (:state runtime) update :journal-limit + 2)
   (stdlib/ignore 0))
 
-(defn blocks-for-page [runtime page-uuid] (read/blocks-for-page #(Ok %) (db runtime) page-uuid))
+(defn blocks-for-page [runtime page-uuid]
+  (let [caches (caches-for-db runtime (db runtime))]
+    (match (get @(:page-blocks caches) page-uuid)
+      (Some blocks) blocks
+      None
+      (let [blocks (read/blocks-for-page #(Ok %) (db runtime) page-uuid)]
+        (swap! (:page-blocks caches) assoc page-uuid blocks) blocks))))
 
 (defn sidebar-pages [runtime]
   (let [database (db runtime)]
@@ -300,19 +344,56 @@
                                      (ops/Delete-page (record ops/pending-page-delete
                                                               (page-uuid page-uuid) (order order) (deleted-at now)))))))
 
-(defn node-destination [runtime uuid] (read/node-destination #(Ok %) (db runtime) uuid))
+(defn node-destination [runtime uuid]
+  (let [caches (caches-for-db runtime (db runtime))]
+    (match (get @(:node-destinations caches) uuid)
+      (Some destination) destination
+      None
+      (let [destination (read/node-destination #(Ok %) (db runtime) uuid)]
+        (swap! (:node-destinations caches) assoc uuid destination) destination))))
 
-(defn objects-for-tag [runtime uuid] (read/objects-for-tag #(Ok %) (db runtime) uuid))
+(defn- node-blocks-for [runtime kind uuid]
+  (let [caches (caches-for-db runtime (db runtime)) key (str kind uuid)]
+    (match (get @(:node-blocks caches) key)
+      (Some blocks) blocks
+      None
+      (let [blocks (match kind
+                     "tag:" (read/objects-for-tag #(Ok %) (db runtime) uuid)
+                     "refs:" (read/references-for-node #(Ok %) (db runtime) uuid)
+                     _ (read/blocks-for-page #(Ok %) (db runtime) uuid))]
+        (swap! (:node-blocks caches) assoc key blocks) blocks))))
 
-(defn tag-pages [runtime] (read/tag-pages #(Ok %) (db runtime)))
+(defn objects-for-tag [runtime uuid] (node-blocks-for runtime "tag:" uuid))
 
-(defn node-is-tag [runtime uuid] (read/node-is-tag? (db runtime) uuid))
+(defn references-for-node [runtime uuid] (node-blocks-for runtime "refs:" uuid))
 
-(defn node-is-property [runtime uuid] (read/node-is-property? (db runtime) uuid))
+(defn tag-pages [runtime]
+  (let [caches (caches-for-db runtime (db runtime))]
+    (match @(:tag-pages caches)
+      (Some pages) pages
+      None
+      (let [pages (read/tag-pages #(Ok %) (db runtime))]
+        (reset! (:tag-pages caches) (Some pages)) pages))))
 
-(defn references-for-node [runtime uuid] (read/references-for-node #(Ok %) (db runtime) uuid))
+(defn- node-kind [runtime uuid]
+  (let [caches (caches-for-db runtime (db runtime))]
+    (match (get @(:node-kind caches) uuid)
+      (Some kind) kind
+      None
+      (let [kind (tuple (read/node-is-tag? (db runtime) uuid) (read/node-is-property? (db runtime) uuid))]
+        (swap! (:node-kind caches) assoc uuid kind) kind))))
 
-(defn journal-page-uuid [runtime journal-day] (read/journal-page-uuid (db runtime) journal-day))
+(defn node-is-tag [runtime uuid] (first (node-kind runtime uuid)))
+
+(defn node-is-property [runtime uuid] (second (node-kind runtime uuid)))
+
+(defn journal-page-uuid [runtime journal-day]
+  (let [caches (caches-for-db runtime (db runtime))]
+    (match (get @(:journal-page-uuids caches) journal-day)
+      (Some uuid) uuid
+      None
+      (let [uuid (read/journal-page-uuid (db runtime) journal-day)]
+        (swap! (:journal-page-uuids caches) assoc journal-day uuid) uuid))))
 
 (defn normalize-titles [runtime uuid titles] (read/normalize-titles-creating-tags (db runtime) fresh-uuid uuid titles))
 

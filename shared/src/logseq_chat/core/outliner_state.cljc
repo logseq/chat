@@ -70,7 +70,8 @@
               (Copy_text :string) (Copy_references :list<string>) (Copy_urls :list<string>))
 
 (type-record outliner-context
-             (blocks :list<model/block>) (pages :list<outliner-candidate>) (tags :list<outliner-candidate>))
+             (blocks :list<model/block>) (pages :list<outliner-candidate>) (tags :list<outliner-candidate>)
+             (label-values :map<string;set<string>>) (dup-labels :set<string>))
 
 (type-record outliner-row (block :model/block) (depth :int) (has-children :bool) (is-collapsed :bool))
 
@@ -94,10 +95,23 @@
 
 (defn find-block [^:outliner-context context uuid] (some #(when (= (:uuid %) uuid) %) (:blocks context)))
 
+(defn- candidate-label-values [candidates]
+  (reduce (fn [^:map<string;set<string>> values candidate]
+            (let [key (bytes/lowercase-ascii (:label candidate))]
+              (assoc values key (conj (or (get values key) empty-uuids) (:value candidate)))))
+          {} candidates))
+
+(defn- duplicated-of [label-values]
+  (into empty-uuids (keep (fn [[label values]] (when (> (count values) 1) label)) label-values)))
+
 (defn duplicated-labels [candidates]
-  (let [by-label (group-by #(bytes/lowercase-ascii (:label %)) candidates)]
-    (into empty-uuids (keep (fn [[label values]]
-                      (when (> (count (set (map :value values))) 1) label)) by-label))))
+  (duplicated-of (candidate-label-values candidates)))
+
+(defn context [blocks pages tags]
+  (let [pages (apply list pages) tags (apply list tags)
+        label-values (candidate-label-values (concat pages tags))]
+    (record outliner-context (blocks (apply list blocks)) (pages pages) (tags tags)
+            (label-values label-values) (dup-labels (duplicated-of label-values)))))
 
 (defn summary-candidates [^:seq<model/entity-summary> summaries]
   (mapv #(record outliner-candidate (label (:title %)) (value (:uuid %))) summaries))
@@ -108,9 +122,14 @@
            (:title %)) summaries))
 
 (defn display-block-title [context block]
-  (let [candidates (concat (:pages context) (:tags context)
-                           (summary-candidates (concat (:references block) (:tags block))))
-        duplicated (duplicated-labels candidates)]
+  (let [[dup _] (reduce (fn [[dup label-values] candidate]
+                          (let [key (bytes/lowercase-ascii (:label candidate))
+                                values (conj (or (get label-values key) empty-uuids) (:value candidate))]
+                            (tuple (if (> (count values) 1) (conj dup key) dup)
+                                   (assoc label-values key values))))
+                        (tuple (:dup-labels context) (:label-values context))
+                        (summary-candidates (concat (:references block) (:tags block))))
+        duplicated dup]
     (ref-text/to-text
      #(summary-title duplicated (concat (:tags block) (:references block)) %)
      #(summary-title duplicated (concat (:references block) (:tags block)) %)
@@ -205,7 +224,7 @@
   (str (bytes/sub value 0 start) replacement (bytes/sub value finish (- (bytes/length value) finish))))
 
 (defn candidate-label [context ^:seq<outliner-candidate> candidates value]
-  (let [duplicated (duplicated-labels (concat (:pages context) (:tags context)))]
+  (let [duplicated (:dup-labels context)]
     (some #(when (and (= (:value %) value) (not (string/blank? (:label %)))
                       (not (contains? duplicated (bytes/lowercase-ascii (:label %))))) (:label %)) candidates)))
 

@@ -5,6 +5,7 @@
             [ocaml.Stdlib :as stdlib]
             [logseq-chat.rpc :as rpc]
             [logseq-chat.rpc-session :as rpc-session]
+            [logseq-chat.session-types :as session-types]
             [logseq-chat.graph-read :as graph]
             [logseq-chat.fractional-order :as fractional]
             [logseq-chat.pending-ops :as ops]
@@ -1434,8 +1435,7 @@
      (fn [[anchored before after position deleted inserted changed removed]]
        (let [session (rpc-session/create-session rpc-session/default-options)
              context (fn [blocks]
-                       (record outliner/outliner-context
-                               (blocks (apply list blocks)) (pages (list)) (tags (list))))
+                       (outliner/context blocks (list) (list)))
              result (response-result
                      (json/from-string
                       (rpc-session/structural-outliner-patch anchored session (context before) (:outliner-state (rpc-session/state session)) (context after))))
@@ -1789,7 +1789,7 @@
                                                     :sync-cursor (Some (fn [] (Some 60)))
                                                     :prepare-operation (Some prepare-operation))))
         operation (assoc (queued-title-operation "late-ack" "New") :base-t 60)]
-    (swap! (:state session) assoc :semantic-queue [(record rpc-session/semantic-pending (operation operation))])
+    (swap! (:state session) assoc :semantic-queue [(record session-types/semantic-pending (operation operation))])
     (match (:config (rpc-session/state session))
       (Some config) (rpc-session/activate-semantic-request session config (Some 43))
       None (stdlib/failwith "expected configured session"))
@@ -2090,9 +2090,8 @@
         other-page (assoc sibling :uuid "other-page" :page-id "elsewhere" :order (Some "zZ"))
         other-parent (assoc sibling :uuid "other-parent" :parent-id (Some "elsewhere") :order (Some "zZ"))
         unordered (assoc sibling :uuid "unordered" :order nil)
-        context (record outliner/outliner-context
-                        (blocks (list parent sibling earlier other-page other-parent unordered))
-                        (pages (list)) (tags (list)))
+        context (outliner/context (list parent sibling earlier other-page other-parent unordered)
+                        (list) (list))
         ids (atom 0)
         fresh-id (fn [] (swap! ids inc) "operation")]
     (match (rpc/child-operation 7 context "child" "Child" "parent" 10 fresh-id)
@@ -3107,7 +3106,7 @@
 (deftest outliner-rows-preserve-hierarchy-video-targets-and-serializer
   (let [video (video-block "video" "{{youtube dQw4w9WgXcQ}}")
         child (assoc (video-block "child" "{{youtube-timestamp 00:10}}") :parent-id (Some "video"))
-        context (record outliner/outliner-context (blocks (list video child)) (pages (list)) (tags (list)))
+        context (outliner/context (list video child) (list) (list))
         seen (atom [])
         serialize (fn [block] (swap! seen conj (:uuid block)) (tag String (:uuid block)))
         encode (fn [state] (json/to-string (rpc/outliner-rows-json serialize context state)))]
@@ -3121,7 +3120,7 @@
 
 (deftest outliner-candidate-json-preserves-filtering-and-no-request
   (let [candidate (record outliner/outliner-candidate (label "Alpha") (value "page"))
-        context (record outliner/outliner-context (blocks (list)) (pages (list candidate)) (tags (list)))
+        context (outliner/context (list) (list candidate) (list))
         state (assoc outliner/empty :autocomplete
                      (Some (record outliner/reducer-autocomplete (kind outliner/Node) (query "alp"))))]
     (is (= "[]" (json/to-string (rpc/outliner-candidates-json context outliner/empty))))
