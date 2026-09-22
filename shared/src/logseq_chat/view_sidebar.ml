@@ -97,14 +97,14 @@ let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
-      [ text ~value:"Journals" [] ])
+      ~text:"Journals" [])
   else
     View_base.with_label "Journals"
       (list_item ~role:"navigation" ~icon:"app:calendar"
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
-      [ text ~value:"Journals" [] ])
+      ~text:"Journals" [])
 
 let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = FlutterHost then
@@ -113,14 +113,14 @@ let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
-      [ text ~value:"Flashcards" [] ])
+      ~text:"Flashcards" [])
   else
     View_base.with_label "Flashcards"
       (list_item ~role:"navigation" ~icon:"app:flashcards"
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
-      [ text ~value:"Flashcards" [] ])
+      ~text:"Flashcards" [])
 
 let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = FlutterHost then
@@ -129,14 +129,14 @@ let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
-      [ text ~value:"Graphs" [] ])
+      ~text:"Graphs" [])
   else
     View_base.with_label "Graphs"
       (list_item ~role:"navigation" ~icon:"app:folder"
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
-      [ text ~value:"Graphs" [] ])
+      ~text:"Graphs" [])
 
 let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
   column ~accessibility_identifier:"sidebar.navigation" ~grow:1.0 ~gap:4

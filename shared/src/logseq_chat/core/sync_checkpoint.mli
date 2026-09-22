@@ -11,3 +11,6 @@ val encode : sync_checkpoint -> string
 val decode : string -> (sync_checkpoint, string) result
 val load_checkpoint : string -> (sync_checkpoint option, string) result
 val save_checkpoint_atomic : string -> sync_checkpoint -> (unit, string) result
+val decode_map :
+  (Transit_core.Json.value * Transit_core.Json.value) list ->
+  (sync_checkpoint, string) result

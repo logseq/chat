@@ -1407,3 +1407,12 @@ let with_int_prop_signal prop signal_ (elem : Lui_elements.t)
    let node = elem context parent in
    Lui_ui.int_property_signal context node prop signal_;
    node
+
+let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
+ fun context parent ->
+   let tweak = Lui_ui.platform_tweak context "liquid-glass" in
+   Lui_ui.extension_property context tweak "shape"
+     (StringValue shape);
+   ignore (elem context (Some tweak));
+   Lui_elements.attach context parent tweak;
+   tweak

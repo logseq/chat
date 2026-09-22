@@ -52,7 +52,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
   if Lui_ui.host context = FlutterHost then
     View_base.with_label_signal
       (reactive View_base.outliner_row_collapse_label row_source)
-      (View_base.with_string_prop_signal IconName
+      (View_base.with_string_prop_signal InlineIconName
          (Signal.map
             (fun (current_row : Model.outline_row) ->
               View_base.outliner_collapse_icon_name
@@ -70,7 +70,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
   else
     View_base.with_label_signal
       (reactive View_base.outliner_row_collapse_label row_source)
-      (View_base.with_string_prop_signal IconName
+      (View_base.with_string_prop_signal InlineIconName
          (Signal.map
             (fun (current_row : Model.outline_row) ->
               if current_row.is_collapsed then "app:disclosure-right"
@@ -286,7 +286,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
   else
     View_base.with_label_signal
       (reactive View_base.outliner_row_status_title row_source)
-      (View_base.with_string_prop_signal IconName
+      (View_base.with_string_prop_signal InlineIconName
          (reactive View_base.outliner_task_status_icon row_source)
          (button ~variant:"ghost" ~style_class:"body-line"
             ~foreground:"secondary" ~size:"icon" ~width:22 ~height:24
@@ -588,12 +588,13 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
         ~accessibility_identifier:identifier
         ~on_press:(fun _ ->
           ignore (send (Model.PerformOutlinerToolbarAction action)))
-        [ text ~value:label [] ]
+        ~text:label []
     in
-    toolbar ~orientation:"horizontal" ~label:"Outliner selection"
-      ~accessibility_identifier:"toolbar.outliner.selection"
-      ~style_class:"scroll-leading leading-inset-12" ~height:54
-      ~toolbar_gap:6
+    View_base.with_liquid_glass "capsule"
+      (toolbar ~orientation:"horizontal" ~label:"Outliner selection"
+         ~accessibility_identifier:"toolbar.outliner.selection"
+         ~style_class:"scroll-leading leading-inset-12"
+         ~toolbar_gap:6
       [
         apple_button "app:toolbar-copy" "Copy"
           "button.outliner.selection.copy" "copy";
@@ -613,8 +614,8 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
           ~on_press:(fun _ ->
             ignore
               (send (Model.PerformOutlinerToolbarAction "unselect")))
-          [ text ~value:"Unselect" [] ];
-      ]
+          ~text:"Unselect" [];
+      ])
 
 let outliner_autocomplete_row (context : Lui_ui.ui_context)
     candidate_source send : t =
@@ -702,7 +703,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                 ignore
                   (send
                      (Model.PerformOutlinerToolbarAction "pageReference")))
-              [ text ~value:"[[]]" [] ];
+              ~text:"[[]]" [];
             toolbar_button "app:toolbar-hide-keyboard" "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
           ];
@@ -717,7 +718,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     in
     toolbar ~orientation:"horizontal" ~label:"Outliner editor"
       ~accessibility_identifier:"toolbar.outliner.editor"
-      ~style_class:"scroll-leading leading-inset-8" ~height:50
+      ~style_class:"scroll-leading leading-inset-8"
       ~toolbar_gap:4
       [
         View_base.with_label_signal
@@ -741,7 +742,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
             ignore
               (send
                  (Model.PerformOutlinerToolbarAction "pageReference")))
-          [ text ~value:"[[]]" [] ];
+          ~text:"[[]]" [];
         apple_icon_button "app:toolbar-hide-keyboard" "Hide keyboard"
           "button.outliner.editor.hideKeyboard" "hideKeyboard";
       ]
@@ -852,7 +853,7 @@ let add_first_block_button model_source send : t =
                (Model.AddRootBlock
                   (View_base.active_node_page_uuid
                      (Signal.sample model_source)))))
-        [ text ~value:"Add first block" [] ];
+        ~text:"Add first block" [];
     ]
 
 let node_screen (context : Lui_ui.ui_context) model_source send : t =

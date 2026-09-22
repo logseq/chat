@@ -35,7 +35,7 @@ let composer_attachment_button (context : Lui_ui.ui_context) send : t =
     button ~icon:"app:add" ~variant:"ghost" ~label:"Add attachment"
       ~accessibility_identifier:"button.attachment"
       ~on_press:(press send Model.OpenAttachmentPicker)
-      [ text ~value:"Attach" []; attachment_menu send ]
+      ~text:"Attach" [ attachment_menu send ]
   else
     button ~icon:"app:composer-add" ~variant:"ghost" ~width:32 ~height:32
       ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
@@ -47,7 +47,7 @@ let composer_task_status_button (context : Lui_ui.ui_context) send : t =
     button ~icon:"app:task-todo" ~variant:"ghost" ~foreground:"border"
       ~label:"Task status" ~accessibility_identifier:"button.task-status"
       ~on_press:(press send Model.OpenTaskStatusPicker)
-      [ text ~value:"Task" [] ]
+      ~text:"Task" []
   else
     button ~icon:"app:task-todo" ~variant:"ghost" ~size:"icon" ~width:32
       ~height:32 ~foreground:"border" ~label:"Task status"
@@ -68,7 +68,7 @@ let android_composer_send_button (context : Lui_ui.ui_context)
       ~accessibility_identifier:"button.send"
       ~disabled_signal:disabled_source
       ~on_press:(press send Model.SendComposer)
-      [ text ~value:"Send" [] ]
+      ~text:"Send" []
 
 let apple_composer_send_button disabled_source send : t =
   button ~icon:"app:arrow-up" ~variant:"ghost" ~width:36 ~height:36
@@ -90,19 +90,20 @@ let collapsed_composer_button (context : Lui_ui.ui_context) send : t =
         ~padding_horizontal:20 ~label:"Capture a thought"
         ~accessibility_identifier:"button.composer.expand"
         ~on_press:(press send Model.ExpandComposer)
-        [ text ~value:"Capture a thought" [] ]
+        ~text:"Capture a thought" []
     else
       button ~variant:"ghost" ~height:58 ~padding_horizontal:30
         ~foreground:"muted-foreground"
         ~accessibility_identifier:"button.composer.expand"
         ~on_press:(press send Model.ExpandComposer)
-        [ text ~value:"Capture" [] ]
+        ~text:"Capture" []
   else
-    button ~variant:"ghost" ~grow:1.0 ~height:58 ~padding_horizontal:30
-      ~foreground:"muted-foreground"
-      ~accessibility_identifier:"button.composer.expand"
-      ~on_press:(press send Model.ExpandComposer)
-      [ text ~value:"Capture" [] ]
+    View_base.with_liquid_glass "capsule"
+      (button ~variant:"ghost" ~grow:1.0 ~height:58
+         ~padding_horizontal:30 ~foreground:"muted-foreground"
+         ~accessibility_identifier:"button.composer.expand"
+         ~on_press:(press send Model.ExpandComposer)
+         ~text:"Capture" [])
 
 let composer_asset_preview asset_source : t =
  fun context parent ->
@@ -181,24 +182,24 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
     [
       if_
         ~test:(Signal.map View_base.composer_expanded_ model_source)
-        (column ~grow:1.0 ~main:"end" ~gap:0
-           ~padding_horizontal:
-             (if Lui_ui.host context = FlutterHost then 12 else 16)
-           ~padding_vertical:
-             (if Lui_ui.host context = FlutterHost then 12 else 8)
-           ~background:
-             (if Lui_ui.host context = FlutterHost then
-                "surface-container-high"
-              else "glass-fallback")
-           ~corner_radius:24
+        (View_base.with_liquid_glass "rounded-rectangle"
+           (column ~grow:1.0 ~main:"end" ~gap:0
+              ~padding_horizontal:
+                (if Lui_ui.host context = FlutterHost then 12 else 16)
+              ~padding_vertical:
+                (if Lui_ui.host context = FlutterHost then 12 else 8)
+              ~background:
+                (if Lui_ui.host context = FlutterHost then
+                   "surface-container-high"
+                 else "glass-fallback")
+              ~corner_radius:24
            [
              box ~height:6 ~accessibility_identifier:"spacer.composer.top"
                [];
              if_
                ~test:(Signal.map View_base.composer_assets_present_
                         model_source)
-               (View_base.with_string_prop OrientationValue "horizontal"
-                  (scroll ~height:140
+               (scroll ~height:140
                      [
                        row ~gap:8
                          [
@@ -211,7 +212,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                              ~mount:(fun asset_source ->
                                composer_asset_view asset_source send);
                          ];
-                     ]));
+                     ]);
              textarea
                ~text_signal:(reactive View_base.composer_draft model_source)
                ~min_height:36 ~style_class:"composer-input"
@@ -243,7 +244,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                    (reactive View_base.composer_send_disabled_ model_source)
                    send;
                ];
-           ]);
+           ]));
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
         (collapsed_composer_button context send);

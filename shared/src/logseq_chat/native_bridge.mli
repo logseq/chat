@@ -1,36 +1,52 @@
-val send_patch_bang : string -> bool
+val send_patch : string -> bool
 
-val operating_system : int -> operating_system
+val operating_system : int -> Lui_protocol.operating_system
 
-val host_kind : int -> host_kind
+val host_kind : int -> Lui_protocol.host_kind
 
-val app : unit -> (chat_model, chat_action) reducer_app
+val app :
+  unit -> (Model.chat_model, Model.chat_action) Lui_app.reducer_app
 
-val flush_event_bang : event -> string
+val flush_event : Lui_protocol.event -> string
 
-val flush_action_bang : chat_action -> string
+val flush_action : Model.chat_action -> string
 
-val encode_string_vector : string Rrbvec.t -> string
+val apply_response : string -> string
+
+val apply_host_update : string -> string -> string
+
+val encode_string_vector : string list -> string
 
 val encode_option_string : string option -> string
 
-val encode_task_status : task_status -> string
+val encode_session_asset : Model.composer_asset -> string
+
+val encode_session_routes : Model.navigation_route list -> string
+
+val encode_ui_session : Model.ui_session -> string
+
+val encode_task_status : Model.task_status -> string
 
 val encode_asset_presentation : string -> string -> string -> string
 
-val encode_settings : settings_projection -> string
+val encode_settings : Model.settings_projection -> string
 
-val encode_runtime_log_record : runtime_log_record -> string
+val encode_runtime_log_record : Model.runtime_log_record -> string
 
-val encode_runtime_log_records : runtime_log_record Rrbvec.t -> string
+val encode_runtime_log_records : Model.runtime_log_record list -> string
 
-val encode_effect : chat_effect -> string
+val encode_effect : Model.chat_effect -> string
 
-val encode_effect_dispatch : chat_effect -> string -> string
+val encode_effect_dispatch : Model.chat_effect -> string -> string
 
 val take_effect : unit -> string
 
 val resolve_effect : int -> bool -> string -> string
+
+val backend : Lui_protocol.platform_profile -> Lui_protocol.backend
+
+val start_application :
+  (Model.chat_model, Model.chat_action) Lui_app.reducer_app -> string
 
 val initialize : int -> int -> int -> string
 
@@ -61,9 +77,3 @@ val extension_event : int -> string -> string -> string -> int -> string
 val dispose : unit -> string
 
 val root_node : unit -> int
-
-val encode_session_asset : composer_asset -> string
-
-val encode_session_routes : navigation_route Rrbvec.t -> string
-
-val encode_ui_session : ui_session -> string

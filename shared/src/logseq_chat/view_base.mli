@@ -375,3 +375,4 @@ val with_bool_prop_signal :
 val with_int_prop_signal :
   Lui_protocol.Property_map.key ->
   int Signal.signal -> Lui_elements.t -> Lui_elements.t
+val with_liquid_glass : string -> Lui_elements.t -> Lui_elements.t

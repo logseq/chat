@@ -15,7 +15,7 @@ let flashcard_rating_button rating title foreground background send : t =
     ~text_alignment:"center" ~foreground ~background ~corner_radius:14
     ~accessibility_identifier:("button.flashcard.rating." ^ rating)
     ~on_press:(press send (Model.ReviewFlashcard rating))
-    [ text ~value:title [] ]
+    ~text:title []
 
 let flashcard_review_content model_source send : t =
   column ~accessibility_identifier:"layout.flashcards.review" ~grow:1.0
@@ -79,7 +79,7 @@ let flashcard_review_content model_source send : t =
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-cloze"
                    ~on_press:(press send Model.RevealFlashcardCloze)
-                   [ text ~value:"Show cloze" [] ];
+                   ~text:"Show cloze" [];
                ]);
           if_
             ~test:(Signal.map View_base.flashcard_show_answer_ model_source)
@@ -91,7 +91,7 @@ let flashcard_review_content model_source send : t =
                    ~corner_radius:14
                    ~accessibility_identifier:"button.flashcard.show-answer"
                    ~on_press:(press send Model.RevealFlashcardAnswer)
-                   [ text ~value:"Show answer" [] ];
+                   ~text:"Show answer" [];
                ]);
           if_
             ~test:(Signal.map View_base.flashcard_show_ratings_ model_source)

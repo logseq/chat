@@ -39,15 +39,28 @@
   (c_library_flags
    (:standard -L%{env:LOGSEQ_CHAT_SQLITE_LIB_DIR=.} -lsqlite3)))
 
+(library
+ (name logseq_chat_app)
+ (wrapped false)
+ (modules
+  (:include dune_modules/app.sexp))
+ (libraries
+  logseq_chat_core
+  lui
+  ocaml-signal
+  ctypes.foreign)
+ (flags (:standard -w -27-32-37-39-69))
+ (preprocess
+  (pps lui.ppx)))
+
 (executable
  (name logseq_chat_mobile_entry)
  (modules
   (:include dune_modules/mobile_entry.sexp))
  (modes object)
  (flags (:standard -w -27-32-37-39-69))
- (preprocess
-  (pps lui.ppx))
  (libraries
+  logseq_chat_app
   logseq_chat_core
   lui
   ocaml-signal
