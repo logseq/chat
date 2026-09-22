@@ -1,1 +1,1 @@
-let () = ()
+let () = Live_sync.run ()

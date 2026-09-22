@@ -1,1 +1,1 @@
-("Logseq_chat_mobile_entry")
+("Model" "View_base" "Logseq_chat_mobile_entry")

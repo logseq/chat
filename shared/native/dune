@@ -7,8 +7,8 @@
 ; membership and artifact paths stay in shared/native/.
 (copy_files ../src/logseq_chat/core/*.ml)
 (copy_files ../src/logseq_chat/core/*.mli)
-; (copy_files ../src/logseq_chat/*.ml)
-; (copy_files ../src/logseq_chat/*.mli)
+(copy_files ../src/logseq_chat/*.ml)
+(copy_files ../src/logseq_chat/*.mli)
 (copy_files ../src/logseq_chat/entry/*.ml)
 
 (library
@@ -46,7 +46,7 @@
  (modes object)
  (flags (:standard -w -27-32-37-39-69))
  (preprocess
-  (pps lui_ppx))
+  (pps lui.ppx))
  (libraries
   logseq_chat_core
   lui
