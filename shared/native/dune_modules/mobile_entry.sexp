@@ -1,1 +1,1 @@
-("logseq_chat_mobile_entry")
+("Logseq_chat_mobile_entry")
