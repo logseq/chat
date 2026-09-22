@@ -10,7 +10,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       (list_item
       ~text:(reactive View_base.sidebar_page_title page_source)
       ~icon:"app:document"
-      ~selected:(reactive View_base.sidebar_page_selected_ model_source)
+      ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
       ~accessibility_identifier:(View_base.sidebar_page_identifier page)
       ~on_press:(fun _ ->
         ignore (send (Model.SelectSidebarPage (sample page_source).uuid)))
@@ -21,7 +21,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       (list_item
       ~text:(reactive View_base.sidebar_page_title page_source)
       ~role:"navigation" ~icon:"app:document"
-      ~selected:(reactive View_base.sidebar_page_selected_ model_source)
+      ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
       ~accessibility_identifier:(View_base.sidebar_page_identifier page)
       ~on_press:(fun _ ->
         ignore (send (Model.SelectSidebarPage (sample page_source).uuid)))
@@ -30,7 +30,8 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
 let sidebar_graph_menu_item model_source graph_source send : t =
   let graph = sample graph_source in
   View_base.with_selected_signal
-    (reactive View_base.sidebar_graph_selected_ model_source)
+    (Signal.map2 View_base.sidebar_graph_selected_ model_source
+       graph_source)
     (menu_item
     ~text:(reactive View_base.graph_title graph_source)
     ~disabled:(reactive View_base.sidebar_graph_disabled_ graph_source)
@@ -148,7 +149,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
         [
           sidebar_graph_switch context model_source send;
           if_
-            ~test:(reactive View_base.model_graph_menu_open_ model_source)
+            ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
             (dropdown_menu ~anchor:"below" ~anchor_alignment:"start"
                ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
                ~on_dismiss:(press send Model.DismissGraphMenu)
@@ -159,16 +160,18 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                         (fun (current : Model.chat_model) -> current.graphs)
                         model_source)
                    ~key:View_base.sidebar_graph_identifier ~compare
-                   ~mount:(sidebar_graph_menu_item model_source send);
+                   ~mount:(fun graph_source ->
+                     sidebar_graph_menu_item model_source graph_source
+                       send);
                ]);
         ];
       box ~height:12 [];
       sidebar_journals_row context model_source send;
       if_
-        ~test:(reactive View_base.flashcards_tab_visible_ model_source)
+        ~test:(Signal.map View_base.flashcards_tab_visible_ model_source)
         (sidebar_flashcards_row context model_source send);
       if_
-        ~test:(reactive View_base.graphs_tab_visible_ model_source)
+        ~test:(Signal.map View_base.graphs_tab_visible_ model_source)
         (sidebar_graphs_row context model_source send);
       scroll ~grow:1.0 ~accessibility_identifier:"scroll.sidebar.pages"
         [
@@ -179,13 +182,15 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                 [
                   sidebar_section_heading "Favorites" "app:star";
                   if_
-                    ~test:(reactive View_base.favorites_empty_ model_source)
+                    ~test:(Signal.map View_base.favorites_empty_ model_source)
                     (sidebar_empty_section_label "No favorites yet");
                   keyed
                     ~source:
                       (Signal.map View_base.sidebar_favorites model_source)
                     ~key:View_base.sidebar_page_identifier ~compare
-                    ~mount:(sidebar_page_row context model_source send);
+                    ~mount:(fun page_source ->
+                       sidebar_page_row context model_source page_source
+                         send);
                 ];
               column ~accessibility_identifier:"section.sidebar.recent"
                 ~gap:2
@@ -193,13 +198,15 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                   sidebar_section_heading "Recent" "app:history";
                   if_
                     ~test:
-                      (reactive View_base.recent_pages_empty_ model_source)
+                      (Signal.map View_base.recent_pages_empty_ model_source)
                     (sidebar_empty_section_label "No recent pages");
                   keyed
                     ~source:
                       (Signal.map View_base.sidebar_recent_pages model_source)
                     ~key:View_base.sidebar_page_identifier ~compare
-                    ~mount:(sidebar_page_row context model_source send);
+                    ~mount:(fun page_source ->
+                       sidebar_page_row context model_source page_source
+                         send);
                 ];
             ];
         ];

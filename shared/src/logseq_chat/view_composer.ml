@@ -168,7 +168,7 @@ let task_status_picker_dialog model_source send : t =
         ~key:View_base.task_status_identifier ~compare:compare
         ~mount:(fun status_source -> task_status_row status_source send);
       if_
-        ~test:(reactive View_base.task_status_selected_ model_source)
+        ~test:(Signal.map View_base.task_status_selected_ model_source)
         (menu_item ~accessibility_identifier:"button.task-status.clear"
            ~text:"Clear task status"
            ~on_press:(press send Model.ClearTaskStatus)
@@ -180,7 +180,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
     ~min_height:58
     [
       if_
-        ~test:(reactive View_base.composer_expanded_ model_source)
+        ~test:(Signal.map View_base.composer_expanded_ model_source)
         (column ~grow:1.0 ~main:"end" ~gap:0
            ~padding_horizontal:
              (if Lui_ui.host context = FlutterHost then 12 else 16)
@@ -195,7 +195,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              box ~height:6 ~accessibility_identifier:"spacer.composer.top"
                [];
              if_
-               ~test:(reactive View_base.composer_assets_present_
+               ~test:(Signal.map View_base.composer_assets_present_
                         model_source)
                (View_base.with_string_prop OrientationValue "horizontal"
                   (scroll ~height:140
@@ -233,7 +233,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                      composer_task_status_button context send;
                      if_
                        ~test:
-                         (reactive View_base.model_task_status_picker_open_
+                         (Signal.map View_base.model_task_status_picker_open_
                             model_source)
                        (task_status_picker_dialog model_source send);
                    ];
@@ -245,7 +245,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                ];
            ]);
       if_
-        ~test:(reactive View_base.composer_collapsed_ model_source)
+        ~test:(Signal.map View_base.composer_collapsed_ model_source)
         (collapsed_composer_button context send);
     ]
 

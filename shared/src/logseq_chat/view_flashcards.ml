@@ -1,4 +1,3 @@
-open Lui_protocol
 open Lui_elements
 
 let flashcard_answer_row answer_source : t =
@@ -48,7 +47,7 @@ let flashcard_review_content model_source send : t =
                     ~accessibility_identifier:"flashcard.question" [];
                   if_
                     ~test:
-                      (reactive View_base.flashcard_answer_rows_visible_
+                      (Signal.map View_base.flashcard_answer_rows_visible_
                          model_source)
                     (column ~gap:18
                        [
@@ -71,7 +70,7 @@ let flashcard_review_content model_source send : t =
                 ];
             ];
           if_
-            ~test:(reactive View_base.flashcard_show_cloze_ model_source)
+            ~test:(Signal.map View_base.flashcard_show_cloze_ model_source)
             (row
                [
                  button ~variant:"ghost" ~style_class:"semibold" ~grow:1.0
@@ -83,7 +82,7 @@ let flashcard_review_content model_source send : t =
                    [ text ~value:"Show cloze" [] ];
                ]);
           if_
-            ~test:(reactive View_base.flashcard_show_answer_ model_source)
+            ~test:(Signal.map View_base.flashcard_show_answer_ model_source)
             (row
                [
                  button ~variant:"ghost" ~style_class:"semibold" ~grow:1.0
@@ -95,7 +94,7 @@ let flashcard_review_content model_source send : t =
                    [ text ~value:"Show answer" [] ];
                ]);
           if_
-            ~test:(reactive View_base.flashcard_show_ratings_ model_source)
+            ~test:(Signal.map View_base.flashcard_show_ratings_ model_source)
             (column ~gap:10
                [
                  row ~gap:10
@@ -123,7 +122,7 @@ let flashcard_screen model_source send : t =
     ~background:"background"
     [
       if_
-        ~test:(reactive View_base.flashcards_empty_ model_source)
+        ~test:(Signal.map View_base.flashcards_empty_ model_source)
         (column ~accessibility_identifier:"layout.flashcards.empty"
            ~grow:1.0 ~main:"center" ~cross:"center" ~gap:10 ~padding:32
            [
@@ -135,6 +134,6 @@ let flashcard_screen model_source send : t =
                ~value:"Tag any block with #Card to review it here." [];
            ]);
       if_
-        ~test:(reactive View_base.flashcards_present_ model_source)
+        ~test:(Signal.map View_base.flashcards_present_ model_source)
         (flashcard_review_content model_source send);
     ]

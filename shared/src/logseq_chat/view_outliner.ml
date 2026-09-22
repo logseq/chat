@@ -48,7 +48,7 @@ let outliner_rich_block_view model_source title_source markup_source
 
 let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
     t =
-  let row = Signal.sample row_source in
+  let current_row = Signal.sample row_source in
   if Lui_ui.host context = FlutterHost then
     View_base.with_label_signal
       (reactive View_base.outliner_row_collapse_label row_source)
@@ -60,7 +60,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
             row_source)
          (button ~variant:"ghost" ~width:28 ~height:28
             ~accessibility_identifier:
-              (View_base.outliner_collapse_identifier row)
+              (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
               ignore
                 (send
@@ -79,7 +79,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
          (button ~size:"icon" ~style_class:"body-line"
             ~foreground:"secondary" ~variant:"ghost" ~width:28 ~height:24
             ~accessibility_identifier:
-              (View_base.outliner_collapse_identifier row)
+              (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
               ignore
                 (send
@@ -154,8 +154,8 @@ let outliner_tag tag_source send : t =
 let outliner_zoom_control (context : Lui_ui.ui_context) model_source
     row_source send search_open : t =
   let current = Signal.sample model_source in
-  let row = Signal.sample row_source in
-  if (not search_open) && View_base.outliner_row_journal_ current row
+  let current_row = Signal.sample row_source in
+  if (not search_open) && View_base.outliner_row_journal_ current current_row
   then
     if Lui_ui.host context = FlutterHost then
       row ~width:24 ~height:24 ~main:"center" ~cross:"center"
@@ -163,7 +163,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
           box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
             ~accessibility_identifier:
               ("outliner.bullet-glyph."
-               ^ View_base.outliner_row_uuid row)
+               ^ View_base.outliner_row_uuid current_row)
             [];
         ]
     else
@@ -180,7 +180,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
             box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
               ~accessibility_identifier:
                 ("outliner.bullet-glyph."
-                 ^ View_base.outliner_row_uuid row)
+                 ^ View_base.outliner_row_uuid current_row)
               [];
           ];
         View_base.with_label_signal
@@ -220,13 +220,13 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
          [])
 
 let outliner_status_icon identifier test name row_source : t =
-  if_ ~test:(reactive test row_source)
+  if_ ~test:(Signal.map test row_source)
     (icon ~name ~size:"lg" ~width:22 ~height:22 ~foreground:"foreground"
        ~accessibility_identifier:identifier [])
 
 let outliner_status_control (context : Lui_ui.ui_context) model_source
     row_source send : t =
-  let row = Signal.sample row_source in
+  let current_row = Signal.sample row_source in
   let status_menu =
     context_menu
       [
@@ -235,7 +235,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
           ~key:View_base.task_status_identifier ~compare:compare
           ~mount:(fun status_source ->
             View_composer.outliner_task_status_row
-              (View_base.outliner_row_uuid row) status_source send);
+              (View_base.outliner_row_uuid current_row) status_source send);
       ]
   in
   if Lui_ui.host context = FlutterHost then
@@ -247,32 +247,32 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
               [
                 outliner_status_icon
                   ("outliner.task-status-icon."
-                   ^ View_base.outliner_row_uuid row)
+                   ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_backlog_
                   "app:task-backlog" row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
-                   ^ View_base.outliner_row_uuid row)
+                   ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_todo_ "app:task-todo"
                   row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
-                   ^ View_base.outliner_row_uuid row)
+                   ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_doing_ "app:task-doing"
                   row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
-                   ^ View_base.outliner_row_uuid row)
+                   ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_review_
                   "app:task-review" row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
-                   ^ View_base.outliner_row_uuid row)
+                   ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_done_ "app:task-done"
                   row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
-                   ^ View_base.outliner_row_uuid row)
+                   ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_canceled_
                   "app:task-canceled" row_source;
               ];
@@ -295,8 +295,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
 
 let outliner_row_main_content (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
-  let _ = context in
-  let row = Signal.sample row_source in
+  let current_row = Signal.sample row_source in
   let block_id_source =
     reactive View_base.outliner_row_uuid row_source
   in
@@ -370,7 +369,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
             (text
                ~accessibility_identifier:
                  ("outliner.sync-failed."
-                  ^ View_base.outliner_row_uuid row)
+                  ^ View_base.outliner_row_uuid current_row)
                ~value:"Sync failed" []);
         ];
       if_ ~test:has_children_source
@@ -393,7 +392,7 @@ let outliner_row_content context model_source retained_row_source
 
 let outliner_row (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
-  let row = Signal.sample row_source in
+  let current_row = Signal.sample row_source in
   let search_open = (Signal.sample model_source : Model.chat_model).search_open in
   let selected_source =
     Signal.map2
@@ -403,7 +402,7 @@ let outliner_row (context : Lui_ui.ui_context) model_source
   in
   if
     View_base.outliner_row_list_item_press_enabled_
-      (Lui_ui.host context) row
+      (Lui_ui.host context) current_row
   then
     box
       ~accessibility_identifier_signal:
@@ -709,13 +708,6 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           ];
       ]
   else
-    let apple_button label identifier action : t =
-      button ~variant:"ghost" ~width:38 ~height:42 ~label
-        ~accessibility_identifier:identifier
-        ~on_press:(fun _ ->
-          ignore (send (Model.PerformOutlinerToolbarAction action)))
-        []
-    in
     let apple_icon_button icon label identifier action : t =
       button ~icon ~variant:"ghost" ~width:38 ~height:42 ~label
         ~accessibility_identifier:identifier
@@ -816,7 +808,7 @@ let node_tagged_section context model_source send : t =
       related_section_heading "Tagged nodes";
       box ~height:8 [];
       if_
-        ~test:(reactive View_base.node_tag_section_empty_ model_source)
+        ~test:(Signal.map View_base.node_tag_section_empty_ model_source)
         (box ~padding_horizontal:8
            [ text ~foreground:"muted-foreground" ~value:"No tagged nodes" [] ]);
       column ~accessibility_identifier:"list.node.tagged"
@@ -874,12 +866,12 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
               box ~height:16 [];
               if_
                 ~test:
-                  (reactive View_base.active_node_has_breadcrumbs_
+                  (Signal.map View_base.active_node_has_breadcrumbs_
                      model_source)
                 (box ~padding_horizontal:8
                    [ node_breadcrumbs model_source send ]);
               if_
-                ~test:(reactive View_base.node_title_visible_ model_source)
+                ~test:(Signal.map View_base.node_title_visible_ model_source)
                 (column ~gap:0
                    [
                      box ~height:26 [];
@@ -896,7 +888,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                    ]);
               if_
                 ~test:
-                  (reactive View_base.node_outliner_visible_ model_source)
+                  (Signal.map View_base.node_outliner_visible_ model_source)
                 (column ~accessibility_identifier:"list.outliner"
                    [
                      keyed
@@ -914,22 +906,22 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                    ]);
               if_
                 ~test:
-                  (reactive View_base.node_can_add_first_block_
+                  (Signal.map View_base.node_can_add_first_block_
                      model_source)
                 (add_first_block_button model_source send);
               if_
                 ~test:
-                  (reactive View_base.node_related_section_visible_
+                  (Signal.map View_base.node_related_section_visible_
                      model_source)
                 (node_related_section context model_source send);
               if_
                 ~test:
-                  (reactive View_base.node_tag_section_visible_
+                  (Signal.map View_base.node_tag_section_visible_
                      model_source)
                 (node_tagged_section context model_source send);
               if_
                 ~test:
-                  (reactive
+                  (Signal.map
                      View_base.node_linked_reference_section_visible_
                      model_source)
                 (node_linked_reference_section context model_source send);
