@@ -405,10 +405,25 @@ let global_effect_error_feedback (context : Lui_ui.ui_context)
           ];
       ]
   else
-    text
-      ~value_signal:
-        (Signal.map View_base.effect_error_message model_source)
-      ~accessibility_identifier:"error.banner" []
+    box ~padding_horizontal:16 ~padding_vertical:8
+      [
+        alert ~variant:"destructive" ~padding:14 ~corner_radius:16
+          ~border_width:0
+          ~accessibility_identifier:"layout.error.banner"
+          [
+            row ~gap:10 ~cross:"center"
+              [
+                icon ~name:"app:warning" ~width:22 ~height:22
+                  ~foreground:"destructive" [];
+                text
+                  ~value_signal:
+                    (Signal.map View_base.effect_error_message
+                       model_source)
+                  ~grow:1.0 ~accessibility_identifier:"error.banner"
+                  [];
+              ];
+          ];
+      ]
 
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
     =

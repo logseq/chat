@@ -1105,7 +1105,9 @@ private struct DeletePagePayload: Encodable {
                 if streamError?.code == "snapshot_required" {
                     lastError = nil
                 }
-                await dispatchRawAndWait("stopWebSocket")
+                if streamError?.code != "snapshot_required" {
+                    await dispatchRawAndWait("stopWebSocket")
+                }
                 if let streamError {
                     if streamError.code == "snapshot_required" {
                         return true
@@ -1118,7 +1120,6 @@ private struct DeletePagePayload: Encodable {
                 socket.cancel(with: .goingAway, reason: nil)
             }
         } catch {
-            await dispatchRawAndWait("stopWebSocket")
             if LogseqGraphWebSocketFailurePolicy.shouldReport(
                 error,
                 taskIsCancelled: Task.isCancelled
@@ -1130,6 +1131,9 @@ private struct DeletePagePayload: Encodable {
                     code: "websocket_connection_failed",
                     message: LogseqGraphWebSocketFailurePolicy.userFacingMessage(error)
                 )
+            }
+            if !LogseqGraphWebSocketReconnectPolicy.shouldReconnect(syncError) {
+                await dispatchRawAndWait("stopWebSocket")
             }
         }
         return false

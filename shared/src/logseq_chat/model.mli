@@ -278,6 +278,7 @@ type chat_model =
   ; local_graph_ids : string list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
+  ; unlock_previous_graph_id : string option
   ; graph_loading : bool
   ; graph_password_open : bool
   ; graph_password : string
@@ -322,6 +323,7 @@ type chat_model =
   ; auto_correction : bool
   ; sidebar_tabs : string list
   ; base_url : string
+  ; base_url_draft : string
   ; version : string
   ; revision : string
   ; runtime_log_source : string

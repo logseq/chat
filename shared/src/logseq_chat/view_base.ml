@@ -137,7 +137,7 @@ let graph_label (current : Model.chat_model) =
 let sync_label (current : Model.chat_model) =
   match current.sync_state with
   | OfflineState -> "Offline"
-  | FailedState reason -> "Sync failed: " ^ reason
+  | FailedState _ -> "Sync failed"
   | _ ->
     if
       current.has_pending_semantic_operations
@@ -186,7 +186,7 @@ let sync_indicator_foreground (current : Model.chat_model) =
 
 let sync_connection_label (current : Model.chat_model) =
   match current.sync_state with
-  | OfflineState -> "Disconnected"
+  | OfflineState | FailedState _ -> "Disconnected"
   | _ -> "Connected"
 
 let sync_pending_label (current : Model.chat_model) =
@@ -969,6 +969,10 @@ let graph_row_local_ (current : Model.chat_model) (graph : Model.graph) =
 let graph_icon_name local (graph : Model.graph) =
   if local then "app:graph-local" else "app:graph-remote"
 
+let sidebar_graph_icon_name (current : Model.chat_model) (graph : Model.graph) =
+  if graph.is_encrypted then "app:graph-locked"
+  else graph_icon_name (Model.graph_local_ current graph.id) graph
+
 let local_graphs (current : Model.chat_model) =
   List.filter (fun (graph : Model.graph) -> Model.graph_local_ current graph.id)
     current.graphs
@@ -1028,7 +1032,9 @@ let graph_unlock_error_present_ (current : Model.chat_model) =
   effect_error_present_ current
 
 let graph_unlock_error_message (current : Model.chat_model) =
-  effect_error_message current
+  match effect_error_message current with
+  | "authenticationFailure" -> "Incorrect password."
+  | message -> message
 
 let global_effect_error_present_ (current : Model.chat_model) =
   effect_error_present_ current
@@ -1050,6 +1056,10 @@ let graph_picker_error_reason (current : Model.chat_model) =
 
 let graph_picker_error_present_ (current : Model.chat_model) =
   graph_picker_error_reason current <> None
+
+let graphs_screen_error_visible_ (current : Model.chat_model) =
+  graph_picker_error_present_ current
+  && not (global_effect_error_present_ current)
 
 let error_separator reason =
   match String_kit.index_of ~sub:"\n" reason with
@@ -1090,14 +1100,14 @@ let settings_spell_check (current : Model.chat_model) = current.spell_check
 let settings_auto_correction (current : Model.chat_model) =
   current.auto_correction
 
-let settings_base_url (current : Model.chat_model) = current.base_url
+let settings_base_url (current : Model.chat_model) = current.base_url_draft
 
 let settings_base_url_invalid_ (current : Model.chat_model) =
-  String.trim current.base_url <> ""
-  && not (Model.valid_base_url_ current.base_url)
+  String.trim current.base_url_draft <> ""
+  && not (Model.valid_base_url_ current.base_url_draft)
 
 let settings_apply_disabled_ (current : Model.chat_model) =
-  not (Model.valid_base_url_ current.base_url)
+  not (Model.valid_base_url_ current.base_url_draft)
 
 let settings_version (current : Model.chat_model) = current.version
 let settings_revision (current : Model.chat_model) = current.revision

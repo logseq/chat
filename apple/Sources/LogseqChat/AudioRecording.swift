@@ -81,7 +81,7 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
             isRecording = true
             startMetering()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = "Couldn't start recording. \(error.localizedDescription)"
         }
     }
 
@@ -200,7 +200,7 @@ struct AudioRecorderSheet: View {
                                 try onSave(asset, targetBlockID, transcript)
                                 dismiss()
                             } catch {
-                                saveError = String(describing: error)
+                                saveError = "Couldn't save the recording. \(error.localizedDescription)"
                             }
                         }
                     }
