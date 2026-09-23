@@ -140,7 +140,7 @@ let every_datascript_value_has_a_sync_encoding () =
       (Ds.Bool true, Value.Bool true);
       (Ds.Keyword "keyword", Value.Keyword "keyword");
       (Ds.Uuid "uuid", Value.Uuid "uuid");
-      (Ds.Instant 123, Value.Date 123L);
+      (Ds.Instant 123L, Value.Date 123L);
       (Ds.Regex "a+", Value.Tagged ("regex", Value.String "a+"));
       (Ds.Ref 1, stable_ref);
       (Ds.List [ Ds.Int 1 ], Value.List [ Value.Int 1 ]);

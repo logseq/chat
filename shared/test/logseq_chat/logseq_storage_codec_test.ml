@@ -43,7 +43,7 @@ let all_value_types_and_storage_nodes_roundtrip () =
       Ds.Float 1.5;
       Ds.Keyword "block/page";
       Ds.Uuid "00000000-0000-0000-0000-000000000007";
-      Ds.Instant 123;
+      Ds.Instant 123L;
       Ds.Regex "a+";
       Ds.Symbol "x";
       Ds.Vector [ Ds.Int 1; Ds.Nil ];

@@ -87,7 +87,7 @@ let block id title page parent created attributes =
   entity id title
     (field "block/page" (Ds.Ref_to (Ds.Temp_id page))
     :: field "block/parent" (Ds.Ref_to (Ds.Temp_id parent))
-    :: field "block/created-at" (Ds.Instant created)
+    :: field "block/created-at" (Ds.Instant (Int64.of_int created))
     :: attributes)
 
 let transact conn entities = ignore (Ds.transact_conn conn entities)
@@ -223,7 +223,7 @@ let incremental_projection_refreshes_dependencies_and_evicts_recycled_journals
     (Read.recent_journal_page_ids 1 (Ds.conn_db conn))
     [ eid (Ds.conn_db conn) next_page ];
   check_eq (Read.journal_page_count (Ds.conn_db conn)) 2;
-  add conn next_page "logseq.property/deleted-at" (Ds.Instant 6);
+  add conn next_page "logseq.property/deleted-at" (Ds.Instant 6L);
   let db = Ds.conn_db conn in
   check_eq (Read.recent_journal_page_ids 7 db) [ eid db page_id ];
   check
@@ -283,7 +283,7 @@ let node_navigation_and_related_blocks_respect_visibility_and_breadcrumbs () =
         "node-page" "node-page" 6
         [
           refs "block/refs" [ "node-page" ];
-          field "logseq.property/deleted-at" (Ds.Instant 6);
+          field "logseq.property/deleted-at" (Ds.Instant 6L);
         ];
       entity "hidden-parent" "Hidden parent"
         [
@@ -406,7 +406,7 @@ let transitive_class_cycles_include_tagged_pages_and_classify_assets () =
       page "tagged-page" "tagged page" "Tagged page"
         [
           refs "block/tags" [ "grandchild-tag" ];
-          field "block/created-at" (Ds.Instant 3);
+          field "block/created-at" (Ds.Instant 3L);
         ];
       page "asset-child" "asset child" "Asset child"
         [ refs "logseq.property.class/extends" [ "asset-class" ] ];
@@ -447,7 +447,7 @@ let graph_blocks_preserve_identities_instants_order_and_decrypt_journal_titles
       block block_id "Desktop seed" page_id page_id 1776000000000
         [
           field "block/order" (Ds.String "a1");
-          field "block/updated-at" (Ds.Instant 1776000000001);
+          field "block/updated-at" (Ds.Instant 1776000000001L);
         ];
     ];
   let db = Ds.conn_db conn in
@@ -568,18 +568,18 @@ let sidebar_favorites_preserve_order_and_exclude_hidden_built_in_and_favorite_re
     [
       page "favorites-page" "$$$favorites" "Favorites" [];
       page "page-alpha" "alpha" "Alpha"
-        [ field "block/updated-at" (Ds.Instant 200) ];
+        [ field "block/updated-at" (Ds.Instant 200L) ];
       page "page-beta" "beta" "Beta"
-        [ field "block/updated-at" (Ds.Instant 300) ];
+        [ field "block/updated-at" (Ds.Instant 300L) ];
       page "page-hidden" "hidden" "Hidden"
         [
-          field "block/updated-at" (Ds.Instant 400);
+          field "block/updated-at" (Ds.Instant 400L);
           field "logseq.property/hide?" (Ds.Bool true);
         ];
       page "page-seeded-recent" "seeded-recent" "Seeded recent" [];
       page "page-built-in" "built-in-page" "Built-in page"
         [
-          field "block/updated-at" (Ds.Instant 500);
+          field "block/updated-at" (Ds.Instant 500L);
           field "logseq.property/built-in?" (Ds.Bool true);
         ];
       entity "favorite-alpha" ""
@@ -597,8 +597,8 @@ let sidebar_favorites_preserve_order_and_exclude_hidden_built_in_and_favorite_re
       entity "alpha-block" "Alpha content"
         [
           field "block/page" (Ds.Ref_to (Ds.Temp_id "page-alpha"));
-          field "block/created-at" (Ds.Instant 100);
-          field "block/updated-at" (Ds.Instant 100);
+          field "block/created-at" (Ds.Instant 100L);
+          field "block/updated-at" (Ds.Instant 100L);
         ];
     ];
   let db = Ds.conn_db conn in
@@ -664,7 +664,7 @@ let restored_raw_numeric_references_remain_navigable () =
         raw 2 "block/title" (Ds.String "Restored block");
         raw 2 "block/page" (Ds.Int 1);
         raw 2 "block/parent" (Ds.Int 1);
-        raw 2 "block/created-at" (Ds.Instant 1);
+        raw 2 "block/created-at" (Ds.Instant 1L);
       ]
       (Ds.conn_db conn)
   in
@@ -739,7 +739,7 @@ let recent_page eid title attributes =
     (field "block/uuid" (Ds.Uuid (Printf.sprintf "recent-%d" eid))
     :: field "block/name" (Ds.String (Printf.sprintf "recent-%d" eid))
     :: field "block/title" (Ds.String title)
-    :: field "block/updated-at" (Ds.Instant eid)
+    :: field "block/updated-at" (Ds.Instant (Int64.of_int eid))
     :: attributes)
 
 let recent_window_fills_past_hidden_and_blank_pages_without_decrypting_older_pages
@@ -758,7 +758,7 @@ let recent_window_fills_past_hidden_and_blank_pages_without_decrypting_older_pag
         recent_page 102 "Built-in"
           [ field "logseq.property/built-in?" (Ds.Bool true) ];
         recent_page 103 "Deleted"
-          [ field "logseq.property/deleted-at" (Ds.Instant 1) ];
+          [ field "logseq.property/deleted-at" (Ds.Instant 1L) ];
         recent_page 104 "  " [];
         recent_page 105 "Hidden child"
           [ field "block/parent" (Ds.Ref 101) ];

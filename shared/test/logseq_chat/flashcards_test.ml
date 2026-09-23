@@ -150,9 +150,9 @@ let due_cards_include_subclasses_answers_and_stable_due_ordering () =
         [
           add 11 "block/tags" (Ds.Ref 1);
           add 12 "block/tags" (Ds.Ref 2);
-          add 12 "logseq.property.fsrs/due" (Ds.Instant now);
+          add 12 "logseq.property.fsrs/due" (Ds.Instant (Int64.of_int now));
           add 13 "block/tags" (Ds.Ref 1);
-          add 13 "logseq.property.fsrs/due" (Ds.Instant (now + day));
+          add 13 "logseq.property.fsrs/due" (Ds.Instant (Int64.of_int (now + day)));
           add 13 "logseq.property.fsrs/state" future_state;
         ];
       ]
@@ -177,7 +177,7 @@ let due_cards_include_subclasses_answers_and_stable_due_ordering () =
   let tied =
     Ds.db_with
       [
-        add 11 "logseq.property.fsrs/due" (Ds.Instant now);
+        add 11 "logseq.property.fsrs/due" (Ds.Instant (Int64.of_int now));
         add 11 "logseq.property.fsrs/state" future_state;
         add 12 "logseq.property.fsrs/state" future_state;
       ]
@@ -185,7 +185,7 @@ let due_cards_include_subclasses_answers_and_stable_due_ordering () =
   in
   let earlier =
     Ds.db_with
-      [ add 11 "logseq.property.fsrs/due" (Ds.Instant (now - 1)) ]
+      [ add 11 "logseq.property.fsrs/due" (Ds.Instant (Int64.of_int (now - 1))) ]
       tied
   in
   check_eq [ "due-subclass"; "new-card" ] (ordered_uuids tied);

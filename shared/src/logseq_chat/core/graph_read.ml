@@ -24,7 +24,8 @@ let uuid_value = function
   | _ -> None
 
 let int_value = function
-  | Some (Ds.Int value) | Some (Ds.Instant value) -> Some value
+  | Some (Ds.Int value) -> Some value
+  | Some (Ds.Instant value) -> Some (Int64.to_int value)
   | _ -> None
 
 let protected_string decrypt_title value =

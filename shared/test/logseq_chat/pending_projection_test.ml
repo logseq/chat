@@ -784,7 +784,7 @@ let semantic_equality_preserves_nested_values_and_reference_identities () =
     (fun (actual, expected) ->
       check (Projection.semantic_value_equal db (Some actual) (Some expected)))
     [
-      (Ds.Instant 42, Ops.Instant_value 42);
+      (Ds.Instant 42L, Ops.Instant_value 42);
       (Ds.Float 1.0, Ops.Float_value 1.0);
       (Ds.Int 1, Ops.Float_value 1.0);
       (Ds.Int 8, Ops.Int_value 8);

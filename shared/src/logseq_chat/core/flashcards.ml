@@ -169,7 +169,7 @@ let float_value value =
 let int_value value =
   match value with
   | Some (Ds.Int value) -> Some value
-  | Some (Ds.Instant value) -> Some value
+  | Some (Ds.Instant value) -> Some (Int64.to_int value)
   | _ -> None
 
 let keyword_value value =

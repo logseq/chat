@@ -49,7 +49,7 @@ let rec generic_value (input : Value.value) : Ds.value =
   | Value.Binary value -> Ds.String value
   | Value.Big_decimal value -> Ds.Float (float_of_string value)
   | Value.Big_int value -> Ds.Int (Int64.to_int (Int64.of_string value))
-  | Value.Date value -> Ds.Instant (Int64.to_int value)
+  | Value.Date value -> Ds.Instant value
   | Value.Uuid value -> Ds.Uuid value
   | Value.Uri value -> Ds.String value
   | Value.Keyword value -> Ds.Keyword value
@@ -60,8 +60,8 @@ let rec generic_value (input : Value.value) : Ds.value =
   | Value.Set values -> Ds.Set (List.map generic_value values)
   | Value.List values -> Ds.List (List.map generic_value values)
   | Value.Tagged ("u", Value.String value) -> Ds.Uuid value
-  | Value.Tagged ("m", Value.Int value) -> Ds.Instant value
-  | Value.Tagged ("m", Value.Int64 value) -> Ds.Instant (Int64.to_int value)
+  | Value.Tagged ("m", Value.Int value) -> Ds.Instant (Int64.of_int value)
+  | Value.Tagged ("m", Value.Int64 value) -> Ds.Instant value
   | Value.Tagged ("regex", Value.String value) -> Ds.Regex value
   | Value.Tagged (tag, value) ->
     Ds.Vector [ Ds.String tag; generic_value value ]

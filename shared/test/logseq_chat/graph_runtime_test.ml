@@ -154,7 +154,7 @@ let semantic_values_preserve_native_primitives () =
     [
       (Ds.String "text", Pending.String_value "text");
       (Ds.Int 42, Pending.Int_value 42);
-      (Ds.Instant 1234, Pending.Instant_value 1234);
+      (Ds.Instant 1234L, Pending.Instant_value 1234);
       (Ds.Float 0.5, Pending.Float_value 0.5);
       (Ds.Bool false, Pending.Bool_value false);
       (Ds.Keyword "learning", Pending.Keyword_value "learning");

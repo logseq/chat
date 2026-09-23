@@ -253,7 +253,7 @@ let refresh_initial_timestamps now (tx : Ds.tx_op) =
                 else if
                   attr = "file/created-at"
                   || attr = "file/last-modified-at"
-                then Ds.One_value (Ds.Instant now)
+                then Ds.One_value (Ds.Instant (Int64.of_int now))
                 else value ))
             entity.Ds.attrs;
       }

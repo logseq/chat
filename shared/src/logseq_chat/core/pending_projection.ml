@@ -61,7 +61,7 @@ let rec datascript_value (value : Ops.semantic_value) : Ds.value =
   match value with
   | Ops.String_value value -> Ds.String value
   | Ops.Int_value value -> Ds.Int value
-  | Ops.Instant_value value -> Ds.Instant value
+  | Ops.Instant_value value -> Ds.Instant (Int64.of_int value)
   | Ops.Float_value value -> Ds.Float value
   | Ops.Bool_value value -> Ds.Bool value
   | Ops.Keyword_value value -> Ds.Keyword value
@@ -78,7 +78,7 @@ let rec semantic_value_equal_value db left right =
   match (left, right) with
   | Ds.String value, Ops.String_value expected -> value = expected
   | Ds.Int value, Ops.Int_value expected -> value = expected
-  | Ds.Instant value, Ops.Instant_value expected -> value = expected
+  | Ds.Instant value, Ops.Instant_value expected -> Int64.equal value (Int64.of_int expected)
   | Ds.Float value, Ops.Float_value expected ->
     Float.equal value expected
   | Ds.Int value, Ops.Float_value expected ->
@@ -726,7 +726,7 @@ let rec compile db (intent : Ops.pending_intent) =
                 ; ( "block/order"
                   , Ds.One_value (Ds.String value.order) )
                 ; ( "logseq.property/deleted-at"
-                  , Ds.One_value (Ds.Instant value.deleted_at) )
+                  , Ds.One_value (Ds.Instant (Int64.of_int value.deleted_at)) )
                 ; ( "logseq.property.recycle/original-page"
                   , Ds.One_value (Ds.Ref page_eid) )
                 ]

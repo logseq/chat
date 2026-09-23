@@ -40,7 +40,7 @@ and transit_of_value db value =
   | Ds.Bool flag -> Transit.Bool flag
   | Ds.Keyword keyword -> Transit.Keyword keyword
   | Ds.Uuid uuid -> Transit.Uuid uuid
-  | Ds.Instant instant -> Transit.Date (Int64.of_int instant)
+  | Ds.Instant instant -> Transit.Date instant
   | Ds.Regex pattern -> Transit.Tagged ("regex", Transit.String pattern)
   | Ds.Ref eid -> transit_of_entity_ref db (stable_entity_ref db eid)
   | Ds.List values ->

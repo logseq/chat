@@ -25,7 +25,7 @@ let rec semantic_value_from_datascript input =
   match input with
   | Ds.String value -> Ok (String_value value)
   | Ds.Int value -> Ok (Int_value value)
-  | Ds.Instant value -> Ok (Instant_value value)
+  | Ds.Instant value -> Ok (Instant_value (Int64.to_int value))
   | Ds.Float value -> Ok (Float_value value)
   | Ds.Bool value -> Ok (Bool_value value)
   | Ds.Keyword value -> Ok (Keyword_value value)
