@@ -7,6 +7,7 @@ val uppercase : string
 val minimum : string
 val index_of_in : string -> string -> int option
 val index_of : string -> int option
+val suffix : string -> int -> string
 val integer_length : string -> (int, string) result
 val integer_part : string -> (string, string) result
 val validate_integer_error : string -> string option
