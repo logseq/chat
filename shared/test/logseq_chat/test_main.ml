@@ -40,4 +40,6 @@ let () =
       "outliner_state", Outliner_state_test.cases;
       "pending_projection", Pending_projection_test.cases;
       "graph_runtime", Graph_runtime_test.cases;
+      "rpc", Rpc_test.cases;
+      "app", App_test.cases;
     ]

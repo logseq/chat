@@ -564,9 +564,9 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
       [ View_outliner.node_screen context route_model_source send ]
   else View_outliner.node_screen context route_model_source send
 
-let native_search_view (context : Lui_ui.ui_context) model_source send :
+let native_search_view (_context : Lui_ui.ui_context) model_source send :
     t =
- fun _context parent ->
+ fun context parent ->
    let node = Lui_ui.extension context "native-search-presentation" in
    attach context parent node;
    let presented_source =
@@ -632,9 +632,9 @@ let native_search_view (context : Lui_ui.ui_context) model_source send :
           context (Some node));
      node)
 
-let native_navigation_view (context : Lui_ui.ui_context) model_source send
+let native_navigation_view (_context : Lui_ui.ui_context) model_source send
     : t =
- fun _context parent ->
+ fun context parent ->
    let node = Lui_ui.extension context "native-navigation-stack" in
    attach context parent node;
    let depth_source =

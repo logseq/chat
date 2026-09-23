@@ -9,7 +9,7 @@ let settings_language_choice_radio model_source choice_source send : t =
          choice_source)
     ~accessibility_identifier:
       (View_base.settings_language_choice_identifier choice)
-    ~on_toggle:(fun _ ->
+    ~on_change:(fun _ ->
       ignore (send (Model.ChooseSettingsLanguage choice.id)))
     ~text:(View_base.settings_language_choice_title choice) []
 

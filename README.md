@@ -1,21 +1,20 @@
 # Logseq Chat
 
 Logseq Chat is a native SwiftUI app for iOS and a Flutter Material app for
-Android. Both clients share an LG application model and core, compiled to
-OCaml and backed by the OCaml DataScript library.
+Android. Both clients share an OCaml application model and core, backed by
+the OCaml DataScript library and the lui reactive UI layer.
 
 Shared core sources live in `shared/src/logseq_chat/core`, with executable entry points
 in `shared/src/logseq_chat/entry`. The `shared/native` directory contains Dune configuration and
 native platform bridges; generated OCaml stays under `_build`. Core tests live
-in `shared/test/logseq_chat`, retaining one LG test module for each original OCaml
-test module. The core test gate also builds the seed and live-sync executables.
+in `shared/test/logseq_chat`, one alcotest suite per core module. The core test gate also builds the seed and live-sync executables.
 
 ## Repository layout
 
 - `apple/`: Swift package, app, extensions, Xcode workspace, and Apple tests.
 - `flutter/`: Flutter Android app and its platform integration.
-- `shared/src/`: LG application and core sources.
-- `shared/test/`: LG tests.
+- `shared/src/`: OCaml application and core sources.
+- `shared/test/`: OCaml test suites.
 - `shared/native/`: Dune configuration and native bridges.
 - `tests/e2e/`: Maestro flows and fixtures.
 - `scripts/`: build and validation commands, run from the repository root.

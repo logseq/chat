@@ -2,12 +2,12 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/lg-coverage-test.XXXXXX")
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/coverage-check-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 opam exec --switch=5.5.0 -- ocamlfind ocamlopt -w -24 \
   -package compiler-libs.common -c \
-  -o "$tmp/check.cmx" -impl "$root/scripts/lg-coverage.ml"
+  -o "$tmp/check.cmx" -impl "$root/scripts/coverage_check.ml"
 opam exec --switch=5.5.0 -- ocamlfind ocamlopt \
   -package compiler-libs.common -linkpkg -o "$tmp/check.exe" "$tmp/check.cmx"
 
@@ -43,4 +43,4 @@ if "$tmp/check.exe" "$tmp/generated.ml" generated.ml feature_ 0 "$tmp/version.co
   echo 'error: accepted an unsupported coverage format' >&2
   exit 1
 fi
-echo 'LG generated-code coverage checks passed'
+echo 'coverage checks passed'

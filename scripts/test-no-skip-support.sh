@@ -32,9 +32,9 @@ if grep -REn '#(if|elseif).*(^|[^A-Za-z])!?SKIP([^A-Za-z]|$)' \
   die "Swift sources still contain Skip conditional compilation"
 fi
 
-if grep -Fq '(proto/profile proto/AndroidOS proto/SwiftUIHost)' \
-  "$repo_root/shared/src/logseq_chat/view.cljc"; then
-  die "LG still registers the removed Android SwiftUI host"
+if grep -Eq 'profile[[:space:]]+AndroidOS[[:space:]]+SwiftUIHost' \
+  "$repo_root/shared/src/logseq_chat/view.ml"; then
+  die "the extension registry still registers the removed Android SwiftUI host"
 fi
 
 if grep -Eq 'SkipStone|Run skip gradle|Skip\.env|skip gradle' \

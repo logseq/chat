@@ -404,12 +404,13 @@ let outliner_row (context : Lui_ui.ui_context) model_source
     View_base.outliner_row_list_item_press_enabled_
       (Lui_ui.host context) current_row
   then
-    box
-      ~accessibility_identifier_signal:
-        (reactive View_base.outliner_row_identifier row_source)
-      ~padding:0 ~corner_radius:10
-      [
-        row ~gap:0 ~cross:"start" ~padding_vertical:5
+    View_base.with_bool_prop_signal Selected selected_source
+      (box
+         ~accessibility_identifier_signal:
+           (reactive View_base.outliner_row_identifier row_source)
+         ~padding:0 ~corner_radius:10
+         [
+           row ~gap:0 ~cross:"start" ~padding_vertical:5
           [
             outliner_indent_view
               (reactive View_base.outliner_row_indent row_source);
@@ -453,8 +454,8 @@ let outliner_row (context : Lui_ui.ui_context) model_source
                       outliner_row_main_content context model_source
                         retained_row_source row_source send;
                     ]));
-          ];
-      ]
+           ];
+         ])
   else
     View_base.with_bool_prop_signal Selected selected_source
       (View_base.with_label_signal
@@ -743,8 +744,13 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               (send
                  (Model.PerformOutlinerToolbarAction "pageReference")))
           ~text:"[[]]" [];
-        apple_icon_button "app:toolbar-hide-keyboard" "Hide keyboard"
-          "button.outliner.editor.hideKeyboard" "hideKeyboard";
+        button ~icon:"app:toolbar-hide-keyboard" ~variant:"ghost"
+          ~width:42 ~height:42 ~label:"Hide keyboard"
+          ~accessibility_identifier:"button.outliner.editor.hideKeyboard"
+          ~on_press:(fun _ ->
+            ignore
+              (send (Model.PerformOutlinerToolbarAction "hideKeyboard")))
+          [];
       ]
 
 let node_related_row context model_source row_source send : t =

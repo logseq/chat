@@ -213,15 +213,17 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                                composer_asset_view asset_source send);
                          ];
                      ]);
-             textarea
-               ~text_signal:(reactive View_base.composer_draft model_source)
-               ~min_height:36 ~style_class:"composer-input"
-               ~placeholder:"Capture" ~label:"Capture"
-               ~accessibility_identifier:"field.composer"
-               ~on_input:(on_input send (fun text ->
-                            Model.ChangeComposerDraft text))
-               ~on_submit:(press send Model.SendComposer)
-               [];
+             View_base.with_bool_prop_signal Lui_protocol.Autofocus
+               (Signal.map View_base.composer_autofocus_ model_source)
+               (textarea
+                  ~text_signal:(reactive View_base.composer_draft model_source)
+                  ~min_height:36 ~style_class:"composer-input"
+                  ~placeholder:"Capture" ~label:"Capture"
+                  ~accessibility_identifier:"field.composer"
+                  ~on_input:(on_input send (fun text ->
+                               Model.ChangeComposerDraft text))
+                  ~on_submit:(press send Model.SendComposer)
+                  []);
              box ~height:8
                ~accessibility_identifier:"spacer.composer.field-controls"
                [];

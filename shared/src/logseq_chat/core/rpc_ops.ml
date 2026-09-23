@@ -396,7 +396,9 @@ let page_blocks_with_optimistic_overlay cached editing page_uuid
     match cached with
     | Some blocks ->
       let live_by_uuid =
-        List.map (fun (block : Model.block) -> (block.uuid, block)) live_blocks
+        List.map
+          (fun (block : Model.block) -> (block.uuid, block))
+          (List.rev live_blocks)
       in
       List.map
         (fun (block : Model.block) ->

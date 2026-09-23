@@ -33,7 +33,6 @@ default.profraw
 .build/
 _build/
 _coverage/
-.lg-cache/
 .clj-kondo/.cache/
 .lsp/.cache/
 /*.install

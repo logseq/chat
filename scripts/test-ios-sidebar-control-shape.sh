@@ -2,14 +2,14 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-control_source="$(rtk sed -n '/^(defui main-header-leading /,/^(defui main-header-title /p' \
-  "${repo_root}/shared/src/logseq_chat/view.cljc")"
-if printf '%s\n' "${control_source}" | rtk rg -q ':corner-radius'; then
+control_source="$(rtk sed -n '/^let main_header_leading /,/^let main_header_title /p' \
+  "${repo_root}/shared/src/logseq_chat/view_screens.ml")"
+if printf '%s\n' "${control_source}" | rtk rg -q '~corner_radius'; then
   echo "main-header-leading overrides the native toolbar button shape" >&2
   exit 1
 fi
 if printf '%s\n' "${control_source}" \
-  | rtk rg -q ':(width|height)[[:space:]]+[0-9]'; then
+  | rtk rg -q '~(width|height):[0-9]'; then
   echo "main-header-leading overrides the native toolbar control size" >&2
   exit 1
 fi

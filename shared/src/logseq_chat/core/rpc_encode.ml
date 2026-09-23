@@ -270,17 +270,8 @@ let structural_outliner_delta anchored before_context before_state
         if List.mem block.uuid after_uuids then None else Some block.uuid)
       before_context.Outliner.blocks
   in
-  let start =
-    common_row_prefix
-      (List.map (fun row -> row.Outliner.block.Model.uuid) before_rows)
-      (List.map (fun row -> row.Outliner.block.Model.uuid) after_rows)
-  in
-  let suffix =
-    common_row_suffix
-      (List.map (fun row -> row.Outliner.block.Model.uuid) before_rows)
-      (List.map (fun row -> row.Outliner.block.Model.uuid) after_rows)
-      start
-  in
+  let start = common_row_prefix before_rows after_rows in
+  let suffix = common_row_suffix before_rows after_rows start in
   let delete_count = List.length before_rows - start - suffix in
   let insert_count = List.length after_rows - start - suffix in
   let targets =

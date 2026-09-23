@@ -327,10 +327,10 @@ let finish_semantic_active (session : Types.session) active succeeded
    | Some stage ->
      ignore (stage { active.Types.pending.operation with Ops.state = next_state })
    | None -> ());
-  if succeeded then
-    match accepted with
-    | Some accepted -> Types.record_accepted_server_t session accepted
-    | None -> ();
+  (if succeeded then
+     match accepted with
+     | Some accepted -> Types.record_accepted_server_t session accepted
+     | None -> ());
   session.state := { !(session.state) with semantic_active = None };
   if succeeded then
     match (Types.state session).config with

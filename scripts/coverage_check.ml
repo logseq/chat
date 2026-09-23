@@ -80,7 +80,7 @@ let check source filename prefix floor coverage =
 let () =
   try
     if Array.length Sys.argv <> 6 then
-      failwith "usage: lg-coverage SOURCE COVERAGE_FILENAME PREFIX BASIS_POINTS COVERAGE";
+      failwith "usage: coverage_check SOURCE COVERAGE_FILENAME PREFIX BASIS_POINTS COVERAGE";
     check Sys.argv.(1) Sys.argv.(2) Sys.argv.(3)
       (int_of_string Sys.argv.(4)) Sys.argv.(5)
   with error ->
