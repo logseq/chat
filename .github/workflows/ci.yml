@@ -23,7 +23,15 @@ jobs:
           opam-pin: false
           # "cache" (default true) caches the opam root + switch.
 
+      - name: Restore opam switch
+        id: opam-switch
+        uses: actions/cache/restore@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
       - name: Install opam dependencies
+        if: steps.opam-switch.outputs.cache-hit != 'true'
         run: |
           eval $(opam env)
           # opam clears file-based git config for its fetch subprocesses, but
@@ -39,10 +47,21 @@ jobs:
           opam pin add -n -y melange-edn-native git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956
           opam pin add -n -y melange-transit-core git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97
           opam pin add -n -y melange-transit-native git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97
+          # ocaml-signal compiles melange emit rules but does not depend on the
+          # melange package, so a parallel deps build can run it before melc
+          # exists; install melange first to pin the ordering.
+          opam install -y melange.7.0.1-55
           opam install . --deps-only --yes --with-test --assume-depexts
           # 0.3.x matches the lockfile's x-opam-monorepo-version; 0.5 embeds an
           # opam lib too new for the runner's opam root layout.
           opam install -y opam-monorepo.0.3.6
+
+      - name: Save opam switch
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
 
       - name: Restore duniverse
         id: duniverse
