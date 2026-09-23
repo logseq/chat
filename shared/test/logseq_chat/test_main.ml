@@ -39,4 +39,5 @@ let () =
       "mobile_graph", Mobile_graph_test.cases;
       "outliner_state", Outliner_state_test.cases;
       "pending_projection", Pending_projection_test.cases;
+      "graph_runtime", Graph_runtime_test.cases;
     ]

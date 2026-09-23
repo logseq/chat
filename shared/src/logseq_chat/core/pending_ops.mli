@@ -186,3 +186,5 @@ val remove : string -> string -> unit
 val confirm : string -> string list -> unit
 val store_raw : string -> string -> int -> string -> string -> unit
 val list_raw : string -> (string * int * string * string) list
+val normalize_expected_title :
+  Datascript.db -> string -> string -> (string, string) result
