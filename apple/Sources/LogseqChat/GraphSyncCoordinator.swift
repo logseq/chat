@@ -59,6 +59,14 @@ actor GraphSyncCoordinator {
         await cancelForegroundTask()
     }
 
+    func kickForeground() async {
+        guard networkAvailable, let desiredForeground else { return }
+        await launchForeground(
+            graphID: desiredForeground.graphID,
+            operation: desiredForeground.operation
+        )
+    }
+
     private func cancelForegroundTask() async {
         guard let foregroundTask else { return }
         self.foregroundTask = nil

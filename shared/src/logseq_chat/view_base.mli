@@ -260,6 +260,7 @@ val graph_row_disabled_ : Model.chat_model -> Model.graph -> bool
 val graph_delete_active_ : Model.chat_model -> Model.graph -> bool
 val graph_row_local_ : Model.chat_model -> Model.graph -> bool
 val graph_icon_name : bool -> Model.graph -> string
+val sidebar_graph_icon_name : Model.chat_model -> Model.graph -> string
 val local_graphs : Model.chat_model -> Model.graph list
 val remote_graphs : Model.chat_model -> Model.graph list
 val local_graphs_empty_ : Model.chat_model -> bool
@@ -281,6 +282,8 @@ val graph_unlock_error_message : Model.chat_model -> string
 val global_effect_error_present_ : Model.chat_model -> bool
 val graph_picker_error_reason : Model.chat_model -> string option
 val graph_picker_error_present_ : Model.chat_model -> bool
+
+val graphs_screen_error_visible_ : Model.chat_model -> bool
 val error_separator : string -> int
 val graph_picker_error_code : Model.chat_model -> string
 val graph_picker_error_title : Model.chat_model -> string

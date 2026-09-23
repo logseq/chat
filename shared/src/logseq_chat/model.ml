@@ -278,6 +278,7 @@ type chat_model =
   ; local_graph_ids : string list
   ; is_graph_encrypted : bool
   ; is_graph_unlocked : bool
+  ; unlock_previous_graph_id : string option
   ; graph_loading : bool
   ; graph_password_open : bool
   ; graph_password : string
@@ -322,6 +323,7 @@ type chat_model =
   ; auto_correction : bool
   ; sidebar_tabs : string list
   ; base_url : string
+  ; base_url_draft : string
   ; version : string
   ; revision : string
   ; runtime_log_source : string
@@ -572,6 +574,7 @@ let initial () =
     local_graph_ids = [];
     is_graph_encrypted = false;
     is_graph_unlocked = false;
+    unlock_previous_graph_id = None;
     graph_loading = false;
     graph_password_open = false;
     graph_password = "";
@@ -616,6 +619,7 @@ let initial () =
     auto_correction = true;
     sidebar_tabs = [ "journals"; "flashcards"; "graphs" ];
     base_url = "";
+    base_url_draft = "";
     version = "Development";
     revision = "Development";
     runtime_log_source = "ui";
@@ -2084,12 +2088,19 @@ let rec update (current : chat_model) action =
         (UnlockGraphEffect (id, current.graph_password))
     end
   | CancelGraphUnlock ->
-    {
-      current with
-      graph_password_open = false;
-      graph_password = "";
-      effect_error = None;
-    }
+    let cancelled =
+      {
+        current with
+        graph_password_open = false;
+        graph_password = "";
+        effect_error = None;
+        unlock_previous_graph_id = None;
+      }
+    in
+    (match current.unlock_previous_graph_id with
+     | Some previous_id when Some previous_id <> current.selected_graph_id ->
+       enqueue_open_graph cancelled previous_id
+     | _ -> cancelled)
   | OpenCreateGraph -> { current with create_graph_open = true }
   | DismissCreateGraph ->
     {
@@ -2160,6 +2171,7 @@ let rec update (current : chat_model) action =
       auto_correction = settings.auto_correction;
       sidebar_tabs = normalize_sidebar_tabs settings.sidebar_tabs;
       base_url = settings.base_url;
+      base_url_draft = settings.base_url;
       version = settings.version;
       revision = settings.revision;
     }
@@ -2240,6 +2252,7 @@ let rec update (current : chat_model) action =
       settings_appearance_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
+      base_url_draft = current.base_url;
     }
   | DismissSettings ->
     {
@@ -2249,6 +2262,7 @@ let rec update (current : chat_model) action =
       settings_appearance_menu_open = false;
       settings_language_menu_open = false;
       runtime_log_open = false;
+      base_url_draft = current.base_url;
     }
   | OpenSettingsTabs -> { current with settings_tabs_open = true }
   | BackSettings ->
@@ -2295,19 +2309,26 @@ let rec update (current : chat_model) action =
         current with
         sidebar_tabs = move_sidebar_tab current.sidebar_tabs tab offset;
       }
-  | ChangeBaseURL base_url -> { current with base_url }
+  | ChangeBaseURL value -> { current with base_url_draft = value }
   | ApplySettings ->
-    if valid_base_url_ current.base_url then begin
-      let id = current.next_effect_id in
-      enqueue_effect
+    if valid_base_url_ current.base_url_draft then begin
+      let applied =
         {
           current with
+          base_url = String.trim current.base_url_draft;
+          base_url_draft = String.trim current.base_url_draft;
+        }
+      in
+      let id = applied.next_effect_id in
+      enqueue_effect
+        {
+          applied with
           settings_open = false;
           settings_tabs_open = false;
           settings_language_menu_open = false;
           runtime_log_open = false;
         }
-        (SaveSettingsEffect (id, current_settings current))
+        (SaveSettingsEffect (id, current_settings applied))
     end
     else current
   | ExportGraphDatabase ->
@@ -2593,6 +2614,7 @@ and apply_core_snapshot (current : chat_model)
           graph_password_open = true;
           graph_password = "";
           effect_error = None;
+          unlock_previous_graph_id = current.selected_graph_id;
         }
       else searched
   end

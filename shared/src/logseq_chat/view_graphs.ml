@@ -216,18 +216,32 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
               ~on_input:
                 (on_input send (fun text -> Model.ChangeNewGraphName text))
               [];
-            toggle
-              ~checked_signal:
-                (Signal.map View_base.model_new_graph_encrypted_
-                   model_source)
-              ~label:"End-to-end encryption"
-              ~accessibility_identifier:"toggle.graph-encryption"
-              ~on_toggle:(fun event ->
-                match event with
-                | ToggleChanged (_node, enabled) ->
-                  ignore (send (Model.ToggleNewGraphEncrypted enabled))
-                | _ -> ())
-              ~text:"End-to-end encryption" [];
+            list_item ~padding:0
+              ~accessibility_identifier:"row.graph-encryption"
+              ~on_press:(fun _ ->
+                ignore
+                  (send
+                     (Model.ToggleNewGraphEncrypted
+                        (not
+                           (Signal.sample
+                              (Signal.map
+                                 View_base.model_new_graph_encrypted_
+                                 model_source))))))
+              [
+                toggle
+                  ~checked_signal:
+                    (Signal.map View_base.model_new_graph_encrypted_
+                       model_source)
+                  ~label:"End-to-end encryption"
+                  ~accessibility_identifier:"toggle.graph-encryption"
+                  ~on_toggle:(fun event ->
+                    match event with
+                    | ToggleChanged (_node, enabled) ->
+                      ignore
+                        (send (Model.ToggleNewGraphEncrypted enabled))
+                    | _ -> ())
+                  ~text:"End-to-end encryption" [];
+              ];
             text ~style_class:"footnote" ~foreground:"muted-foreground"
               ~value:
                 "Encryption cannot be changed after the sync graph is \
@@ -365,12 +379,13 @@ let graph_picker_error_banner model_source : t =
     ]
 
 let graph_password_sheet model_source send : t =
-  sheet ~text:"Unlock encrypted graphs"
+  sheet ~text:"Unlock encrypted graphs" ~style_class:"navigation-form"
+    ~accessibility_identifier:"sheet.graph-unlock"
     ~on_dismiss:(press send Model.CancelGraphUnlock)
     [
-      column
+      column ~style_class:"form"
+        ~accessibility_identifier:"form.graph-unlock"
         [
-          text ~value:"Unlock encrypted graphs" [];
           secure_field
             ~text_signal:
               (Signal.map View_base.model_graph_password model_source)
@@ -379,6 +394,8 @@ let graph_password_sheet model_source send : t =
             ~on_input:
               (on_input send (fun text -> Model.ChangeGraphPassword text))
             [];
+          text ~style_class:"footnote" ~foreground:"muted-foreground"
+            ~value:"Enter your E2EE password to unlock this graph." [];
           if_
             ~test:
               (Signal.map View_base.graph_unlock_error_present_
@@ -387,11 +404,19 @@ let graph_password_sheet model_source send : t =
                ~value_signal:
                  (Signal.map View_base.graph_unlock_error_message
                     model_source)
+               ~style_class:"footnote" ~foreground:"destructive"
                ~accessibility_identifier:"text.graph-unlock-error" []);
-          button ~accessibility_identifier:"button.graph-unlock.cancel"
+        ];
+      toolbar ~orientation:"horizontal" ~label:"Graph unlock actions"
+        ~style_class:"navigation-actions"
+        ~accessibility_identifier:"toolbar.graph-unlock"
+        [
+          button ~style_class:"cancellation-action"
+            ~accessibility_identifier:"button.graph-unlock.cancel"
             ~on_press:(press send Model.CancelGraphUnlock)
             ~text:"Cancel" [];
-          button ~accessibility_identifier:"button.graph-unlock"
+          button ~style_class:"confirmation-action"
+            ~accessibility_identifier:"button.graph-unlock"
             ~disabled_signal:
               (Signal.map View_base.graph_unlock_disabled_ model_source)
             ~on_press:(press send Model.SubmitGraphPassword)
@@ -417,6 +442,12 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
               ~on_press:(press send Model.OpenCreateGraph)
               ~text:"Add graph" [];
           ];
+        if_
+          ~test:
+            (Signal.map View_base.graphs_screen_error_visible_
+               model_source)
+          (box ~padding:16
+             [ graph_picker_error_banner model_source ]);
         if_
           ~test:(Signal.map Model.graph_refresh_active_ model_source)
           (box ~padding:16
@@ -461,9 +492,14 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~accessibility_identifier:"button.graph-add"
           ~on_press:(press send Model.OpenCreateGraph)
           ~text:"Add sync graph" [];
+        if_
+          ~test:
+            (Signal.map View_base.graphs_screen_error_visible_
+               model_source)
+          (graph_picker_error_banner model_source);
         heading ~level:5
           ~accessibility_identifier:"heading.graphs.local"
-          ~value:"Local graphs:" [];
+          ~value:"Local graphs" [];
         if_
           ~test:(Signal.map View_base.local_graphs_empty_ model_source)
           (text ~foreground:"secondary" ~value:"No local graphs" []);
@@ -476,7 +512,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           ~test:(Signal.map View_base.remote_graphs_present_ model_source)
           (heading ~level:5
              ~accessibility_identifier:"heading.graphs.remote"
-             ~value:"Remote graphs:" []);
+             ~value:"Remote graphs" []);
         keyed
           ~source:(Signal.map View_base.remote_graphs model_source)
           ~key:View_base.graph_identifier ~compare:compare

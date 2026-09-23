@@ -34,6 +34,30 @@ private struct LGChatOverflowMenu: View {
     let context: LUIAppleExtensionViewContext
 
     var body: some View {
+        if settingsVisible && !pageActionsVisible {
+            Button {
+                emit("settings")
+            } label: {
+                ZStack {
+                    Circle()
+                        .stroke(lineWidth: 2)
+                    Image(systemName: "gearshape")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                }
+                .frame(width: 24, height: 24)
+            }
+            .frame(width: 44, height: 44)
+            .foregroundStyle(.primary)
+            .accessibilityLabel(Text("Settings", bundle: .module))
+            .accessibilityIdentifier("button.connection")
+        } else {
+            menuBody
+        }
+    }
+
+    private var menuBody: some View {
         Menu {
             if pageActionsVisible {
                 Button {

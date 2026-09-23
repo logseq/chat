@@ -267,7 +267,10 @@ public struct LogseqChatRootView : View {
             presentPageShare: { payload in
                 return presentationCoordinator.presentPageShare(payload)
             },
-            syncNow: { store.syncPending() }
+            syncNow: {
+                store.syncPending()
+                Task { await syncCoordinator.kickForeground() }
+            }
         )
         let platformCommandRouter = LGChatPlatformCommandRouter(
             setClipboardText: { text in Self.copyText(text) },
