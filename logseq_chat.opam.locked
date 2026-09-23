@@ -423,11 +423,11 @@ pin-depends: [
   ]
   [
     "melange-transit-core.0.1.2"
-    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+    "git+https://github.com/RCmerci/melange-transit.git#38ca92e299cf34c897d9a44091fe86e55b1315ee"
   ]
   [
     "melange-transit-native.0.1.2"
-    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+    "git+https://github.com/RCmerci/melange-transit.git#38ca92e299cf34c897d9a44091fe86e55b1315ee"
   ]
   [
     "melange-webapi.0.22.0"
@@ -467,11 +467,11 @@ pin-depends: [
   ]
   [
     "ocaml-fsrs.0.1.0-alpha3"
-    "git+https://github.com/logseq/ocaml-fsrs.git#54d30651b01081d9d7bcfc6d473b7338bfb6c278"
+    "git+https://github.com/logseq/ocaml-fsrs.git#472b8ff1b86e5afd2ac4bbeba5e2eecedd3948fc"
   ]
   [
     "ocaml-signal.0.1.0"
-    "git+https://github.com/logseq/ocaml-signal.git#b975304facce9e1e5e3f19286db1ce5d857325b6"
+    "git+https://github.com/logseq/ocaml-signal.git#48a4a4d37f87addbb28d85a10a55bd13becf94be"
   ]
   [
     "ocaml-syntax-shims.1.0.0"
@@ -788,7 +788,7 @@ x-opam-monorepo-duniverse-dirs: [
     "melange-edn"
   ]
   [
-    "git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97"
+    "git+https://github.com/RCmerci/melange-transit.git#38ca92e299cf34c897d9a44091fe86e55b1315ee"
     "melange-transit"
   ]
   [
@@ -1477,11 +1477,11 @@ x-opam-monorepo-duniverse-dirs: [
     "angstrom"
   ]
   [
-    "git+https://github.com/logseq/ocaml-fsrs.git#54d30651b01081d9d7bcfc6d473b7338bfb6c278"
+    "git+https://github.com/logseq/ocaml-fsrs.git#472b8ff1b86e5afd2ac4bbeba5e2eecedd3948fc"
     "ocaml-fsrs"
   ]
   [
-    "git+https://github.com/logseq/ocaml-signal.git#b975304facce9e1e5e3f19286db1ce5d857325b6"
+    "git+https://github.com/logseq/ocaml-signal.git#48a4a4d37f87addbb28d85a10a55bd13becf94be"
     "ocaml-signal"
   ]
   [
