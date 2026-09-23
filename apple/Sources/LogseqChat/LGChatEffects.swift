@@ -64,16 +64,6 @@ public struct LGChatSettingsPayload: Decodable, Equatable, Sendable {
     public let baseURL: String
 }
 
-
-public struct LGChatSettingsPayload: Decodable, Equatable, Sendable {
-    public let appearance: String
-    public let language: String
-    public let spellCheck: Bool
-    public let autoCorrection: Bool
-    public let sidebarTabs: [String]
-    public let baseURL: String
-}
-
 public struct LGChatAssetPresentationPayload: Codable, Equatable, Sendable {
     public let title: String
     public let assetType: String
@@ -378,6 +368,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     }
 }
 
+@MainActor
 public protocol LGChatPlatformCommandHandling: AnyObject {
     func handle(_ batch: LGChatPlatformCommandBatch)
 }
