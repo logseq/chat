@@ -1,0 +1,199 @@
+open Test_util
+
+module Ds = Datascript
+module Search = Search_index
+module Storage = Storage_codec
+
+let one = Storage.default_schema_attr
+
+let schema =
+  [
+    ( "block/uuid"
+    , { one with
+        Ds.unique = Some Ds.Identity;
+        indexed = true;
+        value_type = Some Ds.UuidType;
+      } );
+    ("block/name", { one with Ds.value_type = Some Ds.StringType });
+    ("block/title", { one with Ds.value_type = Some Ds.StringType });
+    ("block/page", { one with Ds.value_type = Some Ds.RefType });
+    ("block/parent", { one with Ds.value_type = Some Ds.RefType });
+    ("block/journal-day", one);
+    ("logseq.property/built-in?", one);
+    ("logseq.property/hide?", one);
+  ]
+
+let page_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec1"
+
+let block_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec2"
+
+let ref_block_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec3"
+
+let journal_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec4"
+
+let hidden_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec5"
+
+let cjk_uuid = "018f7850-0000-7da0-8b3f-6dbb64aa4ec6"
+
+let add eid attr value = Ds.Add (Ds.Entity_id eid, attr, value)
+
+let seeded_conn () =
+  let conn = Ds.create_conn ~schema () in
+  ignore
+    (Ds.transact_conn conn
+       [
+         add 1 "block/uuid" (Ds.Uuid page_uuid);
+         add 1 "block/name" (Ds.String "movies");
+         add 1 "block/title" (Ds.String "Movies");
+         add 2 "block/uuid" (Ds.Uuid block_uuid);
+         add 2 "block/title" (Ds.String "watch 4k movies tonight");
+         add 2 "block/page" (Ds.Ref 1);
+         add 3 "block/uuid" (Ds.Uuid ref_block_uuid);
+         add 3 "block/title" (Ds.String ("[[" ^ page_uuid ^ "]] marathon plan"));
+         add 3 "block/page" (Ds.Ref 1);
+         add 4 "block/uuid" (Ds.Uuid journal_uuid);
+         add 4 "block/name" (Ds.String "aug 16th, 2026");
+         add 4 "block/title" (Ds.String "Aug 16th, 2026");
+         add 4 "block/journal-day" (Ds.Int 20260816);
+         add 5 "block/uuid" (Ds.Uuid hidden_uuid);
+         add 5 "block/name" (Ds.String "secret");
+         add 5 "block/title" (Ds.String "Secret movies page");
+         add 5 "logseq.property/hide?" (Ds.Bool true);
+         add 6 "block/uuid" (Ds.Uuid cjk_uuid);
+         add 6 "block/title" (Ds.String "晚上看电影");
+         add 6 "block/page" (Ds.Ref 1);
+       ]);
+  conn
+
+let with_index f =
+  let root = Filename.temp_file "logseq-chat-search" "" in
+  let directory = Filename.concat root "search" in
+  let path = Filename.concat directory "db.sqlite" in
+  Sys.remove root;
+  Unix.mkdir root 0o755;
+  Fun.protect
+    ~finally:(fun () ->
+      List.iter
+        (fun candidate ->
+          if Sys.file_exists candidate then Sys.remove candidate)
+        [
+          path;
+          path ^ "-wal";
+          path ^ "-shm";
+          path ^ "-journal";
+        ];
+      if Sys.file_exists directory then Unix.rmdir directory;
+      Unix.rmdir root)
+    (fun () -> f (Search.create path))
+
+let results index query = Search.search (fun _ -> false) 100 index query
+
+let find_result index query uuid =
+  List.find_opt
+    (fun (result : Search.search_result) -> result.uuid = uuid)
+    (results index query)
+
+let match_input_preserves_logseq_boolean_and_phrase_rules () =
+  List.iter
+    (fun (query, expected) -> check_eq expected (Search.get_match_input query))
+    [
+      ("movie", "movie");
+      ("left and right", "left AND right");
+      ("block/title", "\"block/title\"*");
+      ("left and ", "\"left AND \"*");
+      ("say \"hello\"", "\"say \"\"hello\"\"\"*");
+    ]
+
+let fuzzy_scores_and_utf8_segmentation_preserve_search_semantics () =
+  check (Search.fuzzy_score "mov" "movies" > Search.fuzzy_score "mov" "my old vase");
+  check (Search.fuzzy_score "mov" "task" < 1.0);
+  check_eq 1018.0 (Search.fuzzy_score "abc" "abc");
+  check_eq 1012.0 (Search.fuzzy_score "" "");
+  let cjk = "电" in
+  let emoji = "😀" in
+  let text = "a" ^ cjk ^ emoji in
+  check_eq 3 (Search.utf8_length text);
+  check_eq [ "a"; cjk; emoji ] (Search.utf8_chars text);
+  check_eq "%\\%%\\_%\\\\%" (Search.fuzzy_like_pattern "%_\\")
+
+let candidates_are_deduplicated_limited_and_idempotently_refreshed () =
+  with_index (fun index ->
+    let db = Ds.conn_db (seeded_conn ()) in
+    Search.refresh index db;
+    let found = results index "movies" in
+    let ids = List.map (fun (r : Search.search_result) -> r.uuid) found in
+    check (found <> []);
+    check_eq (List.length ids)
+      (List.length (List.sort_uniq String.compare ids));
+    List.iter
+      (fun limit ->
+        check_eq [] (Search.search (fun _ -> false) limit index "movies"))
+      [ 0; -1 ];
+    check_eq [] (results index " \t\n");
+    check_eq
+      (match found with
+       | first :: _ -> [ first ]
+       | [] -> [])
+      (Search.search (fun _ -> false) 1 index "movies");
+    check_eq []
+      (Search.query_rows index
+         "select id, page, title from missing_table" []);
+    Search.refresh index db;
+    check_eq found (results index "movies"))
+
+let persisted_search_ranks_pages_resolves_references_and_refreshes_changes () =
+  with_index (fun index ->
+    let conn = seeded_conn () in
+    Search.refresh index (Ds.conn_db conn);
+    let found = results index "movies" in
+    check_eq (Some page_uuid)
+      (match found with
+       | (first : Search.search_result) :: _ -> Some first.uuid
+       | [] -> None);
+    check_eq (Some true)
+      (match found with
+       | first :: _ -> Some first.is_page
+       | [] -> None);
+    List.iter
+      (fun query -> check (find_result index query block_uuid <> None))
+      [ "movies"; "ovie"; "4k" ];
+    check (find_result index "电影" cjk_uuid <> None);
+    check_eq (Some "[[Movies]] marathon plan")
+      (match find_result index "Movies marathon" ref_block_uuid with
+       | Some (hit : Search.search_result) -> Some hit.title
+       | None -> None);
+    check (find_result index "20260816" journal_uuid <> None);
+    check_eq None (find_result index "Secret" hidden_uuid);
+    check_eq
+      (results index "movies")
+      (results (Search.create index.path) "movies");
+    ignore
+      (Ds.transact_conn conn
+         [
+           Ds.Add
+             ( Ds.Lookup_ref ("block/uuid", Ds.Uuid block_uuid)
+             , "block/title"
+             , Ds.String "listen to jazz records" );
+         ]);
+    Search.refresh index (Ds.conn_db conn);
+    check_eq None (find_result index "4k movies" block_uuid);
+    check (find_result index "jazz" block_uuid <> None);
+    ignore
+      (Ds.transact_conn conn
+         [
+           Ds.RetractEntity (Ds.Lookup_ref ("block/uuid", Ds.Uuid block_uuid));
+         ]);
+    Search.refresh index (Ds.conn_db conn);
+    check_eq None (find_result index "jazz" block_uuid))
+
+let cases =
+  [
+    case "match input preserves logseq boolean and phrase rules"
+      match_input_preserves_logseq_boolean_and_phrase_rules;
+    case "fuzzy scores and utf8 segmentation preserve search semantics"
+      fuzzy_scores_and_utf8_segmentation_preserve_search_semantics;
+    case "candidates are deduplicated limited and idempotently refreshed"
+      candidates_are_deduplicated_limited_and_idempotently_refreshed;
+    case "persisted search ranks pages resolves references and refreshes changes"
+      persisted_search_ranks_pages_resolves_references_and_refreshes_changes;
+  ]

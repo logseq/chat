@@ -14,3 +14,7 @@ val save_checkpoint_atomic : string -> sync_checkpoint -> (unit, string) result
 val decode_map :
   (Transit_core.Json.value * Transit_core.Json.value) list ->
   (sync_checkpoint, string) result
+val field :
+  string ->
+  (Transit_core.Json.value * Transit_core.Json.value) list ->
+  Transit_core.Json.value option

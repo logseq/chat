@@ -39,3 +39,4 @@ val card_eid : Datascript.db -> int -> bool
 val descendants : Cache_model.block list -> string -> Cache_model.block list
 val card_for_uuid : Datascript.db -> int -> string -> due_card option
 val due_cards : Datascript.db -> int -> due_card list
+val map_value : string -> (Datascript.value * Datascript.value) list -> Datascript.value option

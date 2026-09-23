@@ -25,3 +25,7 @@ val search_open : string -> unit
 val search_upsert : string -> (string * string * string) list -> unit
 val search_delete : string -> string list -> unit
 val search_query : string -> string -> string list -> (string * string * string) list
+
+val with_db : string -> (Sqlite3.db -> 'a) -> 'a
+val query :
+  Sqlite3.db -> string -> Sqlite3.Data.t list -> (Sqlite3.stmt -> 'a) -> 'a list

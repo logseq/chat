@@ -6,7 +6,9 @@ let https_send_raw =
       (Foreign.foreign "logseq_chat_https_send"
          (string @-> string @-> string @-> string @-> returning string))
   in
-  fun method_ url body token -> Lazy.force impl method_ url body token
+  fun method_ url body token ->
+    try Lazy.force impl method_ url body token
+    with error -> "ERROR\n" ^ Printexc.to_string error
 
 let https_upload_file_raw =
   let impl =
@@ -16,7 +18,8 @@ let https_upload_file_raw =
           @-> returning string))
   in
   fun method_ url path content_type token ->
-    Lazy.force impl method_ url path content_type token
+    try Lazy.force impl method_ url path content_type token
+    with error -> "ERROR\n" ^ Printexc.to_string error
 
 type http_endpoint =
   { scheme : string

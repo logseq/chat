@@ -29,3 +29,7 @@ val identity_uuid : Transit_core.Json.value -> string option
 val changed_block_uuids : sync_change_set -> string list
 val decode_change_set : string -> (sync_change_set, string) result
 val decode_event : string -> string -> (sync_event, string) result
+val field :
+  string ->
+  (Transit_core.Json.value * Transit_core.Json.value) list ->
+  Transit_core.Json.value option

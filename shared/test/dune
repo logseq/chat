@@ -2,8 +2,11 @@
 
 (executable
  (name test_main)
- (modules (:standard))
+
  (flags (:standard -w -27-32-37-39-69))
+ (foreign_stubs
+  (language c)
+  (names logseq_chat_platform_crypto_test_stubs))
  (libraries
   logseq_chat_core
   logseq_chat_app
@@ -27,6 +30,7 @@
  (deps
   ../native/logseq_chat_e2e_seed.exe
   ../native/logseq_chat_live_sync.exe
+  ../native/pending_ops_golden.jsonl
   test_main.exe)
  (action
   (run ./test_main.exe)))

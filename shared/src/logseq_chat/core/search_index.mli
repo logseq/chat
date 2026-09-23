@@ -44,3 +44,6 @@ val search :
   (string -> bool) -> int -> search_index -> string -> search_result list
 val search_hits :
   int -> search_index -> Datascript.db -> string -> indexed_search_hit list
+val query_rows :
+  search_index -> string -> string list -> (string * string * string) list
+val fuzzy_like_pattern : string -> string

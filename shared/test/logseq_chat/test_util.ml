@@ -10,3 +10,6 @@ let check_error ?(msg = "expected Error") result =
 let fail = Alcotest.fail
 
 let case name f = Alcotest.test_case name `Quick f
+
+let check_ok ?(msg = "expected Ok") result =
+  Alcotest.(check bool) msg true (Result.is_ok result)

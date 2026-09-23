@@ -174,8 +174,15 @@ val semantic_value_json : semantic_value -> Yojson.Basic.t
 val semantic_value_of_json : Yojson.Basic.t -> semantic_value
 val intent_json : pending_intent -> Yojson.Basic.t
 val intent_of_json : Yojson.Basic.t -> pending_intent
+val raw_title :
+  Datascript.db -> string -> (string, string) result
+val json_object : (string * Yojson.Basic.t) list -> Yojson.Basic.t
+val option_json : ('a -> Yojson.Basic.t) -> 'a option -> Yojson.Basic.t
+val option_value : (Yojson.Basic.t -> 'a) -> Yojson.Basic.t -> 'a option
 val save : string -> pending_operation -> unit
 val list : string -> pending_operation list
 val set_state : string -> string -> pending_state -> unit
 val remove : string -> string -> unit
 val confirm : string -> string list -> unit
+val store_raw : string -> string -> int -> string -> string -> unit
+val list_raw : string -> (string * int * string * string) list

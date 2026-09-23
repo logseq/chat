@@ -105,7 +105,7 @@ let visible_tag_summaries decrypt_title db eid =
     | None -> None)
 
 let rec breadcrumbs_loop decrypt_title db seen eid ancestors =
-  if List.mem eid seen then List.rev ancestors
+  if List.mem eid seen then ancestors
   else
     match
       Ds_value.optional_ref_eid db "block/parent"
@@ -118,7 +118,7 @@ let rec breadcrumbs_loop decrypt_title db seen eid ancestors =
         | None -> ancestors
       in
       breadcrumbs_loop decrypt_title db (eid :: seen) parent_eid ancestors
-    | None -> List.rev ancestors
+    | None -> ancestors
 
 let breadcrumbs decrypt_title db eid =
   breadcrumbs_loop decrypt_title db [] eid []
@@ -383,32 +383,40 @@ let sidebar_pages decrypt_title db =
         else compare right_eid left_eid)
       candidates
   in
-  let distinct l =
+
+  (* Resolve and decrypt only enough ranked pages to fill the window:
+     stay lazy like the original seq pipeline. *)
+  let seq_distinct xs =
     let seen = Hashtbl.create 16 in
-    List.filter
-      (fun x ->
-        if Hashtbl.mem seen x then false
+    let rec loop xs () =
+      match xs () with
+      | Seq.Nil -> Seq.Nil
+      | Seq.Cons (x, rest) ->
+        if Hashtbl.mem seen x then loop rest ()
         else (
           Hashtbl.replace seen x ();
-          true))
-      l
+          Seq.Cons (x, loop rest))
+    in
+    loop xs
   in
-  let recent =
-    ranked
-    |> List.map (fun (_, _, eid) -> eid)
-    |> distinct
-    |> List.filter_map (fun eid ->
+  let recent_seq =
+    List.to_seq ranked
+    |> Seq.map (fun (_, _, eid) -> eid)
+    |> seq_distinct
+    |> Seq.filter_map (fun eid ->
       match page_summary decrypt_title db eid with
       | Some page ->
         if List.mem page.Model.uuid favorite_uuids then None else Some page
       | None -> None)
   in
-  let rec take n l =
-    match l with
-    | [] -> []
-    | x :: rest -> if n = 0 then [] else x :: take (n - 1) rest
+  let rec take n xs () =
+    if n <= 0 then Seq.Nil
+    else
+      match xs () with
+      | Seq.Nil -> Seq.Nil
+      | Seq.Cons (x, rest) -> Seq.Cons (x, take (n - 1) rest)
   in
-  { favorites; recent_pages = take 15 recent }
+  { favorites; recent_pages = List.of_seq (take 15 recent_seq) }
 
 let page_block decrypt_title db eid =
   match page_summary decrypt_title db eid with
