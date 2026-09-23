@@ -1,0 +1,464 @@
+module Types = Session_types
+module Rpc = Rpc
+module Model = Cache_model
+module Ops = Pending_ops
+module Outliner = Outliner_state
+
+let sidebar_pages (session : Types.session) =
+  match (Types.host session).graph_sidebar_pages with
+  | Some load -> (match load () with Some sidebar -> sidebar | None -> Types.empty_sidebar)
+  | None -> Types.empty_sidebar
+
+let summary_candidate (page : Model.entity_summary) =
+  { Outliner.label = page.title; value = page.uuid }
+
+let outliner_context_with_blocks session sidebar blocks =
+  let sidebar =
+    match sidebar with
+    | Some sidebar -> sidebar
+    | None -> sidebar_pages session
+  in
+  let pages =
+    List.map summary_candidate
+      (sidebar.Graph_read.favorites @ sidebar.Graph_read.recent_pages)
+  in
+  let tags =
+    match (Types.host session).Types.graph_tag_pages with
+    | Some load ->
+      List.map summary_candidate
+        (match load () with Some pages -> pages | None -> [])
+    | None -> []
+  in
+  Outliner.context blocks pages tags
+
+let base_outliner_context_live (session : Types.session) =
+  let s = Types.state session in
+  let h = Types.host session in
+  let blocks =
+    match (s.selected_sidebar_page, h.graph_page_blocks, h.graph_blocks) with
+    | Some page, Some load, _ ->
+      (match load page.Model.uuid with
+       | Some blocks -> blocks
+       | None -> [])
+    | _, _, Some load ->
+      (match load () with Some blocks -> blocks | None -> [])
+    | _ -> Model.visible_blocks s.model
+  in
+  outliner_context_with_blocks session None blocks
+
+let page_overlay (session : Types.session) page_id blocks =
+  Rpc.page_blocks_with_optimistic_overlay
+    (Types.state session).outliner_optimistic_blocks
+    (Outliner.editing_uuid (Types.state session).outliner_state <> None)
+    page_id blocks
+
+let scope_selected_page (session : Types.session)
+    (context : Outliner.outliner_context) =
+  match (Types.state session).selected_sidebar_page with
+  | Some page ->
+    {
+      context with
+      Outliner.blocks = page_overlay session page.uuid context.blocks;
+    }
+  | None -> context
+
+let base_outliner_context_with_blocks session sidebar blocks =
+  scope_selected_page session
+    (outliner_context_with_blocks session sidebar blocks)
+
+let base_outliner_context session =
+  scope_selected_page session (base_outliner_context_live session)
+
+let page_outliner_context (session : Types.session) uuid =
+  match (Types.host session).graph_page_blocks with
+  | Some load ->
+    (match load uuid with
+     | Some blocks -> Some (outliner_context_with_blocks session None blocks)
+     | None -> None)
+  | None -> None
+
+let node_route_context session (route : Types.node_route) =
+  let blocks =
+    match (Types.host session).graph_page_blocks with
+    | Some load ->
+      (match load route.page.Model.uuid with
+       | Some blocks -> blocks
+       | None -> [])
+    | None -> []
+  in
+  outliner_context_with_blocks session None
+    (page_overlay session route.page.uuid blocks)
+
+let active_node_route (session : Types.session) =
+  let routes = (Types.state session).node_routes in
+  match List.rev routes with
+  | route :: _ -> Some route
+  | [] -> None
+
+let node_route_related_blocks session (route : Types.node_route) =
+  let loader =
+    if route.is_tag then (Types.host session).Types.graph_tag_objects
+    else (Types.host session).graph_node_references
+  in
+  match loader with
+  | Some load ->
+    (match load route.uuid with
+     | Some blocks -> blocks
+     | None -> route.related_blocks)
+  | None -> route.related_blocks
+
+let node_route_linked_reference_blocks session (route : Types.node_route) =
+  if route.is_tag then
+    match (Types.host session).graph_node_references with
+    | Some load ->
+      (match load route.uuid with Some blocks -> blocks | None -> [])
+    | None -> []
+  else []
+
+let page_for_visible_block (block : Model.block) =
+  let title =
+    match block.journal with
+    | Some (title, _) when not (String_kit.is_blank title) -> Some title
+    | _ -> None
+  in
+  let title =
+    match title with
+    | Some _ -> title
+    | None ->
+      (match
+         List.find_opt
+           (fun (page : Model.entity_summary) -> page.uuid = block.page_id)
+           block.breadcrumbs
+       with
+       | Some page -> Some page.title
+       | None -> Some block.title)
+  in
+  { Model.uuid = block.page_id; title = Option.value title ~default:"" }
+
+let projected_node_destination (session : Types.session) uuid =
+  let s = Types.state session in
+  let h = Types.host session in
+  let graph_blocks =
+    match h.graph_blocks with
+    | Some load -> (match load () with Some blocks -> blocks | None -> [])
+    | None -> []
+  in
+  let selected_blocks =
+    match (s.selected_sidebar_page, h.graph_page_blocks) with
+    | Some page, Some load ->
+      (match load page.Model.uuid with Some blocks -> blocks | None -> [])
+    | _ -> []
+  in
+  let route_blocks =
+    List.concat_map
+      (fun route -> (node_route_context session route).Outliner.blocks)
+      s.node_routes
+  in
+  let blocks =
+    graph_blocks @ selected_blocks @ route_blocks @ s.related_blocks
+    @ Option.value s.outliner_optimistic_blocks ~default:[]
+  in
+  let candidate =
+    match
+      List.find_opt (fun block -> block.Model.uuid = uuid) blocks
+    with
+    | Some block -> Some (block, true)
+    | None ->
+      (match
+         List.find_opt (fun block -> block.Model.page_id = uuid) blocks
+       with
+       | Some block -> Some (block, false)
+       | None -> None)
+  in
+  match candidate with
+  | Some (block, zoom) when block.Model.page_id <> "" ->
+    Some (page_for_visible_block block, zoom)
+  | _ -> None
+
+let with_extra_blocks (context : Outliner.outliner_context) extra =
+  let present = List.map (fun b -> b.Model.uuid) context.blocks in
+  {
+    context with
+    Outliner.blocks =
+      context.blocks
+      @ List.filter
+          (fun block -> not (List.mem block.Model.uuid present))
+          extra;
+  }
+
+let outliner_context (session : Types.session) =
+  match active_node_route session with
+  | Some route ->
+    with_extra_blocks
+      (node_route_context session route)
+      (node_route_related_blocks session route
+       @ node_route_linked_reference_blocks session route)
+  | None ->
+    with_extra_blocks
+      (base_outliner_context session)
+      (Types.state session).related_blocks
+
+let project_outliner_operations (context : Outliner.outliner_context)
+    operations =
+  {
+    context with
+    Outliner.blocks =
+      List.fold_left
+        (fun blocks (operation : Ops.pending_operation) ->
+          Rpc.project_outliner_intent blocks operation.intent)
+        context.blocks operations;
+  }
+
+let selected_graph (session : Types.session) =
+  match (Types.state session).config with
+  | Some config ->
+    List.find_opt
+      (fun (graph : Api.api_graph) -> graph.id = config.Api.graph_id)
+      (Types.state session).available_graphs
+  | None -> None
+
+let selected_graph_is_encrypted session =
+  match selected_graph session with
+  | Some graph -> graph.Api.e2ee
+  | None -> false
+
+let selected_graph_is_unlocked (session : Types.session) =
+  match ((Types.state session).config, selected_graph session) with
+  | config, Some graph ->
+    if not graph.Api.e2ee then true
+    else
+      (match (config, (Types.host session).graph_unlocked) with
+       | Some config, Some unlocked -> unlocked config.Api.graph_id
+       | _ -> false)
+  | _ -> false
+
+let selected_page_is_tag (session : Types.session) =
+  match
+    ( (Types.state session).selected_sidebar_page
+    , (Types.host session).graph_node_is_tag )
+  with
+  | Some page, Some check -> check page.Model.uuid
+  | _ -> false
+
+let selected_page_is_property (session : Types.session) =
+  match
+    ( (Types.state session).selected_sidebar_page
+    , (Types.host session).graph_node_is_property )
+  with
+  | Some page, Some check -> check page.Model.uuid
+  | _ -> false
+
+let snapshot_related_blocks (session : Types.session) =
+  if selected_page_is_tag session then
+    match
+      ( (Types.state session).selected_sidebar_page
+      , (Types.host session).graph_tag_objects )
+    with
+    | Some page, Some load ->
+      (match load page.Model.uuid with
+       | Some blocks -> blocks
+       | None -> [])
+    | _ -> []
+  else (Types.state session).related_blocks
+
+let snapshot_linked_reference_blocks (session : Types.session) =
+  if selected_page_is_tag session then
+    match
+      ( (Types.state session).selected_sidebar_page
+      , (Types.host session).graph_node_references )
+    with
+    | Some page, Some load ->
+      (match load page.Model.uuid with
+       | Some blocks -> blocks
+       | None -> [])
+    | _ -> []
+  else []
+
+let has_pending_operations (session : Types.session) =
+  let s = Types.state session in
+  s.semantic_queue <> []
+  || s.semantic_active <> None
+  || s.pending_sync <> None
+  || Model.pending_blocks s.model <> []
+
+let reset_outliner (session : Types.session) =
+  session.state :=
+    {
+      !(session.state) with
+      outliner_state = Outliner.empty;
+      outliner_optimistic_blocks = None;
+      outliner_commands = [];
+      outliner_revision = (Types.state session).outliner_revision + 1;
+    }
+
+let clear_node_navigation (session : Types.session) =
+  (match (Types.state session).node_base_state with
+   | Some base ->
+     session.state := { !(session.state) with outliner_state = base }
+   | None -> ());
+  session.state :=
+    { !(session.state) with node_routes = []; node_base_state = None }
+
+let persist_active_node_state (session : Types.session) =
+  let s = Types.state session in
+  let routes = s.node_routes in
+  match List.length routes with
+  | 0 -> ()
+  | count ->
+    let index = count - 1 in
+    session.state :=
+      {
+        !(session.state) with
+        node_routes =
+          List.mapi
+            (fun i (route : Types.node_route) ->
+              if i = index then { route with state = s.outliner_state }
+              else route)
+            routes;
+      }
+
+let initial_node_state session (route : Types.node_route) =
+  if route.zoom_to_block then
+    fst
+      (Outliner.update
+         (node_route_context session route)
+         Outliner.empty
+         (Outliner.Zoom_in route.uuid))
+  else Outliner.empty
+
+let push_node_route (session : Types.session) (route : Types.node_route) =
+  persist_active_node_state session;
+  if (Types.state session).node_routes = [] then
+    session.state :=
+      {
+        !(session.state) with
+        node_base_state = Some (Types.state session).outliner_state;
+      };
+  let current = initial_node_state session route in
+  session.state :=
+    {
+      !(session.state) with
+      node_routes = (Types.state session).node_routes @ [ { route with state = current } ];
+      outliner_state = current;
+      outliner_commands = [];
+      outliner_revision = (Types.state session).outliner_revision + 1;
+    }
+
+let pop_node_route (session : Types.session) =
+  persist_active_node_state session;
+  let routes = (Types.state session).node_routes in
+  if routes <> [] then begin
+    session.state :=
+      {
+        !(session.state) with
+        node_routes = Rpc.sub_list routes 0 (List.length routes - 1);
+      };
+    (match active_node_route session with
+     | Some route ->
+       session.state := { !(session.state) with outliner_state = route.state }
+     | None ->
+       session.state :=
+         {
+           !(session.state) with
+           outliner_state =
+             (match (Types.state session).node_base_state with
+              | Some base -> base
+              | None -> Outliner.empty);
+           node_base_state = None;
+         });
+    session.state :=
+      {
+        !(session.state) with
+        outliner_commands = [];
+        outliner_revision = (Types.state session).outliner_revision + 1;
+      }
+  end
+
+let aggregate_return_context session payload
+    (message : Outliner.outliner_message) =
+  let s = Types.state session in
+  let return =
+    match message with
+    | Outliner.Return_pressed -> true
+    | Outliner.Return_pressed_with_text _ -> true
+    | _ -> false
+  in
+  if s.selected_sidebar_page = None && s.node_routes = [] && return then
+    match Rpc.outliner_structure_source payload with
+    | Some source ->
+      (match (Types.host session).graph_node_destination with
+       | Some destination ->
+         (match destination source with
+          | Some (page, _) ->
+            (match page_outliner_context session page.Model.uuid with
+             | Some context -> Some (context, page.uuid)
+             | None -> None)
+          | None -> None)
+       | None -> None)
+    | None -> None
+  else None
+
+type outliner_patch_plan =
+  | Patch_blocks of string list
+  | Structural_diff
+
+let event_patch_plan (message : Outliner.outliner_message) operations =
+  match message with
+  | Outliner.Toggle_collapsed _ -> Structural_diff
+  | _ ->
+    (match operations with
+     | [ operation ] ->
+       (match operation.Ops.intent with
+        | Ops.Save_title title -> Patch_blocks [ title.uuid ]
+        | Ops.Set_property property -> Patch_blocks [ property.uuid ]
+        | _ -> Structural_diff)
+     | [] ->
+       (match message with
+        | Outliner.Tap_block _ -> Patch_blocks []
+        | Outliner.Long_press_block _ -> Patch_blocks []
+        | Outliner.Text_changed _ -> Patch_blocks []
+        | Outliner.Caret_moved _ -> Patch_blocks []
+        | Outliner.Choose_autocomplete _ -> Patch_blocks []
+        | Outliner.Save_editing -> Patch_blocks []
+        | Outliner.Cancel_editing -> Patch_blocks []
+        | Outliner.Toolbar _ -> Patch_blocks []
+        | _ -> Structural_diff)
+     | _ -> Structural_diff)
+
+let refresh_reference_metadata session aggregate projected operations =
+  if
+    List.exists
+      (fun (operation : Ops.pending_operation) ->
+        match operation.intent with
+        | Ops.Save_title _ -> true
+        | Ops.Add_tag _ -> true
+        | _ -> false)
+      operations
+  then
+    let live =
+      match aggregate with
+      | Some uuid ->
+        (match page_outliner_context session uuid with
+         | Some context -> context
+         | None -> outliner_context session)
+      | None -> outliner_context session
+    in
+    let by_id =
+      List.map (fun (b : Model.block) -> (b.uuid, b)) live.Outliner.blocks
+    in
+    {
+      projected with
+      Outliner.blocks =
+        List.map
+          (fun (block : Model.block) ->
+            match List.assoc_opt block.uuid by_id with
+            | Some current ->
+              {
+                block with
+                references = current.references;
+                tags = current.tags;
+              }
+            | None -> block)
+          projected.Outliner.blocks;
+    }
+  else projected

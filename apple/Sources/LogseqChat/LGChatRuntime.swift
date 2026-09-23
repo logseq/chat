@@ -29,11 +29,6 @@ private struct LGChatPendingHostUpdate {
 }
 
 
-public protocol LGChatPlatformCommandHandling: AnyObject {
-    func handle(_ batch: LGChatPlatformCommandBatch)
-}
-
-
 private struct LGCoreResponseEnvelope: Decodable {
     let result: Result?
 
@@ -73,6 +68,7 @@ public enum LGChatRuntimeError: Error, Equatable {
 }
 
 
+@MainActor
 public final class LGChatRuntime {
     public let renderer: LGChatRenderer
     public private(set) var lastError: String?

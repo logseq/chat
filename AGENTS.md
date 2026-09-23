@@ -16,12 +16,12 @@ Logseq Chat uses native SwiftUI on iOS and Flutter Material on Android, backed b
 
 - Use `dune build @shared/native/runtest` for core validation. The mobile entry object
   also needs platform libraries and FFI symbols supplied by the mobile build.
-  Crypto protocol handling lives in `shared/src/logseq_chat/core/platform_crypto.cljc`.
+  Crypto protocol handling lives in `shared/src/logseq_chat/core/platform_crypto.ml`.
   The mobile-only `logseq_chat_crypto_call` FFI declaration lives in
-  `shared/src/logseq_chat/native_crypto.cljc` so CLI builds do not require mobile symbols.
+  `shared/src/logseq_chat/native_crypto.ml` so CLI builds do not require mobile symbols.
 - Mobile OCaml builds use the thin `scripts/build-mobile-ocaml.sh` Dune wrapper.
-  Native module membership lives in `shared/native/dune_modules/*.sexp`. Core LG sources
-  are discovered from `shared/src/logseq_chat/core`; adding one needs no per-file rule.
+  Native module membership lives in `shared/native/dune_modules/*.sexp`. Core sources
+  live in `shared/src/logseq_chat/core`; adding one needs no per-file rule.
 
 ## Cursor Cloud specific instructions
 
@@ -52,7 +52,7 @@ opam install . --deps-only --yes --with-test
 
 `opam init` on this VM must use `--disable-sandboxing`. New shells need `eval $(opam env --switch=5.5.0)` unless `.bashrc` already loads it.
 
-A representative core action is the Swift FFI RPC `dispatch` / `send`, which optimistic-captures a journal block (see `shared/test/logseq_chat/rpc_test.cljc` and `dune build @shared/native/runtest`).
+A representative core action is the Swift FFI RPC `dispatch` / `send`, which optimistic-captures a journal block (see `shared/test/logseq_chat/rpc_test.ml` and `dune build @shared/native/runtest`).
 
 ### iOS / Android
 

@@ -90,7 +90,6 @@ jobs:
         with:
           path: |
             ~/.cache/dune
-            .lg-cache
           key: build-cache-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
             build-cache-${{ github.ref_name }}-
@@ -112,5 +111,4 @@ jobs:
         with:
           path: |
             ~/.cache/dune
-            .lg-cache
           key: build-cache-${{ github.ref_name }}-${{ github.sha }}

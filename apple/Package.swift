@@ -10,7 +10,8 @@ let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmp
     .unsafeFlags(logseqChatNativeLinkInputs, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
     .linkedFramework("Security", .when(platforms: [.iOS])),
-    .linkedLibrary("sqlite3", .when(platforms: [.iOS]))
+    .linkedLibrary("sqlite3", .when(platforms: [.iOS])),
+    .linkedLibrary("ffi", .when(platforms: [.iOS]))
 ]
 let logseqChatCoreSwiftSettings: [SwiftSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
     .define("LOGSEQ_CHAT_CORE", .when(platforms: [.iOS]))
