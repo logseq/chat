@@ -1,5 +1,5 @@
 {
-  "originHash" : "753b6422d5efc77161cf30afcad1cdf633e2e712739c1093258d89b91fe18be1",
+  "originHash" : "422381304893946ee2caaa23bada3bc39c4c8131c4ff49ea5949ce458dafd82e",
   "pins" : [
     {
       "identity" : "highlightswift",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "ssh://git@github.com/logseq/lui.git",
       "state" : {
-        "revision" : "38096c4fab853e462e60fc04d4daadd1f06aa09a"
+        "revision" : "0e491ba080db0641af1a393cef1dc0e5a3d3c659"
       }
     },
     {

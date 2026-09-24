@@ -595,7 +595,7 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
       (toolbar ~orientation:`horizontal ~label:"Outliner selection"
          ~accessibility_identifier:"toolbar.outliner.selection"
          ~style_class:"scroll-leading leading-inset-12"
-         ~toolbar_gap:6
+         ~toolbar_gap:6 ~placement:"bottom"
       [
         apple_button (`app "toolbar-copy") "Copy"
           "button.outliner.selection.copy" "copy";
@@ -720,7 +720,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     toolbar ~orientation:`horizontal ~label:"Outliner editor"
       ~accessibility_identifier:"toolbar.outliner.editor"
       ~style_class:"scroll-leading leading-inset-8"
-      ~toolbar_gap:4
+      ~toolbar_gap:4 ~placement:"bottom"
       [
         View_base.with_label_signal
           (reactive View_base.outliner_editor_task_label model_source)
