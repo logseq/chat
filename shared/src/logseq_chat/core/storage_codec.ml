@@ -349,6 +349,20 @@ let address_to_json address =
 let addresses_to_json addresses =
   Yojson.Safe.to_string (`List (List.map address_to_json addresses))
 
+let index_metadata_of_transit entries =
+  match lookup "count" entries, lookup "shift" entries with
+  | Some count, Some shift ->
+    Some
+      { Ds.storage_index_count = required_int "index metadata :count" count
+      ; storage_index_shift = required_int "index metadata :shift" shift
+      }
+  | _ -> None
+
+let optional_metadata key entries =
+  match lookup key entries with
+  | Some (Value.Map metadata) -> index_metadata_of_transit metadata
+  | _ -> None
+
 let root_of_transit entries : Ds.storage_root =
   { storage_schema = schema_of_transit (required "schema" entries)
   ; storage_max_eid = required_int "root :max-eid" (required "max-eid" entries)
@@ -356,6 +370,9 @@ let root_of_transit entries : Ds.storage_root =
   ; storage_eavt = address_of_transit "root :eavt" (required "eavt" entries)
   ; storage_aevt = address_of_transit "root :aevt" (required "aevt" entries)
   ; storage_avet = address_of_transit "root :avet" (required "avet" entries)
+  ; storage_eavt_metadata = optional_metadata "eavt-metadata" entries
+  ; storage_aevt_metadata = optional_metadata "aevt-metadata" entries
+  ; storage_avet_metadata = optional_metadata "avet-metadata" entries
   ; storage_duplicate_datoms =
       (match lookup "duplicate-datoms" entries with
        | None -> []
@@ -377,10 +394,16 @@ let index_metadata_to_transit metadata =
       (Value.Keyword "shift", Value.Int metadata.shift);
     ]
 
+let stored_index_metadata_to_transit (metadata : Ds.storage_index_metadata) =
+  Value.Map
+    [
+      (Value.Keyword "count", Value.Int metadata.storage_index_count);
+      (Value.Keyword "shift", Value.Int metadata.storage_index_shift);
+    ]
+
 let root_to_transit index_metadata (root : Ds.storage_root) =
   let metadata =
     match index_metadata with
-    | None -> []
     | Some metadata ->
       [
         ( Value.Keyword "eavt-metadata"
@@ -390,6 +413,17 @@ let root_to_transit index_metadata (root : Ds.storage_root) =
         ( Value.Keyword "avet-metadata"
         , index_metadata_to_transit metadata.avet );
       ]
+    | None ->
+      List.filter_map
+        (fun (key, value) ->
+          Option.map
+            (fun metadata -> (Value.Keyword key, stored_index_metadata_to_transit metadata))
+            value)
+        [
+          ("eavt-metadata", root.storage_eavt_metadata);
+          ("aevt-metadata", root.storage_aevt_metadata);
+          ("avet-metadata", root.storage_avet_metadata);
+        ]
   in
   Value.Map
     ([
