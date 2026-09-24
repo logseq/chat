@@ -2,7 +2,9 @@ open Lui_protocol
 open Lui_elements
 
 let settings_language_choice_radio model_source
-    (choice : Model.settings_language_choice) send : radio_el =
+    (choice_source : Model.settings_language_choice Signal.signal) send :
+    radio_el =
+  let choice = Signal.sample choice_source in
   radio
     ~checked_signal:
       (Signal.map
@@ -58,15 +60,16 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
              ]);
       ]
   else
-    dyn ~equal:(=)
-      (fun (choices : Model.settings_language_choice list) ->
-        radio_group ~label:"Language" ~style_class:"menu"
-          ~accessibility_identifier:"picker.settings.language"
-          (List.map
-             (fun choice ->
-               settings_language_choice_radio model_source choice send)
-             choices))
-      (Signal.map View_base.model_language_choices model_source)
+    radio_group ~label:"Language" ~style_class:"menu"
+      ~accessibility_identifier:"picker.settings.language"
+      [
+        keyed_radio
+          ~source:(Signal.map View_base.model_language_choices model_source)
+          ~key:View_base.settings_language_choice_identifier
+          ~cmp:compare
+          ~mount:(fun choice_source ->
+            settings_language_choice_radio model_source choice_source send);
+      ]
 
 let settings_appearance_control (context : Lui_ui.ui_context) model_source
     send : t =
