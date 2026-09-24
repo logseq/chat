@@ -17,11 +17,12 @@ jobs:
       - name: System dependencies
         run: sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config
 
-      - uses: ocaml/setup-ocaml@v3
+      - name: Restore opam root
+        id: opam-root
+        uses: actions/cache/restore@v4
         with:
-          ocaml-compiler: "5.5"
-          opam-pin: false
-          # "cache" (default true) caches the opam root + switch.
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
 
       - name: Restore opam switch
         id: opam-switch
@@ -29,6 +30,33 @@ jobs:
         with:
           path: _opam
           key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      # setup-ocaml runs `opam update` unconditionally (~40s). When both the
+      # root and the switch are cache hits the env is already complete, so
+      # only the opam binary is needed.
+      - name: Install opam binary
+        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
+          chmod +x ~/.local/bin/opam
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          eval $(opam env)
+          opam --version && ocaml -version
+
+      - uses: ocaml/setup-ocaml@v3
+        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
+        with:
+          ocaml-compiler: "5.5"
+          opam-pin: false
+          # "cache" (default true) caches the opam root + switch.
+
+      - name: Save opam root
+        if: steps.opam-root.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
 
       - name: Install opam dependencies
         if: steps.opam-switch.outputs.cache-hit != 'true'
