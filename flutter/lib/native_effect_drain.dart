@@ -133,7 +133,7 @@ final class NativeEffectDrain {
         return;
       }
 
-      _apply(dispatch.patch);
+      _apply(dispatch.patch, 'dispatch kind=${dispatch.effect.kind}');
       _cancelOutlinerAutosaveBeforeExecuting(dispatch.effect);
       final stopwatch = Stopwatch()..start();
       trace('start id=${dispatch.effect.id} kind=${dispatch.effect.kind}');
@@ -148,7 +148,7 @@ final class NativeEffectDrain {
       if (resolution.succeeded) {
         switch (resolution.output) {
           case NativeEffectOutputKind.coreResponse:
-            _apply(runtime.applySnapshot(resolution.message));
+            _apply(runtime.applySnapshot(resolution.message), 'applySnapshot');
             await afterCoreResponseApplied?.call(resolution.message);
             _scheduleOutlinerAutosaveIfNeeded(
               dispatch.effect,
@@ -161,6 +161,7 @@ final class NativeEffectDrain {
                 kind: resolution.hostUpdateKind!,
                 payload: resolution.message,
               ),
+              'applyHostUpdate kind=${resolution.hostUpdateKind}',
             );
             break;
           case NativeEffectOutputKind.discard:
@@ -173,6 +174,8 @@ final class NativeEffectDrain {
           succeeded: resolution.succeeded,
           message: resolution.message,
         ),
+        'resolveEffect id=${dispatch.effect.id} '
+        'succeeded=${resolution.succeeded}',
       );
     }
   }
@@ -234,15 +237,24 @@ final class NativeEffectDrain {
       if (resolution.output != NativeEffectOutputKind.coreResponse) {
         throw StateError('Outliner autosave did not return a core response');
       }
-      _apply(runtime.applySnapshot(resolution.message));
+      _apply(
+        runtime.applySnapshot(resolution.message),
+        'applySnapshot(outliner-autosave)',
+      );
       await afterCoreResponseApplied?.call(resolution.message);
     } catch (error, stackTrace) {
       onError(error, stackTrace);
     }
   }
 
-  void _apply(String patch) {
-    if (patch.isNotEmpty) applyPatch(patch);
+  void _apply(String patch, String source) {
+    if (patch.isNotEmpty) {
+      applyPatch(patch);
+    } else {
+      // An OCaml exception in a lui_* FFI call surfaces as an empty patch —
+      // log the producer so a wedged pipeline is visible in the drain trace.
+      trace('empty patch from $source');
+    }
   }
 
   String _singleLine(String message) => message.replaceAll('\n', r'\n');
