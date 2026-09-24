@@ -82,7 +82,7 @@ jobs:
           git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
           git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
           opam monorepo pull -y
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[0-9a-f]{40}' logseq_chat.opam | sort -u); do
+          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
             url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
             # opam monorepo pull already vendors lockfile entries at the right
             # commits (without .git dirs — `git -C` there would hit the parent
@@ -93,7 +93,7 @@ jobs:
             git clone --quiet "https://github.com/$url" "duniverse/$name"
             if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
               git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
-              git -C "duniverse/$name" checkout --quiet "$sha"
+              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
             fi
           done
 
