@@ -109,7 +109,9 @@ jobs:
           git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "ssh://git@github.com/"
           git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
           git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
-          opam monorepo pull -y
+          # Call the binary directly: the `opam monorepo` plugin shim rejects
+          # plugins built under a different opam version (restored caches).
+          opam exec -- opam-monorepo pull
           for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
             url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
             # opam monorepo pull already vendors lockfile entries at the right
