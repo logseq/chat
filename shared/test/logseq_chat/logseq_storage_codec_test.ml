@@ -88,6 +88,9 @@ let root () : Ds.storage_root =
     storage_eavt = "3";
     storage_aevt = "4";
     storage_avet = "5";
+    storage_eavt_metadata = Some { Ds.storage_index_count = 4; storage_index_shift = 1 };
+    storage_aevt_metadata = Some { Ds.storage_index_count = 4; storage_index_shift = 1 };
+    storage_avet_metadata = Some { Ds.storage_index_count = 4; storage_index_shift = 1 };
     storage_duplicate_datoms = [ datom (Ds.String "duplicate") ];
     storage_max_addr = 6;
     storage_branching_factor = 32;
