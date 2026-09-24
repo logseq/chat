@@ -287,6 +287,15 @@ jobs:
           export DUNE="$(command -v dune)"
           LOGSEQ_CHAT_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
+      - name: Upload Maestro debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-maestro-debug
+          path: ~/.maestro/tests
+          retention-days: 7
+          if-no-files-found: ignore
+
   android-e2e:
     name: Android e2e
     needs: duniverse
@@ -436,6 +445,15 @@ jobs:
             export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
             export DUNE="$(command -v dune)"
             ./scripts/test-android-e2e.sh "$ANDROID_MODULE"
+
+      - name: Upload Maestro debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-maestro-debug
+          path: ~/.maestro/tests
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Save Android OCaml toolchain
         if: steps.android-toolchain.outputs.cache-hit != 'true'
