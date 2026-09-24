@@ -1,0 +1,18 @@
+# Create a local graph, open Settings, and switch the appearance theme
+# through the settings menu — ChangeAppearance applies optimistically and
+# the save effect is resolved by the host stub.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+ext ext:native-overflow-menu native-overflow-menu settings '{}'
+wait prop:accessibility-identifier=sheet.settings
+press kind:select
+wait kind:menu-item&text:"Dark"
+press kind:menu-item&text:"Dark"
+expect kind:select&text:"Dark"
+press kind:select&text:"Dark"
+wait kind:menu-item&text:"Light"
+press kind:menu-item&text:"Light"
+expect kind:select&text:"Light"
