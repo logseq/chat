@@ -7492,8 +7492,11 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
   let rendered_row =
     descendant_with_identifier renderer outliner "outliner.block.parent"
   in
+  let navigation = extension_node application "native-navigation-stack" in
+  let wrapper = List.nth (children renderer navigation) 0 in
   let toolbar =
-    descendant_with_identifier renderer chrome "toolbar.outliner.selection"
+    descendant_with_identifier renderer wrapper
+      "toolbar.outliner.selection"
   in
   let selection_buttons = children renderer toolbar in
   let copy_button = List.nth selection_buttons 0 in
@@ -7715,6 +7718,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
     descendant_with_identifier renderer root "button.sidebar"
   in
   let navigation = extension_node application "native-navigation-stack" in
+  let wrapper = List.nth (children renderer navigation) 0 in
   let chrome = native_bottom_chrome renderer application in
   let autocomplete_bar =
     descendant_with_identifier renderer chrome
@@ -7722,7 +7726,7 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   in
   let editor_glass =
     descendant_extension_containing_identifier renderer application chrome
-      "liquid-glass" "toolbar.outliner.editor"
+      "liquid-glass" "toolbar.outliner.autocomplete"
   in
   let autocomplete_column =
     List.nth (children renderer autocomplete_bar) 0
@@ -7732,7 +7736,8 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
       "button.outliner.autocomplete.0"
   in
   let editor_toolbar =
-    descendant_with_identifier renderer chrome "toolbar.outliner.editor"
+    descendant_with_identifier renderer wrapper
+      "toolbar.outliner.editor"
   in
   let editor_buttons = children renderer editor_toolbar in
   let task_button = List.nth editor_buttons 0 in

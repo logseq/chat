@@ -197,19 +197,19 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
         if_
           ~test:(Signal.map View_base.bottom_chrome_selection_
                    model_source)
-          selection_chrome;
+          (column ~gap:0 ~padding_horizontal:16 [ box ~height:21 [] ]);
         if_
-          ~test:(Signal.map View_base.bottom_chrome_editor_ model_source)
+          ~test:
+            (Signal.map2
+               (fun editor autocomplete -> editor && autocomplete)
+               (Signal.map View_base.bottom_chrome_editor_ model_source)
+               (Signal.map View_base.outliner_autocomplete_active_
+                  model_source))
           (View_base.with_liquid_glass "container"
              (box
                 [
-                  if_
-                    ~test:
-                      (Signal.map View_base.outliner_autocomplete_active_
-                         model_source)
-                    (View_outliner.outliner_autocomplete_bar context model_source
-                       send);
-                  View_outliner.outliner_editor_toolbar context model_source send;
+                  View_outliner.outliner_autocomplete_bar context
+                    model_source send;
                 ]));
         if_
           ~test:
@@ -698,8 +698,20 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      node
    else (
      ignore
-       ((column [ native_search_view context model_source send ]) context
-          (Some node));
+       ((column
+           [
+             native_search_view context model_source send;
+             if_
+               ~test:(Signal.map View_base.bottom_chrome_selection_
+                        model_source)
+               (View_outliner.outliner_selection_toolbar context send);
+             if_
+               ~test:(Signal.map View_base.bottom_chrome_editor_
+                        model_source)
+               (View_outliner.outliner_editor_toolbar context model_source
+                  send);
+           ])
+          context (Some node));
      ignore
        ((main_header_leading context model_source send) context
           (Some node));
