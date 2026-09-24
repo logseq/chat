@@ -5,7 +5,9 @@
 #include <caml/memory.h>
 #include <caml/threads.h>
 #include <caml/mlvalues.h>
+#include <caml/printexc.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -116,17 +118,47 @@ static const char *missing_lui_callback(void) {
   return replace_response("");
 }
 
+/* The lui_* entry points return raw patch strings, so an OCaml exception
+   cannot ride back in-band — the host would try to parse it as a patch.
+   An empty patch is silently skipped by the drain, which is exactly the
+   wedge signature we hit when an exception wedged the pipeline: log the
+   exception to stderr (logcat on Android, console on iOS) so the failure
+   is diagnosable instead of invisible. */
+static const char *lui_no_callback(const char *name) {
+  fprintf(stderr, "logseq_chat: OCaml LUI callback is not registered: %s\n",
+          name);
+  return missing_lui_callback();
+}
+
+static const char *lui_bad_argument(const char *name) {
+  fprintf(stderr, "logseq_chat: NULL argument passed to %s\n", name);
+  return missing_lui_callback();
+}
+
+static const char *lui_exception(const char *name, value result) {
+  char *message = caml_format_exception(Extract_exception(result));
+  fprintf(stderr, "logseq_chat: OCaml exception in %s: %s\n",
+          name, message == NULL ? "(unprintable)" : message);
+  return missing_lui_callback();
+}
+
+static const char *lui_thread_registration_failed(void) {
+  fprintf(stderr, "logseq_chat: could not register calling thread "
+                  "with the OCaml runtime\n");
+  return missing_lui_callback();
+}
+
 static const char *call_lui0(const char *name) {
   const char *response;
   CAMLparam0();
   CAMLlocal1(result);
   const value *callback = caml_named_value(name);
   if (callback == NULL) {
-    response = missing_lui_callback();
+    response = lui_no_callback(name);
   } else {
     result = caml_callback_exn(*callback, Val_unit);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception(name, result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -138,11 +170,11 @@ static const char *call_lui_int(const char *name, int64_t number) {
   CAMLlocal1(result);
   const value *callback = caml_named_value(name);
   if (callback == NULL) {
-    response = missing_lui_callback();
+    response = lui_no_callback(name);
   } else {
     result = caml_callback_exn(*callback, Val_long(number));
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception(name, result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -157,7 +189,7 @@ static const char *call_lui_initialize(
   CAMLlocal1(result);
   const value *callback = caml_named_value("logseq_chat_lui_init");
   if (callback == NULL) {
-    response = missing_lui_callback();
+    response = lui_no_callback("logseq_chat_lui_init");
   } else {
     value arguments[3] = {
       Val_long(platform_code),
@@ -166,7 +198,7 @@ static const char *call_lui_initialize(
     };
     result = caml_callbackN_exn(*callback, 3, arguments);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception("logseq_chat_lui_init", result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -177,13 +209,15 @@ static const char *call_lui_text(int64_t node, const char *text) {
   CAMLparam0();
   CAMLlocal2(text_value, result);
   const value *callback = caml_named_value("logseq_chat_lui_text_changed");
-  if (callback == NULL || text == NULL) {
-    response = missing_lui_callback();
+  if (callback == NULL) {
+    response = lui_no_callback("logseq_chat_lui_text_changed");
+  } else if (text == NULL) {
+    response = lui_bad_argument("logseq_chat_lui_text_changed");
   } else {
     text_value = caml_copy_string(text);
     result = caml_callback2_exn(*callback, Val_long(node), text_value);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception("logseq_chat_lui_text_changed", result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -194,13 +228,15 @@ static const char *call_lui_string(const char *name, const char *text) {
   CAMLparam0();
   CAMLlocal2(text_value, result);
   const value *callback = caml_named_value(name);
-  if (callback == NULL || text == NULL) {
-    response = missing_lui_callback();
+  if (callback == NULL) {
+    response = lui_no_callback(name);
+  } else if (text == NULL) {
+    response = lui_bad_argument(name);
   } else {
     text_value = caml_copy_string(text);
     result = caml_callback_exn(*callback, text_value);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception(name, result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -212,14 +248,16 @@ static const char *call_lui_two_strings(const char *name, const char *left,
   CAMLparam0();
   CAMLlocal3(left_value, right_value, result);
   const value *callback = caml_named_value(name);
-  if (callback == NULL || left == NULL || right == NULL) {
-    response = missing_lui_callback();
+  if (callback == NULL) {
+    response = lui_no_callback(name);
+  } else if (left == NULL || right == NULL) {
+    response = lui_bad_argument(name);
   } else {
     left_value = caml_copy_string(left);
     right_value = caml_copy_string(right);
     result = caml_callback2_exn(*callback, left_value, right_value);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception(name, result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -231,11 +269,11 @@ static const char *call_lui_bool(int64_t node, int32_t checked) {
   CAMLlocal1(result);
   const value *callback = caml_named_value("logseq_chat_lui_toggle_changed");
   if (callback == NULL) {
-    response = missing_lui_callback();
+    response = lui_no_callback("logseq_chat_lui_toggle_changed");
   } else {
     result = caml_callback2_exn(*callback, Val_long(node), Val_bool(checked != 0));
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception("logseq_chat_lui_toggle_changed", result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -247,12 +285,12 @@ static const char *call_lui_double(int64_t node, double number) {
   CAMLlocal2(number_value, result);
   const value *callback = caml_named_value("logseq_chat_lui_value_changed");
   if (callback == NULL) {
-    response = missing_lui_callback();
+    response = lui_no_callback("logseq_chat_lui_value_changed");
   } else {
     number_value = caml_copy_double(number);
     result = caml_callback2_exn(*callback, Val_long(node), number_value);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception("logseq_chat_lui_value_changed", result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -265,7 +303,7 @@ static const char *call_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
   CAMLlocal2(message_value, result);
   const value *callback = caml_named_value("logseq_chat_lui_resolve_effect");
   if (callback == NULL) {
-    response = missing_lui_callback();
+    response = lui_no_callback("logseq_chat_lui_resolve_effect");
   } else {
     message_value = caml_copy_string(message == NULL ? "" : message);
     result = caml_callback3_exn(
@@ -274,7 +312,7 @@ static const char *call_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
       Val_bool(succeeded != 0),
       message_value);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception("logseq_chat_lui_resolve_effect", result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -288,8 +326,10 @@ static const char *call_lui_extension_event(
   CAMLlocal4(identifier_value, name_value, text_value, result);
   value arguments[5];
   const value *callback = caml_named_value("logseq_chat_lui_extension_event");
-  if (callback == NULL || identifier == NULL || name == NULL || text == NULL) {
-    response = missing_lui_callback();
+  if (callback == NULL) {
+    response = lui_no_callback("logseq_chat_lui_extension_event");
+  } else if (identifier == NULL || name == NULL || text == NULL) {
+    response = lui_bad_argument("logseq_chat_lui_extension_event");
   } else {
     identifier_value = caml_copy_string(identifier);
     name_value = caml_copy_string(name);
@@ -301,7 +341,7 @@ static const char *call_lui_extension_event(
     arguments[4] = Val_long(number);
     result = caml_callbackN_exn(*callback, 5, arguments);
     response = Is_exception_result(result)
-      ? missing_lui_callback()
+      ? lui_exception("logseq_chat_lui_extension_event", result)
       : replace_response(String_val(result));
   }
   CAMLreturnT(const char *, response);
@@ -309,7 +349,7 @@ static const char *call_lui_extension_event(
 
 #define LUI_RUNTIME_CALL(expression) \
   int registration = acquire_ocaml_runtime(); \
-  if (registration < 0) { return missing_lui_callback(); } \
+  if (registration < 0) { return lui_thread_registration_failed(); } \
   const char *response = (expression); \
   release_ocaml_runtime(registration); \
   return response
@@ -376,9 +416,19 @@ int64_t logseq_chat_lui_root_node(void) {
   int registration = acquire_ocaml_runtime();
   if (registration < 0) return node;
   const value *callback = caml_named_value("logseq_chat_lui_root_node");
-  if (callback != NULL) {
+  if (callback == NULL) {
+    fprintf(stderr, "logseq_chat: OCaml LUI callback is not registered: "
+                    "logseq_chat_lui_root_node\n");
+  } else {
     value result = caml_callback_exn(*callback, Val_unit);
-    if (!Is_exception_result(result)) node = Long_val(result);
+    if (Is_exception_result(result)) {
+      char *message = caml_format_exception(Extract_exception(result));
+      fprintf(stderr, "logseq_chat: OCaml exception in "
+                      "logseq_chat_lui_root_node: %s\n",
+              message == NULL ? "(unprintable)" : message);
+    } else {
+      node = Long_val(result);
+    }
   }
   release_ocaml_runtime(registration);
   return node;
