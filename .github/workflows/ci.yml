@@ -29,7 +29,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml') }}
 
       # setup-ocaml runs `opam update` unconditionally (~40s). When both the
       # root and the switch are cache hits the env is already complete, so
@@ -94,7 +94,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml') }}
 
       - name: Restore duniverse
         id: duniverse
