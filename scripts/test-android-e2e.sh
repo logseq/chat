@@ -244,6 +244,10 @@ if (( needs_connection )); then
   : "${LOGSEQ_CHAT_E2E_PASSWORD:?error: LOGSEQ_CHAT_E2E_PASSWORD is required}"
   : "${LOGSEQ_CHAT_E2E_BASE_URL:?error: LOGSEQ_CHAT_E2E_BASE_URL is required}"
 fi
+# Modules that still sign in through the in-app Cognito form (e.g. smoke's
+# local server setup) use the shared dev-account defaults.
+LOGSEQ_CHAT_E2E_USERNAME=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
+LOGSEQ_CHAT_E2E_PASSWORD=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
 
 command -v adb >/dev/null 2>&1 || die "adb is not installed"
 command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
@@ -263,7 +267,7 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
 
-if (( needs_connection )) \
+if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
   && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
   local_backend_port=${BASH_REMATCH[4]:-}
   if [[ -z $local_backend_port ]]; then
@@ -304,7 +308,7 @@ if (( needs_connection )) && [[ ${LOGSEQ_CHAT_ANDROID_E2E_CLEAR_BROWSER_STATE:-1
   fi
 fi
 
-if (( needs_connection )); then
+if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]]; then
   [[ $LOGSEQ_CHAT_E2E_BASE_URL != *['<>&"']* ]] \
     || die "LOGSEQ_CHAT_E2E_BASE_URL contains characters that are unsafe in Android preferences"
   preferences_file=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-defaults.xml.XXXXXX")
@@ -430,7 +434,7 @@ for flow in "${flows[@]}"; do
       "$app_id/.MainActivity" >/dev/null
   fi
   maestro_args=(--device "$device" test)
-  if [[ $flow == "$connect_flow" ]]; then
+  if [[ $flow == "$connect_flow" || $flow == "$local_setup_flow" ]]; then
     maestro_args+=(
       -e "USERNAME=$LOGSEQ_CHAT_E2E_USERNAME"
       -e "PASSWORD=$LOGSEQ_CHAT_E2E_PASSWORD"

@@ -15,6 +15,26 @@ appId: com.logseq.chat
             - tapOn: "Use without an account"
       - extendedWaitUntil:
           visible:
+            id: "signInFormUsername"
+          timeout: 30000
+      - tapOn:
+          id: "signInFormUsername"
+      - inputText: ${USERNAME}
+      - runFlow:
+          when:
+            visible: "Try out your stylus"
+          commands:
+            - tapOn: "Cancel"
+      - tapOn:
+          id: "signInFormPassword"
+      - inputText: ${PASSWORD}
+      - hideKeyboard
+      - extendedWaitUntil:
+          visible: "submit"
+          timeout: 10000
+      - tapOn: "submit"
+      - extendedWaitUntil:
+          visible:
             id: "screen.graph-picker"
           timeout: 60000
 - runFlow:

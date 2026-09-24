@@ -282,6 +282,11 @@ jobs:
           xcrun simctl bootstatus "$udid" -b
           echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
 
+      - name: Start db-sync server
+        uses: ./.github/actions/db-sync-server
+        with:
+          token: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+
       - name: Run iOS e2e module
         run: |
           eval $(opam env)
@@ -307,6 +312,7 @@ jobs:
       LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
       LOGSEQ_CHAT_OPAM_SWITCH: ${{ github.workspace }}
       LOGSEQ_CHAT_ANDROID_ABI: x86_64
+      LOGSEQ_CHAT_E2E_BASE_URL: http://127.0.0.1:8787
     steps:
       - uses: actions/checkout@v4
 
@@ -419,6 +425,11 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      - name: Start db-sync server
+        uses: ./.github/actions/db-sync-server
+        with:
+          token: ${{ secrets.LOGSEQ_GITHUB_PAT }}
 
       - name: Run Android e2e module
         uses: reactivecircus/android-emulator-runner@v2
