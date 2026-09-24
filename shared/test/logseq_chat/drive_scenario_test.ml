@@ -25,7 +25,8 @@ let journal_rows =
       "Second seeded block" "Today" 20260828 1;
   ]
 
-let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked graphs =
+let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked ?(rows = journal_rows)
+    graphs =
   {
     (App_test.empty_core_projection ()) with
     Model.graph_name = Some graph_name;
@@ -33,11 +34,14 @@ let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked graphs =
     graphs;
     is_graph_encrypted = encrypted;
     is_graph_unlocked = unlocked;
-    journal_outliner_rows = journal_rows;
-    outliner_rows = journal_rows;
+    journal_outliner_rows = rows;
+    outliner_rows = rows;
   }
 
-type host = { mutable graphs : Model.graph list }
+type host =
+  { mutable graphs : Model.graph list
+  ; mutable rows : Model.outline_row list
+  }
 
 let host_responses host model =
   let find_graph id =
@@ -61,7 +65,7 @@ let host_responses host model =
              (List.map (fun (g : Model.graph) -> g.id) host.graphs)
         :: Model.ApplyCoreSnapshot
              (graph_projection ~graph_id:name ~graph_name:name ~encrypted
-                ~unlocked:(not encrypted) host.graphs)
+                ~unlocked:(not encrypted) ~rows:host.rows host.graphs)
         :: resolved
       | Model.SearchNodesEffect (id, query) ->
         Model.DequeueEffect id
@@ -102,7 +106,7 @@ let host_responses host model =
                {
                  (graph_projection ~graph_id:g.id ~graph_name:g.name
                     ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
-                    host.graphs)
+                    ~rows:host.rows host.graphs)
                  with
                  projection_outliner_editing =
                    Some
@@ -121,7 +125,7 @@ let host_responses host model =
           :: Model.ApplyCoreSnapshot
                (graph_projection ~graph_id:g.id ~graph_name:g.name
                   ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
-                  host.graphs)
+                  ~rows:host.rows host.graphs)
           :: resolved
         | None ->
           [
@@ -137,7 +141,48 @@ let host_responses host model =
           Model.DequeueEffect id
           :: Model.ApplyCoreSnapshot
                (graph_projection ~graph_id:g.id ~graph_name:g.name
-                  ~encrypted:g.is_encrypted ~unlocked:true host.graphs)
+                  ~encrypted:g.is_encrypted ~unlocked:true ~rows:host.rows
+                  host.graphs)
+          :: resolved
+        | None -> Model.DequeueEffect id :: resolved)
+      | Model.ChangeOutlinerTextEffect (id, uuid, title, caret) -> (
+        match
+          Option.map find_graph model.Model.selected_graph_id |> Option.join
+        with
+        | Some g ->
+          Model.DequeueEffect id
+          :: Model.ApplyCoreSnapshot
+               {
+                 (graph_projection ~graph_id:g.id ~graph_name:g.name
+                    ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
+                    ~rows:host.rows host.graphs)
+                 with
+                 projection_outliner_editing =
+                   Some
+                     {
+                       Model.editing_uuid = uuid;
+                       editing_title = title;
+                       caret_utf16_offset = caret;
+                     };
+               }
+          :: resolved
+        | None -> Model.DequeueEffect id :: resolved)
+      | Model.ReturnOutlinerEditorEffect (id, uuid, title, _caret) -> (
+        match
+          Option.map find_graph model.Model.selected_graph_id |> Option.join
+        with
+        | Some g ->
+          host.rows <-
+            List.map
+              (fun (row : Model.outline_row) ->
+                if row.row_uuid = uuid then { row with row_title = title }
+                else row)
+              host.rows;
+          Model.DequeueEffect id
+          :: Model.ApplyCoreSnapshot
+               (graph_projection ~graph_id:g.id ~graph_name:g.name
+                  ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
+                  ~rows:host.rows host.graphs)
           :: resolved
         | None -> Model.DequeueEffect id :: resolved)
       | eff ->
@@ -148,7 +193,7 @@ let host_responses host model =
     model.Model.pending_effects
 
 let mount ~profile () =
-  let host = { graphs = [] } in
+  let host = { graphs = []; rows = journal_rows } in
   let self = ref None in
   let drain () =
     match !self with
