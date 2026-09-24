@@ -1,0 +1,16 @@
+# Create a local graph, capture a note through the composer, and verify
+# the send path clears the draft.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=surface.composer.root
+press prop:accessibility-identifier=button.composer.expand
+wait prop:accessibility-identifier=field.composer
+expect-prop prop:accessibility-identifier=button.send enabled false
+type prop:accessibility-identifier=field.composer "first drive note"
+expect-prop prop:accessibility-identifier=button.send enabled true
+press prop:accessibility-identifier=button.send
+expect-prop prop:accessibility-identifier=field.composer text ""
+expect-prop prop:accessibility-identifier=button.send enabled false

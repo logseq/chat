@@ -69,13 +69,26 @@ fi
 if [[ ${LOGSEQ_CHAT_IOS_SKIP_BUILD:-0} != 1 ]]; then
   "$repo_root/scripts/build-mobile-ios-simulator.sh" >/dev/null
 fi
-xcrun simctl uninstall "$device" "$app_id" >/dev/null 2>&1 || true
+# Reset app state between flows by wiping the data container instead of
+# reinstalling the (unchanged) binary — a copy of the .app bundle is the
+# slowest part of per-flow setup. LOGSEQ_CHAT_IOS_E2E_REINSTALL=1 restores
+# the old uninstall+install behavior.
+xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
+if [[ ${LOGSEQ_CHAT_IOS_E2E_REINSTALL:-0} == 1 ]]; then
+  xcrun simctl uninstall "$device" "$app_id" >/dev/null 2>&1 || true
+fi
+data_container=$(xcrun simctl get_app_container "$device" "$app_id" data 2>/dev/null || true)
+if [[ -n $data_container && -d $data_container ]]; then
+  rm -rf "$data_container/Documents" "$data_container/Library" "$data_container/tmp"
+fi
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.baseURL >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.selectedGraphId >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.composerDraft >/dev/null 2>&1 || true
 xcrun simctl spawn "$device" defaults delete "$app_id" logseq.contentMode >/dev/null 2>&1 || true
 [[ -d $app_path ]] || die "iOS app bundle was not found: $app_path"
-xcrun simctl install "$device" "$app_path"
+if [[ -z $data_container ]]; then
+  xcrun simctl install "$device" "$app_path"
+fi
 xcrun simctl spawn "$device" defaults write "$app_id" logseq.baseURL "$base_url"
 
 mkdir -p "$screenshots_dir"
@@ -109,27 +122,44 @@ sed \
   -e "s|__LOGSEQ_CHAT_E2E_SETUP_FLOW__|$rendered_setup|g" \
   -e "s|__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__|$rendered_outliner_anchor|g" \
   "$flow_path" > "$rendered_flow"
+# The graph-setup Maestro flow + sqlite/checkpoint wait is the slowest part
+# of a seeded flow (~30-60s). When LOGSEQ_CHAT_E2E_SEED_CACHE points at a
+# directory, the seeded Documents/graphs tree is cached per fixture mode and
+# copied into a fresh container on the next flow instead of re-driving the
+# UI setup. The suite script sets this up so the cache spans the whole run.
+seed_cache_dir=${LOGSEQ_CHAT_E2E_SEED_CACHE:-}
+seed_cache_key=${fixture_seed_mode:-default}-$graph_name
 if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
-  MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"
-  data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
-  graph_database=""
-  for _ in {1..120}; do
-    if [[ -d $data_container/Documents/graphs ]]; then
-      graph_database=$(find "$data_container/Documents/graphs" -name graph.sqlite -type f | head -1)
-    fi
-    if [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]]; then
-      break
-    fi
-    sleep 0.5
-  done
-  [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]] \
-    || die "timed out waiting for the graph snapshot import to finish"
-  xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
-  if [[ -n $fixture_seed_mode ]]; then
-    opam exec --switch=5.5.0 -- \
-      dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+  if [[ -n $seed_cache_dir && -d $seed_cache_dir/$seed_cache_key/graphs ]]; then
+    data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
+    mkdir -p "$data_container/Documents"
+    cp -R "$seed_cache_dir/$seed_cache_key/graphs" "$data_container/Documents/"
   else
-    opam exec --switch=5.5.0 -- dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database"
+    MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"
+    data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
+    graph_database=""
+    for _ in {1..120}; do
+      if [[ -d $data_container/Documents/graphs ]]; then
+        graph_database=$(find "$data_container/Documents/graphs" -name graph.sqlite -type f | head -1)
+      fi
+      if [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]]; then
+        break
+      fi
+      sleep 0.5
+    done
+    [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]] \
+      || die "timed out waiting for the graph snapshot import to finish"
+    xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
+    if [[ -n $fixture_seed_mode ]]; then
+      opam exec --switch=5.5.0 -- \
+        dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+    else
+      opam exec --switch=5.5.0 -- dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database"
+    fi
+    if [[ -n $seed_cache_dir ]]; then
+      mkdir -p "$seed_cache_dir/$seed_cache_key"
+      cp -R "$data_container/Documents/graphs" "$seed_cache_dir/$seed_cache_key/"
+    fi
   fi
 fi
 if [[ ${flow##*/} == ios-graphs-lifecycle.yaml ]]; then

@@ -10,6 +10,7 @@
  (libraries
   logseq_chat_core
   logseq_chat_app
+  drive
   lui
   ocaml-signal
   datascript-ocaml-native
@@ -31,6 +32,7 @@
   ../native/logseq_chat_e2e_seed.exe
   ../native/logseq_chat_live_sync.exe
   ../native/pending_ops_golden.jsonl
-  test_main.exe)
+  test_main.exe
+  (source_tree logseq_chat/drive))
  (action
   (run ./test_main.exe)))
