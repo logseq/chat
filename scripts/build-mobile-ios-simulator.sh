@@ -51,7 +51,16 @@ fi
 
 ocaml_lib="$target_prefix/lib/ocaml"
 clang=$(xcrun --sdk iphonesimulator --find clang)
+clangxx=$(xcrun --sdk iphonesimulator --find clang++)
 mkdir -p "$core_build_dir"
+
+# Apple marks libffi unavailable in the iOS SDK headers; ctypes-foreign's stub
+# build needs real libffi headers and the final link needs a real libffi.a.
+ffi_prefix=$("$repo_root/scripts/build-mobile-libffi.sh" \
+  aarch64-apple-darwin \
+  "$toolchain_root/ios/libffi-$triple" \
+  "$clang -target $triple -isysroot $sdk_path" \
+  "$clangxx -target $triple -isysroot $sdk_path")
 
 plutil -create xml1 "$simulator_entitlements"
 plutil -insert application-identifier -string "${team_id}.com.logseq.chat" "$simulator_entitlements"
@@ -62,6 +71,7 @@ plutil -insert 'com\.apple\.security\.application-groups' -json '["group.com.log
 
 core_object=$(LOGSEQ_CHAT_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
   LOGSEQ_CHAT_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd" \
+  PKG_CONFIG_PATH="$ffi_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
   "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" ios_simulator)
 
 for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
@@ -82,7 +92,7 @@ native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
 fingerprinted_core_object="$native_link_dir/logseq_chat_runtime.o"
 mkdir -p "$native_link_dir"
 [[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
-native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a"
+native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a:-L$ffi_prefix/lib"
 
 prune_stale_swift_resource_bundles
 LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$native_link_inputs" \

@@ -236,7 +236,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0
+          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
       - name: Build iOS app for the simulator
         run: |
@@ -250,7 +250,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0
+          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
       - name: Boot an iOS simulator
         run: |
@@ -382,7 +382,7 @@ jobs:
             _build/android-toolchain
             _build/android-dependency-sources
             _build/android-sqlite-host
-          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0
+          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
       - name: Enable KVM
         run: |
@@ -426,4 +426,4 @@ jobs:
             _build/android-toolchain
             _build/android-dependency-sources
             _build/android-sqlite-host
-          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0
+          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
