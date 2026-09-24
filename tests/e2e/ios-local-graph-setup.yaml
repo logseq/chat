@@ -43,10 +43,19 @@ appId: com.logseq.chat
       - tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
 - waitForAnimationToEnd:
     timeout: 5000
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 20000
+    optional: true
 - runFlow:
     when:
-      visible: "Choose a graph"
+      notVisible:
+        id: "button.sidebar"
     commands:
+      - extendedWaitUntil:
+          visible: "Choose a graph"
+          timeout: 30000
       - tapOn: "Add sync graph"
       - extendedWaitUntil:
           visible: "Add sync graph"
