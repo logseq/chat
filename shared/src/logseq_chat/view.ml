@@ -4,7 +4,8 @@ let chat_view = View_screens.chat_view
 
 let composer_asset_schema () =
   Lui_extension.component "composer-asset"
-    [ Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost ]
+    [ Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost;
+      Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.FlutterHost ]
     false []
     [
       Lui_extension.property "title" Lui_extension.StringScalar true None;

@@ -21,6 +21,7 @@ val graph_picker_overflow_menu :
 val graph_picker_error_banner :
   Model.chat_model Signal.signal -> Lui_elements.t
 val graph_password_sheet :
+  Lui_ui.ui_context ->
   Model.chat_model Signal.signal ->
   (Model.chat_action -> bool) -> Lui_elements.t
 val graphs_screen :

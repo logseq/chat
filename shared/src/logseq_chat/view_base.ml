@@ -260,6 +260,9 @@ let model_graph_menu_open_ (current : Model.chat_model) =
 let model_task_status_picker_open_ (current : Model.chat_model) =
   current.task_status_picker_open
 
+let model_attachment_picker_open_ (current : Model.chat_model) =
+  current.attachment_picker_open
+
 let model_new_graph_name (current : Model.chat_model) = current.new_graph_name
 
 let model_new_graph_encrypted_ (current : Model.chat_model) =
