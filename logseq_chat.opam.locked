@@ -323,7 +323,7 @@ pin-depends: [
   ]
   [
     "drive.dev"
-    "git+https://github.com/logseq/drive.git#2ac231e8c35ffbd3a3d38fd28bd55d93682c3c8e"
+    "git+https://github.com/logseq/drive.git#a7da801a36d5bca761a5f9c350cc2130984dcebd"
   ]
   [
     "dune-build-info.3.24.2"
@@ -1482,7 +1482,7 @@ x-opam-monorepo-duniverse-dirs: [
     "angstrom"
   ]
   [
-    "git+https://github.com/logseq/drive.git#2ac231e8c35ffbd3a3d38fd28bd55d93682c3c8e"
+    "git+https://github.com/logseq/drive.git#a7da801a36d5bca761a5f9c350cc2130984dcebd"
     "drive"
   ]
   [
