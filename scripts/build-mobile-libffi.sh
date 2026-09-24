@@ -35,17 +35,18 @@ if [[ ! -d $src_dir ]]; then
     | tar xz -C "$src_parent"
 fi
 
+# Build chatter goes to stderr so callers can safely capture only the prefix.
 (
   cd "$src_dir"
-  [[ -f Makefile ]] && make distclean >/dev/null 2>&1 || true
+  [[ -f Makefile ]] && make distclean >&2 || true
   CC="$cc" CXX="$cxx" CFLAGS="-O2 -fPIC" ./configure \
     --host="$host_triple" \
     --prefix="$prefix" \
     --disable-shared \
     --enable-static \
-    --disable-multi-os-directory
-  make -j"${LOGSEQ_CHAT_BUILD_JOBS:-8}"
-  make install
+    --disable-multi-os-directory >&2
+  make -j"${LOGSEQ_CHAT_BUILD_JOBS:-8}" >&2
+  make install >&2
 )
 
 touch "$stamp"
