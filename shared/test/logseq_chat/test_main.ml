@@ -42,4 +42,5 @@ let () =
       "graph_runtime", Graph_runtime_test.cases;
       "rpc", Rpc_test.cases;
       "app", App_test.cases;
+      "drive", Drive_scenario_test.cases;
     ]

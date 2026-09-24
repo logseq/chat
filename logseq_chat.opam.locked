@@ -41,6 +41,7 @@ depends: [
   "datascript-ocaml-native" {= "dev" & ?vendor}
   "datascript_ocaml" {= "dev" & ?vendor}
   "delimited_parsing" {= "v0.17.0" & ?vendor}
+  "drive" {= "dev" & ?vendor}
   "dune" {= "3.24.2"}
   "dune-build-info" {= "3.24.2" & ?vendor}
   "dune-compiledb" {= "0.6.0" & ?vendor}
@@ -319,6 +320,10 @@ pin-depends: [
   [
     "delimited_parsing.v0.17.0"
     "https://github.com/janestreet/delimited_parsing/archive/refs/tags/v0.17.0.tar.gz"
+  ]
+  [
+    "drive.dev"
+    "git+https://github.com/logseq/drive.git#2ac231e8c35ffbd3a3d38fd28bd55d93682c3c8e"
   ]
   [
     "dune-build-info.3.24.2"
@@ -1475,6 +1480,10 @@ x-opam-monorepo-duniverse-dirs: [
   [
     "git+https://github.com/logseq/angstrom.git#3be9b966dc2bc9ccf9948d17a7b0df1cb526de15"
     "angstrom"
+  ]
+  [
+    "git+https://github.com/logseq/drive.git#2ac231e8c35ffbd3a3d38fd28bd55d93682c3c8e"
+    "drive"
   ]
   [
     "git+https://github.com/logseq/ocaml-fsrs.git#472b8ff1b86e5afd2ac4bbeba5e2eecedd3948fc"

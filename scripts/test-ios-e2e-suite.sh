@@ -126,6 +126,17 @@ if [[ ${LOGSEQ_CHAT_IOS_SKIP_BUILD:-0} != 1 ]]; then
   "$repo_root/scripts/build-mobile-ios-simulator.sh" >/dev/null
 fi
 
+# One run id for every flow in this suite so graph names are stable, plus a
+# shared seed cache: the first flow per fixture mode drives the graph-setup
+# flow and caches the seeded graphs dir; later flows copy it into a fresh
+# container instead of re-running the Maestro setup.
+export LOGSEQ_CHAT_E2E_RUN_ID=${LOGSEQ_CHAT_E2E_RUN_ID:-$(date +%s)}
+if [[ ${LOGSEQ_CHAT_E2E_SEED_CACHE:-unset} == unset ]]; then
+  seed_cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-e2e-seed-cache.XXXXXX")
+  export LOGSEQ_CHAT_E2E_SEED_CACHE=$seed_cache_dir
+  trap 'rm -rf "$seed_cache_dir"' EXIT
+fi
+
 start_index=${LOGSEQ_CHAT_IOS_E2E_START_INDEX:-0}
 if (( start_index < 0 || start_index >= ${#flows[@]} )); then
   echo "error: LOGSEQ_CHAT_IOS_E2E_START_INDEX must be between 0 and $((${#flows[@]} - 1))" >&2
