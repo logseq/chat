@@ -1923,7 +1923,11 @@ let rec update (current : chat_model) action =
         app_navigation_previews =
           remove_node_projection updated.app_navigation_previews uuid;
       }
-  | BackAppNavigation count -> back_app_navigation current count
+  | BackAppNavigation count ->
+    if current.outliner_selected_block_ids <> [] then
+      let id = current.next_effect_id in
+      enqueue_effect current (OutlinerToolbarEffect (id, "unselect"))
+    else back_app_navigation current count
   | RequestSearchNode uuid ->
     let path = current.search_navigation_path in
     let requested = request_route path (NodeRoute uuid) in
