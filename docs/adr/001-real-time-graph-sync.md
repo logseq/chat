@@ -653,8 +653,8 @@ The implementation is complete when automated integration tests demonstrate:
 - `datascript-ocaml/examples/logseq_sqlite_storage.ml`
 - `logseq-chat/shared/native/logseq_chat_sqlite.ml`
 - `logseq-chat/shared/native/logseq_chat_core_ffi.c`
-- [melange-transit: native OCaml, js_of_ocaml, and Melange Transit JSON](https://github.com/RCmerci/melange-transit)
-- [melange-edn: native OCaml, js_of_ocaml, and Melange EDN](https://github.com/RCmerci/melange-edn)
+- [melange-transit: native OCaml, js_of_ocaml, and Melange Transit JSON](https://github.com/logseq/melange-transit)
+- [melange-edn: native OCaml, js_of_ocaml, and Melange EDN](https://github.com/logseq/melange-edn)
 - [Amazon Cognito authorization endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/authorization-endpoint.html)
 - [Amazon Cognito token endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/token-endpoint.html)
 - [Amazon Cognito PKCE](https://docs.aws.amazon.com/cognito/latest/developerguide/using-pkce-in-authorization-code.html)
