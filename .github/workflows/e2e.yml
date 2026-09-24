@@ -257,12 +257,46 @@ jobs:
           path: _build/apple-toolchains
           key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
+      - name: Boot an iOS simulator
+        # simctl boot returns as soon as the boot is initiated; the device
+        # finishes booting while the app builds, and bootstatus gates later.
+        run: |
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; rs.sort(key=lambda r: [int(x) for x in r["version"].split(".")]); print(rs[-1]["identifier"])')
+          udid=$(xcrun simctl create "CI iPhone" \
+            "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$runtime_id")
+          xcrun simctl boot "$udid"
+          echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+
+      - name: Start db-sync server (background)
+        # Builds while the iOS app build runs; "Wait for db-sync" polls it.
+        uses: ./.github/actions/db-sync-server
+        with:
+          token: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+          background: "true"
+
+      - name: Restore iOS build artifacts
+        # SwiftPM + xcodebuild products; stale objects are harmless — the
+        # build only reuses what still matches.
+        id: ios-build-artifacts
+        uses: actions/cache/restore@v4
+        with:
+          path: apple/.build
+          key: ios-build-artifacts-${{ runner.os }}-xcode26.3-${{ hashFiles('apple/Package.swift', 'apple/Package.resolved') }}
+          restore-keys: ios-build-artifacts-${{ runner.os }}-xcode26.3-
+
       - name: Build iOS app for the simulator
         run: |
           eval $(opam env)
           export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
           export DUNE="$(command -v dune)"
           ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save iOS build artifacts
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: apple/.build
+          key: ios-build-artifacts-${{ runner.os }}-xcode26.3-${{ hashFiles('apple/Package.swift', 'apple/Package.resolved') }}
 
       - name: Save iOS OCaml toolchain
         # always(): even when e2e fails, preserve the expensive toolchain
@@ -273,19 +307,22 @@ jobs:
           path: _build/apple-toolchains
           key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
-      - name: Boot an iOS simulator
+      - name: Wait for db-sync and the simulator
         run: |
-          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; rs.sort(key=lambda r: [int(x) for x in r["version"].split(".")]); print(rs[-1]["identifier"])')
-          udid=$(xcrun simctl create "CI iPhone" \
-            "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$runtime_id")
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
-          echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
-
-      - name: Start db-sync server
-        uses: ./.github/actions/db-sync-server
-        with:
-          token: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+          for attempt in $(seq 1 180); do
+            if curl -s -o /dev/null "http://127.0.0.1:8787/"; then
+              echo "db-sync is listening on :8787"
+              break
+            fi
+            if [[ $attempt == 180 ]]; then
+              echo "db-sync did not come up; build log:" >&2
+              tail -100 logseq-server/deps/db-sync/build.log >&2 || true
+              tail -100 logseq-server/deps/db-sync/db-sync.log >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
+          xcrun simctl bootstatus "$LOGSEQ_CHAT_IOS_SIMULATOR_UDID" -b
 
       - name: Run iOS e2e module
         run: |
@@ -426,10 +463,13 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Start db-sync server
+      - name: Start db-sync server (background)
+        # Builds while the emulator boots and the APK compiles; the next
+        # step polls the port before the flows run.
         uses: ./.github/actions/db-sync-server
         with:
           token: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+          background: "true"
 
       - name: Run Android e2e module
         uses: reactivecircus/android-emulator-runner@v2
