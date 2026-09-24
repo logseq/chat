@@ -15,6 +15,13 @@ inputs:
     description: Port the server binds.
     required: false
     default: "8787"
+  background:
+    description: >-
+      When "true", the pnpm install, cljs release build and server start run in
+      a detached background process (log at logseq-server/deps/db-sync/build.log)
+      so the job can continue with other work; a later step must poll the port.
+    required: false
+    default: "false"
 outputs:
   port:
     description: The port the server is listening on.
@@ -67,6 +74,7 @@ runs:
         restore-keys: dbsync-deps-${{ runner.os }}-
 
     - name: Build and start db-sync
+      if: inputs.background != 'true'
       shell: bash
       run: |
         cd logseq-server
@@ -88,6 +96,27 @@ runs:
         echo "db-sync did not start; tail of log:" >&2
         tail -100 "$PWD/db-sync.log" >&2 || true
         exit 1
+
+    - name: Build and start db-sync in the background
+      if: inputs.background == 'true'
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP"
+        printf '%s\n' \
+          '#!/usr/bin/env bash' \
+          'set -e' \
+          'cd "$GITHUB_WORKSPACE/logseq-server"' \
+          'pnpm install' \
+          'cd deps/db-sync' \
+          'clojure -M:cljs release db-sync-node' \
+          'mkdir -p data' \
+          'DB_SYNC_DATA_DIR="$PWD/data" nohup ./start.sh >"$PWD/db-sync.log" 2>&1 &' \
+          'echo $! > "$PWD/db-sync.pid"' \
+          > "$RUNNER_TEMP/db-sync-bg.sh"
+        chmod +x "$RUNNER_TEMP/db-sync-bg.sh"
+        DB_SYNC_PORT=${{ inputs.port }} nohup "$RUNNER_TEMP/db-sync-bg.sh" \
+          >"logseq-server/deps/db-sync/build.log" 2>&1 &
+        echo "db-sync build started in background (pid $!)"
 
     - name: Upload db-sync log
       if: failure()

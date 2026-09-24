@@ -379,6 +379,21 @@ seed_android_fixture() {
   adb -s "$device" shell rm -f "$remote_database"
 }
 
+if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
+  && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
+  # CI builds db-sync in a background process; flows must not start before
+  # it binds the port (a bound port returns any HTTP response, incl. 401/404).
+  for attempt in $(seq 1 180); do
+    if curl -s -o /dev/null "${LOGSEQ_CHAT_E2E_BASE_URL}/"; then
+      break
+    fi
+    if (( attempt == 180 )); then
+      die "db-sync server did not come up at $LOGSEQ_CHAT_E2E_BASE_URL"
+    fi
+    sleep 2
+  done
+fi
+
 for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow = /* ]]; then

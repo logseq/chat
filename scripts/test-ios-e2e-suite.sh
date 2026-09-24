@@ -155,7 +155,11 @@ for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
      || $flow == tests/e2e/ios-page-share.yaml \
      || $flow == tests/e2e/ios-page-favorite.yaml \
      || $flow == tests/e2e/ios-sidebar-page-empty-block-delete.yaml \
-     || $flow == tests/e2e/ios-rich-block-rendering.yaml ]]; then
+     || $flow == tests/e2e/ios-rich-block-rendering.yaml \
+     || $flow == tests/e2e/ios-capture-responsive.yaml \
+     || $flow == tests/e2e/ios-cold-start-composer.yaml \
+     || $flow == tests/e2e/ios-search-status-regression.yaml \
+     || $flow == tests/e2e/sidebar.yaml ]]; then
     LOGSEQ_CHAT_IOS_SKIP_BUILD=1 \
       LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH=1 \
       LOGSEQ_CHAT_IOS_E2E_FLOW="$flow" \
