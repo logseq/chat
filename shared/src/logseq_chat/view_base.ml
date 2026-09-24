@@ -1431,3 +1431,8 @@ let with_liquid_glass shape (elem : Lui_elements.t) : Lui_elements.t =
      Lui_elements.attach context parent tweak;
      tweak
    | _ -> elem context parent
+
+let icon_of_wire_name (name : string) : Lui_elements.icon =
+  if String_kit.starts_with ~prefix:"app:" name then
+    `app (String.sub name 4 (String.length name - 4))
+  else `app name

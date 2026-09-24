@@ -1,7 +1,7 @@
 val settings_language_choice_radio :
   Model.chat_model Signal.signal ->
-  Model.settings_language_choice Signal.signal ->
-  (Model.chat_action -> 'a) -> Lui_elements.t
+  Model.settings_language_choice ->
+  (Model.chat_action -> 'a) -> Lui_elements.radio_el
 val settings_language_choice_menu_item :
   Model.settings_language_choice Signal.signal ->
   (Model.chat_action -> 'a) -> Lui_elements.t
