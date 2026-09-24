@@ -79,7 +79,12 @@ jobs:
           # melange package, so a parallel deps build can run it before melc
           # exists; install melange first to pin the ordering.
           opam install -y melange.7.0.1-55
-          opam install . --deps-only --yes --with-test --assume-depexts
+          # Install only the deps the lockfile marks non-vendored. Installing
+          # from logseq_chat.opam puts the full dep closure (including the
+          # pin-depends that duniverse also vendors, e.g.
+          # persistent_sorted_set_ocaml) into _opam, and dune then sees every
+          # vendored library twice and aborts with a conflict.
+          opam install --deps-only ./logseq_chat.opam.locked --yes --with-test --assume-depexts
           # 0.3.x matches the lockfile's x-opam-monorepo-version; 0.5 embeds an
           # opam lib too new for the runner's opam root layout.
           opam install -y opam-monorepo.0.3.6
