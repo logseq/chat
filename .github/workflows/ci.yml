@@ -68,7 +68,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml') }}
 
       - name: Pull vendored dependencies
         if: steps.duniverse.outputs.cache-hit != 'true'
@@ -102,7 +102,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml') }}
 
       - name: Restore build caches
         uses: actions/cache/restore@v4
