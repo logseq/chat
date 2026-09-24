@@ -154,6 +154,11 @@ public final class LGChatRenderer {
         rootID = backend.rootIDs.first
     }
 
+    public func apply(decoded: LUIAppleBackend.DecodedPatchBatch) throws {
+        try backend.apply(decoded: decoded)
+        rootID = backend.rootIDs.first
+    }
+
     func receiveForTesting(_ event: LGChatRendererEvent) {
         receive(event)
     }
