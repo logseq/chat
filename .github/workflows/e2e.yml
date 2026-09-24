@@ -28,7 +28,7 @@ env:
 
 jobs:
   ios-e2e:
-    name: iOS e2e (${{ env.IOS_MODULE }})
+    name: iOS e2e
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -171,7 +171,7 @@ jobs:
           LOGSEQ_CHAT_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
   android-e2e:
-    name: Android e2e (${{ env.ANDROID_MODULE }})
+    name: Android e2e
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
