@@ -249,7 +249,9 @@ final class NativeEffectDrain {
 
   void _apply(String patch, String source) {
     if (patch.isNotEmpty) {
+      trace('applying patch from $source chars=${patch.length}');
       applyPatch(patch);
+      trace('applied patch from $source');
     } else {
       // An OCaml exception in a lui_* FFI call surfaces as an empty patch —
       // log the producer so a wedged pipeline is visible in the drain trace.

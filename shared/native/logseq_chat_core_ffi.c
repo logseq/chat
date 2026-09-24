@@ -11,6 +11,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define LOGSEQ_CHAT_LOG(...) \
+  __android_log_print(ANDROID_LOG_ERROR, "logseq_chat", __VA_ARGS__)
+#else
+#define LOGSEQ_CHAT_LOG(...) \
+  do { \
+    fprintf(stderr, "logseq_chat: "); \
+    fprintf(stderr, __VA_ARGS__); \
+    fputc('\n', stderr); \
+  } while (0)
+#endif
+
 static pthread_once_t logseq_chat_runtime_once = PTHREAD_ONCE_INIT;
 static pthread_t logseq_chat_runtime_thread;
 static _Thread_local char *logseq_chat_response = NULL;
@@ -122,29 +135,27 @@ static const char *missing_lui_callback(void) {
    cannot ride back in-band — the host would try to parse it as a patch.
    An empty patch is silently skipped by the drain, which is exactly the
    wedge signature we hit when an exception wedged the pipeline: log the
-   exception to stderr (logcat on Android, console on iOS) so the failure
-   is diagnosable instead of invisible. */
+   exception via the platform logger (stderr does not reach logcat on
+   Android) so the failure is diagnosable instead of invisible. */
 static const char *lui_no_callback(const char *name) {
-  fprintf(stderr, "logseq_chat: OCaml LUI callback is not registered: %s\n",
-          name);
+  LOGSEQ_CHAT_LOG("OCaml LUI callback is not registered: %s", name);
   return missing_lui_callback();
 }
 
 static const char *lui_bad_argument(const char *name) {
-  fprintf(stderr, "logseq_chat: NULL argument passed to %s\n", name);
+  LOGSEQ_CHAT_LOG("NULL argument passed to %s", name);
   return missing_lui_callback();
 }
 
 static const char *lui_exception(const char *name, value result) {
   char *message = caml_format_exception(Extract_exception(result));
-  fprintf(stderr, "logseq_chat: OCaml exception in %s: %s\n",
-          name, message == NULL ? "(unprintable)" : message);
+  LOGSEQ_CHAT_LOG("OCaml exception in %s: %s",
+                  name, message == NULL ? "(unprintable)" : message);
   return missing_lui_callback();
 }
 
 static const char *lui_thread_registration_failed(void) {
-  fprintf(stderr, "logseq_chat: could not register calling thread "
-                  "with the OCaml runtime\n");
+  LOGSEQ_CHAT_LOG("could not register calling thread with the OCaml runtime");
   return missing_lui_callback();
 }
 
@@ -417,15 +428,14 @@ int64_t logseq_chat_lui_root_node(void) {
   if (registration < 0) return node;
   const value *callback = caml_named_value("logseq_chat_lui_root_node");
   if (callback == NULL) {
-    fprintf(stderr, "logseq_chat: OCaml LUI callback is not registered: "
-                    "logseq_chat_lui_root_node\n");
+    LOGSEQ_CHAT_LOG("OCaml LUI callback is not registered: "
+                    "logseq_chat_lui_root_node");
   } else {
     value result = caml_callback_exn(*callback, Val_unit);
     if (Is_exception_result(result)) {
       char *message = caml_format_exception(Extract_exception(result));
-      fprintf(stderr, "logseq_chat: OCaml exception in "
-                      "logseq_chat_lui_root_node: %s\n",
-              message == NULL ? "(unprintable)" : message);
+      LOGSEQ_CHAT_LOG("OCaml exception in logseq_chat_lui_root_node: %s",
+                      message == NULL ? "(unprintable)" : message);
     } else {
       node = Long_val(result);
     }

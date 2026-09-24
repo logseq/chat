@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 
 import 'lui_dispatch.dart';
 import 'native_effect_drain.dart';
@@ -228,6 +229,7 @@ final class LogseqChatNativeBridge
     required String message,
   }) {
     if (_runtimeScheduler.isCoreBusy) {
+      debugPrint('[NativeBridge] resolveEffect id=$id queued (core busy)');
       _runtimeScheduler.runUi(
         () => _apply(
           _resolveEffectWithMessage(
@@ -239,9 +241,14 @@ final class LogseqChatNativeBridge
       );
       return '';
     }
-    return _read(
+    debugPrint('[NativeBridge] resolveEffect id=$id call');
+    final result = _read(
       _resolveEffectWithMessage(id: id, succeeded: succeeded, message: message),
     );
+    debugPrint(
+      '[NativeBridge] resolveEffect id=$id returned chars=${result.length}',
+    );
+    return result;
   }
 
   Pointer<Utf8> _resolveEffectWithMessage({
@@ -260,12 +267,21 @@ final class LogseqChatNativeBridge
   @override
   String applySnapshot(String response) {
     if (_runtimeScheduler.isCoreBusy) {
+      debugPrint(
+        '[NativeBridge] applySnapshot queued (core busy) '
+        'chars=${response.length}',
+      );
       _runtimeScheduler.runUi(
         () => _apply(_applySnapshotWithResponse(response)),
       );
       return '';
     }
-    return _read(_applySnapshotWithResponse(response));
+    debugPrint('[NativeBridge] applySnapshot call chars=${response.length}');
+    final result = _read(_applySnapshotWithResponse(response));
+    debugPrint(
+      '[NativeBridge] applySnapshot returned chars=${result.length}',
+    );
+    return result;
   }
 
   Pointer<Utf8> _applySnapshotWithResponse(String response) {
@@ -280,12 +296,19 @@ final class LogseqChatNativeBridge
   @override
   String applyHostUpdate({required String kind, required String payload}) {
     if (_runtimeScheduler.isCoreBusy) {
+      debugPrint('[NativeBridge] applyHostUpdate kind=$kind queued (core busy)');
       _runtimeScheduler.runUi(
         () => _apply(_applyHostUpdateWithPayload(kind, payload)),
       );
       return '';
     }
-    return _read(_applyHostUpdateWithPayload(kind, payload));
+    debugPrint('[NativeBridge] applyHostUpdate kind=$kind call');
+    final result = _read(_applyHostUpdateWithPayload(kind, payload));
+    debugPrint(
+      '[NativeBridge] applyHostUpdate kind=$kind returned '
+      'chars=${result.length}',
+    );
+    return result;
   }
 
   Pointer<Utf8> _applyHostUpdateWithPayload(String kind, String payload) {
