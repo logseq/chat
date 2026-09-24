@@ -326,7 +326,7 @@ jobs:
           # the emulator-runner's script environment).
           GIT_CONFIG_COUNT: 4
           GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
-          GIT_CONFIG_VALUE_0: git@github.com:
+          GIT_CONFIG_VALUE_0: "git@github.com:"
           GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
           GIT_CONFIG_VALUE_1: ssh://git@github.com/
           GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
