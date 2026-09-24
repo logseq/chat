@@ -241,6 +241,8 @@ jobs:
       - name: Build iOS app for the simulator
         run: |
           eval $(opam env)
+          export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
+          export DUNE="$(command -v dune)"
           ./scripts/build-mobile-ios-simulator.sh
 
       - name: Save iOS OCaml toolchain
@@ -262,6 +264,8 @@ jobs:
       - name: Run iOS e2e module
         run: |
           eval $(opam env)
+          export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
+          export DUNE="$(command -v dune)"
           LOGSEQ_CHAT_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
   android-e2e:
@@ -410,6 +414,8 @@ jobs:
           emulator-boot-timeout: 600
           script: |
             eval $(opam env)
+            export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
+            export DUNE="$(command -v dune)"
             ./scripts/test-android-e2e.sh "$ANDROID_MODULE"
 
       - name: Save Android OCaml toolchain
