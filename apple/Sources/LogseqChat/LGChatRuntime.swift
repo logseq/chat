@@ -113,6 +113,12 @@ public final class LGChatRuntime {
     @ObservationIgnored
     private let outlinerAutosaveDelayNanoseconds: UInt64
 
+    @ObservationIgnored
+    private var patchTail: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var patchApplyEpoch = 0
+
     public init(
         native: any LGChatNativeCalling,
         effectExecutor: any LGChatEffectExecuting = LGChatCoreEffectExecutor(),
@@ -149,6 +155,7 @@ public final class LGChatRuntime {
         guard !initialPatch.isEmpty else {
             throw LGChatRuntimeError.emptyInitializationPatch
         }
+        invalidatePendingPatchApplies()
         try apply(initialPatch)
         isStarted = true
         while !pendingCoreResponses.isEmpty {
@@ -157,7 +164,7 @@ public final class LGChatRuntime {
         }
         while !pendingHostUpdates.isEmpty {
             let update = pendingHostUpdates.removeFirst()
-            try apply(native.applyHostUpdate(kind: update.kind, payload: update.payload))
+            enqueueApply(native.applyHostUpdate(kind: update.kind, payload: update.payload))
         }
         scheduleEffectDrain()
     }
@@ -165,6 +172,7 @@ public final class LGChatRuntime {
     public func stop() {
         guard isStarted else { return }
         cancelOutlinerAutosave()
+        invalidatePendingPatchApplies()
         do {
             try apply(native.dispose())
         } catch {
@@ -186,7 +194,7 @@ public final class LGChatRuntime {
             deliverPlatformCommands(envelope)
             return
         }
-        try apply(native.applySnapshot(response))
+        enqueueApply(native.applySnapshot(response))
         recordAppliedCoreResponse(response, envelope: envelope)
         deliverPlatformCommands(envelope)
     }
@@ -247,7 +255,7 @@ public final class LGChatRuntime {
             pendingHostUpdates.append(LGChatPendingHostUpdate(kind: kind, payload: payload))
             return
         }
-        try apply(native.applyHostUpdate(kind: kind, payload: payload))
+        enqueueApply(native.applyHostUpdate(kind: kind, payload: payload))
     }
 
     private func receive(_ event: LGChatRendererEvent) {
@@ -301,15 +309,8 @@ public final class LGChatRuntime {
             )
         }
 
-        do {
-            try apply(patch)
-            scheduleEffectDrain()
-        } catch {
-            lastError = String(describing: error)
-            #if DEBUG
-            print("LogseqChat renderer event failed: \(lastError ?? "unknown error")")
-            #endif
-        }
+        enqueueApply(patch)
+        scheduleEffectDrain()
     }
 
     private static func extensionString(
@@ -375,7 +376,7 @@ public final class LGChatRuntime {
                             + " kind=\(dispatch.effect.kind)"
                     )
                     #endif
-                    try apply(dispatch.patch)
+                    enqueueApply(dispatch.patch)
                     effect = dispatch.effect
                 } else {
                     #if DEBUG
@@ -398,58 +399,51 @@ public final class LGChatRuntime {
                 )
             }
             #endif
-            do {
-                if resolution.succeeded,
-                   case .coreResponse = resolution.output {
-                    try apply(native.applySnapshot(resolution.message))
-                }
-                try apply(native.resolveEffect(
-                    id: effect.id,
-                    succeeded: resolution.succeeded,
-                    message: resolution.message
-                ))
-                if resolution.succeeded {
-                    switch resolution.output {
-                    case .coreResponse:
-                        let envelope = decodeCoreResponse(resolution.message)
-                        deliverPlatformCommands(envelope)
-                        scheduleOutlinerAutosaveIfNeeded(
-                            after: effect,
-                            envelope: envelope
-                        )
-                        let syncResolution = await startSyncIfNeeded(
-                            envelope: envelope
-                        )
-                        if !syncResolution.succeeded {
-                            lastError = syncResolution.message
-                            return
-                        }
-                    case let .hostUpdate(kind):
-                        try apply(native.applyHostUpdate(
-                            kind: kind,
-                            payload: resolution.message
-                        ))
-                    case .discard:
-                        break
-                    }
-                }
-                if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task") {
-                    // A send may finish while backgrounded; do not restore already submitted drafts.
-                    try apply(native.applyHostUpdate(kind: "save-ui-session", payload: "null"))
-                }
-                lastError = resolution.succeeded ? nil : resolution.message
-            } catch {
-                lastError = String(describing: error)
-                logger.error(
-                    "Could not apply LG effect resolution: \(String(describing: error))"
-                )
-                return
+            if resolution.succeeded,
+               case .coreResponse = resolution.output {
+                enqueueApply(native.applySnapshot(resolution.message))
             }
+            enqueueApply(native.resolveEffect(
+                id: effect.id,
+                succeeded: resolution.succeeded,
+                message: resolution.message
+            ))
+            if resolution.succeeded {
+                switch resolution.output {
+                case .coreResponse:
+                    let envelope = decodeCoreResponse(resolution.message)
+                    deliverPlatformCommands(envelope)
+                    scheduleOutlinerAutosaveIfNeeded(
+                        after: effect,
+                        envelope: envelope
+                    )
+                    let syncResolution = await startSyncIfNeeded(
+                        envelope: envelope
+                    )
+                    if !syncResolution.succeeded {
+                        lastError = syncResolution.message
+                        return
+                    }
+                case let .hostUpdate(kind):
+                    enqueueApply(native.applyHostUpdate(
+                        kind: kind,
+                        payload: resolution.message
+                    ))
+                case .discard:
+                    break
+                }
+            }
+            if resolution.succeeded && (effect.kind == "send-asset" || effect.kind == "send-capture" || effect.kind == "send-task") {
+                // A send may finish while backgrounded; do not restore already submitted drafts.
+                enqueueApply(native.applyHostUpdate(kind: "save-ui-session", payload: "null"))
+            }
+            lastError = resolution.succeeded ? nil : resolution.message
         }
     }
 
     func drainEffectsForTesting() async {
         await drainEffects()
+        await patchTail?.value
     }
 
     private func deliverPlatformCommands(_ envelope: LGCoreResponseEnvelope?) {
@@ -528,16 +522,9 @@ public final class LGChatRuntime {
             lastError = resolution.message
             return
         }
-        var syncEnvelope: LGCoreResponseEnvelope?
-        do {
-            try apply(native.applySnapshot(resolution.message))
-            let envelope = decodeCoreResponse(resolution.message)
-            deliverPlatformCommands(envelope)
-            syncEnvelope = envelope
-        } catch {
-            lastError = String(describing: error)
-            return
-        }
+        enqueueApply(native.applySnapshot(resolution.message))
+        let syncEnvelope = decodeCoreResponse(resolution.message)
+        deliverPlatformCommands(syncEnvelope)
 
         let syncResolution = await startSyncIfNeeded(envelope: syncEnvelope)
         if syncResolution.succeeded {
@@ -557,6 +544,50 @@ public final class LGChatRuntime {
         #endif
         try renderer.apply(patchJSON: patch)
         lastError = nil
+    }
+
+    /// The core produces patches in generation order and applies must stay in
+    /// that order, but JSON decoding is pure work that doesn't belong in the
+    /// 120Hz frame budget. Each patch decodes eagerly on a detached task and
+    /// a chained tail applies batches serially on the main actor — decode of
+    /// the next batch overlaps apply of the previous one without reordering.
+    private func enqueueApply(_ patch: String) {
+        guard !patch.isEmpty else { return }
+        let epoch = patchApplyEpoch
+        let decodeTask = Task.detached {
+            try LUIAppleBackend.decode(patch)
+        }
+        let previous = patchTail
+        patchTail = Task { [weak self] in
+            _ = await previous?.value
+            guard let self else { return }
+            do {
+                let decoded = try await decodeTask.value
+                guard epoch == self.patchApplyEpoch else { return }
+                #if DEBUG
+                print(
+                    "LOGSEQ_LG_PATCH apply generation="
+                        + String(Self.patchGeneration(patch) ?? -1)
+                )
+                #endif
+                try self.renderer.apply(decoded: decoded)
+                self.lastError = nil
+            } catch {
+                guard epoch == self.patchApplyEpoch else { return }
+                self.lastError = String(describing: error)
+                #if DEBUG
+                print("LogseqChat renderer apply failed: \(self.lastError ?? "unknown")")
+                #endif
+            }
+        }
+    }
+
+    /// Drops in-flight patch applies — pending tasks check the epoch after
+    /// decoding and discard stale batches, so a following synchronous apply
+    /// (initial mount, dispose) can't be reordered behind a stale decode.
+    private func invalidatePendingPatchApplies() {
+        patchApplyEpoch += 1
+        patchTail = nil
     }
 
     private static func patchGeneration(_ patch: String) -> Int? {
