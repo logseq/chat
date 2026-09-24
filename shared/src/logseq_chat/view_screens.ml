@@ -791,14 +791,14 @@ let application_main_content (context : Lui_ui.ui_context) model_source
         if_
           ~test:(Signal.map View_base.model_graph_password_open_
                    model_source)
-          (View_graphs.graph_password_sheet model_source send);
+          (View_graphs.graph_password_sheet context model_source send);
         if_
           ~test:(Signal.map View_base.page_deletion_pending_ model_source)
-          (View_settings.page_delete_dialog send);
+          (View_settings.page_delete_dialog context send);
         if_
           ~test:(Signal.map View_base.model_sync_details_open_
                    model_source)
-          (View_settings.sync_status_sheet model_source send);
+          (View_settings.sync_status_sheet context model_source send);
       ]
     else
       [
@@ -829,14 +829,14 @@ let application_main_content (context : Lui_ui.ui_context) model_source
         if_
           ~test:(Signal.map View_base.model_graph_password_open_
                    model_source)
-          (View_graphs.graph_password_sheet model_source send);
+          (View_graphs.graph_password_sheet context model_source send);
         if_
           ~test:(Signal.map View_base.page_deletion_pending_ model_source)
-          (View_settings.page_delete_dialog send);
+          (View_settings.page_delete_dialog context send);
         if_
           ~test:(Signal.map View_base.model_sync_details_open_
                    model_source)
-          (View_settings.sync_status_sheet model_source send);
+          (View_settings.sync_status_sheet context model_source send);
       ]
   in
   let stack_grow = Lui_ui.platform context = AndroidOS in

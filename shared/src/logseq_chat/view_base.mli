@@ -62,6 +62,7 @@ val model_community_links :
   Model.chat_model -> Model.settings_community_link list
 val model_graph_menu_open_ : Model.chat_model -> bool
 val model_task_status_picker_open_ : Model.chat_model -> bool
+val model_attachment_picker_open_ : Model.chat_model -> bool
 val model_new_graph_name : Model.chat_model -> string
 val model_new_graph_encrypted_ : Model.chat_model -> bool
 val model_graph_password : Model.chat_model -> string

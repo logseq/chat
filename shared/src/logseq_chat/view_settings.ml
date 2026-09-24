@@ -56,7 +56,25 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
                  ~key:View_base.settings_language_choice_identifier
                  ~cmp:compare
                  ~mount:(fun choice_source ->
-                   settings_language_choice_menu_item choice_source send);
+                   let choice = Signal.sample choice_source in
+                   menu_item
+                     ~text_signal:
+                       (Signal.map
+                          View_base.settings_language_choice_title
+                          choice_source)
+                     ~selected_signal:
+                       (Signal.map
+                          (fun (model : Model.chat_model) ->
+                            Model.settings_language_choice_selected_
+                              model choice)
+                          model_source)
+                     ~accessibility_identifier:
+                       (View_base.settings_language_choice_identifier
+                          choice)
+                     ~on_press:(fun _ ->
+                       ignore
+                         (send (Model.ChooseSettingsLanguage choice.id)))
+                     []);
              ]);
       ]
   else
@@ -74,6 +92,18 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
 let settings_appearance_control (context : Lui_ui.ui_context) model_source
     send : t =
   if Lui_ui.host context = FlutterHost then
+    let appearance_item id title : t =
+      menu_item ~text:title
+        ~selected_signal:
+          (Signal.map
+             (fun (model : Model.chat_model) -> model.appearance = id)
+             model_source)
+        ~accessibility_identifier:
+          ("picker.settings.appearance.option." ^ id)
+        ~on_press:(fun _ ->
+          ignore (send (Model.ChangeAppearance id)))
+        []
+    in
     stack
       ~accessibility_identifier:"layout.settings.appearance-control"
       [
@@ -92,18 +122,9 @@ let settings_appearance_control (context : Lui_ui.ui_context) model_source
              ~min_width:160
              ~on_dismiss:(press send Model.CloseSettingsAppearanceMenu)
              [
-               menu_item ~text:"System"
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ChangeAppearance "system")))
-                 [];
-               menu_item ~text:"Light"
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ChangeAppearance "light")))
-                 [];
-               menu_item ~text:"Dark"
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ChangeAppearance "dark")))
-                 [];
+               appearance_item "system" "System";
+               appearance_item "light" "Light";
+               appearance_item "dark" "Dark";
              ]);
       ]
   else
@@ -923,24 +944,54 @@ let settings_sheet (context : Lui_ui.ui_context) model_source send : t =
       ]
   else settings_main_sheet context model_source send
 
-let page_delete_dialog send : t =
-  dialog ~text:"Delete page?" ~style_class:"alert"
-    ~accessibility_identifier:"dialog.page-delete"
-    ~on_dismiss:(press send Model.CancelDeleteActivePage)
-    [
-      column
-        [
-          text ~value:"The page will be moved to Recycle." [];
-          button ~accessibility_identifier:"button.page-delete.cancel"
-            ~on_press:(press send Model.CancelDeleteActivePage)
-            ~text:"Cancel" [];
-          button ~accessibility_identifier:"button.page-delete.confirm"
-            ~on_press:(press send Model.ConfirmDeleteActivePage)
-            ~text:"Delete" [];
-        ];
-    ]
+let page_delete_dialog (context : Lui_ui.ui_context) send : t =
+  if Lui_ui.host context = FlutterHost then
+    dialog ~text:"Delete page?" ~height:280
+      ~accessibility_identifier:"dialog.page-delete"
+      ~on_dismiss:(press send Model.CancelDeleteActivePage)
+      [
+        column ~gap:16 ~cross:`stretch
+          [
+            text ~value:"The page will be moved to Recycle." ~grow:1.0 [];
+            spacer ~grow:1.0 [];
+            row ~main:`end_
+              [
+                toolbar ~orientation:`horizontal ~toolbar_gap:12
+                  ~label:"Page deletion actions"
+                  ~accessibility_identifier:"toolbar.page-delete"
+                  [
+                    button ~variant:`ghost
+                      ~accessibility_identifier:
+                        "button.page-delete.cancel"
+                      ~on_press:(press send Model.CancelDeleteActivePage)
+                      ~text:"Cancel" [];
+                    button ~variant:`destructive
+                      ~accessibility_identifier:
+                        "button.page-delete.confirm"
+                      ~on_press:(press send Model.ConfirmDeleteActivePage)
+                      ~text:"Delete" [];
+                  ];
+              ];
+          ];
+      ]
+  else
+    dialog ~text:"Delete page?" ~style_class:"alert"
+      ~accessibility_identifier:"dialog.page-delete"
+      ~on_dismiss:(press send Model.CancelDeleteActivePage)
+      [
+        column
+          [
+            text ~value:"The page will be moved to Recycle." [];
+            button ~accessibility_identifier:"button.page-delete.cancel"
+              ~on_press:(press send Model.CancelDeleteActivePage)
+              ~text:"Cancel" [];
+            button ~accessibility_identifier:"button.page-delete.confirm"
+              ~on_press:(press send Model.ConfirmDeleteActivePage)
+              ~text:"Delete" [];
+          ];
+      ]
 
-let sync_status_sheet model_source send : t =
+let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
   let sync_row identifier label value_signal : t =
     list_item ~accessibility_identifier:identifier
       [
@@ -952,15 +1003,83 @@ let sync_status_sheet model_source send : t =
           ];
       ]
   in
-  sheet ~text:"Sync status" ~style_class:"navigation-form"
-    ~accessibility_identifier:"sheet.sync-status"
-    ~on_dismiss:(press send Model.CloseSyncDetails)
-    [
-      column ~style_class:"form"
-        ~accessibility_identifier:"form.sync-status"
-        [
-          sync_row "row.sync.status" "Status"
-            (Signal.map View_base.sync_label model_source);
+  if Lui_ui.host context = FlutterHost then
+    sheet ~text:"Sync status" ~height:420
+      ~accessibility_identifier:"sheet.sync-status"
+      ~on_dismiss:(press send Model.CloseSyncDetails)
+      [
+        column ~gap:8 ~cross:`stretch ~grow:1.0
+          ~accessibility_identifier:"form.sync-status"
+          [
+            sync_row "row.sync.status" "Status"
+              (Signal.map View_base.sync_label model_source);
+            sync_row "row.sync.graph" "Graph"
+              (Signal.map View_base.graph_label model_source);
+            sync_row "row.sync.connection" "Connection"
+              (Signal.map View_base.sync_connection_label model_source);
+            list_item ~accessibility_identifier:"row.sync.pending"
+              [
+                row ~grow:1.0 ~cross:`center ~main:`space_between
+                  [
+                    text ~value:"Local changes" [];
+                    text
+                      ~value_signal:
+                        (Signal.map View_base.sync_pending_label
+                           model_source)
+                      ~foreground:"secondary" ~text_alignment:`end_
+                      ~accessibility_identifier:"sync.pending" [];
+                  ];
+              ];
+            list_item ~accessibility_identifier:"row.sync.cursor"
+              [
+                row ~grow:1.0 ~cross:`center ~main:`space_between
+                  [
+                    text ~value:"Server cursor" [];
+                    text
+                      ~value_signal:
+                        (Signal.map View_base.sync_cursor_label
+                           model_source)
+                      ~foreground:"secondary" ~text_alignment:`end_
+                      ~accessibility_identifier:"sync.cursor" [];
+                  ];
+              ];
+            if_
+              ~test:(Signal.map View_base.sync_error_present_ model_source)
+              (text ~style_class:"footnote" ~foreground:"muted-foreground"
+                 ~value:"Last error" []);
+            if_
+              ~test:(Signal.map View_base.sync_error_present_ model_source)
+              (text
+                 ~value_signal:
+                   (Signal.map View_base.sync_error_message model_source)
+                 ~foreground:"destructive"
+                 ~accessibility_identifier:"sync.error" []);
+            spacer ~grow:1.0 [];
+            button ~variant:`primary ~grow:1.0
+              ~accessibility_identifier:"button.sync-now"
+              ~on_press:(press send Model.SyncNow)
+              ~text:"Sync now" [];
+            toolbar ~orientation:`horizontal ~label:"Sync status actions"
+              ~accessibility_identifier:"toolbar.sync.actions"
+              [
+                spacer ~grow:1.0 [];
+                button ~variant:`ghost
+                  ~accessibility_identifier:"button.sync.done"
+                  ~on_press:(press send Model.CloseSyncDetails)
+                  ~text:"Done" [];
+              ];
+          ];
+      ]
+  else
+    sheet ~text:"Sync status" ~style_class:"navigation-form"
+      ~accessibility_identifier:"sheet.sync-status"
+      ~on_dismiss:(press send Model.CloseSyncDetails)
+      [
+        column ~style_class:"form"
+          ~accessibility_identifier:"form.sync-status"
+          [
+            sync_row "row.sync.status" "Status"
+              (Signal.map View_base.sync_label model_source);
           sync_row "row.sync.graph" "Graph"
             (Signal.map View_base.graph_label model_source);
           sync_row "row.sync.connection" "Connection"

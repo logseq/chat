@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lui_flutter_backend/lui_flutter_backend.dart';
 
 import 'android_platform_effects.dart';
@@ -32,6 +33,20 @@ void _traceStartup(String message) {
 void main() {
   _traceStartup('main entered');
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge).then((_) {
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarDividerColor: Colors.transparent,
+          systemNavigationBarContrastEnforced: false,
+          statusBarBrightness: Brightness.dark,
+          statusBarIconBrightness: Brightness.dark,
+        ),
+      );
+    }),
+  );
   _traceStartup('Flutter binding initialized');
   runApp(const LogseqChatFlutterApp());
   _traceStartup('runApp returned');
@@ -47,6 +62,7 @@ class LogseqChatFlutterApp extends StatefulWidget {
 class _LogseqChatFlutterAppState extends State<LogseqChatFlutterApp>
     with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   late final LUIFlutterBackend _backend;
   late final FlutterPatchApplier _patchApplier;
   LogseqChatNativeBridge? _bridge;
@@ -602,6 +618,14 @@ class _LogseqChatFlutterAppState extends State<LogseqChatFlutterApp>
 
   void _reportEffectError(Object error, StackTrace stack) {
     _logRuntime(level: 'error', source: 'ui', message: error.toString());
+    _messengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Something went wrong: $error'),
+        ),
+      );
     FlutterError.reportError(
       FlutterErrorDetails(
         exception: error,
@@ -654,6 +678,7 @@ class _LogseqChatFlutterAppState extends State<LogseqChatFlutterApp>
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,
       title: 'Logseq Chat',
       theme: LogseqChatTheme.light(),
@@ -666,9 +691,36 @@ class _LogseqChatFlutterAppState extends State<LogseqChatFlutterApp>
   Widget _content() {
     if (_startupError != null) {
       return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('Could not start Logseq Chat: $_startupError'),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              spacing: 16,
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                Text(
+                  'Could not start Logseq Chat',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  '$_startupError',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                FilledButton(
+                  onPressed: () {
+                    setState(() => _startupError = null);
+                    unawaited(_start());
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }

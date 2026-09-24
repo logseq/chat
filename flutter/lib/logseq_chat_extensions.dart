@@ -54,6 +54,11 @@ const _overflowFingerprint =
     'properties:14:favorite-label:string:required:none,16:settings-visible:bool:'
     'required:none,20:page-actions-visible:bool:required:none|events:5:share[],'
     '6:delete[],8:favorite[],8:settings[]';
+const _composerAssetFingerprint =
+    'lui-extension-v1|14:composer-asset|profiles:android/flutter,'
+    'ios/swiftui|standard-children:0|children:|'
+    'properties:10:local-path:string:required:none,5:title:string:'
+    'required:none|events:';
 
 String _identityAssetPath(String path) => path;
 
@@ -206,7 +211,60 @@ LUIFlutterExtensionRegistry logseqChatExtensionRegistry({
         ],
         builder: (context) => _OverflowMenu(context: context),
       ),
+    )
+    ..register(
+      LUIFlutterExtension(
+        identifier: 'composer-asset',
+        fingerprint: _composerAssetFingerprint,
+        properties: [
+          _requiredStringProperty('title'),
+          _requiredStringProperty('local-path'),
+        ],
+        builder: (context) => _ComposerAssetPreview(context: context),
+      ),
     );
+}
+
+final class _ComposerAssetPreview extends StatelessWidget {
+  const _ComposerAssetPreview({required this.context});
+
+  final LUIFlutterExtensionContext context;
+
+  @override
+  Widget build(BuildContext buildContext) {
+    final title = context.property('title') as String? ?? '';
+    final localPath = context.property('local-path') as String? ?? '';
+    final Widget content =
+        localPath.isNotEmpty && isAndroidImageAsset('', localPath)
+        ? Image.file(
+            File(localPath),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _fallback(buildContext, title),
+          )
+        : _fallback(buildContext, title);
+    return Semantics(
+      label: title,
+      image: true,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox.square(dimension: 128, child: content),
+      ),
+    );
+  }
+
+  Widget _fallback(BuildContext buildContext, String title) => ColoredBox(
+    color: Theme.of(buildContext).colorScheme.surfaceContainerHigh,
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          const Icon(Icons.attach_file_rounded),
+          Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        ],
+      ),
+    ),
+  );
 }
 
 LUIExtensionEventField _requiredStringField(String name) =>
@@ -380,6 +438,7 @@ final class _SearchPresentationState extends State<_SearchPresentation>
                     controller: _controller,
                     focusNode: _focusNode,
                     autoFocus: query.isEmpty,
+                    textInputAction: TextInputAction.search,
                     hintText: 'Search pages and blocks',
                     leading: IconButton(
                       tooltip: depth > 0 ? 'Back' : 'Close search',

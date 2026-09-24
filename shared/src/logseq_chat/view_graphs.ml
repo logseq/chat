@@ -378,11 +378,61 @@ let graph_picker_error_banner model_source : t =
         ];
     ]
 
-let graph_password_sheet model_source send : t =
-  sheet ~text:"Unlock encrypted graphs" ~style_class:"navigation-form"
-    ~accessibility_identifier:"sheet.graph-unlock"
-    ~on_dismiss:(press send Model.CancelGraphUnlock)
-    [
+let graph_password_sheet (context : Lui_ui.ui_context) model_source send
+    : t =
+  if Lui_ui.host context = FlutterHost then
+    sheet ~text:"Unlock encrypted graphs" ~height:360
+      ~accessibility_identifier:"sheet.graph-unlock"
+      ~on_dismiss:(press send Model.CancelGraphUnlock)
+      [
+        column ~gap:20 ~cross:`stretch ~grow:1.0
+          ~accessibility_identifier:"form.graph-unlock"
+          [
+            secure_field
+              ~text_signal:
+                (Signal.map View_base.model_graph_password model_source)
+              ~placeholder:"E2EE password" ~label:"E2EE password"
+              ~accessibility_identifier:"field.graph-password"
+              ~on_input:
+                (on_input send (fun text ->
+                     Model.ChangeGraphPassword text))
+              [];
+            text ~style_class:"footnote" ~foreground:"muted-foreground"
+              ~value:"Enter your E2EE password to unlock this graph." [];
+            if_
+              ~test:
+                (Signal.map View_base.graph_unlock_error_present_
+                   model_source)
+              (text
+                 ~value_signal:
+                   (Signal.map View_base.graph_unlock_error_message
+                      model_source)
+                 ~style_class:"footnote" ~foreground:"destructive"
+                 ~accessibility_identifier:"text.graph-unlock-error" []);
+            spacer ~grow:1.0 [];
+            toolbar ~orientation:`horizontal ~label:"Graph unlock actions"
+              ~accessibility_identifier:"toolbar.graph-unlock"
+              [
+                spacer ~grow:1.0 [];
+                button ~variant:`ghost
+                  ~accessibility_identifier:"button.graph-unlock.cancel"
+                  ~on_press:(press send Model.CancelGraphUnlock)
+                  ~text:"Cancel" [];
+                button ~variant:`primary
+                  ~accessibility_identifier:"button.graph-unlock"
+                  ~disabled_signal:
+                    (Signal.map View_base.graph_unlock_disabled_
+                       model_source)
+                  ~on_press:(press send Model.SubmitGraphPassword)
+                  ~text:"Unlock" [];
+              ];
+          ];
+      ]
+  else
+    sheet ~text:"Unlock encrypted graphs" ~style_class:"navigation-form"
+      ~accessibility_identifier:"sheet.graph-unlock"
+      ~on_dismiss:(press send Model.CancelGraphUnlock)
+      [
       column ~style_class:"form"
         ~accessibility_identifier:"form.graph-unlock"
         [

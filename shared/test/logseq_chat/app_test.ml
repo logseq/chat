@@ -8317,7 +8317,7 @@ let composer_asset_failure_retains_draft_and_success_removes_it () =
 let composer_asset_schema_matches_native_thumbnail_renderer () =
   check_eq ~msg:"native attachment thumbnails share the LG schema"
     (Lui_extension.fingerprint (View.composer_asset_schema ()))
-    "lui-extension-v1|14:composer-asset|profiles:ios/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:"
+    "lui-extension-v1|14:composer-asset|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:"
 
 let block_node_breadcrumbs_preserve_navigation_context () =
   List.iter

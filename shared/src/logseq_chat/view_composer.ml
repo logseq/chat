@@ -30,6 +30,36 @@ let attachment_menu send : t =
         [];
     ]
 
+let attachment_picker_menu send : t =
+  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:200
+    ~on_dismiss:(press send Model.CloseAttachmentPicker)
+    [
+      menu_item ~icon:(`app "toolbar-attachment")
+        ~accessibility_identifier:"button.attachment.files"
+        ~text:"File"
+        ~on_press:(fun _ ->
+          ignore (send (Model.ChooseAttachment "files")))
+        [];
+      menu_item ~icon:(`app "toolbar-camera")
+        ~accessibility_identifier:"button.attachment.camera"
+        ~text:"Camera"
+        ~on_press:(fun _ ->
+          ignore (send (Model.ChooseAttachment "camera")))
+        [];
+      menu_item ~icon:(`app "composer-photo")
+        ~accessibility_identifier:"button.attachment.photos"
+        ~text:"Photo"
+        ~on_press:(fun _ ->
+          ignore (send (Model.ChooseAttachment "photos")))
+        [];
+      menu_item ~icon:(`app "toolbar-audio")
+        ~accessibility_identifier:"button.attachment.audio"
+        ~text:"Audio recording"
+        ~on_press:(fun _ ->
+          ignore (send (Model.ChooseAttachment "audio")))
+        [];
+    ]
+
 let composer_attachment_button (context : Lui_ui.ui_context) send : t =
   if Lui_ui.platform context = AndroidOS then
     button ~icon:(`app "add") ~variant:`ghost ~label:"Add attachment"
@@ -230,7 +260,18 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              row ~gap:8 ~height:44 ~cross:`center
                ~accessibility_identifier:"row.composer.controls"
                [
-                 composer_attachment_button context send;
+                 if Lui_ui.host context = FlutterHost then
+                   stack
+                     [
+                       composer_attachment_button context send;
+                       if_
+                         ~test:
+                           (Signal.map
+                              View_base.model_attachment_picker_open_
+                              model_source)
+                         (attachment_picker_menu send);
+                     ]
+                 else composer_attachment_button context send;
                  stack
                    [
                      composer_task_status_button context send;

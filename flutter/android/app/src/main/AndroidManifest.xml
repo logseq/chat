@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:label="Logseq Chat"
+        android:enableOnBackInvokedCallback="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
