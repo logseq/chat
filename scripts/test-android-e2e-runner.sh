@@ -11,7 +11,7 @@ die() {
 }
 
 list_output=$($runner --list) || die "Android E2E runner could not list modules"
-grep -Fq "Modules: all signed-out connect capture composer autocomplete outliner hierarchy audio navigation graphs settings flashcards search rich-content youtube node-tag page-actions shortcuts sharing editor-regressions sharing-image" <<<"$list_output" \
+grep -Fq "Modules: all signed-out smoke connect capture composer autocomplete outliner hierarchy audio navigation graphs settings flashcards search rich-content youtube node-tag page-actions shortcuts sharing editor-regressions sharing-image" <<<"$list_output" \
   || die "Android E2E runner did not list every module"
 grep -Fq "tests/e2e/android-staging-connect.yaml" <<<"$list_output" \
   || die "Android E2E runner did not list the connection flow"
@@ -255,6 +255,7 @@ PATH="$mock_bin:$PATH" \
   LOGSEQ_CHAT_E2E_USERNAME=test-user \
   LOGSEQ_CHAT_E2E_PASSWORD=test-password \
   LOGSEQ_CHAT_E2E_BASE_URL=http://127.0.0.1:8787 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_DB_SYNC_WAIT=1 \
   "$runner" connect >/dev/null
 grep -Fxq -- '-s test-device reverse tcp:8787 tcp:8787' "$adb_args" \
   || die "Android E2E runner did not expose the host-local backend to the device"
