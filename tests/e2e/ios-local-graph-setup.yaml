@@ -25,6 +25,10 @@ appId: com.logseq.chat
           visible: "submit"
           timeout: 10000
       - tapOn: "submit"
+      # Post-login bootstrap churns the view tree; hierarchy snapshots taken
+      # during it have stalled the XCTest driver on CI. Wait it out.
+      - waitForAnimationToEnd:
+          timeout: 30000
 - runFlow:
     when:
       visible: "Enter your username"
