@@ -27,12 +27,129 @@ env:
   ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'capture') }}
 
 jobs:
+  # opam-monorepo.0.3.6 (needed for `monorepo pull`) vendors an old base whose
+  # -mpopcnt C flag fails to compile on macOS arm64. duniverse/ is pure source
+  # — platform-independent — so vendor it once on Linux and share via cache.
+  duniverse:
+    name: Vendor duniverse
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore opam root
+        id: opam-root
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Restore opam switch
+        id: opam-switch
+        uses: actions/cache/restore@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      - name: Install opam binary
+        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
+          chmod +x ~/.local/bin/opam
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          eval $(opam env)
+          opam --version && ocaml -version
+
+      - uses: ocaml/setup-ocaml@v3
+        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
+        with:
+          ocaml-compiler: "5.5"
+          opam-pin: false
+
+      - name: Save opam root
+        if: steps.opam-root.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Install opam dependencies
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        run: |
+          eval $(opam env)
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=3
+          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
+          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
+          export GIT_CONFIG_KEY_2="credential.helper"
+          export GIT_CONFIG_VALUE_2='!f() { [ -n "$LOGSEQ_GITHUB_PAT" ] || exit 0; echo username=x-access-token; echo "password=$LOGSEQ_GITHUB_PAT"; }; f'
+          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
+          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
+          opam install -y melange.7.0.1-55
+          opam install . --deps-only --yes --with-test --assume-depexts
+          # 0.3.x matches the lockfile's x-opam-monorepo-version.
+          opam install -y opam-monorepo.0.3.6
+
+      - name: Save opam switch
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      - name: Restore duniverse
+        id: duniverse
+        uses: actions/cache/restore@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          enableCrossOsArchive: true
+
+      - name: Pull vendored dependencies
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          eval $(opam env)
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git@github.com:"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
+          # Call the binary directly: the `opam monorepo` plugin shim rejects
+          # plugins built under a different opam version (restored caches).
+          opam exec -- opam-monorepo pull
+          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
+            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
+            if [ -d "duniverse/$name" ]; then
+              continue
+            fi
+            git clone --quiet "https://github.com/$url" "duniverse/$name"
+            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
+              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
+              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
+            fi
+          done
+
+      - name: Save duniverse
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          enableCrossOsArchive: true
+
   ios-e2e:
     name: iOS e2e
+    needs: duniverse
     runs-on: macos-15
     timeout-minutes: 90
     env:
       LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+      LOGSEQ_CHAT_OPAM_SWITCH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +209,6 @@ jobs:
           opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
           opam install -y melange.7.0.1-55
           opam install . --deps-only --yes --with-test --assume-depexts
-          opam install -y opam-monorepo.0.3.6
 
       - name: Save opam switch
         if: steps.opam-switch.outputs.cache-hit != 'true'
@@ -101,43 +217,19 @@ jobs:
           path: _opam
           key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
 
+      # Produced by the linux `duniverse` job — opam-monorepo doesn't build on
+      # macOS arm64, and a plain restore keeps this job off that toolchain.
       - name: Restore duniverse
         id: duniverse
         uses: actions/cache/restore@v4
         with:
           path: duniverse
           key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          enableCrossOsArchive: true
 
-      - name: Pull vendored dependencies
+      - name: Require vendored dependencies
         if: steps.duniverse.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          eval $(opam env)
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git@github.com:"
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
-          # Call the binary directly: the `opam monorepo` plugin shim rejects
-          # plugins built under a different opam version (restored caches).
-          opam exec -- opam-monorepo pull
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
-            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
-            if [ -d "duniverse/$name" ]; then
-              continue
-            fi
-            git clone --quiet "https://github.com/$url" "duniverse/$name"
-            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
-              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
-              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
-            fi
-          done
-
-      - name: Save duniverse
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+        run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
 
       - name: Restore iOS OCaml toolchain
         id: ios-toolchain
@@ -174,10 +266,12 @@ jobs:
 
   android-e2e:
     name: Android e2e
+    needs: duniverse
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
       LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+      LOGSEQ_CHAT_OPAM_SWITCH: ${{ github.workspace }}
       LOGSEQ_CHAT_ANDROID_ABI: x86_64
     steps:
       - uses: actions/checkout@v4
@@ -238,7 +332,6 @@ jobs:
           opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
           opam install -y melange.7.0.1-55
           opam install . --deps-only --yes --with-test --assume-depexts
-          opam install -y opam-monorepo.0.3.6
 
       - name: Save opam switch
         if: steps.opam-switch.outputs.cache-hit != 'true'
@@ -247,43 +340,18 @@ jobs:
           path: _opam
           key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
 
+      # Produced by the `duniverse` job — shared via cross-OS cache.
       - name: Restore duniverse
         id: duniverse
         uses: actions/cache/restore@v4
         with:
           path: duniverse
           key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          enableCrossOsArchive: true
 
-      - name: Pull vendored dependencies
+      - name: Require vendored dependencies
         if: steps.duniverse.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          eval $(opam env)
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git@github.com:"
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "ssh://git@github.com/"
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
-          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
-          # Call the binary directly: the `opam monorepo` plugin shim rejects
-          # plugins built under a different opam version (restored caches).
-          opam exec -- opam-monorepo pull
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
-            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
-            if [ -d "duniverse/$name" ]; then
-              continue
-            fi
-            git clone --quiet "https://github.com/$url" "duniverse/$name"
-            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
-              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
-              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
-            fi
-          done
-
-      - name: Save duniverse
-        if: steps.duniverse.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+        run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
