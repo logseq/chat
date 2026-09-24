@@ -1,0 +1,99 @@
+name: Start db-sync server
+description: >-
+  Check out logseq@feature/native-mobile-app, build the db-sync node adapter,
+  and start it on the given port (default 8787). The app e2e flows create sync
+  graphs against it.
+inputs:
+  token:
+    description: GitHub token with access to the private logseq/logseq repo.
+    required: true
+  ref:
+    description: logseq/logseq ref to check out.
+    required: false
+    default: feature/native-mobile-app
+  port:
+    description: Port the server binds.
+    required: false
+    default: "8787"
+outputs:
+  port:
+    description: The port the server is listening on.
+    value: ${{ inputs.port }}
+runs:
+  using: composite
+  steps:
+    - name: Check out db-sync server
+      uses: actions/checkout@v4
+      with:
+        repository: logseq/logseq
+        ref: ${{ inputs.ref }}
+        path: logseq-server
+        token: ${{ inputs.token }}
+        fetch-depth: 1
+
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    - name: Install Clojure CLI and pnpm
+      shell: bash
+      run: |
+        if [[ $RUNNER_OS == macOS ]]; then
+          brew install clojure/tools/clojure || brew upgrade clojure/tools/clojure
+        else
+          curl -fsSL \
+            https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh \
+            | sudo bash
+        fi
+        corepack enable
+        clojure --version
+
+    - name: Restore db-sync build caches
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.m2
+          ~/.gitlibs
+          ~/.local/share/pnpm/store
+          ~/Library/pnpm
+          logseq-server/node_modules
+          logseq-server/deps/db-sync/node_modules
+        key: dbsync-deps-${{ runner.os }}-${{ hashFiles('logseq-server/pnpm-lock.yaml') }}
+        restore-keys: dbsync-deps-${{ runner.os }}-
+
+    - name: Build and start db-sync
+      shell: bash
+      run: |
+        cd logseq-server
+        pnpm install
+        cd deps/db-sync
+        clojure -M:cljs release db-sync-node
+        mkdir -p data
+        DB_SYNC_PORT=${{ inputs.port }} DB_SYNC_DATA_DIR="$PWD/data" \
+          nohup ./start.sh >"$PWD/db-sync.log" 2>&1 &
+        echo $! > "$PWD/db-sync.pid"
+        for attempt in $(seq 1 90); do
+          # Any HTTP response (including 401/404) means the port is bound.
+          if curl -s -o /dev/null "http://127.0.0.1:${{ inputs.port }}/"; then
+            echo "db-sync is listening on :${{ inputs.port }}"
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "db-sync did not start; tail of log:" >&2
+        tail -100 "$PWD/db-sync.log" >&2 || true
+        exit 1
+
+    - name: Upload db-sync log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: db-sync-log-${{ runner.os }}
+        path: logseq-server/deps/db-sync/db-sync.log
+        retention-days: 7
+        if-no-files-found: ignore
