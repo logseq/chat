@@ -23,12 +23,18 @@ workspace="$repo_root/dune-workspace.mobile"
 
 # Local opam switches (e.g. CI's _opam) are addressed by their parent dir, not
 # by name — the checked-in workspace pins the named `5.5.0` switch.
-if [[ -n ${LOGSEQ_CHAT_OPAM_SWITCH:-} ]]; then
+switch=${LOGSEQ_CHAT_OPAM_SWITCH:-}
+if [[ -z $switch ]] && command -v opam >/dev/null 2>&1; then
+  switch=$(opam switch show 2>/dev/null || true)
+fi
+if [[ -n $switch ]]; then
   workspace="$repo_root/_build/dune-workspace.mobile"
   mkdir -p "$(dirname "$workspace")"
-  sed "s|(switch [^)]*)|(switch $LOGSEQ_CHAT_OPAM_SWITCH)|" \
+  sed "s|(switch [^)]*)|(switch $switch)|" \
     "$repo_root/dune-workspace.mobile" > "$workspace"
 fi
+
+echo "build-mobile-ocaml: dune=$dune workspace=$workspace" >&2
 
 [[ -x $target_prefix/bin/ocamlc ]] || {
   echo "error: target OCaml compiler is missing at $target_prefix" >&2

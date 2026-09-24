@@ -69,6 +69,14 @@ cd "$build_dir"
 "$ndk_bin/llvm-nm" sqlite3.o | grep "sqlite3Fts5Init" >/dev/null
 "$ndk_bin/llvm-ar" rcs libsqlite3.a sqlite3.o
 
+# The NDK ships no libffi; ctypes-foreign needs real headers for its stub
+# build and -lffi must resolve at the final .so link.
+ffi_prefix=$("$repo_root/scripts/build-mobile-libffi.sh" \
+  "$target_arch-linux-android" \
+  "$repo_root/_build/android-toolchain/libffi-$target" \
+  "$ndk_bin/clang --target=$target" \
+  "$ndk_bin/clang++ --target=$target")
+
 mkdir -p "$build_dir/pkgconfig"
 cat > "$build_dir/pkgconfig/sqlite3.pc" <<EOF
 prefix=$build_dir
@@ -83,7 +91,7 @@ Cflags: -I\${includedir}
 EOF
 
 runtime_object=$(C_INCLUDE_PATH="$sqlite_source_dir${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}" \
-  PKG_CONFIG_PATH="$build_dir/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
+  PKG_CONFIG_PATH="$build_dir/pkgconfig:$ffi_prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
   SQLITE3_DISABLE_LOADABLE_EXTENSIONS=1 \
   DATASCRIPT_SQLITE_LIB_DIR="$build_dir" \
   DUNE_PROFILE=android \
@@ -109,6 +117,7 @@ done
   "$runtime_object" \
   logseq_chat_crypto_android.o \
   logseq_chat_https_android.o \
+  "$ffi_prefix/lib/libffi.a" \
   -lm \
   -ldl \
   -llog \
