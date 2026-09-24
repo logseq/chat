@@ -265,7 +265,9 @@ jobs:
           ./scripts/build-mobile-ios-simulator.sh
 
       - name: Save iOS OCaml toolchain
-        if: steps.ios-toolchain.outputs.cache-hit != 'true'
+        # always(): even when e2e fails, preserve the expensive toolchain
+        # build — bootstrap stamp files keep partial builds safe to cache.
+        if: always() && steps.ios-toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: _build/apple-toolchains
@@ -456,7 +458,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Save Android OCaml toolchain
-        if: steps.android-toolchain.outputs.cache-hit != 'true'
+        if: always() && steps.android-toolchain.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
