@@ -75,16 +75,21 @@ jobs:
           opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
           opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
           opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
+          opam install . --deps-only --yes --with-test --assume-depexts
+          # `opam install --deps-only` installs the pin-depends too, so the
+          # switch and `duniverse/` end up providing the same public libraries
+          # (e.g. persistent_sorted_set_ocaml) and dune aborts on the conflict.
+          # Drop the installed copies of every lockfile-vendored package; the
+          # vendored sources are what the build uses.
+          comm -12 \
+            <(grep -oE '"[a-zA-Z0-9_.-]+" \{= "[^"]*" & \?vendor\}' logseq_chat.opam.locked | cut -d'"' -f2 | sort) \
+            <(opam list --installed --short | sort) \
+            | xargs -r opam remove -y
           # ocaml-signal compiles melange emit rules but does not depend on the
           # melange package, so a parallel deps build can run it before melc
-          # exists; install melange first to pin the ordering.
+          # exists; keep melange in the switch to pin the ordering (removal
+          # above cascades to it via ppxlib/menhir).
           opam install -y melange.7.0.1-55
-          # Install only the deps the lockfile marks non-vendored. Installing
-          # from logseq_chat.opam puts the full dep closure (including the
-          # pin-depends that duniverse also vendors, e.g.
-          # persistent_sorted_set_ocaml) into _opam, and dune then sees every
-          # vendored library twice and aborts with a conflict.
-          opam install --deps-only ./logseq_chat.opam.locked --yes --with-test --assume-depexts
           # 0.3.x matches the lockfile's x-opam-monorepo-version; 0.5 embeds an
           # opam lib too new for the runner's opam root layout.
           opam install -y opam-monorepo.0.3.6
