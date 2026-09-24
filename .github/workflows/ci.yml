@@ -43,10 +43,10 @@ jobs:
           export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
           export GIT_CONFIG_KEY_2="credential.helper"
           export GIT_CONFIG_VALUE_2='!f() { [ -n "$LOGSEQ_GITHUB_PAT" ] || exit 0; echo username=x-access-token; echo "password=$LOGSEQ_GITHUB_PAT"; }; f'
-          opam pin add -n -y melange-edn-core git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956
-          opam pin add -n -y melange-edn-native git+https://github.com/RCmerci/melange-edn.git#3cb79f278e972388a0a2b2ea1caec7a008a0b956
-          opam pin add -n -y melange-transit-core git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97
-          opam pin add -n -y melange-transit-native git+https://github.com/RCmerci/melange-transit.git#950a5786e343f893a6e0396819383db341d5aa97
+          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
+          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
           # ocaml-signal compiles melange emit rules but does not depend on the
           # melange package, so a parallel deps build can run it before melc
           # exists; install melange first to pin the ordering.

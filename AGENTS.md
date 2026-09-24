@@ -43,10 +43,10 @@ dune runtest
 `opam install . --deps-only` does not apply nested pins from `datascript-ocaml-native`. Pin these first (idempotent):
 
 ```sh
-opam pin add -n -y melange-edn-core git+https://github.com/RCmerci/melange-edn.git#main
-opam pin add -n -y melange-edn-native git+https://github.com/RCmerci/melange-edn.git#main
-opam pin add -n -y melange-transit-core git+https://github.com/RCmerci/melange-transit.git#main
-opam pin add -n -y melange-transit-native git+https://github.com/RCmerci/melange-transit.git#main
+opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
+opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
+opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
+opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
 opam install . --deps-only --yes --with-test
 ```
 
