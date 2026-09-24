@@ -1,0 +1,13 @@
+# Create an encrypted graph, land on the unlock sheet, type the
+# password, unlock, and reach the application shell.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+wait prop:accessibility-identifier=sheet.graph-create
+expect prop:accessibility-identifier=toggle.graph-encryption
+type prop:accessibility-identifier=field.graph-name "Locked"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=sheet.graph-unlock
+type prop:accessibility-identifier=field.graph-password "pw1234"
+press prop:accessibility-identifier=button.graph-unlock
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=title.main

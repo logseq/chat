@@ -150,11 +150,15 @@ if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; the
     [[ -n $graph_database && -f ${graph_database%/graph.sqlite}/sync.checkpoint ]] \
       || die "timed out waiting for the graph snapshot import to finish"
     xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
-    if [[ -n $fixture_seed_mode ]]; then
-      opam exec --switch=5.5.0 -- \
-        dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+    if command -v dune >/dev/null 2>&1; then
+      dune_seed=(dune exec)
     else
-      opam exec --switch=5.5.0 -- dune exec shared/native/logseq_chat_e2e_seed.exe -- "$graph_database"
+      dune_seed=(opam exec --switch=5.5.0 -- dune exec)
+    fi
+    if [[ -n $fixture_seed_mode ]]; then
+      "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+    else
+      "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$graph_database"
     fi
     if [[ -n $seed_cache_dir ]]; then
       mkdir -p "$seed_cache_dir/$seed_cache_key"

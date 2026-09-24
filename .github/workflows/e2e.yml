@@ -1,0 +1,338 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ios_module:
+        description: "iOS e2e module (scripts/test-ios-e2e-suite.sh --list)"
+        required: false
+        default: "smoke"
+      android_module:
+        description: "Android e2e module (scripts/test-android-e2e.sh --list)"
+        required: false
+        default: "capture"
+  schedule:
+    # Nightly full-suite coverage; PRs and pushes run the small smoke modules.
+    - cron: "37 3 * * *"
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IOS_MODULE: ${{ inputs.ios_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
+  ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'capture') }}
+
+jobs:
+  ios-e2e:
+    name: iOS e2e (${{ env.IOS_MODULE }})
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Restore opam root
+        id: opam-root
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Restore opam switch
+        id: opam-switch
+        uses: actions/cache/restore@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      # See ci.yml: on a dual cache hit only the opam binary is needed.
+      - name: Install opam binary
+        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
+        run: |
+          brew install opam
+          eval $(opam env)
+          opam --version && ocaml -version
+
+      - uses: ocaml/setup-ocaml@v3
+        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
+        with:
+          ocaml-compiler: "5.5"
+          opam-pin: false
+
+      - name: Save opam root
+        if: steps.opam-root.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Install opam dependencies
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        run: |
+          eval $(opam env)
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=3
+          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
+          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
+          export GIT_CONFIG_KEY_2="credential.helper"
+          export GIT_CONFIG_VALUE_2='!f() { [ -n "$LOGSEQ_GITHUB_PAT" ] || exit 0; echo username=x-access-token; echo "password=$LOGSEQ_GITHUB_PAT"; }; f'
+          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
+          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
+          opam install -y melange.7.0.1-55
+          opam install . --deps-only --yes --with-test --assume-depexts
+          opam install -y opam-monorepo.0.3.6
+
+      - name: Save opam switch
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      - name: Restore duniverse
+        id: duniverse
+        uses: actions/cache/restore@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+
+      - name: Pull vendored dependencies
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          eval $(opam env)
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git@github.com:"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
+          opam monorepo pull -y
+          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
+            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
+            if [ -d "duniverse/$name" ]; then
+              continue
+            fi
+            git clone --quiet "https://github.com/$url" "duniverse/$name"
+            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
+              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
+              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
+            fi
+          done
+
+      - name: Save duniverse
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+
+      - name: Restore iOS OCaml toolchain
+        id: ios-toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/apple-toolchains
+          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0
+
+      - name: Build iOS app for the simulator
+        run: |
+          eval $(opam env)
+          ./scripts/build-mobile-ios-simulator.sh
+
+      - name: Save iOS OCaml toolchain
+        if: steps.ios-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _build/apple-toolchains
+          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0
+
+      - name: Boot an iOS simulator
+        run: |
+          runtime_id=$(xcrun simctl list -j runtimes | python3 -c 'import json,sys; rs=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and ".iOS-" in r["identifier"]]; rs.sort(key=lambda r: [int(x) for x in r["version"].split(".")]); print(rs[-1]["identifier"])')
+          udid=$(xcrun simctl create "CI iPhone" \
+            "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$runtime_id")
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+
+      - name: Run iOS e2e module
+        run: |
+          eval $(opam env)
+          LOGSEQ_CHAT_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
+
+  android-e2e:
+    name: Android e2e (${{ env.ANDROID_MODULE }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+      LOGSEQ_CHAT_ANDROID_ABI: x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System dependencies
+        run: sudo apt-get install -y libsqlite3-dev libffi-dev pkg-config
+
+      - name: Restore opam root
+        id: opam-root
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Restore opam switch
+        id: opam-switch
+        uses: actions/cache/restore@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      - name: Install opam binary
+        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          curl -fsSL https://github.com/ocaml/opam/releases/download/2.6.0/opam-2.6.0-x86_64-linux -o ~/.local/bin/opam
+          chmod +x ~/.local/bin/opam
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          eval $(opam env)
+          opam --version && ocaml -version
+
+      - uses: ocaml/setup-ocaml@v3
+        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
+        with:
+          ocaml-compiler: "5.5"
+          opam-pin: false
+
+      - name: Save opam root
+        if: steps.opam-root.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Install opam dependencies
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        run: |
+          eval $(opam env)
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=3
+          export GIT_CONFIG_KEY_0="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_0="git@github.com:"
+          export GIT_CONFIG_KEY_1="url.https://github.com/.insteadOf" GIT_CONFIG_VALUE_1="ssh://git@github.com/"
+          export GIT_CONFIG_KEY_2="credential.helper"
+          export GIT_CONFIG_VALUE_2='!f() { [ -n "$LOGSEQ_GITHUB_PAT" ] || exit 0; echo username=x-access-token; echo "password=$LOGSEQ_GITHUB_PAT"; }; f'
+          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
+          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
+          opam install -y melange.7.0.1-55
+          opam install . --deps-only --yes --with-test --assume-depexts
+          opam install -y opam-monorepo.0.3.6
+
+      - name: Save opam switch
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+
+      - name: Restore duniverse
+        id: duniverse
+        uses: actions/cache/restore@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+
+      - name: Pull vendored dependencies
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          eval $(opam env)
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git@github.com:"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "ssh://git@github.com/"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "git+ssh://git@github.com/"
+          git config --global url."https://x-access-token:${LOGSEQ_GITHUB_PAT}@github.com/".insteadOf "https://github.com/"
+          opam monorepo pull -y
+          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
+            url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
+            if [ -d "duniverse/$name" ]; then
+              continue
+            fi
+            git clone --quiet "https://github.com/$url" "duniverse/$name"
+            if ! git -C "duniverse/$name" checkout --quiet "$sha"; then
+              git -C "duniverse/$name" fetch --quiet "https://github.com/$url" "$sha"
+              git -C "duniverse/$name" checkout --quiet FETCH_HEAD
+            fi
+          done
+
+      - name: Save duniverse
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Restore Android OCaml toolchain
+        id: android-toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            _build/android-toolchain
+            _build/android-dependency-sources
+            _build/android-sqlite-host
+          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android e2e module
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            eval $(opam env)
+            ./scripts/test-android-e2e.sh "$ANDROID_MODULE"
+
+      - name: Save Android OCaml toolchain
+        if: steps.android-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            _build/android-toolchain
+            _build/android-dependency-sources
+            _build/android-sqlite-host
+          key: android-toolchain-${{ runner.os }}-x86_64-5.5.0

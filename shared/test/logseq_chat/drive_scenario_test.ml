@@ -16,6 +16,15 @@ let graph_entry id name encrypted =
 let catalog_projection graphs =
   { (App_test.empty_core_projection ()) with Model.graphs }
 
+let journal_rows =
+  [
+    (App_test.journal_outline_row "journal-block-1" "journal"
+       "First seeded block" "Today" 20260828 0
+    |> fun (row : Model.outline_row) -> { row with has_children = true });
+    App_test.journal_outline_row "journal-block-2" "journal"
+      "Second seeded block" "Today" 20260828 1;
+  ]
+
 let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked graphs =
   {
     (App_test.empty_core_projection ()) with
@@ -24,6 +33,8 @@ let graph_projection ~graph_id ~graph_name ~encrypted ~unlocked graphs =
     graphs;
     is_graph_encrypted = encrypted;
     is_graph_unlocked = unlocked;
+    journal_outliner_rows = journal_rows;
+    outliner_rows = journal_rows;
   }
 
 type host = { mutable graphs : Model.graph list }
@@ -52,6 +63,57 @@ let host_responses host model =
              (graph_projection ~graph_id:name ~graph_name:name ~encrypted
                 ~unlocked:(not encrypted) host.graphs)
         :: resolved
+      | Model.SearchNodesEffect (id, query) ->
+        Model.DequeueEffect id
+        :: Model.ApplySearchResults
+             (query
+             , [
+               {
+                 Model.hit_uuid = "page-1";
+                 hit_title = "Alpha Doc";
+                 breadcrumb = "";
+                 breadcrumbs = [];
+                 is_page = true;
+               };
+               {
+                 Model.hit_uuid = "block-1";
+                 hit_title = "alpha block";
+                 breadcrumb = "Alpha Doc";
+                 breadcrumbs = [ { Model.uuid = "page-1"; title = "Alpha Doc" } ];
+                 is_page = false;
+               };
+             ])
+        :: resolved
+      | Model.DeleteLocalGraphEffect (id, graph_id) ->
+        host.graphs <-
+          List.filter (fun (g : Model.graph) -> g.id <> graph_id) host.graphs;
+        Model.DequeueEffect id
+        :: Model.ApplyLocalGraphIds
+             (List.map (fun (g : Model.graph) -> g.id) host.graphs)
+        :: Model.ApplyCoreSnapshot (catalog_projection host.graphs)
+        :: resolved
+      | Model.TapOutlinerBlockEffect (id, uuid) -> (
+        match
+          Option.map find_graph model.Model.selected_graph_id |> Option.join
+        with
+        | Some g ->
+          Model.DequeueEffect id
+          :: Model.ApplyCoreSnapshot
+               {
+                 (graph_projection ~graph_id:g.id ~graph_name:g.name
+                    ~encrypted:g.is_encrypted ~unlocked:(not g.is_encrypted)
+                    host.graphs)
+                 with
+                 projection_outliner_editing =
+                   Some
+                     {
+                       Model.editing_uuid = uuid;
+                       editing_title = "";
+                       caret_utf16_offset = 0;
+                     };
+               }
+          :: resolved
+        | None -> Model.DequeueEffect id :: resolved)
       | Model.OpenGraphEffect (id, graph_id) -> (
         match find_graph graph_id with
         | Some g ->

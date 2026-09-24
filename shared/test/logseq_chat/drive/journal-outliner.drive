@@ -1,0 +1,17 @@
+# Create a local graph, verify the seeded journal blocks render in the
+# outliner, tap a block to start editing, and check the editor toolbar
+# surfaces. The host stub answers TapOutlinerBlockEffect with a snapshot
+# carrying projection_outliner_editing — the same response the native
+# bridge would deliver.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+wait prop:accessibility-identifier=field.graph-name
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=outliner.block.journal-block-1
+expect prop:accessibility-identifier=outliner.block.journal-block-2
+press prop:accessibility-identifier=outliner.block-action.journal-block-1
+wait prop:accessibility-identifier=toolbar.outliner.editor
+expect prop:accessibility-identifier=button.outliner.editor.task
+expect prop:accessibility-identifier=button.outliner.editor.indent
