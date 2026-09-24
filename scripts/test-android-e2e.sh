@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 app_id=com.logseq.chat
 signed_out_flow=tests/e2e/android-signed-out.yaml
+local_setup_flow=tests/e2e/android-local-graph-setup.yaml
 connect_flow=tests/e2e/android-staging-connect.yaml
 capture_flow=tests/e2e/android-capture-search.yaml
 composer_flow=tests/e2e/android-composer-lifecycle.yaml
@@ -66,6 +67,14 @@ case $selector in
     needs_connection=0
     needs_clear_state=1
     needs_primary_button=1
+    ;;
+  smoke)
+    # Fresh-install smoke: bypass hosted sign-in, create a local graph, then
+    # run the capture assertions. Works without backend credentials.
+    flows=("$signed_out_flow" "$local_setup_flow" "$capture_flow")
+    needs_connection=0
+    needs_clear_state=1
+    needs_primary_button=0
     ;;
   connect)
     flows=("$connect_flow")
@@ -188,7 +197,7 @@ case $selector in
     needs_primary_button=0
     ;;
   --list)
-    echo "Modules: all signed-out connect capture composer autocomplete outliner hierarchy audio navigation graphs settings flashcards search rich-content youtube node-tag page-actions shortcuts sharing editor-regressions sharing-image"
+    echo "Modules: all signed-out smoke connect capture composer autocomplete outliner hierarchy audio navigation graphs settings flashcards search rich-content youtube node-tag page-actions shortcuts sharing editor-regressions sharing-image"
     printf '%s\n' \
       "$signed_out_flow" \
       "$connect_flow" \

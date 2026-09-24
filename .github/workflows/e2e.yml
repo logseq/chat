@@ -13,7 +13,7 @@ on:
       android_module:
         description: "Android e2e module (scripts/test-android-e2e.sh --list)"
         required: false
-        default: "capture"
+        default: "smoke"
   schedule:
     # Nightly full-suite coverage; PRs and pushes run the small smoke modules.
     - cron: "37 3 * * *"
@@ -24,7 +24,7 @@ concurrency:
 
 env:
   IOS_MODULE: ${{ inputs.ios_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
-  ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'capture') }}
+  ANDROID_MODULE: ${{ inputs.android_module || (github.event_name == 'schedule' && 'all' || 'smoke') }}
 
 jobs:
   # opam-monorepo.0.3.6 (needed for `monorepo pull`) vendors an old base whose
@@ -150,6 +150,14 @@ jobs:
     env:
       LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
       LOGSEQ_CHAT_OPAM_SWITCH: ${{ github.workspace }}
+      # SwiftPM clones lui over ssh://; rewrite to authenticated https.
+      GIT_CONFIG_COUNT: 3
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: "git@github.com:"
+      GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_1: "ssh://git@github.com/"
+      GIT_CONFIG_KEY_2: credential.helper
+      GIT_CONFIG_VALUE_2: '!f() { [ -n "$LOGSEQ_GITHUB_PAT" ] || exit 0; echo username=x-access-token; echo "password=$LOGSEQ_GITHUB_PAT"; }; f'
     steps:
       - uses: actions/checkout@v4
 

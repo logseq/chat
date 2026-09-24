@@ -1,0 +1,48 @@
+appId: com.logseq.chat
+---
+- launchApp
+- runFlow:
+    when:
+      visible:
+        id: "button.hosted-sign-in"
+    commands:
+      - tapOn:
+          id: "button.hosted-sign-in"
+      - runFlow:
+          when:
+            visible: "Use without an account"
+          commands:
+            - tapOn: "Use without an account"
+      - extendedWaitUntil:
+          visible:
+            id: "screen.graph-picker"
+          timeout: 60000
+- runFlow:
+    when:
+      visible:
+        id: "screen.graph-picker"
+    commands:
+      - tapOn:
+          id: "button.graph-add"
+      - extendedWaitUntil:
+          visible:
+            id: "field.graph-name"
+          timeout: 30000
+      - tapOn:
+          id: "field.graph-name"
+      - inputText: "android-e2e-smoke"
+      - hideKeyboard
+      - tapOn:
+          id: "toggle.graph-encryption"
+      - assertVisible:
+          id: "toggle.graph-encryption"
+          checked: false
+      - tapOn:
+          id: "button.graph-add.confirm"
+      - extendedWaitUntil:
+          visible: "android-e2e-smoke"
+          timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: "button.sidebar"
+    timeout: 60000
