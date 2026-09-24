@@ -1,12 +1,16 @@
 open Lui_protocol
 open Lui_elements
 
-let settings_language_choice_radio model_source choice_source send : t =
+let settings_language_choice_radio model_source
+    (choice_source : Model.settings_language_choice Signal.signal) send :
+    radio_el =
   let choice = Signal.sample choice_source in
   radio
     ~checked_signal:
-      (Signal.map2 Model.settings_language_choice_selected_ model_source
-         choice_source)
+      (Signal.map
+         (fun (model : Model.chat_model) ->
+           Model.settings_language_choice_selected_ model choice)
+         model_source)
     ~accessibility_identifier:
       (View_base.settings_language_choice_identifier choice)
     ~on_change:(fun _ ->
@@ -41,7 +45,7 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
           ~test:
             (Signal.map View_base.model_settings_language_menu_open_
                model_source)
-          (dropdown_menu ~anchor:"below" ~anchor_alignment:"end"
+          (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
              ~min_width:220
              ~on_dismiss:(press send Model.CloseSettingsLanguageMenu)
              [
@@ -50,7 +54,7 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
                    (Signal.map View_base.model_language_choices
                       model_source)
                  ~key:View_base.settings_language_choice_identifier
-                 ~compare:compare
+                 ~cmp:compare
                  ~mount:(fun choice_source ->
                    settings_language_choice_menu_item choice_source send);
              ]);
@@ -59,14 +63,12 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
     radio_group ~label:"Language" ~style_class:"menu"
       ~accessibility_identifier:"picker.settings.language"
       [
-        keyed
-          ~source:(Signal.map View_base.model_language_choices
-                     model_source)
+        keyed_radio
+          ~source:(Signal.map View_base.model_language_choices model_source)
           ~key:View_base.settings_language_choice_identifier
-          ~compare:compare
+          ~cmp:compare
           ~mount:(fun choice_source ->
-            settings_language_choice_radio model_source choice_source
-              send);
+            settings_language_choice_radio model_source choice_source send);
       ]
 
 let settings_appearance_control (context : Lui_ui.ui_context) model_source
@@ -86,7 +88,7 @@ let settings_appearance_control (context : Lui_ui.ui_context) model_source
           ~test:
             (Signal.map View_base.model_settings_appearance_menu_open_
                model_source)
-          (dropdown_menu ~anchor:"below" ~anchor_alignment:"end"
+          (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
              ~min_width:160
              ~on_dismiss:(press send Model.CloseSettingsAppearanceMenu)
              [
@@ -117,7 +119,7 @@ let settings_appearance_control (context : Lui_ui.ui_context) model_source
           ~test:
             (Signal.map View_base.model_settings_appearance_menu_open_
                model_source)
-          (dropdown_menu ~anchor:"below" ~anchor_alignment:"end"
+          (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
              ~min_width:160
              ~on_dismiss:(press send Model.CloseSettingsAppearanceMenu)
              [
@@ -146,7 +148,7 @@ let settings_community_link_row (context : Lui_ui.ui_context) model_source
           ~text_signal:
             (Signal.map View_base.settings_community_link_title
                link_source)
-          ~icon:"app:open-external" ~padding:0
+          ~icon:(`app "open-external") ~padding:0
           ~accessibility_identifier:
             (View_base.settings_community_link_identifier link)
           ~on_press:(fun _ ->
@@ -259,16 +261,16 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
       model_source
   in
   if Lui_ui.host context = FlutterHost then
-    row ~cross:"center" ~padding:8 ~background:"surface-container-low"
+    row ~cross:`center ~padding:8 ~background:"surface-container-low"
       ~corner_radius:12
       ~accessibility_identifier:("row.settings.tab." ^ tab)
       [
-        row ~grow:1.0 ~cross:"center" ~gap:8
+        row ~grow:1.0 ~cross:`center ~gap:8
           [
             View_base.with_label_signal label_source
               (View_base.with_string_prop_signal InlineIconName
                  selection_icon_source
-                 (button ~icon_placement:"trailing" ~variant:"ghost"
+                 (button ~icon_placement:`trailing ~variant:`ghost
                     ~disabled_signal:toggle_disabled_source
                     ~accessibility_identifier:
                       (View_base.tab_toggle_identifier tab)
@@ -277,16 +279,16 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                     ~text:title []));
             spacer [];
             if_ ~test:movement_visible_source
-              (button ~icon:"app:arrow-up" ~size:"icon"
-                 ~disabled_signal:up_disabled_source ~variant:"ghost"
+              (button ~icon:(`app "arrow-up") ~size:`icon
+                 ~disabled_signal:up_disabled_source ~variant:`ghost
                  ~label:"Move tab up"
                  ~accessibility_identifier:(View_base.tab_up_identifier tab)
                  ~on_press:(fun _ ->
                    ignore (send (Model.MoveSidebarTab (tab, -1))))
                  []);
             if_ ~test:movement_visible_source
-              (button ~icon:"app:arrow-down" ~size:"icon"
-                 ~disabled_signal:down_disabled_source ~variant:"ghost"
+              (button ~icon:(`app "arrow-down") ~size:`icon
+                 ~disabled_signal:down_disabled_source ~variant:`ghost
                  ~label:"Move tab down"
                  ~accessibility_identifier:
                    (View_base.tab_down_identifier tab)
@@ -299,10 +301,10 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
     list_item
       ~accessibility_identifier:("row.settings.tab." ^ tab)
       [
-        row ~grow:1.0 ~cross:"center" ~gap:8
+        row ~grow:1.0 ~cross:`center ~gap:8
           [
             View_base.with_label_signal label_source
-              (button ~grow:1.0 ~variant:"ghost"
+              (button ~grow:1.0 ~variant:`ghost
                  ~disabled_signal:toggle_disabled_source
                  ~accessibility_identifier:
                    (View_base.tab_toggle_identifier tab)
@@ -312,7 +314,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
             text ~value_signal:selection_glyph_source
               ~foreground:"accent" [];
             if_ ~test:movement_visible_source
-              (button ~disabled_signal:up_disabled_source ~variant:"ghost"
+              (button ~disabled_signal:up_disabled_source ~variant:`ghost
                  ~label:"Move tab up"
                  ~accessibility_identifier:(View_base.tab_up_identifier tab)
                  ~on_press:(fun _ ->
@@ -320,7 +322,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
                  ~text:"\xE2\x86\x91" []);
             if_ ~test:movement_visible_source
               (button ~disabled_signal:down_disabled_source
-                 ~variant:"ghost" ~label:"Move tab down"
+                 ~variant:`ghost ~label:"Move tab down"
                  ~accessibility_identifier:
                    (View_base.tab_down_identifier tab)
                  ~on_press:(fun _ ->
@@ -332,7 +334,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
 let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = FlutterHost then
-    column ~grow:1.0 ~cross:"stretch" ~gap:10 ~padding:16
+    column ~grow:1.0 ~cross:`stretch ~gap:10 ~padding:16
       ~accessibility_identifier:"screen.settings.tabs"
       [
         text ~style_class:"headline" ~foreground:"muted-foreground"
@@ -417,15 +419,15 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
     =
   let log_button text_signal label identifier action : t =
     View_base.with_label label
-      (button ~text_signal ~variant:"secondary"
+      (button ~text_signal ~variant:`secondary
          ~accessibility_identifier:identifier
          ~on_press:(press send action)
          [])
   in
   if Lui_ui.host context = FlutterHost then
-    column ~gap:8 ~cross:"stretch"
+    column ~gap:8 ~cross:`stretch
       [
-        toolbar ~orientation:"horizontal" ~toolbar_gap:8
+        toolbar ~orientation:`horizontal ~toolbar_gap:8
           ~label:"Log filters"
           ~accessibility_identifier:"toolbar.log-filters.primary"
           [
@@ -438,7 +440,7 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
               "Toggle log ordering" "button.log-order"
               Model.ToggleRuntimeLogOrder;
           ];
-        toolbar ~orientation:"horizontal" ~toolbar_gap:8
+        toolbar ~orientation:`horizontal ~toolbar_gap:8
           ~label:"Log actions"
           ~accessibility_identifier:"toolbar.log-filters.secondary"
           [
@@ -446,14 +448,14 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
               (Signal.map View_base.runtime_log_source_label model_source)
               "Toggle log source" "button.log-source"
               Model.ToggleRuntimeLogSource;
-            button ~variant:"secondary"
+            button ~variant:`secondary
               ~accessibility_identifier:"button.log-copy"
               ~on_press:(press send Model.CopyRuntimeLog)
               ~text:"Copy" [];
           ];
       ]
   else
-    toolbar ~orientation:"horizontal" ~style_class:"scroll" ~toolbar_gap:8
+    toolbar ~orientation:`horizontal ~style_class:"scroll" ~toolbar_gap:8
       ~label:"Log filters"
       [
         log_button
@@ -468,7 +470,7 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
           (Signal.map View_base.runtime_log_source_label model_source)
           "Toggle log source" "button.log-source"
           Model.ToggleRuntimeLogSource;
-        button ~variant:"secondary"
+        button ~variant:`secondary
           ~accessibility_identifier:"button.log-copy"
           ~on_press:(press send Model.CopyRuntimeLog)
           ~text:"Copy" [];
@@ -491,7 +493,7 @@ let runtime_log_screen (context : Lui_ui.ui_context) model_source send : t =
                 ~source:(Signal.map View_base.runtime_log_records
                            model_source)
                 ~key:View_base.runtime_log_record_identifier
-                ~compare:compare ~mount:runtime_log_row;
+                ~cmp:compare ~mount:runtime_log_row;
             ];
         ];
     ]
@@ -511,7 +513,7 @@ let settings_toggle_auto_correction send input_event =
 let settings_general_card (context : Lui_ui.ui_context) model_source send :
     t =
   if Lui_ui.host context = FlutterHost then
-    column ~gap:12 ~cross:"stretch" ~padding:16
+    column ~gap:12 ~cross:`stretch ~padding:16
       ~background:"surface-container-low" ~corner_radius:14
       ~accessibility_identifier:"layout.settings.general-card"
       [
@@ -523,7 +525,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
           ~accessibility_identifier:"link.settings.tabs"
           ~on_press:(press send Model.OpenSettingsTabs)
           [
-            row ~grow:1.0 ~cross:"center" ~gap:12
+            row ~grow:1.0 ~cross:`center ~gap:12
               [
                 column ~grow:1.0 ~gap:2
                   ~accessibility_identifier:"layout.settings.tabs-copy"
@@ -538,7 +540,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
                       ~accessibility_identifier:
                         "text.settings.tabs.selection" [];
                   ];
-                icon ~name:"app:chevron-right" ~width:20 ~height:20
+                icon ~name:(`app "chevron-right") ~width:20 ~height:20
                   ~foreground:"muted-foreground"
                   ~accessibility_identifier:"icon.settings.tabs" [];
               ];
@@ -548,14 +550,14 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
     column ~gap:12 ~padding:16 ~background:"surface" ~corner_radius:14
       ~accessibility_identifier:"layout.settings.general-card"
       [
-        row ~cross:"center"
+        row ~cross:`center
           [
             text ~value:"Theme" [];
             spacer [];
             settings_appearance_control context model_source send;
           ];
         separator [];
-        row ~cross:"center"
+        row ~cross:`center
           [
             text ~value:"Language" [];
             spacer [];
@@ -566,7 +568,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
           ~accessibility_identifier:"link.settings.tabs"
           ~on_press:(press send Model.OpenSettingsTabs)
           [
-            row ~grow:1.0 ~cross:"center"
+            row ~grow:1.0 ~cross:`center
               [
                 text ~value:"Tabs" [];
                 spacer [];
@@ -584,7 +586,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
 let settings_editor_card (context : Lui_ui.ui_context) spell_check_source
     auto_correction_source send : t =
   if Lui_ui.host context = FlutterHost then
-    column ~gap:0 ~cross:"stretch" ~padding:16
+    column ~gap:0 ~cross:`stretch ~padding:16
       ~background:"surface-container-low" ~corner_radius:14
       [
         switch_ ~checked_signal:spell_check_source
@@ -611,7 +613,7 @@ let settings_editor_card (context : Lui_ui.ui_context) spell_check_source
 
 let settings_export_row (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = FlutterHost then
-    list_item ~icon:"app:download" ~padding:0
+    list_item ~icon:(`app "download") ~padding:0
       ~accessibility_identifier:"button.export-graph-database"
       ~on_press:(press send Model.ExportGraphDatabase)
       ~text:"Export Graph SQLite DB" []
@@ -623,7 +625,7 @@ let settings_export_row (context : Lui_ui.ui_context) send : t =
 
 let settings_runtime_log_row (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = FlutterHost then
-    list_item ~icon:"app:terminal" ~padding:0
+    list_item ~icon:(`app "terminal") ~padding:0
       ~accessibility_identifier:"button.runtime-log"
       ~on_press:(press send Model.OpenRuntimeLog)
       ~text:"Check log" []
@@ -634,7 +636,7 @@ let settings_runtime_log_row (context : Lui_ui.ui_context) send : t =
 
 let settings_sign_out_row (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = FlutterHost then
-    list_item ~icon:"app:sign-out" ~padding:0
+    list_item ~icon:(`app "sign-out") ~padding:0
       ~accessibility_identifier:"button.sign-out"
       ~on_press:(press send Model.SignOut)
       ~text:"Sign Out" []
@@ -745,7 +747,7 @@ let settings_screen (context : Lui_ui.ui_context) model_source send : t =
                   (Signal.map View_base.model_community_links
                      model_source)
                 ~key:View_base.settings_community_link_identifier
-                ~compare:compare
+                ~cmp:compare
                 ~mount:(fun link_source ->
                   settings_community_link_row context model_source
                     link_source send);
@@ -770,7 +772,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
               ~background:"surface-container-low"
               ~accessibility_identifier:"toolbar.settings.actions"
               [
-                button ~variant:"secondary" ~grow:1.0
+                button ~variant:`secondary ~grow:1.0
                   ~accessibility_identifier:"button.connection.cancel"
                   ~on_press:(press send Model.BackSettings)
                   ~text:"Back to Settings" [];
@@ -783,7 +785,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
       ~on_dismiss:(press send Model.BackSettings)
       [
         settings_tabs_screen context model_source send;
-        toolbar ~orientation:"horizontal" ~label:"Tabs actions"
+        toolbar ~orientation:`horizontal ~label:"Tabs actions"
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.settings.actions"
           [
@@ -800,17 +802,17 @@ let runtime_log_actions (context : Lui_ui.ui_context) send : t =
       ~background:"surface-container-low"
       ~accessibility_identifier:"toolbar.settings.actions"
       [
-        button ~variant:"secondary" ~grow:1.0
+        button ~variant:`secondary ~grow:1.0
           ~accessibility_identifier:"button.log-refresh"
           ~on_press:(press send Model.RefreshRuntimeLog)
           ~text:"Refresh" [];
-        button ~variant:"primary" ~grow:1.0
+        button ~variant:`primary ~grow:1.0
           ~accessibility_identifier:"button.connection.apply"
           ~on_press:(press send Model.DismissRuntimeLog)
           ~text:"Done" [];
       ]
   else
-    toolbar ~orientation:"horizontal" ~label:"Log actions"
+    toolbar ~orientation:`horizontal ~label:"Log actions"
       ~style_class:"navigation-actions"
       ~accessibility_identifier:"toolbar.settings.actions"
       [
@@ -861,11 +863,11 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
               ~background:"surface-container-low"
               ~accessibility_identifier:"toolbar.settings.actions"
               [
-                button ~variant:"secondary" ~grow:1.0
+                button ~variant:`secondary ~grow:1.0
                   ~accessibility_identifier:"button.connection.cancel"
                   ~on_press:(press send Model.DismissSettings)
                   ~text:"Cancel" [];
-                button ~variant:"primary" ~grow:1.0
+                button ~variant:`primary ~grow:1.0
                   ~accessibility_identifier:"button.connection.apply"
                   ~disabled_signal:
                     (Signal.map View_base.settings_apply_disabled_
@@ -887,7 +889,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
         if_
           ~test:(Signal.map View_base.runtime_log_visible_ model_source)
           (runtime_log_sheet context model_source send);
-        toolbar ~orientation:"horizontal" ~label:"Settings actions"
+        toolbar ~orientation:`horizontal ~label:"Settings actions"
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.settings.actions"
           [
@@ -942,11 +944,11 @@ let sync_status_sheet model_source send : t =
   let sync_row identifier label value_signal : t =
     list_item ~accessibility_identifier:identifier
       [
-        row ~grow:1.0 ~cross:"center" ~main:"space_between"
+        row ~grow:1.0 ~cross:`center ~main:`space_between
           [
             text ~value:label [];
             text ~value_signal ~foreground:"secondary"
-              ~text_alignment:"end" [];
+              ~text_alignment:`end_ [];
           ];
       ]
   in
@@ -965,26 +967,26 @@ let sync_status_sheet model_source send : t =
             (Signal.map View_base.sync_connection_label model_source);
           list_item ~accessibility_identifier:"row.sync.pending"
             [
-              row ~grow:1.0 ~cross:"center" ~main:"space_between"
+              row ~grow:1.0 ~cross:`center ~main:`space_between
                 [
                   text ~value:"Local changes" [];
                   text
                     ~value_signal:
                       (Signal.map View_base.sync_pending_label
                          model_source)
-                    ~foreground:"secondary" ~text_alignment:"end"
+                    ~foreground:"secondary" ~text_alignment:`end_
                     ~accessibility_identifier:"sync.pending" [];
                 ];
             ];
           list_item ~accessibility_identifier:"row.sync.cursor"
             [
-              row ~grow:1.0 ~cross:"center" ~main:"space_between"
+              row ~grow:1.0 ~cross:`center ~main:`space_between
                 [
                   text ~value:"Server cursor" [];
                   text
                     ~value_signal:
                       (Signal.map View_base.sync_cursor_label model_source)
-                    ~foreground:"secondary" ~text_alignment:"end"
+                    ~foreground:"secondary" ~text_alignment:`end_
                     ~accessibility_identifier:"sync.cursor" [];
                 ];
             ];
@@ -1006,7 +1008,7 @@ let sync_status_sheet model_source send : t =
             ~on_press:(press send Model.SyncNow)
             ~text:"Sync now" [];
         ];
-      toolbar ~orientation:"horizontal" ~label:"Sync status actions"
+      toolbar ~orientation:`horizontal ~label:"Sync status actions"
         ~style_class:"navigation-actions"
         ~accessibility_identifier:"toolbar.sync.actions"
         [

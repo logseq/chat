@@ -43,7 +43,7 @@ let graph_row (context : Lui_ui.ui_context) model_source graph_source
               (Signal.map2 View_base.graph_row_local_ model_source
                  graph_source)
             (View_base.with_string_prop VariantValue "destructive"
-              (menu_item ~icon:"app:trash"
+              (menu_item ~icon:(`app "trash")
                ~disabled_signal:
                  (Signal.map2 View_base.graph_delete_active_ model_source
                     graph_source)
@@ -135,7 +135,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
         column ~grow:1.0 ~gap:24
           ~accessibility_identifier:"layout.graph-create.sheet"
           [
-            column ~gap:20 ~cross:"stretch" ~style_class:"form"
+            column ~gap:20 ~cross:`stretch ~style_class:"form"
               ~accessibility_identifier:"form.graph-create"
               [
                 text_field
@@ -179,17 +179,17 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                      []);
               ];
             spacer ~grow:1.0 [];
-            row ~main:"end" ~cross:"center"
+            row ~main:`end_ ~cross:`center
               [
-                toolbar ~orientation:"horizontal" ~toolbar_gap:12
+                toolbar ~orientation:`horizontal ~toolbar_gap:12
                   ~label:"Graph creation actions"
                   ~accessibility_identifier:"toolbar.graph-create"
                   [
-                    button ~variant:"ghost"
+                    button ~variant:`ghost
                       ~accessibility_identifier:"button.graph-add.cancel"
                       ~on_press:(press send Model.DismissCreateGraph)
                       ~text:"Cancel" [];
-                    button ~variant:"primary"
+                    button ~variant:`primary
                       ~accessibility_identifier:"button.graph-add.confirm"
                       ~disabled_signal:
                         (Signal.map View_base.graph_create_disabled_
@@ -257,7 +257,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
                  ~style_class:"footnote" ~foreground:"destructive"
                  ~accessibility_identifier:"text.graph-create.error" []);
           ];
-        toolbar ~orientation:"horizontal" ~label:"Graph creation actions"
+        toolbar ~orientation:`horizontal ~label:"Graph creation actions"
           ~style_class:"navigation-actions"
           ~accessibility_identifier:"toolbar.graph-create"
           [
@@ -281,11 +281,11 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
       ~accessibility_identifier:"dialog.graph-delete"
       ~on_dismiss:(press send Model.CancelDeleteGraph)
       [
-        column ~gap:16 ~cross:"stretch"
+        column ~gap:16 ~cross:`stretch
           [
-            row ~gap:12 ~cross:"center"
+            row ~gap:12 ~cross:`center
               [
-                icon ~name:"app:warning" ~width:28 ~height:28
+                icon ~name:(`app "warning") ~width:28 ~height:28
                   ~foreground:"destructive"
                   ~accessibility_identifier:"icon.graph-delete-warning" [];
                 text
@@ -302,18 +302,18 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
                  sure you have a backup."
               [];
             spacer ~grow:1.0 [];
-            row ~main:"end"
+            row ~main:`end_
               [
-                toolbar ~orientation:"horizontal" ~toolbar_gap:12
+                toolbar ~orientation:`horizontal ~toolbar_gap:12
                   ~label:"Graph deletion actions"
                   ~accessibility_identifier:"toolbar.graph-delete"
                   [
-                    button ~variant:"ghost"
+                    button ~variant:`ghost
                       ~accessibility_identifier:
                         "button.graph-delete.cancel"
                       ~on_press:(press send Model.CancelDeleteGraph)
                       ~text:"Cancel" [];
-                    button ~variant:"destructive"
+                    button ~variant:`destructive
                       ~accessibility_identifier:
                         "button.graph-delete.confirm"
                       ~on_press:(press send Model.ConfirmDeleteGraph)
@@ -361,7 +361,7 @@ let graph_picker_overflow_menu send : t =
    node
 
 let graph_picker_error_banner model_source : t =
-  alert ~variant:"destructive" ~accessibility_identifier:"error.banner"
+  alert ~variant:`destructive ~accessibility_identifier:"error.banner"
     ~padding:14 ~corner_radius:16 ~border_width:0
     [
       column ~gap:4
@@ -407,7 +407,7 @@ let graph_password_sheet model_source send : t =
                ~style_class:"footnote" ~foreground:"destructive"
                ~accessibility_identifier:"text.graph-unlock-error" []);
         ];
-      toolbar ~orientation:"horizontal" ~label:"Graph unlock actions"
+      toolbar ~orientation:`horizontal ~label:"Graph unlock actions"
         ~style_class:"navigation-actions"
         ~accessibility_identifier:"toolbar.graph-unlock"
         [
@@ -431,13 +431,13 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
         row ~gap:12 ~padding:16
           ~accessibility_identifier:"row.graphs.actions"
           [
-            button ~icon:"app:sync-status" ~variant:"secondary" ~grow:1.0
+            button ~icon:(`app "sync-status") ~variant:`secondary ~grow:1.0
               ~accessibility_identifier:"button.graphs.refresh"
               ~disabled_signal:
                 (Signal.map Model.graph_refresh_active_ model_source)
               ~on_press:(press send Model.RefreshGraphs)
               ~text:"Refresh" [];
-            button ~icon:"app:add" ~variant:"primary" ~grow:1.0
+            button ~icon:(`app "add") ~variant:`primary ~grow:1.0
               ~accessibility_identifier:"button.graph-add"
               ~on_press:(press send Model.OpenCreateGraph)
               ~text:"Add graph" [];
@@ -463,7 +463,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
              ]);
         keyed
           ~source:(Signal.map View_base.local_graphs model_source)
-          ~key:View_base.graph_identifier ~compare:compare
+          ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source true send);
         if_
@@ -472,14 +472,14 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
              [ heading ~level:5 ~value:"Remote graphs" [] ]);
         keyed
           ~source:(Signal.map View_base.remote_graphs model_source)
-          ~key:View_base.graph_identifier ~compare:compare
+          ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source false send);
       ]
   else
     list ~accessibility_identifier:"screen.graphs" ~gap:4
       [
-        list_item ~icon:"app:refresh" ~min_height:44
+        list_item ~icon:(`app "refresh") ~min_height:44
           ~accessibility_identifier:"button.graphs.refresh"
           ~disabled_signal:
             (Signal.map Model.graph_refresh_active_ model_source)
@@ -505,7 +505,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
           (text ~foreground:"secondary" ~value:"No local graphs" []);
         keyed
           ~source:(Signal.map View_base.local_graphs model_source)
-          ~key:View_base.graph_identifier ~compare:compare
+          ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source true send);
         if_
@@ -515,13 +515,13 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
              ~value:"Remote graphs" []);
         keyed
           ~source:(Signal.map View_base.remote_graphs model_source)
-          ~key:View_base.graph_identifier ~compare:compare
+          ~key:View_base.graph_identifier ~cmp:compare
           ~mount:(fun graph_source ->
             graph_list_row context model_source graph_source false send);
       ]
 
 let flutter_graph_picker_loading_state () : t =
-  column ~grow:1.0 ~main:"center" ~cross:"center" ~gap:12
+  column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
     ~accessibility_identifier:"loading.graph-picker"
     [
       spinner ~accessibility_identifier:"graphs.loading" [];
@@ -530,24 +530,24 @@ let flutter_graph_picker_loading_state () : t =
     ]
 
 let flutter_graph_picker_empty_state send : t =
-  column ~grow:1.0 ~main:"center" ~cross:"stretch"
+  column ~grow:1.0 ~main:`center ~cross:`stretch
     [
-      column ~cross:"center" ~gap:16
+      column ~cross:`center ~gap:16
         ~accessibility_identifier:"empty.graph-picker"
         [
-          icon ~name:"app:graph-remote" ~width:48 ~height:48
+          icon ~name:(`app "graph-remote") ~width:48 ~height:48
             ~foreground:"primary" [];
           heading ~level:3 ~value:"No sync graphs yet" [];
-          text ~foreground:"muted-foreground" ~text_alignment:"center"
+          text ~foreground:"muted-foreground" ~text_alignment:`center
             ~value:
               "Create a graph to start capturing and syncing notes on \
                this device."
             [];
-          button ~icon:"app:add" ~variant:"primary"
+          button ~icon:(`app "add") ~variant:`primary
             ~accessibility_identifier:"button.graph-add"
             ~on_press:(press send Model.OpenCreateGraph)
             ~text:"Add sync graph" [];
-          button ~icon:"app:sync-status" ~variant:"ghost"
+          button ~icon:(`app "sync-status") ~variant:`ghost
             ~foreground:"foreground"
             ~accessibility_identifier:"button.graphs.refresh"
             ~on_press:(press send Model.RefreshGraphs)
@@ -559,7 +559,7 @@ let flutter_graph_picker_catalog (context : Lui_ui.ui_context) model_source
     send : t =
   column ~grow:1.0 ~gap:16
     [
-      button ~icon:"app:add" ~variant:"primary"
+      button ~icon:(`app "add") ~variant:`primary
         ~accessibility_identifier:"button.graph-add"
         ~on_press:(press send Model.OpenCreateGraph)
         ~text:"Add sync graph" [];
@@ -569,7 +569,7 @@ let flutter_graph_picker_catalog (context : Lui_ui.ui_context) model_source
             [
               keyed
                 ~source:(Signal.map View_base.model_graphs model_source)
-                ~key:View_base.graph_identifier ~compare:compare
+                ~key:View_base.graph_identifier ~cmp:compare
                 ~mount:(fun graph_source ->
                   graph_row context model_source graph_source false send);
             ];
@@ -579,10 +579,10 @@ let flutter_graph_picker_catalog (context : Lui_ui.ui_context) model_source
 let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
     =
   if Lui_ui.host context = FlutterHost then
-    column ~accessibility_identifier:"screen.graph-picker" ~main:"start"
-      ~cross:"stretch" ~grow:1.0 ~gap:16 ~padding:24
+    column ~accessibility_identifier:"screen.graph-picker" ~main:`start
+      ~cross:`stretch ~grow:1.0 ~gap:16 ~padding:24
       [
-        row ~main:"space_between" ~cross:"center"
+        row ~main:`space_between ~cross:`center
           [
             heading ~level:3 ~value:"Choose a graph"
               ~accessibility_identifier:"title.graph-picker" [];
@@ -608,10 +608,10 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
           (flutter_graph_picker_catalog context model_source send);
       ]
   else
-    column ~accessibility_identifier:"screen.graph-picker" ~main:"start"
-      ~grow:1.0 ~container_relative_frame:"vertical" ~gap:20 ~padding:24
+    column ~accessibility_identifier:"screen.graph-picker" ~main:`start
+      ~grow:1.0 ~container_relative_frame:`vertical ~gap:20 ~padding:24
       [
-        row ~main:"space_between" ~cross:"center"
+        row ~main:`space_between ~cross:`center
           [
             heading ~level:3 ~value:"Choose a graph" [];
             graph_picker_overflow_menu send;
@@ -620,7 +620,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
           ~value:
             "Select a Logseq graph to download and sync on this device."
           [];
-        button ~variant:"ghost" ~foreground:"foreground"
+        button ~variant:`ghost ~foreground:"foreground"
           ~accessibility_identifier:"button.graph-add"
           ~on_press:(press send Model.OpenCreateGraph)
           ~text:"Add sync graph" [];
@@ -634,7 +634,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
         if_
           ~test:
             (Signal.map View_base.empty_graphs_refreshable_ model_source)
-          (button ~variant:"ghost" ~foreground:"foreground"
+          (button ~variant:`ghost ~foreground:"foreground"
              ~accessibility_identifier:"button.graphs.refresh"
              ~on_press:(press send Model.RefreshGraphs)
              ~text:"Refresh graphs" []);
@@ -644,7 +644,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
               [
                 keyed
                   ~source:(Signal.map View_base.model_graphs model_source)
-                  ~key:View_base.graph_identifier ~compare:compare
+                  ~key:View_base.graph_identifier ~cmp:compare
                   ~mount:(fun graph_source ->
                     graph_row context model_source graph_source false
                       send);

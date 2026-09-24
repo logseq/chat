@@ -58,7 +58,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
               View_base.outliner_collapse_icon_name
                 current_row.is_collapsed)
             row_source)
-         (button ~variant:"ghost" ~width:28 ~height:28
+         (button ~variant:`ghost ~width:28 ~height:28
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
@@ -76,8 +76,8 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
               if current_row.is_collapsed then "app:disclosure-right"
               else "app:disclosure-down")
             row_source)
-         (button ~size:"icon" ~style_class:"body-line"
-            ~foreground:"secondary" ~variant:"ghost" ~width:28 ~height:24
+         (button ~size:`icon ~style_class:"body-line"
+            ~foreground:"secondary" ~variant:`ghost ~width:28 ~height:24
             ~accessibility_identifier:
               (View_base.outliner_collapse_identifier current_row)
             ~on_press:(fun _ ->
@@ -98,7 +98,7 @@ let breadcrumb_button breadcrumb_source search_open send : t =
   let breadcrumb = Signal.sample breadcrumb_source in
   button
     ~text_signal:(reactive View_base.breadcrumb_title breadcrumb_source)
-    ~variant:"ghost" ~style_class:"caption" ~foreground:"muted-foreground"
+    ~variant:`ghost ~style_class:"caption" ~foreground:"muted-foreground"
     ~accessibility_identifier:(View_base.breadcrumb_identifier breadcrumb)
     ~on_press:(fun _ ->
       ignore
@@ -116,23 +116,23 @@ let node_breadcrumb_button model_source breadcrumb_source send : t =
   breadcrumb_button breadcrumb_source search_open send
 
 let node_breadcrumbs model_source send : t =
-  breadcrumb ~gap:5 ~main:"start"
+  breadcrumb ~gap:5 ~main:`start
     ~accessibility_identifier:"breadcrumb.node"
     [
       keyed
         ~source:(Signal.map View_base.active_node_breadcrumbs model_source)
-        ~key:View_base.breadcrumb_identifier ~compare:compare
+        ~key:View_base.breadcrumb_identifier ~cmp:compare
         ~mount:(fun breadcrumb_source ->
           node_breadcrumb_button model_source breadcrumb_source send);
     ]
 
 let related_row_breadcrumbs row_source send : t =
-  breadcrumb ~gap:5 ~main:"start"
+  breadcrumb ~gap:5 ~main:`start
     ~accessibility_identifier:"breadcrumb.related-blocks"
     [
       keyed
         ~source:(Signal.map View_base.outliner_row_breadcrumbs row_source)
-        ~key:View_base.breadcrumb_identifier ~compare:compare
+        ~key:View_base.breadcrumb_identifier ~cmp:compare
         ~mount:(fun breadcrumb_source ->
           breadcrumb_button breadcrumb_source false send);
     ]
@@ -143,7 +143,7 @@ let outliner_tag tag_source send : t =
     (reactive View_base.outliner_tag_title tag_source)
     (button
        ~text_signal:(reactive View_base.outliner_tag_title tag_source)
-       ~style_class:"caption" ~variant:"ghost" ~foreground:"accent"
+       ~style_class:"caption" ~variant:`ghost ~foreground:"accent"
        ~accessibility_identifier:(View_base.outliner_tag_identifier tag)
        ~on_press:(fun _ ->
          ignore
@@ -158,7 +158,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
   if (not search_open) && View_base.outliner_row_journal_ current current_row
   then
     if Lui_ui.host context = FlutterHost then
-      row ~width:24 ~height:24 ~main:"center" ~cross:"center"
+      row ~width:24 ~height:24 ~main:`center ~cross:`center
         [
           box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
             ~accessibility_identifier:
@@ -167,7 +167,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
             [];
         ]
     else
-      icon ~name:"app:outliner-bullet" ~style_class:"body-line"
+      icon ~name:(`app "outliner-bullet") ~style_class:"body-line"
         ~foreground:"border" ~width:24 ~height:24
         ~accessibility_identifier_signal:
           (reactive View_base.outliner_row_zoom_identifier row_source)
@@ -175,7 +175,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
   else if Lui_ui.host context = FlutterHost then
     stack ~width:24 ~height:24
       [
-        row ~width:24 ~height:24 ~main:"center" ~cross:"center"
+        row ~width:24 ~height:24 ~main:`center ~cross:`center
           [
             box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
               ~accessibility_identifier:
@@ -185,7 +185,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
           ];
         View_base.with_label_signal
           (reactive View_base.outliner_row_zoom_label row_source)
-          (button ~variant:"ghost" ~width:24 ~height:24
+          (button ~variant:`ghost ~width:24 ~height:24
              ~accessibility_identifier_signal:
                (reactive View_base.outliner_row_zoom_identifier
                   row_source)
@@ -203,8 +203,8 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
   else
     View_base.with_label_signal
       (reactive View_base.outliner_row_zoom_label row_source)
-      (button ~icon:"app:outliner-bullet" ~size:"icon"
-         ~style_class:"body-line" ~variant:"ghost" ~foreground:"border"
+      (button ~icon:(`app "outliner-bullet") ~size:`icon
+         ~style_class:"body-line" ~variant:`ghost ~foreground:"border"
          ~width:24 ~height:24
          ~accessibility_identifier_signal:
            (reactive View_base.outliner_row_zoom_identifier row_source)
@@ -221,7 +221,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
 
 let outliner_status_icon identifier test name row_source : t =
   if_ ~test:(Signal.map test row_source)
-    (icon ~name ~size:"lg" ~width:22 ~height:22 ~foreground:"foreground"
+    (icon ~name ~size:`lg ~width:22 ~height:22 ~foreground:"foreground"
        ~accessibility_identifier:identifier [])
 
 let outliner_status_control (context : Lui_ui.ui_context) model_source
@@ -232,7 +232,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
       [
         keyed
           ~source:(Signal.map View_base.model_task_statuses model_source)
-          ~key:View_base.task_status_identifier ~compare:compare
+          ~key:View_base.task_status_identifier ~cmp:compare
           ~mount:(fun status_source ->
             View_composer.outliner_task_status_row
               (View_base.outliner_row_uuid current_row) status_source send);
@@ -241,7 +241,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
   if Lui_ui.host context = FlutterHost then
     stack ~width:24 ~height:24
       [
-        row ~width:24 ~height:24 ~main:"center" ~cross:"center"
+        row ~width:24 ~height:24 ~main:`center ~cross:`center
           [
             stack ~width:22 ~height:22
               [
@@ -249,37 +249,37 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
                   ("outliner.task-status-icon."
                    ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_backlog_
-                  "app:task-backlog" row_source;
+                  (`app "task-backlog") row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
                    ^ View_base.outliner_row_uuid current_row)
-                  View_base.outliner_task_status_todo_ "app:task-todo"
+                  View_base.outliner_task_status_todo_ (`app "task-todo")
                   row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
                    ^ View_base.outliner_row_uuid current_row)
-                  View_base.outliner_task_status_doing_ "app:task-doing"
+                  View_base.outliner_task_status_doing_ (`app "task-doing")
                   row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
                    ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_review_
-                  "app:task-review" row_source;
+                  (`app "task-review") row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
                    ^ View_base.outliner_row_uuid current_row)
-                  View_base.outliner_task_status_done_ "app:task-done"
+                  View_base.outliner_task_status_done_ (`app "task-done")
                   row_source;
                 outliner_status_icon
                   ("outliner.task-status-icon."
                    ^ View_base.outliner_row_uuid current_row)
                   View_base.outliner_task_status_canceled_
-                  "app:task-canceled" row_source;
+                  (`app "task-canceled") row_source;
               ];
           ];
         View_base.with_label_signal
           (reactive View_base.outliner_row_status_title row_source)
-          (button ~variant:"ghost" ~size:"icon" ~width:24 ~height:24
+          (button ~variant:`ghost ~size:`icon ~width:24 ~height:24
              ~accessibility_identifier:"button.block-task-status"
              [ status_menu ]);
       ]
@@ -288,8 +288,8 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
       (reactive View_base.outliner_row_status_title row_source)
       (View_base.with_string_prop_signal InlineIconName
          (reactive View_base.outliner_task_status_icon row_source)
-         (button ~variant:"ghost" ~style_class:"body-line"
-            ~foreground:"secondary" ~size:"icon" ~width:22 ~height:24
+         (button ~variant:`ghost ~style_class:"body-line"
+            ~foreground:"secondary" ~size:`icon ~width:22 ~height:24
             ~accessibility_identifier:"button.block-task-status"
             [ status_menu ]))
 
@@ -342,12 +342,12 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
   let sync_failed_source =
     reactive View_base.outliner_row_sync_failed_ row_source
   in
-  row ~gap:7 ~cross:"start" ~grow:1.0
+  row ~gap:7 ~cross:`start ~grow:1.0
     [
       if_ ~test:has_status_source
-        (column ~cross:"start"
+        (column ~cross:`start
            [ outliner_status_control context model_source row_source send ]);
-      column ~grow:1.0 ~cross:"start"
+      column ~grow:1.0 ~cross:`start
         [
           if_ ~test:editing_source
             (outliner_editor_view block_id_source editing_title_source
@@ -362,7 +362,7 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
                  keyed
                    ~source:
                      (Signal.map View_base.outliner_row_tags row_source)
-                   ~key:View_base.outliner_tag_identifier ~compare:compare
+                   ~key:View_base.outliner_tag_identifier ~cmp:compare
                    ~mount:(fun tag_source -> outliner_tag tag_source send);
                ]);
           if_ ~test:sync_failed_source
@@ -373,13 +373,13 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
                ~value:"Sync failed" []);
         ];
       if_ ~test:has_children_source
-        (column ~cross:"start"
+        (column ~cross:`start
            [ outliner_collapse_button context row_source send ]);
     ]
 
 let outliner_row_content context model_source retained_row_source
     row_source send search_open : t =
-  row ~gap:0 ~cross:"start" ~padding_vertical:5
+  row ~gap:0 ~cross:`start ~padding_vertical:5
     [
       outliner_indent_view
         (reactive View_base.outliner_row_indent row_source);
@@ -410,7 +410,7 @@ let outliner_row (context : Lui_ui.ui_context) model_source
            (reactive View_base.outliner_row_identifier row_source)
          ~padding:0 ~corner_radius:10
          [
-           row ~gap:0 ~cross:"start" ~padding_vertical:5
+           row ~gap:0 ~cross:`start ~padding_vertical:5
           [
             outliner_indent_view
               (reactive View_base.outliner_row_indent row_source);
@@ -525,14 +525,14 @@ let outliner_first_journal_section (context : Lui_ui.ui_context)
         keyed
           ~source:(Signal.map View_rows.first_journal_retained_rows
                      model_source)
-          ~key:View_rows.retained_row_identifier ~compare:compare
+          ~key:View_rows.retained_row_identifier ~cmp:compare
           ~mount:(fun retained_row_source ->
             outliner_entry context model_source retained_row_source
               (reactive View_rows.retained_row_value retained_row_source)
               send);
       ]
   else
-    column ~container_relative_frame:"min-vertical"
+    column ~container_relative_frame:`min_vertical
       ~container_relative_frame_inset:136
       ~accessibility_identifier:
         (View_rows.first_journal_section_identifier
@@ -541,7 +541,7 @@ let outliner_first_journal_section (context : Lui_ui.ui_context)
         keyed
           ~source:(Signal.map View_rows.first_journal_retained_rows
                      model_source)
-          ~key:View_rows.retained_row_identifier ~compare:compare
+          ~key:View_rows.retained_row_identifier ~cmp:compare
           ~mount:(fun retained_row_source ->
             outliner_entry context model_source retained_row_source
               (reactive View_rows.retained_row_value retained_row_source)
@@ -549,7 +549,7 @@ let outliner_first_journal_section (context : Lui_ui.ui_context)
       ]
 
 let toolbar_button icon label identifier action send : t =
-  button ~icon ~variant:"ghost" ~size:"icon" ~width:48 ~height:48
+  button ~icon ~variant:`ghost ~size:`icon ~width:48 ~height:48
     ~foreground:"muted-foreground" ~label ~accessibility_identifier:identifier
     ~on_press:(fun _ ->
       ignore (send (Model.PerformOutlinerToolbarAction action)))
@@ -561,56 +561,56 @@ let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
       ~background:"surface-container-high" ~corner_radius:20
       ~accessibility_identifier:"surface.outliner.selection-toolbar"
       [
-        toolbar ~orientation:"horizontal" ~label:"Outliner selection"
+        toolbar ~orientation:`horizontal ~label:"Outliner selection"
           ~accessibility_identifier:"toolbar.outliner.selection"
           ~style_class:"scroll-leading" ~toolbar_gap:4
           [
-            toolbar_button "app:toolbar-copy" "Copy"
+            toolbar_button (`app "toolbar-copy") "Copy"
               "button.outliner.selection.copy" "copy" send;
-            toolbar_button "app:toolbar-outdent" "Outdent"
+            toolbar_button (`app "toolbar-outdent") "Outdent"
               "button.outliner.selection.outdent" "outdent" send;
-            toolbar_button "app:toolbar-indent" "Indent"
+            toolbar_button (`app "toolbar-indent") "Indent"
               "button.outliner.selection.indent" "indent" send;
-            toolbar_button "app:toolbar-delete" "Delete"
+            toolbar_button (`app "toolbar-delete") "Delete"
               "button.outliner.selection.delete" "delete" send;
-            toolbar_button "app:toolbar-copy-reference" "Copy reference"
+            toolbar_button (`app "toolbar-copy-reference") "Copy reference"
               "button.outliner.selection.copyReference" "copyReference"
               send;
-            toolbar_button "app:toolbar-copy-url" "Copy URL"
+            toolbar_button (`app "toolbar-copy-url") "Copy URL"
               "button.outliner.selection.copyURL" "copyURL" send;
-            toolbar_button "app:toolbar-unselect" "Unselect"
+            toolbar_button (`app "toolbar-unselect") "Unselect"
               "button.outliner.selection.unselect" "unselect" send;
           ];
       ]
   else
     let apple_button icon label identifier action : t =
-      button ~icon ~variant:"ghost" ~width:58 ~height:46
-        ~icon_placement:"top" ~label
+      button ~icon ~variant:`ghost ~width:58 ~height:46
+        ~icon_placement:`top ~label
         ~accessibility_identifier:identifier
         ~on_press:(fun _ ->
           ignore (send (Model.PerformOutlinerToolbarAction action)))
         ~text:label []
     in
     View_base.with_liquid_glass "capsule"
-      (toolbar ~orientation:"horizontal" ~label:"Outliner selection"
+      (toolbar ~orientation:`horizontal ~label:"Outliner selection"
          ~accessibility_identifier:"toolbar.outliner.selection"
          ~style_class:"scroll-leading leading-inset-12"
          ~toolbar_gap:6
       [
-        apple_button "app:toolbar-copy" "Copy"
+        apple_button (`app "toolbar-copy") "Copy"
           "button.outliner.selection.copy" "copy";
-        apple_button "app:toolbar-outdent" "Outdent"
+        apple_button (`app "toolbar-outdent") "Outdent"
           "button.outliner.selection.outdent" "outdent";
-        apple_button "app:toolbar-indent" "Indent"
+        apple_button (`app "toolbar-indent") "Indent"
           "button.outliner.selection.indent" "indent";
-        apple_button "app:toolbar-delete" "Delete"
+        apple_button (`app "toolbar-delete") "Delete"
           "button.outliner.selection.delete" "delete";
-        apple_button "app:toolbar-copy-reference" "Copy reference"
+        apple_button (`app "toolbar-copy-reference") "Copy reference"
           "button.outliner.selection.copyReference" "copyReference";
-        apple_button "app:toolbar-copy-url" "Copy URL"
+        apple_button (`app "toolbar-copy-url") "Copy URL"
           "button.outliner.selection.copyURL" "copyURL";
-        button ~icon:"app:toolbar-unselect" ~variant:"ghost" ~width:70
-          ~height:46 ~icon_placement:"top" ~label:"Unselect"
+        button ~icon:(`app "toolbar-unselect") ~variant:`ghost ~width:70
+          ~height:46 ~icon_placement:`top ~label:"Unselect"
           ~accessibility_identifier:"button.outliner.selection.unselect"
           ~on_press:(fun _ ->
             ignore
@@ -626,11 +626,11 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
     (button
        ~text_signal:
          (reactive View_base.outliner_autocomplete_label candidate_source)
-       ~variant:"ghost"
+       ~variant:`ghost
        ~grow:(if Lui_ui.host context = FlutterHost then 0.0 else 1.0)
        ~height:44 ~padding_horizontal:10
        ~background:"autocomplete-row-background" ~foreground:"foreground"
-       ~corner_radius:8 ~text_alignment:"start"
+       ~corner_radius:8 ~text_alignment:`start
        ~accessibility_identifier:
          (View_base.outliner_autocomplete_identifier candidate)
        ~on_press:(fun _ ->
@@ -648,7 +648,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
     [
       column ~gap:2 ~padding:8
         ~cross:
-          (if Lui_ui.host context = FlutterHost then "stretch" else "center")
+          (if Lui_ui.host context = FlutterHost then `stretch else `center)
         ~grow:(if Lui_ui.host context = FlutterHost then 0.0 else 1.0)
         [
           keyed
@@ -657,7 +657,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
                  View_base.model_outliner_autocomplete_candidates
                  model_source)
             ~key:View_base.outliner_autocomplete_identifier
-            ~compare:compare
+            ~cmp:compare
             ~mount:(fun candidate_source ->
               outliner_autocomplete_row context candidate_source send);
         ];
@@ -669,14 +669,14 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
       ~accessibility_identifier:"surface.outliner.editor-toolbar"
       [
-        toolbar ~orientation:"horizontal" ~label:"Outliner editor"
+        toolbar ~orientation:`horizontal ~label:"Outliner editor"
           ~accessibility_identifier:"toolbar.outliner.editor"
           ~style_class:"scroll-leading" ~toolbar_gap:4
           [
             View_base.with_label_signal
               (reactive View_base.outliner_editor_task_label model_source)
-              (button ~icon:"app:toolbar-task" ~variant:"ghost"
-                 ~size:"icon" ~width:48 ~height:48
+              (button ~icon:(`app "toolbar-task") ~variant:`ghost
+                 ~size:`icon ~width:48 ~height:48
                  ~foreground:"muted-foreground"
                  ~accessibility_identifier:"button.outliner.editor.task"
                  ~on_press:(fun _ ->
@@ -684,19 +684,19 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                      (send
                         (Model.PerformOutlinerToolbarAction "task")))
                  []);
-            toolbar_button "app:toolbar-outdent" "Outdent"
+            toolbar_button (`app "toolbar-outdent") "Outdent"
               "button.outliner.editor.outdent" "outdent" send;
-            toolbar_button "app:toolbar-indent" "Indent"
+            toolbar_button (`app "toolbar-indent") "Indent"
               "button.outliner.editor.indent" "indent" send;
-            toolbar_button "app:toolbar-tag" "Tag"
+            toolbar_button (`app "toolbar-tag") "Tag"
               "button.outliner.editor.tag" "tag" send;
-            toolbar_button "app:toolbar-camera" "Photo"
+            toolbar_button (`app "toolbar-camera") "Photo"
               "button.outliner.editor.camera" "camera" send;
-            toolbar_button "app:toolbar-audio" "Record audio"
+            toolbar_button (`app "toolbar-audio") "Record audio"
               "button.outliner.editor.audio" "audio" send;
-            toolbar_button "app:toolbar-attachment" "Upload asset"
+            toolbar_button (`app "toolbar-attachment") "Upload asset"
               "button.outliner.editor.attachment" "attachment" send;
-            button ~variant:"ghost" ~size:"icon" ~width:48 ~height:48
+            button ~variant:`ghost ~size:`icon ~width:48 ~height:48
               ~foreground:"muted-foreground" ~label:"Page reference"
               ~accessibility_identifier:
                 "button.outliner.editor.pageReference"
@@ -705,38 +705,38 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
                   (send
                      (Model.PerformOutlinerToolbarAction "pageReference")))
               ~text:"[[]]" [];
-            toolbar_button "app:toolbar-hide-keyboard" "Hide keyboard"
+            toolbar_button (`app "toolbar-hide-keyboard") "Hide keyboard"
               "button.outliner.editor.hideKeyboard" "hideKeyboard" send;
           ];
       ]
   else
     let apple_icon_button icon label identifier action : t =
-      button ~icon ~variant:"ghost" ~width:38 ~height:42 ~label
+      button ~icon ~variant:`ghost ~width:38 ~height:42 ~label
         ~accessibility_identifier:identifier
         ~on_press:(fun _ ->
           ignore (send (Model.PerformOutlinerToolbarAction action)))
         []
     in
-    toolbar ~orientation:"horizontal" ~label:"Outliner editor"
+    toolbar ~orientation:`horizontal ~label:"Outliner editor"
       ~accessibility_identifier:"toolbar.outliner.editor"
       ~style_class:"scroll-leading leading-inset-8"
       ~toolbar_gap:4
       [
         View_base.with_label_signal
           (reactive View_base.outliner_editor_task_label model_source)
-          (apple_icon_button "app:toolbar-task" ""
+          (apple_icon_button (`app "toolbar-task") ""
              "button.outliner.editor.task" "task");
-        apple_icon_button "app:toolbar-outdent" "Outdent"
+        apple_icon_button (`app "toolbar-outdent") "Outdent"
           "button.outliner.editor.outdent" "outdent";
-        apple_icon_button "app:toolbar-indent" "Indent"
+        apple_icon_button (`app "toolbar-indent") "Indent"
           "button.outliner.editor.indent" "indent";
-        apple_icon_button "app:toolbar-tag" "Tag"
+        apple_icon_button (`app "toolbar-tag") "Tag"
           "button.outliner.editor.tag" "tag";
-        apple_icon_button "app:toolbar-camera" "Photo"
+        apple_icon_button (`app "toolbar-camera") "Photo"
           "button.outliner.editor.camera" "camera";
-        apple_icon_button "app:toolbar-audio" "Record audio"
+        apple_icon_button (`app "toolbar-audio") "Record audio"
           "button.outliner.editor.audio" "audio";
-        button ~variant:"ghost" ~width:38 ~height:42
+        button ~variant:`ghost ~width:38 ~height:42
           ~label:"Page reference"
           ~accessibility_identifier:"button.outliner.editor.pageReference"
           ~on_press:(fun _ ->
@@ -744,7 +744,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               (send
                  (Model.PerformOutlinerToolbarAction "pageReference")))
           ~text:"[[]]" [];
-        button ~icon:"app:toolbar-hide-keyboard" ~variant:"ghost"
+        button ~icon:(`app "toolbar-hide-keyboard") ~variant:`ghost
           ~width:42 ~height:42 ~label:"Hide keyboard"
           ~accessibility_identifier:"button.outliner.editor.hideKeyboard"
           ~on_press:(fun _ ->
@@ -802,7 +802,7 @@ let node_related_section context model_source send : t =
           keyed
             ~source:(Signal.map View_base.active_node_related_rows
                        model_source)
-            ~key:View_base.outliner_row_identifier ~compare:compare
+            ~key:View_base.outliner_row_identifier ~cmp:compare
             ~mount:(fun row_source ->
               node_related_row context model_source row_source send);
         ];
@@ -823,7 +823,7 @@ let node_tagged_section context model_source send : t =
           keyed
             ~source:(Signal.map View_base.active_node_related_rows
                        model_source)
-            ~key:View_base.outliner_row_identifier ~compare:compare
+            ~key:View_base.outliner_row_identifier ~cmp:compare
             ~mount:(fun row_source ->
               node_related_row context model_source row_source send);
         ];
@@ -842,7 +842,7 @@ let node_linked_reference_section context model_source send : t =
             ~source:
               (Signal.map View_base.active_node_linked_reference_rows
                  model_source)
-            ~key:View_base.outliner_row_identifier ~compare:compare
+            ~key:View_base.outliner_row_identifier ~cmp:compare
             ~mount:(fun row_source ->
               node_related_row context model_source row_source send);
         ];
@@ -903,7 +903,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                          (Signal.map View_rows.retained_outliner_rows
                             model_source)
                        ~key:View_rows.retained_row_identifier
-                       ~compare:compare
+                       ~cmp:compare
                        ~mount:(fun retained_row_source ->
                          outliner_row context model_source
                            retained_row_source

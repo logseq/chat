@@ -4,25 +4,25 @@ open Lui_elements
 let attachment_menu send : t =
   context_menu
     [
-      menu_item ~icon:"app:toolbar-attachment"
+      menu_item ~icon:(`app "toolbar-attachment")
         ~accessibility_identifier:"button.attachment.files"
         ~text:"File"
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "files")))
         [];
-      menu_item ~icon:"app:toolbar-camera"
+      menu_item ~icon:(`app "toolbar-camera")
         ~accessibility_identifier:"button.attachment.camera"
         ~text:"Camera"
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "camera")))
         [];
-      menu_item ~icon:"app:composer-photo"
+      menu_item ~icon:(`app "composer-photo")
         ~accessibility_identifier:"button.attachment.photos"
         ~text:"Photo"
         ~on_press:(fun _ ->
           ignore (send (Model.ChooseAttachment "photos")))
         [];
-      menu_item ~icon:"app:toolbar-audio"
+      menu_item ~icon:(`app "toolbar-audio")
         ~accessibility_identifier:"button.attachment.audio"
         ~text:"Audio recording"
         ~on_press:(fun _ ->
@@ -32,24 +32,24 @@ let attachment_menu send : t =
 
 let composer_attachment_button (context : Lui_ui.ui_context) send : t =
   if Lui_ui.platform context = AndroidOS then
-    button ~icon:"app:add" ~variant:"ghost" ~label:"Add attachment"
+    button ~icon:(`app "add") ~variant:`ghost ~label:"Add attachment"
       ~accessibility_identifier:"button.attachment"
       ~on_press:(press send Model.OpenAttachmentPicker)
       ~text:"Attach" [ attachment_menu send ]
   else
-    button ~icon:"app:composer-add" ~variant:"ghost" ~width:32 ~height:32
+    button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:32
       ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
       ~on_press:(press send Model.OpenAttachmentPicker)
       [ attachment_menu send ]
 
 let composer_task_status_button (context : Lui_ui.ui_context) send : t =
   if Lui_ui.platform context = AndroidOS then
-    button ~icon:"app:task-todo" ~variant:"ghost" ~foreground:"border"
+    button ~icon:(`app "task-todo") ~variant:`ghost ~foreground:"border"
       ~label:"Task status" ~accessibility_identifier:"button.task-status"
       ~on_press:(press send Model.OpenTaskStatusPicker)
       ~text:"Task" []
   else
-    button ~icon:"app:task-todo" ~variant:"ghost" ~size:"icon" ~width:32
+    button ~icon:(`app "task-todo") ~variant:`ghost ~size:`icon ~width:32
       ~height:32 ~foreground:"border" ~label:"Task status"
       ~accessibility_identifier:"button.task-status"
       ~on_press:(press send Model.OpenTaskStatusPicker)
@@ -58,20 +58,20 @@ let composer_task_status_button (context : Lui_ui.ui_context) send : t =
 let android_composer_send_button (context : Lui_ui.ui_context)
     disabled_source send : t =
   if Lui_ui.host context = FlutterHost then
-    button ~icon:"app:send" ~variant:"primary" ~size:"icon" ~width:48
+    button ~icon:(`app "send") ~variant:`primary ~size:`icon ~width:48
       ~height:48 ~label:"Send" ~accessibility_identifier:"button.send"
       ~disabled_signal:disabled_source
       ~on_press:(press send Model.SendComposer)
       []
   else
-    button ~icon:"app:send" ~variant:"primary" ~label:"Send"
+    button ~icon:(`app "send") ~variant:`primary ~label:"Send"
       ~accessibility_identifier:"button.send"
       ~disabled_signal:disabled_source
       ~on_press:(press send Model.SendComposer)
       ~text:"Send" []
 
 let apple_composer_send_button disabled_source send : t =
-  button ~icon:"app:arrow-up" ~variant:"ghost" ~width:36 ~height:36
+  button ~icon:(`app "arrow-up") ~variant:`ghost ~width:36 ~height:36
     ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:"Send"
     ~accessibility_identifier:"button.send" ~disabled_signal:disabled_source
     ~on_press:(press send Model.SendComposer)
@@ -86,20 +86,20 @@ let composer_send_button (context : Lui_ui.ui_context) disabled_source send
 let collapsed_composer_button (context : Lui_ui.ui_context) send : t =
   if Lui_ui.platform context = AndroidOS then
     if Lui_ui.host context = FlutterHost then
-      button ~icon:"app:add" ~variant:"secondary" ~grow:1.0 ~height:58
+      button ~icon:(`app "add") ~variant:`secondary ~grow:1.0 ~height:58
         ~padding_horizontal:20 ~label:"Capture a thought"
         ~accessibility_identifier:"button.composer.expand"
         ~on_press:(press send Model.ExpandComposer)
         ~text:"Capture a thought" []
     else
-      button ~variant:"ghost" ~height:58 ~padding_horizontal:30
+      button ~variant:`ghost ~height:58 ~padding_horizontal:30
         ~foreground:"muted-foreground"
         ~accessibility_identifier:"button.composer.expand"
         ~on_press:(press send Model.ExpandComposer)
         ~text:"Capture" []
   else
     View_base.with_liquid_glass "capsule"
-      (button ~variant:"ghost" ~grow:1.0 ~height:58
+      (button ~variant:`ghost ~grow:1.0 ~height:58
          ~padding_horizontal:30 ~foreground:"muted-foreground"
          ~accessibility_identifier:"button.composer.expand"
          ~on_press:(press send Model.ExpandComposer)
@@ -127,11 +127,11 @@ let composer_asset_view asset_source send : t =
     ~accessibility_identifier:(View_base.composer_asset_identifier asset)
     [
       composer_asset_preview asset_source;
-      column ~width:128 ~height:128 ~padding:4 ~main:"start"
+      column ~width:128 ~height:128 ~padding:4 ~main:`start
         [
-          row ~main:"end" ~height:24
+          row ~main:`end_ ~height:24
             [
-              button ~icon:"app:close" ~variant:"ghost" ~size:"sm" ~width:24
+              button ~icon:(`app "close") ~variant:`ghost ~size:`sm ~width:24
                 ~height:24 ~corner_radius:12 ~background:"muted-foreground"
                 ~foreground:"white" ~label:"Remove attachment"
                 ~accessibility_identifier:"composer.asset.remove"
@@ -150,7 +150,7 @@ let task_status_row status_source send : t =
   let status = Signal.sample status_source in
   menu_item
     ~text_signal:(reactive View_base.task_status_title status_source)
-    ~icon:(View_base.task_status_icon_name status)
+    ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:(View_base.task_status_foreground status)
     ~accessibility_identifier:(View_base.task_status_identifier status)
     ~on_press:(fun _ ->
@@ -161,12 +161,12 @@ let task_status_row status_source send : t =
     []
 
 let task_status_picker_dialog model_source send : t =
-  dropdown_menu ~anchor:"above" ~anchor_alignment:"start" ~min_width:220
+  dropdown_menu ~anchor:`above ~anchor_alignment:`start ~min_width:220
     ~on_dismiss:(press send Model.CloseTaskStatusPicker)
     [
       keyed
         ~source:(Signal.map View_base.model_task_statuses model_source)
-        ~key:View_base.task_status_identifier ~compare:compare
+        ~key:View_base.task_status_identifier ~cmp:compare
         ~mount:(fun status_source -> task_status_row status_source send);
       if_
         ~test:(Signal.map View_base.task_status_selected_ model_source)
@@ -183,7 +183,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
       if_
         ~test:(Signal.map View_base.composer_expanded_ model_source)
         (View_base.with_liquid_glass "rounded-rectangle"
-           (column ~grow:1.0 ~main:"end" ~gap:0
+           (column ~grow:1.0 ~main:`end_ ~gap:0
               ~padding_horizontal:
                 (if Lui_ui.host context = FlutterHost then 12 else 16)
               ~padding_vertical:
@@ -208,7 +208,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                                (Signal.map View_base.model_composer_assets
                                   model_source)
                              ~key:View_base.composer_asset_identifier
-                             ~compare:compare
+                             ~cmp:compare
                              ~mount:(fun asset_source ->
                                composer_asset_view asset_source send);
                          ];
@@ -227,7 +227,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
              box ~height:8
                ~accessibility_identifier:"spacer.composer.field-controls"
                [];
-             row ~gap:8 ~height:44 ~cross:"center"
+             row ~gap:8 ~height:44 ~cross:`center
                ~accessibility_identifier:"row.composer.controls"
                [
                  composer_attachment_button context send;
@@ -256,7 +256,7 @@ let outliner_task_status_row block_id status_source send : t =
   let status = Signal.sample status_source in
   menu_item
     ~text_signal:(reactive View_base.task_status_title status_source)
-    ~icon:(View_base.task_status_icon_name status)
+    ~icon:(View_base.icon_of_wire_name (View_base.task_status_icon_name status))
     ~foreground:"secondary"
     ~accessibility_identifier:
       (View_base.outliner_task_status_option_identifier status)

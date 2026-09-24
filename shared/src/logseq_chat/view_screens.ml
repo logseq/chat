@@ -44,7 +44,7 @@ let search_result_row hit_source send : t =
 let search_screen model_source send : t =
   column ~grow:1.0 ~accessibility_identifier:"screen.search"
     [
-      row ~height:24 ~gap:6 ~cross:"center" ~padding_horizontal:20
+      row ~height:24 ~gap:6 ~cross:`center ~padding_horizontal:20
         [
           if_
             ~test:(Signal.map View_base.model_search_loading_ model_source)
@@ -59,16 +59,16 @@ let search_screen model_source send : t =
       if_
         ~test:(Signal.map View_base.search_empty_state_present_
                  model_source)
-        (column ~grow:1.0 ~main:"center" ~cross:"center" ~gap:10
+        (column ~grow:1.0 ~main:`center ~cross:`center ~gap:10
            ~padding:32
            [
-             icon ~name:"app:search" ~width:48 ~height:48
+             icon ~name:(`app "search") ~width:48 ~height:48
                ~foreground:"muted-foreground"
                ~accessibility_identifier:"search.empty.icon" [];
              text
                ~value_signal:
                  (Signal.map View_base.search_empty_message model_source)
-               ~style_class:"headline" ~text_alignment:"center"
+               ~style_class:"headline" ~text_alignment:`center
                ~accessibility_identifier:"search.empty" [];
              text
                ~value_signal:
@@ -77,7 +77,7 @@ let search_screen model_source send : t =
                       View_base.search_empty_supporting_message
                         (View_base.model_search_query model))
                     model_source)
-               ~foreground:"muted-foreground" ~text_alignment:"center"
+               ~foreground:"muted-foreground" ~text_alignment:`center
                ~accessibility_identifier:"search.empty.supporting" [];
            ]);
       if_
@@ -95,7 +95,7 @@ let search_screen model_source send : t =
              keyed
                ~source:
                  (Signal.map View_base.page_search_results model_source)
-               ~key:View_base.search_result_identifier ~compare:compare
+               ~key:View_base.search_result_identifier ~cmp:compare
                ~mount:(fun hit_source -> search_result_row hit_source send);
              if_
                ~test:
@@ -107,7 +107,7 @@ let search_screen model_source send : t =
              keyed
                ~source:
                  (Signal.map View_base.block_search_results model_source)
-               ~key:View_base.search_result_identifier ~compare:compare
+               ~key:View_base.search_result_identifier ~cmp:compare
                ~mount:(fun hit_source -> search_result_row hit_source send);
            ]);
     ]
@@ -115,23 +115,23 @@ let search_screen model_source send : t =
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.platform context = AndroidOS then
-    row ~gap:10 ~cross:"center"
+    row ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
-        button ~icon:"app:search" ~variant:"secondary" ~size:"icon"
+        button ~icon:(`app "search") ~variant:`secondary ~size:`icon
           ~width:58 ~height:58 ~label:"Search"
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
           [];
       ]
   else
-    row ~grow:1.0 ~gap:10 ~cross:"center"
+    row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
         View_base.with_liquid_glass "circle"
-          (button ~icon:"app:search" ~variant:"ghost" ~size:"icon"
+          (button ~icon:(`app "search") ~variant:`ghost ~size:`icon
              ~width:58 ~height:58 ~label:"Search"
              ~accessibility_identifier:"button.search"
              ~on_press:(press send Model.OpenSearch)
@@ -156,7 +156,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
           selection_chrome;
         if_
           ~test:(Signal.map View_base.bottom_chrome_editor_ model_source)
-          (column ~gap:0 ~cross:"stretch"
+          (column ~gap:0 ~cross:`stretch
              ~background:"surface-container-low" ~corner_radius:20
              ~accessibility_identifier:"container.outliner.editor-chrome"
              [
@@ -175,7 +175,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
           (column ~gap:0 ~padding_horizontal:16
              [
                box ~height:6 [];
-               row ~cross:"center"
+               row ~cross:`center
                  ~accessibility_identifier:"row.composer.placement"
                  [ View_composer.composer_view context model_source send ];
                box ~height:21 [];
@@ -215,11 +215,11 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
           ~test:
             (Signal.map View_base.bottom_chrome_expanded_composer_
                model_source)
-          (column ~container_relative_frame:"horizontal" ~cross:"stretch"
+          (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
              [
                box ~height:6 [];
-               row ~cross:"center"
+               row ~cross:`center
                  ~accessibility_identifier:"row.composer.placement"
                  [ View_composer.composer_view context model_source send ];
                box ~height:21 [];
@@ -228,7 +228,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
           ~test:
             (Signal.map View_base.bottom_chrome_capture_and_search_
                model_source)
-          (column ~container_relative_frame:"horizontal" ~cross:"stretch"
+          (column ~container_relative_frame:`horizontal ~cross:`stretch
              ~gap:0 ~padding_horizontal:16
              [
                box ~height:8 [];
@@ -275,7 +275,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
             ~source:
               (Signal.map View_rows.remaining_retained_outliner_rows
                  model_source)
-            ~key:View_rows.retained_row_identifier ~compare:compare
+            ~key:View_rows.retained_row_identifier ~cmp:compare
             ~mount:(fun retained_row_source ->
               View_outliner.outliner_entry context model_source
                 retained_row_source
@@ -360,7 +360,7 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
         retained_journal_pane context model_source send;
         keyed
           ~source:(Signal.map View_base.selected_page_models model_source)
-          ~key:View_base.selected_page_model_key ~compare:compare
+          ~key:View_base.selected_page_model_key ~cmp:compare
           ~mount:(fun selected_model_source ->
             box ~grow:1.0 ~accessibility_identifier:"pane.selected-page"
               [
@@ -375,7 +375,7 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
       [
         keyed
           ~source:(Signal.map View_base.selected_page_models model_source)
-          ~key:View_base.selected_page_model_key ~compare:compare
+          ~key:View_base.selected_page_model_key ~cmp:compare
           ~mount:(fun selected_model_source ->
             box ~grow:1.0 ~accessibility_identifier:"pane.selected-page"
               [
@@ -390,13 +390,13 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
 let global_effect_error_feedback (context : Lui_ui.ui_context)
     model_source : t =
   if Lui_ui.host context = FlutterHost then
-    alert ~variant:"destructive" ~padding:14 ~corner_radius:16
+    alert ~variant:`destructive ~padding:14 ~corner_radius:16
       ~border_width:0
       ~accessibility_identifier:"layout.error.banner"
       [
-        row ~gap:10 ~cross:"center"
+        row ~gap:10 ~cross:`center
           [
-            icon ~name:"app:warning" ~width:22 ~height:22
+            icon ~name:(`app "warning") ~width:22 ~height:22
               ~foreground:"destructive" [];
             text
               ~value_signal:
@@ -407,13 +407,13 @@ let global_effect_error_feedback (context : Lui_ui.ui_context)
   else
     box ~padding_horizontal:16 ~padding_vertical:8
       [
-        alert ~variant:"destructive" ~padding:14 ~corner_radius:16
+        alert ~variant:`destructive ~padding:14 ~corner_radius:16
           ~border_width:0
           ~accessibility_identifier:"layout.error.banner"
           [
-            row ~gap:10 ~cross:"center"
+            row ~gap:10 ~cross:`center
               [
-                icon ~name:"app:warning" ~width:22 ~height:22
+                icon ~name:(`app "warning") ~width:22 ~height:22
                   ~foreground:"destructive" [];
                 text
                   ~value_signal:
@@ -428,7 +428,7 @@ let global_effect_error_feedback (context : Lui_ui.ui_context)
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
     =
   if Lui_ui.host context = FlutterHost then
-    column ~grow:1.0 ~main:"center" ~cross:"center" ~gap:12
+    column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
       ~background:"background"
       ~accessibility_identifier:"journals.loading"
       [
@@ -483,7 +483,7 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
                Lui_ui.host context = FlutterHost
                && View_base.node_screen_visible_ current)
              model_source)
-        (button ~icon:"app:navigation-back" ~variant:"ghost" ~size:"icon"
+        (button ~icon:(`app "navigation-back") ~variant:`ghost ~size:`icon
            ~label:"Back"
            ~accessibility_identifier:"button.navigation.back"
            ~on_press:(fun _ ->
@@ -493,7 +493,7 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
         ~test:
           (Signal.map View_base.primary_sidebar_button_visible_
              model_source)
-        (button ~icon:"app:sidebar-toggle" ~variant:"ghost" ~size:"icon"
+        (button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
            ~label:"Open sidebar"
            ~accessibility_identifier:"button.sidebar"
            ~disabled_signal:
@@ -523,9 +523,9 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
            (button
               ~icon:
                 (if Lui_ui.host context = FlutterHost then
-                   "app:sync-status"
-                 else "app:status-dot")
-              ~variant:"ghost" ~size:"icon"
+                   `app "sync-status"
+                 else `app "status-dot")
+              ~variant:`ghost ~size:`icon
               ~foreground_signal:
                 (Signal.map View_base.sync_indicator_foreground
                    model_source)
@@ -611,7 +611,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
            keyed
              ~source:
                (Signal.map View_base.active_app_node_routes model_source)
-             ~key:View_base.node_projection_identifier ~compare:compare
+             ~key:View_base.node_projection_identifier ~cmp:compare
              ~mount:(fun route_source ->
                native_node_screen context model_source route_source send);
            if_
@@ -624,7 +624,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
              ~source:
                (Signal.map View_base.active_search_node_routes
                   model_source)
-             ~key:View_base.node_projection_identifier ~compare:compare
+             ~key:View_base.node_projection_identifier ~cmp:compare
              ~mount:(fun route_source ->
                native_node_screen context model_source route_source send);
          ]
@@ -641,7 +641,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
        ((keyed
            ~source:
              (Signal.map View_base.search_node_routes model_source)
-           ~key:View_base.node_projection_identifier ~compare:compare
+           ~key:View_base.node_projection_identifier ~cmp:compare
            ~mount:(fun route_source ->
              native_node_screen context model_source route_source send))
           context (Some node));
@@ -680,7 +680,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      let _ =
        column ~grow:1.0
          [
-           row ~cross:"center" ~gap:4 ~height:64 ~padding_horizontal:8
+           row ~cross:`center ~gap:4 ~height:64 ~padding_horizontal:8
              ~accessibility_identifier:"header.main"
              [
                main_header_leading context model_source send;
@@ -712,25 +712,25 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
        ((main_bottom_chrome context model_source send) context (Some node));
      ignore
        ((keyed ~source:(Signal.map Model.app_node_routes model_source)
-           ~key:View_base.node_projection_identifier ~compare:compare
+           ~key:View_base.node_projection_identifier ~cmp:compare
            ~mount:(fun route_source ->
              native_node_screen context model_source route_source send))
           context (Some node));
      node)
 
 let authentication_content model_source send : t =
-  column ~cross:"center" ~gap:0
+  column ~cross:`center ~gap:0
     [
       row ~width:96 ~height:96 ~corner_radius:22
-        [ icon ~name:"app:logo" ~width:96 ~height:96 [] ];
+        [ icon ~name:(`app "logo") ~width:96 ~height:96 [] ];
       box ~height:28 [];
       heading ~level:1 ~value:"Logseq Chat" [];
       box ~height:10 [];
-      text ~foreground:"muted-foreground" ~text_alignment:"center"
+      text ~foreground:"muted-foreground" ~text_alignment:`center
         ~value:"Capture, sync, and review your notes anywhere." [];
       box ~height:36 [];
       button ~accessibility_identifier:"button.hosted-sign-in"
-        ~variant:"primary" ~size:"lg" ~grow:1.0 ~text_alignment:"center"
+        ~variant:`primary ~size:`lg ~grow:1.0 ~text_alignment:`center
         ~disabled_signal:
           (Signal.map View_base.authentication_signing_in_ model_source)
         ~on_press:(press send Model.SignIn)
@@ -739,7 +739,7 @@ let authentication_content model_source send : t =
         ~test:
           (Signal.map View_base.authentication_error_present_
              model_source)
-        (column ~cross:"center"
+        (column ~cross:`center
            [
              box ~height:16 [];
              text
@@ -747,7 +747,7 @@ let authentication_content model_source send : t =
                  (Signal.map View_base.authentication_error_message
                     model_source)
                ~style_class:"caption" ~foreground:"destructive"
-               ~text_alignment:"center"
+               ~text_alignment:`center
                ~accessibility_identifier:"text.authentication-error" [];
            ]);
     ]
@@ -756,11 +756,11 @@ let authentication_screen (context : Lui_ui.ui_context) model_source send
     : t =
   if Lui_ui.host context = FlutterHost then
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
-      ~main:"center" ~cross:"stretch" ~padding:32
+      ~main:`center ~cross:`stretch ~padding:32
       [ authentication_content model_source send ]
   else
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
-      ~container_relative_frame:"vertical" ~main:"center" ~cross:"center"
+      ~container_relative_frame:`vertical ~main:`center ~cross:`center
       ~padding:32
       [ authentication_content model_source send ]
 
@@ -844,17 +844,13 @@ let application_main_content (context : Lui_ui.ui_context) model_source
     if Lui_ui.host context = FlutterHost then
       stack ~grow:1.0 content_children
     else
-      stack ~grow:1.0 ~container_relative_frame:"vertical"
+      stack ~grow:1.0 ~container_relative_frame:`vertical
         content_children
   else stack content_children
 
 let chat_view (context : Lui_ui.ui_context) model_source send : t =
-  let drawer_children : t list =
-    [
-      application_main_content context model_source send;
-      View_sidebar.sidebar_view context model_source send;
-    ]
-  in
+  let drawer_main = application_main_content context model_source send in
+  let drawer_panel = View_sidebar.sidebar_view context model_source send in
   if Lui_ui.platform context = AndroidOS then
     if Lui_ui.host context = FlutterHost then
       stack ~grow:1.0
@@ -883,10 +879,10 @@ let chat_view (context : Lui_ui.ui_context) model_source send : t =
                         (if open_ then Model.OpenSidebar
                          else Model.CloseSidebar))
                  | _ -> ())
-               drawer_children);
+               drawer_main drawer_panel);
         ]
     else
-      stack ~grow:1.0 ~container_relative_frame:"both"
+      stack ~grow:1.0 ~container_relative_frame:`both
         [
           if_
             ~test:
@@ -912,7 +908,7 @@ let chat_view (context : Lui_ui.ui_context) model_source send : t =
                         (if open_ then Model.OpenSidebar
                          else Model.CloseSidebar))
                  | _ -> ())
-               drawer_children);
+               drawer_main drawer_panel);
         ]
   else
     drawer
@@ -929,4 +925,4 @@ let chat_view (context : Lui_ui.ui_context) model_source send : t =
             (send
                (if open_ then Model.OpenSidebar else Model.CloseSidebar))
         | _ -> ())
-      drawer_children
+      drawer_main drawer_panel

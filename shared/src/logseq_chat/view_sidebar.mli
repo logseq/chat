@@ -6,7 +6,7 @@ val sidebar_page_row :
 val sidebar_graph_menu_item :
   Model.chat_model Signal.signal ->
   Model.graph Signal.signal -> (Model.chat_action -> 'a) -> Lui_elements.t
-val sidebar_section_heading : string -> string -> Lui_elements.t
+val sidebar_section_heading : string -> Lui_elements.icon -> Lui_elements.t
 val sidebar_empty_section_label : string -> Lui_elements.t
 val sidebar_graph_switch_content :
   Model.chat_model Signal.signal -> Lui_elements.t

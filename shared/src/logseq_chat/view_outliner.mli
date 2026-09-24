@@ -38,7 +38,8 @@ val outliner_zoom_control :
   Model.outline_row Signal.signal ->
   (Model.chat_action -> 'a) -> bool -> Lui_elements.t
 val outliner_status_icon :
-  string -> ('a -> bool) -> string -> 'a Signal.signal -> Lui_elements.t
+  string ->
+  ('a -> bool) -> Lui_elements.icon -> 'a Signal.signal -> Lui_elements.t
 val outliner_status_control :
   Lui_ui.ui_context ->
   Model.chat_model Signal.signal ->
@@ -73,7 +74,7 @@ val outliner_first_journal_section :
   Model.chat_model Signal.signal ->
   (Model.chat_action -> bool) -> Lui_elements.t
 val toolbar_button :
-  string ->
+  Lui_elements.icon ->
   string -> string -> string -> (Model.chat_action -> 'a) -> Lui_elements.t
 val outliner_selection_toolbar :
   Lui_ui.ui_context -> (Model.chat_action -> 'a) -> Lui_elements.t

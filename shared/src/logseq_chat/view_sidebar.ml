@@ -9,7 +9,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       (reactive View_base.sidebar_page_title page_source)
       (list_item
       ~text:(reactive View_base.sidebar_page_title page_source)
-      ~icon:"app:document"
+      ~icon:(`app "document")
       ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
       ~accessibility_identifier:(View_base.sidebar_page_identifier page)
       ~on_press:(fun _ ->
@@ -20,7 +20,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       (reactive View_base.sidebar_page_title page_source)
       (list_item
       ~text:(reactive View_base.sidebar_page_title page_source)
-      ~role:"navigation" ~icon:"app:document"
+      ~role:`navigation ~icon:(`app "document")
       ~selected:(reactive View_base.sidebar_page_selected_ model_source page_source)
       ~accessibility_identifier:(View_base.sidebar_page_identifier page)
       ~on_press:(fun _ ->
@@ -47,7 +47,7 @@ let sidebar_section_heading title icon : t =
   column ~gap:0
     [
       box ~height:16 [];
-      row ~gap:6 ~cross:"center" ~padding_horizontal:12
+      row ~gap:6 ~cross:`center ~padding_horizontal:12
         [
           Lui_elements.icon ~name:icon ~width:14 ~height:14
             ~foreground:"muted-foreground" [];
@@ -69,10 +69,10 @@ let sidebar_empty_section_label title : t =
     ]
 
 let sidebar_graph_switch_content model_source : t =
-  row ~grow:1.0 ~main:"space_between" ~cross:"center"
+  row ~grow:1.0 ~main:`space_between ~cross:`center
     [
       text ~value:(reactive View_base.graph_label model_source) [];
-      Lui_elements.icon ~name:"app:chevron-down" ~width:18 ~height:18
+      Lui_elements.icon ~name:(`app "chevron-down") ~width:18 ~height:18
         ~foreground:"muted-foreground" [];
     ]
 
@@ -87,8 +87,8 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
     View_base.with_label "Switch graph"
       (list_item
       ~text:(reactive View_base.graph_label model_source)
-      ~role:"navigation-heading"
-      ~icon:"app:chevron-down" ~icon_placement:"trailing"
+      ~role:`navigation_heading
+      ~icon:(`app "chevron-down") ~icon_placement:`trailing
       ~accessibility_identifier:"button.graph-switch"
       ~on_press:(press send Model.OpenGraphMenu)
       [])
@@ -96,14 +96,14 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = FlutterHost then
     View_base.with_label "Journals"
-      (list_item ~icon:"app:calendar"
+      (list_item ~icon:(`app "calendar")
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
       ~text:"Journals" [])
   else
     View_base.with_label "Journals"
-      (list_item ~role:"navigation" ~icon:"app:calendar"
+      (list_item ~role:`navigation ~icon:(`app "calendar")
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.journals"
       ~on_press:(press send Model.ShowJournals)
@@ -112,14 +112,14 @@ let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = FlutterHost then
     View_base.with_label "Flashcards"
-      (list_item ~icon:"app:flashcards"
+      (list_item ~icon:(`app "flashcards")
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
       ~text:"Flashcards" [])
   else
     View_base.with_label "Flashcards"
-      (list_item ~role:"navigation" ~icon:"app:flashcards"
+      (list_item ~role:`navigation ~icon:(`app "flashcards")
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.flashcards"
       ~on_press:(press send Model.ShowFlashcards)
@@ -128,14 +128,14 @@ let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
 let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
   if Lui_ui.host context = FlutterHost then
     View_base.with_label "Graphs"
-      (list_item ~icon:"app:folder"
+      (list_item ~icon:(`app "folder")
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
       ~text:"Graphs" [])
   else
     View_base.with_label "Graphs"
-      (list_item ~role:"navigation" ~icon:"app:folder"
+      (list_item ~role:`navigation ~icon:(`app "folder")
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
       ~accessibility_identifier:"link.sidebar.graphs"
       ~on_press:(press send Model.ShowGraphs)
@@ -153,7 +153,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
           sidebar_graph_switch context model_source send;
           if_
             ~test:(Signal.map View_base.model_graph_menu_open_ model_source)
-            (dropdown_menu ~anchor:"below" ~anchor_alignment:"start"
+            (dropdown_menu ~anchor:`below ~anchor_alignment:`start
                ~min_width:240 ~accessibility_identifier:"menu.graph-switch"
                ~on_dismiss:(press send Model.DismissGraphMenu)
                [
@@ -162,7 +162,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                      (Signal.map
                         (fun (current : Model.chat_model) -> current.graphs)
                         model_source)
-                   ~key:View_base.sidebar_graph_identifier ~compare
+                   ~key:View_base.sidebar_graph_identifier ~cmp:compare
                    ~mount:(fun graph_source ->
                      sidebar_graph_menu_item model_source graph_source
                        send);
@@ -183,14 +183,14 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
               column ~accessibility_identifier:"section.sidebar.favorites"
                 ~gap:2
                 [
-                  sidebar_section_heading "Favorites" "app:star";
+                  sidebar_section_heading "Favorites" (`app "star");
                   if_
                     ~test:(Signal.map View_base.favorites_empty_ model_source)
                     (sidebar_empty_section_label "No favorites yet");
                   keyed
                     ~source:
                       (Signal.map View_base.sidebar_favorites model_source)
-                    ~key:View_base.sidebar_page_identifier ~compare
+                    ~key:View_base.sidebar_page_identifier ~cmp:compare
                     ~mount:(fun page_source ->
                        sidebar_page_row context model_source page_source
                          send);
@@ -198,7 +198,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
               column ~accessibility_identifier:"section.sidebar.recent"
                 ~gap:2
                 [
-                  sidebar_section_heading "Recent" "app:history";
+                  sidebar_section_heading "Recent" (`app "history");
                   if_
                     ~test:
                       (Signal.map View_base.recent_pages_empty_ model_source)
@@ -206,7 +206,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
                   keyed
                     ~source:
                       (Signal.map View_base.sidebar_recent_pages model_source)
-                    ~key:View_base.sidebar_page_identifier ~compare
+                    ~key:View_base.sidebar_page_identifier ~cmp:compare
                     ~mount:(fun page_source ->
                        sidebar_page_row context model_source page_source
                          send);
