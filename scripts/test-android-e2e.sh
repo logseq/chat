@@ -380,6 +380,7 @@ seed_android_fixture() {
 }
 
 if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
+  && [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_DB_SYNC_WAIT:-0} != 1 ]] \
   && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
   # CI builds db-sync in a background process; flows must not start before
   # it binds the port (a bound port returns any HTTP response, incl. 401/404).
@@ -455,7 +456,14 @@ for flow in "${flows[@]}"; do
       -e "PASSWORD=$LOGSEQ_CHAT_E2E_PASSWORD"
     )
   fi
-  MAESTRO_CLI_NO_ANALYTICS=1 maestro "${maestro_args[@]}" "$flow_path"
+  adb -s "$device" logcat -c >/dev/null 2>&1 || true
+  if ! MAESTRO_CLI_NO_ANALYTICS=1 maestro "${maestro_args[@]}" "$flow_path"; then
+    # OCaml lui_* FFI exceptions and [NativeEffect] drain traces land in
+    # logcat — dump it so a wedged pipeline is diagnosable from CI output.
+    echo "==> $flow failed — device logcat follows" >&2
+    adb -s "$device" logcat -d -v brief 2>/dev/null | tail -n 400 >&2 || true
+    exit 1
+  fi
   if [[ $flow == "$sharing_image_flow" ]]; then
     adb -s "$device" shell run-as "$app_id" rm -f "$app_share_image"
   fi
