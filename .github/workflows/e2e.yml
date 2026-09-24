@@ -239,12 +239,17 @@ jobs:
         if: steps.duniverse.outputs.cache-hit != 'true'
         run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
 
+      - name: Select Xcode 26
+        # lui declares swift-tools-version 6.2; the image default (16.4) ships
+        # Swift 6.1, so select the Xcode 26 toolchain (Swift 6.2).
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+
       - name: Restore iOS OCaml toolchain
         id: ios-toolchain
         uses: actions/cache/restore@v4
         with:
           path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
       - name: Build iOS app for the simulator
         run: |
@@ -258,7 +263,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _build/apple-toolchains
-          key: apple-toolchain-${{ runner.os }}-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-simulator-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
       - name: Boot an iOS simulator
         run: |
