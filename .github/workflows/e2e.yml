@@ -320,6 +320,19 @@ jobs:
 
       - name: Run Android e2e module
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # pub get clones the lui git dep over ssh; rewrite to https + PAT
+          # credential helper (file-based git config doesn't reliably reach
+          # the emulator-runner's script environment).
+          GIT_CONFIG_COUNT: 4
+          GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: git@github.com:
+          GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_1: ssh://git@github.com/
+          GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
+          GIT_CONFIG_VALUE_2: git+ssh://git@github.com/
+          GIT_CONFIG_KEY_3: credential.helper
+          GIT_CONFIG_VALUE_3: '!f() { [ -n "$LOGSEQ_GITHUB_PAT" ] || exit 0; echo username=x-access-token; echo "password=$LOGSEQ_GITHUB_PAT"; }; f'
         with:
           api-level: 34
           target: google_apis
