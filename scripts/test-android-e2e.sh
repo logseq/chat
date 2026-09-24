@@ -269,7 +269,7 @@ fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
   (
-    cd "$repo_root/Flutter"
+    cd "$repo_root/flutter"
     ANDROID_SERIAL=$device flutter build apk --debug
   )
 fi
@@ -346,12 +346,16 @@ seed_android_fixture() {
   local_database=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-graph.XXXXXX")
   temporary_files+=("$local_database")
   adb -s "$device" exec-out run-as "$app_id" cat "$graph_database" >"$local_database"
-  if [[ -n $seed_mode ]]; then
-    opam exec --switch=5.5.0 -- \
-      dune exec shared/native/logseq_chat_e2e_seed.exe -- "$local_database" "$seed_mode"
+  local dune_seed=()
+  if command -v dune >/dev/null 2>&1; then
+    dune_seed=(dune exec)
   else
-    opam exec --switch=5.5.0 -- \
-      dune exec shared/native/logseq_chat_e2e_seed.exe -- "$local_database"
+    dune_seed=(opam exec --switch=5.5.0 -- dune exec)
+  fi
+  if [[ -n $seed_mode ]]; then
+    "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$local_database" "$seed_mode"
+  else
+    "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$local_database"
   fi
 
   local remote_database="/data/local/tmp/logseq-chat-android-graph-$$.sqlite"

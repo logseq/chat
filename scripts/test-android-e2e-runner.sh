@@ -189,7 +189,7 @@ PATH="$mock_bin:$PATH" \
   LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
   LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
   "$runner" signed-out >/dev/null
-[[ $(<"$flutter_args") == "$repo_root/Flutter|build apk --debug" ]] \
+[[ $(<"$flutter_args") == "$repo_root/flutter|build apk --debug" ]] \
   || die "Android E2E runner did not build the Flutter debug APK"
 
 : >"$adb_args"

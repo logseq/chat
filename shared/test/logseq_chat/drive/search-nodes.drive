@@ -1,0 +1,16 @@
+# Create a graph, open the native search screen, submit a query via the
+# native-search extension event, and verify results render.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Alpha"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+expect prop:accessibility-identifier=button.search
+press prop:accessibility-identifier=button.search
+wait prop:accessibility-identifier=screen.search
+expect prop:accessibility-identifier=search.empty
+ext ext:native-search-presentation native-search-presentation query-changed '{"query":"alpha"}'
+wait prop:accessibility-identifier=search.section.pages
+expect prop:accessibility-identifier=search.result.page-1
+expect prop:accessibility-identifier=search.section.blocks
+expect prop:accessibility-identifier=search.result.block-1
