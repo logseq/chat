@@ -7,3 +7,4 @@ type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
 expect prop:accessibility-identifier=title.main
+expect-absent prop:accessibility-identifier=sheet.graph-create
