@@ -29,6 +29,14 @@ appId: com.logseq.chat
       # during it have stalled the XCTest driver on CI. Wait it out.
       - waitForAnimationToEnd:
           timeout: 30000
+# Cognito hosted UI lives in the system browser, where each hierarchy
+# query can stall tens of seconds on a loaded runner (and once crashed the
+# XCTest driver). Give the `when` below real headroom instead of burning
+# its whole budget on two stalled snapshots.
+- extendedWaitUntil:
+    visible: "Enter your username"
+    timeout: 120000
+    optional: true
 - runFlow:
     when:
       visible: "Enter your username"
