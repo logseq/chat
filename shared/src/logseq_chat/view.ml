@@ -1,6 +1,38 @@
 type retained_outline_row = View_rows.retained_row
 
-let chat_view = View_screens.chat_view
+(* App theme: the chat palette as scoped theme tokens — mode-dependent
+   colors ride the wire as adaptive {light,dark} pairs picked by each
+   backend's effective color scheme, and `theme-mode` follows the
+   appearance setting so every platform hot-switches with one patch. *)
+let chat_theme_tokens : (string * Lui_ui.theme_token_value) list =
+  let open Lui_ui in
+  [
+    ("background", Adaptive { light = "#FCFCFC"; dark = "#002D38" });
+    ("surface", Adaptive { light = "#F8F8F8"; dark = "#19394D" });
+    ( "autocomplete-row-background",
+      Adaptive { light = "#6F6F6F1A"; dark = "#9BD3D41A" } );
+    ("task-backlog", Fixed "#A8A39E");
+    ("task-todo", Fixed "#78706B");
+    ("task-doing", Fixed "#C98A05");
+    ("task-in-review", Fixed "#1C4FD9");
+    ("task-done", Fixed "#17A34A");
+    ("task-canceled", Fixed "#DB2626");
+    ("flashcard-again-background", Fixed "#FF3B301F");
+    ("flashcard-hard-background", Fixed "#FF95001F");
+    ("flashcard-good-background", Fixed "#007AFF1F");
+    ("flashcard-easy-background", Fixed "#34C7591F");
+  ]
+
+let chat_theme_mode (model : Model.chat_model) : Lui_ui.theme_mode =
+  match model.appearance with
+  | "light" -> `light
+  | "dark" -> `dark
+  | _ -> `system
+
+let chat_view (context : Lui_ui.ui_context) model_source send =
+  Lui_elements.themed ~tokens:chat_theme_tokens
+    ~mode_signal:(Signal.map chat_theme_mode model_source)
+    (View_screens.chat_view context model_source send)
 
 let composer_asset_schema () =
   Lui_extension.component "composer-asset"
