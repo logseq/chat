@@ -325,13 +325,13 @@ fi
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
   (
     cd "$repo_root/flutter"
-    ANDROID_SERIAL=$device flutter build apk --debug
+    ANDROID_SERIAL=$device flutter build apk --profile
   )
 fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
-  apk="$repo_root/flutter/build/app/outputs/flutter-apk/app-debug.apk"
-  [[ -f $apk ]] || die "Android debug APK was not produced at $apk"
+  apk="$repo_root/flutter/build/app/outputs/flutter-apk/app-profile.apk"
+  [[ -f $apk ]] || die "Android profile APK was not produced at $apk"
   adb -s "$device" install -r "$apk" >/dev/null
 fi
 
