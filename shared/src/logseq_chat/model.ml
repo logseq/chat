@@ -1770,7 +1770,11 @@ let rec update (current : chat_model) action =
     enqueue_close_search_effects closed path
   | ExpandComposer ->
     { current with composer_expanded = true; composer_autofocus = true }
-  | FocusComposer -> { current with composer_autofocus = true }
+  | FocusComposer ->
+    (* autofocus is an edge-triggered focus request: toggling guarantees a
+       prop diff (and therefore a refocus edge) even when the flag already
+       reads true while the field is unfocused *)
+    { current with composer_autofocus = not current.composer_autofocus }
   | ApplyComposerDraft draft -> { current with composer_draft = draft }
   | ChangeComposerDraft draft ->
     let updated =

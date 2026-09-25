@@ -4729,6 +4729,19 @@ let composer_draft_restore_focus_and_dismissal_are_owned_by_lg () =
   check_eq ~msg:"dismissal keeps the persisted capture text"
     dismissed.composer_draft "Later"
 
+let composer_refocus_always_emits_an_autofocus_edge () =
+  let expanded =
+    Model.update (Model.initial ()) Model.ExpandComposer
+  in
+  (* the armed flag reads true but the host field may be unfocused; every
+     FocusComposer must still flip the prop so the edge reaches the host *)
+  let first = Model.update expanded Model.FocusComposer in
+  let second = Model.update first Model.FocusComposer in
+  check ~msg:"expanding arms the autofocus edge" expanded.composer_autofocus;
+  check ~msg:"a refocus request while armed flips the flag"
+    (not first.composer_autofocus);
+  check ~msg:"the next refocus request flips it back" second.composer_autofocus
+
 let composer_renders_autofocus_and_native_outside_dismissal () =
   let application = App.create (ios_backend ()) in
   start application;
@@ -8602,6 +8615,7 @@ let cases =
     case "hide-keyboard-optimistically-finishes-outliner-editing" hide_keyboard_optimistically_finishes_outliner_editing;
     case "outliner-return-handoff-retains-one-native-editor-node" outliner_return_handoff_retains_one_native_editor_node;
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
+    case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
     case "composer-renders-autofocus-and-native-outside-dismissal" composer_renders_autofocus_and_native_outside_dismissal;
     case "flutter-composer-uses-a-tonal-material-dock" flutter_composer_uses_a_tonal_material_dock;
     case "flutter-sidebar-uses-compact-material-drawer-metrics" flutter_sidebar_uses_compact_material_drawer_metrics;
