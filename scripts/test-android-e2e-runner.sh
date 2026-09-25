@@ -400,6 +400,32 @@ expected_node_tag_args=$(printf '%s\n' \
 [[ $(<"$maestro_args") == "$expected_node_tag_args" ]] \
   || die "Android E2E runner did not preserve the node and tag parity flow"
 
+: >"$adb_args"
+cat >"$mock_bin/adb" <<'EOF'
+#!/usr/bin/env bash
+if [[ -n ${LOGSEQ_CHAT_ADB_ARGS:-} ]]; then
+  printf '%s\n' "$*" >>"$LOGSEQ_CHAT_ADB_ARGS"
+fi
+case "$*" in
+  *"exec-out uiautomator dump"*)
+    printf '%s\n' \
+      '<hierarchy><node text="Pixel Launcher isn'"'"'t responding" bounds="[28,979][1052,1485]"/><node text="Wait" bounds="[136,879][314,945]"/></hierarchy>'
+    ;;
+esac
+EOF
+printf '#!/usr/bin/env bash\nsleep 1\nprintf "%%s\\n" "$@" >"$LOGSEQ_CHAT_MAESTRO_ARGS"\n' >"$mock_bin/maestro"
+chmod +x "$mock_bin/adb" "$mock_bin/maestro"
+PATH="$mock_bin:$PATH" \
+  ANDROID_SERIAL=test-device \
+  LOGSEQ_CHAT_ADB_ARGS="$adb_args" \
+  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  "$runner" settings >/dev/null
+grep -Fq -- '-s test-device shell input tap 225 912' "$adb_args" \
+  || die "Android E2E runner's ANR watchdog did not tap the dialog's Wait button"
+
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
   LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \

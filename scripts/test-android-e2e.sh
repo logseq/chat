@@ -254,18 +254,50 @@ command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
 command -v flutter >/dev/null 2>&1 || die "Flutter is not installed"
 
 temporary_files=()
+anr_watchdog_pid=""
 cleanup() {
+  if [[ -n $anr_watchdog_pid ]]; then
+    kill "$anr_watchdog_pid" 2>/dev/null || true
+  fi
   if (( ${#temporary_files[@]} > 0 )); then
     rm -f "${temporary_files[@]}"
   fi
 }
 trap cleanup EXIT
 
+# A system ANR dialog ("<app> isn't responding", e.g. Pixel Launcher on a
+# loaded emulator) occludes the whole a11y tree — Maestro can't see the app
+# behind it and every assertion times out. Tap its "Wait" button so a
+# system-level hiccup can't fail a flow whose app is healthy.
+start_anr_watchdog() {
+  (
+    while :; do
+      xml=$(adb -s "$device" exec-out uiautomator dump /dev/tty 2>/dev/null || true)
+      if printf '%s' "$xml" | grep -q "isn't responding"; then
+        wait_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+          | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+        if [[ $wait_bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]]; then
+          x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+          y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+          echo "[anr-watchdog] dismissing system ANR dialog (Wait at $x,$y)" >&2
+          adb -s "$device" shell input tap "$x" "$y" >/dev/null 2>&1 || true
+        fi
+      fi
+      sleep 3
+    done
+  ) &
+  anr_watchdog_pid=$!
+}
+
 device=${ANDROID_SERIAL:-}
 if [[ -z $device ]]; then
   device=$(adb devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
+
+if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_ANR_WATCHDOG:-0} != 1 ]]; then
+  start_anr_watchdog
+fi
 
 if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
   && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
