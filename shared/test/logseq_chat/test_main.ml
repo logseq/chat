@@ -43,4 +43,5 @@ let () =
       "rpc", Rpc_test.cases;
       "app", App_test.cases;
       "drive", Drive_scenario_test.cases;
+      "repro", Repro_wedge_test.cases;
     ]
