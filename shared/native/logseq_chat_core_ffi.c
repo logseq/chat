@@ -15,6 +15,14 @@
 #include <android/log.h>
 #define LOGSEQ_CHAT_LOG(...) \
   __android_log_print(ANDROID_LOG_ERROR, "logseq_chat", __VA_ARGS__)
+#elif defined(__APPLE__)
+#include <os/log.h>
+#define LOGSEQ_CHAT_LOG(...) \
+  do { \
+    char logseq_chat_log_buf[2048]; \
+    snprintf(logseq_chat_log_buf, sizeof logseq_chat_log_buf, __VA_ARGS__); \
+    os_log_error(OS_LOG_DEFAULT, "%{public}s", logseq_chat_log_buf); \
+  } while (0)
 #else
 #define LOGSEQ_CHAT_LOG(...) \
   do { \
