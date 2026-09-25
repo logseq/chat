@@ -104,10 +104,13 @@ const char *logseq_chat_call(const char *request_json) {
     }
     needs_unregister = 1;
   }
+  LOGSEQ_CHAT_LOG("rpc enter");
   caml_acquire_runtime_system();
+  LOGSEQ_CHAT_LOG("rpc acquired");
 
   response = call_ocaml(request_json);
 
+  LOGSEQ_CHAT_LOG("rpc done");
   caml_release_runtime_system();
   if (needs_unregister) {
     caml_c_thread_unregister();
@@ -366,10 +369,13 @@ static const char *call_lui_extension_event(
   CAMLreturnT(const char *, response);
 }
 
-#define LUI_RUNTIME_CALL(expression) \
+#define LUI_RUNTIME_CALL(entry_name, expression) \
+  LOGSEQ_CHAT_LOG("lui %s enter", entry_name); \
   int registration = acquire_ocaml_runtime(); \
   if (registration < 0) { return lui_thread_registration_failed(); } \
+  LOGSEQ_CHAT_LOG("lui %s acquired", entry_name); \
   const char *response = (expression); \
+  LOGSEQ_CHAT_LOG("lui %s done", entry_name); \
   release_ocaml_runtime(registration); \
   return response
 
@@ -377,63 +383,66 @@ const char *logseq_chat_lui_initialize(
     int32_t platform_code,
     int32_t host_code,
     int32_t authentication_code) {
-  LUI_RUNTIME_CALL(call_lui_initialize(
+  LUI_RUNTIME_CALL("initialize", call_lui_initialize(
       platform_code,
       host_code,
       authentication_code));
 }
 
 const char *logseq_chat_lui_appear(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_appear", node));
+  LUI_RUNTIME_CALL("appear", call_lui_int("logseq_chat_lui_appear", node));
 }
 
 const char *logseq_chat_lui_press(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_press", node));
+  LUI_RUNTIME_CALL("press", call_lui_int("logseq_chat_lui_press", node));
 }
 
 const char *logseq_chat_lui_long_press(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_long_press", node));
+  LUI_RUNTIME_CALL("long_press", call_lui_int("logseq_chat_lui_long_press", node));
 }
 
 const char *logseq_chat_lui_text_changed(int64_t node, const char *text) {
-  LUI_RUNTIME_CALL(call_lui_text(node, text));
+  LUI_RUNTIME_CALL("text_changed", call_lui_text(node, text));
 }
 
 const char *logseq_chat_lui_submit(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_submit", node));
+  LUI_RUNTIME_CALL("submit", call_lui_int("logseq_chat_lui_submit", node));
 }
 
 const char *logseq_chat_lui_toggle_changed(int64_t node, int32_t checked) {
-  LUI_RUNTIME_CALL(call_lui_bool(node, checked));
+  LUI_RUNTIME_CALL("toggle_changed", call_lui_bool(node, checked));
 }
 
 const char *logseq_chat_lui_change(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_change", node));
+  LUI_RUNTIME_CALL("change", call_lui_int("logseq_chat_lui_change", node));
 }
 
 const char *logseq_chat_lui_value_changed(int64_t node, double value) {
-  LUI_RUNTIME_CALL(call_lui_double(node, value));
+  LUI_RUNTIME_CALL("value_changed", call_lui_double(node, value));
 }
 
 const char *logseq_chat_lui_dismiss(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_dismiss", node));
+  LUI_RUNTIME_CALL("dismiss", call_lui_int("logseq_chat_lui_dismiss", node));
 }
 
 const char *logseq_chat_lui_double_press(int64_t node) {
-  LUI_RUNTIME_CALL(call_lui_int("logseq_chat_lui_double_press", node));
+  LUI_RUNTIME_CALL("double_press", call_lui_int("logseq_chat_lui_double_press", node));
 }
 
 const char *logseq_chat_lui_extension_event(
     int64_t node, const char *identifier, const char *name, const char *text,
     int64_t value) {
   LUI_RUNTIME_CALL(
+      "extension_event",
       call_lui_extension_event(node, identifier, name, text, value));
 }
 
 int64_t logseq_chat_lui_root_node(void) {
   int64_t node = -1;
+  LOGSEQ_CHAT_LOG("lui root_node enter");
   int registration = acquire_ocaml_runtime();
   if (registration < 0) return node;
+  LOGSEQ_CHAT_LOG("lui root_node acquired");
   const value *callback = caml_named_value("logseq_chat_lui_root_node");
   if (callback == NULL) {
     LOGSEQ_CHAT_LOG("OCaml LUI callback is not registered: "
@@ -453,24 +462,26 @@ int64_t logseq_chat_lui_root_node(void) {
 }
 
 const char *logseq_chat_lui_dispose(void) {
-  LUI_RUNTIME_CALL(call_lui0("logseq_chat_lui_dispose"));
+  LUI_RUNTIME_CALL("dispose", call_lui0("logseq_chat_lui_dispose"));
 }
 
 const char *logseq_chat_lui_take_effect(void) {
-  LUI_RUNTIME_CALL(call_lui0("logseq_chat_lui_take_effect"));
+  LUI_RUNTIME_CALL("take_effect", call_lui0("logseq_chat_lui_take_effect"));
 }
 
 const char *logseq_chat_lui_resolve_effect(int64_t effect_id, int32_t succeeded,
                                            const char *message) {
-  LUI_RUNTIME_CALL(call_lui_resolve_effect(effect_id, succeeded, message));
+  LUI_RUNTIME_CALL("resolve_effect", call_lui_resolve_effect(effect_id, succeeded, message));
 }
 
 const char *logseq_chat_lui_apply_snapshot(const char *response_json) {
-  LUI_RUNTIME_CALL(call_lui_string("logseq_chat_lui_apply_snapshot", response_json));
+  LUI_RUNTIME_CALL("apply_snapshot", call_lui_string("logseq_chat_lui_apply_snapshot", response_json));
 }
 
 const char *logseq_chat_lui_apply_host_update(const char *kind,
                                               const char *payload_json) {
-  LUI_RUNTIME_CALL(call_lui_two_strings(
-      "logseq_chat_lui_apply_host_update", kind, payload_json));
+  LUI_RUNTIME_CALL(
+      "apply_host_update",
+      call_lui_two_strings(
+          "logseq_chat_lui_apply_host_update", kind, payload_json));
 }
