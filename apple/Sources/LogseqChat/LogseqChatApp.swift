@@ -58,21 +58,9 @@ public struct LogseqChatRootView : View {
         .environment(\.locale, preferredLocale)
         .tint(LogseqThemePolicy.accent)
         .foregroundStyle(themePalette.primaryText)
-        .luiSemanticColors([
-            "background": themePalette.background,
-            "surface": themePalette.surface,
-            "autocomplete-row-background": themePalette.secondaryText.opacity(0.1),
-            "task-backlog": Color(red: 0.66, green: 0.64, blue: 0.62),
-            "task-todo": Color(red: 0.47, green: 0.44, blue: 0.42),
-            "task-doing": Color(red: 0.79, green: 0.54, blue: 0.02),
-            "task-in-review": Color(red: 0.11, green: 0.31, blue: 0.85),
-            "task-done": Color(red: 0.09, green: 0.64, blue: 0.29),
-            "task-canceled": Color(red: 0.86, green: 0.15, blue: 0.15),
-            "flashcard-again-background": Color.red.opacity(0.12),
-            "flashcard-hard-background": Color.orange.opacity(0.12),
-            "flashcard-good-background": Color.blue.opacity(0.12),
-            "flashcard-easy-background": Color.green.opacity(0.12),
-        ])
+        // Semantic colors inside the LUI tree come from the `theme` prop the
+        // OCaml view emits (adaptive light/dark tokens), not a host-side
+        // dictionary — the shell keeps its palette for chrome below.
         .background(themePalette.background.ignoresSafeArea())
     }
 
