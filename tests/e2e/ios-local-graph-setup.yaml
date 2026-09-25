@@ -35,7 +35,10 @@ appId: com.logseq.chat
 # its whole budget on two stalled snapshots.
 - extendedWaitUntil:
     visible: "Enter your username"
-    timeout: 120000
+    # Each system-browser snapshot can take ~90s+ on a loaded runner (the
+    # driver retries the WebView query several times), so the budget must
+    # cover multiple snapshot rounds, not just one.
+    timeout: 240000
     optional: true
 - runFlow:
     when:
