@@ -60,7 +60,8 @@ appId: com.logseq.chat
       - tapOn:
           id: "button.graph-add.confirm"
       - extendedWaitUntil:
-          visible: "android-e2e-smoke"
+          visible:
+            id: "button.composer.expand"
           timeout: 60000
 - extendedWaitUntil:
     visible:
