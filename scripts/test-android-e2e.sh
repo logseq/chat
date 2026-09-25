@@ -506,7 +506,7 @@ for flow in "${flows[@]}"; do
   flow_retries=${LOGSEQ_CHAT_ANDROID_E2E_RETRIES:-1}
   flow_attempt=0
   while :; do
-    if MAESTRO_CLI_NO_ANALYTICS=1 MAESTRO_DRIVER_STARTUP_TIMEOUT=180000 \
+    if MAESTRO_CLI_NO_ANALYTICS=1 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 \
       maestro "${maestro_args[@]}" "$flow_path"; then
       break
     fi
