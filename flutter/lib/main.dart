@@ -643,7 +643,8 @@ class _LogseqChatFlutterAppState extends State<LogseqChatFlutterApp>
         !message.contains('kind=refresh-graphs') &&
         !message.contains('kind=send-capture') &&
         !message.contains('kind=send-task') &&
-        !message.contains('kind=search-nodes')) {
+        !message.contains('kind=search-nodes') &&
+        !message.contains('patch')) {
       return;
     }
     debugPrint('[NativeEffect] $message');
