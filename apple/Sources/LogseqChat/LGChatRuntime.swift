@@ -394,7 +394,9 @@ public final class LGChatRuntime {
             }
 
             cancelOutlinerAutosaveBeforeExecuting(effect)
+            Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
             let resolution = await effectExecutor.execute(effect)
+            Self.log.notice("effect resolved id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) succeeded=\(resolution.succeeded, privacy: .public)")
             if !resolution.succeeded {
                 Self.log.error("effect failed id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) message=\(resolution.message, privacy: .public)")
             }
@@ -419,6 +421,7 @@ public final class LGChatRuntime {
                     let syncResolution = await startSyncIfNeeded(
                         envelope: envelope
                     )
+                    Self.log.notice("startSync resolved id=\(effect.id, privacy: .public) succeeded=\(syncResolution.succeeded, privacy: .public)")
                     if !syncResolution.succeeded {
                         lastError = syncResolution.message
                         return
