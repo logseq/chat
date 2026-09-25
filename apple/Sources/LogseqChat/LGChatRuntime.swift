@@ -2,6 +2,7 @@ import Foundation
 import LUIAppleBackend
 import Observation
 import LogseqChatModel
+import os
 
 private struct LGChatPatchMetadata: Decodable {
     let generation: Int
@@ -112,6 +113,8 @@ public final class LGChatRuntime {
 
     @ObservationIgnored
     private let outlinerAutosaveDelayNanoseconds: UInt64
+
+    private static let log = Logger(subsystem: "com.logseq.chat", category: "runtime")
 
     @ObservationIgnored
     private var patchTail: Task<Void, Never>?
@@ -563,21 +566,17 @@ public final class LGChatRuntime {
             guard let self else { return }
             do {
                 let decoded = try await decodeTask.value
-                guard epoch == self.patchApplyEpoch else { return }
-                #if DEBUG
-                print(
-                    "LOGSEQ_LG_PATCH apply generation="
-                        + String(Self.patchGeneration(patch) ?? -1)
-                )
-                #endif
+                guard epoch == self.patchApplyEpoch else {
+                    Self.log.warning("dropped stale patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public) epoch=\(epoch, privacy: .public) current=\(self.patchApplyEpoch, privacy: .public)")
+                    return
+                }
+                Self.log.info("apply patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public)")
                 try self.renderer.apply(decoded: decoded)
                 self.lastError = nil
             } catch {
                 guard epoch == self.patchApplyEpoch else { return }
                 self.lastError = String(describing: error)
-                #if DEBUG
-                print("LogseqChat renderer apply failed: \(self.lastError ?? "unknown")")
-                #endif
+                Self.log.error("renderer apply failed: \(self.lastError ?? "unknown", privacy: .public)")
             }
         }
     }
