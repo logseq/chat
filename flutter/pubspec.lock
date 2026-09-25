@@ -159,8 +159,8 @@ packages:
     dependency: "direct main"
     description:
       path: "platform/flutter"
-      ref: d055aa4b05f6cece2ae28e35a635ae1cdea893d0
-      resolved-ref: d055aa4b05f6cece2ae28e35a635ae1cdea893d0
+      ref: ed44ebc8858e80d9430949fc9ce2aeee5f9901e8
+      resolved-ref: ed44ebc8858e80d9430949fc9ce2aeee5f9901e8
       url: "ssh://git@github.com/logseq/lui.git"
     source: git
     version: "0.1.0"
