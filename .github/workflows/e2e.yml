@@ -493,9 +493,6 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-boot-timeout: 600
-          # Default AVD RAM (~2G) lets the launcher hit lowmemorykiller
-          # stalls → foreground ANR dialogs that occlude the a11y tree.
-          emulator-options: -memory 4096 -cores 4 -no-snapshot-save
           script: |
             eval $(opam env)
             export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
