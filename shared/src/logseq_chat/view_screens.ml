@@ -494,6 +494,7 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
           (Signal.map View_base.primary_sidebar_button_visible_
              model_source)
         (button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
+           ~width:44 ~height:44
            ~label:"Open sidebar"
            ~accessibility_identifier:"button.sidebar"
            ~disabled_signal:
