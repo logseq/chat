@@ -437,6 +437,40 @@ if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
   done
 fi
 
+recover_device() {
+  # Retrying a flow against a dead adb server or crashed emulator fails
+  # identically — recover connectivity before the next attempt.
+  if adb -s "$device" get-state >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[android-e2e] device $device unreachable; restarting adb server" >&2
+  adb kill-server >/dev/null 2>&1 || true
+  sleep 1
+  adb start-server >/dev/null 2>&1 || true
+  timeout 60 adb -s "$device" wait-for-device 2>/dev/null || true
+  adb -s "$device" get-state >/dev/null 2>&1 && return 0
+  # The emulator process itself is gone — relaunch the runner's AVD.
+  local emulator_bin avd
+  emulator_bin="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/emulator/emulator"
+  avd=$("$emulator_bin" -list-avds 2>/dev/null | head -n 1)
+  [[ -n $avd ]] || return 1
+  echo "[android-e2e] relaunching emulator @$avd" >&2
+  nohup "$emulator_bin" "@$avd" -no-window -no-audio -no-boot-anim \
+    -gpu swiftshader_indirect -no-snapshot-save >/dev/null 2>&1 &
+  timeout 600 adb -s "$device" wait-for-device || return 1
+  timeout 180 adb -s "$device" shell \
+    'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done' \
+    || return 1
+  # A fresh boot loses the app and the db-sync tunnel.
+  adb -s "$device" install -r \
+    "$repo_root/flutter/build/app/outputs/flutter-apk/app-profile.apk" \
+    >/dev/null
+  if [[ -n ${local_backend_port:-} ]]; then
+    adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port"
+  fi
+  return 0
+}
+
 for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow = /* ]]; then
@@ -519,6 +553,7 @@ for flow in "${flows[@]}"; do
       exit 1
     fi
     echo "[android-e2e] $flow failed; retrying ($flow_attempt/$flow_retries)" >&2
+    recover_device || echo "[android-e2e] device recovery failed" >&2
   done
   if [[ $flow == "$sharing_image_flow" ]]; then
     adb -s "$device" shell run-as "$app_id" rm -f "$app_share_image"
