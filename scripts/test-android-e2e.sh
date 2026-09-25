@@ -304,7 +304,10 @@ start_anr_watchdog() {
           adb -s "$device" shell input tap "$x" "$y" >/dev/null 2>&1 || true
         fi
       fi
-      sleep 3
+      # Every 3s turned out to hammer the a11y framework hard enough to
+      # starve Maestro's own UiAutomation binding on loaded emulators;
+      # 10s still catches ANR dialogs well inside assert timeouts.
+      sleep 10
     done
   ) &
   anr_watchdog_pid=$!
@@ -483,6 +486,9 @@ recover_device() {
     if [[ -n ${local_backend_port:-} ]]; then
       adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port" >/dev/null 2>&1 || true
     fi
+    # Clear stale Maestro instrumentation that may still hold the
+    # UiAutomation binding from the failed attempt.
+    adb -s "$device" shell am force-stop dev.mobile.maestro >/dev/null 2>&1 || true
     return 0
   fi
   # The emulator process is gone or hung — kill it if still running,
@@ -574,6 +580,11 @@ for flow in "${flows[@]}"; do
     )
   fi
   adb -s "$device" logcat -c >/dev/null 2>&1 || true
+  # A previous flow's Maestro instrumentation (dev.mobile.maestro) can
+  # linger and keep the UiAutomation binding — the next driver session
+  # then waits the whole startup budget for a binding it can never get.
+  # Force-stop the stale driver before each flow.
+  adb -s "$device" shell am force-stop dev.mobile.maestro >/dev/null 2>&1 || true
   # The Android driver's default startup budget is only 15s — far too small
   # for a loaded CI emulator (it once failed to come up between two flows).
   # Per-flow retry additionally covers driver/device hiccups;
