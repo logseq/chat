@@ -409,7 +409,7 @@ fi
 case "$*" in
   *"exec-out uiautomator dump"*)
     printf '%s\n' \
-      '<hierarchy><node text="Pixel Launcher isn'"'"'t responding" bounds="[28,979][1052,1485]"/><node text="Wait" bounds="[136,879][314,945]"/></hierarchy>'
+      '<hierarchy><node text="Pixel Launcher isn'"'"'t responding" bounds="[28,979][1052,1485]"/><node text="Close app" bounds="[136,879][314,945]"/><node text="Wait" bounds="[400,879][578,945]"/></hierarchy>'
     ;;
 esac
 EOF
@@ -424,7 +424,7 @@ PATH="$mock_bin:$PATH" \
   LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" settings >/dev/null
 grep -Fq -- '-s test-device shell input tap 225 912' "$adb_args" \
-  || die "Android E2E runner's ANR watchdog did not tap the dialog's Wait button"
+  || die "Android E2E runner's ANR watchdog did not tap the dialog's Close app button"
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \

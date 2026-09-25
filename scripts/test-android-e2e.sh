@@ -274,12 +274,19 @@ start_anr_watchdog() {
     while :; do
       xml=$(adb -s "$device" exec-out uiautomator dump /dev/tty 2>/dev/null || true)
       if printf '%s' "$xml" | grep -q "isn't responding"; then
-        wait_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
-          | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
-        if [[ $wait_bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]]; then
+        # "Wait" only postpones the dialog — a genuinely hung process (Pixel
+        # Launcher on a loaded emulator) re-ANRs forever. "Close app"
+        # force-stops it so Android restarts it fresh.
+        close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+          | sed -n 's/.*text="Close app"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+        if [[ -z $close_bounds ]]; then
+          close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+            | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+        fi
+        if [[ $close_bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]]; then
           x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
           y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
-          echo "[anr-watchdog] dismissing system ANR dialog (Wait at $x,$y)" >&2
+          echo "[anr-watchdog] dismissing system ANR dialog (Close app at $x,$y)" >&2
           adb -s "$device" shell input tap "$x" "$y" >/dev/null 2>&1 || true
         fi
       fi
@@ -295,6 +302,9 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
 
+# Suppress ANR dialogs for background processes up front; the watchdog below
+# still closes foreground ANRs (e.g. Pixel Launcher) by force-stopping them.
+adb -s "$device" shell settings put global anr_show_background 0 >/dev/null 2>&1 || true
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_ANR_WATCHDOG:-0} != 1 ]]; then
   start_anr_watchdog
 fi
