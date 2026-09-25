@@ -274,19 +274,33 @@ start_anr_watchdog() {
     while :; do
       xml=$(adb -s "$device" exec-out uiautomator dump /dev/tty 2>/dev/null || true)
       if printf '%s' "$xml" | grep -q "isn't responding"; then
-        # "Wait" only postpones the dialog — a genuinely hung process (Pixel
-        # Launcher on a loaded emulator) re-ANRs forever. "Close app"
-        # force-stops it so Android restarts it fresh.
-        close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
-          | sed -n 's/.*text="Close app"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+        anr_app=$(printf '%s' "$xml" | tr '>' '\n' \
+          | sed -n "s/.*text=\"\(.*\) isn't responding\".*/\1/p" | head -1)
+        # "Wait" only postpones the dialog — a genuinely hung app process
+        # (Pixel Launcher on a loaded emulator) re-ANRs forever, so
+        # "Close app" force-stops it and Android restarts it fresh. But
+        # for system_server/System UI, "Close app" kills the runtime and
+        # soft-reboots the device, dropping every adb transport — always
+        # pick "Wait" there and let the transient stall recover.
+        case "$anr_app" in
+          *system_server*|*"System UI"*|*settings*)
+            close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+              | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+            action="Wait" ;;
+          *)
+            close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+              | sed -n 's/.*text="Close app"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+            action="Close app" ;;
+        esac
         if [[ -z $close_bounds ]]; then
           close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
             | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+          action="Wait"
         fi
         if [[ $close_bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]]; then
           x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
           y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
-          echo "[anr-watchdog] dismissing system ANR dialog (Close app at $x,$y)" >&2
+          echo "[anr-watchdog] dismissing '$anr_app' ANR dialog ($action at $x,$y)" >&2
           adb -s "$device" shell input tap "$x" "$y" >/dev/null 2>&1 || true
         fi
       fi
@@ -438,23 +452,50 @@ if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
 fi
 
 recover_device() {
-  # Retrying a flow against a dead adb server or crashed emulator fails
-  # identically — recover connectivity before the next attempt.
-  if adb -s "$device" get-state >/dev/null 2>&1; then
+  # Retrying a flow against a dead adb server, a flapped transport
+  # (get-state answers but the adbd channel is closed), or a crashed
+  # emulator fails identically — recover connectivity before the next
+  # attempt. `adb shell echo ok` proves the channel end-to-end; get-state
+  # alone only proves a stale transport entry.
+  local device_ok=0
+  if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+    device_ok=1
+  else
+    echo "[android-e2e] device $device channel dead; reconnecting adb" >&2
+    adb -s "$device" reconnect >/dev/null 2>&1 || true
+    sleep 2
+    if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+      device_ok=1
+    else
+      echo "[android-e2e] restarting adb server" >&2
+      adb kill-server >/dev/null 2>&1 || true
+      sleep 1
+      adb start-server >/dev/null 2>&1 || true
+      timeout 60 adb -s "$device" wait-for-device 2>/dev/null || true
+      if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+        device_ok=1
+      fi
+    fi
+  fi
+  if (( device_ok )); then
+    # adb reverse rules die with transport flaps even when the device
+    # itself stayed up — re-add the db-sync tunnel before retrying.
+    if [[ -n ${local_backend_port:-} ]]; then
+      adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port" >/dev/null 2>&1 || true
+    fi
     return 0
   fi
-  echo "[android-e2e] device $device unreachable; restarting adb server" >&2
-  adb kill-server >/dev/null 2>&1 || true
-  sleep 1
-  adb start-server >/dev/null 2>&1 || true
-  timeout 60 adb -s "$device" wait-for-device 2>/dev/null || true
-  adb -s "$device" get-state >/dev/null 2>&1 && return 0
-  # The emulator process itself is gone — relaunch the runner's AVD.
+  # The emulator process is gone or hung — kill it if still running,
+  # then relaunch the runner's AVD.
   local emulator_bin avd
   emulator_bin="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/emulator/emulator"
   avd=$("$emulator_bin" -list-avds 2>/dev/null | head -n 1)
   [[ -n $avd ]] || return 1
   echo "[android-e2e] relaunching emulator @$avd" >&2
+  timeout 30 adb -s "$device" emu kill >/dev/null 2>&1 || true
+  sleep 2
+  adb kill-server >/dev/null 2>&1 || true
+  adb start-server >/dev/null 2>&1 || true
   nohup "$emulator_bin" "@$avd" -no-window -no-audio -no-boot-anim \
     -gpu swiftshader_indirect -no-snapshot-save >/dev/null 2>&1 &
   timeout 600 adb -s "$device" wait-for-device || return 1
