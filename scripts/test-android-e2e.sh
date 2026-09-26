@@ -254,18 +254,77 @@ command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
 command -v flutter >/dev/null 2>&1 || die "Flutter is not installed"
 
 temporary_files=()
+anr_watchdog_pid=""
 cleanup() {
+  if [[ -n $anr_watchdog_pid ]]; then
+    kill "$anr_watchdog_pid" 2>/dev/null || true
+  fi
   if (( ${#temporary_files[@]} > 0 )); then
     rm -f "${temporary_files[@]}"
   fi
 }
 trap cleanup EXIT
 
+# A system ANR dialog ("<app> isn't responding", e.g. Pixel Launcher on a
+# loaded emulator) occludes the whole a11y tree — Maestro can't see the app
+# behind it and every assertion times out. Tap its "Wait" button so a
+# system-level hiccup can't fail a flow whose app is healthy.
+start_anr_watchdog() {
+  (
+    while :; do
+      xml=$(adb -s "$device" exec-out uiautomator dump /dev/tty 2>/dev/null || true)
+      if printf '%s' "$xml" | grep -q "isn't responding"; then
+        anr_app=$(printf '%s' "$xml" | tr '>' '\n' \
+          | sed -n "s/.*text=\"\(.*\) isn't responding\".*/\1/p" | head -1)
+        # "Wait" only postpones the dialog — a genuinely hung app process
+        # (Pixel Launcher on a loaded emulator) re-ANRs forever, so
+        # "Close app" force-stops it and Android restarts it fresh. But
+        # for system_server/System UI, "Close app" kills the runtime and
+        # soft-reboots the device, dropping every adb transport — always
+        # pick "Wait" there and let the transient stall recover.
+        case "$anr_app" in
+          *system_server*|*"System UI"*|*settings*)
+            close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+              | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+            action="Wait" ;;
+          *)
+            close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+              | sed -n 's/.*text="Close app"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+            action="Close app" ;;
+        esac
+        if [[ -z $close_bounds ]]; then
+          close_bounds=$(printf '%s' "$xml" | tr '>' '\n' \
+            | sed -n 's/.*text="Wait"[^>]*bounds="\(\[[0-9,]*\]\[[0-9,]*\]\)".*/\1/p' | head -1)
+          action="Wait"
+        fi
+        if [[ $close_bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]]; then
+          x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+          y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+          echo "[anr-watchdog] dismissing '$anr_app' ANR dialog ($action at $x,$y)" >&2
+          adb -s "$device" shell input tap "$x" "$y" >/dev/null 2>&1 || true
+        fi
+      fi
+      # Every 3s turned out to hammer the a11y framework hard enough to
+      # starve Maestro's own UiAutomation binding on loaded emulators;
+      # 10s still catches ANR dialogs well inside assert timeouts.
+      sleep 10
+    done
+  ) &
+  anr_watchdog_pid=$!
+}
+
 device=${ANDROID_SERIAL:-}
 if [[ -z $device ]]; then
   device=$(adb devices | awk 'NR > 1 && $2 == "device" { print $1; exit }')
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
+
+# Suppress ANR dialogs for background processes up front; the watchdog below
+# still closes foreground ANRs (e.g. Pixel Launcher) by force-stopping them.
+adb -s "$device" shell settings put global anr_show_background 0 >/dev/null 2>&1 || true
+if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_ANR_WATCHDOG:-0} != 1 ]]; then
+  start_anr_watchdog
+fi
 
 if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
   && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
@@ -283,13 +342,13 @@ fi
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
   (
     cd "$repo_root/flutter"
-    ANDROID_SERIAL=$device flutter build apk --debug
+    ANDROID_SERIAL=$device flutter build apk --profile
   )
 fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
-  apk="$repo_root/flutter/build/app/outputs/flutter-apk/app-debug.apk"
-  [[ -f $apk ]] || die "Android debug APK was not produced at $apk"
+  apk="$repo_root/flutter/build/app/outputs/flutter-apk/app-profile.apk"
+  [[ -f $apk ]] || die "Android profile APK was not produced at $apk"
   adb -s "$device" install -r "$apk" >/dev/null
 fi
 
@@ -395,6 +454,70 @@ if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
   done
 fi
 
+recover_device() {
+  # Retrying a flow against a dead adb server, a flapped transport
+  # (get-state answers but the adbd channel is closed), or a crashed
+  # emulator fails identically — recover connectivity before the next
+  # attempt. `adb shell echo ok` proves the channel end-to-end; get-state
+  # alone only proves a stale transport entry.
+  local device_ok=0
+  if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+    device_ok=1
+  else
+    echo "[android-e2e] device $device channel dead; reconnecting adb" >&2
+    adb -s "$device" reconnect >/dev/null 2>&1 || true
+    sleep 2
+    if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+      device_ok=1
+    else
+      echo "[android-e2e] restarting adb server" >&2
+      adb kill-server >/dev/null 2>&1 || true
+      sleep 1
+      adb start-server >/dev/null 2>&1 || true
+      timeout 60 adb -s "$device" wait-for-device 2>/dev/null || true
+      if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+        device_ok=1
+      fi
+    fi
+  fi
+  if (( device_ok )); then
+    # adb reverse rules die with transport flaps even when the device
+    # itself stayed up — re-add the db-sync tunnel before retrying.
+    if [[ -n ${local_backend_port:-} ]]; then
+      adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port" >/dev/null 2>&1 || true
+    fi
+    # Clear stale Maestro instrumentation that may still hold the
+    # UiAutomation binding from the failed attempt.
+    adb -s "$device" shell am force-stop dev.mobile.maestro >/dev/null 2>&1 || true
+    return 0
+  fi
+  # The emulator process is gone or hung — kill it if still running,
+  # then relaunch the runner's AVD.
+  local emulator_bin avd
+  emulator_bin="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/emulator/emulator"
+  avd=$("$emulator_bin" -list-avds 2>/dev/null | head -n 1)
+  [[ -n $avd ]] || return 1
+  echo "[android-e2e] relaunching emulator @$avd" >&2
+  timeout 30 adb -s "$device" emu kill >/dev/null 2>&1 || true
+  sleep 2
+  adb kill-server >/dev/null 2>&1 || true
+  adb start-server >/dev/null 2>&1 || true
+  nohup "$emulator_bin" "@$avd" -no-window -no-audio -no-boot-anim \
+    -gpu swiftshader_indirect -no-snapshot-save >/dev/null 2>&1 &
+  timeout 600 adb -s "$device" wait-for-device || return 1
+  timeout 180 adb -s "$device" shell \
+    'while [ "$(getprop sys.boot_completed)" != "1" ]; do sleep 2; done' \
+    || return 1
+  # A fresh boot loses the app and the db-sync tunnel.
+  adb -s "$device" install -r \
+    "$repo_root/flutter/build/app/outputs/flutter-apk/app-profile.apk" \
+    >/dev/null
+  if [[ -n ${local_backend_port:-} ]]; then
+    adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port"
+  fi
+  return 0
+}
+
 for flow in "${flows[@]}"; do
   echo "==> $flow"
   if [[ $flow = /* ]]; then
@@ -457,13 +580,33 @@ for flow in "${flows[@]}"; do
     )
   fi
   adb -s "$device" logcat -c >/dev/null 2>&1 || true
-  if ! MAESTRO_CLI_NO_ANALYTICS=1 maestro "${maestro_args[@]}" "$flow_path"; then
-    # OCaml lui_* FFI exceptions and [NativeEffect] drain traces land in
-    # logcat — dump it so a wedged pipeline is diagnosable from CI output.
-    echo "==> $flow failed — device logcat follows" >&2
-    adb -s "$device" logcat -d -v brief 2>/dev/null | tail -n 400 >&2 || true
-    exit 1
-  fi
+  # A previous flow's Maestro instrumentation (dev.mobile.maestro) can
+  # linger and keep the UiAutomation binding — the next driver session
+  # then waits the whole startup budget for a binding it can never get.
+  # Force-stop the stale driver before each flow.
+  adb -s "$device" shell am force-stop dev.mobile.maestro >/dev/null 2>&1 || true
+  # The Android driver's default startup budget is only 15s — far too small
+  # for a loaded CI emulator (it once failed to come up between two flows).
+  # Per-flow retry additionally covers driver/device hiccups;
+  # LOGSEQ_CHAT_ANDROID_E2E_RETRIES=0 runs each flow exactly once.
+  flow_retries=${LOGSEQ_CHAT_ANDROID_E2E_RETRIES:-1}
+  flow_attempt=0
+  while :; do
+    if MAESTRO_CLI_NO_ANALYTICS=1 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 \
+      maestro "${maestro_args[@]}" "$flow_path"; then
+      break
+    fi
+    flow_attempt=$((flow_attempt + 1))
+    if (( flow_attempt > flow_retries )); then
+      # OCaml lui_* FFI exceptions and [NativeEffect] drain traces land in
+      # logcat — dump it so a wedged pipeline is diagnosable from CI output.
+      echo "==> $flow failed — device logcat follows" >&2
+      adb -s "$device" logcat -d -v brief 2>/dev/null | tail -n 400 >&2 || true
+      exit 1
+    fi
+    echo "[android-e2e] $flow failed; retrying ($flow_attempt/$flow_retries)" >&2
+    recover_device || echo "[android-e2e] device recovery failed" >&2
+  done
   if [[ $flow == "$sharing_image_flow" ]]; then
     adb -s "$device" shell run-as "$app_id" rm -f "$app_share_image"
   fi

@@ -2,6 +2,7 @@ import Foundation
 import LUIAppleBackend
 import Observation
 import LogseqChatModel
+import os
 
 private struct LGChatPatchMetadata: Decodable {
     let generation: Int
@@ -113,6 +114,8 @@ public final class LGChatRuntime {
     @ObservationIgnored
     private let outlinerAutosaveDelayNanoseconds: UInt64
 
+    private static let log = Logger(subsystem: "com.logseq.chat", category: "runtime")
+
     @ObservationIgnored
     private var patchTail: Task<Void, Never>?
 
@@ -191,6 +194,7 @@ public final class LGChatRuntime {
         }
         let envelope = decodeCoreResponse(response)
         guard shouldApplyCoreResponse(response, envelope: envelope) else {
+            Self.log.notice("skipped core response (deduped) pendingSync=\(envelope?.result?.isPendingSyncPatch ?? false, privacy: .public) outliner=\(envelope?.result?.isOutlinerPatch ?? false, privacy: .public)")
             deliverPlatformCommands(envelope)
             return
         }
@@ -390,15 +394,12 @@ public final class LGChatRuntime {
             }
 
             cancelOutlinerAutosaveBeforeExecuting(effect)
+            Self.log.notice("effect start id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public)")
             let resolution = await effectExecutor.execute(effect)
-            #if DEBUG
+            Self.log.notice("effect resolved id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) succeeded=\(resolution.succeeded, privacy: .public)")
             if !resolution.succeeded {
-                print(
-                    "LOGSEQ_LG_EFFECT failed id=\(effect.id)"
-                        + " kind=\(effect.kind) message=\(resolution.message)"
-                )
+                Self.log.error("effect failed id=\(effect.id, privacy: .public) kind=\(effect.kind, privacy: .public) message=\(resolution.message, privacy: .public)")
             }
-            #endif
             if resolution.succeeded,
                case .coreResponse = resolution.output {
                 enqueueApply(native.applySnapshot(resolution.message))
@@ -420,6 +421,7 @@ public final class LGChatRuntime {
                     let syncResolution = await startSyncIfNeeded(
                         envelope: envelope
                     )
+                    Self.log.notice("startSync resolved id=\(effect.id, privacy: .public) succeeded=\(syncResolution.succeeded, privacy: .public)")
                     if !syncResolution.succeeded {
                         lastError = syncResolution.message
                         return
@@ -563,21 +565,17 @@ public final class LGChatRuntime {
             guard let self else { return }
             do {
                 let decoded = try await decodeTask.value
-                guard epoch == self.patchApplyEpoch else { return }
-                #if DEBUG
-                print(
-                    "LOGSEQ_LG_PATCH apply generation="
-                        + String(Self.patchGeneration(patch) ?? -1)
-                )
-                #endif
+                guard epoch == self.patchApplyEpoch else {
+                    Self.log.warning("dropped stale patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public) epoch=\(epoch, privacy: .public) current=\(self.patchApplyEpoch, privacy: .public)")
+                    return
+                }
+                Self.log.notice("apply patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public)")
                 try self.renderer.apply(decoded: decoded)
                 self.lastError = nil
             } catch {
                 guard epoch == self.patchApplyEpoch else { return }
                 self.lastError = String(describing: error)
-                #if DEBUG
-                print("LogseqChat renderer apply failed: \(self.lastError ?? "unknown")")
-                #endif
+                Self.log.error("renderer apply failed: \(self.lastError ?? "unknown", privacy: .public)")
             }
         }
     }

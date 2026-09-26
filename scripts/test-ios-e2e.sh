@@ -57,6 +57,25 @@ fi
 [[ -n $maestro_bin && -x $maestro_bin ]] \
   || die "Maestro CLI is not installed. Install it with: brew install mobile-dev-inc/tap/maestro --formula"
 
+# The setup flow drives the Cognito hosted UI in the system browser, where
+# hierarchy queries occasionally stall or crash the XCTest driver on a
+# loaded runner. Retry the setup once so a driver flake does not fail the
+# whole suite; LOGSEQ_CHAT_IOS_E2E_SETUP_RETRIES=0 disables the retry.
+setup_retries=${LOGSEQ_CHAT_IOS_E2E_SETUP_RETRIES:-1}
+run_setup_flow() {
+  local attempt=0
+  while :; do
+    if MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    if (( attempt > setup_retries )); then
+      return 1
+    fi
+    echo "[ios-e2e] setup flow failed; retrying ($attempt/$setup_retries)" >&2
+  done
+}
+
 device=${LOGSEQ_CHAT_IOS_SIMULATOR_UDID:-}
 if [[ -z $device ]]; then
   device=$(
@@ -138,7 +157,7 @@ if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; the
     mkdir -p "$data_container/Documents"
     cp -R "$seed_cache_dir/$seed_cache_key/graphs" "$data_container/Documents/"
   else
-    MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"
+    run_setup_flow
     data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
     graph_database=""
     for _ in {1..120}; do
@@ -170,7 +189,7 @@ if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; the
   fi
 fi
 if [[ ${flow##*/} == ios-graphs-lifecycle.yaml ]]; then
-  MAESTRO_CLI_NO_ANALYTICS=1 "$maestro_bin" --device "$device" test "$rendered_setup"
+  run_setup_flow
   MAESTRO_CLI_NO_ANALYTICS=1 \
     "$maestro_bin" --device "$device" test "$rendered_graphs_lifecycle_fixture"
 fi
