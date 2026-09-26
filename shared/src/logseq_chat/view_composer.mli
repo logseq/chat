@@ -3,16 +3,6 @@ val composer_attachment_button :
   Lui_ui.ui_context -> (Model.chat_action -> bool) -> Lui_elements.t
 val composer_task_status_button :
   Lui_ui.ui_context -> (Model.chat_action -> bool) -> Lui_elements.t
-val android_composer_send_button :
-  Lui_ui.ui_context ->
-  bool Signal.signal -> (Model.chat_action -> bool) -> Lui_elements.t
-val apple_composer_send_button :
-  bool Signal.signal -> (Model.chat_action -> bool) -> Lui_elements.t
-val composer_send_button :
-  Lui_ui.ui_context ->
-  bool Signal.signal -> (Model.chat_action -> bool) -> Lui_elements.t
-val collapsed_composer_button :
-  Lui_ui.ui_context -> (Model.chat_action -> bool) -> Lui_elements.t
 val composer_asset_preview :
   Model.composer_asset Signal.signal -> Lui_elements.t
 val composer_asset_view :
