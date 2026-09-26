@@ -1,6 +1,13 @@
 open Lui_protocol
 open Lui_elements
 
+let with_press handler (elem : t) : t =
+ fun context parent ->
+   let node = elem context parent in
+   enable context node PressEnabled;
+   register_press context node handler;
+   node
+
 let attachment_menu send : t =
   context_menu
     [
@@ -213,23 +220,24 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
       if_
         ~test:(Signal.map View_base.composer_expanded_ model_source)
         (View_base.with_liquid_glass "rounded-rectangle"
-           (column ~grow:1.0 ~main:`end_ ~gap:0
-              ~padding_horizontal:
-                (if Lui_ui.host context = FlutterHost then 12 else 16)
-              ~padding_vertical:
-                (if Lui_ui.host context = FlutterHost then 12 else 8)
-              ~background:
-                (if Lui_ui.host context = FlutterHost then
-                   "surface-container-high"
-                 else "glass-fallback")
-              ~corner_radius:24
+           (with_press (press send Model.FocusComposer)
+              (column ~grow:1.0 ~main:`end_ ~gap:0
+                 ~padding_horizontal:
+                   (if Lui_ui.host context = FlutterHost then 12 else 16)
+                 ~padding_vertical:
+                   (if Lui_ui.host context = FlutterHost then 12 else 8)
+                 ~background:
+                   (if Lui_ui.host context = FlutterHost then
+                      "surface-container-high"
+                    else "glass-fallback")
+                 ~corner_radius:24
            [
              box ~height:6 ~accessibility_identifier:"spacer.composer.top"
                [];
              if_
                ~test:(Signal.map View_base.composer_assets_present_
                         model_source)
-               (scroll ~height:140
+               (scroll ~orientation:`horizontal ~height:140
                      [
                        row ~gap:8
                          [
@@ -287,7 +295,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                    (reactive View_base.composer_send_disabled_ model_source)
                    send;
                ];
-           ]));
+              ])));
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
         (collapsed_composer_button context send);

@@ -15,7 +15,7 @@ dependencies:
   lui_flutter_backend:
     git:
       url: ssh://git@github.com/logseq/lui.git
-      ref: 5c8ee0bf82fde5257bfbe70562c8649a13c56c59
+      ref: d2b3b0739bf047a1df5d22d3f316a45e430a68bd
       path: platform/flutter
   webview_flutter: ^4.14.1
 
