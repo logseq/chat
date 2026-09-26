@@ -89,6 +89,8 @@ enum LGChatIconPolicy {
             "toolbar-delete": .systemName("trash"),
             "toolbar-hide-keyboard": .assetName("toolbar_hide_keyboard"),
             "toolbar-indent": .assetName("toolbar_indent"),
+            "toolbar-move-down": .systemName("arrow.down"),
+            "toolbar-move-up": .systemName("arrow.up"),
             "toolbar-outdent": .assetName("toolbar_outdent"),
             "toolbar-tag": .assetName("toolbar_tag"),
             "toolbar-task": .assetName("task_done"),
@@ -109,6 +111,8 @@ enum LGChatIconPolicy {
         result["toolbar-camera"] = .systemName("camera")
         result["toolbar-hide-keyboard"] = .systemName("keyboard.chevron.compact.down")
         result["toolbar-indent"] = .systemName("arrow.right")
+        result["toolbar-move-down"] = .systemName("arrow.down")
+        result["toolbar-move-up"] = .systemName("arrow.up")
         result["toolbar-outdent"] = .systemName("arrow.left")
         result["toolbar-tag"] = .systemName("number")
         result["toolbar-task"] = .systemName("checkmark.square")

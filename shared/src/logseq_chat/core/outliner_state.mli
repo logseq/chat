@@ -34,6 +34,8 @@ type outliner_toolbar =
   | Task
   | Outdent
   | Indent
+  | Move_up
+  | Move_down
   | Tag_action
   | Page_reference
   | Camera
@@ -222,6 +224,11 @@ val selection_is_contiguous :
 val same_parent : Cache_model.block list -> string option -> bool
 val indent : outliner_context -> Sset.t -> Pending_ops.pending_move list option
 val outdent : outliner_context -> Sset.t -> Pending_ops.pending_move list option
+val move :
+  outliner_context ->
+  Sset.t ->
+  bool ->
+  Pending_ops.pending_move list option
 val ancestor_uuids : outliner_context -> Cache_model.block -> Sset.t
 val drop :
   outliner_context ->
@@ -249,6 +256,11 @@ val interaction_targets : outliner_state -> Sset.t
 val toolbar_insert :
   outliner_state -> string -> int -> outliner_state * outliner_command list
 val toolbar_move :
+  outliner_context ->
+  outliner_state ->
+  bool ->
+  outliner_state * outliner_command list
+val toolbar_reorder :
   outliner_context ->
   outliner_state ->
   bool ->

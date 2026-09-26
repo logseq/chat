@@ -688,6 +688,10 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
               "button.outliner.editor.outdent" "outdent" send;
             toolbar_button (`app "toolbar-indent") "Indent"
               "button.outliner.editor.indent" "indent" send;
+            toolbar_button (`app "toolbar-move-up") "Move up"
+              "button.outliner.editor.moveUp" "moveUp" send;
+            toolbar_button (`app "toolbar-move-down") "Move down"
+              "button.outliner.editor.moveDown" "moveDown" send;
             toolbar_button (`app "toolbar-tag") "Tag"
               "button.outliner.editor.tag" "tag" send;
             toolbar_button (`app "toolbar-camera") "Photo"
@@ -730,6 +734,10 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           "button.outliner.editor.outdent" "outdent";
         apple_icon_button (`app "toolbar-indent") "Indent"
           "button.outliner.editor.indent" "indent";
+        apple_icon_button (`app "toolbar-move-up") "Move up"
+          "button.outliner.editor.moveUp" "moveUp";
+        apple_icon_button (`app "toolbar-move-down") "Move down"
+          "button.outliner.editor.moveDown" "moveDown";
         apple_icon_button (`app "toolbar-tag") "Tag"
           "button.outliner.editor.tag" "tag";
         apple_icon_button (`app "toolbar-camera") "Photo"

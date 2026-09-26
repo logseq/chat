@@ -391,6 +391,81 @@ let selected_indent_and_outdent_stay_atomic_and_preserve_selection () =
   check (compare a.Ops.order b.Ops.order < 0);
   check (compare b.Ops.order "a1" < 0)
 
+let move_up_and_down_reorder_siblings_and_keep_focus () =
+  let ctx =
+    context_for
+      [
+        row "first" "page" "a0";
+        row "second" "page" "a1";
+        row "third" "page" "a2";
+      ]
+  in
+  let editing = fst (step ctx State.empty (State.Tap_block "third")) in
+  let next, commands = step ctx editing (State.Toolbar State.Move_up) in
+  let batch = moves commands in
+  check_eq (State.editing_uuid next) (Some "third");
+  check_eq (List.map (fun (m : Ops.pending_move) -> m.uuid) batch)
+    [ "third" ];
+  check_eq (List.hd batch).Ops.parent_uuid "page";
+  check (compare "a0" (List.hd batch).Ops.order < 0);
+  check (compare (List.hd batch).Ops.order "a1" < 0);
+  let current =
+    advance ctx State.empty
+      [ State.Long_press_block "first"; State.Tap_block "second" ]
+  in
+  let next, commands = step ctx current (State.Toolbar State.Move_down) in
+  let batch = moves commands in
+  check_eq (selected next) [ "first"; "second" ];
+  check_eq (List.map (fun (m : Ops.pending_move) -> m.uuid) batch)
+    [ "first"; "second" ];
+  check
+    (List.for_all
+       (fun (m : Ops.pending_move) -> compare "a2" m.Ops.order < 0)
+       batch);
+  let first_editing = fst (step ctx State.empty (State.Tap_block "first")) in
+  check_eq (snd (step ctx first_editing (State.Toolbar State.Move_up)))
+    [ State.Haptic State.Impact ];
+  let last_editing = fst (step ctx State.empty (State.Tap_block "third")) in
+  check_eq (snd (step ctx last_editing (State.Toolbar State.Move_down)))
+    [ State.Haptic State.Impact ]
+
+let move_up_down_at_boundary_crosses_into_neighbor_parent () =
+  let ctx =
+    context_for
+      [
+        row "ra" "page" "a0";
+        row "ca" "ra" "a0";
+        row "rb" "page" "a1";
+        row "cb1" "rb" "a0";
+        row "cb2" "rb" "a1";
+        row "rc" "page" "a2";
+      ]
+  in
+  let editing = fst (step ctx State.empty (State.Tap_block "cb1")) in
+  let next, commands = step ctx editing (State.Toolbar State.Move_up) in
+  let batch = moves commands in
+  check_eq (State.editing_uuid next) (Some "cb1");
+  check_eq (List.map (fun (m : Ops.pending_move) -> m.uuid) batch) [ "cb1" ];
+  check_eq (List.hd batch).Ops.parent_uuid "ra";
+  check (compare (List.hd batch).Ops.order "a0" < 0);
+  let editing = fst (step ctx State.empty (State.Tap_block "cb2")) in
+  let _, commands = step ctx editing (State.Toolbar State.Move_down) in
+  let batch = moves commands in
+  check_eq (List.map (fun (m : Ops.pending_move) -> m.uuid) batch) [ "cb2" ];
+  check_eq (List.hd batch).Ops.parent_uuid "rc";
+  let nested =
+    context_for
+      [
+        row "rp" "page" "a0";
+        row "only" "rp" "a0";
+      ]
+  in
+  let editing = fst (step nested State.empty (State.Tap_block "only")) in
+  check_eq (snd (step nested editing (State.Toolbar State.Move_up)))
+    [ State.Haptic State.Impact ];
+  check_eq (snd (step nested editing (State.Toolbar State.Move_down)))
+    [ State.Haptic State.Impact ]
+
 let delete_confirmation_is_consumed_once () =
   let current = fst (step context State.empty (State.Long_press_block "a")) in
   let asked, commands = step context current (State.Toolbar State.Delete) in
@@ -1047,6 +1122,10 @@ let cases =
       return_only_outdents_the_final_empty_child;
     case "selected indent and outdent stay atomic and preserve selection"
       selected_indent_and_outdent_stay_atomic_and_preserve_selection;
+    case "move up and down reorder siblings and keep focus"
+      move_up_and_down_reorder_siblings_and_keep_focus;
+    case "move up and down cross the parent boundary at edges"
+      move_up_down_at_boundary_crosses_into_neighbor_parent;
     case "delete confirmation is consumed once"
       delete_confirmation_is_consumed_once;
     case "drop rejects descendants and valid drop clears selection"

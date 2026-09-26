@@ -5063,6 +5063,8 @@ let toolbar_wire_actions_preserve_all_public_mappings () =
       ("task", Outliner.Task);
       ("outdent", Outliner.Outdent);
       ("indent", Outliner.Indent);
+      ("moveUp", Outliner.Move_up);
+      ("moveDown", Outliner.Move_down);
       ("tag", Outliner.Tag_action);
       ("pageReference", Outliner.Page_reference);
       ("camera", Outliner.Camera);

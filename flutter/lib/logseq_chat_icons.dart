@@ -49,6 +49,8 @@ const logseqChatAppIcons = <String, IconData>{
   'toolbar-delete': Icons.delete_outline_rounded,
   'toolbar-hide-keyboard': Icons.keyboard_hide_rounded,
   'toolbar-indent': Icons.format_indent_increase,
+  'toolbar-move-down': Icons.arrow_downward_rounded,
+  'toolbar-move-up': Icons.arrow_upward_rounded,
   'toolbar-outdent': Icons.format_indent_decrease,
   'toolbar-tag': Icons.tag_rounded,
   'toolbar-task': Icons.check_box_outlined,
