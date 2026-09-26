@@ -15,7 +15,9 @@ private struct LogseqModelLogger {
         #if os(Android)
         print(message)
         #else
-        logger.info("\(message, privacy: .public)")
+        // notice so the line survives the sim's unified-log filtering (info
+        // is dropped from device-simulator.log captures).
+        logger.notice("\(message, privacy: .public)")
         #endif
     }
 
