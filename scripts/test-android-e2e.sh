@@ -459,9 +459,15 @@ recover_device() {
   # (get-state answers but the adbd channel is closed), or a crashed
   # emulator fails identically — recover connectivity before the next
   # attempt. `adb shell echo ok` proves the channel end-to-end; get-state
-  # alone only proves a stale transport entry.
+  # alone only proves a stale transport entry. Pass "force" to skip the
+  # connectivity ladder and relaunch the emulator directly — used when the
+  # adb channel is fine but the Maestro driver itself is wedged.
+  local force_relaunch=0
+  [[ ${1:-} == force ]] && force_relaunch=1
   local device_ok=0
-  if timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
+  if (( force_relaunch )); then
+    :
+  elif timeout 15 adb -s "$device" shell 'echo ok' 2>/dev/null | grep -q ok; then
     device_ok=1
   else
     echo "[android-e2e] device $device channel dead; reconnecting adb" >&2
@@ -592,10 +598,16 @@ for flow in "${flows[@]}"; do
   flow_retries=${LOGSEQ_CHAT_ANDROID_E2E_RETRIES:-1}
   flow_attempt=0
   while :; do
+    maestro_log=$(mktemp)
     if MAESTRO_CLI_NO_ANALYTICS=1 MAESTRO_DRIVER_STARTUP_TIMEOUT=300000 \
-      maestro "${maestro_args[@]}" "$flow_path"; then
+      maestro "${maestro_args[@]}" "$flow_path" 2>&1 | tee "$maestro_log"; then
+      rm -f "$maestro_log"
       break
     fi
+    driver_start_failed=0
+    grep -q "AndroidDriverTimeoutException\|driver did not start" \
+      "$maestro_log" && driver_start_failed=1
+    rm -f "$maestro_log"
     flow_attempt=$((flow_attempt + 1))
     if (( flow_attempt > flow_retries )); then
       # OCaml lui_* FFI exceptions and [NativeEffect] drain traces land in
@@ -605,7 +617,14 @@ for flow in "${flows[@]}"; do
       exit 1
     fi
     echo "[android-e2e] $flow failed; retrying ($flow_attempt/$flow_retries)" >&2
-    recover_device || echo "[android-e2e] device recovery failed" >&2
+    if (( driver_start_failed )); then
+      # The driver never bound its port while adb stayed healthy — the
+      # instrumentation is wedged, not the channel. Relaunch the emulator
+      # for a clean binding rather than force-stopping the stale driver.
+      recover_device force || echo "[android-e2e] device recovery failed" >&2
+    else
+      recover_device || echo "[android-e2e] device recovery failed" >&2
+    fi
   done
   if [[ $flow == "$sharing_image_flow" ]]; then
     adb -s "$device" shell run-as "$app_id" rm -f "$app_share_image"
