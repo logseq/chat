@@ -22,8 +22,8 @@ depends: [
   "sqlite3"
 ]
 pin-depends: [
-  ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#e439cbac48b28800820984ea3e285cf26a4f92b5"]
-  ["datascript-ocaml-native.dev" "git+https://github.com/logseq/datascript-ocaml.git#e439cbac48b28800820984ea3e285cf26a4f92b5"]
+  ["datascript_ocaml.dev" "git+https://github.com/logseq/datascript-ocaml.git#e439cba85fa0a5b35277959f4737510e3b6a45a7"]
+  ["datascript-ocaml-native.dev" "git+https://github.com/logseq/datascript-ocaml.git#e439cba85fa0a5b35277959f4737510e3b6a45a7"]
   ["persistent_sorted_set_ocaml.dev" "git+https://github.com/logseq/persistent-sorted-set-ocaml.git#4016dae1cdf4304207d8277ff9957656cdd8b177"]
   ["melange-edn-core.0.5.0" "git+https://github.com/logseq/melange-edn.git#main"]
   ["melange-edn-native.0.5.0" "git+https://github.com/logseq/melange-edn.git#main"]
