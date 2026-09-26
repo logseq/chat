@@ -476,7 +476,7 @@ pin-depends: [
   ]
   [
     "ocaml-signal.0.1.0"
-    "git+https://github.com/logseq/ocaml-signal.git#b9cb81fc910519fc579a90960267acb851483bca"
+    "git+https://github.com/logseq/ocaml-signal.git#868c1459f865b4ba3b227eb440dba40f1c812899"
   ]
   [
     "ocaml-syntax-shims.1.0.0"
@@ -1490,7 +1490,7 @@ x-opam-monorepo-duniverse-dirs: [
     "ocaml-fsrs"
   ]
   [
-    "git+https://github.com/logseq/ocaml-signal.git#b9cb81fc910519fc579a90960267acb851483bca"
+    "git+https://github.com/logseq/ocaml-signal.git#868c1459f865b4ba3b227eb440dba40f1c812899"
     "ocaml-signal"
   ]
   [
