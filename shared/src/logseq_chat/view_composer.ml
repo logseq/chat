@@ -1,13 +1,6 @@
 open Lui_protocol
 open Lui_elements
 
-let with_press handler (elem : t) : t =
- fun context parent ->
-   let node = elem context parent in
-   enable context node PressEnabled;
-   register_press context node handler;
-   node
-
 let attachment_menu send : t =
   context_menu
     [
@@ -92,56 +85,6 @@ let composer_task_status_button (context : Lui_ui.ui_context) send : t =
       ~on_press:(press send Model.OpenTaskStatusPicker)
       []
 
-let android_composer_send_button (context : Lui_ui.ui_context)
-    disabled_source send : t =
-  if Lui_ui.host context = FlutterHost then
-    button ~icon:(`app "send") ~variant:`primary ~size:`icon ~width:48
-      ~height:48 ~label:"Send" ~accessibility_identifier:"button.send"
-      ~disabled_signal:disabled_source
-      ~on_press:(press send Model.SendComposer)
-      []
-  else
-    button ~icon:(`app "send") ~variant:`primary ~label:"Send"
-      ~accessibility_identifier:"button.send"
-      ~disabled_signal:disabled_source
-      ~on_press:(press send Model.SendComposer)
-      ~text:"Send" []
-
-let apple_composer_send_button disabled_source send : t =
-  button ~icon:(`app "arrow-up") ~variant:`ghost ~width:36 ~height:36
-    ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:"Send"
-    ~accessibility_identifier:"button.send" ~disabled_signal:disabled_source
-    ~on_press:(press send Model.SendComposer)
-    []
-
-let composer_send_button (context : Lui_ui.ui_context) disabled_source send
-    : t =
-  if Lui_ui.platform context = AndroidOS then
-    android_composer_send_button context disabled_source send
-  else apple_composer_send_button disabled_source send
-
-let collapsed_composer_button (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.platform context = AndroidOS then
-    if Lui_ui.host context = FlutterHost then
-      button ~icon:(`app "add") ~variant:`secondary ~grow:1.0 ~height:58
-        ~padding_horizontal:20 ~label:"Capture a thought"
-        ~accessibility_identifier:"button.composer.expand"
-        ~on_press:(press send Model.ExpandComposer)
-        ~text:"Capture a thought" []
-    else
-      button ~variant:`ghost ~height:58 ~padding_horizontal:30
-        ~foreground:"muted-foreground"
-        ~accessibility_identifier:"button.composer.expand"
-        ~on_press:(press send Model.ExpandComposer)
-        ~text:"Capture" []
-  else
-    View_base.with_liquid_glass "capsule"
-      (button ~variant:`ghost ~grow:1.0 ~height:58
-         ~padding_horizontal:30 ~foreground:"muted-foreground"
-         ~accessibility_identifier:"button.composer.expand"
-         ~on_press:(press send Model.ExpandComposer)
-         ~text:"Capture" [])
-
 let composer_asset_preview asset_source : t =
  fun context parent ->
    let node = Lui_ui.extension context "composer-asset" in
@@ -219,86 +162,66 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
     [
       if_
         ~test:(Signal.map View_base.composer_expanded_ model_source)
-        (View_base.with_liquid_glass "rounded-rectangle"
-           (with_press (press send Model.FocusComposer)
-              (column ~grow:1.0 ~main:`end_ ~gap:0
-                 ~padding_horizontal:
-                   (if Lui_ui.host context = FlutterHost then 12 else 16)
-                 ~padding_vertical:
-                   (if Lui_ui.host context = FlutterHost then 12 else 8)
-                 ~background:
-                   (if Lui_ui.host context = FlutterHost then
-                      "surface-container-high"
-                    else "glass-fallback")
-                 ~corner_radius:24
-           [
-             box ~height:6 ~accessibility_identifier:"spacer.composer.top"
-               [];
-             if_
-               ~test:(Signal.map View_base.composer_assets_present_
-                        model_source)
-               (scroll ~orientation:`horizontal ~height:140
-                     [
-                       row ~gap:8
-                         [
-                           keyed
-                             ~source:
-                               (Signal.map View_base.model_composer_assets
-                                  model_source)
-                             ~key:View_base.composer_asset_identifier
-                             ~cmp:compare
-                             ~mount:(fun asset_source ->
-                               composer_asset_view asset_source send);
-                         ];
-                     ]);
-             View_base.with_bool_prop_signal Lui_protocol.Autofocus
-               (Signal.map View_base.composer_autofocus_ model_source)
-               (textarea
-                  ~text_signal:(reactive View_base.composer_draft model_source)
-                  ~min_height:36 ~style_class:"composer-input"
-                  ~placeholder:"Capture" ~label:"Capture"
-                  ~accessibility_identifier:"field.composer"
-                  ~on_input:(on_input send (fun text ->
-                               Model.ChangeComposerDraft text))
-                  ~on_submit:(press send Model.SendComposer)
-                  []);
-             box ~height:8
-               ~accessibility_identifier:"spacer.composer.field-controls"
-               [];
-             row ~gap:8 ~height:44 ~cross:`center
-               ~accessibility_identifier:"row.composer.controls"
-               [
-                 if Lui_ui.host context = FlutterHost then
-                   stack
-                     [
-                       composer_attachment_button context send;
-                       if_
-                         ~test:
-                           (Signal.map
-                              View_base.model_attachment_picker_open_
-                              model_source)
-                         (attachment_picker_menu send);
-                     ]
-                 else composer_attachment_button context send;
-                 stack
-                   [
-                     composer_task_status_button context send;
-                     if_
-                       ~test:
-                         (Signal.map View_base.model_task_status_picker_open_
-                            model_source)
-                       (task_status_picker_dialog model_source send);
-                   ];
-                 spacer ~grow:1.0
-                   ~accessibility_identifier:"spacer.composer.controls" [];
-                 composer_send_button context
-                   (reactive View_base.composer_send_disabled_ model_source)
-                   send;
-               ];
-              ])));
+        (Lui_element_combine.composer
+           ~placeholder:"Capture" ~label:"Capture"
+           ~text_signal:(reactive View_base.composer_draft model_source)
+           ~autofocus_signal:
+             (Signal.map View_base.composer_autofocus_ model_source)
+           ~attachments:
+             (keyed
+                ~source:
+                  (Signal.map View_base.model_composer_assets model_source)
+                ~key:View_base.composer_asset_identifier ~cmp:compare
+                ~mount:(fun asset_source ->
+                  composer_asset_view asset_source send))
+           ~attachments_visible:
+             (reactive View_base.composer_assets_present_ model_source)
+           ~actions:
+             [
+               (if Lui_ui.host context = FlutterHost then
+                  stack
+                    [
+                      composer_attachment_button context send;
+                      if_
+                        ~test:
+                          (Signal.map
+                             View_base.model_attachment_picker_open_
+                             model_source)
+                        (attachment_picker_menu send);
+                    ]
+                else composer_attachment_button context send);
+               stack
+                 [
+                   composer_task_status_button context send;
+                   if_
+                     ~test:
+                       (Signal.map View_base.model_task_status_picker_open_
+                          model_source)
+                     (task_status_picker_dialog model_source send);
+                 ];
+             ]
+           ~send_icon:
+             (if Lui_ui.platform context = AndroidOS then `app "send"
+              else `app "arrow-up")
+           ~send_disabled:
+             (reactive View_base.composer_send_disabled_ model_source)
+           ~on_input:(on_input send (fun text ->
+                        Model.ChangeComposerDraft text))
+           ~on_submit:(press send Model.SendComposer)
+           ~on_send:(press send Model.SendComposer)
+           ~on_press:(press send Model.FocusComposer)
+           ());
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
-        (collapsed_composer_button context send);
+        (Lui_element_combine.composer_collapsed
+           ~label:
+             (if Lui_ui.host context = FlutterHost then "Capture a thought"
+              else "Capture")
+           ?icon:
+             (if Lui_ui.host context = FlutterHost then Some (`app "add")
+              else None)
+           ~accessibility_identifier:"button.composer.expand"
+           ~on_press:(press send Model.ExpandComposer) ());
     ]
 
 let outliner_task_status_row block_id status_source send : t =
