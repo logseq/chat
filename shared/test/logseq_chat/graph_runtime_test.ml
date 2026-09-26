@@ -66,14 +66,14 @@ let base_db title =
       add 1 "block/uuid" (Ds.Uuid "page");
       add 1 "block/title" (Ds.String "Page");
       add 1 "block/name" (Ds.String "page");
-      add 1 "block/journal-day" (Ds.Int 20260816);
+      add 1 "block/journal-day" (Ds.Int64 20260816L);
       add 10 "block/uuid" (Ds.Uuid "block");
       add 10 "block/title" (Ds.String title);
       add 10 "block/page" (Ds.Ref 1);
       add 10 "block/parent" (Ds.Ref 1);
       add 10 "block/order" (Ds.String "a0");
-      add 10 "block/created-at" (Ds.Int 1);
-      add 10 "block/updated-at" (Ds.Int 1);
+      add 10 "block/created-at" (Ds.Int64 1L);
+      add 10 "block/updated-at" (Ds.Int64 1L);
     ]
     (Ds.empty_db ~schema ())
 
@@ -153,7 +153,7 @@ let semantic_values_preserve_native_primitives () =
   let cases =
     [
       (Ds.String "text", Pending.String_value "text");
-      (Ds.Int 42, Pending.Int_value 42);
+      (Ds.Int64 42L, Pending.Int_value 42);
       (Ds.Instant 1234L, Pending.Instant_value 1234);
       (Ds.Float 0.5, Pending.Float_value 0.5);
       (Ds.Bool false, Pending.Bool_value false);
@@ -171,8 +171,8 @@ let semantic_maps_preserve_nesting_entry_order_and_duplicate_keys () =
       [
         ( Ds.Keyword "nested",
           Ds.Map [ (Ds.Keyword "flag", Ds.Bool true) ] );
-        (Ds.Keyword "duplicate", Ds.Int 1);
-        (Ds.Keyword "duplicate", Ds.Int 2);
+        (Ds.Keyword "duplicate", Ds.Int64 1L);
+        (Ds.Keyword "duplicate", Ds.Int64 2L);
       ]
   in
   let expected =
@@ -188,7 +188,7 @@ let semantic_maps_preserve_nesting_entry_order_and_duplicate_keys () =
 let semantic_maps_reject_invalid_keys_and_unsupported_values () =
   check_eq
     (Pending.semantic_value_from_datascript
-       (Ds.Map [ (Ds.String "invalid", Ds.Int 1); (Ds.Keyword "later", Ds.Int 2) ]))
+       (Ds.Map [ (Ds.String "invalid", Ds.Int64 1L); (Ds.Keyword "later", Ds.Int64 2L) ]))
     (Error "flashcard state contains a non-keyword key");
   check_eq
     (Pending.semantic_value_from_datascript
@@ -254,7 +254,7 @@ let page_deletion_is_optimistic_durable_and_rejects_built_ins () =
       let db =
         Ds.db_with
           [
-            Ds.Retract (Ds.Entity_id 1, "block/journal-day", Some (Ds.Int 20260816));
+            Ds.Retract (Ds.Entity_id 1, "block/journal-day", Some (Ds.Int64 20260816L));
             add 20 "block/uuid" (Ds.Uuid "recycle-page");
             add 20 "block/title" (Ds.String "Recycle");
             add 20 "block/name" (Ds.String "recycle");
@@ -890,8 +890,8 @@ let encrypted_merge_encrypts_the_completed_title_once () =
             add 11 "block/page" (Ds.Ref 1);
             add 11 "block/parent" (Ds.Ref 1);
             add 11 "block/order" (Ds.String "Zz");
-            add 11 "block/created-at" (Ds.Int 0);
-            add 11 "block/updated-at" (Ds.Int 0);
+            add 11 "block/created-at" (Ds.Int64 0L);
+            add 11 "block/updated-at" (Ds.Int64 0L);
           ]
           (base_db "Old")
       in
@@ -930,12 +930,12 @@ let journal_window_grows_by_two_pages_per_request () =
               add page "block/uuid" (Ds.Uuid (Printf.sprintf "page-%d" index));
               add page "block/title" (Ds.String (Printf.sprintf "Page %d" index));
               add page "block/name" (Ds.String (Printf.sprintf "page-%d" index));
-              add page "block/journal-day" (Ds.Int (20260801 + index));
+              add page "block/journal-day" (Ds.Int64 (Int64.of_int (20260801 + index)));
               add block "block/uuid" (Ds.Uuid (Printf.sprintf "block-%d" index));
               add block "block/title" (Ds.String (Printf.sprintf "Block %d" index));
               add block "block/page" (Ds.Ref page);
               add block "block/parent" (Ds.Ref page);
-              add block "block/created-at" (Ds.Int index);
+              add block "block/created-at" (Ds.Int64 (Int64.of_int index));
             ])
           (List.init 8 (fun i -> i))
       in
@@ -1089,7 +1089,7 @@ let authoritative_today_journal_is_not_recreated () =
             add 1 "block/uuid" (Ds.Uuid "existing-today");
             add 1 "block/title" (Ds.String "Today");
             add 1 "block/name" (Ds.String "today");
-            add 1 "block/journal-day" (Ds.Int day);
+            add 1 "block/journal-day" (Ds.Int64 (Int64.of_int day));
           ]
           (Ds.empty_db ~schema ())
       in
@@ -1122,7 +1122,7 @@ let accepted_partial_journal_keeps_its_pending_first_block () =
                  add 1 "block/uuid" (Ds.Uuid value.page_uuid);
                  add 1 "block/title" (Ds.String value.title);
                  add 1 "block/name" (Ds.String value.title);
-                 add 1 "block/journal-day" (Ds.Int value.journal_day);
+                 add 1 "block/journal-day" (Ds.Int64 (Int64.of_int value.journal_day));
                ]
                (Ds.empty_db ~schema ())
            in
@@ -1247,8 +1247,8 @@ let startup_split_confirmation_distinguishes_submission_from_collision () =
                 add 11 "block/page" (Ds.Ref 1);
                 add 11 "block/parent" (Ds.Ref 1);
                 add 11 "block/order" (Ds.String "a2");
-                add 11 "block/created-at" (Ds.Int 2);
-                add 11 "block/updated-at" (Ds.Int 3);
+                add 11 "block/created-at" (Ds.Int64 2L);
+                add 11 "block/updated-at" (Ds.Int64 3L);
               ]
               (base_db "Old")
           in

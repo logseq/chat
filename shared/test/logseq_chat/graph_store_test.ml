@@ -130,7 +130,7 @@ let typed_restore_and_writable_connection_persist () =
       (values db "block/uuid");
     check_eq [ Ds.Ref 11 ] (values db "block/parent");
     check_eq [ Ds.Keyword "whiteboard" ] (values db "block/type");
-    check_eq [ Ds.Int 1723012345678 ] (values db "block/created-at");
+    check_eq [ Ds.Int64 1723012345678L ] (values db "block/created-at");
     check_eq [ Ds.Map [ (Ds.Keyword "priority", Ds.Keyword "A") ] ]
       (values db "block/properties");
     check_eq [ Ds.Ref 11; Ds.Ref 12 ] (values db "block/tags");

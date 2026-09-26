@@ -24,7 +24,7 @@ let rec semantic_value_from_datascript input =
   let ( let* ) = Result.bind in
   match input with
   | Ds.String value -> Ok (String_value value)
-  | Ds.Int value -> Ok (Int_value value)
+  | Ds.Int64 value -> Ok (Int_value (Int64.to_int value))
   | Ds.Instant value -> Ok (Instant_value (Int64.to_int value))
   | Ds.Float value -> Ok (Float_value value)
   | Ds.Bool value -> Ok (Bool_value value)

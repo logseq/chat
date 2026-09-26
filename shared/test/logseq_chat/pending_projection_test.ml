@@ -389,7 +389,7 @@ let flashcard_property_batch_is_atomic () =
       }
   in
   let projected = apply_intent db intent in
-  let remote = with_tx db [ add 10 "logseq.property.fsrs/due" (Ds.Int 99) ] in
+  let remote = with_tx db [ add 10 "logseq.property.fsrs/due" (Ds.Int64 99L) ] in
   check (Projection.satisfied projected intent);
   check
     (Projection.semantic_value_equal projected
@@ -397,7 +397,7 @@ let flashcard_property_batch_is_atomic () =
        (Some state));
   check_eq
     (value projected "block" "logseq.property.fsrs/due")
-    (Some (Ds.Int 1776000060000));
+    (Some (Ds.Int64 1776000060000L));
   check
     (match Projection.compile remote intent with
      | Error _ -> true
@@ -431,7 +431,7 @@ let asset_projection_keeps_upload_metadata_and_built_in_class () =
     (Some (Ds.String "png"));
   check_eq
     (value db "asset" "logseq.property.asset/size")
-    (Some (Ds.Int 2048));
+    (Some (Ds.Int64 2048L));
   check_eq
     (value db "asset" "logseq.property.asset/checksum")
     (Some (Ds.String "abc123"));
@@ -720,7 +720,7 @@ let partial_journal_creation_restores_the_missing_first_block () =
         add 20 "block/uuid" (Ds.Uuid "today-page");
         add 20 "block/title" (Ds.String "Aug 22nd, 2026");
         add 20 "block/name" (Ds.String "aug 22nd, 2026");
-        add 20 "block/journal-day" (Ds.Int 20260822);
+        add 20 "block/journal-day" (Ds.Int64 20260822L);
       ]
   in
   let snapshot =
@@ -729,7 +729,7 @@ let partial_journal_creation_restores_the_missing_first_block () =
   in
   check
     (Option.is_some
-       (Ds.entid db "block/journal-day" (Ds.Int 20260822)));
+       (Ds.entid db "block/journal-day" (Ds.Int64 20260822L)));
   check_eq (Ds.entid db "block/uuid" (Ds.Uuid "today-block")) None;
   check (not (Projection.satisfied db journal_intent));
   check
@@ -786,15 +786,15 @@ let semantic_equality_preserves_nested_values_and_reference_identities () =
     [
       (Ds.Instant 42L, Ops.Instant_value 42);
       (Ds.Float 1.0, Ops.Float_value 1.0);
-      (Ds.Int 1, Ops.Float_value 1.0);
-      (Ds.Int 8, Ops.Int_value 8);
+      (Ds.Int64 1L, Ops.Float_value 1.0);
+      (Ds.Int64 8L, Ops.Int_value 8);
       (Ds.Bool true, Ops.Bool_value true);
       (Ds.Ref 50, Ops.Ref_ident "status.todo");
-      (Ds.Int 50, Ops.Ref_ident "status.todo");
+      (Ds.Int64 50L, Ops.Ref_ident "status.todo");
       ( Ds.Map
           [
             ( Ds.Keyword "nested",
-              Ds.Map [ (Ds.Keyword "value", Ds.Int 1) ] );
+              Ds.Map [ (Ds.Keyword "value", Ds.Int64 1L) ] );
           ],
         nested );
     ];
@@ -808,12 +808,12 @@ let semantic_equality_preserves_nested_values_and_reference_identities () =
       Ds.Map
         [
           ( Ds.String "nested",
-            Ds.Map [ (Ds.Keyword "value", Ds.Int 1) ] );
+            Ds.Map [ (Ds.Keyword "value", Ds.Int64 1L) ] );
         ];
       Ds.Map
         [
           ( Ds.Keyword "nested",
-            Ds.Map [ (Ds.Keyword "value", Ds.Int 2) ] );
+            Ds.Map [ (Ds.Keyword "value", Ds.Int64 2L) ] );
         ];
     ]
 
@@ -894,13 +894,13 @@ let raw_numeric_references_support_editing_and_recursive_deletion () =
         raw 1 "block/title" (Ds.String "Raw page");
         raw 10 "block/uuid" (Ds.Uuid "raw-parent");
         raw 10 "block/title" (Ds.String "Parent");
-        raw 10 "block/page" (Ds.Int 1);
-        raw 10 "block/parent" (Ds.Int 1);
+        raw 10 "block/page" (Ds.Int64 1L);
+        raw 10 "block/parent" (Ds.Int64 1L);
         raw 10 "block/order" (Ds.String "a0");
         raw 11 "block/uuid" (Ds.Uuid "raw-child");
         raw 11 "block/title" (Ds.String "Child");
-        raw 11 "block/page" (Ds.Int 1);
-        raw 11 "block/parent" (Ds.Int 10);
+        raw 11 "block/page" (Ds.Int64 1L);
+        raw 11 "block/parent" (Ds.Int64 10L);
         raw 11 "block/order" (Ds.String "a0");
       ]
   in
@@ -1098,7 +1098,7 @@ let journal_deletion_and_cyclic_parent_traversal_are_rejected () =
       [
         add 30 "block/uuid" (Ds.Uuid "journal");
         add 30 "block/title" (Ds.String "Journal");
-        add 30 "block/journal-day" (Ds.Int 20260817);
+        add 30 "block/journal-day" (Ds.Int64 20260817L);
       ]
   in
   let cyclic = with_tx (base_db ()) [ add 10 "block/parent" (Ds.Ref 10) ] in
@@ -1128,7 +1128,7 @@ let projected_properties_are_queryable_without_changing_authoritative_indexes
        (fun _ -> true)
        (List.of_seq
           (Ds.Db.datoms projected Ds.Aevt ~a:"user.property/effort"
-             ~v:(Ds.Int 8) ())));
+             ~v:(Ds.Int64 8L) ())));
   check_eq
     (List.of_seq
        (Ds.Db.datoms db Ds.Aevt ~a:"user.property/effort" ()))

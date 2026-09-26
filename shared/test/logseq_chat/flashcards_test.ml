@@ -119,8 +119,8 @@ let block_tx eid uuid title parent order created_at =
     add eid "block/page" (Ds.Ref 10);
     add eid "block/parent" (Ds.Ref parent);
     add eid "block/order" (Ds.String order);
-    add eid "block/created-at" (Ds.Int created_at);
-    add eid "block/updated-at" (Ds.Int created_at);
+    add eid "block/created-at" (Ds.Int64 (Int64.of_int created_at));
+    add eid "block/updated-at" (Ds.Int64 (Int64.of_int created_at));
   ]
 
 let ordered_uuids db =

@@ -43,12 +43,12 @@ let rec generic_value (input : Value.value) : Ds.value =
   | Value.Null -> Ds.Nil
   | Value.Bool value -> Ds.Bool value
   | Value.String value -> Ds.String value
-  | Value.Int value -> Ds.Int value
-  | Value.Int64 value -> Ds.Int (Int64.to_int value)
+  | Value.Int value -> Ds.Int64 (Int64.of_int value)
+  | Value.Int64 value -> Ds.Int64 value
   | Value.Float value -> Ds.Float value
   | Value.Binary value -> Ds.String value
   | Value.Big_decimal value -> Ds.Float (float_of_string value)
-  | Value.Big_int value -> Ds.Int (Int64.to_int (Int64.of_string value))
+  | Value.Big_int value -> Ds.Int64 (Int64.of_string value)
   | Value.Date value -> Ds.Instant value
   | Value.Uuid value -> Ds.Uuid value
   | Value.Uri value -> Ds.String value

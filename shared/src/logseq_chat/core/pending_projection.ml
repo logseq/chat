@@ -60,7 +60,7 @@ let favorite_block_eid db page_uuid =
 let rec datascript_value (value : Ops.semantic_value) : Ds.value =
   match value with
   | Ops.String_value value -> Ds.String value
-  | Ops.Int_value value -> Ds.Int value
+  | Ops.Int_value value -> Ds.Int64 (Int64.of_int value)
   | Ops.Instant_value value -> Ds.Instant (Int64.of_int value)
   | Ops.Float_value value -> Ds.Float value
   | Ops.Bool_value value -> Ds.Bool value
@@ -77,12 +77,12 @@ let rec datascript_value (value : Ops.semantic_value) : Ds.value =
 let rec semantic_value_equal_value db left right =
   match (left, right) with
   | Ds.String value, Ops.String_value expected -> value = expected
-  | Ds.Int value, Ops.Int_value expected -> value = expected
+  | Ds.Int64 value, Ops.Int_value expected -> Int64.equal value (Int64.of_int expected)
   | Ds.Instant value, Ops.Instant_value expected -> Int64.equal value (Int64.of_int expected)
   | Ds.Float value, Ops.Float_value expected ->
     Float.equal value expected
-  | Ds.Int value, Ops.Float_value expected ->
-    Float.equal (Float.of_int value) expected
+  | Ds.Int64 value, Ops.Float_value expected ->
+    Float.equal (Int64.to_float value) expected
   | Ds.Bool value, Ops.Bool_value expected -> value = expected
   | Ds.Keyword value, Ops.Keyword_value expected -> value = expected
   | Ds.Map entries, Ops.Map_value expected ->
@@ -100,12 +100,12 @@ let rec semantic_value_equal_value db left right =
          expected
   | Ds.Ref eid, Ops.Ref_uuid uuid ->
     Ds.entid db "block/uuid" (Ds.Uuid uuid) = Some eid
-  | Ds.Int eid, Ops.Ref_uuid uuid ->
-    Ds.entid db "block/uuid" (Ds.Uuid uuid) = Some eid
+  | Ds.Int64 eid, Ops.Ref_uuid uuid ->
+    Ds.entid db "block/uuid" (Ds.Uuid uuid) = Some (Int64.to_int eid)
   | Ds.Ref eid, Ops.Ref_ident ident ->
     Ds.entid db "db/ident" (Ds.Keyword ident) = Some eid
-  | Ds.Int eid, Ops.Ref_ident ident ->
-    Ds.entid db "db/ident" (Ds.Keyword ident) = Some eid
+  | Ds.Int64 eid, Ops.Ref_ident ident ->
+    Ds.entid db "db/ident" (Ds.Keyword ident) = Some (Int64.to_int eid)
   | _ -> false
 
 let semantic_value_equal db left right =
@@ -194,7 +194,7 @@ let journal_page_eid db day =
   Seq.find_map
     (fun datom ->
       match datom.Ds.v with
-      | Ds.Int value when value = day -> Some datom.Ds.e
+      | Ds.Int64 value when Int64.equal value (Int64.of_int day) -> Some datom.Ds.e
       | _ -> None)
     (Db.datoms db Ds.Aevt ~a:"block/journal-day" ())
 
@@ -237,8 +237,8 @@ let insert_tx db (block : Outliner.outliner_block) created_at =
        ; ( "block/parent"
          , Ds.One_value (Ds.Ref_to (lookup block.parent_uuid)) )
        ; ( "block/order", Ds.One_value (Ds.String block.order) )
-       ; ( "block/created-at", Ds.One_value (Ds.Int created_at) )
-       ; ( "block/updated-at", Ds.One_value (Ds.Int created_at) )
+       ; ( "block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)) )
+       ; ( "block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)) )
        ]
        @ many_refs "block/refs" (refs_for_title db block.title)
        @ many_refs "block/tags" (tag_eids_for_title db block.title));
@@ -319,8 +319,8 @@ let create_attrs uuid title created_at =
   ; ( "block/name"
     , Ds.One_value (Ds.String (String.lowercase_ascii title)) )
   ; ("block/title", Ds.One_value (Ds.String title))
-  ; ("block/created-at", Ds.One_value (Ds.Int created_at))
-  ; ("block/updated-at", Ds.One_value (Ds.Int created_at))
+  ; ("block/created-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)))
+  ; ("block/updated-at", Ds.One_value (Ds.Int64 (Int64.of_int created_at)))
   ]
 
 let rec compile db (intent : Ops.pending_intent) =
@@ -412,13 +412,13 @@ let rec compile db (intent : Ops.pending_intent) =
                          ("db/ident", Ds.Keyword "logseq.class/Asset"))
                   ] )
             ; ( "block/created-at"
-              , Ds.One_value (Ds.Int value.created_at) )
+              , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
             ; ( "block/updated-at"
-              , Ds.One_value (Ds.Int value.created_at) )
+              , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
             ; ( "logseq.property.asset/type"
               , Ds.One_value (Ds.String value.asset_type) )
             ; ( "logseq.property.asset/size"
-              , Ds.One_value (Ds.Int value.asset_size) )
+              , Ds.One_value (Ds.Int64 (Int64.of_int value.asset_size)) )
             ; ( "logseq.property.asset/checksum"
               , Ds.One_value (Ds.String value.asset_checksum) )
             ; ( "logseq.property.asset/remote-metadata"
@@ -551,9 +551,9 @@ let rec compile db (intent : Ops.pending_intent) =
                          ("db/ident", Ds.Keyword "logseq.class/Root"))
                   ] )
             ; ( "block/created-at"
-              , Ds.One_value (Ds.Int value.created_at) )
+              , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
             ; ( "block/updated-at"
-              , Ds.One_value (Ds.Int value.created_at) )
+              , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
             ];
         ]
   | Ops.Create_journal value ->
@@ -571,11 +571,11 @@ let rec compile db (intent : Ops.pending_intent) =
                 (Ds.String (String.lowercase_ascii value.title)) )
           ; ("block/title", Ds.One_value (Ds.String value.title))
           ; ( "block/journal-day"
-            , Ds.One_value (Ds.Int value.journal_day) )
+            , Ds.One_value (Ds.Int64 (Int64.of_int value.journal_day)) )
           ; ( "block/created-at"
-            , Ds.One_value (Ds.Int value.created_at) )
+            , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
           ; ( "block/updated-at"
-            , Ds.One_value (Ds.Int value.created_at) )
+            , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
           ]
         in
         let attrs =
@@ -622,9 +622,9 @@ let rec compile db (intent : Ops.pending_intent) =
                 ; ("block/parent", Ds.One_value (Ds.Ref_to page_ref))
                 ; ("block/order", Ds.One_value (Ds.String "a0"))
                 ; ( "block/created-at"
-                  , Ds.One_value (Ds.Int value.created_at) )
+                  , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
                 ; ( "block/updated-at"
-                  , Ds.One_value (Ds.Int value.created_at) )
+                  , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
                 ];
             ]))
   | Ops.Add_tag value ->
@@ -672,9 +672,9 @@ let rec compile db (intent : Ops.pending_intent) =
                   ; ( "block/order"
                     , Ds.One_value (Ds.String value.order) )
                   ; ( "block/created-at"
-                    , Ds.One_value (Ds.Int value.created_at) )
+                    , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
                   ; ( "block/updated-at"
-                    , Ds.One_value (Ds.Int value.created_at) )
+                    , Ds.One_value (Ds.Int64 (Int64.of_int value.created_at)) )
                   ];
               ]))
   | Ops.Delete_page value ->
@@ -701,10 +701,15 @@ let rec compile db (intent : Ops.pending_intent) =
        else
          let parent =
            match one_value db reference "block/parent" with
-           | Some (Ds.Ref eid) | Some (Ds.Int eid) ->
+           | Some (Ds.Ref eid) ->
              [
                ( "logseq.property.recycle/original-parent"
                , Ds.One_value (Ds.Ref eid) )
+             ]
+           | Some (Ds.Int64 eid) ->
+             [
+               ( "logseq.property.recycle/original-parent"
+               , Ds.One_value (Ds.Ref (Int64.to_int eid)) )
              ]
            | _ -> []
          in
@@ -777,7 +782,7 @@ let rec satisfied db (intent : Ops.pending_intent) =
          (one_value db reference "logseq.property.asset/type")
        = Some value.asset_type
     && one_value db reference "logseq.property.asset/size"
-       = Some (Ds.Int value.asset_size)
+       = Some (Ds.Int64 (Int64.of_int value.asset_size))
     && string_value
          (one_value db reference "logseq.property.asset/checksum")
        = Some value.asset_checksum

@@ -33,7 +33,7 @@ let rec transit_of_entity_ref db entity_ref =
 and transit_of_value db value =
   match value with
   | Ds.Nil -> Transit.Null
-  | Ds.Int number -> Transit.Int number
+  | Ds.Int64 number -> Transit.Int64 number
   | Ds.Float number -> Transit.Float number
   | Ds.String text -> Transit.String text
   | Ds.Symbol symbol -> Transit.Symbol symbol

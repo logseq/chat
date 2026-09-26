@@ -54,7 +54,7 @@ let seeded_conn () =
          add 4 "block/uuid" (Ds.Uuid journal_uuid);
          add 4 "block/name" (Ds.String "aug 16th, 2026");
          add 4 "block/title" (Ds.String "Aug 16th, 2026");
-         add 4 "block/journal-day" (Ds.Int 20260816);
+         add 4 "block/journal-day" (Ds.Int64 20260816L);
          add 5 "block/uuid" (Ds.Uuid hidden_uuid);
          add 5 "block/name" (Ds.String "secret");
          add 5 "block/title" (Ds.String "Secret movies page");

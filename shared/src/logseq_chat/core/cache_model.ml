@@ -70,7 +70,7 @@ let one value_type indexed unique =
   }
 
 let string_decode = function Ds.String value -> value | _ -> failwith "expected string"
-let int_decode = function Ds.Int value -> value | _ -> failwith "expected int"
+let int_decode = function Ds.Int64 value -> Int64.to_int value | _ -> failwith "expected int"
 
 let text_attribute name indexed =
   { attr_name = name
@@ -82,7 +82,7 @@ let text_attribute name indexed =
 let number_attribute name indexed =
   { attr_name = name
   ; attr_spec = one Ds.NumberType indexed None
-  ; attr_encode = (fun value -> Ds.Int value)
+  ; attr_encode = (fun value -> Ds.Int64 (Int64.of_int value))
   ; attr_decode = int_decode
   }
 

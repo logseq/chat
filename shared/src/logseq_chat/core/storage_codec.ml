@@ -228,12 +228,12 @@ let rec value_of_transit input : Ds.value =
   | Value.Null -> Ds.Nil
   | Value.Bool value -> Ds.Bool value
   | Value.String value -> Ds.String value
-  | Value.Int value -> Ds.Int value
-  | Value.Int64 value -> Ds.Int (Int64.to_int value)
+  | Value.Int value -> Ds.Int64 (Int64.of_int value)
+  | Value.Int64 value -> Ds.Int64 value
   | Value.Float value -> Ds.Float value
   | Value.Binary value -> Ds.String value
   | Value.Big_decimal value -> Ds.Float (float_of_string value)
-  | Value.Big_int value -> Ds.Int (Int64.to_int (Int64.of_string value))
+  | Value.Big_int value -> Ds.Int64 (Int64.of_string value)
   | Value.Date value -> Ds.Instant value
   | Value.Uuid value -> Ds.Uuid value
   | Value.Uri value -> Ds.String value
@@ -257,14 +257,14 @@ let rec value_of_transit input : Ds.value =
 let rec value_to_transit input : Value.value =
   match input with
   | Ds.Nil -> Value.Null
-  | Ds.Int value -> Value.Int value
+  | Ds.Int64 value -> Value.Int64 value
   | Ds.Float value -> Value.Float value
   | Ds.String value -> Value.String value
   | Ds.Symbol value -> Value.Symbol value
   | Ds.Bool value -> Value.Bool value
   | Ds.Keyword value -> Value.Keyword value
   | Ds.Uuid value -> Value.Tagged ("u", Value.String value)
-  | Ds.Instant value -> Value.Tagged ("m", Value.Int (Int64.to_int value))
+  | Ds.Instant value -> Value.Tagged ("m", Value.Int64 value)
   | Ds.Regex value -> Value.Tagged ("regex", Value.String value)
   | Ds.Ref value -> Value.Int value
   | Ds.List values -> Value.List (List.map value_to_transit values)

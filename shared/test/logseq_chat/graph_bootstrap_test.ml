@@ -147,7 +147,7 @@ let built_in_catalog_and_graph_metadata () =
   check_eq (Some (Ds.Bool true)) (kv_value db "logseq.kv/graph-remote?");
   check_eq (Some (Ds.Bool false)) (kv_value db "logseq.kv/graph-rtc-e2ee?");
   (match kv_value db "logseq.kv/graph-created-at" with
-   | Some (Ds.Int timestamp) -> check (timestamp >= started)
+   | Some (Ds.Int64 timestamp) -> check (Int64.compare timestamp (Int64.of_int started) >= 0)
    | _ -> failwith "missing graph creation timestamp");
   check
     (kv_value db "logseq.kv/local-graph-uuid"
