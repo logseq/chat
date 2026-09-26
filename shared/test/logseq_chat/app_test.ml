@@ -7676,7 +7676,7 @@ let flutter_outliner_editor_toolbar_uses_a_material_bottom_surface () =
     (property_string renderer editor_container Lui_protocol.BackgroundValue)
     "surface-container-low";
   check_eq ~msg:"all editor actions remain reachable by horizontal scroll"
-    (List.length buttons) 9;
+    (List.length buttons) 11;
   List.iter
     (fun button ->
        check_eq ~msg:"every editor action has a 48dp target"
@@ -7689,7 +7689,7 @@ let flutter_outliner_editor_toolbar_uses_a_material_bottom_surface () =
          (property_string renderer button Lui_protocol.SizeValue)
          "icon")
     buttons;
-  let page_reference = List.nth buttons 7 in
+  let page_reference = List.nth buttons 9 in
   check_eq ~msg:"page reference does not use an unrelated code glyph"
     (property_string renderer page_reference Lui_protocol.InlineIconName)
     "<missing>";
@@ -7831,16 +7831,18 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
       (0, "app:toolbar-task");
       (1, "app:toolbar-outdent");
       (2, "app:toolbar-indent");
-      (3, "app:toolbar-tag");
-      (4, "app:toolbar-camera");
-      (5, "app:toolbar-audio");
+      (3, "app:toolbar-move-up");
+      (4, "app:toolbar-move-down");
+      (5, "app:toolbar-tag");
+      (6, "app:toolbar-camera");
+      (7, "app:toolbar-audio");
     ];
   check_eq ~msg:"the iOS editor toolbar omits the file picker"
     (descendant_with_identifier renderer editor_toolbar
        "button.outliner.editor.attachment")
     (-1);
-  let page_reference_button = List.nth editor_buttons 6 in
-  let hide_keyboard_button = List.nth editor_buttons 7 in
+  let page_reference_button = List.nth editor_buttons 8 in
+  let hide_keyboard_button = List.nth editor_buttons 9 in
   check_eq ~msg:"page reference retains main's compact symbolic label"
     (property_string renderer page_reference_button Lui_protocol.TextValue)
     "[[]]";

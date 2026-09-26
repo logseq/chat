@@ -37,6 +37,8 @@ type outliner_toolbar =
   | Task
   | Outdent
   | Indent
+  | Move_up
+  | Move_down
   | Tag_action
   | Page_reference
   | Camera
@@ -804,22 +806,46 @@ let outdent (context : outliner_context) selected =
       |> (fun parent ->
         match parent with
         | Some (parent : Model.block) ->
-          if
-            selection_is_contiguous roots
-              (sorted_siblings context (Some parent.uuid))
-          then
+          let siblings = sorted_siblings context (Some parent.uuid) in
+          if selection_is_contiguous roots siblings then
             let parent_uuid =
               match parent.parent_id with
               | Some uuid -> uuid
               | None -> parent.page_id
             in
-            let siblings = sorted_siblings context (Some parent_uuid) in
-            (match index_of_uuid parent.uuid siblings with
+            let parent_row = sorted_siblings context (Some parent_uuid) in
+            (match index_of_uuid parent.uuid parent_row with
              | Some index ->
-               moves_with_orders roots parent_uuid parent.order
-                 (if index + 1 < List.length siblings then
-                    (List.nth siblings (index + 1)).order
-                  else None)
+               (match
+                  moves_with_orders roots parent_uuid parent.order
+                    (if index + 1 < List.length parent_row then
+                       (List.nth parent_row (index + 1)).order
+                     else None)
+                with
+                | Some moves ->
+                  (* logseq direct outdenting: the trailing siblings of the
+                     last moved block become its children *)
+                  let last_index =
+                    List.fold_left max 0 (selection_indices roots siblings)
+                  in
+                  let last = List.nth siblings last_index in
+                  let trailing =
+                    List.filteri (fun i _ -> i > last_index) siblings
+                  in
+                  (match trailing with
+                   | [] -> Some moves
+                   | trailing ->
+                     let lower =
+                       match
+                         List.rev (sorted_siblings context (Some last.uuid))
+                       with
+                       | child :: _ -> child.order
+                       | [] -> None
+                     in
+                     (match moves_with_orders trailing last.uuid lower None with
+                      | Some adopted -> Some (moves @ adopted)
+                      | None -> Some moves))
+                | None -> None)
              | None -> None)
           else None
         | None -> None)
@@ -1013,6 +1039,86 @@ let toolbar_insert (state : outliner_state) text backward =
       [ Haptic Impact ]
   | None -> step state []
 
+let move (context : outliner_context) selected up_ =
+  let roots = selected_roots context selected in
+  match roots with
+  | [] -> None
+  | first :: _ ->
+    if not (same_parent roots (first : Model.block).parent_id) then None
+    else
+      let parent =
+        match first.parent_id with Some uuid -> uuid | None -> first.page_id
+      in
+      let siblings = sorted_siblings context (Some parent) in
+      (match selection_indices roots siblings with
+       | [] -> None
+       | first_index :: _ as indices ->
+         if not (selection_is_contiguous roots siblings) then None
+         else
+           let last_index = first_index + List.length indices - 1 in
+           (* like logseq's move-blocks-up-down: at a boundary the selection
+              crosses into the parent's neighbor as its first child *)
+           let parent_neighbor before =
+             if parent = first.page_id then None
+             else
+               match find_block context parent with
+               | Some parent_block ->
+                 let grandparent =
+                   match (parent_block : Model.block).parent_id with
+                   | Some uuid -> uuid
+                   | None -> parent_block.page_id
+                 in
+                 let parent_siblings =
+                   sorted_siblings context (Some grandparent)
+                 in
+                 (match index_of_uuid parent_block.uuid parent_siblings with
+                  | Some index ->
+                    let neighbor_index =
+                      if before then index - 1 else index + 1
+                    in
+                    if
+                      neighbor_index < 0
+                      || neighbor_index >= List.length parent_siblings
+                    then None
+                    else Some (List.nth parent_siblings neighbor_index)
+                  | None -> None)
+               | None -> None
+           in
+           let first_child_order (block : Model.block) =
+             match sorted_siblings context (Some block.uuid) with
+             | child :: _ -> child.order
+             | [] -> None
+           in
+           if up_ then
+             if first_index = 0 then
+               match parent_neighbor true with
+               | Some neighbor ->
+                 moves_with_orders roots neighbor.uuid None
+                   (first_child_order neighbor)
+               | None -> None
+             else
+               let target = List.nth siblings (first_index - 1) in
+               let lower =
+                 if first_index > 1 then
+                   (List.nth siblings (first_index - 2)).order
+                 else None
+               in
+               moves_with_orders roots parent lower target.order
+           else if last_index + 1 >= List.length siblings then
+             match parent_neighbor false with
+             | Some neighbor ->
+               moves_with_orders roots neighbor.uuid None
+                 (first_child_order neighbor)
+             | None -> None
+           else
+             let target = List.nth siblings (last_index + 1) in
+             let upper =
+               if last_index + 2 < List.length siblings then
+                 (List.nth siblings (last_index + 2)).order
+               else None
+             in
+             moves_with_orders roots parent target.order upper)
+
 let toolbar_move context (state : outliner_state) outdent_ =
   let moves =
     if outdent_ then outdent context (interaction_targets state)
@@ -1022,6 +1128,11 @@ let toolbar_move context (state : outliner_state) outdent_ =
     (match moves with
      | Some moves -> [ Reparent_blocks moves; Haptic Impact ]
      | None -> [ Haptic Impact ])
+
+let toolbar_reorder context (state : outliner_state) up_ =
+  match move context (interaction_targets state) up_ with
+  | Some moves -> step state [ Reparent_blocks moves; Haptic Impact ]
+  | None -> step state [ Haptic Impact ]
 
 let choose_completion context (state : outliner_state) value =
   match (state.editing, state.autocomplete) with
@@ -1172,6 +1283,8 @@ let update context (state : outliner_state) message =
      | None -> step state [])
   | Toolbar Indent -> toolbar_move context state false
   | Toolbar Outdent -> toolbar_move context state true
+  | Toolbar Move_up -> toolbar_reorder context state true
+  | Toolbar Move_down -> toolbar_reorder context state false
   | Toolbar Delete ->
     let uuids = selected_uuids state in
     step

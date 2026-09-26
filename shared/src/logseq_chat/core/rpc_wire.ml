@@ -63,6 +63,8 @@ let toolbar_action wire =
   | "task" -> Ok Outliner.Task
   | "outdent" -> Ok Outliner.Outdent
   | "indent" -> Ok Outliner.Indent
+  | "moveUp" -> Ok Outliner.Move_up
+  | "moveDown" -> Ok Outliner.Move_down
   | "tag" -> Ok Outliner.Tag_action
   | "pageReference" -> Ok Outliner.Page_reference
   | "camera" -> Ok Outliner.Camera
