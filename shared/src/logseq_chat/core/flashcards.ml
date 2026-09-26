@@ -134,12 +134,12 @@ let state_value card =
     [
       (Ds.Keyword "stability", Ds.Float card.stability);
       (Ds.Keyword "difficulty", Ds.Float card.difficulty);
-      (Ds.Keyword "elapsed-days", Ds.Int card.elapsed_days);
-      (Ds.Keyword "scheduled-days", Ds.Int card.scheduled_days);
-      (Ds.Keyword "reps", Ds.Int card.reps);
-      (Ds.Keyword "lapses", Ds.Int card.lapses);
+      (Ds.Keyword "elapsed-days", Ds.Int64 (Int64.of_int card.elapsed_days));
+      (Ds.Keyword "scheduled-days", Ds.Int64 (Int64.of_int card.scheduled_days));
+      (Ds.Keyword "reps", Ds.Int64 (Int64.of_int card.reps));
+      (Ds.Keyword "lapses", Ds.Int64 (Int64.of_int card.lapses));
       (Ds.Keyword "state", Ds.Keyword (state_name card.state));
-      (Ds.Keyword "last-repeat", Ds.Int card.last_repeat);
+      (Ds.Keyword "last-repeat", Ds.Int64 (Int64.of_int card.last_repeat));
     ]
   in
   let entries =
@@ -163,12 +163,12 @@ let map_value key entries =
 let float_value value =
   match value with
   | Some (Ds.Float value) -> Some value
-  | Some (Ds.Int value) -> Some (float_of_int value)
+  | Some (Ds.Int64 value) -> Some (Int64.to_float value)
   | _ -> None
 
 let int_value value =
   match value with
-  | Some (Ds.Int value) -> Some value
+  | Some (Ds.Int64 value) -> Some (Int64.to_int value)
   | Some (Ds.Instant value) -> Some (Int64.to_int value)
   | _ -> None
 

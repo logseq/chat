@@ -245,7 +245,7 @@ let composer_reset_preserves_built_ins_and_removes_user_content () =
           ("block/uuid", Ds.One_value (Ds.Uuid "e2e-stale-page"));
           ("block/name", Ds.One_value (Ds.String "stale journal"));
           ("block/title", Ds.One_value (Ds.String "Stale Journal"));
-          ("block/journal-day", Ds.One_value (Ds.Int 20260827));
+          ("block/journal-day", Ds.One_value (Ds.Int64 20260827L));
         ];
       entity None
         [

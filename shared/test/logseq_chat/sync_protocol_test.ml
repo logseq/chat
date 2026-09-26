@@ -67,11 +67,11 @@ let lookup_preserves_first_false_and_null_values () =
   List.iter
     (fun input ->
        let entries =
-         [ (Ds.Keyword "key", input); (Ds.Keyword "key", Ds.Int 42) ]
+         [ (Ds.Keyword "key", input); (Ds.Keyword "key", Ds.Int64 42L) ]
        in
        check_eq (Some input) (Flashcards.map_value "key" entries);
        check (Flashcards.map_value "missing" entries = None))
-    [ Ds.Nil; Ds.Bool false; Ds.Int 0; Ds.String "" ]
+    [ Ds.Nil; Ds.Bool false; Ds.Int64 0L; Ds.String "" ]
 
 let wire_contract_preserves_identities_sets_and_cursors () =
   let change = decode payload in

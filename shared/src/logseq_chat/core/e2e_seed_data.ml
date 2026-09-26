@@ -44,7 +44,7 @@ let reset_user_page_entities conn =
 
 let uuid_attr value = Ds.One_value (Ds.Uuid value)
 let string_attr value = Ds.One_value (Ds.String value)
-let int_attr value = Ds.One_value (Ds.Int value)
+let int_attr value = Ds.One_value (Ds.Int64 (Int64.of_int value))
 let ref_attr id = Ds.One_value (Ds.Ref_to (Ds.Temp_id id))
 
 let many_refs ids =

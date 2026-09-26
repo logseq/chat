@@ -71,7 +71,7 @@ let graph_metadata graph_id e2ee now =
     kv "logseq.kv/graph-uuid" (Ds.Uuid graph_id)
   ; kv "logseq.kv/graph-remote?" (Ds.Bool true)
   ; kv "logseq.kv/graph-rtc-e2ee?" (Ds.Bool e2ee)
-  ; kv "logseq.kv/graph-created-at" (Ds.Int now)
+  ; kv "logseq.kv/graph-created-at" (Ds.Int64 (Int64.of_int now))
   ; kv "logseq.kv/local-graph-uuid" (Ds.Uuid (fresh_local_graph_uuid ()))
   ]
 
@@ -113,7 +113,7 @@ let normalize_scalar_maps (tx : Ds.tx_op) =
 
 let valid_ref_value (value : Ds.value) =
   match value with
-  | Ds.TxRef | Ds.Ref _ | Ds.Ref_to _ | Ds.Int _ | Ds.String _
+  | Ds.TxRef | Ds.Ref _ | Ds.Ref_to _ | Ds.Int64 _ | Ds.String _
   | Ds.Keyword _ -> true
   | Ds.Symbol value ->
     value = "db/current-tx" || value = "datomic.tx"
@@ -249,11 +249,11 @@ let refresh_initial_timestamps now (tx : Ds.tx_op) =
             (fun (attr, value) ->
               ( attr
               , if attr = "block/created-at" || attr = "block/updated-at"
-                then Ds.One_value (Ds.Int now)
+                then Ds.One_value (Ds.Int64 (Int64.of_int now))
                 else if
                   attr = "file/created-at"
                   || attr = "file/last-modified-at"
-                then Ds.One_value (Ds.Instant (Int64.of_int now))
+                then Ds.One_value (Ds.Int64 (Int64.of_int now))
                 else value ))
             entity.Ds.attrs;
       }

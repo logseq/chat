@@ -313,7 +313,7 @@ let missing_attributes_default_but_malformed_attributes_raise () =
            false
          with Failure _ -> true))
     [
-      ("block/title", Ds.Int 42);
+      ("block/title", Ds.Int64 42L);
       ("block/created-at", Ds.Float 1.5);
       ("block/asset-size", Ds.String "large");
       ("block/local-path", Ds.Bool false);

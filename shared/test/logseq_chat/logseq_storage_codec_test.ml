@@ -39,16 +39,16 @@ let all_value_types_and_storage_nodes_roundtrip () =
       Ds.Nil;
       Ds.Bool false;
       Ds.String "text";
-      Ds.Int 12;
+      Ds.Int64 12L;
       Ds.Float 1.5;
       Ds.Keyword "block/page";
       Ds.Uuid "00000000-0000-0000-0000-000000000007";
       Ds.Instant 123L;
       Ds.Regex "a+";
       Ds.Symbol "x";
-      Ds.Vector [ Ds.Int 1; Ds.Nil ];
+      Ds.Vector [ Ds.Int64 1L; Ds.Nil ];
       Ds.List [ Ds.String "item" ];
-      Ds.Map [ (Ds.Keyword "x", Ds.Set [ Ds.Int 2 ]) ];
+      Ds.Map [ (Ds.Keyword "x", Ds.Set [ Ds.Int64 2L ]) ];
     ]
   in
   let datoms = List.map datom values in
@@ -136,7 +136,7 @@ let tuple_reference_normalization () =
        (Pset.Leaf
           [
             datom ~added:true
-              (Ds.Vector [ Ds.Int 9; Ds.Nil ]);
+              (Ds.Vector [ Ds.Int64 9L; Ds.Nil ]);
           ]))
     (Codec.decode None content)
 

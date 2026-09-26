@@ -81,7 +81,7 @@ let page id name title attributes =
   entity id title (field "block/name" (Ds.String name) :: attributes)
 
 let journal id title day =
-  page id id title [ field "block/journal-day" (Ds.Int day) ]
+  page id id title [ field "block/journal-day" (Ds.Int64 (Int64.of_int day)) ]
 
 let block id title page parent created attributes =
   entity id title
@@ -659,11 +659,11 @@ let restored_raw_numeric_references_remain_navigable () =
         raw 1 "block/uuid" (Ds.Uuid "raw-page");
         raw 1 "block/name" (Ds.String "raw-page");
         raw 1 "block/title" (Ds.String "Raw journal");
-        raw 1 "block/journal-day" (Ds.Int 20260817);
+        raw 1 "block/journal-day" (Ds.Int64 20260817L);
         raw 2 "block/uuid" (Ds.Uuid "raw-block");
         raw 2 "block/title" (Ds.String "Restored block");
-        raw 2 "block/page" (Ds.Int 1);
-        raw 2 "block/parent" (Ds.Int 1);
+        raw 2 "block/page" (Ds.Int64 1L);
+        raw 2 "block/parent" (Ds.Int64 1L);
         raw 2 "block/created-at" (Ds.Instant 1L);
       ]
       (Ds.conn_db conn)

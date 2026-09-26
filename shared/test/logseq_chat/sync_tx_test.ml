@@ -133,7 +133,7 @@ let every_datascript_value_has_a_sync_encoding () =
       check_eq expected (Sync.transit_of_value db value))
     [
       (Ds.Nil, Value.Null);
-      (Ds.Int 7, Value.Int 7);
+      (Ds.Int64 7L, Value.Int64 7L);
       (Ds.Float 1.5, Value.Float 1.5);
       (Ds.String "text", Value.String "text");
       (Ds.Symbol "symbol", Value.Symbol "symbol");
@@ -143,12 +143,12 @@ let every_datascript_value_has_a_sync_encoding () =
       (Ds.Instant 123L, Value.Date 123L);
       (Ds.Regex "a+", Value.Tagged ("regex", Value.String "a+"));
       (Ds.Ref 1, stable_ref);
-      (Ds.List [ Ds.Int 1 ], Value.List [ Value.Int 1 ]);
+      (Ds.List [ Ds.Int64 1L ], Value.List [ Value.Int64 1L ]);
       (Ds.Vector [ Ds.String "v" ], array [ Value.String "v" ]);
       ( Ds.Map [ (Ds.Keyword "k", Ds.Bool false) ]
       , Value.Map [ (Value.Keyword "k", Value.Bool false) ] );
       (Ds.Set [ Ds.Uuid "u" ], Value.Set [ Value.Uuid "u" ]);
-      (Ds.Tuple [ Some (Ds.Int 1); None ], array [ Value.Int 1; Value.Null ]);
+      (Ds.Tuple [ Some (Ds.Int64 1L); None ], array [ Value.Int64 1L; Value.Null ]);
       (Ds.TxRef, Value.Keyword "db/current-tx");
       (Ds.Ref_to (Ds.Temp_id "ref"), Value.String "ref");
     ]
@@ -161,8 +161,8 @@ let nested_entity_cardinalities_are_preserved () =
   let value =
     entity (Some (Ds.Temp_id "entity"))
       [
-        ("one", Ds.One_value (Ds.Int 1));
-        ("many", Ds.Many_values [ Ds.Int 2; Ds.Int 3 ]);
+        ("one", Ds.One_value (Ds.Int64 1L));
+        ("many", Ds.Many_values [ Ds.Int64 2L; Ds.Int64 3L ]);
         ("child", Ds.One_entity nested);
         ("children", Ds.Many_entities [ nested ]);
       ]
@@ -171,8 +171,8 @@ let nested_entity_cardinalities_are_preserved () =
     (Value.Map
        [
          (Value.Keyword "db/id", Value.String "entity");
-         (Value.Keyword "one", Value.Int 1);
-         (Value.Keyword "many", array [ Value.Int 2; Value.Int 3 ]);
+         (Value.Keyword "one", Value.Int64 1L);
+         (Value.Keyword "many", array [ Value.Int64 2L; Value.Int64 3L ]);
          (Value.Keyword "child", wire);
          (Value.Keyword "children", array [ wire ]);
        ])
@@ -248,9 +248,9 @@ let transaction_operations_preserve_all_operands () =
             attr;
             Value.String "Raw";
           ] );
-      ( Ds.CallIdent (Ds.Ident "function", [ Ds.Int 1; Ds.String "x" ])
+      ( Ds.CallIdent (Ds.Ident "function", [ Ds.Int64 1L; Ds.String "x" ])
       , array
-          [ Value.Keyword "function"; Value.Int 1; Value.String "x" ] );
+          [ Value.Keyword "function"; Value.Int64 1L; Value.String "x" ] );
     ];
   check_eq (array []) (Codec.of_string (expect_ok (encode db [])));
   List.iter
@@ -330,7 +330,7 @@ let encryption_covers_protected_operands_and_nested_entities () =
     ];
   check_error
     (Sync.encrypt_tx_op encrypt
-       (Ds.Add (reference, "block/title", Ds.Int 1)))
+       (Ds.Add (reference, "block/title", Ds.Int64 1L)))
 
 let cases =
   [

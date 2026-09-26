@@ -24,7 +24,7 @@ let uuid_value = function
   | _ -> None
 
 let int_value = function
-  | Some (Ds.Int value) -> Some value
+  | Some (Ds.Int64 value) -> Some (Int64.to_int value)
   | Some (Ds.Instant value) -> Some (Int64.to_int value)
   | _ -> None
 
@@ -665,7 +665,7 @@ let recent_journal_page_ids limit db =
   List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/journal-day" ())
   |> List.filter_map (fun (datom : Ds.datom) ->
     match datom.v with
-    | Ds.Int day ->
+    | Ds.Int64 day ->
       if page_is_hidden db datom.e then None else Some (day, datom.e)
     | _ -> None)
   |> List.sort (fun (left, _) (right, _) -> compare right left)
@@ -688,8 +688,8 @@ let journal_page_uuid db day =
   List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/journal-day" ())
   |> List.find_map (fun (datom : Ds.datom) ->
     match datom.v with
-    | Ds.Int candidate ->
-      if candidate = day && not (page_is_hidden db datom.e) then
+    | Ds.Int64 candidate ->
+      if Int64.equal candidate (Int64.of_int day) && not (page_is_hidden db datom.e) then
         uuid_for_eid db datom.e
       else None
     | _ -> None)
