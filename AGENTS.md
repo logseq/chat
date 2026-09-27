@@ -54,6 +54,8 @@ opam install . --deps-only --yes --with-test
 
 A representative core action is the Swift FFI RPC `dispatch` / `send`, which optimistic-captures a journal block (see `shared/test/logseq_chat/rpc_test.ml` and `dune build @shared/native/runtest`).
 
+- Avoid O(n²) `List` patterns such as `List.concat` and repeated `List.append` on large sequences; when the project already depends on the `rrbvec` package, use `Rrbvec` vectors instead.
+
 ### iOS / Android
 
 On a Mac, follow `README.md`: open `apple/Project.xcworkspace`, run the `LogseqChat App` scheme. Native core builds (`scripts/build-mobile-ios-*.sh`, `scripts/build-android-native.sh`) expect an `ocaml-demo` checkout via `LOGSEQ_CHAT_OCAML_DEMO_ROOT` (defaults to a machine-local path). Do not start Android emulators or Maestro from Cloud Agent unless that stack is explicitly in scope.
