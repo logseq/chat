@@ -34,18 +34,6 @@ let chat_view (context : Lui_ui.ui_context) model_source send =
     ~mode_signal:(Signal.map chat_theme_mode model_source)
     (View_screens.chat_view context model_source send)
 
-let composer_asset_schema () =
-  Lui_extension.component "composer-asset"
-    [ Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost;
-      Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.FlutterHost ]
-    false []
-    [
-      Lui_extension.property "title" Lui_extension.StringScalar true None;
-      Lui_extension.property "local-path" Lui_extension.StringScalar true
-        None;
-    ]
-    []
-
 let outliner_editor_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -147,24 +135,6 @@ let native_search_presentation_schema () =
         [ Lui_extension.event_field "query" StringScalar true ];
     ]
 
-let native_overflow_menu_schema () =
-  let open Lui_protocol in
-  let open Lui_extension in
-  Lui_extension.component "native-overflow-menu"
-    [ profile IOS SwiftUIHost; profile AndroidOS FlutterHost ]
-    false []
-    [
-      Lui_extension.property "page-actions-visible" BoolScalar true None;
-      Lui_extension.property "favorite-label" StringScalar true None;
-      Lui_extension.property "settings-visible" BoolScalar true None;
-    ]
-    [
-      Lui_extension.event "favorite" [];
-      Lui_extension.event "share" [];
-      Lui_extension.event "delete" [];
-      Lui_extension.event "settings" [];
-    ]
-
 let liquid_glass_schema () =
   let open Lui_protocol in
   let open Lui_extension in
@@ -176,12 +146,9 @@ let extension_registry () =
   Lui_extension.register_component registry (outliner_editor_schema ());
   Lui_extension.register_component registry
     (outliner_block_content_schema ());
-  Lui_extension.register_component registry (composer_asset_schema ());
   Lui_extension.register_component registry
     (native_navigation_stack_schema ());
   Lui_extension.register_component registry
     (native_search_presentation_schema ());
-  Lui_extension.register_component registry
-    (native_overflow_menu_schema ());
   Lui_extension.register_tweak registry (liquid_glass_schema ());
   registry

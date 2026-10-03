@@ -145,23 +145,6 @@ struct LGChatRendererTests {
         #expect(renderer.rootID == 1)
     }
 
-    @Test("registers the native overflow menu with the LG fingerprint")
-    func registersNativeOverflowMenu() throws {
-        let renderer = LGChatRenderer()
-
-        try renderer.apply(patchJSON: """
-        {"generation":1,"ops":[
-          {"op":"create-node","id":1,"kind":"root"},
-          {"op":"create-extension","id":2,"identifier":"native-overflow-menu","fingerprint":"\(LGChatOverflowMenuExtension.fingerprint)"},
-          {"op":"set-extension-prop","id":2,"property":"page-actions-visible","value":false},
-          {"op":"set-extension-prop","id":2,"property":"favorite-label","value":"Favorite"},
-          {"op":"set-extension-prop","id":2,"property":"settings-visible","value":true},
-          {"op":"insert-child","parent":1,"child":2,"index":0}
-        ]}
-        """)
-
-        #expect(renderer.rootID == 1)
-    }
 
     @Test("forwards renderer events without owning application state")
     func forwardsEvents() {
@@ -792,7 +775,7 @@ struct LGChatRendererTests {
             signOut: {},
             presentAsset: { asset in
                 presented = asset
-                return true
+                return URL(fileURLWithPath: "/tmp/Photo.jpg")
             }
         )
 
@@ -809,7 +792,8 @@ struct LGChatRendererTests {
             localPath: "Assets/Photo.jpg"
         ))
         #expect(resolution.succeeded)
-        #expect(resolution.output == .discard)
+        #expect(resolution.output == .hostUpdate("asset-preview-resolved"))
+        #expect(resolution.message.contains(#""path":"/tmp/Photo.jpg""#))
     }
 
     @Test("page mutations preserve semantic operation payloads")

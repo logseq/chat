@@ -57,6 +57,7 @@ type host_update =
   | Authentication of host_authentication
   | Open_quick_action of string
   | Open_capture
+  | Asset_preview_resolved of string * string
 
 let string_field name value = Util.to_string (Util.member name value)
 let bool_field name value = Util.to_bool (Util.member name value)
@@ -134,6 +135,10 @@ let decode kind payload =
            })
     | "open-quick-action" -> Ok (Open_quick_action (Util.to_string value))
     | "open-capture" -> Ok Open_capture
+    | "asset-preview-resolved" ->
+      Ok
+        (Asset_preview_resolved
+           (string_field "title" value, string_field "path" value))
     | _ -> Error ("Unsupported host update: " ^ kind)
   with
   | Yojson.Json_error message -> Error ("Invalid host update JSON: " ^ message)

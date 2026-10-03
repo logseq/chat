@@ -539,27 +539,63 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
 
 let active_overflow_menu model_source send : t =
  fun context parent ->
-   let node = Lui_ui.extension context "native-overflow-menu" in
-   attach context parent node;
    let page_actions_source =
      Signal.map View_base.active_page_actions_visible_ model_source
-   in
-   let favorite_label_source =
-     Signal.map View_base.active_page_favorite_label model_source
    in
    let settings_source =
      Signal.map View_base.connection_settings_visible_ model_source
    in
-   Lui_ui.extension_property_signal context node "page-actions-visible"
-     (reactive View_base.bool_wire_value page_actions_source);
-   Lui_ui.extension_property_signal context node "favorite-label"
-     (reactive View_base.string_wire_value favorite_label_source);
-   Lui_ui.extension_property_signal context node "settings-visible"
-     (reactive View_base.bool_wire_value settings_source);
-   Lui_ui.on_event context node (fun input_event ->
-       ignore
-         (View_base.handle_native_overflow_menu_event input_event send));
-   node
+   let flutter_host = Lui_ui.host context = FlutterHost in
+   (* iOS menu items carry no icons; the Flutter popup did. *)
+   let item_icon name = if flutter_host then Some (`app name) else None in
+   let entries =
+     [ if_ ~test:page_actions_source
+         (if flutter_host then
+            menu_item
+              ~text_signal:
+                (reactive View_base.active_page_favorite_label model_source)
+              ~icon_signal:
+                (Signal.map
+                   (fun current ->
+                     `app
+                       (if View_base.active_page_favorite_label current
+                           = "Unfavorite"
+                        then "star-filled"
+                        else "star"))
+                   model_source)
+              ~on_press:(press send Model.ToggleActivePageFavorite)
+              []
+          else
+            menu_item
+              ~text_signal:
+                (reactive View_base.active_page_favorite_label model_source)
+              ~on_press:(press send Model.ToggleActivePageFavorite)
+              []);
+       if_ ~test:page_actions_source
+         (menu_item ~text:"Share" ?icon:(item_icon "share")
+            ~on_press:(press send Model.ShareActivePage)
+            []);
+       if_ ~test:page_actions_source
+         (menu_item ~text:"Delete" ~variant:`destructive
+            ?icon:(item_icon "toolbar-delete")
+            ~on_press:(press send Model.RequestDeleteActivePage)
+            []);
+       if_ ~test:settings_source
+         (menu_item ~text:"Settings" ?icon:(item_icon "settings")
+            ~on_press:(press send Model.OpenSettings)
+            []);
+     ]
+   in
+   if flutter_host then
+     menu ~icon:(`app "more-vert") ~label:"More"
+       ~accessibility_identifier:"button.overflow-menu" entries context parent
+   else
+     stack ~width:44 ~height:44
+       [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
+           ~border_color:"foreground" [];
+         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
+           ~accessibility_identifier:"button.connection" entries ]
+       context parent
 
 let main_header_connection model_source send : t =
   stack
@@ -696,6 +732,15 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
          ]
          context (Some node)
      in
+     ignore
+       ((if_
+           ~test:(Signal.map View_base.asset_preview_ model_source)
+           (file_preview
+              ~path_signal:
+                (Signal.map View_base.asset_preview_path model_source)
+              ~on_dismiss:(press send Model.DismissAssetPreview)
+              []))
+          context (Some node));
      node
    else (
      ignore
@@ -728,6 +773,15 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            ~key:View_base.node_projection_identifier ~cmp:compare
            ~mount:(fun route_source ->
              native_node_screen context model_source route_source send))
+          context (Some node));
+     ignore
+       ((if_
+           ~test:(Signal.map View_base.asset_preview_ model_source)
+           (file_preview
+              ~path_signal:
+                (Signal.map View_base.asset_preview_path model_source)
+              ~on_dismiss:(press send Model.DismissAssetPreview)
+              []))
           context (Some node));
      node)
 

@@ -16,6 +16,18 @@ typedef _NativeTextEvent = Pointer<Utf8> Function(Int64, Pointer<Utf8>);
 typedef _DartTextEvent = Pointer<Utf8> Function(int, Pointer<Utf8>);
 typedef _NativeToggleEvent = Pointer<Utf8> Function(Int64, Int32);
 typedef _DartToggleEvent = Pointer<Utf8> Function(int, int);
+typedef _NativeRangeEvent = Pointer<Utf8> Function(Int64, Int32, Int32);
+typedef _DartRangeEvent = Pointer<Utf8> Function(int, int, int);
+typedef _NativeScrollCompletedEvent = Pointer<Utf8> Function(
+  Int64,
+  Int32,
+  Pointer<Utf8>,
+);
+typedef _DartScrollCompletedEvent = Pointer<Utf8> Function(
+  int,
+  int,
+  Pointer<Utf8>,
+);
 typedef _NativeValueEvent = Pointer<Utf8> Function(Int64, Double);
 typedef _DartValueEvent = Pointer<Utf8> Function(int, double);
 typedef _NativeExtensionEvent = Pointer<Utf8> Function(
@@ -83,6 +95,16 @@ final class LogseqChatNativeBridge
     );
     _dismiss = _nodeEvent('logseq_chat_lui_dismiss');
     _doublePress = _nodeEvent('logseq_chat_lui_double_press');
+    _picked = _library.lookupFunction<_NativeTextEvent, _DartTextEvent>(
+      'logseq_chat_lui_picked',
+    );
+    _visibleRange = _library.lookupFunction<_NativeRangeEvent, _DartRangeEvent>(
+      'logseq_chat_lui_visible_range',
+    );
+    _scrollCompleted = _library
+        .lookupFunction<_NativeScrollCompletedEvent, _DartScrollCompletedEvent>(
+          'logseq_chat_lui_scroll_completed',
+        );
     _extensionEvent = _library
         .lookupFunction<_NativeExtensionEvent, _DartExtensionEvent>(
           'logseq_chat_lui_extension_event',
@@ -122,6 +144,9 @@ final class LogseqChatNativeBridge
   late final _DartValueEvent _valueChanged;
   late final _DartNodeEvent _dismiss;
   late final _DartNodeEvent _doublePress;
+  late final _DartTextEvent _picked;
+  late final _DartRangeEvent _visibleRange;
+  late final _DartScrollCompletedEvent _scrollCompleted;
   late final _DartExtensionEvent _extensionEvent;
   late final _DartNoArgument _dispose;
   late final _DartNoArgument _takeEffect;
@@ -185,6 +210,34 @@ final class LogseqChatNativeBridge
   @override
   void doublePress(int node) =>
       _runtimeScheduler.runUi(() => _apply(_doublePress(node)));
+
+  @override
+  void picked(int node, String payload) {
+    _runtimeScheduler.runUi(() {
+      final nativePayload = payload.toNativeUtf8();
+      try {
+        _apply(_picked(node, nativePayload));
+      } finally {
+        malloc.free(nativePayload);
+      }
+    });
+  }
+
+  @override
+  void visibleRange(int node, int first, int last) =>
+      _runtimeScheduler.runUi(() => _apply(_visibleRange(node, first, last)));
+
+  @override
+  void scrollCompleted(int node, int token, String outcome) {
+    _runtimeScheduler.runUi(() {
+      final nativeOutcome = outcome.toNativeUtf8();
+      try {
+        _apply(_scrollCompleted(node, token, nativeOutcome));
+      } finally {
+        malloc.free(nativeOutcome);
+      }
+    });
+  }
 
   @override
   void extensionEvent(
@@ -278,9 +331,7 @@ final class LogseqChatNativeBridge
     }
     debugPrint('[NativeBridge] applySnapshot call chars=${response.length}');
     final result = _read(_applySnapshotWithResponse(response));
-    debugPrint(
-      '[NativeBridge] applySnapshot returned chars=${result.length}',
-    );
+    debugPrint('[NativeBridge] applySnapshot returned chars=${result.length}');
     return result;
   }
 
@@ -296,7 +347,9 @@ final class LogseqChatNativeBridge
   @override
   String applyHostUpdate({required String kind, required String payload}) {
     if (_runtimeScheduler.isCoreBusy) {
-      debugPrint('[NativeBridge] applyHostUpdate kind=$kind queued (core busy)');
+      debugPrint(
+        '[NativeBridge] applyHostUpdate kind=$kind queued (core busy)',
+      );
       _runtimeScheduler.runUi(
         () => _apply(_applyHostUpdateWithPayload(kind, payload)),
       );

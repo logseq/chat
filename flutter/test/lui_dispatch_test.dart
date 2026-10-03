@@ -72,7 +72,18 @@ final class _RecordingNativeDispatch implements LogseqChatNativeDispatch {
   void longPress(int node) => events.add('long:$node');
 
   @override
+  void picked(int node, String payload) => events.add('picked:$node:$payload');
+
+  @override
   void press(int node) => events.add('press:$node');
+
+  @override
+  void scrollCompleted(int node, int token, String outcome) =>
+      events.add('scroll:$node:$token:$outcome');
+
+  @override
+  void visibleRange(int node, int first, int last) =>
+      events.add('visible:$node:$first:$last');
 
   @override
   void submit(int node) => events.add('submit:$node');

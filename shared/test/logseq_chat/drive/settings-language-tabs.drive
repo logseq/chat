@@ -5,7 +5,7 @@ press prop:accessibility-identifier=button.graph-add
 type prop:accessibility-identifier=field.graph-name "Drive Graph"
 press prop:accessibility-identifier=button.graph-add.confirm
 wait prop:accessibility-identifier=application.shell
-ext ext:native-overflow-menu native-overflow-menu settings '{}'
+press kind:menu-item&text:"Settings"
 wait prop:accessibility-identifier=sheet.settings
 expect prop:accessibility-identifier=layout.settings.general-card
 expect prop:accessibility-identifier=picker.settings.language

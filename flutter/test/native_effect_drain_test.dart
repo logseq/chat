@@ -148,17 +148,23 @@ void main() {
 
     await drain.drain();
 
-    expect(traces, hasLength(2));
-    expect(traces.first, 'start id=14 kind=open-graph');
+    expect(traces, hasLength(5));
+    expect(traces[0], 'empty patch from dispatch kind=open-graph');
+    expect(traces[1], 'start id=14 kind=open-graph');
     expect(
-      traces.last,
+      traces[2],
       startsWith(
         'finish id=14 kind=open-graph succeeded=false output=discard '
         'elapsedMs=',
       ),
     );
-    expect(traces.last, contains('message=graph_open_failed'));
-    expect(traces.last, contains('Snapshot download timed out'));
+    expect(traces[2], contains('message=graph_open_failed'));
+    expect(traces[2], contains('Snapshot download timed out'));
+    expect(
+      traces[3],
+      startsWith('applying patch from resolveEffect id=14 succeeded=false'),
+    );
+    expect(traces[4], 'applied patch from resolveEffect id=14 succeeded=false');
   });
 
   test('traces search response query and result count without result text', () async {
@@ -187,9 +193,12 @@ void main() {
 
     await drain.drain();
 
-    expect(traces.last, contains('searchQueryChars=13 searchResults=2'));
-    expect(traces.last, isNot(contains('private query')));
-    expect(traces.last, isNot(contains('sensitive result')));
+    final finish = traces.firstWhere(
+      (trace) => trace.startsWith('finish id=15'),
+    );
+    expect(finish, contains('searchQueryChars=13 searchResults=2'));
+    expect(finish, isNot(contains('private query')));
+    expect(finish, isNot(contains('sensitive result')));
   });
 
   test('preserves optional effect values for platform execution', () async {
