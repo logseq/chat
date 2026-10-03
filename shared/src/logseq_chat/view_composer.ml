@@ -85,11 +85,11 @@ let composer_task_status_button (context : Lui_ui.ui_context) send : t =
       ~on_press:(press send Model.OpenTaskStatusPicker)
       []
 
-let composer_asset_preview asset_source : t =
+let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
   let title = View_base.composer_asset_title asset in
   let path = View_base.composer_asset_path asset in
-  if View_base.composer_asset_is_image asset then
+  if View_base.composer_asset_is_image context asset then
     file_image ~path ~max_pixel_size:384 ~fit:`fill ~width:128 ~height:128
       ~corner_radius:12 ~background:"secondary" ~label:title []
   else
@@ -98,12 +98,12 @@ let composer_asset_preview asset_source : t =
       [ icon ~name:(`app "composer-file") [];
         text ~value:title ~style_class:"caption line-clamp-3" [] ]
 
-let composer_asset_view asset_source send : t =
+let composer_asset_view (context : Lui_ui.ui_context) asset_source send : t =
   let asset = Signal.sample asset_source in
   stack ~width:128 ~height:128
     ~accessibility_identifier:(View_base.composer_asset_identifier asset)
     [
-      composer_asset_preview asset_source;
+      composer_asset_preview context asset_source;
       column ~width:128 ~height:128 ~padding:4 ~main:`start
         [
           row ~main:`end_ ~height:24
@@ -170,7 +170,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                   (Signal.map View_base.model_composer_assets model_source)
                 ~key:View_base.composer_asset_identifier ~cmp:compare
                 ~mount:(fun asset_source ->
-                  composer_asset_view asset_source send))
+                  composer_asset_view context asset_source send))
            ~attachments_visible:
              (reactive View_base.composer_assets_present_ model_source)
            ~actions:

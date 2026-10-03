@@ -99,6 +99,8 @@ let host_action (update : Host_update.host_update) =
       (authentication.state, authentication.error_message)
   | Open_quick_action kind -> Model.OpenQuickAction kind
   | Open_capture -> Model.ExpandComposer
+  | Asset_preview_resolved (title, path) ->
+    Model.ResolveAssetPreview (title, path)
 
 let apply_host_update kind payload =
   flush_action

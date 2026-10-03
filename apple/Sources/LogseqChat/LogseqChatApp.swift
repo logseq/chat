@@ -250,9 +250,15 @@ public struct LogseqChatRootView : View {
                 presentationCoordinator.presentAttachment(kind)
             },
             // Asset preview is presented by the file-preview node on iOS; the
-            // effect only drives the Android MethodChannel path, so resolve it
-            // as a no-op here.
-            presentAsset: { _ in true },
+            // effect reports the resolved file URL back to the core so the
+            // preview only mounts for a path that exists on disk.
+            presentAsset: { asset in
+                LocalAssetPath.resolve(
+                    asset.localPath,
+                    title: asset.title,
+                    assetType: asset.assetType
+                )
+            },
             presentPageShare: { payload in
                 return presentationCoordinator.presentPageShare(payload)
             },

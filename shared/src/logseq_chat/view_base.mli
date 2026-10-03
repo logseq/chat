@@ -231,7 +231,7 @@ val outliner_row_journal_ : Model.chat_model -> Model.outline_row -> bool
 val composer_asset_title : Model.composer_asset -> string
 val composer_asset_path : Model.composer_asset -> string
 val composer_asset_identifier : Model.composer_asset -> string
-val composer_asset_is_image : Model.composer_asset -> bool
+val composer_asset_is_image : Lui_ui.ui_context -> Model.composer_asset -> bool
 val composer_assets_present_ : Model.chat_model -> bool
 val asset_preview_ : Model.chat_model -> bool
 val asset_preview_path : Model.chat_model -> string

@@ -877,9 +877,11 @@ let composer_assets_present_ (current : Model.chat_model) =
   current.composer_assets <> []
 
 (* Matches the platform image-asset policy: extensions the Apple backend can
-   thumbnail through CGImageSource (including PDF first pages), same set the
-   Flutter asset renderer recognizes. *)
-let composer_asset_is_image (asset : Model.composer_asset) =
+   thumbnail through CGImageSource (including PDF and TIFF first pages). The
+   Flutter image codec cannot decode PDF or TIFF, so those fall back to the
+   document tile there. *)
+let composer_asset_is_image (context : Lui_ui.ui_context)
+    (asset : Model.composer_asset) =
   let extension =
     match String.rindex_opt asset.local_path '.' with
     | Some index when index < String.length asset.local_path - 1 ->
@@ -888,9 +890,16 @@ let composer_asset_is_image (asset : Model.composer_asset) =
            (String.length asset.local_path - index - 1))
     | _ -> ""
   in
+  let flutter_image_codecs =
+    Lui_ui.host context = Lui_protocol.FlutterHost
+  in
   List.mem extension
-    [ "png"; "jpg"; "jpeg"; "gif"; "webp"; "bmp"; "wbmp"; "heic"; "heif"
-    ; "avif"; "tif"; "tiff"; "pdf" ]
+    (if flutter_image_codecs then
+       [ "png"; "jpg"; "jpeg"; "gif"; "webp"; "bmp"; "wbmp"; "heic"; "heif"
+       ; "avif" ]
+     else
+       [ "png"; "jpg"; "jpeg"; "gif"; "webp"; "bmp"; "wbmp"; "heic"; "heif"
+       ; "avif"; "tif"; "tiff"; "pdf" ])
 
 let asset_preview_ (current : Model.chat_model) =
   current.asset_preview <> None

@@ -4,10 +4,12 @@ val composer_attachment_button :
 val composer_task_status_button :
   Lui_ui.ui_context -> (Model.chat_action -> bool) -> Lui_elements.t
 val composer_asset_preview :
-  Model.composer_asset Signal.signal -> Lui_elements.t
+  Lui_ui.ui_context -> Model.composer_asset Signal.signal -> Lui_elements.t
 val composer_asset_view :
+  Lui_ui.ui_context ->
   Model.composer_asset Signal.signal ->
-  (Model.chat_action -> 'a) -> Lui_elements.t
+  (Model.chat_action -> 'a) ->
+  Lui_elements.t
 val task_status_row :
   Model.task_status Signal.signal ->
   (Model.chat_action -> 'a) -> Lui_elements.t

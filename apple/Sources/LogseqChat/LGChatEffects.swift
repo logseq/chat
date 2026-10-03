@@ -107,7 +107,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
     private let exportGraphDatabase: (@MainActor () async -> Bool)?
     private let graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)?
     private let presentAttachment: (@MainActor (String) async -> Bool)?
-    private let presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)?
+    private let presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> URL?)?
     private let presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)?
     private let syncNow: (@MainActor () -> Void)?
 
@@ -122,7 +122,7 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
         exportGraphDatabase: (@MainActor () async -> Bool)? = nil,
         graphEffect: (@MainActor (LGChatEffect) async -> LGChatEffectResolution)? = nil,
         presentAttachment: (@MainActor (String) async -> Bool)? = nil,
-        presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> Bool)? = nil,
+        presentAsset: (@MainActor (LGChatAssetPresentationPayload) async -> URL?)? = nil,
         presentPageShare: (@MainActor (LGChatPageSharePayload) async -> Bool)? = nil,
         syncNow: (@MainActor () -> Void)? = nil
     ) {
@@ -301,11 +301,24 @@ public final class LGChatPlatformEffectHandler: LGChatEffectExecuting {
                     LGChatAssetPresentationPayload.self,
                     from: Data(metadata.utf8)
                 )
-                let succeeded = await presentAsset(asset)
+                guard let url = await presentAsset(asset) else {
+                    return LGChatEffectResolution(
+                        succeeded: false,
+                        message: "The local asset is unavailable",
+                        output: .discard
+                    )
+                }
+                let payload = String(
+                    data: try JSONEncoder().encode([
+                        "title": asset.title,
+                        "path": url.path,
+                    ]),
+                    encoding: .utf8
+                ) ?? "{}"
                 return LGChatEffectResolution(
-                    succeeded: succeeded,
-                    message: succeeded ? "" : "The local asset is unavailable",
-                    output: .discard
+                    succeeded: true,
+                    message: payload,
+                    output: .hostUpdate("asset-preview-resolved")
                 )
             case "present-page-share":
                 guard let presentPageShare, let metadata = effect.metadata else {

@@ -400,6 +400,7 @@ type chat_action =
   | RemoveComposerAsset of string
   | DequeueEffect of int
   | ResolveEffect of int * bool * string
+  | ResolveAssetPreview of string * string
   | OpenAttachmentPicker
   | CloseAttachmentPicker
   | ChooseAttachment of string

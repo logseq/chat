@@ -775,7 +775,7 @@ struct LGChatRendererTests {
             signOut: {},
             presentAsset: { asset in
                 presented = asset
-                return true
+                return URL(fileURLWithPath: "/tmp/Photo.jpg")
             }
         )
 
@@ -792,7 +792,8 @@ struct LGChatRendererTests {
             localPath: "Assets/Photo.jpg"
         ))
         #expect(resolution.succeeded)
-        #expect(resolution.output == .discard)
+        #expect(resolution.output == .hostUpdate("asset-preview-resolved"))
+        #expect(resolution.message.contains(#""path":"/tmp/Photo.jpg""#))
     }
 
     @Test("page mutations preserve semantic operation payloads")

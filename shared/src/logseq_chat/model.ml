@@ -403,6 +403,7 @@ type chat_action =
   | RemoveComposerAsset of string
   | DequeueEffect of int
   | ResolveEffect of int * bool * string
+  | ResolveAssetPreview of string * string
   | OpenAttachmentPicker
   | CloseAttachmentPicker
   | ChooseAttachment of string
@@ -1757,22 +1758,17 @@ let rec update (current : chat_model) action =
              | Some value -> value
              | None -> "application/octet-stream"
            in
-           let updated =
-             {
-               current with
-               asset_preview =
-                 Some
-                   {
-                     preview_title = row.row_title;
-                     preview_path = path;
-                   };
-             }
-           in
-           enqueue_effect updated
+           enqueue_effect current
              (PresentAssetEffect (id, row.row_title, asset_type, path))
          | None -> current
        else current
      | None -> current)
+  | ResolveAssetPreview (title, path) ->
+    {
+      current with
+      asset_preview =
+        Some { preview_title = title; preview_path = path };
+    }
   | DismissAssetPreview -> { current with asset_preview = None }
   | CloseSearch ->
     let path = current.search_navigation_path in
