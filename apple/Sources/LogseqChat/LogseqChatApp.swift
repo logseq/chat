@@ -249,9 +249,10 @@ public struct LogseqChatRootView : View {
             presentAttachment: { kind in
                 presentationCoordinator.presentAttachment(kind)
             },
-            presentAsset: { asset in
-                return presentationCoordinator.presentAsset(asset)
-            },
+            // Asset preview is presented by the file-preview node on iOS; the
+            // effect only drives the Android MethodChannel path, so resolve it
+            // as a no-op here.
+            presentAsset: { _ in true },
             presentPageShare: { payload in
                 return presentationCoordinator.presentPageShare(payload)
             },

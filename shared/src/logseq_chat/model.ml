@@ -19,6 +19,14 @@ type composer_asset =
   ; payload : string
   }
 
+(* The asset currently shown by the file-preview node (QuickLook on Apple).
+   The node stays mounted while this is [Some]; the backend's Dismiss event
+   clears it through [DismissAssetPreview]. *)
+type asset_preview =
+  { preview_title : string
+  ; preview_path : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -357,6 +365,7 @@ type chat_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; asset_preview : asset_preview option
   }
 
 type chat_action =
@@ -380,6 +389,7 @@ type chat_action =
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
   | OpenOutlinerAsset of string
+  | DismissAssetPreview
   | CloseSearch
   | ExpandComposer
   | FocusComposer
@@ -650,6 +660,7 @@ let initial () =
     last_core_response = None;
     attachment_picker_open = false;
     task_status_picker_open = false;
+    asset_preview = None;
     app_navigation_previews = [];
     app_navigation_path = [];
     search_navigation_path = [];
@@ -1746,11 +1757,23 @@ let rec update (current : chat_model) action =
              | Some value -> value
              | None -> "application/octet-stream"
            in
-           enqueue_effect current
+           let updated =
+             {
+               current with
+               asset_preview =
+                 Some
+                   {
+                     preview_title = row.row_title;
+                     preview_path = path;
+                   };
+             }
+           in
+           enqueue_effect updated
              (PresentAssetEffect (id, row.row_title, asset_type, path))
          | None -> current
        else current
      | None -> current)
+  | DismissAssetPreview -> { current with asset_preview = None }
   | CloseSearch ->
     let path = current.search_navigation_path in
     let editing_ended =

@@ -19,6 +19,11 @@ type composer_asset =
   ; payload : string
   }
 
+type asset_preview =
+  { preview_title : string
+  ; preview_path : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -357,6 +362,7 @@ type chat_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; asset_preview : asset_preview option
   }
 
 type chat_action =
@@ -380,6 +386,7 @@ type chat_action =
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
   | OpenOutlinerAsset of string
+  | DismissAssetPreview
   | CloseSearch
   | ExpandComposer
   | FocusComposer

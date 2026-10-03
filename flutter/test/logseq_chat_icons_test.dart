@@ -4,12 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logseq_chat_flutter/logseq_chat_icons.dart';
 
+Iterable<String> _viewSource() =>
+    Directory('../shared/src/logseq_chat')
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.ml'))
+        .map((file) => file.readAsStringSync());
+
 void main() {
   test('maps every app icon emitted by the LG view', () {
-    final source = File('../shared/src/logseq_chat/view.cljc').readAsStringSync();
-    final emittedNames = RegExp(r'"app:([a-z0-9]+(?:-[a-z0-9]+)*)"')
-        .allMatches(source)
-        .map((match) => match.group(1)!)
+    final emittedNames = _viewSource()
+        .expand(
+          (source) => RegExp(
+                r'"app:([a-z0-9]+(?:-[a-z0-9]+)*)"|`app "([a-z0-9]+(?:-[a-z0-9]+)*)"',
+              )
+              .allMatches(source)
+              .map((match) => match.group(1) ?? match.group(2)!),
+        )
         .toSet();
 
     expect(emittedNames, isNotEmpty);
@@ -22,10 +33,12 @@ void main() {
   });
 
   test('routes every literal LG icon through the cross-platform app map', () {
-    final source = File('../shared/src/logseq_chat/view.cljc').readAsStringSync();
-    final bareNames = RegExp(r':icon "(?!app:)([a-z0-9-]+)"')
-        .allMatches(source)
-        .map((match) => match.group(1)!)
+    final bareNames = _viewSource()
+        .expand(
+          (source) => RegExp(r'~(?:icon|name):\s*"(?!app:)([a-z0-9-]+)"')
+              .allMatches(source)
+              .map((match) => match.group(1)!),
+        )
         .toSet();
 
     expect(

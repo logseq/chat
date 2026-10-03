@@ -420,6 +420,14 @@ let dismiss node = flush_event (Dismiss node)
 
 let double_press node = flush_event (DoublePress node)
 
+let picked node payload = flush_event (Picked (node, payload))
+
+let visible_range node first last =
+  flush_event (VisibleRange (node, first, last))
+
+let scroll_completed node token outcome =
+  flush_event (ScrollCompleted (node, token, outcome))
+
 let extension_event node identifier name text value =
   let open Lui_protocol in
   let values =
@@ -477,6 +485,9 @@ let () =
   Callback.register "logseq_chat_lui_value_changed" value_changed;
   Callback.register "logseq_chat_lui_dismiss" dismiss;
   Callback.register "logseq_chat_lui_double_press" double_press;
+  Callback.register "logseq_chat_lui_picked" picked;
+  Callback.register "logseq_chat_lui_visible_range" visible_range;
+  Callback.register "logseq_chat_lui_scroll_completed" scroll_completed;
   Callback.register "logseq_chat_lui_extension_event" extension_event;
   Callback.register "logseq_chat_lui_dispose" dispose;
   Callback.register "logseq_chat_lui_root_node" root_node;

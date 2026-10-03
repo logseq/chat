@@ -53,6 +53,7 @@ enum LGChatIconPolicy {
             "calendar": .assetName("calendar"),
             "add": .assetName("plus"),
             "composer-add": .systemName("plus"),
+            "composer-file": .systemName("doc"),
             "arrow-up": .systemName("arrow.up"),
             "close": .assetName("close"),
             "chevron-down": .assetName("chevron_down"),

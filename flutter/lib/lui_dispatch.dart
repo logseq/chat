@@ -10,6 +10,9 @@ abstract interface class LogseqChatNativeDispatch {
   void change(int node);
   void valueChanged(int node, double value);
   void dismiss(int node);
+  void picked(int node, String payload);
+  void scrollCompleted(int node, int token, String outcome);
+  void visibleRange(int node, int first, int last);
   void doublePress(int node);
   void extensionEvent(
     int node,
@@ -40,6 +43,12 @@ void dispatchLUIEvent(LUIEvent event, LogseqChatNativeDispatch native) {
       native.valueChanged(node, value);
     case LUIDismissEvent(:final node):
       native.dismiss(node);
+    case LUIPickedEvent(:final node, :final payload):
+      native.picked(node, payload);
+    case LUIScrollCompletedEvent(:final node, :final token, :final outcome):
+      native.scrollCompleted(node, token, outcome);
+    case LUIVisibleRangeEvent(:final node, :final first, :final last):
+      native.visibleRange(node, first, last);
     case LUIDoublePressEvent(:final node):
       native.doublePress(node);
     case LUIExtensionComponentEvent(

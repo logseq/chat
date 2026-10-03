@@ -16,8 +16,6 @@ val handle_native_navigation_event :
   Lui_protocol.event -> (Model.chat_action -> bool) -> bool
 val handle_native_search_event :
   Lui_protocol.event -> (Model.chat_action -> bool) -> bool
-val handle_native_overflow_menu_event :
-  Lui_protocol.event -> (Model.chat_action -> bool) -> bool
 val handle_outliner_editor_event :
   Lui_protocol.event ->
   string Signal.signal -> (Model.chat_action -> bool) -> bool
@@ -233,7 +231,10 @@ val outliner_row_journal_ : Model.chat_model -> Model.outline_row -> bool
 val composer_asset_title : Model.composer_asset -> string
 val composer_asset_path : Model.composer_asset -> string
 val composer_asset_identifier : Model.composer_asset -> string
+val composer_asset_is_image : Model.composer_asset -> bool
 val composer_assets_present_ : Model.chat_model -> bool
+val asset_preview_ : Model.chat_model -> bool
+val asset_preview_path : Model.chat_model -> string
 val composer_expanded_ : Model.chat_model -> bool
 val composer_draft : Model.chat_model -> string
 val composer_autofocus_ : Model.chat_model -> bool

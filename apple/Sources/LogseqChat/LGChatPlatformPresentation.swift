@@ -24,7 +24,6 @@ public final class LGChatPlatformPresentationCoordinator {
     public private(set) var attachmentTargetBlockID: String?
     public private(set) var pendingDeletionBlockIDs: [String] = []
     #if os(iOS)
-    public private(set) var previewAssetURL: URL?
     var pageSharePayload: NodeSharePayload?
     #endif
 
@@ -62,21 +61,6 @@ public final class LGChatPlatformPresentationCoordinator {
     }
 
     #if os(iOS)
-    @discardableResult
-    public func presentAsset(_ asset: LGChatAssetPresentationPayload) -> Bool {
-        guard let url = LocalAssetPath.resolve(
-            asset.localPath,
-            title: asset.title,
-            assetType: asset.assetType
-        ) else { return false }
-        previewAssetURL = url
-        return true
-    }
-
-    public func updatePreviewAssetURL(_ url: URL?) {
-        previewAssetURL = url
-    }
-
     @discardableResult
     public func presentPageShare(_ payload: LGChatPageSharePayload) -> Bool {
         pageSharePayload = NodeSharePayload(
@@ -208,7 +192,6 @@ struct LGChatPlatformPresentationHost: ViewModifier {
                 Text("This deletes the block and all of its children. Pages use Recycle instead.")
             }
             #if os(iOS)
-            .quickLookPreview(previewAssetBinding)
             .sheet(item: pageSharePayloadBinding) { payload in
                 NodeShareSheet(items: payload.items)
             }
@@ -273,13 +256,6 @@ struct LGChatPlatformPresentationHost: ViewModifier {
     }
 
     #if os(iOS)
-    private var previewAssetBinding: Binding<URL?> {
-        Binding(
-            get: { coordinator.previewAssetURL },
-            set: { coordinator.updatePreviewAssetURL($0) }
-        )
-    }
-
     private var pageSharePayloadBinding: Binding<NodeSharePayload?> {
         Binding(
             get: { coordinator.pageSharePayload },

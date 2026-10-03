@@ -106,6 +106,7 @@ class _LogseqChatFlutterAppState extends State<LogseqChatFlutterApp>
         resolveAssetPath: _platformEffects.platform.resolveAssetPath,
       ),
       appIcons: logseqChatAppIcons,
+      filePathResolver: _platformEffects.platform.resolveAssetPath,
     );
     _patchApplier = FlutterPatchApplier(_backend);
     final commandHandler = AndroidOutlinerPlatformCommandHandler(

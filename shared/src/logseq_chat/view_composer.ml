@@ -86,20 +86,17 @@ let composer_task_status_button (context : Lui_ui.ui_context) send : t =
       []
 
 let composer_asset_preview asset_source : t =
- fun context parent ->
-   let node = Lui_ui.extension context "composer-asset" in
-   attach context parent node;
-   Lui_ui.extension_property_signal context node "title"
-     (Signal.map
-        (fun (asset : Model.composer_asset) ->
-          View_base.string_wire_value (View_base.composer_asset_title asset))
-        asset_source);
-   Lui_ui.extension_property_signal context node "local-path"
-     (Signal.map
-        (fun (asset : Model.composer_asset) ->
-          View_base.string_wire_value (View_base.composer_asset_path asset))
-        asset_source);
-   node
+  let asset = Signal.sample asset_source in
+  let title = View_base.composer_asset_title asset in
+  let path = View_base.composer_asset_path asset in
+  if View_base.composer_asset_is_image asset then
+    file_image ~path ~max_pixel_size:384 ~fit:`fill ~width:128 ~height:128
+      ~corner_radius:12 ~background:"secondary" ~label:title []
+  else
+    column ~width:128 ~height:128 ~main:`center ~cross:`center ~gap:4
+      ~padding:4 ~background:"secondary" ~corner_radius:12
+      [ icon ~name:(`app "composer-file") [];
+        text ~value:title ~style_class:"caption line-clamp-3" [] ]
 
 let composer_asset_view asset_source send : t =
   let asset = Signal.sample asset_source in

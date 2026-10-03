@@ -347,18 +347,24 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
 
 let graph_picker_overflow_menu send : t =
  fun context parent ->
-   let node = Lui_ui.extension context "native-overflow-menu" in
-   attach context parent node;
-   Lui_ui.extension_property context node "page-actions-visible"
-     (BoolValue false);
-   Lui_ui.extension_property context node "favorite-label"
-     (StringValue "Favorite");
-   Lui_ui.extension_property context node "settings-visible"
-     (BoolValue true);
-   Lui_ui.on_event context node (fun input_event ->
-       ignore
-         (View_base.handle_native_overflow_menu_event input_event send));
-   node
+   let flutter_host = Lui_ui.host context = FlutterHost in
+   let entries =
+     [ menu_item ~text:"Settings"
+         ?icon:(if flutter_host then Some (`app "settings") else None)
+         ~on_press:(press send Model.OpenSettings)
+         []
+     ]
+   in
+   if flutter_host then
+     menu ~icon:(`app "more-vert") ~label:"More"
+       ~accessibility_identifier:"button.overflow-menu" entries context parent
+   else
+     stack ~width:44 ~height:44
+       [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
+           ~border_color:"foreground" [];
+         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
+           ~accessibility_identifier:"button.connection" entries ]
+       context parent
 
 let graph_picker_error_banner model_source : t =
   alert ~variant:`destructive ~accessibility_identifier:"error.banner"

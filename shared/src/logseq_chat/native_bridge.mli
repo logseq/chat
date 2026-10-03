@@ -72,6 +72,12 @@ val dismiss : int -> string
 
 val double_press : int -> string
 
+val picked : int -> string -> string
+
+val visible_range : int -> int -> int -> string
+
+val scroll_completed : int -> int -> string -> string
+
 val extension_event : int -> string -> string -> string -> int -> string
 
 val dispose : unit -> string
