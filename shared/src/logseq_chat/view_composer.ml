@@ -153,13 +153,107 @@ let task_status_picker_dialog model_source send : t =
            []);
     ]
 
+let with_press handler (elem : t) : t =
+ fun context parent ->
+  let node = elem context parent in
+  enable context node Lui_protocol.PressEnabled;
+  register_press context node handler;
+  node
+
+(* The expanded composer keeps the surface spec from the previous lui pin
+   (edf381b): upstream restyled it with a content-hugging `composer-surface`
+   column, which changed the capture UI. This is that older spec verbatim,
+   minus the parts chat does not use. *)
+let composer_send_button context ?send_icon send_disabled on_send : t =
+  let android_icon = Option.value send_icon ~default:(`send : icon) in
+  let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
+  if Lui_ui.platform context = Lui_protocol.AndroidOS then
+    if Lui_ui.host context = Lui_protocol.FlutterHost then
+      button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48
+        ~height:48 ~label:"Send" ~accessibility_identifier:"button.send"
+        ?disabled_signal:send_disabled ~on_press:on_send []
+    else
+      button ~icon:android_icon ~variant:`primary ~label:"Send"
+        ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
+        ~on_press:on_send ~text:"Send" []
+  else
+    button ~icon:apple_icon ~variant:`ghost ~width:36 ~height:36
+      ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:"Send"
+      ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
+      ~on_press:on_send []
+
+let composer_surface ?key ?accessibility_identifier ?attachments
+    ?attachments_visible_signal ?(actions = []) ~placeholder ?label ?text
+    ?text_signal ?(autofocus = false) ?autofocus_signal ?submit_on_enter
+    ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
+    : t =
+ fun context parent ->
+  let flutter = Lui_ui.host context = Lui_protocol.FlutterHost in
+  let attachment_strip =
+    match attachments with
+    | None -> []
+    | Some content ->
+      let strip =
+        scroll ~orientation:`horizontal ~height:140 [ row ~gap:8 [ content ] ]
+      in
+      [
+        (match attachments_visible_signal with
+         | None -> strip
+         | Some test -> if_ ~test strip);
+      ]
+  in
+  let field =
+    textarea ~min_height:36 ~style_class:"composer-input" ~placeholder
+      ~label:(match label with Some value -> value | None -> placeholder)
+      ?text ?text_signal ~autofocus ?submit_on_enter
+      ~accessibility_identifier:"field.composer" ?on_input ?on_submit []
+  in
+  let field =
+    match autofocus_signal with
+    | None -> field
+    | Some signal_ -> View_base.with_bool_prop_signal Lui_protocol.Autofocus signal_ field
+  in
+  let send_button =
+    match on_send with
+    | None -> []
+    | Some on_send ->
+      [ composer_send_button context ?send_icon send_disabled_signal on_send ]
+  in
+  let capsule =
+    column ?key ?accessibility_identifier ~grow:1.0 ~min_height:58 ~main:`end_
+      ~gap:0
+      ~padding_horizontal:(if flutter then 12 else 16)
+      ~padding_vertical:(if flutter then 12 else 8)
+      ~background:(if flutter then "surface-container-high" else "glass")
+      ~corner_radius:24
+      ([ box ~height:6 ~accessibility_identifier:"spacer.composer.top" [] ]
+       @ attachment_strip
+       @ [
+           field;
+           box ~height:8
+             ~accessibility_identifier:"spacer.composer.field-controls" [];
+           row ~gap:8 ~height:44 ~cross:`center
+             ~accessibility_identifier:"row.composer.controls"
+             (actions
+              @ [
+                  spacer ~grow:1.0
+                    ~accessibility_identifier:"spacer.composer.controls" [];
+                ]
+              @ send_button);
+         ])
+  in
+  (match on_press with
+   | None -> capsule
+   | Some handler -> with_press handler capsule)
+    context parent
+
 let composer_view (context : Lui_ui.ui_context) model_source send : t =
   box ~accessibility_identifier:"surface.composer.root" ~grow:1.0
     ~min_height:58
     [
       if_
         ~test:(Signal.map View_base.composer_expanded_ model_source)
-        (Lui_element_combine.composer
+        (composer_surface
            ~placeholder:"Capture" ~label:"Capture"
            ~text_signal:(reactive View_base.composer_draft model_source)
            ~autofocus_signal:
@@ -171,7 +265,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                 ~key:View_base.composer_asset_identifier ~cmp:compare
                 ~mount:(fun asset_source ->
                   composer_asset_view context asset_source send))
-           ~attachments_visible:
+           ~attachments_visible_signal:
              (reactive View_base.composer_assets_present_ model_source)
            ~actions:
              [
@@ -200,7 +294,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
            ~send_icon:
              (if Lui_ui.platform context = AndroidOS then `app "send"
               else `app "arrow-up")
-           ~send_disabled:
+           ~send_disabled_signal:
              (reactive View_base.composer_send_disabled_ model_source)
            ~on_input:(on_input send (fun text ->
                         Model.ChangeComposerDraft text))
