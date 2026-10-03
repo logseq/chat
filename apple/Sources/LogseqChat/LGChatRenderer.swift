@@ -13,6 +13,9 @@ public enum LGChatRendererEventKind: Equatable, Sendable {
     case valueChanged
     case dismiss
     case doublePress
+    case scrollCompleted
+    case visibleRange
+    case picked
     case `extension`
 }
 
@@ -25,6 +28,11 @@ public struct LGChatRendererEvent: Equatable, Sendable {
     public let extensionIdentifier: String?
     public let extensionName: String?
     public let extensionValues: [String: LUIExtensionValue]?
+    public let payload: String?
+    public let first: Int?
+    public let last: Int?
+    public let token: Int?
+    public let outcome: String?
 
     public init(
         kind: LGChatRendererEventKind,
@@ -34,7 +42,12 @@ public struct LGChatRendererEvent: Equatable, Sendable {
         value: Double? = nil,
         extensionIdentifier: String? = nil,
         extensionName: String? = nil,
-        extensionValues: [String: LUIExtensionValue]? = nil
+        extensionValues: [String: LUIExtensionValue]? = nil,
+        payload: String? = nil,
+        first: Int? = nil,
+        last: Int? = nil,
+        token: Int? = nil,
+        outcome: String? = nil
     ) {
         self.kind = kind
         self.nodeID = nodeID
@@ -44,6 +57,11 @@ public struct LGChatRendererEvent: Equatable, Sendable {
         self.extensionIdentifier = extensionIdentifier
         self.extensionName = extensionName
         self.extensionValues = extensionValues
+        self.payload = payload
+        self.first = first
+        self.last = last
+        self.token = token
+        self.outcome = outcome
     }
 }
 
@@ -199,6 +217,22 @@ public final class LGChatRenderer {
             return LGChatRendererEvent(kind: .dismiss, nodeID: node)
         case .doublePress(let node):
             return LGChatRendererEvent(kind: .doublePress, nodeID: node)
+        case .scrollCompleted(let node, let token, let outcome):
+            return LGChatRendererEvent(
+                kind: .scrollCompleted,
+                nodeID: node,
+                token: token,
+                outcome: outcome
+            )
+        case .visibleRange(let node, let first, let last):
+            return LGChatRendererEvent(
+                kind: .visibleRange,
+                nodeID: node,
+                first: first,
+                last: last
+            )
+        case .picked(let node, let payload):
+            return LGChatRendererEvent(kind: .picked, nodeID: node, payload: payload)
         case .extension(let node, let identifier, let name, let values):
             return LGChatRendererEvent(
                 kind: .extension,

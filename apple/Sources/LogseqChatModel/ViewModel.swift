@@ -244,6 +244,55 @@ public final class LogseqChatCore {
         #endif
     }
 
+    public func logseq_chat_lui_picked(_ node: Int, _ payload: String) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_picked(
+                Int64(node),
+                payload
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_visible_range(
+        _ node: Int,
+        _ first: Int,
+        _ last: Int
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_visible_range(
+                Int64(node),
+                Int64(first),
+                Int64(last)
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_scroll_completed(
+        _ node: Int,
+        _ token: Int,
+        _ outcome: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_scroll_completed(
+                Int64(node),
+                Int64(token),
+                outcome
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
     public func logseq_chat_lui_dispose() -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {

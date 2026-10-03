@@ -15,6 +15,9 @@ private final class NativeQueue: LGChatNativeCalling {
     func valueChanged(node: Int, value: Double) -> String { "" }
     func dismiss(node: Int) -> String { "" }
     func doublePress(node: Int) -> String { "" }
+    func picked(node: Int, payload: String) -> String { "" }
+    func visibleRange(node: Int, first: Int, last: Int) -> String { "" }
+    func scrollCompleted(node: Int, token: Int, outcome: String) -> String { "" }
     func extensionEvent(node: Int, identifier: String, name: String, text: String, value: Int) -> String { "" }
     func dispose() -> String { "" }
     func takeEffect() -> String { effects.isEmpty ? "" : effects.removeFirst() }

@@ -26,6 +26,11 @@ const char *logseq_chat_lui_double_press(int64_t node);
 const char *logseq_chat_lui_extension_event(
     int64_t node, const char *identifier, const char *name, const char *text,
     int64_t value);
+const char *logseq_chat_lui_picked(int64_t node, const char *payload);
+const char *logseq_chat_lui_visible_range(int64_t node, int64_t first,
+                                          int64_t last);
+const char *logseq_chat_lui_scroll_completed(int64_t node, int64_t token,
+                                             const char *outcome);
 int64_t logseq_chat_lui_root_node(void);
 const char *logseq_chat_lui_dispose(void);
 const char *logseq_chat_lui_take_effect(void);

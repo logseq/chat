@@ -288,6 +288,20 @@ public final class LGChatRuntime {
             patch = native.dismiss(node: event.nodeID)
         case .doublePress:
             patch = native.doublePress(node: event.nodeID)
+        case .scrollCompleted:
+            patch = native.scrollCompleted(
+                node: event.nodeID,
+                token: event.token ?? 0,
+                outcome: event.outcome ?? ""
+            )
+        case .visibleRange:
+            patch = native.visibleRange(
+                node: event.nodeID,
+                first: event.first ?? 0,
+                last: event.last ?? 0
+            )
+        case .picked:
+            patch = native.picked(node: event.nodeID, payload: event.payload ?? "")
         case .extension:
             guard let identifier = event.extensionIdentifier,
                   let name = event.extensionName,
