@@ -317,6 +317,7 @@ type chat_model =
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
   ; pending_page_deletion : sidebar_page option
+  ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
   ; settings_tabs_open : bool
@@ -484,6 +485,8 @@ type chat_action =
   | ApplyRuntimeLog of runtime_log_record list
   | RefreshRuntimeLog
   | CopyRuntimeLog
+  | RequestSignOut
+  | CancelSignOut
   | SignOut
   | RevealFlashcardCloze
   | RevealFlashcardAnswer
@@ -616,6 +619,7 @@ let initial () =
     new_graph_encrypted = true;
     pending_graph_deletion = None;
     pending_page_deletion = None;
+    pending_sign_out = false;
     connection_menu_open = false;
     settings_open = false;
     settings_tabs_open = false;
@@ -2430,9 +2434,15 @@ let rec update (current : chat_model) action =
     let id = current.next_effect_id in
     enqueue_effect current
       (CopyRuntimeLogEffect (id, current.runtime_log_records))
+  | RequestSignOut ->
+    { current with pending_sign_out = true; settings_open = false }
+  | CancelSignOut ->
+    { current with pending_sign_out = false; settings_open = true }
   | SignOut ->
     let id = current.next_effect_id in
-    enqueue_effect current (SignOutEffect id)
+    enqueue_effect
+      { current with pending_sign_out = false }
+      (SignOutEffect id)
   | RevealFlashcardCloze ->
     { current with flashcard_cloze_revealed = true }
   | RevealFlashcardAnswer ->

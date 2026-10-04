@@ -153,6 +153,16 @@ public struct LogseqChatRootView : View {
     }
 
     private init() {
+        #if DEBUG
+        NSSetUncaughtExceptionHandler { exception in
+            NSLog(
+                "LUICRASH %@: %@\n%@",
+                exception.name.rawValue,
+                exception.reason ?? "",
+                exception.callStackSymbols.joined(separator: "\n")
+            )
+        }
+        #endif
         try? FileManager.default.removeItem(
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
         )

@@ -160,11 +160,17 @@ public final class LGChatRenderer {
 
     private static func makeBackend() -> LUIAppleBackend {
         do {
-            return try LUIAppleBackend(
+            let backend = try LUIAppleBackend(
                 appIcons: LGChatIconPolicy.icons,
                 appIconBundle: .module,
                 extensionRegistry: LGChatExtensionRegistry.makeRegistry()
             )
+            // Effects like local-graph deletion resolve through several RPCs,
+            // each emitting a patch on its own runloop turn. Coalescing merges
+            // the burst into one view commit; without it iOS's collection view
+            // replays stale section mutations and asserts.
+            backend.coalescesCommits = true
+            return backend
         } catch {
             preconditionFailure(
                 "Invalid LG chat extension registry: \(String(describing: error))"

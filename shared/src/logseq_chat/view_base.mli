@@ -40,6 +40,7 @@ val active_page_actions_visible_ : Model.chat_model -> bool
 val connection_settings_visible_ : Model.chat_model -> bool
 val active_page_favorite_label : Model.chat_model -> string
 val page_deletion_pending_ : Model.chat_model -> bool
+val sign_out_pending_ : Model.chat_model -> bool
 val sidebar_page_identifier : Model.sidebar_page -> string
 val sidebar_page_title : Model.sidebar_page -> string
 val sidebar_graph_identifier : Model.graph -> string

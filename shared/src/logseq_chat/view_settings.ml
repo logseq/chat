@@ -128,35 +128,44 @@ let settings_appearance_control (context : Lui_ui.ui_context) model_source
              ]);
       ]
   else
-    stack
+    (* Menu-style radio group renders as the native inline picker:
+       label on the left, current value + dropdown on the right. *)
+    radio_group ~label:"Theme" ~style_class:"menu"
+      ~accessibility_identifier:"picker.settings.appearance"
       [
-        select
-          ~text_signal:
-            (Signal.map View_base.settings_appearance_title model_source)
-          ~label:"Theme"
-          ~on_press:(press send Model.OpenSettingsAppearanceMenu)
-          [];
-        if_
-          ~test:
-            (Signal.map View_base.model_settings_appearance_menu_open_
+        radio ~text:"System"
+          ~checked_signal:
+            (Signal.map
+               (fun (model : Model.chat_model) ->
+                 model.appearance = "system")
                model_source)
-          (dropdown_menu ~anchor:`below ~anchor_alignment:`end_
-             ~min_width:160
-             ~on_dismiss:(press send Model.CloseSettingsAppearanceMenu)
-             [
-               menu_item ~text:"System"
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ChangeAppearance "system")))
-                 [];
-               menu_item ~text:"Light"
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ChangeAppearance "light")))
-                 [];
-               menu_item ~text:"Dark"
-                 ~on_press:(fun _ ->
-                   ignore (send (Model.ChangeAppearance "dark")))
-                 [];
-             ]);
+          ~accessibility_identifier:
+            "picker.settings.appearance.option.system"
+          ~on_change:(fun _ ->
+            ignore (send (Model.ChangeAppearance "system")))
+          [];
+        radio ~text:"Light"
+          ~checked_signal:
+            (Signal.map
+               (fun (model : Model.chat_model) ->
+                 model.appearance = "light")
+               model_source)
+          ~accessibility_identifier:
+            "picker.settings.appearance.option.light"
+          ~on_change:(fun _ ->
+            ignore (send (Model.ChangeAppearance "light")))
+          [];
+        radio ~text:"Dark"
+          ~checked_signal:
+            (Signal.map
+               (fun (model : Model.chat_model) ->
+                 model.appearance = "dark")
+               model_source)
+          ~accessibility_identifier:
+            "picker.settings.appearance.option.dark"
+          ~on_change:(fun _ ->
+            ignore (send (Model.ChangeAppearance "dark")))
+          [];
       ]
 
 let settings_community_link_row (context : Lui_ui.ui_context) model_source
@@ -659,14 +668,69 @@ let settings_sign_out_row (context : Lui_ui.ui_context) send : t =
   if Lui_ui.host context = FlutterHost then
     list_item ~icon:(`app "sign-out") ~padding:0
       ~accessibility_identifier:"button.sign-out"
-      ~on_press:(press send Model.SignOut)
+      ~on_press:(press send Model.RequestSignOut)
       ~text:"Sign Out" []
   else
     list_item ~padding:0 ~accessibility_identifier:"button.sign-out"
-      ~on_press:(press send Model.SignOut)
+      ~on_press:(press send Model.RequestSignOut)
       ~text:"Sign Out" []
 
-let settings_screen (context : Lui_ui.ui_context) model_source send : t =
+let sign_out_dialog (context : Lui_ui.ui_context) send : t =
+  if Lui_ui.host context = FlutterHost then
+    dialog ~text:"Sign out?" ~height:280
+      ~accessibility_identifier:"dialog.sign-out"
+      ~on_dismiss:(press send Model.CancelSignOut)
+      [
+        column ~gap:16 ~cross:`stretch
+          [
+            text
+              ~value:
+                "You will be signed out of the sync server on this \
+                 device."
+              ~grow:1.0 [];
+            spacer ~grow:1.0 [];
+            row ~main:`end_
+              [
+                toolbar ~orientation:`horizontal ~toolbar_gap:12
+                  ~label:"Sign out actions"
+                  ~accessibility_identifier:"toolbar.sign-out"
+                  [
+                    button ~variant:`ghost
+                      ~accessibility_identifier:
+                        "button.sign-out.cancel"
+                      ~on_press:(press send Model.CancelSignOut)
+                      ~text:"Cancel" [];
+                    button ~variant:`destructive
+                      ~accessibility_identifier:
+                        "button.sign-out.confirm"
+                      ~on_press:(press send Model.SignOut)
+                      ~text:"Sign Out" [];
+                  ];
+              ];
+          ];
+      ]
+  else
+    (* Text-and-buttons-only children keep the dialog on the native alert
+       path (rich children fall back to a custom sheet). *)
+    dialog ~text:"Sign out?" ~style_class:"alert"
+      ~accessibility_identifier:"dialog.sign-out"
+      ~on_dismiss:(press send Model.CancelSignOut)
+      [
+        text
+          ~value:
+            "You will be signed out of the sync server on this device."
+          [];
+        button ~accessibility_identifier:"button.sign-out.cancel"
+          ~on_press:(press send Model.CancelSignOut)
+          ~text:"Cancel" [];
+        button ~variant:`destructive
+          ~accessibility_identifier:"button.sign-out.confirm"
+          ~on_press:(press send Model.SignOut)
+          ~text:"Sign Out" [];
+      ]
+
+let settings_flutter_screen (context : Lui_ui.ui_context) model_source
+    send : t =
   let card_bg =
     if Lui_ui.host context = FlutterHost then "surface-container-low"
     else "surface"
@@ -777,6 +841,126 @@ let settings_screen (context : Lui_ui.ui_context) model_source send : t =
       column ~padding:16 ~background:card_bg ~corner_radius:14
         [ settings_sign_out_row context send ];
     ]
+
+(* Native grouped-settings form: a `form`-styled content column whose
+   children are `heading` section delimiters and row nodes — the Apple
+   backend renders it as a grouped Form (white section cards, system
+   separators, green toggles). *)
+let settings_form_screen (context : Lui_ui.ui_context) model_source send
+    : t =
+  let version_row label value_signal identifier : t =
+    row ~cross:`center ~accessibility_identifier:identifier
+      [
+        text ~value:label [];
+        spacer [];
+        text ~value_signal ~foreground:"secondary" [];
+      ]
+  in
+  column ~style_class:"form"
+    ~accessibility_identifier:"screen.settings"
+    [
+      heading ~value:"General" ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.general" [];
+      settings_appearance_control context model_source send;
+      settings_language_control context model_source send;
+      list_item ~accessibility_identifier:"link.settings.tabs"
+        ~on_press:(press send Model.OpenSettingsTabs)
+        [
+          row ~grow:1.0 ~cross:`center
+            [
+              text ~value:"Tabs" [];
+              spacer [];
+              text
+                ~value_signal:
+                  (Signal.map View_base.settings_tabs_summary
+                     model_source)
+                ~style_class:"single-line" ~foreground:"secondary"
+                ~accessibility_identifier:
+                  "text.settings.tabs.selection" [];
+            ];
+        ];
+      heading ~value:"Editor" ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.editor" [];
+      toggle
+        ~checked_signal:
+          (Signal.map View_base.settings_spell_check model_source)
+        ~accessibility_identifier:"switch.settings.spell-check"
+        ~on_toggle:(settings_toggle_spell_check send)
+        ~text:"Spell check" [];
+      toggle
+        ~checked_signal:
+          (Signal.map View_base.settings_auto_correction model_source)
+        ~accessibility_identifier:"switch.settings.auto-correction"
+        ~on_toggle:(settings_toggle_auto_correction send)
+        ~text:"Auto-correction" [];
+      heading ~value:"Sync server" ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.sync-server" [];
+      text_field
+        ~text_signal:(Signal.map View_base.settings_base_url model_source)
+        ~placeholder:"Server URL" ~label:"Server URL"
+        ~accessibility_identifier:"field.base-url"
+        ~on_input:(on_input send (fun text -> Model.ChangeBaseURL text))
+        [];
+      if_
+        ~test:
+          (Signal.map View_base.settings_base_url_invalid_ model_source)
+        (text ~foreground:"destructive"
+           ~value:"Enter a valid HTTP or HTTPS URL." []);
+      if_
+        ~test:(Signal.map View_base.selected_graph_local_ model_source)
+        (heading ~value:"Advanced" ~foreground:"muted-foreground"
+           ~accessibility_identifier:"label.settings.advanced" []);
+      if_
+        ~test:(Signal.map View_base.selected_graph_local_ model_source)
+        (list_item ~padding:0
+           ~accessibility_identifier:"button.export-graph-database"
+           ~on_press:(press send Model.ExportGraphDatabase)
+           ~text:"Export Graph SQLite DB" []);
+      heading ~value:"About" ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.about" [];
+      version_row "Version"
+        (Signal.map View_base.settings_version model_source)
+        "row.settings.version";
+      version_row "Revision"
+        (Signal.map View_base.settings_revision model_source)
+        "row.settings.revision";
+      list_item ~accessibility_identifier:"button.runtime-log"
+        ~on_press:(press send Model.OpenRuntimeLog)
+        ~text:"Check log" [];
+      heading ~value:"Community" ~foreground:"muted-foreground"
+        ~accessibility_identifier:"label.settings.community" [];
+      keyed
+        ~source:(Signal.map View_base.model_community_links model_source)
+        ~key:View_base.settings_community_link_identifier
+        ~cmp:compare
+        ~mount:(fun link_source ->
+          list_item
+            ~text_signal:
+              (Signal.map View_base.settings_community_link_title
+                 link_source)
+            ~accessibility_identifier:
+              (View_base.settings_community_link_identifier
+                 (Signal.sample link_source))
+            ~on_press:(fun _ ->
+              ignore
+                (send
+                   (Model.OpenExternalURL
+                      (Signal.sample link_source
+                         : Model.settings_community_link)
+                        .url)))
+            []);
+      heading ~value:"Account"
+        ~accessibility_identifier:"label.settings.account" [];
+      list_item ~foreground:"destructive"
+        ~accessibility_identifier:"button.sign-out"
+        ~on_press:(press send Model.RequestSignOut)
+        ~text:"Sign Out" [];
+    ]
+
+let settings_screen (context : Lui_ui.ui_context) model_source send : t =
+  if Lui_ui.host context = FlutterHost then
+    settings_flutter_screen context model_source send
+  else settings_form_screen context model_source send
 
 let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
     t =
@@ -899,7 +1083,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
           ];
       ]
   else
-    sheet ~text:"Settings" ~style_class:"navigation-scroll"
+    sheet ~text:"Settings" ~style_class:"navigation-form"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
       [
@@ -975,20 +1159,20 @@ let page_delete_dialog (context : Lui_ui.ui_context) send : t =
           ];
       ]
   else
+    (* Text-and-buttons-only children keep the dialog on the native alert
+       path (rich children fall back to a custom sheet). *)
     dialog ~text:"Delete page?" ~style_class:"alert"
       ~accessibility_identifier:"dialog.page-delete"
       ~on_dismiss:(press send Model.CancelDeleteActivePage)
       [
-        column
-          [
-            text ~value:"The page will be moved to Recycle." [];
-            button ~accessibility_identifier:"button.page-delete.cancel"
-              ~on_press:(press send Model.CancelDeleteActivePage)
-              ~text:"Cancel" [];
-            button ~accessibility_identifier:"button.page-delete.confirm"
-              ~on_press:(press send Model.ConfirmDeleteActivePage)
-              ~text:"Delete" [];
-          ];
+        text ~value:"The page will be moved to Recycle." [];
+        button ~accessibility_identifier:"button.page-delete.cancel"
+          ~on_press:(press send Model.CancelDeleteActivePage)
+          ~text:"Cancel" [];
+        button ~variant:`destructive
+          ~accessibility_identifier:"button.page-delete.confirm"
+          ~on_press:(press send Model.ConfirmDeleteActivePage)
+          ~text:"Delete" [];
       ]
 
 let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =

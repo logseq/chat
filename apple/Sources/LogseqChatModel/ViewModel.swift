@@ -692,7 +692,7 @@ private struct DeletePagePayload: Encodable {
         )
     }
 
-    public func resetToCatalog() async {
+    public func resetToCatalog(applyResponse: Bool = true) async {
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(
                 code: "database_not_open",
@@ -700,11 +700,18 @@ private struct DeletePagePayload: Encodable {
             )
             return
         }
+        // When a caller issues several RPCs back-to-back (e.g. graph deletion:
+        // catalog reset followed by configure), applying each response renders
+        // intermediate tree states. Consecutive commits inside one SwiftUI
+        // update window get replayed as a single coalesced collection batch,
+        // which can double-apply a row delete and crash; suppressing the
+        // intermediate apply collapses the transition into one commit.
         await performAsyncAndWait(
             LogseqChatRPCRequest(
                 method: "open",
                 params: LogseqChatRPCParams(action: nil, path: openedDatabasePath)
-            )
+            ),
+            shouldApply: { applyResponse }
         )
     }
 

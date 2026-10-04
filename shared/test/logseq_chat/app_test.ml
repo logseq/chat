@@ -1150,18 +1150,14 @@ let settings_render_the_main_branch_navigation_contract () =
   check_eq ~msg:"the settings root owns the native sheet title"
     (property_string renderer settings_sheet Lui_protocol.TextValue)
     "Settings";
-  check_eq ~msg:"the settings root keeps its custom scrolling cards"
+  check_eq ~msg:"the settings root uses the native grouped form sheet"
     (property_string renderer settings_sheet Lui_protocol.StyleClass)
-    "navigation-scroll";
+    "navigation-form";
   check ~msg:"settings retain their baseline screen identifier"
     (settings_screen <> -1);
-  check_eq ~msg:"settings paint the app background inside the native sheet"
-    (property_string renderer settings_screen Lui_protocol.BackgroundValue)
-    "background";
-  check_eq ~msg:"settings cards use the same themed surface as main"
-    (descendant_count_with_property_string renderer settings_screen
-       Lui_protocol.BackgroundValue "surface")
-    7;
+  check_eq ~msg:"the settings content uses the native form layout"
+    (property_string renderer settings_screen Lui_protocol.StyleClass)
+    "form";
   let tabs_link =
     descendant_with_identifier renderer root "link.settings.tabs"
   in
@@ -1170,9 +1166,6 @@ let settings_render_the_main_branch_navigation_contract () =
       "text.settings.tabs.selection"
   in
   check ~msg:"settings expose tabs navigation" (tabs_link <> -1);
-  check_eq ~msg:"settings card rows do not duplicate card padding"
-    (property_int renderer tabs_link Lui_protocol.PaddingValue)
-    0;
   check_eq ~msg:"tabs show the same selected-items summary as main"
     (property_string renderer tabs_selection Lui_protocol.TextValue)
     "Journals · Flashcards · Graphs";
@@ -1804,25 +1797,11 @@ let settings_community_links_use_a_typed_platform_boundary () =
     descendant_with_identifier renderer root
       "link.settings.community.report-bug"
   in
-  let report_row =
-    parent_with_child_identifier renderer root
-      "link.settings.community.report-bug"
-  in
   let github =
     descendant_with_identifier renderer root "link.settings.community.github"
   in
-  let github_row =
-    parent_with_child_identifier renderer root
-      "link.settings.community.github"
-  in
   check ~msg:"settings retain the issue tracker link" (report_bug <> -1);
   check ~msg:"settings retain the GitHub community link" (github <> -1);
-  check_eq ~msg:"community links preserve main's spacing before dividers"
-    (property_int renderer report_row Lui_protocol.Gap)
-    12;
-  check_eq ~msg:"the final community link has no trailing divider"
-    (List.length (children renderer github_row))
-    1;
   dispatch application (Lui_protocol.Press github);
   flush application;
   check_eq ~msg:"community navigation stays on the typed platform boundary"

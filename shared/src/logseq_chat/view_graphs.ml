@@ -323,26 +323,28 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
           ];
       ]
   else
-    dialog ~text:"Delete local graph"
+    (* Text-and-buttons-only children keep the dialog on the native alert
+       path (rich children fall back to a custom sheet). *)
+    dialog ~text:"Delete local graph" ~style_class:"alert"
+      ~accessibility_identifier:"dialog.graph-delete"
       ~on_dismiss:(press send Model.CancelDeleteGraph)
       [
-        column
-          [
-            text
-              ~value_signal:
-                (Signal.map View_base.graph_deletion_message model_source)
-              ~accessibility_identifier:"text.graph-delete-warning" [];
-            text
-              ~value:
-                "\xE2\x9A\xA0\xEF\xB8\x8F Notice that we can't recover \
-                 this graph after being deleted. Make sure you have \
-                 backups before deleting it."
-              [];
-            button ~on_press:(press send Model.CancelDeleteGraph)
-              ~text:"Cancel" [];
-            button ~on_press:(press send Model.ConfirmDeleteGraph)
-              ~text:"Confirm" [];
-          ];
+        text
+          ~value_signal:
+            (Signal.map View_base.graph_deletion_message model_source)
+          ~accessibility_identifier:"text.graph-delete-warning" [];
+        text
+          ~value:
+            "Notice that we can't recover this graph after being \
+             deleted. Make sure you have backups before deleting it."
+          [];
+        button ~accessibility_identifier:"button.graph-delete.cancel"
+          ~on_press:(press send Model.CancelDeleteGraph)
+          ~text:"Cancel" [];
+        button ~variant:`destructive
+          ~accessibility_identifier:"button.graph-delete.confirm"
+          ~on_press:(press send Model.ConfirmDeleteGraph)
+          ~text:"Delete" [];
       ]
 
 let graph_picker_overflow_menu send : t =

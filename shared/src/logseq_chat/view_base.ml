@@ -210,6 +210,9 @@ let active_page_favorite_label (current : Model.chat_model) =
 let page_deletion_pending_ (current : Model.chat_model) =
   current.pending_page_deletion <> None
 
+let sign_out_pending_ (current : Model.chat_model) =
+  current.pending_sign_out
+
 let sidebar_page_identifier (page : Model.sidebar_page) =
   "link.sidebar.page." ^ page.uuid
 

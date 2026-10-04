@@ -700,7 +700,7 @@ public final class LGChatCoreEffectExecutor: LGChatEffectExecuting {
             }
             return Self.resolution(from: await deleteLocalGraph(effect.text))
         case "persist-ui-session", "persist-composer-draft", "sign-in", "save-settings", "refresh-runtime-log",
-             "copy-runtime-log", "sign-out",
+             "copy-runtime-log", "sign-out", "export-graph-database", "open-external-url",
              "present-attachment", "present-asset", "present-page-share", "sync-now":
             guard let platformEffect else {
                 return LGChatEffectResolution(

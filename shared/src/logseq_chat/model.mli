@@ -314,6 +314,7 @@ type chat_model =
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
   ; pending_page_deletion : sidebar_page option
+  ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
   ; settings_tabs_open : bool
@@ -481,6 +482,8 @@ type chat_action =
   | ApplyRuntimeLog of runtime_log_record list
   | RefreshRuntimeLog
   | CopyRuntimeLog
+  | RequestSignOut
+  | CancelSignOut
   | SignOut
   | RevealFlashcardCloze
   | RevealFlashcardAnswer

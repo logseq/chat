@@ -863,6 +863,9 @@ let application_main_content (context : Lui_ui.ui_context) model_source
           ~test:(Signal.map View_base.page_deletion_pending_ model_source)
           (View_settings.page_delete_dialog context send);
         if_
+          ~test:(Signal.map View_base.sign_out_pending_ model_source)
+          (View_settings.sign_out_dialog context send);
+        if_
           ~test:(Signal.map View_base.model_sync_details_open_
                    model_source)
           (View_settings.sync_status_sheet context model_source send);
@@ -900,6 +903,9 @@ let application_main_content (context : Lui_ui.ui_context) model_source
         if_
           ~test:(Signal.map View_base.page_deletion_pending_ model_source)
           (View_settings.page_delete_dialog context send);
+        if_
+          ~test:(Signal.map View_base.sign_out_pending_ model_source)
+          (View_settings.sign_out_dialog context send);
         if_
           ~test:(Signal.map View_base.model_sync_details_open_
                    model_source)
