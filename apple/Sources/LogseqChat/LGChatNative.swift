@@ -26,6 +26,9 @@ public protocol LGChatNativeCalling {
         text: String,
         value: Int
     ) -> String
+    func picked(node: Int, payload: String) -> String
+    func visibleRange(node: Int, first: Int, last: Int) -> String
+    func scrollCompleted(node: Int, token: Int, outcome: String) -> String
     func dispose() -> String
     func takeEffect() -> String
     func resolveEffect(id: Int, succeeded: Bool, message: String) -> String
@@ -78,6 +81,15 @@ public final class LGChatCoreNativeCaller: LGChatNativeCalling {
         value: Int
     ) -> String {
         core.logseq_chat_lui_extension_event(node, identifier, name, text, value)
+    }
+    public func picked(node: Int, payload: String) -> String {
+        core.logseq_chat_lui_picked(node, payload)
+    }
+    public func visibleRange(node: Int, first: Int, last: Int) -> String {
+        core.logseq_chat_lui_visible_range(node, first, last)
+    }
+    public func scrollCompleted(node: Int, token: Int, outcome: String) -> String {
+        core.logseq_chat_lui_scroll_completed(node, token, outcome)
     }
     public func dispose() -> String { core.logseq_chat_lui_dispose() }
     public func takeEffect() -> String { core.logseq_chat_lui_take_effect() }

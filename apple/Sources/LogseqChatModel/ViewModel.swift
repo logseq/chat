@@ -244,6 +244,55 @@ public final class LogseqChatCore {
         #endif
     }
 
+    public func logseq_chat_lui_picked(_ node: Int, _ payload: String) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_picked(
+                Int64(node),
+                payload
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_visible_range(
+        _ node: Int,
+        _ first: Int,
+        _ last: Int
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_visible_range(
+                Int64(node),
+                Int64(first),
+                Int64(last)
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
+    public func logseq_chat_lui_scroll_completed(
+        _ node: Int,
+        _ token: Int,
+        _ outcome: String
+    ) -> String {
+        #if LOGSEQ_CHAT_CORE
+        return invokeCore {
+            String(cString: LogseqChatCoreABI.logseq_chat_lui_scroll_completed(
+                Int64(node),
+                Int64(token),
+                outcome
+            ))
+        }
+        #else
+        return ""
+        #endif
+    }
+
     public func logseq_chat_lui_dispose() -> String {
         #if LOGSEQ_CHAT_CORE
         return invokeCore {
@@ -643,7 +692,7 @@ private struct DeletePagePayload: Encodable {
         )
     }
 
-    public func resetToCatalog() async {
+    public func resetToCatalog(applyResponse: Bool = true) async {
         guard let openedDatabasePath else {
             lastError = LogseqChatCoreError(
                 code: "database_not_open",
@@ -651,11 +700,18 @@ private struct DeletePagePayload: Encodable {
             )
             return
         }
+        // When a caller issues several RPCs back-to-back (e.g. graph deletion:
+        // catalog reset followed by configure), applying each response renders
+        // intermediate tree states. Consecutive commits inside one SwiftUI
+        // update window get replayed as a single coalesced collection batch,
+        // which can double-apply a row delete and crash; suppressing the
+        // intermediate apply collapses the transition into one commit.
         await performAsyncAndWait(
             LogseqChatRPCRequest(
                 method: "open",
                 params: LogseqChatRPCParams(action: nil, path: openedDatabasePath)
-            )
+            ),
+            shouldApply: { applyResponse }
         )
     }
 

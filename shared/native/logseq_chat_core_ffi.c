@@ -369,6 +369,71 @@ static const char *call_lui_extension_event(
   CAMLreturnT(const char *, response);
 }
 
+static const char *call_lui_node_text(const char *name, int64_t node,
+                                      const char *text) {
+  const char *response;
+  CAMLparam0();
+  CAMLlocal2(text_value, result);
+  const value *callback = caml_named_value(name);
+  if (callback == NULL) {
+    response = lui_no_callback(name);
+  } else if (text == NULL) {
+    response = lui_bad_argument(name);
+  } else {
+    text_value = caml_copy_string(text);
+    result = caml_callback2_exn(*callback, Val_long(node), text_value);
+    response = Is_exception_result(result)
+      ? lui_exception(name, result)
+      : replace_response(String_val(result));
+  }
+  CAMLreturnT(const char *, response);
+}
+
+static const char *call_lui_visible_range(int64_t node, int64_t first,
+                                          int64_t last) {
+  const char *response;
+  CAMLparam0();
+  CAMLlocal1(result);
+  const value *callback = caml_named_value("logseq_chat_lui_visible_range");
+  if (callback == NULL) {
+    response = lui_no_callback("logseq_chat_lui_visible_range");
+  } else {
+    result = caml_callback3_exn(
+      *callback,
+      Val_long(node),
+      Val_long(first),
+      Val_long(last));
+    response = Is_exception_result(result)
+      ? lui_exception("logseq_chat_lui_visible_range", result)
+      : replace_response(String_val(result));
+  }
+  CAMLreturnT(const char *, response);
+}
+
+static const char *call_lui_scroll_completed(int64_t node, int64_t token,
+                                             const char *outcome) {
+  const char *response;
+  CAMLparam0();
+  CAMLlocal2(outcome_value, result);
+  const value *callback = caml_named_value("logseq_chat_lui_scroll_completed");
+  if (callback == NULL) {
+    response = lui_no_callback("logseq_chat_lui_scroll_completed");
+  } else if (outcome == NULL) {
+    response = lui_bad_argument("logseq_chat_lui_scroll_completed");
+  } else {
+    outcome_value = caml_copy_string(outcome);
+    result = caml_callback3_exn(
+      *callback,
+      Val_long(node),
+      Val_long(token),
+      outcome_value);
+    response = Is_exception_result(result)
+      ? lui_exception("logseq_chat_lui_scroll_completed", result)
+      : replace_response(String_val(result));
+  }
+  CAMLreturnT(const char *, response);
+}
+
 #define LUI_RUNTIME_CALL(entry_name, expression) \
   LOGSEQ_CHAT_LOG("lui %s enter", entry_name); \
   int registration = acquire_ocaml_runtime(); \
@@ -435,6 +500,25 @@ const char *logseq_chat_lui_extension_event(
   LUI_RUNTIME_CALL(
       "extension_event",
       call_lui_extension_event(node, identifier, name, text, value));
+}
+
+const char *logseq_chat_lui_picked(int64_t node, const char *payload) {
+  LUI_RUNTIME_CALL(
+      "picked", call_lui_node_text("logseq_chat_lui_picked", node, payload));
+}
+
+const char *logseq_chat_lui_visible_range(int64_t node, int64_t first,
+                                          int64_t last) {
+  LUI_RUNTIME_CALL(
+      "visible_range",
+      call_lui_visible_range(node, first, last));
+}
+
+const char *logseq_chat_lui_scroll_completed(int64_t node, int64_t token,
+                                             const char *outcome) {
+  LUI_RUNTIME_CALL(
+      "scroll_completed",
+      call_lui_scroll_completed(node, token, outcome));
 }
 
 int64_t logseq_chat_lui_root_node(void) {

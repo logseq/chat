@@ -48,17 +48,6 @@ const _searchFingerprint =
     '5:title:string:required:none,9:presented:bool:required:none|events:'
     '13:query-changed[5:query:string:required],4:back[5:count:int:required],'
     '7:dismiss[]';
-const _overflowFingerprint =
-    'lui-extension-v1|20:native-overflow-menu|profiles:android/flutter,'
-    'ios/swiftui|standard-children:0|children:|'
-    'properties:14:favorite-label:string:required:none,16:settings-visible:bool:'
-    'required:none,20:page-actions-visible:bool:required:none|events:5:share[],'
-    '6:delete[],8:favorite[],8:settings[]';
-const _composerAssetFingerprint =
-    'lui-extension-v1|14:composer-asset|profiles:android/flutter,'
-    'ios/swiftui|standard-children:0|children:|'
-    'properties:10:local-path:string:required:none,5:title:string:'
-    'required:none|events:';
 
 String _identityAssetPath(String path) => path;
 
@@ -193,78 +182,7 @@ LUIFlutterExtensionRegistry logseqChatExtensionRegistry({
         ],
         builder: (context) => _SearchPresentation(context: context),
       ),
-    )
-    ..register(
-      LUIFlutterExtension(
-        identifier: 'native-overflow-menu',
-        fingerprint: _overflowFingerprint,
-        properties: [
-          _requiredBoolProperty('page-actions-visible'),
-          _requiredStringProperty('favorite-label'),
-          _requiredBoolProperty('settings-visible'),
-        ],
-        events: [
-          LUIExtensionEventSchema(name: 'favorite'),
-          LUIExtensionEventSchema(name: 'share'),
-          LUIExtensionEventSchema(name: 'delete'),
-          LUIExtensionEventSchema(name: 'settings'),
-        ],
-        builder: (context) => _OverflowMenu(context: context),
-      ),
-    )
-    ..register(
-      LUIFlutterExtension(
-        identifier: 'composer-asset',
-        fingerprint: _composerAssetFingerprint,
-        properties: [
-          _requiredStringProperty('title'),
-          _requiredStringProperty('local-path'),
-        ],
-        builder: (context) => _ComposerAssetPreview(context: context),
-      ),
     );
-}
-
-final class _ComposerAssetPreview extends StatelessWidget {
-  const _ComposerAssetPreview({required this.context});
-
-  final LUIFlutterExtensionContext context;
-
-  @override
-  Widget build(BuildContext buildContext) {
-    final title = context.property('title') as String? ?? '';
-    final localPath = context.property('local-path') as String? ?? '';
-    final Widget content =
-        localPath.isNotEmpty && isAndroidImageAsset('', localPath)
-        ? Image.file(
-            File(localPath),
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _fallback(buildContext, title),
-          )
-        : _fallback(buildContext, title);
-    return Semantics(
-      label: title,
-      image: true,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox.square(dimension: 128, child: content),
-      ),
-    );
-  }
-
-  Widget _fallback(BuildContext buildContext, String title) => ColoredBox(
-    color: Theme.of(buildContext).colorScheme.surfaceContainerHigh,
-    child: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        spacing: 4,
-        children: [
-          const Icon(Icons.attach_file_rounded),
-          Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
-        ],
-      ),
-    ),
-  );
 }
 
 LUIExtensionEventField _requiredStringField(String name) =>
@@ -503,75 +421,6 @@ final class _SearchPresentationState extends State<_SearchPresentation>
     _controller.dispose();
     super.dispose();
   }
-}
-
-final class _OverflowMenu extends StatelessWidget {
-  const _OverflowMenu({required this.context});
-
-  final LUIFlutterExtensionContext context;
-
-  @override
-  Widget build(BuildContext buildContext) {
-    final pageActions = context.property('page-actions-visible')! as bool;
-    final settings = context.property('settings-visible')! as bool;
-    return Semantics(
-      key: const ValueKey('overflow-menu'),
-      identifier: 'button.overflow-menu',
-      button: true,
-      child: PopupMenuButton<String>(
-        tooltip: 'More',
-        icon: const Icon(Icons.more_vert_rounded),
-        onSelected: (name) => context.emit(name: name),
-        itemBuilder: (_) => [
-          if (pageActions) ...[
-            PopupMenuItem(
-              value: 'favorite',
-              child: _MenuAction(
-                icon:
-                    (context.property('favorite-label')! as String) ==
-                        'Unfavorite'
-                    ? Icons.star_rounded
-                    : Icons.star_outline_rounded,
-                label: context.property('favorite-label')! as String,
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'share',
-              child: _MenuAction(icon: Icons.share_outlined, label: 'Share'),
-            ),
-            const PopupMenuItem(
-              value: 'delete',
-              child: _MenuAction(
-                icon: Icons.delete_outline_rounded,
-                label: 'Delete',
-              ),
-            ),
-          ],
-          if (settings)
-            const PopupMenuItem(
-              value: 'settings',
-              child: _MenuAction(
-                icon: Icons.settings_outlined,
-                label: 'Settings',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-final class _MenuAction extends StatelessWidget {
-  const _MenuAction({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
-  );
 }
 
 final class _YoutubePlaybackCoordinator

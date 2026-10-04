@@ -19,6 +19,11 @@ type composer_asset =
   ; payload : string
   }
 
+type asset_preview =
+  { preview_title : string
+  ; preview_path : string
+  }
+
 type ui_session =
   { graph_id : string option
   ; destination : primary_destination
@@ -309,6 +314,7 @@ type chat_model =
   ; new_graph_encrypted : bool
   ; pending_graph_deletion : graph option
   ; pending_page_deletion : sidebar_page option
+  ; pending_sign_out : bool
   ; connection_menu_open : bool
   ; settings_open : bool
   ; settings_tabs_open : bool
@@ -357,6 +363,7 @@ type chat_model =
   ; app_navigation_previews : node_projection list
   ; app_navigation_path : navigation_route list
   ; search_navigation_path : navigation_route list
+  ; asset_preview : asset_preview option
   }
 
 type chat_action =
@@ -380,6 +387,7 @@ type chat_action =
   | PerformOutlinerToolbarAction of string
   | ChooseOutlinerAutocomplete of string
   | OpenOutlinerAsset of string
+  | DismissAssetPreview
   | CloseSearch
   | ExpandComposer
   | FocusComposer
@@ -393,6 +401,7 @@ type chat_action =
   | RemoveComposerAsset of string
   | DequeueEffect of int
   | ResolveEffect of int * bool * string
+  | ResolveAssetPreview of string * string
   | OpenAttachmentPicker
   | CloseAttachmentPicker
   | ChooseAttachment of string
@@ -473,6 +482,8 @@ type chat_action =
   | ApplyRuntimeLog of runtime_log_record list
   | RefreshRuntimeLog
   | CopyRuntimeLog
+  | RequestSignOut
+  | CancelSignOut
   | SignOut
   | RevealFlashcardCloze
   | RevealFlashcardAnswer

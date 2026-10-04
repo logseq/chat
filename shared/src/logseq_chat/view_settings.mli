@@ -78,6 +78,8 @@ val settings_sheet :
   (Model.chat_action -> bool) -> Lui_elements.t
 val page_delete_dialog :
   Lui_ui.ui_context -> (Model.chat_action -> bool) -> Lui_elements.t
+val sign_out_dialog :
+  Lui_ui.ui_context -> (Model.chat_action -> bool) -> Lui_elements.t
 val sync_status_sheet :
   Lui_ui.ui_context ->
   Model.chat_model Signal.signal ->

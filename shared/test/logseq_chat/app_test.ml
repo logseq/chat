@@ -66,6 +66,24 @@ let rec descendant_with_node_kind runtime parent kind =
     in
     loop 0
 
+let menu_item_with_text runtime menu_trigger text =
+  let menu =
+    descendant_with_node_kind runtime menu_trigger
+      Lui_protocol.DropdownMenu
+  in
+  if menu = -1 then -1
+  else
+    let items = children runtime menu in
+    let rec find items =
+      match items with
+      | [] -> -1
+      | item :: rest ->
+        if property_string runtime item Lui_protocol.TextValue = text then
+          item
+        else find rest
+    in
+    find items
+
 let rec descendant_count_with_node_kind runtime parent kind =
   let children = children runtime parent in
   let own = if node runtime parent = Some kind then 1 else 0 in
@@ -1132,18 +1150,14 @@ let settings_render_the_main_branch_navigation_contract () =
   check_eq ~msg:"the settings root owns the native sheet title"
     (property_string renderer settings_sheet Lui_protocol.TextValue)
     "Settings";
-  check_eq ~msg:"the settings root keeps its custom scrolling cards"
+  check_eq ~msg:"the settings root uses the native grouped form sheet"
     (property_string renderer settings_sheet Lui_protocol.StyleClass)
-    "navigation-scroll";
+    "navigation-form";
   check ~msg:"settings retain their baseline screen identifier"
     (settings_screen <> -1);
-  check_eq ~msg:"settings paint the app background inside the native sheet"
-    (property_string renderer settings_screen Lui_protocol.BackgroundValue)
-    "background";
-  check_eq ~msg:"settings cards use the same themed surface as main"
-    (descendant_count_with_property_string renderer settings_screen
-       Lui_protocol.BackgroundValue "surface")
-    7;
+  check_eq ~msg:"the settings content uses the native form layout"
+    (property_string renderer settings_screen Lui_protocol.StyleClass)
+    "form";
   let tabs_link =
     descendant_with_identifier renderer root "link.settings.tabs"
   in
@@ -1152,9 +1166,6 @@ let settings_render_the_main_branch_navigation_contract () =
       "text.settings.tabs.selection"
   in
   check ~msg:"settings expose tabs navigation" (tabs_link <> -1);
-  check_eq ~msg:"settings card rows do not duplicate card padding"
-    (property_int renderer tabs_link Lui_protocol.PaddingValue)
-    0;
   check_eq ~msg:"tabs show the same selected-items summary as main"
     (property_string renderer tabs_selection Lui_protocol.TextValue)
     "Journals · Flashcards · Graphs";
@@ -1581,14 +1592,16 @@ let flutter_settings_use_full_width_material_controls () =
   send application Model.OpenSettingsLanguageMenu;
   flush application;
   let root = main_root renderer application in
-  let menu =
-    descendant_with_node_kind renderer root Lui_protocol.DropdownMenu
-  in
   let system =
     descendant_with_identifier renderer root "button.settings.language.system"
   in
-  check ~msg:"opening the language selector presents a Material menu"
-    (menu <> -1);
+  let menu =
+    parent_with_child_identifier renderer root
+      "button.settings.language.system"
+  in
+  check_eq ~msg:"opening the language selector presents a Material menu"
+    (node renderer menu)
+    (Some Lui_protocol.DropdownMenu);
   check ~msg:"the Material menu retains every shared language choice"
     (descendant_count_with_property_string renderer menu
        Lui_protocol.TextValue "简体中文"
@@ -1784,25 +1797,11 @@ let settings_community_links_use_a_typed_platform_boundary () =
     descendant_with_identifier renderer root
       "link.settings.community.report-bug"
   in
-  let report_row =
-    parent_with_child_identifier renderer root
-      "link.settings.community.report-bug"
-  in
   let github =
     descendant_with_identifier renderer root "link.settings.community.github"
   in
-  let github_row =
-    parent_with_child_identifier renderer root
-      "link.settings.community.github"
-  in
   check ~msg:"settings retain the issue tracker link" (report_bug <> -1);
   check ~msg:"settings retain the GitHub community link" (github <> -1);
-  check_eq ~msg:"community links preserve main's spacing before dividers"
-    (property_int renderer report_row Lui_protocol.Gap)
-    12;
-  check_eq ~msg:"the final community link has no trailing divider"
-    (List.length (children renderer github_row))
-    1;
   dispatch application (Lui_protocol.Press github);
   flush application;
   check_eq ~msg:"community navigation stays on the typed platform boundary"
@@ -2143,7 +2142,9 @@ let graph_picker_matches_main_layout_actions_errors_and_overflow_menu () =
   let refresh =
     child_with_identifier renderer picker "button.graphs.refresh"
   in
-  let overflow = extension_node application "native-overflow-menu" in
+  let overflow =
+    descendant_with_identifier renderer picker "button.connection"
+  in
   check_eq ~msg:"the picker preserves main's vertical spacing"
     (property_int renderer picker Lui_protocol.Gap)
     20;
@@ -2165,17 +2166,19 @@ let graph_picker_matches_main_layout_actions_errors_and_overflow_menu () =
   check_eq ~msg:"the refresh action is a plain text button"
     (property_string renderer refresh Lui_protocol.VariantValue)
     "ghost";
-  check ~msg:"the picker renders the native overflow menu in its header"
+  check ~msg:"the picker renders the overflow menu in its header"
     (overflow <> -1);
   check_eq ~msg:"the picker does not render a second connection control"
-    (child_with_identifier renderer main "button.connection")
-    (-1);
-  dispatch application
-    (Lui_protocol.ExtensionEvent
-       (overflow, "native-overflow-menu", "settings",
-        Lui_protocol.String_map.empty));
+    (descendant_count_with_identifier renderer main "button.connection")
+    1;
+  let settings_item =
+    menu_item_with_text renderer overflow "Settings"
+  in
+  check ~msg:"the overflow menu exposes a Settings item"
+    (settings_item <> -1);
+  if settings_item <> -1 then dispatch application (Lui_protocol.Press settings_item);
   flush application;
-  check ~msg:"the native overflow menu routes settings through LG"
+  check ~msg:"the overflow menu routes settings through LG"
     (App.model application).settings_open;
   send application
     (Model.SyncFailed "graph_discovery_failed\nConnection refused");
@@ -2349,9 +2352,10 @@ let graph_and_sync_actions_update_retained_status_in_place () =
          (property_string renderer control Lui_protocol.VariantValue)
          "ghost")
     [ sidebar_control; sync_control ];
-  check_eq ~msg:"the trailing action uses the platform-native menu"
-    (extension_kind renderer connection_control)
-    (Some "native-overflow-menu");
+  check ~msg:"the trailing action uses the platform-native menu"
+    (descendant_with_node_kind renderer connection_control
+       Lui_protocol.MenuTrigger
+    <> -1);
   check_eq ~msg:"the journal root leaves its default navigation title empty"
     (property_string renderer title Lui_protocol.TextValue)
     "";
@@ -5048,7 +5052,7 @@ let native_bridge_selects_the_flutter_host_profile () =
     (not (contains "container-relative-frame" patch));
   let patch = Native_bridge.initialize 3 3 3 in
   check ~msg:"signed-in Flutter renders the Material graph picker controls"
-    (contains "native-overflow-menu" patch);
+    (contains "menu-trigger" patch);
   check
     ~msg:"signed-in Flutter excludes every SwiftUI-only viewport property"
     (not (contains "container-relative-frame" patch));
@@ -5920,10 +5924,11 @@ let native_navigation_retains_the_journal_and_every_node_route () =
           "sync.disconnected")
        Lui_protocol.InlineIconName)
     "app:status-dot";
-  check_eq ~msg:"LG supplies the native trailing menu"
-    (extension_kind renderer
-       (List.nth (children renderer (List.nth nav_children 4)) 0))
-    (Some "native-overflow-menu");
+  check ~msg:"LG supplies the native trailing menu"
+    (descendant_with_node_kind renderer
+       (List.nth (children renderer (List.nth nav_children 4)) 0)
+       Lui_protocol.MenuTrigger
+    <> -1);
   check_eq
     ~msg:
       "the internal bottom chrome slot does not override its active \
@@ -7205,22 +7210,28 @@ let connection_menu_matches_active_page_actions () =
     (apply_core_snapshot None sidebar [] true "" [] [] None None [] [] []
        false []);
   flush application;
-  let connection = extension_node application "native-overflow-menu" in
-  check_eq ~msg:"active pages expose native page actions"
-    (extension_property application connection "page-actions-visible")
-    (Some (Lui_protocol.BoolValue true));
+  let renderer = Lui_app.runtime application in
+  let navigation = extension_node application "native-navigation-stack" in
+  let connection =
+    descendant_with_identifier renderer navigation "button.connection"
+  in
+  check ~msg:"active pages expose the native overflow menu"
+    (connection <> -1);
   check_eq ~msg:"the native action label reflects favorite state"
-    (extension_property application connection "favorite-label")
-    (Some (Lui_protocol.StringValue "Unfavorite"));
+    (descendant_count_with_property_string renderer connection
+       Lui_protocol.TextValue "Unfavorite")
+    1;
+  check_eq ~msg:"active pages expose the share action"
+    (descendant_count_with_property_string renderer connection
+       Lui_protocol.TextValue "Share")
+    1;
   check_eq ~msg:"page overflow excludes graph settings"
-    (extension_property application connection "settings-visible")
-    (Some (Lui_protocol.BoolValue false));
+    (descendant_count_with_property_string renderer connection
+       Lui_protocol.TextValue "Settings")
+    0;
   dispatch application
-    (Lui_protocol.ExtensionEvent
-       ( connection,
-         "native-overflow-menu",
-         "favorite",
-         Lui_protocol.String_map.empty ));
+    (Lui_protocol.Press
+       (menu_item_with_text renderer connection "Unfavorite"));
   flush application;
   check_eq ~msg:"the native favorite action keeps its typed LG event"
     (App.model application).pending_effects
@@ -8334,11 +8345,6 @@ let composer_asset_failure_retains_draft_and_success_removes_it () =
   check_eq ~msg:"successful assets leave the draft"
     completed.composer_assets []
 
-let composer_asset_schema_matches_native_thumbnail_renderer () =
-  check_eq ~msg:"native attachment thumbnails share the LG schema"
-    (Lui_extension.fingerprint (View.composer_asset_schema ()))
-    "lui-extension-v1|14:composer-asset|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:10:local-path:string:required:none,5:title:string:required:none|events:"
-
 let block_node_breadcrumbs_preserve_navigation_context () =
   List.iter
     (fun search_ ->
@@ -8696,7 +8702,6 @@ let cases =
     case "native-outliner-controls-match-first-line-and-main-status-shapes" native_outliner_controls_match_first_line_and_main_status_shapes;
     case "composer-stages-multiple-assets-until-confirmed" composer_stages_multiple_assets_until_confirmed;
     case "composer-asset-failure-retains-draft-and-success-removes-it" composer_asset_failure_retains_draft_and_success_removes_it;
-    case "composer-asset-schema-matches-native-thumbnail-renderer" composer_asset_schema_matches_native_thumbnail_renderer;
     case "block-node-breadcrumbs-preserve-navigation-context" block_node_breadcrumbs_preserve_navigation_context;
     case "composer-attachment-previews-remove-only-the-selected-draft" composer_attachment_previews_remove_only_the_selected_draft;
     case "ui-session-restores-after-process-relaunch" ui_session_restores_after_process_relaunch;

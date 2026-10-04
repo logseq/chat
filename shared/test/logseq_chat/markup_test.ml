@@ -31,13 +31,16 @@ let rich_node_semantics () =
 let reference_resolution_and_raw_source () =
   List.iter
     (fun source -> check_eq [ Markup_text source ] (parse_bare source))
-    [
-      "Legacy ((block-uuid)) stays text";
-      "Unknown [[missing]]";
-      "Unknown #[[missing]]";
-      "\xF0\x9F\x98\x80 Unknown [[missing]] and #[[missing]]";
-      "{{unknown value}}";
-    ];
+    [ "Legacy ((block-uuid)) stays text"; "{{unknown value}}" ];
+  check_eq
+    [ Markup_text "Unknown missing" ]
+    (parse_bare "Unknown [[missing]]");
+  check_eq
+    [ Markup_text "Unknown #missing" ]
+    (parse_bare "Unknown #[[missing]]");
+  check_eq
+    [ Markup_text "\xF0\x9F\x98\x80 Unknown missing and #missing" ]
+    (parse_bare "\xF0\x9F\x98\x80 Unknown [[missing]] and #[[missing]]");
   check_eq
     [
       Markup_text "Inline ";

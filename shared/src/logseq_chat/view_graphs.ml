@@ -323,42 +323,50 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
           ];
       ]
   else
-    dialog ~text:"Delete local graph"
+    (* Text-and-buttons-only children keep the dialog on the native alert
+       path (rich children fall back to a custom sheet). *)
+    dialog ~text:"Delete local graph" ~style_class:"alert"
+      ~accessibility_identifier:"dialog.graph-delete"
       ~on_dismiss:(press send Model.CancelDeleteGraph)
       [
-        column
-          [
-            text
-              ~value_signal:
-                (Signal.map View_base.graph_deletion_message model_source)
-              ~accessibility_identifier:"text.graph-delete-warning" [];
-            text
-              ~value:
-                "\xE2\x9A\xA0\xEF\xB8\x8F Notice that we can't recover \
-                 this graph after being deleted. Make sure you have \
-                 backups before deleting it."
-              [];
-            button ~on_press:(press send Model.CancelDeleteGraph)
-              ~text:"Cancel" [];
-            button ~on_press:(press send Model.ConfirmDeleteGraph)
-              ~text:"Confirm" [];
-          ];
+        text
+          ~value_signal:
+            (Signal.map View_base.graph_deletion_message model_source)
+          ~accessibility_identifier:"text.graph-delete-warning" [];
+        text
+          ~value:
+            "Notice that we can't recover this graph after being \
+             deleted. Make sure you have backups before deleting it."
+          [];
+        button ~accessibility_identifier:"button.graph-delete.cancel"
+          ~on_press:(press send Model.CancelDeleteGraph)
+          ~text:"Cancel" [];
+        button ~variant:`destructive
+          ~accessibility_identifier:"button.graph-delete.confirm"
+          ~on_press:(press send Model.ConfirmDeleteGraph)
+          ~text:"Delete" [];
       ]
 
 let graph_picker_overflow_menu send : t =
  fun context parent ->
-   let node = Lui_ui.extension context "native-overflow-menu" in
-   attach context parent node;
-   Lui_ui.extension_property context node "page-actions-visible"
-     (BoolValue false);
-   Lui_ui.extension_property context node "favorite-label"
-     (StringValue "Favorite");
-   Lui_ui.extension_property context node "settings-visible"
-     (BoolValue true);
-   Lui_ui.on_event context node (fun input_event ->
-       ignore
-         (View_base.handle_native_overflow_menu_event input_event send));
-   node
+   let flutter_host = Lui_ui.host context = FlutterHost in
+   let entries =
+     [ menu_item ~text:"Settings"
+         ?icon:(if flutter_host then Some (`app "settings") else None)
+         ~on_press:(press send Model.OpenSettings)
+         []
+     ]
+   in
+   if flutter_host then
+     menu ~icon:(`app "more-vert") ~label:"More"
+       ~accessibility_identifier:"button.overflow-menu" entries context parent
+   else
+     stack ~width:44 ~height:44
+       [ box ~width:24 ~height:24 ~corner_radius:12 ~border_width:2
+           ~border_color:"foreground" [];
+         menu ~icon:(`app "more-horiz") ~style_class:"capsule" ~label:"More"
+           ~accessibility_identifier:"button.connection" entries ]
+       context parent
 
 let graph_picker_error_banner model_source : t =
   alert ~variant:`destructive ~accessibility_identifier:"error.banner"

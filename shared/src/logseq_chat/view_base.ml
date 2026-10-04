@@ -49,15 +49,6 @@ let handle_native_search_event input_event send =
     send (Model.ChangeSearchQuery (extension_string values "query"))
   | _ -> true
 
-let handle_native_overflow_menu_event input_event send =
-  match input_event with
-  | ExtensionEvent (_node, _identifier, name, _values) ->
-    if name = "favorite" then send Model.ToggleActivePageFavorite
-    else if name = "share" then send Model.ShareActivePage
-    else if name = "delete" then send Model.RequestDeleteActivePage
-    else if name = "settings" then send Model.OpenSettings
-    else true
-  | _ -> true
 
 let handle_outliner_editor_event input_event block_id_source send =
   match input_event with
@@ -218,6 +209,9 @@ let active_page_favorite_label (current : Model.chat_model) =
 
 let page_deletion_pending_ (current : Model.chat_model) =
   current.pending_page_deletion <> None
+
+let sign_out_pending_ (current : Model.chat_model) =
+  current.pending_sign_out
 
 let sidebar_page_identifier (page : Model.sidebar_page) =
   "link.sidebar.page." ^ page.uuid
@@ -884,6 +878,39 @@ let composer_asset_identifier (asset : Model.composer_asset) =
 
 let composer_assets_present_ (current : Model.chat_model) =
   current.composer_assets <> []
+
+(* Matches the platform image-asset policy: extensions the Apple backend can
+   thumbnail through CGImageSource (including PDF and TIFF first pages). The
+   Flutter image codec cannot decode PDF or TIFF, so those fall back to the
+   document tile there. *)
+let composer_asset_is_image (context : Lui_ui.ui_context)
+    (asset : Model.composer_asset) =
+  let extension =
+    match String.rindex_opt asset.local_path '.' with
+    | Some index when index < String.length asset.local_path - 1 ->
+      String.lowercase_ascii
+        (String.sub asset.local_path (index + 1)
+           (String.length asset.local_path - index - 1))
+    | _ -> ""
+  in
+  let flutter_image_codecs =
+    Lui_ui.host context = Lui_protocol.FlutterHost
+  in
+  List.mem extension
+    (if flutter_image_codecs then
+       [ "png"; "jpg"; "jpeg"; "gif"; "webp"; "bmp"; "wbmp"; "heic"; "heif"
+       ; "avif" ]
+     else
+       [ "png"; "jpg"; "jpeg"; "gif"; "webp"; "bmp"; "wbmp"; "heic"; "heif"
+       ; "avif"; "tif"; "tiff"; "pdf" ])
+
+let asset_preview_ (current : Model.chat_model) =
+  current.asset_preview <> None
+
+let asset_preview_path (current : Model.chat_model) =
+  match current.asset_preview with
+  | Some preview -> preview.preview_path
+  | None -> ""
 
 let composer_expanded_ (current : Model.chat_model) = current.composer_expanded
 let composer_draft (current : Model.chat_model) = current.composer_draft

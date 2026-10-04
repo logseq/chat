@@ -13,6 +13,9 @@ public enum LGChatRendererEventKind: Equatable, Sendable {
     case valueChanged
     case dismiss
     case doublePress
+    case scrollCompleted
+    case visibleRange
+    case picked
     case `extension`
 }
 
@@ -25,6 +28,11 @@ public struct LGChatRendererEvent: Equatable, Sendable {
     public let extensionIdentifier: String?
     public let extensionName: String?
     public let extensionValues: [String: LUIExtensionValue]?
+    public let payload: String?
+    public let first: Int?
+    public let last: Int?
+    public let token: Int?
+    public let outcome: String?
 
     public init(
         kind: LGChatRendererEventKind,
@@ -34,7 +42,12 @@ public struct LGChatRendererEvent: Equatable, Sendable {
         value: Double? = nil,
         extensionIdentifier: String? = nil,
         extensionName: String? = nil,
-        extensionValues: [String: LUIExtensionValue]? = nil
+        extensionValues: [String: LUIExtensionValue]? = nil,
+        payload: String? = nil,
+        first: Int? = nil,
+        last: Int? = nil,
+        token: Int? = nil,
+        outcome: String? = nil
     ) {
         self.kind = kind
         self.nodeID = nodeID
@@ -44,6 +57,11 @@ public struct LGChatRendererEvent: Equatable, Sendable {
         self.extensionIdentifier = extensionIdentifier
         self.extensionName = extensionName
         self.extensionValues = extensionValues
+        self.payload = payload
+        self.first = first
+        self.last = last
+        self.token = token
+        self.outcome = outcome
     }
 }
 
@@ -53,6 +71,7 @@ enum LGChatIconPolicy {
             "calendar": .assetName("calendar"),
             "add": .assetName("plus"),
             "composer-add": .systemName("plus"),
+            "composer-file": .systemName("doc"),
             "arrow-up": .systemName("arrow.up"),
             "close": .assetName("close"),
             "chevron-down": .assetName("chevron_down"),
@@ -141,11 +160,17 @@ public final class LGChatRenderer {
 
     private static func makeBackend() -> LUIAppleBackend {
         do {
-            return try LUIAppleBackend(
+            let backend = try LUIAppleBackend(
                 appIcons: LGChatIconPolicy.icons,
                 appIconBundle: .module,
                 extensionRegistry: LGChatExtensionRegistry.makeRegistry()
             )
+            // Effects like local-graph deletion resolve through several RPCs,
+            // each emitting a patch on its own runloop turn. Coalescing merges
+            // the burst into one view commit; without it iOS's collection view
+            // replays stale section mutations and asserts.
+            backend.coalescesCommits = true
+            return backend
         } catch {
             preconditionFailure(
                 "Invalid LG chat extension registry: \(String(describing: error))"
@@ -198,6 +223,22 @@ public final class LGChatRenderer {
             return LGChatRendererEvent(kind: .dismiss, nodeID: node)
         case .doublePress(let node):
             return LGChatRendererEvent(kind: .doublePress, nodeID: node)
+        case .scrollCompleted(let node, let token, let outcome):
+            return LGChatRendererEvent(
+                kind: .scrollCompleted,
+                nodeID: node,
+                token: token,
+                outcome: outcome
+            )
+        case .visibleRange(let node, let first, let last):
+            return LGChatRendererEvent(
+                kind: .visibleRange,
+                nodeID: node,
+                first: first,
+                last: last
+            )
+        case .picked(let node, let payload):
+            return LGChatRendererEvent(kind: .picked, nodeID: node, payload: payload)
         case .extension(let node, let identifier, let name, let values):
             return LGChatRendererEvent(
                 kind: .extension,

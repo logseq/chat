@@ -15,8 +15,6 @@ enum LGChatExtensionRegistry {
         try LGChatLiquidGlassTweak.register(in: registry)
         try LGChatNavigationExtension.register(in: registry)
         try LGChatSearchPresentationExtension.register(in: registry)
-        try LGChatOverflowMenuExtension.register(in: registry)
-        try LGChatComposerAssetExtension.register(in: registry)
         try LGChatOutlinerEditorExtension.register(in: registry)
         try LGChatRichBlockExtension.register(
             in: registry,

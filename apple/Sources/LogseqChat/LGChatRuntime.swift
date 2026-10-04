@@ -288,6 +288,20 @@ public final class LGChatRuntime {
             patch = native.dismiss(node: event.nodeID)
         case .doublePress:
             patch = native.doublePress(node: event.nodeID)
+        case .scrollCompleted:
+            patch = native.scrollCompleted(
+                node: event.nodeID,
+                token: event.token ?? 0,
+                outcome: event.outcome ?? ""
+            )
+        case .visibleRange:
+            patch = native.visibleRange(
+                node: event.nodeID,
+                first: event.first ?? 0,
+                last: event.last ?? 0
+            )
+        case .picked:
+            patch = native.picked(node: event.nodeID, payload: event.payload ?? "")
         case .extension:
             guard let identifier = event.extensionIdentifier,
                   let name = event.extensionName,
@@ -539,10 +553,20 @@ public final class LGChatRuntime {
     private func apply(_ patch: String) throws {
         guard !patch.isEmpty else { return }
         #if DEBUG
-        print(
-            "LOGSEQ_LG_PATCH apply generation="
-                + String(Self.patchGeneration(patch) ?? -1)
-        )
+        let gen = Self.patchGeneration(patch) ?? -1
+        print("LOGSEQ_LG_PATCH apply generation=\(gen)")
+        if let docs = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        ).first {
+            let dir = docs.appendingPathComponent("lui-patches", isDirectory: true)
+            try? FileManager.default.createDirectory(
+                at: dir, withIntermediateDirectories: true
+            )
+            try? patch.write(
+                to: dir.appendingPathComponent("gen-\(gen).json"),
+                atomically: true, encoding: .utf8
+            )
+        }
         #endif
         try renderer.apply(patchJSON: patch)
         lastError = nil
@@ -570,6 +594,22 @@ public final class LGChatRuntime {
                     return
                 }
                 Self.log.notice("apply patch generation=\(Self.patchGeneration(patch) ?? -1, privacy: .public)")
+                #if DEBUG
+                if let docs = FileManager.default.urls(
+                    for: .documentDirectory, in: .userDomainMask
+                ).first {
+                    let dir = docs.appendingPathComponent("lui-patches", isDirectory: true)
+                    try? FileManager.default.createDirectory(
+                        at: dir, withIntermediateDirectories: true
+                    )
+                    try? patch.write(
+                        to: dir.appendingPathComponent(
+                            "gen-\(Self.patchGeneration(patch) ?? -1).json"
+                        ),
+                        atomically: true, encoding: .utf8
+                    )
+                }
+                #endif
                 try self.renderer.apply(decoded: decoded)
                 self.lastError = nil
             } catch {

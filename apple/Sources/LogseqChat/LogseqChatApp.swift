@@ -153,6 +153,16 @@ public struct LogseqChatRootView : View {
     }
 
     private init() {
+        #if DEBUG
+        NSSetUncaughtExceptionHandler { exception in
+            NSLog(
+                "LUICRASH %@: %@\n%@",
+                exception.name.rawValue,
+                exception.reason ?? "",
+                exception.callStackSymbols.joined(separator: "\n")
+            )
+        }
+        #endif
         try? FileManager.default.removeItem(
             at: URL.documentsDirectory.appendingPathComponent("cached-home-snapshot.json")
         )
@@ -249,8 +259,15 @@ public struct LogseqChatRootView : View {
             presentAttachment: { kind in
                 presentationCoordinator.presentAttachment(kind)
             },
+            // Asset preview is presented by the file-preview node on iOS; the
+            // effect reports the resolved file URL back to the core so the
+            // preview only mounts for a path that exists on disk.
             presentAsset: { asset in
-                return presentationCoordinator.presentAsset(asset)
+                LocalAssetPath.resolve(
+                    asset.localPath,
+                    title: asset.title,
+                    assetType: asset.assetType
+                )
             },
             presentPageShare: { payload in
                 return presentationCoordinator.presentPageShare(payload)

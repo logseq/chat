@@ -203,7 +203,7 @@ final class LGChatGraphLifecycle {
             || store.snapshot.selectedGraphId == graphID
         if deletingSelected {
             await syncCoordinator.stopForeground()
-            await store.resetToCatalog()
+            await store.resetToCatalog(applyResponse: false)
         }
         do {
             try LogseqGraphLocalStorage.delete(databasePath: databasePath, graphID: graphID)

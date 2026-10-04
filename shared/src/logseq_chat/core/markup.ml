@@ -335,13 +335,13 @@ and convert_node source references tags node position =
     (match find_summary references (node_name link) with
      | Some summary ->
        [ Markup_node_ref (summary.Cache_model.uuid, summary.Cache_model.title) ]
-     | None -> raw)
+     | None -> [ Markup_text (node_name link) ])
   | Inline.Tag children ->
     let value = S.trim (String.concat "" (List.map tag_part children)) in
     (match find_summary tags value with
      | Some summary ->
        [ Markup_tag_ref (summary.Cache_model.uuid, summary.Cache_model.title) ]
-     | None -> raw)
+     | None -> [ Markup_text ("#" ^ value) ])
   | Inline.Link link ->
     (match link.url with
      | Inline.Block_ref _ -> raw
@@ -352,7 +352,12 @@ and convert_node source references tags node position =
             Markup_node_ref
               (summary.Cache_model.uuid, summary.Cache_model.title);
           ]
-        | None -> raw)
+        | None ->
+          (match link.label with
+           | [] | [ Inline.Plain "" ] -> [ Markup_text value ]
+           | label ->
+             convert_nodes source references tags
+               (List.map (fun child -> (child, None)) label)))
      | _ ->
        [
          Markup_link

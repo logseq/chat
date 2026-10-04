@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logseq_chat_flutter/logseq_chat_extensions.dart';
+import 'package:logseq_chat_flutter/logseq_chat_icons.dart';
 import 'package:logseq_chat_flutter/logseq_chat_theme.dart';
 import 'package:lui_flutter_backend/lui_flutter_backend.dart';
 
@@ -433,6 +434,7 @@ void main() {
     final events = <LUIEvent>[];
     final backend = LUIFlutterBackend(
       extensionRegistry: logseqChatExtensionRegistry(),
+      appIcons: logseqChatAppIcons,
       onEvent: events.add,
     );
     addTearDown(backend.dispose);
@@ -444,9 +446,13 @@ void main() {
 
     expect(find.byType(PopScope<Object?>), findsWidgets);
     expect(find.byType(SearchBar), findsOneWidget);
-    expect(find.byType(PopupMenuButton<String>), findsOneWidget);
+    expect(find.byType(MenuAnchor), findsWidgets);
     final overflow = tester.getSemantics(
-      find.byKey(const ValueKey('overflow-menu')),
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Semantics &&
+            widget.properties.identifier == 'button.overflow-menu',
+      ),
     );
     expect(overflow.identifier, 'button.overflow-menu');
     expect(find.byType(TextField), findsWidgets);
@@ -582,6 +588,7 @@ void main() {
   testWidgets('overflow menu uses Android action icons', (tester) async {
     final backend = LUIFlutterBackend(
       extensionRegistry: logseqChatExtensionRegistry(),
+      appIcons: logseqChatAppIcons,
     );
     addTearDown(backend.dispose);
     backend.applyJson(jsonEncode(_extensionPatch));
@@ -590,11 +597,7 @@ void main() {
     );
 
     expect(find.byIcon(Icons.more_vert_rounded), findsOneWidget);
-    tester
-        .state<PopupMenuButtonState<String>>(
-          find.byType(PopupMenuButton<String>),
-        )
-        .showButtonMenu();
+    await tester.tap(find.byIcon(Icons.more_vert_rounded));
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.star_outline_rounded), findsOneWidget);
@@ -609,20 +612,22 @@ void main() {
         'generation': 2,
         'ops': [
           {
-            'op': 'set-extension-prop',
-            'id': 20,
-            'property': 'favorite-label',
+            'op': 'set-prop',
+            'id': 22,
+            'property': 'text',
             'value': 'Unfavorite',
+          },
+          {
+            'op': 'set-prop',
+            'id': 22,
+            'property': 'icon',
+            'value': 'app:star-filled',
           },
         ],
       }),
     );
     await tester.pump();
-    tester
-        .state<PopupMenuButtonState<String>>(
-          find.byType(PopupMenuButton<String>),
-        )
-        .showButtonMenu();
+    await tester.tap(find.byIcon(Icons.more_vert_rounded));
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.star_rounded), findsOneWidget);
@@ -910,10 +915,16 @@ void main() {
     );
     addTearDown(backend.dispose);
     final listItemPatch = Map<String, Object>.from(_richMarkupPatch);
+    final richOps =
+        (_richMarkupPatch['ops']! as List<Map<String, Object>>).skip(1).toList()
+          ..removeLast();
     listItemPatch['ops'] = [
       {'op': 'create-node', 'id': 1, 'kind': 'list-item'},
       {'op': 'set-prop', 'id': 1, 'property': 'press-enabled', 'value': true},
-      ...(_richMarkupPatch['ops']! as List<Map<String, Object>>).skip(1),
+      {'op': 'create-node', 'id': 26, 'kind': 'column'},
+      ...richOps,
+      {'op': 'insert-child', 'parent': 26, 'child': 2, 'index': 0},
+      {'op': 'insert-child', 'parent': 1, 'child': 26, 'index': 0},
     ];
     backend.applyJson(jsonEncode(listItemPatch));
     await tester.pumpWidget(
@@ -1140,12 +1151,6 @@ const _searchFingerprint =
     '5:title:string:required:none,9:presented:bool:required:none|events:'
     '13:query-changed[5:query:string:required],4:back[5:count:int:required],'
     '7:dismiss[]';
-const _overflowFingerprint =
-    'lui-extension-v1|20:native-overflow-menu|profiles:android/flutter,'
-    'ios/swiftui|standard-children:0|children:|'
-    'properties:14:favorite-label:string:required:none,16:settings-visible:bool:'
-    'required:none,20:page-actions-visible:bool:required:none|events:5:share[],'
-    '6:delete[],8:favorite[],8:settings[]';
 
 final _editorPatch = {
   'generation': 1,
@@ -1298,24 +1303,57 @@ final _extensionPatch = {
             (key, value) => MapEntry(key, value is int ? value + 10 : value),
           ),
         ),
+    {'op': 'create-node', 'id': 20, 'kind': 'menu-trigger'},
     {
-      'op': 'create-extension',
+      'op': 'set-prop',
       'id': 20,
-      'identifier': 'native-overflow-menu',
-      'fingerprint': _overflowFingerprint,
+      'property': 'icon',
+      'value': 'app:more-vert',
     },
-    for (final entry in {
-      'page-actions-visible': true,
-      'favorite-label': 'Favorite',
-      'settings-visible': true,
-    }.entries)
+    {
+      'op': 'set-prop',
+      'id': 20,
+      'property': 'accessibility-label',
+      'value': 'More',
+    },
+    {
+      'op': 'set-prop',
+      'id': 20,
+      'property': 'accessibility-identifier',
+      'value': 'button.overflow-menu',
+    },
+    {'op': 'create-node', 'id': 21, 'kind': 'dropdown-menu'},
+    {'op': 'insert-child', 'parent': 20, 'child': 21, 'index': 0},
+    for (final item in [
+      (22, 'Favorite', 'app:star', ''),
+      (23, 'Share', 'app:share', ''),
+      (24, 'Delete', 'app:toolbar-delete', 'destructive'),
+      (25, 'Settings', 'app:settings', ''),
+    ]) ...[
+      {'op': 'create-node', 'id': item.$1, 'kind': 'menu-item'},
+      {'op': 'set-prop', 'id': item.$1, 'property': 'text', 'value': item.$2},
       {
-        'op': 'set-extension-prop',
-        'id': 20,
-        'property': entry.key,
-        'value': entry.value,
+        'op': 'set-prop',
+        'id': item.$1,
+        'property': 'icon',
+        'value': item.$3,
       },
-    for (final id in [2, 4, 5, 12, 20])
+      if (item.$4.isNotEmpty)
+        {
+          'op': 'set-prop',
+          'id': item.$1,
+          'property': 'variant',
+          'value': item.$4,
+        },
+      {
+        'op': 'set-prop',
+        'id': item.$1,
+        'property': 'press-enabled',
+        'value': true,
+      },
+      {'op': 'insert-child', 'parent': 21, 'child': item.$1, 'index': 0},
+    ],
+    for (final id in [20, 2, 4, 5, 12])
       {'op': 'insert-child', 'parent': 30, 'child': id, 'index': 0},
     {'op': 'insert-child', 'parent': 1, 'child': 30, 'index': 0},
   ],
