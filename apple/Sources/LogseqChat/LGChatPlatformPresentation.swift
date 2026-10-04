@@ -23,9 +23,6 @@ public final class LGChatPlatformPresentationCoordinator {
     public private(set) var attachmentService: LGChatAttachmentService?
     public private(set) var attachmentTargetBlockID: String?
     public private(set) var pendingDeletionBlockIDs: [String] = []
-    #if os(iOS)
-    var pageSharePayload: NodeSharePayload?
-    #endif
 
     public init() {
     }
@@ -63,18 +60,53 @@ public final class LGChatPlatformPresentationCoordinator {
     #if os(iOS)
     @discardableResult
     public func presentPageShare(_ payload: LGChatPageSharePayload) -> Bool {
-        pageSharePayload = NodeSharePayload(
-            text: payload.text,
-            localAssetPaths: payload.localAssetPaths
+        return presentShareSheet(
+            NodeSharePayload(
+                text: payload.text,
+                localAssetPaths: payload.localAssetPaths
+            ).items
         )
-        return true
     }
 
     @discardableResult
     public func presentFile(_ url: URL) -> Bool {
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
-        pageSharePayload = NodeSharePayload(fileURL: url)
+        return presentShareSheet([url])
+    }
+
+    /// Presents the activity sheet on the topmost presented controller so it
+    /// can appear above an already-presented LUI sheet (e.g. Settings); a
+    /// root-level `.sheet` would queue behind it with no visible feedback.
+    private func presentShareSheet(_ items: [Any]) -> Bool {
+        guard let presenter = Self.topmostPresenter() else { return false }
+        let controller = UIActivityViewController(
+            activityItems: items,
+            applicationActivities: nil
+        )
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.midY,
+                width: 0,
+                height: 0
+            )
+        }
+        presenter.present(controller, animated: true)
         return true
+    }
+
+    private static func topmostPresenter() -> UIViewController? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        let root = windows.first(where: { $0.isKeyWindow })?.rootViewController
+            ?? windows.first?.rootViewController
+        var top = root
+        while let presented = top?.presentedViewController {
+            top = presented
+        }
+        return top
     }
 
     #endif
@@ -192,9 +224,6 @@ struct LGChatPlatformPresentationHost: ViewModifier {
                 Text("This deletes the block and all of its children. Pages use Recycle instead.")
             }
             #if os(iOS)
-            .sheet(item: pageSharePayloadBinding) { payload in
-                NodeShareSheet(items: payload.items)
-            }
             .sheet(isPresented: mediaPanelBinding) {
                 let target = coordinator.attachmentTargetBlockID
                 VStack(spacing: 0) {
@@ -255,14 +284,6 @@ struct LGChatPlatformPresentationHost: ViewModifier {
         )
     }
 
-    #if os(iOS)
-    private var pageSharePayloadBinding: Binding<NodeSharePayload?> {
-        Binding(
-            get: { coordinator.pageSharePayload },
-            set: { coordinator.pageSharePayload = $0 }
-        )
-    }
-    #endif
 
     private var deletionTitle: String {
         coordinator.pendingDeletionBlockIDs.count > 1 ? "Delete blocks?" : "Delete block?"

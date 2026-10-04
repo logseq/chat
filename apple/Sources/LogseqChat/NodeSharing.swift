@@ -25,7 +25,6 @@ enum NodeSharePolicy {
 }
 
 #if os(iOS)
-import SwiftUI
 import UIKit
 
 struct NodeSharePayload: Identifiable {
@@ -74,13 +73,4 @@ struct NodeSharePayload: Identifiable {
     }
 }
 
-struct NodeShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
-}
 #endif
