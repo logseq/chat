@@ -1,0 +1,27 @@
+{
+  "buildFiles": [
+    "/home/ubuntu/repos/chat/android/app/src/main/cpp/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/home/ubuntu/android-sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/home/ubuntu/repos/chat/android/app/.cxx/Debug/666c1h3t/x86_64",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/home/ubuntu/android-sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/home/ubuntu/repos/chat/android/app/.cxx/Debug/666c1h3t/x86_64",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "logseq_chat_jni::@6890427a1f51a3e7e1df": {
+      "artifactName": "logseq_chat_jni",
+      "abi": "x86_64",
+      "output": "/home/ubuntu/repos/chat/android/app/build/intermediates/cxx/Debug/666c1h3t/obj/x86_64/liblogseq_chat_jni.so",
+      "runtimeFiles": []
+    }
+  }
+}

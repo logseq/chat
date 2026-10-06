@@ -1,6 +1,6 @@
 # Logseq Chat
 
-Logseq Chat uses native SwiftUI on iOS and Flutter Material on Android, backed by an OCaml DataScript core. Canonical setup is in `README.md`.
+Logseq Chat uses native SwiftUI on iOS and Kotlin/Jetpack Compose on Android, backed by an OCaml DataScript core. Canonical setup is in `README.md`.
 
 ## Testing
 

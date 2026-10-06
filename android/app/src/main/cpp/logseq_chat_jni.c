@@ -1,0 +1,265 @@
+// Thin JNI shim between com.logseq.chat.NativeCore and the
+// liblogseq_chat_core.so C ABI (shared/native/logseq_chat_core_ffi.h).
+//
+// Symbols are resolved with dlopen/dlsym at first use so this shim links
+// without the prebuilt core being present at CMake configure time —
+// gradle produces the core .so during task execution via
+// scripts/build-android-native.sh, after externalNativeBuild configures.
+//
+// String payloads cross the boundary as jbyteArray holding UTF-8 bytes:
+// the core reads and returns standard UTF-8, while NewStringUTF uses
+// modified UTF-8 and would corrupt 4-byte sequences (e.g. emoji) and any
+// embedded NULs the wire format escapes. Kotlin decodes with
+// Charsets.UTF_8.
+
+#include <dlfcn.h>
+#include <jni.h>
+#include <stdlib.h>
+#include <string.h>
+
+typedef const char *(*lui_fn_iii)(int, int, int);
+typedef const char *(*lui_fn_none)(void);
+typedef const char *(*lui_fn_l)(long long);
+typedef const char *(*lui_fn_ls)(long long, const char *);
+typedef const char *(*lui_fn_li)(long long, int);
+typedef const char *(*lui_fn_ld)(long long, double);
+typedef const char *(*lui_fn_lll)(long long, long long, long long);
+typedef const char *(*lui_fn_llls)(long long, long long, long long, const char *);
+typedef const char *(*lui_fn_lls)(long long, long long, const char *);
+typedef const char *(*lui_fn_lsssl)(long long, const char *, const char *, const char *, long long);
+typedef const char *(*lui_fn_lis)(long long, int, const char *);
+typedef const char *(*lui_fn_s)(const char *);
+typedef const char *(*lui_fn_ss)(const char *, const char *);
+typedef const char *(*lui_fn_sssss)(const char *, const char *, const char *, const char *, const char *);
+
+static void *core_handle = NULL;
+
+static void *core_symbol(const char *name) {
+  if (!core_handle) {
+    core_handle = dlopen("liblogseq_chat_core.so", RTLD_NOW | RTLD_GLOBAL);
+    if (!core_handle) return NULL;
+  }
+  return dlsym(core_handle, name);
+}
+
+static char *jbytes_to_cstr(JNIEnv *env, jbyteArray bytes) {
+  if (!bytes) return NULL;
+  jsize length = (*env)->GetArrayLength(env, bytes);
+  char *buffer = malloc((size_t)length + 1);
+  if (!buffer) return NULL;
+  (*env)->GetByteArrayRegion(env, bytes, 0, length, (jbyte *)buffer);
+  buffer[length] = '\0';
+  return buffer;
+}
+
+static jbyteArray cstr_to_jbytes(JNIEnv *env, const char *text) {
+  if (!text) return NULL;
+  jsize length = (jsize)strlen(text);
+  jbyteArray bytes = (*env)->NewByteArray(env, length);
+  if (!bytes) return NULL;
+  (*env)->SetByteArrayRegion(env, bytes, 0, length, (const jbyte *)text);
+  return bytes;
+}
+
+static jbyteArray call_none(JNIEnv *env, const char *symbol) {
+  lui_fn_none fn = (lui_fn_none)core_symbol(symbol);
+  return fn ? cstr_to_jbytes(env, fn()) : NULL;
+}
+
+static jbyteArray call_l(JNIEnv *env, const char *symbol, jlong a) {
+  lui_fn_l fn = (lui_fn_l)core_symbol(symbol);
+  return fn ? cstr_to_jbytes(env, fn(a)) : NULL;
+}
+
+static jbyteArray call_ls(JNIEnv *env, const char *symbol, jlong a, jbyteArray b) {
+  lui_fn_ls fn = (lui_fn_ls)core_symbol(symbol);
+  if (!fn) return NULL;
+  char *bs = jbytes_to_cstr(env, b);
+  const char *result = fn(a, bs);
+  jbyteArray out = cstr_to_jbytes(env, result);
+  free(bs);
+  return out;
+}
+
+static jbyteArray call_s(JNIEnv *env, const char *symbol, jbyteArray a) {
+  lui_fn_s fn = (lui_fn_s)core_symbol(symbol);
+  if (!fn) return NULL;
+  char *as = jbytes_to_cstr(env, a);
+  const char *result = fn(as);
+  jbyteArray out = cstr_to_jbytes(env, result);
+  free(as);
+  return out;
+}
+
+static jbyteArray call_ss(JNIEnv *env, const char *symbol, jbyteArray a, jbyteArray b) {
+  lui_fn_ss fn = (lui_fn_ss)core_symbol(symbol);
+  if (!fn) return NULL;
+  char *as = jbytes_to_cstr(env, a);
+  char *bs = jbytes_to_cstr(env, b);
+  const char *result = fn(as, bs);
+  jbyteArray out = cstr_to_jbytes(env, result);
+  free(as);
+  free(bs);
+  return out;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiInitialize(
+    JNIEnv *env, jclass clazz, jint platform, jint host, jint authentication) {
+  (void)clazz;
+  lui_fn_iii fn = (lui_fn_iii)core_symbol("logseq_chat_lui_initialize");
+  return fn ? cstr_to_jbytes(env, fn(platform, host, authentication)) : NULL;
+}
+
+JNIEXPORT jlong JNICALL Java_com_logseq_chat_NativeCore_luiRootNode(
+    JNIEnv *env, jclass clazz) {
+  (void)env; (void)clazz;
+  typedef long long (*root_fn)(void);
+  root_fn fn = (root_fn)core_symbol("logseq_chat_lui_root_node");
+  return fn ? (jlong)fn() : 0;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiAppear(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_appear", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiPress(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_press", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiLongPress(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_long_press", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiSubmit(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_submit", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiChange(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_change", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiDismiss(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_dismiss", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiDoublePress(
+    JNIEnv *env, jclass clazz, jlong node) {
+  (void)clazz;
+  return call_l(env, "logseq_chat_lui_double_press", node);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiTextChanged(
+    JNIEnv *env, jclass clazz, jlong node, jbyteArray text) {
+  (void)clazz;
+  return call_ls(env, "logseq_chat_lui_text_changed", node, text);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiToggleChanged(
+    JNIEnv *env, jclass clazz, jlong node, jint checked) {
+  (void)clazz;
+  lui_fn_li fn = (lui_fn_li)core_symbol("logseq_chat_lui_toggle_changed");
+  return fn ? cstr_to_jbytes(env, fn(node, checked)) : NULL;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiValueChanged(
+    JNIEnv *env, jclass clazz, jlong node, jdouble value) {
+  (void)clazz;
+  lui_fn_ld fn = (lui_fn_ld)core_symbol("logseq_chat_lui_value_changed");
+  return fn ? cstr_to_jbytes(env, fn(node, value)) : NULL;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiPicked(
+    JNIEnv *env, jclass clazz, jlong node, jbyteArray payload) {
+  (void)clazz;
+  return call_ls(env, "logseq_chat_lui_picked", node, payload);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiVisibleRange(
+    JNIEnv *env, jclass clazz, jlong node, jlong first, jlong last) {
+  (void)clazz;
+  lui_fn_lll fn = (lui_fn_lll)core_symbol("logseq_chat_lui_visible_range");
+  return fn ? cstr_to_jbytes(env, fn(node, first, last)) : NULL;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiScrollCompleted(
+    JNIEnv *env, jclass clazz, jlong node, jlong token, jbyteArray outcome) {
+  (void)clazz;
+  lui_fn_lls fn = (lui_fn_lls)core_symbol("logseq_chat_lui_scroll_completed");
+  if (!fn) return NULL;
+  char *outcome_s = jbytes_to_cstr(env, outcome);
+  const char *result = fn(node, token, outcome_s);
+  jbyteArray out = cstr_to_jbytes(env, result);
+  free(outcome_s);
+  return out;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiExtensionEvent(
+    JNIEnv *env, jclass clazz, jlong node, jbyteArray identifier, jbyteArray name,
+    jbyteArray text, jlong value) {
+  (void)clazz;
+  lui_fn_lsssl fn = (lui_fn_lsssl)core_symbol("logseq_chat_lui_extension_event");
+  if (!fn) return NULL;
+  char *id_s = jbytes_to_cstr(env, identifier);
+  char *name_s = jbytes_to_cstr(env, name);
+  char *text_s = jbytes_to_cstr(env, text);
+  const char *result = fn(node, id_s, name_s, text_s, value);
+  jbyteArray out = cstr_to_jbytes(env, result);
+  free(id_s);
+  free(name_s);
+  free(text_s);
+  return out;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiDispose(
+    JNIEnv *env, jclass clazz) {
+  (void)clazz;
+  return call_none(env, "logseq_chat_lui_dispose");
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiTakeEffect(
+    JNIEnv *env, jclass clazz) {
+  (void)clazz;
+  return call_none(env, "logseq_chat_lui_take_effect");
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiResolveEffect(
+    JNIEnv *env, jclass clazz, jlong effectId, jint succeeded, jbyteArray message) {
+  (void)clazz;
+  lui_fn_lis fn = (lui_fn_lis)core_symbol("logseq_chat_lui_resolve_effect");
+  if (!fn) return NULL;
+  char *message_s = jbytes_to_cstr(env, message);
+  const char *result = fn(effectId, succeeded, message_s);
+  jbyteArray out = cstr_to_jbytes(env, result);
+  free(message_s);
+  return out;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiApplySnapshot(
+    JNIEnv *env, jclass clazz, jbyteArray response) {
+  (void)clazz;
+  return call_s(env, "logseq_chat_lui_apply_snapshot", response);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_luiApplyHostUpdate(
+    JNIEnv *env, jclass clazz, jbyteArray kind, jbyteArray payload) {
+  (void)clazz;
+  return call_ss(env, "logseq_chat_lui_apply_host_update", kind, payload);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_com_logseq_chat_NativeCore_logseqChatCall(
+    JNIEnv *env, jclass clazz, jbyteArray request) {
+  (void)clazz;
+  return call_s(env, "logseq_chat_call", request);
+}

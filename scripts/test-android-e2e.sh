@@ -251,7 +251,7 @@ LOGSEQ_CHAT_E2E_PASSWORD=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
 
 command -v adb >/dev/null 2>&1 || die "adb is not installed"
 command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
-command -v flutter >/dev/null 2>&1 || die "Flutter is not installed"
+[[ -x $repo_root/android/gradlew ]] || die "android/gradlew is missing"
 
 temporary_files=()
 anr_watchdog_pid=""
@@ -340,14 +340,12 @@ if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
 fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
-  (
-    cd "$repo_root/flutter"
-    ANDROID_SERIAL=$device flutter build apk --profile
-  )
+  gradle=${LOGSEQ_CHAT_ANDROID_GRADLE:-"$repo_root/android/gradlew"}
+  ANDROID_SERIAL=$device "$gradle" -p "$repo_root/android" :app:assembleProfile
 fi
 
 if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
-  apk="$repo_root/flutter/build/app/outputs/flutter-apk/app-profile.apk"
+  apk="$repo_root/android/app/build/outputs/apk/profile/app-profile.apk"
   [[ -f $apk ]] || die "Android profile APK was not produced at $apk"
   adb -s "$device" install -r "$apk" >/dev/null
 fi
@@ -516,7 +514,7 @@ recover_device() {
     || return 1
   # A fresh boot loses the app and the db-sync tunnel.
   adb -s "$device" install -r \
-    "$repo_root/flutter/build/app/outputs/flutter-apk/app-profile.apk" \
+    "$repo_root/android/app/build/outputs/apk/profile/app-profile.apk" \
     >/dev/null
   if [[ -n ${local_backend_port:-} ]]; then
     adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port"
