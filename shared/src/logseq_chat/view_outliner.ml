@@ -7,11 +7,11 @@ let outliner_editor_view block_id_source title_source caret_source send : t
    let node = Lui_ui.extension context "outliner-editor" in
    attach context parent node;
    Lui_ui.extension_property_signal context node "block-id"
-     (reactive View_base.string_wire_value block_id_source);
+     (Signal.map View_base.string_wire_value block_id_source);
    Lui_ui.extension_property_signal context node "title"
-     (reactive View_base.string_wire_value title_source);
+     (Signal.map View_base.string_wire_value title_source);
    Lui_ui.extension_property_signal context node "caret-utf16-offset"
-     (reactive View_base.int_wire_value caret_source);
+     (Signal.map View_base.int_wire_value caret_source);
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_outliner_editor_event input_event
@@ -25,21 +25,21 @@ let outliner_rich_block_view model_source title_source markup_source
    let node = Lui_ui.extension context "outliner-block-content" in
    attach context parent node;
    Lui_ui.extension_property_signal context node "block-id"
-     (reactive View_base.outliner_row_id_wire_value row_source);
+     (Signal.map View_base.outliner_row_id_wire_value row_source);
    Lui_ui.extension_property_signal context node "title"
-     (reactive View_base.string_wire_value title_source);
+     (Signal.map View_base.string_wire_value title_source);
    Lui_ui.extension_property_signal context node "markup-json"
-     (reactive View_base.string_wire_value markup_source);
+     (Signal.map View_base.string_wire_value markup_source);
    Lui_ui.extension_property_signal context node "youtube-target-url"
-     (reactive View_base.string_wire_value youtube_target_source);
+     (Signal.map View_base.string_wire_value youtube_target_source);
    Lui_ui.extension_property_signal context node "is-asset"
-     (reactive View_base.bool_wire_value is_asset_source);
+     (Signal.map View_base.bool_wire_value is_asset_source);
    Lui_ui.extension_property_signal context node "is-completed"
-     (reactive View_base.outliner_row_completed_wire_value row_source);
+     (Signal.map View_base.outliner_row_completed_wire_value row_source);
    Lui_ui.extension_property_signal context node "asset-type"
-     (reactive View_base.string_wire_value asset_type_source);
+     (Signal.map View_base.string_wire_value asset_type_source);
    Lui_ui.extension_property_signal context node "local-path"
-     (reactive View_base.string_wire_value local_path_source);
+     (Signal.map View_base.string_wire_value local_path_source);
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_outliner_block_content_event input_event
@@ -49,9 +49,9 @@ let outliner_rich_block_view model_source title_source markup_source
 let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
     t =
   let current_row = Signal.sample row_source in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     View_base.with_label_signal
-      (reactive View_base.outliner_row_collapse_label row_source)
+      (Signal.map View_base.outliner_row_collapse_label row_source)
       (View_base.with_string_prop_signal InlineIconName
          (Signal.map
             (fun (current_row : Model.outline_row) ->
@@ -69,7 +69,7 @@ let outliner_collapse_button (context : Lui_ui.ui_context) row_source send :
             []))
   else
     View_base.with_label_signal
-      (reactive View_base.outliner_row_collapse_label row_source)
+      (Signal.map View_base.outliner_row_collapse_label row_source)
       (View_base.with_string_prop_signal InlineIconName
          (Signal.map
             (fun (current_row : Model.outline_row) ->
@@ -140,7 +140,7 @@ let related_row_breadcrumbs row_source send : t =
 let outliner_tag tag_source send : t =
   let tag = Signal.sample tag_source in
   View_base.with_label_signal
-    (reactive View_base.outliner_tag_title tag_source)
+    (Signal.map View_base.outliner_tag_title tag_source)
     (button
        ~text_signal:(reactive View_base.outliner_tag_title tag_source)
        ~style_class:"caption" ~variant:`ghost ~foreground:"accent"
@@ -157,7 +157,7 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
   let current_row = Signal.sample row_source in
   if (not search_open) && View_base.outliner_row_journal_ current current_row
   then
-    if Lui_ui.host context = FlutterHost then
+    if Lui_ui.host context = KotlinHost then
       row ~width:24 ~height:24 ~main:`center ~cross:`center
         [
           box ~width:7 ~height:7 ~corner_radius:4 ~background:"border"
@@ -170,9 +170,9 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       icon ~name:(`app "outliner-bullet") ~style_class:"body-line"
         ~foreground:"border" ~width:24 ~height:24
         ~accessibility_identifier_signal:
-          (reactive View_base.outliner_row_zoom_identifier row_source)
+          (Signal.map View_base.outliner_row_zoom_identifier row_source)
         []
-  else if Lui_ui.host context = FlutterHost then
+  else if Lui_ui.host context = KotlinHost then
     stack ~width:24 ~height:24
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
@@ -184,10 +184,10 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
               [];
           ];
         View_base.with_label_signal
-          (reactive View_base.outliner_row_zoom_label row_source)
+          (Signal.map View_base.outliner_row_zoom_label row_source)
           (button ~variant:`ghost ~width:24 ~height:24
              ~accessibility_identifier_signal:
-               (reactive View_base.outliner_row_zoom_identifier
+               (Signal.map View_base.outliner_row_zoom_identifier
                   row_source)
              ~on_press:(fun _ ->
                ignore
@@ -202,12 +202,12 @@ let outliner_zoom_control (context : Lui_ui.ui_context) model_source
       ]
   else
     View_base.with_label_signal
-      (reactive View_base.outliner_row_zoom_label row_source)
+      (Signal.map View_base.outliner_row_zoom_label row_source)
       (button ~icon:(`app "outliner-bullet") ~size:`icon
          ~style_class:"body-line" ~variant:`ghost ~foreground:"border"
          ~width:24 ~height:24
          ~accessibility_identifier_signal:
-           (reactive View_base.outliner_row_zoom_identifier row_source)
+           (Signal.map View_base.outliner_row_zoom_identifier row_source)
          ~on_press:(fun _ ->
            ignore
              (send
@@ -238,7 +238,7 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
               (View_base.outliner_row_uuid current_row) status_source send);
       ]
   in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     stack ~width:24 ~height:24
       [
         row ~width:24 ~height:24 ~main:`center ~cross:`center
@@ -278,16 +278,16 @@ let outliner_status_control (context : Lui_ui.ui_context) model_source
               ];
           ];
         View_base.with_label_signal
-          (reactive View_base.outliner_row_status_title row_source)
+          (Signal.map View_base.outliner_row_status_title row_source)
           (button ~variant:`ghost ~size:`icon ~width:24 ~height:24
              ~accessibility_identifier:"button.block-task-status"
              [ status_menu ]);
       ]
   else
     View_base.with_label_signal
-      (reactive View_base.outliner_row_status_title row_source)
+      (Signal.map View_base.outliner_row_status_title row_source)
       (View_base.with_string_prop_signal InlineIconName
-         (reactive View_base.outliner_task_status_icon row_source)
+         (Signal.map View_base.outliner_task_status_icon row_source)
          (button ~variant:`ghost ~style_class:"body-line"
             ~foreground:"secondary" ~size:`icon ~width:22 ~height:24
             ~accessibility_identifier:"button.block-task-status"
@@ -297,32 +297,32 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
     retained_row_source row_source send : t =
   let current_row = Signal.sample row_source in
   let block_id_source =
-    reactive View_base.outliner_row_uuid row_source
+    Signal.map View_base.outliner_row_uuid row_source
   in
-  let title_source = reactive View_base.outliner_row_title row_source in
+  let title_source = Signal.map View_base.outliner_row_title row_source in
   let markup_source =
-    reactive (fun (r : Model.outline_row) -> r.markup_json) row_source
+    Signal.map (fun (r : Model.outline_row) -> r.markup_json) row_source
   in
   let youtube_target_source =
-    reactive View_base.outliner_row_youtube_target row_source
+    Signal.map View_base.outliner_row_youtube_target row_source
   in
   let is_asset_source =
-    reactive (fun (r : Model.outline_row) -> r.is_asset) row_source
+    Signal.map (fun (r : Model.outline_row) -> r.is_asset) row_source
   in
   let asset_type_source =
-    reactive View_base.outliner_row_asset_type row_source
+    Signal.map View_base.outliner_row_asset_type row_source
   in
   let local_path_source =
-    reactive View_base.outliner_row_local_path row_source
+    Signal.map View_base.outliner_row_local_path row_source
   in
   let editing_title_source =
-    reactive View_rows.retained_row_editing_title retained_row_source
+    Signal.map View_rows.retained_row_editing_title retained_row_source
   in
   let editing_caret_source =
-    reactive View_rows.retained_row_editing_caret retained_row_source
+    Signal.map View_rows.retained_row_editing_caret retained_row_source
   in
   let editing_source =
-    reactive View_rows.retained_row_editing_ retained_row_source
+    Signal.map View_rows.retained_row_editing_ retained_row_source
   in
   let not_editing_source =
     Signal.map2
@@ -331,16 +331,16 @@ let outliner_row_main_content (context : Lui_ui.ui_context) model_source
       model_source row_source
   in
   let has_children_source =
-    reactive View_base.outliner_row_has_children row_source
+    Signal.map View_base.outliner_row_has_children row_source
   in
   let has_status_source =
-    reactive View_base.outliner_row_has_status_ row_source
+    Signal.map View_base.outliner_row_has_status_ row_source
   in
   let has_tags_source =
-    reactive View_base.outliner_row_has_tags_ row_source
+    Signal.map View_base.outliner_row_has_tags_ row_source
   in
   let sync_failed_source =
-    reactive View_base.outliner_row_sync_failed_ row_source
+    Signal.map View_base.outliner_row_sync_failed_ row_source
   in
   row ~gap:7 ~cross:`start ~grow:1.0
     [
@@ -382,7 +382,7 @@ let outliner_row_content context model_source retained_row_source
   row ~gap:0 ~cross:`start ~padding_vertical:5
     [
       outliner_indent_view
-        (reactive View_base.outliner_row_indent row_source);
+        (Signal.map View_base.outliner_row_indent row_source);
       outliner_zoom_control context model_source row_source send
         search_open;
       box ~width:2 [];
@@ -407,13 +407,13 @@ let outliner_row (context : Lui_ui.ui_context) model_source
     View_base.with_bool_prop_signal Selected selected_source
       (box
          ~accessibility_identifier_signal:
-           (reactive View_base.outliner_row_identifier row_source)
+           (Signal.map View_base.outliner_row_identifier row_source)
          ~padding:0 ~corner_radius:10
          [
            row ~gap:0 ~cross:`start ~padding_vertical:5
           [
             outliner_indent_view
-              (reactive View_base.outliner_row_indent row_source);
+              (Signal.map View_base.outliner_row_indent row_source);
             outliner_zoom_control context model_source row_source send
               search_open;
             box ~width:2 [];
@@ -426,7 +426,7 @@ let outliner_row (context : Lui_ui.ui_context) model_source
                     model_source row_source)
                  (list_item
                     ~accessibility_identifier_signal:
-                      (reactive View_base.outliner_row_action_identifier
+                      (Signal.map View_base.outliner_row_action_identifier
                          row_source)
                     ~padding:0 ~grow:1.0
                     ~on_press:(fun _ ->
@@ -465,7 +465,7 @@ let outliner_row (context : Lui_ui.ui_context) model_source
             model_source row_source)
          (box
             ~accessibility_identifier_signal:
-              (reactive View_base.outliner_row_identifier row_source)
+              (Signal.map View_base.outliner_row_identifier row_source)
             ~padding:0 ~corner_radius:10
             [
               outliner_row_content context model_source
@@ -516,7 +516,7 @@ let outliner_entry context model_source retained_row_source row_source
 
 let outliner_first_journal_section (context : Lui_ui.ui_context)
     model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column
       ~accessibility_identifier:
         (View_rows.first_journal_section_identifier
@@ -528,7 +528,7 @@ let outliner_first_journal_section (context : Lui_ui.ui_context)
           ~key:View_rows.retained_row_identifier ~cmp:compare
           ~mount:(fun retained_row_source ->
             outliner_entry context model_source retained_row_source
-              (reactive View_rows.retained_row_value retained_row_source)
+              (Signal.map View_rows.retained_row_value retained_row_source)
               send);
       ]
   else
@@ -544,7 +544,7 @@ let outliner_first_journal_section (context : Lui_ui.ui_context)
           ~key:View_rows.retained_row_identifier ~cmp:compare
           ~mount:(fun retained_row_source ->
             outliner_entry context model_source retained_row_source
-              (reactive View_rows.retained_row_value retained_row_source)
+              (Signal.map View_rows.retained_row_value retained_row_source)
               send);
       ]
 
@@ -556,7 +556,7 @@ let toolbar_button icon label identifier action send : t =
     []
 
 let outliner_selection_toolbar (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
       ~background:"surface-container-high" ~corner_radius:20
       ~accessibility_identifier:"surface.outliner.selection-toolbar"
@@ -622,12 +622,12 @@ let outliner_autocomplete_row (context : Lui_ui.ui_context)
     candidate_source send : t =
   let candidate = Signal.sample candidate_source in
   View_base.with_label_signal
-    (reactive View_base.outliner_autocomplete_label candidate_source)
+    (Signal.map View_base.outliner_autocomplete_label candidate_source)
     (button
        ~text_signal:
-         (reactive View_base.outliner_autocomplete_label candidate_source)
+         (Signal.map View_base.outliner_autocomplete_label candidate_source)
        ~variant:`ghost
-       ~grow:(if Lui_ui.host context = FlutterHost then 0.0 else 1.0)
+       ~grow:(if Lui_ui.host context = KotlinHost then 0.0 else 1.0)
        ~height:44 ~padding_horizontal:10
        ~background:"autocomplete-row-background" ~foreground:"foreground"
        ~corner_radius:8 ~text_alignment:`start
@@ -648,8 +648,8 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
     [
       column ~gap:2 ~padding:8
         ~cross:
-          (if Lui_ui.host context = FlutterHost then `stretch else `center)
-        ~grow:(if Lui_ui.host context = FlutterHost then 0.0 else 1.0)
+          (if Lui_ui.host context = KotlinHost then `stretch else `center)
+        ~grow:(if Lui_ui.host context = KotlinHost then 0.0 else 1.0)
         [
           keyed
             ~source:
@@ -665,7 +665,7 @@ let outliner_autocomplete_bar (context : Lui_ui.ui_context) model_source
 
 let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     box ~height:56 ~padding_horizontal:8 ~padding_vertical:4
       ~accessibility_identifier:"surface.outliner.editor-toolbar"
       [
@@ -674,7 +674,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
           ~style_class:"scroll-leading" ~toolbar_gap:4
           [
             View_base.with_label_signal
-              (reactive View_base.outliner_editor_task_label model_source)
+              (Signal.map View_base.outliner_editor_task_label model_source)
               (button ~icon:(`app "toolbar-task") ~variant:`ghost
                  ~size:`icon ~width:48 ~height:48
                  ~foreground:"muted-foreground"
@@ -727,7 +727,7 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
       ~toolbar_gap:4 ~placement:"bottom"
       [
         View_base.with_label_signal
-          (reactive View_base.outliner_editor_task_label model_source)
+          (Signal.map View_base.outliner_editor_task_label model_source)
           (apple_icon_button (`app "toolbar-task") ""
              "button.outliner.editor.task" "task");
         apple_icon_button (`app "toolbar-outdent") "Outdent"
@@ -763,10 +763,10 @@ let outliner_editor_toolbar (context : Lui_ui.ui_context) model_source send
 
 let node_related_row context model_source row_source send : t =
   let structured_breadcrumb_source =
-    reactive View_base.outliner_row_structured_breadcrumb_ row_source
+    Signal.map View_base.outliner_row_structured_breadcrumb_ row_source
   in
   let fallback_breadcrumb_source =
-    reactive View_base.outliner_row_fallback_breadcrumb_ row_source
+    Signal.map View_base.outliner_row_fallback_breadcrumb_ row_source
   in
   let retained_row_source =
     Signal.map2
@@ -785,7 +785,7 @@ let node_related_row context model_source row_source send : t =
              box ~height:10 [];
              text
                ~value_signal:
-                 (reactive View_base.outliner_row_breadcrumb row_source)
+                 (Signal.map View_base.outliner_row_breadcrumb row_source)
                ~style_class:"caption" ~foreground:"muted-foreground" [];
            ]);
       outliner_row context model_source retained_row_source row_source
@@ -872,7 +872,7 @@ let add_first_block_button model_source send : t =
 
 let node_screen (context : Lui_ui.ui_context) model_source send : t =
   column ~accessibility_identifier:"screen.node"
-    ~grow:(if Lui_ui.host context = FlutterHost then 1.0 else 0.0)
+    ~grow:(if Lui_ui.host context = KotlinHost then 1.0 else 0.0)
     [
       scroll ~grow:1.0 ~accessibility_identifier:"scroll.outliner"
         [
@@ -895,7 +895,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                        [
                          heading ~level:3
                            ~value_signal:
-                             (reactive View_base.active_node_title
+                             (Signal.map View_base.active_node_title
                                 model_source)
                            ~accessibility_identifier:"title.node" [];
                        ];
@@ -915,7 +915,7 @@ let node_screen (context : Lui_ui.ui_context) model_source send : t =
                        ~mount:(fun retained_row_source ->
                          outliner_row context model_source
                            retained_row_source
-                           (reactive View_rows.retained_row_value
+                           (Signal.map View_rows.retained_row_value
                               retained_row_source)
                            send);
                    ]);

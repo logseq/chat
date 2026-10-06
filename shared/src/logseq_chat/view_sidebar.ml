@@ -4,9 +4,9 @@ open Lui_elements
 let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send : t
   =
   let page = sample page_source in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     View_base.with_label_signal
-      (reactive View_base.sidebar_page_title page_source)
+      (Signal.map View_base.sidebar_page_title page_source)
       (list_item
       ~text:(reactive View_base.sidebar_page_title page_source)
       ~icon:(`app "document")
@@ -17,7 +17,7 @@ let sidebar_page_row (context : Lui_ui.ui_context) model_source page_source send
       [])
   else
     View_base.with_label_signal
-      (reactive View_base.sidebar_page_title page_source)
+      (Signal.map View_base.sidebar_page_title page_source)
       (list_item
       ~text:(reactive View_base.sidebar_page_title page_source)
       ~role:`navigation ~icon:(`app "document")
@@ -77,7 +77,7 @@ let sidebar_graph_switch_content model_source : t =
     ]
 
 let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     View_base.with_label "Switch graph"
       (list_item
          ~accessibility_identifier:"button.graph-switch"
@@ -94,7 +94,7 @@ let sidebar_graph_switch (context : Lui_ui.ui_context) model_source send : t =
       [])
 
 let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     View_base.with_label "Journals"
       (list_item ~icon:(`app "calendar")
       ~selected:(reactive View_base.journals_sidebar_selected_ model_source)
@@ -110,7 +110,7 @@ let sidebar_journals_row (context : Lui_ui.ui_context) model_source send : t =
       ~text:"Journals" [])
 
 let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     View_base.with_label "Flashcards"
       (list_item ~icon:(`app "flashcards")
       ~selected:(reactive View_base.flashcards_sidebar_selected_ model_source)
@@ -126,7 +126,7 @@ let sidebar_flashcards_row (context : Lui_ui.ui_context) model_source send : t =
       ~text:"Flashcards" [])
 
 let sidebar_graphs_row (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     View_base.with_label "Graphs"
       (list_item ~icon:(`app "folder")
       ~selected:(reactive View_base.graphs_sidebar_selected_ model_source)
@@ -146,7 +146,7 @@ let sidebar_view (context : Lui_ui.ui_context) model_source send : t =
     ~padding:12
     [
       box
-        ~height:(if Lui_ui.host context = FlutterHost then 8 else 48)
+        ~height:(if Lui_ui.host context = KotlinHost then 8 else 48)
         [];
       stack
         [

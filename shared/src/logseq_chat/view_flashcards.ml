@@ -32,7 +32,7 @@ let flashcard_review_content model_source send : t =
               spacer ~grow:1.0 [];
               text ~style_class:"footnote" ~foreground:"muted-foreground"
                 ~value_signal:
-                  (reactive View_base.flashcard_remaining_label
+                  (Signal.map View_base.flashcard_remaining_label
                      model_source)
                 [];
             ];
@@ -43,7 +43,7 @@ let flashcard_review_content model_source send : t =
                 [
                   text ~style_class:"title2 semibold"
                     ~value_signal:
-                      (reactive View_base.flashcard_question model_source)
+                      (Signal.map View_base.flashcard_question model_source)
                     ~accessibility_identifier:"flashcard.question" [];
                   if_
                     ~test:

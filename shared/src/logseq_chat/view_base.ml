@@ -859,7 +859,7 @@ let outliner_row_sync_failed_ (row : Model.outline_row) =
   row.sync_status = Some "failed"
 
 let outliner_row_list_item_press_enabled_ host (row : Model.outline_row) =
-  host <> FlutterHost || row.is_asset || row.opens_as_page
+  host <> KotlinHost || row.is_asset || row.opens_as_page
 
 let outliner_tag_identifier (tag : Model.sidebar_page) =
   "button.block-tag." ^ tag.uuid
@@ -881,7 +881,7 @@ let composer_assets_present_ (current : Model.chat_model) =
 
 (* Matches the platform image-asset policy: extensions the Apple backend can
    thumbnail through CGImageSource (including PDF and TIFF first pages). The
-   Flutter image codec cannot decode PDF or TIFF, so those fall back to the
+   Kotlin image codec cannot decode PDF or TIFF, so those fall back to the
    document tile there. *)
 let composer_asset_is_image (context : Lui_ui.ui_context)
     (asset : Model.composer_asset) =
@@ -893,11 +893,11 @@ let composer_asset_is_image (context : Lui_ui.ui_context)
            (String.length asset.local_path - index - 1))
     | _ -> ""
   in
-  let flutter_image_codecs =
-    Lui_ui.host context = Lui_protocol.FlutterHost
+  let kotlin_image_codecs =
+    Lui_ui.host context = Lui_protocol.KotlinHost
   in
   List.mem extension
-    (if flutter_image_codecs then
+    (if kotlin_image_codecs then
        [ "png"; "jpg"; "jpeg"; "gif"; "webp"; "bmp"; "wbmp"; "heic"; "heif"
        ; "avif" ]
      else
@@ -1357,10 +1357,10 @@ let active_app_node_routes (current : Model.chat_model) =
 let active_search_node_routes (current : Model.chat_model) =
   active_route_only (search_node_routes current)
 
-let flutter_app_root_visible_ (current : Model.chat_model) =
+let kotlin_app_root_visible_ (current : Model.chat_model) =
   (not current.search_open) && active_app_node_routes current = []
 
-let flutter_search_root_visible_ (current : Model.chat_model) =
+let kotlin_search_root_visible_ (current : Model.chat_model) =
   current.search_open && active_search_node_routes current = []
 
 let authentication_screen_visible_ (current : Model.chat_model) =

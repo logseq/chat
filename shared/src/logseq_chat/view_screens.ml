@@ -147,7 +147,7 @@ let main_bottom_chrome (context : Lui_ui.ui_context) model_source send : t
         box ~height:21 [];
       ]
   in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     stack
       [
         if_
@@ -320,7 +320,7 @@ let root_outliner_view (context : Lui_ui.ui_context) model_source visible_source
 
 let retained_journal_pane (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     stack ~grow:1.0
       [
         if_
@@ -354,7 +354,7 @@ let retained_journal_pane (context : Lui_ui.ui_context) model_source send
 
 let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
     =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     stack ~grow:1.0
       [
         retained_journal_pane context model_source send;
@@ -389,7 +389,7 @@ let journal_tree_panes (context : Lui_ui.ui_context) model_source send : t
 
 let global_effect_error_feedback (context : Lui_ui.ui_context)
     model_source : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     alert ~variant:`destructive ~padding:14 ~corner_radius:16
       ~border_width:0
       ~accessibility_identifier:"layout.error.banner"
@@ -427,7 +427,7 @@ let global_effect_error_feedback (context : Lui_ui.ui_context)
 
 let graph_loading_feedback (context : Lui_ui.ui_context) model_source : t
     =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
       ~background:"background"
       ~accessibility_identifier:"journals.loading"
@@ -480,7 +480,7 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
         ~test:
           (Signal.map
              (fun (current : Model.chat_model) ->
-               Lui_ui.host context = FlutterHost
+               Lui_ui.host context = KotlinHost
                && View_base.node_screen_visible_ current)
              model_source)
         (button ~icon:(`app "navigation-back") ~variant:`ghost ~size:`icon
@@ -504,7 +504,7 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
     ]
 
 let main_header_title (context : Lui_ui.ui_context) model_source : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     heading
       ~value_signal:(Signal.map View_base.main_title model_source)
       ~level:3 ~accessibility_identifier:"title.main" []
@@ -523,7 +523,7 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
            (Signal.map View_base.sync_indicator_label model_source)
            (button
               ~icon:
-                (if Lui_ui.host context = FlutterHost then
+                (if Lui_ui.host context = KotlinHost then
                    `app "sync-status"
                  else `app "status-dot")
               ~variant:`ghost ~size:`icon
@@ -545,15 +545,15 @@ let active_overflow_menu model_source send : t =
    let settings_source =
      Signal.map View_base.connection_settings_visible_ model_source
    in
-   let flutter_host = Lui_ui.host context = FlutterHost in
-   (* iOS menu items carry no icons; the Flutter popup did. *)
-   let item_icon name = if flutter_host then Some (`app name) else None in
+   let kotlin_host = Lui_ui.host context = KotlinHost in
+   (* iOS menu items carry no icons; the Kotlin popup did. *)
+   let item_icon name = if kotlin_host then Some (`app name) else None in
    let entries =
      [ if_ ~test:page_actions_source
-         (if flutter_host then
+         (if kotlin_host then
             menu_item
               ~text_signal:
-                (reactive View_base.active_page_favorite_label model_source)
+                (Signal.map View_base.active_page_favorite_label model_source)
               ~icon_signal:
                 (Signal.map
                    (fun current ->
@@ -568,7 +568,7 @@ let active_overflow_menu model_source send : t =
           else
             menu_item
               ~text_signal:
-                (reactive View_base.active_page_favorite_label model_source)
+                (Signal.map View_base.active_page_favorite_label model_source)
               ~on_press:(press send Model.ToggleActivePageFavorite)
               []);
        if_ ~test:page_actions_source
@@ -586,7 +586,7 @@ let active_overflow_menu model_source send : t =
             []);
      ]
    in
-   if flutter_host then
+   if kotlin_host then
      menu ~icon:(`app "more-vert") ~label:"More"
        ~accessibility_identifier:"button.overflow-menu" entries context parent
    else
@@ -611,7 +611,7 @@ let native_node_screen (context : Lui_ui.ui_context) model_source
   let route_model_source =
     Signal.map2 View_base.node_route_model model_source route_source
   in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     box ~grow:1.0 ~background:"background"
       [ View_outliner.node_screen context route_model_source send ]
   else View_outliner.node_screen context route_model_source send
@@ -629,21 +629,21 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
    in
    let query_source = Signal.map View_base.model_search_query model_source in
    Lui_ui.extension_property_signal context node "presented"
-     (reactive View_base.bool_wire_value presented_source);
+     (Signal.map View_base.bool_wire_value presented_source);
    Lui_ui.extension_property_signal context node "depth"
-     (reactive View_base.int_wire_value depth_source);
+     (Signal.map View_base.int_wire_value depth_source);
    Lui_ui.extension_property_signal context node "query"
-     (reactive View_base.string_wire_value query_source);
+     (Signal.map View_base.string_wire_value query_source);
    Lui_ui.extension_property context node "title" (StringValue "Search");
    Lui_ui.on_event context node (fun input_event ->
        ignore (View_base.handle_native_search_event input_event send));
-   if Lui_ui.host context = FlutterHost then
+   if Lui_ui.host context = KotlinHost then
      let _ =
        stack ~grow:1.0
          [
            if_
              ~test:
-               (Signal.map View_base.flutter_app_root_visible_ model_source)
+               (Signal.map View_base.kotlin_app_root_visible_ model_source)
              (chat_main_view context model_source send);
            keyed
              ~source:
@@ -653,7 +653,7 @@ let native_search_view (_context : Lui_ui.ui_context) model_source send :
                native_node_screen context model_source route_source send);
            if_
              ~test:
-               (Signal.map View_base.flutter_search_root_visible_
+               (Signal.map View_base.kotlin_search_root_visible_
                   model_source)
              (column ~grow:1.0 ~background:"background"
                 [ search_screen model_source send ]);
@@ -701,19 +701,19 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    in
    let title_source = Signal.map View_base.main_title model_source in
    Lui_ui.extension_property_signal context node "depth"
-     (reactive View_base.int_wire_value depth_source);
+     (Signal.map View_base.int_wire_value depth_source);
    Lui_ui.extension_property_signal context node
      "bottom-occupies-layout-space"
-     (reactive View_base.bool_wire_value bottom_occupies_source);
+     (Signal.map View_base.bool_wire_value bottom_occupies_source);
    Lui_ui.extension_property_signal context node
      "composer-dismissal-enabled"
-     (reactive View_base.bool_wire_value composer_dismissal_source);
+     (Signal.map View_base.bool_wire_value composer_dismissal_source);
    Lui_ui.extension_property_signal context node "title"
-     (reactive View_base.string_wire_value title_source);
+     (Signal.map View_base.string_wire_value title_source);
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_native_navigation_event input_event send));
-   if Lui_ui.host context = FlutterHost then
+   if Lui_ui.host context = KotlinHost then
      let _ =
        column ~grow:1.0
          [
@@ -821,7 +821,7 @@ let authentication_content model_source send : t =
 
 let authentication_screen (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
       ~main:`center ~cross:`stretch ~padding:32
       [ authentication_content model_source send ]
@@ -914,7 +914,7 @@ let application_main_content (context : Lui_ui.ui_context) model_source
   in
   let stack_grow = Lui_ui.platform context = AndroidOS in
   if stack_grow then
-    if Lui_ui.host context = FlutterHost then
+    if Lui_ui.host context = KotlinHost then
       stack ~grow:1.0 content_children
     else
       stack ~grow:1.0 ~container_relative_frame:`vertical
@@ -925,7 +925,7 @@ let chat_view (context : Lui_ui.ui_context) model_source send : t =
   let drawer_main = application_main_content context model_source send in
   let drawer_panel = View_sidebar.sidebar_view context model_source send in
   if Lui_ui.platform context = AndroidOS then
-    if Lui_ui.host context = FlutterHost then
+    if Lui_ui.host context = KotlinHost then
       stack ~grow:1.0
         [
           if_

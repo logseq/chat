@@ -27,7 +27,7 @@ enum LGChatNavigationSurfacePolicy {
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -97,7 +97,7 @@ private struct LGChatNavigationStack: View {
 @MainActor
 enum LGChatSearchPresentationExtension {
     static let identifier = "native-search-presentation"
-    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
+    static let fingerprint = "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(

@@ -143,7 +143,7 @@ public final class LGChatRuntime {
 
     public func start(
         platformCode: Int,
-        hostCode: Int = 1,
+        hostCode: Int = 2,
         authenticationCode: Int = 0
     ) throws {
         guard !isStarted else { return }

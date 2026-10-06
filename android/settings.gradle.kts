@@ -6,23 +6,19 @@ pluginManagement {
     }
 }
 
-// The Kotlin/Jetpack Compose LUI backend is developed in the logseq/lui
-// checkout at ../lui (platform/android on branch devin/android-kotlin).
-// When that build exists it is consumed as a composite build, mirroring
-// how apple/ path-deps ../lui/platform/apple. Until it lands, the app
-// builds against the interim dev.lui implementation vendored in :lui —
-// it implements the documented dev.lui surface (LuiBackend patch/node
-// store, LuiTheme, node renderers, LuiExtensionRegistry) so swapping it
-// for the real backend is a settings-only change.
-val luiCheckoutBuild = File(rootDir, "../../lui/platform/android")
-val useCheckoutLui = luiCheckoutBuild.isDirectory &&
-    File(luiCheckoutBuild, "settings.gradle.kts").isFile
-
-if (useCheckoutLui) {
-    includeBuild(luiCheckoutBuild)
-} else {
-    include(":lui")
+// The Kotlin/Jetpack Compose LUI backend is consumed as an included
+// module from the logseq/lui checkout at ../lui/platform/android/lui —
+// the same consumption model as lui's own
+// examples/components/android app, mirroring how apple/ path-deps
+// ../lui/platform/apple. The module resolves plugins from this build's
+// classpath (AGP 9 + builtInKotlin).
+val luiModuleDir = File(rootDir, "../../lui/platform/android/lui")
+require(luiModuleDir.isDirectory && File(luiModuleDir, "build.gradle.kts").isFile) {
+    "Expected a logseq/lui checkout with platform/android/lui at ../lui"
 }
+
+include(":lui")
+project(":lui").projectDir = luiModuleDir
 
 dependencyResolutionManagement {
     repositories {

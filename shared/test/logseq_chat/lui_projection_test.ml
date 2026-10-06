@@ -69,7 +69,7 @@ let node_route_projection_retains_journal_and_editor_state () =
       [ "journal" ]
 
 let first_authoritative_snapshot_publishes_retained_patch () =
-  ignore (Native_bridge.initialize 2 1 0);
+  ignore (Native_bridge.initialize 2 2 0);
   Fun.protect
     ~finally:(fun () -> ignore (Native_bridge.dispose ()))
     (fun () ->
@@ -97,7 +97,7 @@ let native_session_roundtrip_preserves_draft_assets_and_navigation () =
   let saved =
     Native_bridge.encode_ui_session (Model.ui_session original)
   in
-  ignore (Native_bridge.initialize 2 1 3);
+  ignore (Native_bridge.initialize 2 2 3);
   Fun.protect
     ~finally:(fun () -> ignore (Native_bridge.dispose ()))
     (fun () ->
@@ -112,7 +112,7 @@ let native_session_roundtrip_preserves_draft_assets_and_navigation () =
 let quick_actions_clear_selection_before_opening_native_recorder () =
   List.iter
     (fun kind ->
-       ignore (Native_bridge.initialize 2 1 3);
+       ignore (Native_bridge.initialize 2 2 3);
        Fun.protect
          ~finally:(fun () -> ignore (Native_bridge.dispose ()))
          (fun () ->

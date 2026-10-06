@@ -39,7 +39,7 @@ let outliner_editor_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   Lui_extension.component "outliner-editor"
-    [ profile IOS SwiftUIHost; profile AndroidOS FlutterHost ]
+    [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
     false []
     [
       Lui_extension.property "block-id" StringScalar true None;
@@ -70,7 +70,7 @@ let outliner_block_content_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   Lui_extension.component "outliner-block-content"
-    [ profile IOS SwiftUIHost; profile AndroidOS FlutterHost ]
+    [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
     false []
     [
       Lui_extension.property "title" StringScalar true None;
@@ -100,7 +100,7 @@ let native_navigation_stack_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   Lui_extension.component "native-navigation-stack"
-    [ profile IOS SwiftUIHost; profile AndroidOS FlutterHost ]
+    [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
     true []
     [
       Lui_extension.property "depth" IntScalar true None;
@@ -120,7 +120,7 @@ let native_search_presentation_schema () =
   let open Lui_protocol in
   let open Lui_extension in
   Lui_extension.component "native-search-presentation"
-    [ profile IOS SwiftUIHost; profile AndroidOS FlutterHost ]
+    [ profile IOS SwiftUIHost; profile AndroidOS KotlinHost ]
     true []
     [
       Lui_extension.property "presented" BoolScalar true None;

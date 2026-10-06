@@ -9,7 +9,7 @@ let graph_row (context : Lui_ui.ui_context) model_source graph_source
     ~accessibility_identifier:(View_base.graph_identifier graph)
     ~padding:16 ~corner_radius:16
     ~background:
-      (if Lui_ui.host context = FlutterHost then "surface-container-low"
+      (if Lui_ui.host context = KotlinHost then "surface-container-low"
        else "surface")
     ~disabled_signal:
       (Signal.map2 View_base.graph_row_disabled_ model_source
@@ -62,13 +62,13 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
     (Signal.map
        (fun (current_graph : Model.graph) ->
          if
-           Lui_ui.host context <> FlutterHost
+           Lui_ui.host context <> KotlinHost
            && (not local) && current_graph.is_encrypted
          then "app:graph-locked"
          else View_base.graph_icon_name local current_graph)
        graph_source)
     (list_item
-       ~min_height:(if Lui_ui.host context = FlutterHost then 56 else 44)
+       ~min_height:(if Lui_ui.host context = KotlinHost then 56 else 44)
        ~accessibility_identifier:(View_base.graph_identifier graph)
        ~disabled_signal:
          (if local then
@@ -100,7 +100,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
                ~test:
                  (Signal.map
                     (fun (current_graph : Model.graph) ->
-                      Lui_ui.host context = FlutterHost
+                      Lui_ui.host context = KotlinHost
                       && current_graph.is_encrypted)
                     graph_source)
                (text ~style_class:"caption"
@@ -127,7 +127,7 @@ let graph_list_row (context : Lui_ui.ui_context) model_source graph_source
        ])
 
 let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     sheet ~text:"Add sync graph" ~height:480
       ~accessibility_identifier:"sheet.graph-create"
       ~on_dismiss:(press send Model.DismissCreateGraph)
@@ -276,7 +276,7 @@ let graph_create_sheet (context : Lui_ui.ui_context) model_source send : t =
 
 let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
     =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     dialog ~text:"Delete local graph" ~height:320
       ~accessibility_identifier:"dialog.graph-delete"
       ~on_dismiss:(press send Model.CancelDeleteGraph)
@@ -349,15 +349,15 @@ let graph_delete_dialog (context : Lui_ui.ui_context) model_source send : t
 
 let graph_picker_overflow_menu send : t =
  fun context parent ->
-   let flutter_host = Lui_ui.host context = FlutterHost in
+   let kotlin_host = Lui_ui.host context = KotlinHost in
    let entries =
      [ menu_item ~text:"Settings"
-         ?icon:(if flutter_host then Some (`app "settings") else None)
+         ?icon:(if kotlin_host then Some (`app "settings") else None)
          ~on_press:(press send Model.OpenSettings)
          []
      ]
    in
-   if flutter_host then
+   if kotlin_host then
      menu ~icon:(`app "more-vert") ~label:"More"
        ~accessibility_identifier:"button.overflow-menu" entries context parent
    else
@@ -388,7 +388,7 @@ let graph_picker_error_banner model_source : t =
 
 let graph_password_sheet (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     sheet ~text:"Unlock encrypted graphs" ~height:360
       ~accessibility_identifier:"sheet.graph-unlock"
       ~on_dismiss:(press send Model.CancelGraphUnlock)
@@ -483,7 +483,7 @@ let graph_password_sheet (context : Lui_ui.ui_context) model_source send
     ]
 
 let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     list ~accessibility_identifier:"screen.graphs" ~gap:0
       [
         row ~gap:12 ~padding:16
@@ -578,7 +578,7 @@ let graphs_screen (context : Lui_ui.ui_context) model_source send : t =
             graph_list_row context model_source graph_source false send);
       ]
 
-let flutter_graph_picker_loading_state () : t =
+let kotlin_graph_picker_loading_state () : t =
   column ~grow:1.0 ~main:`center ~cross:`center ~gap:12
     ~accessibility_identifier:"loading.graph-picker"
     [
@@ -587,7 +587,7 @@ let flutter_graph_picker_loading_state () : t =
         ~value:"Loading sync graphs\xE2\x80\xA6" [];
     ]
 
-let flutter_graph_picker_empty_state send : t =
+let kotlin_graph_picker_empty_state send : t =
   column ~grow:1.0 ~main:`center ~cross:`stretch
     [
       column ~cross:`center ~gap:16
@@ -613,7 +613,7 @@ let flutter_graph_picker_empty_state send : t =
         ];
     ]
 
-let flutter_graph_picker_catalog (context : Lui_ui.ui_context) model_source
+let kotlin_graph_picker_catalog (context : Lui_ui.ui_context) model_source
     send : t =
   column ~grow:1.0 ~gap:16
     [
@@ -636,7 +636,7 @@ let flutter_graph_picker_catalog (context : Lui_ui.ui_context) model_source
 
 let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
     =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~accessibility_identifier:"screen.graph-picker" ~main:`start
       ~cross:`stretch ~grow:1.0 ~gap:16 ~padding:24
       [
@@ -656,14 +656,14 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
           (graph_picker_error_banner model_source);
         if_
           ~test:(Signal.map View_base.empty_graphs_loading_ model_source)
-          (flutter_graph_picker_loading_state ());
+          (kotlin_graph_picker_loading_state ());
         if_
           ~test:
             (Signal.map View_base.empty_graphs_refreshable_ model_source)
-          (flutter_graph_picker_empty_state send);
+          (kotlin_graph_picker_empty_state send);
         if_
           ~test:(Signal.map View_base.graphs_present_ model_source)
-          (flutter_graph_picker_catalog context model_source send);
+          (kotlin_graph_picker_catalog context model_source send);
       ]
   else
     column ~accessibility_identifier:"screen.graph-picker" ~main:`start
