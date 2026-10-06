@@ -16,7 +16,13 @@ let operating_system platform_code =
   | 3 -> AndroidOS
   | _ -> GenericOS
 
-let host_kind host_code = if host_code = 3 then FlutterHost else SwiftUIHost
+(* Matches the host-code table in lui's components_bridge.ml. *)
+let host_kind = function
+  | 1 -> WebHost
+  | 2 -> SwiftUIHost
+  | 4 -> KotlinHost
+  | 6 -> GPUIHost
+  | _ -> GenericHost
 
 let app () =
   match !current_app with

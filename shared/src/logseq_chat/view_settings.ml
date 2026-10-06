@@ -30,7 +30,7 @@ let settings_language_choice_menu_item choice_source send : t =
 
 let settings_language_control (context : Lui_ui.ui_context) model_source
     send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     stack
       ~accessibility_identifier:"layout.settings.language-control"
       [
@@ -91,7 +91,7 @@ let settings_language_control (context : Lui_ui.ui_context) model_source
 
 let settings_appearance_control (context : Lui_ui.ui_context) model_source
     send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     let appearance_item id title : t =
       menu_item ~text:title
         ~selected_signal:
@@ -171,7 +171,7 @@ let settings_appearance_control (context : Lui_ui.ui_context) model_source
 let settings_community_link_row (context : Lui_ui.ui_context) model_source
     link_source send : t =
   let link = Signal.sample link_source in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~gap:12
       [
         list_item
@@ -290,7 +290,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
         View_base.tab_selection_icon_name current tab)
       model_source
   in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     row ~cross:`center ~padding:8 ~background:"surface-container-low"
       ~corner_radius:12
       ~accessibility_identifier:("row.settings.tab." ^ tab)
@@ -363,7 +363,7 @@ let settings_tab_row (context : Lui_ui.ui_context) model_source tab title
 
 let settings_tabs_screen (context : Lui_ui.ui_context) model_source send :
     t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~grow:1.0 ~cross:`stretch ~gap:10 ~padding:16
       ~accessibility_identifier:"screen.settings.tabs"
       [
@@ -454,7 +454,7 @@ let runtime_log_toolbar (context : Lui_ui.ui_context) model_source send : t
          ~on_press:(press send action)
          [])
   in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~gap:8 ~cross:`stretch
       [
         toolbar ~orientation:`horizontal ~toolbar_gap:8
@@ -542,7 +542,7 @@ let settings_toggle_auto_correction send input_event =
 
 let settings_general_card (context : Lui_ui.ui_context) model_source send :
     t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~gap:12 ~cross:`stretch ~padding:16
       ~background:"surface-container-low" ~corner_radius:14
       ~accessibility_identifier:"layout.settings.general-card"
@@ -615,7 +615,7 @@ let settings_general_card (context : Lui_ui.ui_context) model_source send :
 
 let settings_editor_card (context : Lui_ui.ui_context) spell_check_source
     auto_correction_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     column ~gap:0 ~cross:`stretch ~padding:16
       ~background:"surface-container-low" ~corner_radius:14
       [
@@ -642,7 +642,7 @@ let settings_editor_card (context : Lui_ui.ui_context) spell_check_source
       ]
 
 let settings_export_row (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     list_item ~icon:(`app "download") ~padding:0
       ~accessibility_identifier:"button.export-graph-database"
       ~on_press:(press send Model.ExportGraphDatabase)
@@ -654,7 +654,7 @@ let settings_export_row (context : Lui_ui.ui_context) send : t =
       ~text:"Export Graph SQLite DB" []
 
 let settings_runtime_log_row (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     list_item ~icon:(`app "terminal") ~padding:0
       ~accessibility_identifier:"button.runtime-log"
       ~on_press:(press send Model.OpenRuntimeLog)
@@ -665,7 +665,7 @@ let settings_runtime_log_row (context : Lui_ui.ui_context) send : t =
       ~text:"Check log" []
 
 let settings_sign_out_row (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     list_item ~icon:(`app "sign-out") ~padding:0
       ~accessibility_identifier:"button.sign-out"
       ~on_press:(press send Model.RequestSignOut)
@@ -676,7 +676,7 @@ let settings_sign_out_row (context : Lui_ui.ui_context) send : t =
       ~text:"Sign Out" []
 
 let sign_out_dialog (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     dialog ~text:"Sign out?" ~height:280
       ~accessibility_identifier:"dialog.sign-out"
       ~on_dismiss:(press send Model.CancelSignOut)
@@ -729,10 +729,10 @@ let sign_out_dialog (context : Lui_ui.ui_context) send : t =
           ~text:"Sign Out" [];
       ]
 
-let settings_flutter_screen (context : Lui_ui.ui_context) model_source
+let settings_kotlin_screen (context : Lui_ui.ui_context) model_source
     send : t =
   let card_bg =
-    if Lui_ui.host context = FlutterHost then "surface-container-low"
+    if Lui_ui.host context = KotlinHost then "surface-container-low"
     else "surface"
   in
   column ~gap:18 ~padding:20 ~background:"background"
@@ -958,13 +958,13 @@ let settings_form_screen (context : Lui_ui.ui_context) model_source send
     ]
 
 let settings_screen (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
-    settings_flutter_screen context model_source send
+  if Lui_ui.host context = KotlinHost then
+    settings_kotlin_screen context model_source send
   else settings_form_screen context model_source send
 
 let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
     t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     sheet ~text:"Tabs" ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.BackSettings)
@@ -1002,7 +1002,7 @@ let settings_tabs_sheet (context : Lui_ui.ui_context) model_source send :
       ]
 
 let runtime_log_actions (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     row ~gap:12 ~padding_horizontal:16 ~padding_vertical:12
       ~background:"surface-container-low"
       ~accessibility_identifier:"toolbar.settings.actions"
@@ -1032,7 +1032,7 @@ let runtime_log_actions (context : Lui_ui.ui_context) send : t =
       ]
 
 let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     sheet ~text:"Log" ~style_class:"navigation-content"
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissRuntimeLog)
@@ -1055,7 +1055,7 @@ let runtime_log_sheet (context : Lui_ui.ui_context) model_source send : t =
 
 let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
     t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     sheet ~text:"Settings" ~height:640
       ~accessibility_identifier:"sheet.settings"
       ~on_dismiss:(press send Model.DismissSettings)
@@ -1113,7 +1113,7 @@ let settings_main_sheet (context : Lui_ui.ui_context) model_source send :
       ]
 
 let settings_sheet (context : Lui_ui.ui_context) model_source send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     stack
       [
         if_
@@ -1129,7 +1129,7 @@ let settings_sheet (context : Lui_ui.ui_context) model_source send : t =
   else settings_main_sheet context model_source send
 
 let page_delete_dialog (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     dialog ~text:"Delete page?" ~height:280
       ~accessibility_identifier:"dialog.page-delete"
       ~on_dismiss:(press send Model.CancelDeleteActivePage)
@@ -1187,7 +1187,7 @@ let sync_status_sheet (context : Lui_ui.ui_context) model_source send : t =
           ];
       ]
   in
-  if Lui_ui.host context = FlutterHost then
+  if Lui_ui.host context = KotlinHost then
     sheet ~text:"Sync status" ~height:420
       ~accessibility_identifier:"sheet.sync-status"
       ~on_dismiss:(press send Model.CloseSyncDetails)

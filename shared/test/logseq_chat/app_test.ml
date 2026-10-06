@@ -449,9 +449,9 @@ let ios_backend () =
   Native_bridge.backend
     (Lui_protocol.profile Lui_protocol.IOS Lui_protocol.SwiftUIHost)
 
-let flutter_backend () =
+let kotlin_backend () =
   Native_bridge.backend
-    (Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.FlutterHost)
+    (Lui_protocol.profile Lui_protocol.AndroidOS Lui_protocol.KotlinHost)
 
 let start application = ignore (Lui_app.start application)
 let send application action = ignore (Lui_app.send application action)
@@ -1255,8 +1255,8 @@ let settings_render_the_main_branch_navigation_contract () =
   check ~msg:"runtime diagnostics retain their actions"
     (descendant_with_identifier renderer root "button.log-copy" <> -1)
 
-let flutter_settings_sheet_uses_one_bounded_scroll_layout () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_settings_sheet_uses_one_bounded_scroll_layout () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplyCoreSnapshot
@@ -1275,13 +1275,13 @@ let flutter_settings_sheet_uses_one_bounded_scroll_layout () =
   let layout =
     descendant_with_identifier renderer sheet "layout.settings.sheet"
   in
-  check_eq ~msg:"Flutter bounds the Material bottom sheet"
+  check_eq ~msg:"Kotlin bounds the Material bottom sheet"
     (property_int renderer sheet Lui_protocol.HeightValue)
     640;
-  check_eq ~msg:"Flutter gives the backend one composed sheet child"
+  check_eq ~msg:"Kotlin gives the backend one composed sheet child"
     (List.length (children renderer sheet))
     1;
-  check ~msg:"Flutter owns one vertical settings layout" (layout <> -1);
+  check ~msg:"Kotlin owns one vertical settings layout" (layout <> -1);
   if layout <> -1 then begin
     check_eq ~msg:"long Settings content scrolls inside the sheet"
       (descendant_count_with_node_kind renderer layout Lui_protocol.Scroll)
@@ -1291,8 +1291,8 @@ let flutter_settings_sheet_uses_one_bounded_scroll_layout () =
       <> -1)
   end
 
-let flutter_settings_tabs_open_through_the_rendered_press_handler () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_settings_tabs_open_through_the_rendered_press_handler () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplySettingsSnapshot
@@ -1304,7 +1304,7 @@ let flutter_settings_tabs_open_through_the_rendered_press_handler () =
   let tabs_link =
     descendant_with_identifier renderer root "link.settings.tabs"
   in
-  check ~msg:"Flutter renders the Settings tabs navigation row"
+  check ~msg:"Kotlin renders the Settings tabs navigation row"
     (tabs_link <> -1);
   dispatch application (Lui_protocol.Press tabs_link);
   flush application;
@@ -1337,10 +1337,10 @@ let flutter_settings_tabs_open_through_the_rendered_press_handler () =
   check_eq ~msg:"the Tabs screen replaces the Settings main screen"
     (descendant_with_identifier renderer updated_root "screen.settings")
     (-1);
-  check_eq ~msg:"Flutter gives the Tabs sheet one bounded child"
+  check_eq ~msg:"Kotlin gives the Tabs sheet one bounded child"
     (List.length (children renderer sheet))
     1;
-  check ~msg:"Flutter owns one vertical Tabs layout" (layout <> -1);
+  check ~msg:"Kotlin owns one vertical Tabs layout" (layout <> -1);
   if layout <> -1 then begin
     check_eq ~msg:"Tabs uses one vertical Material layout"
       (node renderer layout)
@@ -1364,8 +1364,8 @@ let flutter_settings_tabs_open_through_the_rendered_press_handler () =
     (property_float renderer flashcards_toggle Lui_protocol.GrowValue)
     (-1.0)
 
-let flutter_runtime_log_actions_fit_phone_width () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_runtime_log_actions_fit_phone_width () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplyCoreSnapshot
@@ -1396,10 +1396,10 @@ let flutter_runtime_log_actions_fit_phone_width () =
   let done_button =
     descendant_with_identifier renderer root "button.connection.apply"
   in
-  check_eq ~msg:"Flutter gives the Runtime log sheet one bounded child"
+  check_eq ~msg:"Kotlin gives the Runtime log sheet one bounded child"
     (List.length (children renderer sheet))
     1;
-  check ~msg:"Flutter owns one vertical Runtime log layout" (layout <> -1);
+  check ~msg:"Kotlin owns one vertical Runtime log layout" (layout <> -1);
   if layout <> -1 then begin
     check_eq ~msg:"Runtime log owns one vertical Material layout"
       (node renderer layout)
@@ -1426,16 +1426,16 @@ let flutter_runtime_log_actions_fit_phone_width () =
   check_eq ~msg:"Done shares the phone width"
     (property_float renderer done_button Lui_protocol.GrowValue)
     1.0;
-  check ~msg:"Flutter groups the first two log actions into a bounded row"
+  check ~msg:"Kotlin groups the first two log actions into a bounded row"
     (descendant_with_identifier renderer root "toolbar.log-filters.primary"
     <> -1);
-  check ~msg:"Flutter groups the remaining log actions into a bounded row"
+  check ~msg:"Kotlin groups the remaining log actions into a bounded row"
     (descendant_with_identifier renderer root
        "toolbar.log-filters.secondary"
     <> -1)
 
-let flutter_settings_use_full_width_material_controls () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_settings_use_full_width_material_controls () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplyCoreSnapshot
@@ -1504,10 +1504,10 @@ let flutter_settings_use_full_width_material_controls () =
   let sign_out =
     descendant_with_identifier renderer root "button.sign-out"
   in
-  check_eq ~msg:"Flutter uses one bounded Material select control"
+  check_eq ~msg:"Kotlin uses one bounded Material select control"
     (node renderer picker)
     (Some Lui_protocol.Select);
-  check_eq ~msg:"Flutter exposes the Material Theme select directly"
+  check_eq ~msg:"Kotlin exposes the Material Theme select directly"
     (node renderer appearance_picker)
     (Some Lui_protocol.Select);
   check_eq ~msg:"the Theme select is not pinned to a phone-specific width"
@@ -1586,7 +1586,7 @@ let flutter_settings_use_full_width_material_controls () =
   check_eq ~msg:"Cancel and Apply share the available phone width"
     (property_float renderer apply Lui_protocol.GrowValue)
     1.0;
-  check_eq ~msg:"Flutter does not lay every language out in one row"
+  check_eq ~msg:"Kotlin does not lay every language out in one row"
     (descendant_count_with_node_kind renderer picker Lui_protocol.RadioGroup)
     0;
   send application Model.OpenSettingsLanguageMenu;
@@ -1956,17 +1956,17 @@ let authentication_screen_uses_the_product_name_on_every_host () =
          (descendant_count_with_property_string renderer root
             Lui_protocol.TextValue "Logseq")
          0)
-    [ ios_backend (); flutter_backend () ]
+    [ ios_backend (); kotlin_backend () ]
 
 let outliner_editor_extension_contract_is_pinned () =
   check_eq ~msg:"the native editor registry must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_editor_schema ()))
-    "lui-extension-v1|15:outliner-editor|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
+    "lui-extension-v1|15:outliner-editor|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:18:caret-utf16-offset:int:required:none,5:title:string:required:none,8:block-id:string:required:none|events:11:text-change[18:caret-utf16-offset:int:required,5:title:string:required],12:caret-change[18:caret-utf16-offset:int:required],6:return[18:caret-utf16-offset:int:required,5:title:string:required],9:backspace[16:selection-length:int:required,5:title:string:required]"
 
 let outliner_block_content_extension_contract_is_pinned () =
   check_eq ~msg:"the rich block renderer must match the LG wire schema"
     (Lui_extension.fingerprint (View.outliner_block_content_schema ()))
-    "lui-extension-v1|22:outliner-block-content|profiles:android/flutter,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
+    "lui-extension-v1|22:outliner-block-content|profiles:android/kotlin,ios/swiftui|standard-children:0|children:|properties:10:asset-type:string:required:none,10:local-path:string:required:none,11:markup-json:string:required:none,12:is-completed:bool:required:none,18:youtube-target-url:string:required:none,5:title:string:required:none,8:block-id:string:required:none,8:is-asset:bool:required:none|events:10:drag-start[4:uuid:string:required],4:drop[4:uuid:string:required,9:placement:string:required],4:edit[4:uuid:string:required],9:open-node[4:uuid:string:required]"
 
 let native_navigation_stack_extension_contract_is_pinned () =
   let schema =
@@ -1982,7 +1982,7 @@ let native_navigation_stack_extension_contract_is_pinned () =
     ~msg:"native navigation must share one pinned LG and Swift wire contract"
     fingerprint
     (Some
-       "lui-extension-v1|23:native-navigation-stack|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
+       "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]")
 
 let native_search_presentation_extension_contract_is_pinned () =
   let schema =
@@ -1998,7 +1998,7 @@ let native_search_presentation_extension_contract_is_pinned () =
     ~msg:"search must use a distinct native full-screen navigation contract"
     fingerprint
     (Some
-       "lui-extension-v1|26:native-search-presentation|profiles:android/flutter,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
+       "lui-extension-v1|26:native-search-presentation|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:5:depth:int:required:none,5:query:string:required:none,5:title:string:required:none,9:presented:bool:required:none|events:13:query-changed[5:query:string:required],4:back[5:count:int:required],7:dismiss[]")
 
 let liquid_glass_remains_an_ios_local_tweak () =
   let registry = View.extension_registry () in
@@ -2198,8 +2198,8 @@ let graph_picker_matches_main_layout_actions_errors_and_overflow_menu () =
        Lui_protocol.TextValue)
     "Connection refused"
 
-let flutter_graph_picker_uses_a_material_empty_state () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_graph_picker_uses_a_material_empty_state () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   flush application;
   let renderer = Lui_app.runtime application in
@@ -2276,8 +2276,8 @@ let persisted_graph_loading_hides_the_launch_picker () =
   check ~msg:"cached journals remain visible during a background reload"
     (View_base.journal_root_visible_ cached)
 
-let flutter_loading_and_errors_use_material_feedback_surfaces () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_loading_and_errors_use_material_feedback_surfaces () =
+  let application = App.create (kotlin_backend ()) in
   let local = graph "local" "Local graph" false true in
   start application;
   send application (Model.ApplyGraphLoading true);
@@ -3848,8 +3848,8 @@ let graphs_render_the_existing_catalog_and_modal_contract () =
       (Some false)
   end
 
-let flutter_graphs_use_a_compact_material_action_group () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_graphs_use_a_compact_material_action_group () =
+  let application = App.create (kotlin_backend ()) in
   let local = graph "local" "Local graph" false true in
   let remote = graph "remote" "Remote graph" false true in
   let projection =
@@ -3923,8 +3923,8 @@ let flutter_graphs_use_a_compact_material_action_group () =
     (node renderer local_row)
     (Some Lui_protocol.ListItem)
 
-let flutter_add_graph_sheet_uses_one_material_form_layout () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_add_graph_sheet_uses_one_material_form_layout () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application Model.OpenCreateGraph;
   flush application;
@@ -3936,13 +3936,13 @@ let flutter_add_graph_sheet_uses_one_material_form_layout () =
   let layout =
     descendant_with_identifier renderer sheet "layout.graph-create.sheet"
   in
-  check_eq ~msg:"Flutter bounds the Add graph Material sheet"
+  check_eq ~msg:"Kotlin bounds the Add graph Material sheet"
     (property_int renderer sheet Lui_protocol.HeightValue)
     480;
-  check_eq ~msg:"Flutter gives the backend one composed Add graph child"
+  check_eq ~msg:"Kotlin gives the backend one composed Add graph child"
     (List.length (children renderer sheet))
     1;
-  check ~msg:"Flutter owns one vertical Add graph layout" (layout <> -1);
+  check ~msg:"Kotlin owns one vertical Add graph layout" (layout <> -1);
   if layout <> -1 then begin
     let form =
       descendant_with_identifier renderer layout "form.graph-create"
@@ -3962,8 +3962,8 @@ let flutter_add_graph_sheet_uses_one_material_form_layout () =
       <> -1)
   end
 
-let flutter_add_graph_sheet_shows_creation_errors_inline () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_add_graph_sheet_shows_creation_errors_inline () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application Model.OpenCreateGraph;
   send application (Model.ChangeNewGraphName "Broken graph");
@@ -4093,8 +4093,8 @@ let graph_deletion_confirmation_names_the_local_graph () =
     (property_string renderer error Lui_protocol.TextValue)
     "Could not delete graph"
 
-let flutter_graph_deletion_uses_a_material_destructive_dialog () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_graph_deletion_uses_a_material_destructive_dialog () =
+  let application = App.create (kotlin_backend ()) in
   let local = graph "local" "Local graph" false true in
   start application;
   send application
@@ -4775,8 +4775,8 @@ let composer_renders_autofocus_and_native_outside_dismissal () =
   check ~msg:"the native outside tap collapses the composer"
     (not (App.model application).composer_expanded)
 
-let flutter_composer_uses_a_tonal_material_dock () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_composer_uses_a_tonal_material_dock () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplyCoreSnapshot
@@ -4833,8 +4833,8 @@ let flutter_composer_uses_a_tonal_material_dock () =
     (property_string renderer send_button Lui_protocol.SizeValue)
     "icon"
 
-let flutter_sidebar_uses_compact_material_drawer_metrics () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_sidebar_uses_compact_material_drawer_metrics () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplyCoreSnapshot
@@ -5040,27 +5040,27 @@ let native_bridge_renders_restored_authentication_in_the_first_patch () =
   check ~msg:"signed-out initialization excludes main navigation controls"
     (not (contains "button.search" patch))
 
-let native_bridge_selects_the_flutter_host_profile () =
-  check ~msg:"Flutter Android uses the retained Flutter backend profile"
-    (Native_bridge.host_kind 3 = Lui_protocol.FlutterHost);
+let native_bridge_selects_the_kotlin_host_profile () =
+  check ~msg:"Kotlin Android uses the retained Kotlin backend profile"
+    (Native_bridge.host_kind 4 = Lui_protocol.KotlinHost);
   check ~msg:"Apple hosts keep the SwiftUI profile"
     (Native_bridge.host_kind 2 = Lui_protocol.SwiftUIHost);
-  let patch = Native_bridge.initialize 3 3 1 in
-  check ~msg:"Flutter renders the shared authentication screen"
+  let patch = Native_bridge.initialize 3 4 1 in
+  check ~msg:"Kotlin renders the shared authentication screen"
     (contains "screen.authentication" patch);
-  check ~msg:"Flutter does not receive SwiftUI-only viewport properties"
+  check ~msg:"Kotlin does not receive SwiftUI-only viewport properties"
     (not (contains "container-relative-frame" patch));
-  let patch = Native_bridge.initialize 3 3 3 in
-  check ~msg:"signed-in Flutter renders the Material graph picker controls"
+  let patch = Native_bridge.initialize 3 4 3 in
+  check ~msg:"signed-in Kotlin renders the Material graph picker controls"
     (contains "menu-trigger" patch);
   check
-    ~msg:"signed-in Flutter excludes every SwiftUI-only viewport property"
+    ~msg:"signed-in Kotlin excludes every SwiftUI-only viewport property"
     (not (contains "container-relative-frame" patch));
-  check ~msg:"signed-in Flutter excludes unsupported list-item icon placement"
+  check ~msg:"signed-in Kotlin excludes unsupported list-item icon placement"
     (not (contains "icon-placement" patch));
-  check ~msg:"signed-in Flutter excludes unsupported list-item heading roles"
+  check ~msg:"signed-in Kotlin excludes unsupported list-item heading roles"
     (not (contains "navigation-heading" patch));
-  check ~msg:"signed-in Flutter excludes unsupported list-item navigation roles"
+  check ~msg:"signed-in Kotlin excludes unsupported list-item navigation roles"
     (not (contains "\"navigation\"" patch));
   let patch =
     Native_bridge.flush_action
@@ -5083,8 +5083,8 @@ let native_bridge_selects_the_flutter_host_profile () =
     (not (contains "\"navigation\"" patch));
   ignore (Native_bridge.dispose ())
 
-let flutter_search_presentation_owns_an_opaque_background () =
-  ignore (Native_bridge.initialize 3 3 3);
+let kotlin_search_presentation_owns_an_opaque_background () =
+  ignore (Native_bridge.initialize 3 4 3);
   ignore
     (Native_bridge.flush_action
        (Model.ApplyCoreSnapshot
@@ -5095,9 +5095,9 @@ let flutter_search_presentation_owns_an_opaque_background () =
             graphs = [ graph "graph-a" "Work" false true ];
           }));
   let patch = Native_bridge.flush_action Model.OpenSearch in
-  check ~msg:"opening Flutter search mounts the search screen"
+  check ~msg:"opening Kotlin search mounts the search screen"
     (contains "screen.search" patch);
-  check ~msg:"Flutter search covers the retained journal surface"
+  check ~msg:"Kotlin search covers the retained journal surface"
     (contains "\"property\":\"background\",\"value\":\"background\"" patch);
   ignore (Native_bridge.dispose ());
   ignore (Native_bridge.initialize 2 2 3);
@@ -5111,15 +5111,15 @@ let flutter_search_presentation_owns_an_opaque_background () =
             graphs = [ graph "graph-a" "Work" false true ];
           }));
   let patch = Native_bridge.flush_action Model.OpenSearch in
-  check ~msg:"the Flutter-only backdrop does not alter SwiftUI search"
+  check ~msg:"the Kotlin-only backdrop does not alter SwiftUI search"
     (not
        (contains "\"property\":\"background\",\"value\":\"background\""
           patch));
   ignore (Native_bridge.dispose ())
 
-let flutter_node_route_owns_an_opaque_background () =
+let kotlin_node_route_owns_an_opaque_background () =
   let route = node_projection "node-a" "page-a" "Project" [] [] in
-  ignore (Native_bridge.initialize 3 3 3);
+  ignore (Native_bridge.initialize 3 4 3);
   ignore (Native_bridge.flush_action (Model.RequestAppNode "node-a"));
   let patch =
     Native_bridge.flush_action
@@ -5131,9 +5131,9 @@ let flutter_node_route_owns_an_opaque_background () =
            node_routes = [ route ];
          })
   in
-  check ~msg:"opening a Flutter node mounts the node screen"
+  check ~msg:"opening a Kotlin node mounts the node screen"
     (contains "screen.node" patch);
-  check ~msg:"Flutter node routes cover the retained journal surface"
+  check ~msg:"Kotlin node routes cover the retained journal surface"
     (contains "\"property\":\"background\",\"value\":\"background\"" patch);
   ignore (Native_bridge.dispose ());
   ignore (Native_bridge.initialize 2 2 3);
@@ -5149,14 +5149,14 @@ let flutter_node_route_owns_an_opaque_background () =
          })
   in
   check
-    ~msg:"the Flutter-only node backdrop does not alter SwiftUI navigation"
+    ~msg:"the Kotlin-only node backdrop does not alter SwiftUI navigation"
     (not
        (contains "\"property\":\"background\",\"value\":\"background\""
           patch));
   ignore (Native_bridge.dispose ())
 
 let native_bridge_drains_and_resolves_typed_effects_once () =
-  ignore (Native_bridge.initialize 2 1 0);
+  ignore (Native_bridge.initialize 2 2 0);
   let application = Native_bridge.app () in
   send application Model.ExpandComposer;
   send application
@@ -5624,7 +5624,7 @@ let ios_node_navigation_is_owned_by_the_native_stack () =
   in
   let chrome = native_bottom_chrome renderer application in
   check_eq
-    ~msg:"SwiftUI node navigation does not receive Flutter flex sizing"
+    ~msg:"SwiftUI node navigation does not receive Kotlin flex sizing"
     (property_float renderer screen Lui_protocol.GrowValue)
     0.0;
   check_eq ~msg:"the retained node does not duplicate the system back button"
@@ -5647,8 +5647,8 @@ let ios_node_navigation_is_owned_by_the_native_stack () =
   check_eq ~msg:"the native iOS back action pops the LG route"
     (App.model application).app_navigation_path []
 
-let flutter_navigation_and_search_own_one_composed_standard_child () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_navigation_and_search_own_one_composed_standard_child () =
+  let application = App.create (kotlin_backend ()) in
   start application;
   send application
     (Model.ApplyCoreSnapshot
@@ -5663,9 +5663,9 @@ let flutter_navigation_and_search_own_one_composed_standard_child () =
   let search = extension_node application "native-search-presentation" in
   let navigation_children = children renderer navigation in
   let search_children = children renderer search in
-  check_eq ~msg:"Flutter navigation receives one composed child"
+  check_eq ~msg:"Kotlin navigation receives one composed child"
     (List.length navigation_children) 1;
-  check_eq ~msg:"Flutter search receives one composed child"
+  check_eq ~msg:"Kotlin search receives one composed child"
     (List.length search_children) 1;
   let navigation_content = List.nth navigation_children 0 in
   let search_content = List.nth search_children 0 in
@@ -5676,20 +5676,20 @@ let flutter_navigation_and_search_own_one_composed_standard_child () =
     descendant_with_identifier renderer navigation_content
       "row.bottom.capture"
   in
-  check_eq ~msg:"the composed Flutter child uses Material title typography"
+  check_eq ~msg:"the composed Kotlin child uses Material title typography"
     (node renderer navigation_title)
     (Some Lui_protocol.Heading);
-  check_eq ~msg:"the Flutter navigation title maps to Material titleLarge"
+  check_eq ~msg:"the Kotlin navigation title maps to Material titleLarge"
     (property_int renderer navigation_title Lui_protocol.HeadingLevel)
     3;
-  check ~msg:"the composed Flutter child owns the bottom controls"
+  check ~msg:"the composed Kotlin child owns the bottom controls"
     (descendant_with_identifier renderer navigation_content "button.search"
     <> -1);
-  check ~msg:"the closed Flutter search child retains journal content"
+  check ~msg:"the closed Kotlin search child retains journal content"
     (descendant_with_identifier renderer search_content "list.outliner"
     <> -1);
   check_eq
-    ~msg:"Flutter capture keeps intrinsic height inside the bottom dock"
+    ~msg:"Kotlin capture keeps intrinsic height inside the bottom dock"
     (property_float renderer capture_row Lui_protocol.GrowValue)
     (-1.0);
   send application Model.ExpandComposer;
@@ -5699,12 +5699,12 @@ let flutter_navigation_and_search_own_one_composed_standard_child () =
       "row.composer.placement"
   in
   check_eq
-    ~msg:"Flutter expanded Capture uses intrinsic height inside the bottom overlay"
+    ~msg:"Kotlin expanded Capture uses intrinsic height inside the bottom overlay"
     (property_float renderer expanded_row Lui_protocol.GrowValue)
     (-1.0)
 
-let flutter_navigation_renders_each_active_node_row_once () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_navigation_renders_each_active_node_row_once () =
+  let application = App.create (kotlin_backend ()) in
   let row =
     journal_outline_row "route-child" "route-page" "Route child" "" 0 0
   in
@@ -5735,17 +5735,17 @@ let flutter_navigation_renders_each_active_node_row_once () =
     descendant_with_identifier renderer navigation "button.navigation.back"
   in
   check
-    ~msg:"Flutter node destinations expose a Material top-app-bar back action"
+    ~msg:"Kotlin node destinations expose a Material top-app-bar back action"
     (back_button <> -1);
   check_eq ~msg:"the Android back action remains available to TalkBack"
     (property_string renderer back_button Lui_protocol.AccessibilityLabel)
     "Back";
-  check_eq ~msg:"Flutter node content receives a bounded flex height"
+  check_eq ~msg:"Kotlin node content receives a bounded flex height"
     (property_float renderer screen Lui_protocol.GrowValue)
     1.0;
   check_eq
     ~msg:
-      "Flutter keeps the journal as the stack root instead of duplicating \
+      "Kotlin keeps the journal as the stack root instead of duplicating \
        the active node route"
     (descendant_count_with_identifier renderer navigation
        "outliner.block.route-child")
@@ -5755,8 +5755,8 @@ let flutter_navigation_renders_each_active_node_row_once () =
   check_eq ~msg:"the visible Android back action pops exactly one route"
     (App.model application).app_navigation_path []
 
-let flutter_selected_pages_unmount_the_hidden_journal_pane () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_selected_pages_unmount_the_hidden_journal_pane () =
+  let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
   let row =
     journal_outline_row "selected-row" "page-a" "Selected row" "" 0 0
@@ -5786,18 +5786,18 @@ let flutter_selected_pages_unmount_the_hidden_journal_pane () =
   flush application;
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
-  check ~msg:"Flutter renders the selected page"
+  check ~msg:"Kotlin renders the selected page"
     (descendant_with_identifier renderer navigation "pane.selected-page"
     <> -1);
   check_eq
     ~msg:
-      "Flutter removes the hidden journal so it cannot paint or receive \
+      "Kotlin removes the hidden journal so it cannot paint or receive \
        input behind the selected page"
     (descendant_with_identifier renderer navigation "pane.journals")
     (-1)
 
-let flutter_selected_page_navigation_renders_the_opened_node () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_selected_page_navigation_renders_the_opened_node () =
+  let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
   let selected_row =
     journal_outline_row "selected-row" "page-a" "Selected row" "" 0 0
@@ -5842,12 +5842,12 @@ let flutter_selected_page_navigation_renders_the_opened_node () =
   flush application;
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
-  check_eq ~msg:"Flutter renders the opened route above an existing selected page"
+  check_eq ~msg:"Kotlin renders the opened route above an existing selected page"
     (descendant_count_with_identifier renderer navigation
        "outliner.block.route-row")
     1;
   check_eq
-    ~msg:"Flutter unmounts the selected-page root while a node route is active"
+    ~msg:"Kotlin unmounts the selected-page root while a node route is active"
     (descendant_with_identifier renderer navigation "pane.selected-page")
     (-1)
 
@@ -7099,23 +7099,23 @@ let outliner_row_press_publishes_a_typed_core_effect () =
   check_eq ~msg:"outliner effects share the monotonic effect sequence"
     editing.next_effect_id 2
 
-let flutter_rich_rows_own_their_primary_tap () =
+let kotlin_rich_rows_own_their_primary_tap () =
   let row = outline_row "block-a" "Linked block" in
   check_eq
-    ~msg:"Flutter rich content avoids a competing whole-row primary tap"
+    ~msg:"Kotlin rich content avoids a competing whole-row primary tap"
     (View_base.outliner_row_list_item_press_enabled_
-       Lui_protocol.FlutterHost row)
+       Lui_protocol.KotlinHost row)
     false;
   check_eq
-    ~msg:"Flutter asset rows retain their whole-row presentation action"
+    ~msg:"Kotlin asset rows retain their whole-row presentation action"
     (View_base.outliner_row_list_item_press_enabled_
-       Lui_protocol.FlutterHost
+       Lui_protocol.KotlinHost
        { row with Model.is_asset = true })
     true;
   check_eq
-    ~msg:"Flutter page rows retain their whole-row navigation action"
+    ~msg:"Kotlin page rows retain their whole-row navigation action"
     (View_base.outliner_row_list_item_press_enabled_
-       Lui_protocol.FlutterHost
+       Lui_protocol.KotlinHost
        { row with Model.opens_as_page = true })
     true;
   check_eq
@@ -7173,7 +7173,7 @@ let active_page_actions_use_typed_core_and_platform_effects () =
     ]
 
 let page_delete_dialog_exposes_stable_material_actions () =
-  let application = App.create (flutter_backend ()) in
+  let application = App.create (kotlin_backend ()) in
   let page = { Model.uuid = "page-a"; title = "Project" } in
   let sidebar =
     { (empty_sidebar_projection ()) with Model.selected_page = Some page }
@@ -7277,8 +7277,8 @@ let outliner_task_status_selection_uses_the_core_event_boundary () =
     chosen.pending_effects
     [ Model.SetOutlinerTaskStatusEffect (1, "block-a", done_status) ]
 
-let flutter_outliner_markers_match_ios_visual_metrics () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_outliner_markers_match_ios_visual_metrics () =
+  let application = App.create (kotlin_backend ()) in
   let todo =
     Model.task_status "todo" "logseq.property/status.todo" "Todo" "Todo"
   in
@@ -7318,9 +7318,9 @@ let flutter_outliner_markers_match_ios_visual_metrics () =
       "button.block-task-status"
   in
   check
-    ~msg:"Flutter renders a dedicated visual bullet inside its hit target"
+    ~msg:"Kotlin renders a dedicated visual bullet inside its hit target"
     (bullet <> -1);
-  check_eq ~msg:"Flutter uses iOS main's seven-point bullet diameter"
+  check_eq ~msg:"Kotlin uses iOS main's seven-point bullet diameter"
     (property_int renderer bullet Lui_protocol.WidthValue)
     7;
   check_eq ~msg:"the outliner bullet remains circular"
@@ -7333,15 +7333,15 @@ let flutter_outliner_markers_match_ios_visual_metrics () =
     (property_int renderer zoom_button Lui_protocol.HeightValue)
     24;
   check
-    ~msg:"Flutter renders the task glyph independently from its menu target"
+    ~msg:"Kotlin renders the task glyph independently from its menu target"
     (status_icon <> -1);
-  check_eq ~msg:"Flutter uses iOS main's 22-point task status glyph"
+  check_eq ~msg:"Kotlin uses iOS main's 22-point task status glyph"
     (property_int renderer status_icon Lui_protocol.WidthValue)
     22;
   check_eq ~msg:"the task status glyph keeps iOS main's square frame"
     (property_int renderer status_icon Lui_protocol.HeightValue)
     22;
-  check_eq ~msg:"Flutter matches iOS by using the row foreground for Todo"
+  check_eq ~msg:"Kotlin matches iOS by using the row foreground for Todo"
     (property_string renderer status_icon Lui_protocol.ForegroundValue)
     "foreground";
   check_eq
@@ -7370,7 +7370,7 @@ let flutter_outliner_markers_match_ios_visual_metrics () =
   in
   check_eq
     ~msg:
-      "a retained Flutter row replaces the task glyph when status changes"
+      "a retained Kotlin row replaces the task glyph when status changes"
     (property_string renderer updated_status_icon Lui_protocol.IconName)
     "app:task-done";
   check_eq
@@ -7572,8 +7572,8 @@ let outliner_long_press_selection_and_toolbar_use_typed_effects () =
     (App.model application).pending_effects
     [ Model.OutlinerToolbarEffect (1, "copy") ]
 
-let flutter_outliner_selection_toolbar_uses_compact_material_actions () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_outliner_selection_toolbar_uses_compact_material_actions () =
+  let application = App.create (kotlin_backend ()) in
   let row = outline_row "parent" "Parent" in
   start application;
   send application
@@ -7593,10 +7593,10 @@ let flutter_outliner_selection_toolbar_uses_compact_material_actions () =
     descendant_with_identifier renderer root "toolbar.outliner.selection"
   in
   let buttons = children renderer toolbar in
-  check_eq ~msg:"Flutter keeps the editor-compatible row surface"
+  check_eq ~msg:"Kotlin keeps the editor-compatible row surface"
     (node renderer selected_row)
     (Some Lui_protocol.Box);
-  check ~msg:"Flutter projects selection onto the row surface"
+  check ~msg:"Kotlin projects selection onto the row surface"
     (property_bool renderer selected_row Lui_protocol.Selected);
   check_eq ~msg:"Android uses compact Material action spacing"
     (property_int renderer toolbar Lui_protocol.Gap)
@@ -7642,8 +7642,8 @@ let flutter_outliner_selection_toolbar_uses_compact_material_actions () =
        Lui_protocol.ForegroundValue)
     "muted-foreground"
 
-let flutter_outliner_editor_toolbar_uses_a_material_bottom_surface () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface () =
+  let application = App.create (kotlin_backend ()) in
   let row = outline_row "block-a" "Draft" in
   let editing =
     {
@@ -7889,8 +7889,8 @@ let outliner_editor_toolbar_and_autocomplete_use_core_owned_state () =
   check_eq ~msg:"a task mutation hides stale synced state immediately"
     (App.model application).sync_state Model.SyncingState
 
-let flutter_outliner_autocomplete_stacks_above_the_editor_toolbar () =
-  let application = App.create (flutter_backend ()) in
+let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
+  let application = App.create (kotlin_backend ()) in
   let row = outline_row "block-a" "Draft #" in
   let editing =
     {
@@ -7938,7 +7938,7 @@ let flutter_outliner_autocomplete_stacks_above_the_editor_toolbar () =
   in
   check_eq
     ~msg:
-      "Flutter lays autocomplete above the editor toolbar instead of \
+      "Kotlin lays autocomplete above the editor toolbar instead of \
        overlaying it"
     (node renderer editor_container)
     (Some Lui_protocol.Column);
@@ -7954,12 +7954,12 @@ let flutter_outliner_autocomplete_stacks_above_the_editor_toolbar () =
        "toolbar.outliner.autocomplete"
     <> -1);
   check_eq
-    ~msg:"Flutter fills autocomplete width with cross-axis stretching"
+    ~msg:"Kotlin fills autocomplete width with cross-axis stretching"
     (property_string renderer autocomplete_column
        Lui_protocol.CrossAlignment)
     "stretch";
   check_eq
-    ~msg:"Flutter does not flex rows along an unbounded scroll axis"
+    ~msg:"Kotlin does not flex rows along an unbounded scroll axis"
     (property_float renderer candidate_button Lui_protocol.GrowValue)
     0.0
 
@@ -8134,13 +8134,13 @@ let outliner_row_splices_update_the_existing_keyed_projection () =
     collapsed.outliner_rows [ collapsed_parent; sibling ]
 
 let native_bridge_returns_initial_and_disposal_patch_batches () =
-  let initial_patch = Native_bridge.initialize 2 1 0 in
+  let initial_patch = Native_bridge.initialize 2 2 0 in
   check ~msg:"initialization emits a patch" (initial_patch <> "");
   check ~msg:"the bridge exposes a root node" (Native_bridge.root_node () > 0);
   check ~msg:"disposal emits a patch" (Native_bridge.dispose () <> "")
 
 let native_bridge_preserves_native_search_query_values () =
-  ignore (Native_bridge.initialize 2 1 0);
+  ignore (Native_bridge.initialize 2 2 0);
   let application = Native_bridge.app () in
   send application (Model.SelectGraph "Work");
   send application Model.OpenSearch;
@@ -8154,7 +8154,7 @@ let native_bridge_preserves_native_search_query_values () =
   ignore (Native_bridge.dispose ())
 
 let native_bridge_preserves_native_navigation_back_counts () =
-  ignore (Native_bridge.initialize 2 1 0);
+  ignore (Native_bridge.initialize 2 2 0);
   let application = Native_bridge.app () in
   send application (Model.SelectGraph "Work");
   send application (Model.RequestAppNode "page-a");
@@ -8557,10 +8557,10 @@ let cases =
     case "graph-database-export-has-a-stable-native-effect-payload" graph_database_export_has_a_stable_native_effect_payload;
     case "cancel-outliner-editing-has-a-stable-native-effect-payload" cancel_outliner_editing_has_a_stable_native_effect_payload;
     case "settings-render-the-main-branch-navigation-contract" settings_render_the_main_branch_navigation_contract;
-    case "flutter-settings-sheet-uses-one-bounded-scroll-layout" flutter_settings_sheet_uses_one_bounded_scroll_layout;
-    case "flutter-settings-tabs-open-through-the-rendered-press-handler" flutter_settings_tabs_open_through_the_rendered_press_handler;
-    case "flutter-runtime-log-actions-fit-phone-width" flutter_runtime_log_actions_fit_phone_width;
-    case "flutter-settings-use-full-width-material-controls" flutter_settings_use_full_width_material_controls;
+    case "kotlin-settings-sheet-uses-one-bounded-scroll-layout" kotlin_settings_sheet_uses_one_bounded_scroll_layout;
+    case "kotlin-settings-tabs-open-through-the-rendered-press-handler" kotlin_settings_tabs_open_through_the_rendered_press_handler;
+    case "kotlin-runtime-log-actions-fit-phone-width" kotlin_runtime_log_actions_fit_phone_width;
+    case "kotlin-settings-use-full-width-material-controls" kotlin_settings_use_full_width_material_controls;
     case "settings-tabs-match-main-visibility-and-movement-boundaries" settings_tabs_match_main_visibility_and_movement_boundaries;
     case "android-disclosure-and-selection-icons-use-material-semantics" android_disclosure_and_selection_icons_use_material_semantics;
     case "settings-tabs-render-saved-order-and-separate-available-tabs" settings_tabs_render_saved_order_and_separate_available_tabs;
@@ -8578,9 +8578,9 @@ let cases =
     case "initial-shell-renders-the-graph-picker-without-a-selected-graph" initial_shell_renders_the_graph_picker_without_a_selected_graph;
     case "graph-picker-not-ready-status-matches-main-copy" graph_picker_not_ready_status_matches_main_copy;
     case "graph-picker-matches-main-layout-actions-errors-and-overflow-menu" graph_picker_matches_main_layout_actions_errors_and_overflow_menu;
-    case "flutter-graph-picker-uses-a-material-empty-state" flutter_graph_picker_uses_a_material_empty_state;
+    case "kotlin-graph-picker-uses-a-material-empty-state" kotlin_graph_picker_uses_a_material_empty_state;
     case "persisted-graph-loading-hides-the-launch-picker" persisted_graph_loading_hides_the_launch_picker;
-    case "flutter-loading-and-errors-use-material-feedback-surfaces" flutter_loading_and_errors_use_material_feedback_surfaces;
+    case "kotlin-loading-and-errors-use-material-feedback-surfaces" kotlin_loading_and_errors_use_material_feedback_surfaces;
     case "graph-and-sync-actions-update-retained-status-in-place" graph_and_sync_actions_update_retained_status_in_place;
     case "sync-details-render-projected-cursor-and-trigger-the-existing-pump" sync_details_render_projected_cursor_and_trigger_the_existing_pump;
     case "sync-details-show-the-last-sync-failure" sync_details_show_the_last_sync_failure;
@@ -8605,13 +8605,13 @@ let cases =
     case "graph-catalog-and-lifecycle-state-are-owned-by-lg" graph_catalog_and_lifecycle_state_are_owned_by_lg;
     case "graph-picker-surfaces-open-graph-effect-failures" graph_picker_surfaces_open_graph_effect_failures;
     case "graphs-render-the-existing-catalog-and-modal-contract" graphs_render_the_existing_catalog_and_modal_contract;
-    case "flutter-graphs-use-a-compact-material-action-group" flutter_graphs_use_a_compact_material_action_group;
-    case "flutter-add-graph-sheet-uses-one-material-form-layout" flutter_add_graph_sheet_uses_one_material_form_layout;
-    case "flutter-add-graph-sheet-shows-creation-errors-inline" flutter_add_graph_sheet_shows_creation_errors_inline;
+    case "kotlin-graphs-use-a-compact-material-action-group" kotlin_graphs_use_a_compact_material_action_group;
+    case "kotlin-add-graph-sheet-uses-one-material-form-layout" kotlin_add_graph_sheet_uses_one_material_form_layout;
+    case "kotlin-add-graph-sheet-shows-creation-errors-inline" kotlin_add_graph_sheet_shows_creation_errors_inline;
     case "graph-lifecycle-effects-disable-duplicate-actions" graph_lifecycle_effects_disable_duplicate_actions;
     case "empty-graph-picker-replaces-refresh-with-progress-while-loading" empty_graph_picker_replaces_refresh_with_progress_while_loading;
     case "graph-deletion-confirmation-names-the-local-graph" graph_deletion_confirmation_names_the_local_graph;
-    case "flutter-graph-deletion-uses-a-material-destructive-dialog" flutter_graph_deletion_uses_a_material_destructive_dialog;
+    case "kotlin-graph-deletion-uses-a-material-destructive-dialog" kotlin_graph_deletion_uses_a_material_destructive_dialog;
     case "search-lifecycle-keeps-query-owned-by-the-lg-model" search_lifecycle_keeps_query_owned_by_the_lg_model;
     case "bottom-chrome-presentation-is-mutually-exclusive" bottom_chrome_presentation_is_mutually_exclusive;
     case "composer-matches-the-main-branch-expand-draft-and-send-contract" composer_matches_the_main_branch_expand_draft_and_send_contract;
@@ -8625,8 +8625,8 @@ let cases =
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
     case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
     case "composer-renders-autofocus-and-native-outside-dismissal" composer_renders_autofocus_and_native_outside_dismissal;
-    case "flutter-composer-uses-a-tonal-material-dock" flutter_composer_uses_a_tonal_material_dock;
-    case "flutter-sidebar-uses-compact-material-drawer-metrics" flutter_sidebar_uses_compact_material_drawer_metrics;
+    case "kotlin-composer-uses-a-tonal-material-dock" kotlin_composer_uses_a_tonal_material_dock;
+    case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
     case "composer-attachment-menu-preserves-main-actions" composer_attachment_menu_preserves_main_actions;
     case "composer-task-status-selection-and-send-are-owned-by-lg" composer_task_status_selection_and_send_are_owned_by_lg;
@@ -8634,9 +8634,9 @@ let cases =
     case "task-capture-has-a-stable-native-effect-payload" task_capture_has_a_stable_native_effect_payload;
     case "task-status-choices-preserve-main-built-in-fallbacks" task_status_choices_preserve_main_built_in_fallbacks;
     case "native-bridge-renders-restored-authentication-in-the-first-patch" native_bridge_renders_restored_authentication_in_the_first_patch;
-    case "native-bridge-selects-the-flutter-host-profile" native_bridge_selects_the_flutter_host_profile;
-    case "flutter-search-presentation-owns-an-opaque-background" flutter_search_presentation_owns_an_opaque_background;
-    case "flutter-node-route-owns-an-opaque-background" flutter_node_route_owns_an_opaque_background;
+    case "native-bridge-selects-the-kotlin-host-profile" native_bridge_selects_the_kotlin_host_profile;
+    case "kotlin-search-presentation-owns-an-opaque-background" kotlin_search_presentation_owns_an_opaque_background;
+    case "kotlin-node-route-owns-an-opaque-background" kotlin_node_route_owns_an_opaque_background;
     case "native-bridge-drains-and-resolves-typed-effects-once" native_bridge_drains_and_resolves_typed_effects_once;
     case "successful-effect-resolution-preserves-the-core-response-for-projection" successful_effect_resolution_preserves_the_core_response_for_projection;
     case "app-navigation-matches-the-main-branch-path-contract" app_navigation_matches_the_main_branch_path_contract;
@@ -8650,10 +8650,10 @@ let cases =
     case "failed-navigation-effects-restore-the-optimistic-path" failed_navigation_effects_restore_the_optimistic_path;
     case "active-node-route-renders-a-core-backed-navigation-screen" active_node_route_renders_a_core_backed_navigation_screen;
     case "ios-node-navigation-is-owned-by-the-native-stack" ios_node_navigation_is_owned_by_the_native_stack;
-    case "flutter-navigation-and-search-own-one-composed-standard-child" flutter_navigation_and_search_own_one_composed_standard_child;
-    case "flutter-navigation-renders-each-active-node-row-once" flutter_navigation_renders_each_active_node_row_once;
-    case "flutter-selected-pages-unmount-the-hidden-journal-pane" flutter_selected_pages_unmount_the_hidden_journal_pane;
-    case "flutter-selected-page-navigation-renders-the-opened-node" flutter_selected_page_navigation_renders_the_opened_node;
+    case "kotlin-navigation-and-search-own-one-composed-standard-child" kotlin_navigation_and_search_own_one_composed_standard_child;
+    case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
+    case "kotlin-selected-pages-unmount-the-hidden-journal-pane" kotlin_selected_pages_unmount_the_hidden_journal_pane;
+    case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
     case "native-navigation-retains-the-journal-and-every-node-route" native_navigation_retains_the_journal_and_every_node_route;
     case "journal-navigation-exposes-an-immediate-preview-route" journal_navigation_exposes_an_immediate_preview_route;
     case "block-navigation-exposes-an-immediate-outliner-preview-route" block_navigation_exposes_an_immediate_outliner_preview_route;
@@ -8678,19 +8678,19 @@ let cases =
     case "projected-markup-renders-through-the-native-rich-block-extension" projected_markup_renders_through_the_native_rich_block_extension;
     case "projected-assets-render-and-open-through-the-native-extension" projected_assets_render_and_open_through_the_native_extension;
     case "outliner-row-press-publishes-a-typed-core-effect" outliner_row_press_publishes_a_typed_core_effect;
-    case "flutter-rich-rows-own-their-primary-tap" flutter_rich_rows_own_their_primary_tap;
+    case "kotlin-rich-rows-own-their-primary-tap" kotlin_rich_rows_own_their_primary_tap;
     case "active-page-actions-use-typed-core-and-platform-effects" active_page_actions_use_typed_core_and_platform_effects;
     case "page-delete-dialog-exposes-stable-material-actions" page_delete_dialog_exposes_stable_material_actions;
     case "connection-menu-matches-active-page-actions" connection_menu_matches_active_page_actions;
     case "outliner-structure-controls-use-native-navigation-and-core-effects" outliner_structure_controls_use_native_navigation_and_core_effects;
     case "outliner-task-status-selection-uses-the-core-event-boundary" outliner_task_status_selection_uses_the_core_event_boundary;
-    case "flutter-outliner-markers-match-ios-visual-metrics" flutter_outliner_markers_match_ios_visual_metrics;
+    case "kotlin-outliner-markers-match-ios-visual-metrics" kotlin_outliner_markers_match_ios_visual_metrics;
     case "outliner-rows-render-status-tags-and-sync-failures" outliner_rows_render_status_tags_and_sync_failures;
     case "outliner-long-press-selection-and-toolbar-use-typed-effects" outliner_long_press_selection_and_toolbar_use_typed_effects;
-    case "flutter-outliner-selection-toolbar-uses-compact-material-actions" flutter_outliner_selection_toolbar_uses_compact_material_actions;
-    case "flutter-outliner-editor-toolbar-uses-a-material-bottom-surface" flutter_outliner_editor_toolbar_uses_a_material_bottom_surface;
+    case "kotlin-outliner-selection-toolbar-uses-compact-material-actions" kotlin_outliner_selection_toolbar_uses_compact_material_actions;
+    case "kotlin-outliner-editor-toolbar-uses-a-material-bottom-surface" kotlin_outliner_editor_toolbar_uses_a_material_bottom_surface;
     case "outliner-editor-toolbar-and-autocomplete-use-core-owned-state" outliner_editor_toolbar_and_autocomplete_use_core_owned_state;
-    case "flutter-outliner-autocomplete-stacks-above-the-editor-toolbar" flutter_outliner_autocomplete_stacks_above_the_editor_toolbar;
+    case "kotlin-outliner-autocomplete-stacks-above-the-editor-toolbar" kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar;
     case "outliner-rows-preserve-depth-zoom-and-collapse-controls" outliner_rows_preserve_depth_zoom_and_collapse_controls;
     case "journal-child-blocks-keep-zoom-navigation" journal_child_blocks_keep_zoom_navigation;
     case "outliner-row-splices-update-the-existing-keyed-projection" outliner_row_splices_update_the_existing_keyed_projection;

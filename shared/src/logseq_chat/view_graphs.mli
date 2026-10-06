@@ -28,10 +28,10 @@ val graphs_screen :
   Lui_ui.ui_context ->
   Model.chat_model Signal.signal ->
   (Model.chat_action -> bool) -> Lui_elements.t
-val flutter_graph_picker_loading_state : unit -> Lui_elements.t
-val flutter_graph_picker_empty_state :
+val kotlin_graph_picker_loading_state : unit -> Lui_elements.t
+val kotlin_graph_picker_empty_state :
   (Model.chat_action -> bool) -> Lui_elements.t
-val flutter_graph_picker_catalog :
+val kotlin_graph_picker_catalog :
   Lui_ui.ui_context ->
   Model.chat_model Signal.signal ->
   (Model.chat_action -> bool) -> Lui_elements.t

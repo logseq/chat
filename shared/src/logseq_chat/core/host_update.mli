@@ -1,4 +1,4 @@
-(** Decoding of host-initiated UI updates sent as JSON from Swift/Flutter. *)
+(** Decoding of host-initiated UI updates sent as JSON from Swift/Kotlin. *)
 
 type host_composer_asset =
   { uuid : string

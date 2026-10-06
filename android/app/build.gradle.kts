@@ -117,21 +117,10 @@ tasks.named("preBuild") {
 
 
 
-// When the vendored :lui module is used (no ../lui/platform/android
-// composite build), resolve the dev.lui:lui coordinate to it.
-if (rootProject.findProject(":lui") != null) {
-    configurations.all {
-        resolutionStrategy.dependencySubstitution {
-            substitute(module("dev.lui:lui")).using(project(":lui"))
-        }
-    }
-}
-
 dependencies {
-    // Resolved to ../lui/platform/android when the Kotlin LUI backend
-    // checkout is present (composite build substitution), otherwise to
-    // the vendored :lui module — see settings.gradle.kts.
-    implementation("dev.lui:lui")
+    // The real Kotlin LUI backend, included from
+    // ../lui/platform/android/lui — see settings.gradle.kts.
+    implementation(project(":lui"))
 
     implementation(platform("androidx.compose:compose-bom:2025.09.00"))
     implementation("androidx.compose.ui:ui")

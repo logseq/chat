@@ -34,13 +34,12 @@ internal class LogseqChatNativeBridge(
         if (patch.isNotEmpty()) onPatch(patch)
     }
 
-    // platform 3 = AndroidOS, host 3 = the Android host slot the core
-    // renders for (the legacy Android host kind in
-    // shared/src/logseq_chat/native_bridge.ml; the Kotlin backend takes
-    // over that host profile).
+    // platform 3 = AndroidOS, host 4 = KotlinHost (see the host-code table
+    // in shared/src/logseq_chat/native_bridge.ml, matching lui's
+    // components_bridge.ml).
     fun initialize(
         platformCode: Int = 3,
-        hostCode: Int = 3,
+        hostCode: Int = 4,
         authenticationCode: Int = 1,
     ): Long {
         apply(decode(NativeCore.luiInitialize(platformCode, hostCode, authenticationCode)))

@@ -28,6 +28,20 @@ internal fun dispatchLuiEvent(event: LuiEvent, native: LogseqChatNativeBridge) {
             extensionText(event.values),
             extensionValue(event.values),
         )
+        // The chat core ABI exports no pointer-level, context-menu,
+        // press-modifier, or load entries (see
+        // shared/native/logseq_chat_core_ffi.h), so these events are
+        // dropped here — matching the upstream dispatchToBridge's
+        // treatment of events with no mobile export.
+        is LuiEvent.PressModifiers,
+        is LuiEvent.PressDetail,
+        is LuiEvent.PointerDown,
+        is LuiEvent.PointerUp,
+        is LuiEvent.PointerEnter,
+        is LuiEvent.PointerLeave,
+        is LuiEvent.ContextMenuPress,
+        is LuiEvent.Load,
+        -> Unit
     }
 }
 

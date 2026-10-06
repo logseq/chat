@@ -353,8 +353,8 @@ val active_route_only : 'a list -> 'a list
 val active_app_node_routes : Model.chat_model -> Model.node_projection list
 val active_search_node_routes :
   Model.chat_model -> Model.node_projection list
-val flutter_app_root_visible_ : Model.chat_model -> bool
-val flutter_search_root_visible_ : Model.chat_model -> bool
+val kotlin_app_root_visible_ : Model.chat_model -> bool
+val kotlin_search_root_visible_ : Model.chat_model -> bool
 val authentication_screen_visible_ : Model.chat_model -> bool
 val graph_picker_screen_visible_ : Model.chat_model -> bool
 val authentication_signing_in_ : Model.chat_model -> bool
