@@ -187,24 +187,24 @@ private fun NodeView(backend: LuiBackend, node: LuiNode) {
         )
         "text", "label" -> TextNode(backend, node)
         "heading" -> Text(
-            text = node.string("value") ?: node.string("title").orEmpty(),
+            text = node.string("text") ?: node.string("title").orEmpty(),
             modifier = node.styleModifier().gestures(backend, node),
             style = node.headingStyle(),
         )
         "paragraph" -> Text(
-            text = node.string("value").orEmpty(),
+            text = node.string("text").orEmpty(),
             modifier = node.styleModifier().gestures(backend, node),
             style = node.textStyle(),
         )
         "kbd" -> Text(
-            text = node.string("value").orEmpty(),
+            text = node.string("text").orEmpty(),
             modifier = node.styleModifier(),
             style = node.textStyle().copy(fontFamily = FontFamily.Monospace),
         )
         "icon" -> IconNode(backend, node)
         "button", "toggle-button" -> ButtonNode(backend, node)
         "link" -> Text(
-            text = node.string("value") ?: node.string("title").orEmpty(),
+            text = node.string("text") ?: node.string("title").orEmpty(),
             modifier = node.styleModifier().gestures(backend, node),
             style = node.textStyle().copy(
                 color = MaterialTheme.colorScheme.primary,
@@ -239,7 +239,7 @@ private fun NodeView(backend: LuiBackend, node: LuiNode) {
             modifier = node.styleModifier(),
         )
         "progress" -> LinearProgressIndicator(
-            progress = { (node.double("progress-value") ?: 0.0).toFloat() },
+            progress = { (node.double("value") ?: 0.0).toFloat() },
             modifier = node.styleModifier().fillMaxWidth(),
         )
         "spinner" -> CircularProgressIndicator(
@@ -342,7 +342,7 @@ private fun RowNode(backend: LuiBackend, node: LuiNode) {
 
 @Composable
 private fun GridNode(backend: LuiBackend, node: LuiNode) {
-    val columns = (node.int("grid-columns") ?: 2).coerceAtLeast(1)
+    val columns = (node.int("columns") ?: 2).coerceAtLeast(1)
     Column(
         modifier = node.surfaceModifier().gestures(backend, node),
         verticalArrangement = node.mainAxisVertical(),
@@ -436,7 +436,7 @@ private fun SpacerNode(node: LuiNode) {
 @Composable
 private fun TextNode(backend: LuiBackend, node: LuiNode) {
     Text(
-        text = node.string("value") ?: node.string("title").orEmpty(),
+        text = node.string("text") ?: node.string("title").orEmpty(),
         modifier = node.styleModifier().gestures(backend, node),
         style = node.textStyle(),
         textAlign = node.textAlign(),
@@ -451,14 +451,14 @@ private fun TextNode(backend: LuiBackend, node: LuiNode) {
 
 @Composable
 private fun IconNode(backend: LuiBackend, node: LuiNode) {
-    val name = node.string("icon") ?: node.string("value") ?: return
+    val name = node.string("name") ?: node.string("icon") ?: return
     val vector = backend.icons.icon(name)
     if (vector != null) {
         Icon(
             imageVector = vector,
             contentDescription = node.string("accessibility-label"),
             tint = node.colorProp("foreground") ?: MaterialTheme.colorScheme.onSurface,
-            modifier = node.styleModifier().size((node.int("size-value") ?: 20).dp),
+            modifier = node.styleModifier().size((node.int("width") ?: 20).dp),
         )
     } else {
         Text(
@@ -485,7 +485,7 @@ private fun ButtonNode(backend: LuiBackend, node: LuiNode) {
                 Spacer(Modifier.width(6.dp))
             }
         }
-        node.string("value")?.let { Text(it) }
+        node.string("text")?.let { Text(it) }
         node.string("title")?.let { Text(it) }
         Children(backend, node)
     }
@@ -521,7 +521,7 @@ private fun ButtonNode(backend: LuiBackend, node: LuiNode) {
 
 @Composable
 private fun TextFieldNode(backend: LuiBackend, node: LuiNode) {
-    val propValue = node.string("value") ?: ""
+    val propValue = node.string("text") ?: ""
     var fieldValue by remember(node.id) { mutableStateOf(TextFieldValue(propValue)) }
     // Keep local IME state in sync when the core patches `value` back.
     if (fieldValue.text != propValue && !node.enabled("editing")) {
@@ -785,7 +785,7 @@ private fun ToastNode(backend: LuiBackend, node: LuiNode) {
 @Composable
 private fun BadgeNode(backend: LuiBackend, node: LuiNode) {
     Badge(modifier = node.styleModifier()) {
-        Text(node.string("value") ?: node.string("title").orEmpty())
+        Text(node.string("text") ?: node.string("title").orEmpty())
     }
 }
 

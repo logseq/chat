@@ -53,12 +53,13 @@ internal fun LuiNode.styleModifier(): Modifier {
     int("max-width")?.let { modifier = modifier.widthIn(max = it.dp) }
     int("min-height")?.let { modifier = modifier.heightIn(min = it.dp) }
     int("max-height")?.let { modifier = modifier.heightIn(max = it.dp) }
-    when (string("width-mode") ?: string("sizing")) {
+    when (string("sizing")) {
         "fill" -> modifier = modifier.fillMaxWidth()
         else -> {}
     }
     if (flag("fill-width")) modifier = modifier.fillMaxWidth()
     if (flag("fill-height") || flag("fill")) modifier = modifier.fillMaxHeight()
+    if ((double("grow") ?: 0.0) > 0.0) modifier = modifier.fillMaxWidth()
     int("padding")?.let { modifier = modifier.padding(it.dp) }
     int("padding-horizontal")?.let { modifier = modifier.padding(horizontal = it.dp) }
     int("padding-vertical")?.let { modifier = modifier.padding(vertical = it.dp) }
@@ -94,7 +95,7 @@ internal fun LuiNode.surfaceModifier(): Modifier {
 internal fun LuiNode.gapDp() = (int("gap") ?: 0).dp
 
 internal fun LuiNode.mainAxisAlignment(): androidx.compose.foundation.layout.Arrangement.Horizontal =
-    when (string("main-alignment")) {
+    when (string("main")) {
         "center" -> androidx.compose.foundation.layout.Arrangement.Center
         "end" -> androidx.compose.foundation.layout.Arrangement.End
         "space-between" -> androidx.compose.foundation.layout.Arrangement.SpaceBetween
@@ -104,7 +105,7 @@ internal fun LuiNode.mainAxisAlignment(): androidx.compose.foundation.layout.Arr
     }
 
 internal fun LuiNode.mainAxisVertical(): androidx.compose.foundation.layout.Arrangement.Vertical =
-    when (string("main-alignment")) {
+    when (string("main")) {
         "center" -> androidx.compose.foundation.layout.Arrangement.Center
         "end", "bottom" -> androidx.compose.foundation.layout.Arrangement.Bottom
         "space-between" -> androidx.compose.foundation.layout.Arrangement.SpaceBetween
@@ -114,14 +115,14 @@ internal fun LuiNode.mainAxisVertical(): androidx.compose.foundation.layout.Arra
     }
 
 internal fun LuiNode.crossAxisHorizontal(): androidx.compose.ui.Alignment.Horizontal =
-    when (string("cross-alignment")) {
+    when (string("cross")) {
         "center" -> androidx.compose.ui.Alignment.CenterHorizontally
         "end" -> androidx.compose.ui.Alignment.End
         else -> androidx.compose.ui.Alignment.Start
     }
 
 internal fun LuiNode.crossAxisVertical(): androidx.compose.ui.Alignment.Vertical =
-    when (string("cross-alignment")) {
+    when (string("cross")) {
         "center" -> androidx.compose.ui.Alignment.CenterVertically
         "end", "bottom" -> androidx.compose.ui.Alignment.Bottom
         else -> androidx.compose.ui.Alignment.Top

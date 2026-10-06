@@ -78,5 +78,10 @@ internal val logseqChatAppIcons: Map<String, ImageVector> = mapOf(
 )
 
 internal val logseqChatIconResolver = LuiIconResolver { name ->
-    logseqChatAppIcons[name] ?: LuiIconResolver.DEFAULT.icon(name)
+    // `app:`-prefixed names are app-owned icon identifiers from the schema.
+    val key = name.removePrefix("app:")
+    logseqChatAppIcons[key]
+        ?: logseqChatAppIcons[name]
+        ?: LuiIconResolver.DEFAULT.icon(name)
+        ?: LuiIconResolver.DEFAULT.icon(key)
 }
