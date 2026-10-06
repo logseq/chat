@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Date | 2026-09-01 |
-| Target | Android Flutter debug app on `logseq_android_36` and physical device `4a23a2e9` |
+| Target | Android debug app on `logseq_android_36` and physical device `4a23a2e9` |
 | Scope | Full Android UI/UX and E2E parity with iOS |
 
 ## Summary
@@ -48,7 +48,7 @@ behavior, and bottom-aligned Cancel/Add actions.
 
 **Fix Verification**
 
-The Flutter host now renders one bounded Material sheet child with a vertical
+The Android host now renders one bounded Material sheet child with a vertical
 form, flexible spacing, and a bottom-aligned action row. Maestro verified the
 field, toggle, disabled/enabled Add state, keyboard entry, and Cancel action.
 No LUI, patch-generation, or RenderFlex errors were logged.
@@ -67,7 +67,7 @@ No LUI, patch-generation, or RenderFlex errors were logged.
 
 **Description**
 
-The Flutter root scaffold did not consume Android system insets. Titles and
+The Android root scaffold did not consume Android system insets. Titles and
 toolbar actions rendered underneath the status bar; the Graph picker overflow
 button was visible but its hit target was intercepted by the system bar.
 
@@ -78,7 +78,7 @@ areas, and visible toolbar actions remain tappable.
 
 **Fix Verification**
 
-The Android Flutter app frame now owns one root `SafeArea`. A widget regression
+The Android app frame now owns one root `SafeArea`. A widget regression
 test verifies both top and bottom insets, and the overflow button is exposed as
 an identified accessibility button. The Settings popup now opens reliably.
 
@@ -96,7 +96,7 @@ an identified accessibility button. The Settings popup now opens reliably.
 
 **Description**
 
-Opening Settings pushed a modal route but rendered only its gray scrim. Flutter
+Opening Settings pushed a modal route but rendered only its gray scrim. Android
 reported a flex child under unbounded width constraints: the shared iOS-style
 language radio picker placed every language in one row, while the Theme and
 Language selects themselves had no finite Material form width.
@@ -150,7 +150,7 @@ text changes and rejects autocomplete selection while that block has a queued
 or in-flight text update. Two reducer regressions cover pending and in-flight
 ordering. The Android E2E waits for and selects the actual **E2E Project** row.
 The node/tag flow and the other nine signed-in Android modules pass in sequence;
-LG passes 137 tests and Flutter passes 68 tests.
+LG passes 137 tests and Android passes 68 tests.
 
 ### ISSUE-005: Authentication content is centered inside a narrow retained layer
 
@@ -164,7 +164,7 @@ LG passes 137 tests and Flutter passes 68 tests.
 
 **Description**
 
-The Flutter root `Stack` gives non-positioned children loose horizontal
+The Android root `Stack` gives non-positioned children loose horizontal
 constraints. The authentication column used `grow`, which filled the vertical
 Flex axis, but retained its intrinsic 780-pixel width on a 1080-pixel emulator.
 The sign-in content therefore appeared left of the physical screen center.
@@ -173,7 +173,7 @@ The sign-in content therefore appeared left of the physical screen center.
 
 **Fix Verification**
 
-The Flutter authentication surface now stretches to the available width before
+The Android authentication surface now stretches to the available width before
 an inner column centers its content. UIAutomator reports
 `screen.authentication` at `[0,132][1080,2337]`, and the signed-out Maestro
 flow passes against the actionable sign-in control.
@@ -193,7 +193,7 @@ flow passes against the actionable sign-in control.
 **Description**
 
 LG correctly emitted the cross-platform `muted-foreground` token, but the LUI
-Flutter backend did not map it into the Material `ColorScheme`. Unknown tokens
+Android backend did not map it into the Material `ColorScheme`. Unknown tokens
 fell back to `Colors.transparent`. Supporting text, captions, statuses, and
 form guidance remained in the accessibility tree while becoming invisible.
 
@@ -201,9 +201,9 @@ form guidance remained in the accessibility tree while becoming invisible.
 
 LUI now maps `muted-foreground` to Material 3 `onSurfaceVariant`. The fix and a
 backend regression test are pushed as commit
-`09631149799f358f55fb6fc13bfa73dfb07e9cf2`; the app pins only its Flutter
+`09631149799f358f55fb6fc13bfa73dfb07e9cf2`; the app pins only its Android
 backend to that compatible revision. All 74 tests on that LUI revision pass,
-the Logseq Chat Flutter suite passes 68 tests, and physical-device screenshots
+the Logseq Chat Android suite passes 68 tests, and physical-device screenshots
 show both page guidance and empty-state descriptions at the expected secondary
 contrast.
 
@@ -233,7 +233,7 @@ primary action.
 Android now uses a compact level-three page title and a centered Material empty
 state with a cloud icon, secondary explanation, filled Add action, and a
 lower-emphasis Refresh action. iOS retains its existing main-branch layout.
-A Flutter-profile LG regression pins the title level, full-width layout,
+A Android-profile LG regression pins the title level, full-width layout,
 empty-state presence, action priority, and Material icon names.
 
 ![Material Graph picker empty state](android-dogfood/screenshots/issue-006-graph-picker-material.png)
@@ -258,7 +258,7 @@ made the new app difficult to distinguish from an existing Logseq installation.
 
 **Fix Verification**
 
-Both Flutter and Apple LG profiles now render **Logseq Chat** from the shared
+Both Android and Apple LG profiles now render **Logseq Chat** from the shared
 authentication view. A cross-host LG regression rejects the old standalone
 name. Android also uses the full product name for clipboard content and the
 system share chooser. The signed-out Maestro flow asserts the product name
@@ -292,7 +292,7 @@ fragile.
 The foreground and monochrome vectors now scale around the 108-unit viewport
 center with an additional 14% inset. The monochrome asset uses an opaque black
 mask so Android 13+ can apply wallpaper-derived themed colors correctly. A
-Flutter resource regression keeps the canonical Android and Flutter-host assets
+Android resource regression keeps the canonical Android and Android-host assets
 identical and pins their pivot, scale, and monochrome semantics.
 
 ![Balanced adaptive icon](android-dogfood/screenshots/issue-009-launcher-safe-zone-fixed.png)
@@ -310,7 +310,7 @@ identical and pins their pivot, scale, and monochrome semantics.
 **Description**
 
 The Android Audio recording command was routed to `ACTION_OPEN_DOCUMENT` and
-the Flutter manifest did not request `RECORD_AUDIO`. Android therefore could
+the Android manifest did not request `RECORD_AUDIO`. Android therefore could
 only pick an existing audio file, while iOS recorded, inserted, and played a
 new voice note inline.
 
@@ -321,7 +321,7 @@ permission at runtime, writes the result into the graph asset metadata path,
 hashes it with SHA-256, and inserts it through the authoritative core
 `addAsset` action. Audio assets render as a Material inline player backed by
 Android `MediaPlayer`, with play, pause, progress, error recovery, and lifecycle
-cleanup. Flutter passes 86 tests, Kotlin unit tests and debug APK compilation
+cleanup. Android passes 86 tests, Kotlin unit tests and debug APK compilation
 pass. The dedicated physical-device instrumentation APK was blocked before
 execution by MIUI's USB installation confirmation (`INSTALL_FAILED_USER_RESTRICTED`),
 so the report does not claim a hardware recording pass yet.
@@ -333,12 +333,12 @@ so the report does not claim a hardware recording pass yet.
 | Severity | high |
 | Category | functional / parity / rich content |
 | View | Journal and page outliner rich blocks |
-| Repro Video | N/A; deterministic Flutter renderer behavior |
+| Repro Video | N/A; deterministic Android renderer behavior |
 | Status | Fixed and verified on emulator |
 
 **Description**
 
-Flutter rendered video and iframe nodes as a play icon plus their raw URL,
+Android rendered video and iframe nodes as a play icon plus their raw URL,
 rendered math as italic TeX source, and rendered cloze text as an always-visible
 static chip. The nodes had parity identifiers but not iOS-equivalent behavior.
 
@@ -348,7 +348,7 @@ YouTube and iframe content now use a lightweight Material preview and create a
 system WebView only after an explicit tap, preserving lazy-list scrolling.
 YouTube URLs are normalized to `youtube-nocookie.com`, unsafe schemes are
 rejected, and timestamp blocks update the embed start time. LaTeX is typeset
-with a pure Flutter renderer and malformed expressions retain a readable
+with a pure Android renderer and malformed expressions retain a readable
 fallback. Cloze content now reveals and hides through a Material action chip.
 Code blocks use selectable, horizontally scrollable syntax-highlighted text
 with light and dark Material color palettes; parsed syntax trees are cached so
@@ -370,7 +370,7 @@ than accepting a placeholder.
 
 **Description**
 
-A long press emitted the selection/drag-start event, but Flutter rows were not
+A long press emitted the selection/drag-start event, but Android rows were not
 draggable and did not accept drops. The core supported before, inside, and
 after placement, while the Android surface could never publish one.
 
@@ -396,7 +396,7 @@ second block, and verifies the LG extension receives the target UUID and
 **Description**
 
 iOS schedules the authoritative core `saveEditing` event one second after text
-changes settle. The Flutter Android effect drain did not recognize or schedule
+changes settle. The Android effect drain did not recognize or schedule
 that action, so an edit could remain in the transient editor state indefinitely
 unless a later structural action happened to commit it.
 
@@ -432,7 +432,7 @@ core restoration, failures, and attachment imports append records without
 reading privileged global logcat data. Kotlin tests cover bounds, filtering,
 ordering, and JSON escaping. Android Settings E2E now requires visible `INFO`
 records for both UI and Core sources. On the rebuilt emulator app, **Check
-log** displayed real Android host, Flutter host, and core-effect records;
+log** displayed real Android host, Android host, and core-effect records;
 level, order, and source controls updated immediately, Copy and Refresh
 dispatched without an error, and Done returned to Settings.
 
@@ -448,7 +448,7 @@ dispatched without an error, and Done returned to Settings.
 
 **Description**
 
-The Flutter Android host launched the system document or camera intent but did
+The Android host launched the system document or camera intent but did
 not receive its result. Selected files therefore never entered app storage or
 the authoritative core asset model.
 
@@ -478,7 +478,7 @@ The visible list stayed stale until the user explicitly tapped **Refresh**.
 
 **Fix Verification**
 
-The Flutter host now starts a coalescing foreground refresh loop after session
+The Android host now starts a coalescing foreground refresh loop after session
 restore, stops it in the background and on sign-out, and immediately refreshes
 again on resume. Device logging exposed that the first implementation sent the
 selected-graph `refresh` action, so restore and resume both ended in
@@ -501,19 +501,19 @@ rejection, overlap, periodic scheduling, and timer cancellation.
 
 **Description**
 
-LUI Flutter rendered the semantic `list` primitive as an eager `Column`. A
-real catalog overflowed the viewport by 2296 pixels, displayed Flutter's
+LUI Android rendered the semantic `list` primitive as an eager `Column`. A
+real catalog overflowed the viewport by 2296 pixels, displayed Android's
 yellow/black failure stripe, and made the remaining graphs unreachable.
 
 ![Graphs overflow before fix](android-dogfood/screenshots/issue-017-graphs-overflow-before.png)
 
 **Fix Verification**
 
-Flutter now maps `list` to a native lazy `ListView`, matching SwiftUI's native
+Android now maps `list` to a native lazy `ListView`, matching SwiftUI's native
 `List` semantics without changing the Apple backend. The full page scrolls,
 starts at the Refresh action, and logs no RenderFlex error. The LUI fix is
 pushed as commit `9512238e40248f664d7a870565360436818410ac`; all 77 LUI tests
-and all 112 Logseq Chat Flutter tests pass.
+and all 112 Logseq Chat Android tests pass.
 
 ![Scrollable Graphs page](android-dogfood/screenshots/issue-017-graphs-scrollable-fixed.png)
 
@@ -544,9 +544,9 @@ a lower-emphasis refresh action, consistent icons, and clear catalog sections.
 Android now renders one 16dp-inset, 12dp-gap action row. **Add graph** is a
 filled primary Material button, **Refresh** is a tonal secondary button, both
 are equal width with native icons and 48dp touch targets, and the catalog
-continues below as a lazy native list. The implementation is Flutter-only;
+continues below as a lazy native list. The implementation is Android-only;
 SwiftUI retains the main-branch native List rows. LG passes 144 tests and
-Flutter passes 112 tests. Emulator event logs prove Refresh reaches
+Android passes 112 tests. Emulator event logs prove Refresh reaches
 `refresh-graphs` and succeeds, while Add graph opens and dismisses the existing
 Material form sheet.
 
@@ -578,9 +578,9 @@ height.
 
 **Root Cause**
 
-The Flutter-only Capture/Search row incorrectly declared `grow: 1` inside the
+The Android-only Capture/Search row incorrectly declared `grow: 1` inside the
 bottom stack. LUI correctly translated that value to an `Expanded`, but the
-bottom stack is measured with unbounded intrinsic height. Flutter therefore
+bottom stack is measured with unbounded intrinsic height. Android therefore
 could not lay out the flex child, which removed the complete mutually-exclusive
 bottom chrome from the rendered surface.
 
@@ -594,7 +594,7 @@ behavior. All 144 LG tests pass. A freshly rebuilt debug APK was installed on
 the emulator with the populated graph preserved: Capture/Search remained
 anchored above the navigation bar, Capture expanded and dismissed through the
 native Back flow, Search opened its Material full-screen presentation, and no
-Flutter, RenderFlex, or overflow exception was logged.
+Android, RenderFlex, or overflow exception was logged.
 
 ![Restored journal bottom chrome](android-dogfood/screenshots/issue-019-bottom-chrome-fixed.png)
 
@@ -629,18 +629,18 @@ secondary text, and an anchored Cancel/Apply action hierarchy.
 **Root Cause**
 
 LUI's `select` authoring element discarded `:label`, and all three validation
-boundaries independently rejected `AccessibilityLabel` on a Select. Flutter
+boundaries independently rejected `AccessibilityLabel` on a Select. Android
 therefore had no field name to render, while adding the property only in the app
 caused the retained LG runtime to reject the complete Settings tree.
 
 **Fix Verification**
 
-LUI now retains the select label in the closed protocol. Flutter renders it as
+LUI now retains the select label in the closed protocol. Android renders it as
 a persistent Material `InputDecorator` label; the Apple backend accepts the
 same accessibility metadata without changing its visual SwiftUI picker. The
 Android form uses tonal cards, readable supporting text, native switches, and
 an anchored equal-width secondary/primary action row. LUI passes 201 tests,
-Logseq Chat LG passes 144 tests, Flutter passes 112 tests, and the rebuilt debug
+Logseq Chat LG passes 144 tests, Android passes 112 tests, and the rebuilt debug
 app renders Theme and Language distinctly with no protocol or layout error.
 
 ![Settings form after redesign](android-dogfood/screenshots/issue-020-settings-form-fixed.png)
@@ -672,19 +672,19 @@ the remaining scrollable area.
 **Root Cause**
 
 The shared sheet exposed the Runtime log screen and its navigation toolbar as
-two sibling children. Flutter bottom sheets compose their single content slot
+two sibling children. Android bottom sheets compose their single content slot
 as an overlay, so the navigation toolbar was painted over the screen's first
 filter toolbar. SwiftUI's native sheet backend handles those navigation
 children separately and did not exhibit the problem.
 
 **Fix Verification**
 
-Flutter now receives one bounded vertical sheet child. The Runtime log screen
+Android now receives one bounded vertical sheet child. The Runtime log screen
 owns the flexible region, while an equal-width secondary **Refresh** and
 primary **Done** row is anchored below it. SwiftUI retains the existing native
 navigation toolbar path. The new RED test first proved the old multi-child,
 overlay-toolbar contract, then passed after the layout change; all 144 LG and
-112 Flutter tests remain green. On the rebuilt emulator, every filter was
+112 Android tests remain green. On the rebuilt emulator, every filter was
 independently tappable, Copy and Refresh dispatched, and Done returned to the
 Settings sheet.
 
@@ -703,7 +703,7 @@ Settings sheet.
 **Description**
 
 Tapping the full-width **Tabs** row leaves the main Settings sheet unchanged.
-The Flutter event log records the row's Press event every time, so this is not
+The Android event log records the row's Press event every time, so this is not
 a missing hit target or Maestro selector failure; the navigation action is
 lost after it reaches the LG bridge. The user therefore cannot configure tab
 visibility or ordering on Android.
@@ -722,7 +722,7 @@ Tabs configuration screen, with a clear path back to Settings.
 **Root Cause**
 
 The Press action correctly set `settings-tabs-open`. Rendering the destination
-then created Flutter icon-only tab-reordering buttons whose authoring maps used
+then created Android icon-only tab-reordering buttons whose authoring maps used
 `accessibility-label`; LUI buttons expose that semantic through `label`.
 Because the required label was absent from the retained protocol, the backend
 rejected the entire destination patch and left the previous Settings tree on
@@ -731,9 +731,9 @@ screen.
 **Fix Verification**
 
 The reordering controls now publish valid button labels. A new regression test
-dispatches Press through the rendered Flutter row and verifies that Tabs
+dispatches Press through the rendered Android row and verifies that Tabs
 replaces the main Settings screen, covering the real path rather than directly
-sending a model action. All 145 LG tests and 112 Flutter tests pass. The rebuilt
+sending a model action. All 145 LG tests and 112 Android tests pass. The rebuilt
 debug APK entered `screen.settings.tabs` during Android Settings E2E.
 
 ### ISSUE-023: Tabs sheet overlaps its back action and misaligns every row
@@ -748,7 +748,7 @@ debug APK entered `screen.settings.tabs` during Android Settings E2E.
 
 **Description**
 
-After navigation succeeds, the Flutter sheet paints the **Settings** back
+After navigation succeeds, the Android sheet paints the **Settings** back
 action over the large **Visible tabs** heading. The tab rows float around the
 horizontal center instead of forming full-width Material settings rows, with
 large irregular gaps between labels, selection state, and reorder arrows.
@@ -764,7 +764,7 @@ Evidence: Android Settings E2E artifact
 
 **Fix Verification**
 
-Flutter now receives one bounded vertical sheet child: a growing Tabs screen
+Android now receives one bounded vertical sheet child: a growing Tabs screen
 and a separate full-width **Back to Settings** footer. The Android-only screen
 uses a compact heading, a native lazy list, 56dp tonal rows, leading tab state,
 and trailing reorder controls with stable labels and identifiers. The shared
@@ -799,7 +799,7 @@ SearchBar and remain navigable through the native Android back stack.
 Targeted effect logging proved that every query update reached the LG bridge,
 the `search-nodes` effect executed successfully, and the final core response
 contained three results. The result `list` was nested in a growing vertical
-search surface without its own `grow` constraint. Flutter therefore laid out
+search surface without its own `grow` constraint. Android therefore laid out
 the populated list at zero height. SwiftUI's native `List` expands by default,
 which is why the shared view had not exposed the same failure on iOS.
 
@@ -841,9 +841,9 @@ isolate when it tried to dispatch composer events into LG.
 `refreshGraphCatalog` now returns a dedicated lightweight graph-catalog patch
 containing only graph metadata. LG applies only those owned fields and preserves
 the active composer, journal rows, navigation, and editor state. Unchanged
-catalogs are also skipped by the Flutter host. Automatic polling runs only while
+catalogs are also skipped by the Android host. Automatic polling runs only while
 the authenticated graph picker is foreground; opening a graph stops it so OCaml
-network discovery cannot contend with editor input. Core, LG, and Flutter
+network discovery cannot contend with editor input. Core, LG, and Android
 regressions cover patch identity, editor-state preservation, polling policy,
 unchanged-catalog skipping, and changed-catalog application.
 The rebuilt APK then completed the full Composer lifecycle E2E without another
@@ -872,12 +872,12 @@ NavigationStack back button.
 
 **Fix Verification**
 
-The Flutter header now switches its leading action from the sidebar menu to an
+The Android header now switches its leading action from the sidebar menu to an
 `arrow_back` action whenever the LG app-navigation depth is non-zero. The
 button uses `button.navigation.back`, has the accessibility label **Back**, and
 pops exactly one LG route. The host check keeps the shared SwiftUI renderer
 unchanged. The new regression failed before the control existed and now passes;
-all 146 LG tests, focused Flutter extension/icon tests, Flutter analysis, and
+all 146 LG tests, focused Android extension/icon tests, Android analysis, and
 the complete Android Material Navigation E2E pass on the rebuilt APK.
 
 ### ISSUE-027: Core restore contends with LG and causes restart ANR
@@ -901,7 +901,7 @@ after catalog polling was disabled for an open graph.
 The 22:14 Android ANR shows the Dart/UI thread blocked in
 `pthread_mutex_lock`, while Dart workers were executing the same
 `liblogseq_chat_core.so`. Core and LG share one OCaml runtime lock, but the
-Flutter bridge allowed background Core FFI and foreground LG FFI to enter it
+Android bridge allowed background Core FFI and foreground LG FFI to enter it
 concurrently. Startup `appear`, accessibility, or input dispatch therefore
 waited on long graph restore work. The platform log recorded 398 and 169
 skipped frames and a 5.083-second focus-event timeout.
@@ -912,7 +912,7 @@ A native-runtime scheduler now serializes all Core requests. While Core owns
 the runtime, LG UI calls are queued on the Dart side instead of blocking the UI
 thread; they flush in order when Core becomes idle, then effect draining
 resumes. Three focused scheduler tests cover lock ownership, Core ordering, UI
-ordering, and idle notification. Effect/extension tests and Flutter analysis
+ordering, and idle notification. Effect/extension tests and Android analysis
 pass. The rebuilt APK completed three consecutive forced restarts with sidebar
 interaction each time, and Android DropBox contains no ANR newer than the
 pre-fix 22:14 record.
@@ -933,7 +933,7 @@ Android rendered the ordinary block bullet from a full Material circle glyph,
 making it much larger and heavier than iOS. Task rows then added a second
 generic 16dp status icon beside it. The two independent controls looked
 crowded, and status colors from the shared `task-*` palette were unsupported by
-the Flutter backend and could resolve to transparent. The status context menu
+the Android backend and could resolve to transparent. The status context menu
 also required a long press, and its standard `accent` foreground token rendered
 its labels and icons transparent.
 
@@ -943,14 +943,14 @@ status glyph, and 24pt alignment slots.
 
 **Fix Verification**
 
-Flutter now paints a dedicated centered 7dp bullet behind the existing zoom
+Android now paints a dedicated centered 7dp bullet behind the existing zoom
 target and a centered 22dp task glyph behind the existing status target. Task
 states use the same row foreground as iOS, and retained rows reactively swap
 the icon without introducing Android-only status colors. SwiftUI continues
-through its original icon/button path. LUI Flutter now opens menu-only buttons on primary
+through its original icon/button path. LUI Android now opens menu-only buttons on primary
 tap and maps the shared `accent` and `destructive` tokens to Material primary
 and error roles. The 147-test LG suite covers marker geometry and retained-row
-updates; LUI's 79 Flutter tests cover menu activation and semantic colors. A
+updates; LUI's 79 Android tests cover menu activation and semantic colors. A
 rebuilt debug APK was installed on the emulator, where primary tap opened the
 visible native menu and selecting Done immediately produced the full-ring check
 glyph and completed text treatment. A follow-up icon-source comparison found
@@ -958,7 +958,7 @@ that Android still used materially different silhouettes for backlog, doing,
 review, and done (ellipsis, calendar, rectangular comment, and broken-ring
 check). Those now use the closest native Material equivalents to iOS's dashed
 circle/progress ring/comment-check/full-ring check semantics. The complete
-121-test Flutter suite and `flutter analyze` pass, and the rebuilt debug APK
+121-test JVM suite and `gradlew test` pass, and the rebuilt debug APK
 shows the Done marker as a centered full-ring check without changing SwiftUI.
 
 ![Aligned Android outliner markers](ui-comparison/android/markers/journals-after.png)
@@ -976,26 +976,26 @@ shows the Done marker as a centered full-ring check without changing SwiftUI.
 **Description**
 
 The shared selection toolbar supplied iOS's icon-plus-caption buttons with a
-46pt fixed height. Flutter correctly rejected the unsupported top icon
+46pt fixed height. Android correctly rejected the unsupported top icon
 placement, but the remaining Material button needed a 48dp minimum target and
-rendered red vertical overflow warnings across every action. Plain Flutter
+rendered red vertical overflow warnings across every action. Plain Android
 outliner rows also used a `box` to preserve editor gestures, so they could not
 project the selected state that iOS shows immediately after a long press.
 
 **Fix Verification**
 
-Flutter now receives seven icon-only Material actions with stable accessibility
+Android now receives seven icon-only Material actions with stable accessibility
 labels, 48dp targets, compact spacing, and horizontal scrolling retained for
 narrow screens. SwiftUI keeps its existing captioned Liquid Glass toolbar.
-LUI Flutter now supports `selected` on a generic box, exposes the state to
+LUI Android now supports `selected` on a generic box, exposes the state to
 semantics, and paints the standard Material secondary-container selection
 surface; the shared outliner projects its selected signal onto the existing
 gesture-compatible row box. The dedicated visual Maestro flow confirms all
 seven actions are visible with no overflow and the selected row is visibly
-highlighted. LUI's 80 tests, the LG 148-test suite, the app's 121 Flutter tests,
-and `flutter analyze` all pass.
+highlighted. LUI's 80 tests, the LG 148-test suite, the app's 121 Android tests,
+and `gradlew test` all pass.
 
-### ISSUE-030: Flutter modal roots lose their accessibility identifiers
+### ISSUE-030: Android modal roots lose their accessibility identifiers
 
 | Field | Value |
 |-------|-------|
@@ -1007,7 +1007,7 @@ and `flutter analyze` all pass.
 
 The Graphs screen loaded and refreshed correctly, but its Android E2E could
 not address the visible delete confirmation dialog by
-`dialog.graph-delete`. The same omission affected every Flutter dialog and
+`dialog.graph-delete`. The same omission affected every Android dialog and
 bottom-sheet root, making Settings and form workflows vulnerable to false
 inaction reports and inaccessible automation.
 
@@ -1023,7 +1023,7 @@ but the foreground surface exposed none to Android accessibility.
 
 LUI now applies the declared accessibility identifier to the actual dialog or
 sheet surface. New widget tests cover both modal kinds and failed before the
-fix. All 80 LUI Flutter tests, 121 application Flutter tests, and both analyze
+fix. All 80 LUI Android tests, 121 application Android tests, and both analyze
 gates pass. On the rebuilt APK, the Graphs E2E now long-presses the local graph
 row using the native Android context-menu gesture, addresses the visible
 delete dialog and its actions, cancels it, opens the Add graph sheet, verifies
@@ -1045,7 +1045,7 @@ the candidate toolbar but did not insert the selected tag.
 
 **Root Cause**
 
-The Flutter editor synchronously dispatched every intermediate text value into
+The Android editor synchronously dispatched every intermediate text value into
 LG, so a single keyboard burst repeatedly crossed the Dart/OCaml boundary on
 the UI thread. LG then discarded `ChooseOutlinerAutocomplete` whenever a
 text-change effect was pending or in flight. This avoided stale selection
@@ -1053,19 +1053,19 @@ state by throwing away the user's action instead of preserving its order.
 
 **Fix Verification**
 
-Flutter now coalesces an ordinary editor text burst for 80ms and publishes only
+Android now coalesces an ordinary editor text burst for 80ms and publishes only
 the latest title and caret, while newline and disposal cancel the pending
 timer. LG queues the candidate-choice effect behind pending and in-flight text
-changes instead of dropping it. The focused Flutter regression failed with
+changes instead of dropping it. The focused Android regression failed with
 three immediate events before the change and now observes one latest event;
 the LG regression failed because the choice was absent and now verifies exact
-effect ordering. All 122 Flutter tests, Flutter analysis, and all 148 LG tests
+effect ordering. All 122 Android tests, Android analysis, and all 148 LG tests
 pass. On the rebuilt APK, the complete node/tag E2E types `#E2E Pro`, selects
 `E2E Project`, verifies the inserted tag chip and tagged-node navigation, and
 finishes without an ANR.
 
 The separately observed cold-start ANR was not caused by editor input. Android
-reported `Application does not have a focused window` while the debug Flutter
+reported `Application does not have a focused window` while the debug Android
 process was still initializing and compiling JIT code on the emulator. Startup
 phase logs now distinguish binding, first frame, platform-state load, bridge
 load, LUI initialization, and root mounting so a future launch failure can be
@@ -1111,13 +1111,13 @@ the same asset rendered as a paperclip rather than an image.
 
 `addAsset` returned a full snapshot. LG intentionally preserves the active
 lazy-list window across unrelated full snapshots, so the new row was omitted.
-The core also normalizes `image/png` to `png`, while Flutter only recognized
+The core also normalizes `image/png` to `png`, while Android only recognized
 MIME values beginning with `image/`.
 
 **Fix Verification**
 
 Journal asset insertion now returns a bounded structural outliner splice built
-from the live visible context. The Flutter renderer recognizes both MIME types
-and normalized image extensions. Core and Flutter regressions failed before
-the fixes; all core tests, all 122 Flutter tests, analysis, and the Android
+from the live visible context. The Android renderer recognizes both MIME types
+and normalized image extensions. Core and Android regressions failed before
+the fixes; all core tests, all 122 Android tests, analysis, and the Android
 image-share E2E now pass with the preview visible in the current journal.

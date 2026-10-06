@@ -43,23 +43,23 @@ if grep -Eq 'SkipStone|Run skip gradle|Skip\.env|skip gradle' \
   die "the Apple project still invokes Skip"
 fi
 
-manifest="$repo_root/flutter/android/app/src/main/AndroidManifest.xml"
-shortcuts="$repo_root/flutter/android/app/src/main/res/xml/shortcuts.xml"
-widgets="$repo_root/flutter/android/app/src/main/kotlin/com/logseq/chat/AndroidWidgets.kt"
+manifest="$repo_root/android/app/src/main/AndroidManifest.xml"
+shortcuts="$repo_root/android/app/src/main/res/xml/shortcuts.xml"
+widgets="$repo_root/android/app/src/main/kotlin/com/logseq/chat/AndroidWidgets.kt"
 
 grep -Fq 'android.app.shortcuts' "$manifest" \
-  || die "Flutter Android manifest lost app shortcuts"
+  || die "Android manifest lost app shortcuts"
 grep -Fq '.TodayJournalWidgetProvider' "$manifest" \
-  || die "Flutter Android manifest lost the journal widget"
+  || die "Android manifest lost the journal widget"
 grep -Fq '.CaptureWidgetProvider' "$manifest" \
-  || die "Flutter Android manifest lost the capture widget"
+  || die "Android manifest lost the capture widget"
 grep -Fq 'logseqchat://capture' "$shortcuts" \
-  || die "Flutter Android shortcuts lost Capture"
+  || die "Android shortcuts lost Capture"
 grep -Fq 'logseqchat://journal' "$shortcuts" \
-  || die "Flutter Android shortcuts lost Journal"
+  || die "Android shortcuts lost Journal"
 grep -Fq 'class TodayJournalWidgetProvider' "$widgets" \
-  || die "Flutter Android journal widget provider is missing"
+  || die "Android journal widget provider is missing"
 grep -Fq 'class CaptureWidgetProvider' "$widgets" \
-  || die "Flutter Android capture widget provider is missing"
+  || die "Android capture widget provider is missing"
 
-echo "No-Skip Flutter Android contract passed"
+echo "No-Skip Android contract passed"

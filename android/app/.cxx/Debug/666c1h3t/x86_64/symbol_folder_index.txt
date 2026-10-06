@@ -1,0 +1,1 @@
+/home/ubuntu/repos/chat/android/app/build/intermediates/cxx/Debug/666c1h3t/obj/x86_64

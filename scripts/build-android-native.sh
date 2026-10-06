@@ -28,7 +28,7 @@ esac
 target="${target_arch}-linux-android${api_level}"
 target_prefix="$repo_root/_build/android-toolchain/$target-$ocaml_version"
 build_dir="$repo_root/_build/android-core/$android_abi"
-jni_dir="$repo_root/flutter/android/app/src/main/jniLibs/$android_abi"
+jni_dir="$repo_root/android/app/src/main/jniLibs/$android_abi"
 library="$build_dir/liblogseq_chat_core.so"
 
 "$repo_root/scripts/bootstrap-android-ocaml.sh" >/dev/null

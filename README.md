@@ -1,7 +1,7 @@
 # Logseq Chat
 
-Logseq Chat is a native SwiftUI app for iOS and a Flutter Material app for
-Android. Both clients share an OCaml application model and core, backed by
+Logseq Chat is a native SwiftUI app for iOS and a Kotlin/Jetpack Compose
+app for Android. Both clients share an OCaml application model and core, backed by
 the OCaml DataScript library and the lui reactive UI layer.
 
 Shared core sources live in `shared/src/logseq_chat/core`, with executable entry points
@@ -12,7 +12,7 @@ in `shared/test/logseq_chat`, one alcotest suite per core module. The core test 
 ## Repository layout
 
 - `apple/`: Swift package, app, extensions, Xcode workspace, and Apple tests.
-- `flutter/`: Flutter Android app and its platform integration.
+- `android/`: Kotlin/Jetpack Compose Android app and its platform integration.
 - `shared/src/`: OCaml application and core sources.
 - `shared/test/`: OCaml test suites.
 - `shared/native/`: Dune configuration and native bridges.
@@ -38,24 +38,27 @@ directly.
 
 ## Android
 
-Android is built exclusively from the Flutter project:
+Android is a standard Gradle project:
 
 ```sh
-cd flutter
-flutter pub get
-flutter run
+cd android
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Build a debug APK or Play Store app bundle with:
+Release builds use `:app:assembleRelease` / `:app:bundleRelease`. The e2e
+profile APK used by `scripts/test-android-e2e.sh` is `:app:assembleProfile`
+(`app/build/outputs/apk/profile/app-profile.apk`). JVM unit tests run with
+`./gradlew test`.
 
-```sh
-cd flutter
-flutter build apk --debug
-flutter build appbundle --release
-```
+The OCaml core shared library is built separately by
+`scripts/build-android-native.sh` (per ABI), which installs
+`liblogseq_chat_core.so` into `android/app/src/main/jniLibs/<abi>`; the Gradle
+`buildAndroidNativeCore` task invokes it automatically (set
+`-PlogseqChatRequireNativeCore=false` to compile Kotlin without it).
 
-The Flutter Android host includes Capture and Journal app shortcuts, Capture
-and Today’s Journal home-screen widgets, inbound sharing, deep links, native
+The Android host includes Capture and Journal app shortcuts, Capture and
+Today’s Journal home-screen widgets, inbound sharing, deep links, native
 authentication, media services, and the OCaml core JNI library.
 
 ## iPhone shortcuts and widgets
@@ -82,7 +85,7 @@ the current environment. Use the supported gates instead:
 ```sh
 swift build --package-path apple --disable-sandbox --triple arm64-apple-ios17.0-simulator \
   --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)"
-(cd flutter && flutter analyze && flutter test)
+(cd android && ./gradlew test)
 opam exec --switch=5.5.0 -- dune build @shared/test/runtest
 opam exec --switch=5.5.0 -- dune build @shared/native/runtest
 ./scripts/test-android-e2e-runner.sh

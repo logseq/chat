@@ -125,7 +125,7 @@ mock_bin="$temporary_directory/bin"
 custom_flow="$temporary_directory/custom-flow.yaml"
 maestro_args="$temporary_directory/maestro-args"
 adb_args="$temporary_directory/adb-args"
-flutter_args="$temporary_directory/flutter-args"
+gradle_args="$temporary_directory/gradle-args"
 mkdir -p "$mock_bin"
 trap 'rm -rf "$temporary_directory"' EXIT
 
@@ -165,12 +165,11 @@ case "$*" in
 esac
 EOF
 printf '#!/usr/bin/env bash\nprintf \"%%s\\n\" \"$@\" >\"$LOGSEQ_CHAT_MAESTRO_ARGS\"\n' >"$mock_bin/maestro"
-printf '#!/usr/bin/env bash\nexit 0\n' >"$mock_bin/gradle"
-cat >"$mock_bin/flutter" <<'EOF'
+cat >"$mock_bin/gradle" <<'GMOCK'
 #!/usr/bin/env bash
-printf '%s|%s\n' "$PWD" "$*" >"$LOGSEQ_CHAT_FLUTTER_ARGS"
-EOF
-chmod +x "$mock_bin/adb" "$mock_bin/maestro" "$mock_bin/gradle" "$mock_bin/flutter"
+printf '%s\n' "$*" >"$LOGSEQ_CHAT_GRADLE_ARGS"
+GMOCK
+chmod +x "$mock_bin/adb" "$mock_bin/maestro" "$mock_bin/gradle"
 printf 'appId: com.logseq.chat\n---\n- launchApp\n' >"$custom_flow"
 
 PATH="$mock_bin:$PATH" \
@@ -184,13 +183,14 @@ PATH="$mock_bin:$PATH" \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_FLUTTER_ARGS="$flutter_args" \
+  LOGSEQ_CHAT_ANDROID_GRADLE=gradle \
+  LOGSEQ_CHAT_GRADLE_ARGS="$gradle_args" \
   LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
   LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
   LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
   "$runner" signed-out >/dev/null
-[[ $(<"$flutter_args") == "$repo_root/flutter|build apk --profile" ]] \
-  || die "Android E2E runner did not build the Flutter profile APK"
+[[ $(<"$gradle_args") == "-p $repo_root/android :app:assembleProfile" ]] \
+  || die "Android E2E runner did not build the profile APK"
 
 : >"$adb_args"
 PATH="$mock_bin:$PATH" \

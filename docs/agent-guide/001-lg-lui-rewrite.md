@@ -16,12 +16,12 @@ baseline on iOS and Android.
 - Move application state, reducers, effects, projections, and ordinary UI into
   LG and LUI.
 - Keep the LUI SwiftUI renderer native on Apple platforms. Render the same LG
-  model through LUI's Flutter backend on Android.
+  model through LUI's Android backend on Android.
 - Keep operating-system services in the existing Swift and Kotlin adapters.
 - Implement Logseq-specific editor, rich content, math, code, video, WebView,
   and media behavior as validated LUI extensions rather than standard LUI
   elements.
-- Keep Android platform services in the Flutter Android host and its Kotlin
+- Keep Android platform services in the Kotlin Android host and its Kotlin
   adapters.
 - Exclude Chat mode, its composer and send flow, and Chat-specific automatic
   scrolling from this rewrite. The Outliner keeps its current scroll position
@@ -68,7 +68,7 @@ features. The following are authoritative evidence:
 ## Delivery gates
 
 1. LG/LUI native runtime shell and reducer tests.
-2. Shared LG model with SwiftUI and Flutter renderer parity tests.
+2. Shared LG model with SwiftUI and Android renderer parity tests.
 3. Virtualized keyed list, viewport events, anchor preservation, and imperative
    scroll tests on both hosts.
 4. Native outliner editor extension and IME/caret stress tests.

@@ -1,0 +1,538 @@
+package com.logseq.chat.runtime
+
+import android.app.Activity
+import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.logseq.chat.AndroidAssetImporter
+import com.logseq.chat.AndroidAudioPlayer
+import com.logseq.chat.AndroidAudioRecorder
+import com.logseq.chat.AndroidAudioTranscriber
+import com.logseq.chat.AndroidPlatformServices
+import com.logseq.chat.CognitoAuthProvider
+import dev.lui.LuiBackend
+import dev.lui.LuiEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import logseq.chat.AndroidRuntimeLogLevel
+import logseq.chat.AndroidRuntimeLogSource
+import logseq.chat.AndroidRuntimeLogs
+import org.json.JSONObject
+
+// Kotlin port of the former Dart app state: owns the LUI
+// backend, the JNI bridge, the effect drain, bootstrap/restore, graph
+// catalog polling, app entries (deep links + share intents), and
+// outliner platform commands. Compose state fields drive LogseqChatApp.
+internal class ChatRuntime(
+    private val activity: Activity,
+    private val scope: CoroutineScope,
+) {
+    val platformServices = AndroidPlatformServices(activity)
+    val authentication = CognitoAuthProvider(activity.applicationContext, activity)
+    val assetImporter = AndroidAssetImporter(activity, scope)
+    val audioRecorder = AndroidAudioRecorder(activity)
+    val audioPlayer = AndroidAudioPlayer(activity)
+
+    private val platformEffects = AndroidPlatformEffects(
+        authentication = CognitoAndroidAuthentication(authentication),
+        platform = platformServices,
+        attachmentsImporter = assetImporter::import,
+    )
+
+    val backend = LuiBackend(
+        onEvent = ::dispatch,
+        extensions = com.logseq.chat.ui.extensions.logseqChatExtensionRegistry(
+            resolveAssetPath = platformServices::resolveAssetPath,
+        ),
+        icons = logseqChatIconResolver,
+    )
+    private val patchFilter = LuiPatchFilter { patch -> backend.applyJson(patch) }
+    private val bridge = LogseqChatNativeBridge(onPatch = ::applyPatch)
+
+    private var coreEffects: CoreEffectExecutor? = null
+    private var effectDrain: NativeEffectDrain? = null
+    private var graphCatalogAutoRefresh: GraphCatalogAutoRefresh? = null
+    private val appEntries = AndroidAppEntryCoordinator(scope, ::handleAppEntry, ::reportError)
+    private val outlinerCommands = OutlinerPlatformCommandDispatcher(::handleOutlinerCommandBatch)
+
+    var rootNodeId by mutableStateOf<Long?>(null)
+        private set
+    var startupError by mutableStateOf<Throwable?>(null)
+        private set
+
+    @Volatile private var hasAuthenticatedSession = false
+    @Volatile private var hasOpenGraph = false
+    @Volatile private var appIsForeground = true
+    private var activeBootstrap: kotlinx.coroutines.Job? = null
+    private var activeBootstrapHadSession = false
+    private var appearance by mutableStateOf("system")
+
+    val supportsAudioTranscription: Boolean get() = AndroidAudioTranscriber.isSupported()
+
+    init {
+        bridge.onCoreIdle = { scope.launch { effectDrain?.drain(scope) } }
+        logRuntime("info", "ui", "Kotlin host initialized")
+    }
+
+    fun start() {
+        scope.launch {
+            try {
+                val authenticationCode = platformEffects.initialAuthenticationCode()
+                val storage = platformEffects.loadStorageState()
+                appearance = storage.settings.appearance
+
+                val graphLifecycle = AndroidGraphLifecycle(
+                    callCore = bridge::callCore,
+                    effects = platformEffects,
+                    accessTokenProvider = platformEffects::restoreAccessToken,
+                    trace = ::traceGraphLifecycle,
+                )
+                val executor = CoreEffectExecutor(
+                    callCore = bridge::callCore,
+                    executePlatformEffect = NativeEffectExecutor(platformEffects::execute),
+                    executeGraphEffect = NativeEffectExecutor(graphLifecycle::execute),
+                )
+                coreEffects = executor
+                graphCatalogAutoRefresh = GraphCatalogAutoRefresh(
+                    scope = scope,
+                    callCore = bridge::callCore,
+                    applyCoreResponse = ::applyCoreResponse,
+                    trace = { traceGraphCatalogRefresh("automatic $it") },
+                )
+                val drain = NativeEffectDrain(
+                    runtime = object : NativeEffectRuntime {
+                        override fun takeEffect() = bridge.takeEffect()
+                        override fun resolveEffect(id: Long, succeeded: Boolean, message: String) =
+                            bridge.resolveEffect(id, succeeded, message)
+                        override fun applySnapshot(response: String) = bridge.applySnapshot(response)
+                        override fun applyHostUpdate(kind: String, payload: String) =
+                            bridge.applyHostUpdate(kind, payload)
+                    },
+                    execute = NativeEffectExecutor(::executeEffect),
+                    applyPatch = ::applyPatch,
+                    onError = ::reportError,
+                    trace = ::traceNativeEffect,
+                    afterCoreResponseApplied = outlinerCommands::deliver,
+                )
+                drain.autosaveDrain = { scope.launch { drain.drain(scope) } }
+                effectDrain = drain
+
+                val rootNode = bridge.initialize(authenticationCode = authenticationCode)
+                for (update in storage.startupHostUpdates) {
+                    applyPatch(bridge.applyHostUpdate(update.kind, update.payload))
+                }
+                rootNodeId = rootNode
+                scope.launch { drain.drain(scope) }
+                restoreCore(hasStoredSession = authenticationCode == 3, storage = storage)
+            } catch (error: Throwable) {
+                startupError = error
+                reportError(error)
+            }
+        }
+    }
+
+    fun onLifecycleResumed(resumed: Boolean) {
+        appIsForeground = resumed
+        updateCatalogPolling("lifecycle")
+    }
+
+    fun publishAppEntry(entry: Map<String, Any?>) = appEntries.publish(entry)
+
+    // --- LUI event dispatch ---
+
+    private fun dispatch(event: LuiEvent) {
+        dispatchLuiEvent(event, bridge)
+        val drain = effectDrain ?: return
+        scope.launch { drain.drain(scope) }
+    }
+
+    private fun applyPatch(patch: String) {
+        if (patch.isEmpty()) return
+        try {
+            patchFilter.applyJson(patch)
+        } catch (error: Throwable) {
+            reportError(error)
+            startupError = error
+        }
+    }
+
+    private suspend fun applyCoreResponse(response: String) {
+        applyPatch(bridge.applySnapshot(response))
+        outlinerCommands.deliver(response)
+    }
+
+    private suspend fun sendOutlinerEvent(event: JSONObject) {
+        val response = bridge.callCore(
+            JSONObject()
+                .put("apiVersion", 1)
+                .put("method", "dispatch")
+                .put(
+                    "params",
+                    JSONObject()
+                        .put("action", "outlinerEvent")
+                        .put("payload", event.toString()),
+                )
+                .toString()
+        )
+        applyCoreResponse(response)
+    }
+
+    // --- Effects ---
+
+    private suspend fun executeEffect(effect: NativeEffect): NativeEffectResolution {
+        if (effect.kind == "present-attachment") {
+            return try {
+                if (effect.text == "audio") {
+                    presentAudioRecording(null)
+                } else {
+                    presentAttachment(effect.text, null)
+                }
+                NativeEffectResolution.Discard()
+            } catch (error: Throwable) {
+                reportError(error)
+                NativeEffectResolution.Failure(error.toString())
+            }
+        }
+        val executor = coreEffects
+            ?: return NativeEffectResolution.Discard(
+                succeeded = false,
+                message = "The native core effect executor is unavailable",
+            )
+        val resolution = executor.execute(effect)
+        if (effect.kind == "save-settings" && resolution.succeeded) {
+            runCatching { JSONObject(effect.text) }.getOrNull()?.let {
+                appearance = it.optString("appearance", "system")
+            }
+        }
+        if (effect.kind == "sign-in" && resolution.succeeded) {
+            restoreCore(hasStoredSession = true)
+        }
+        if (effect.kind == "sign-out" && resolution.succeeded) {
+            hasAuthenticatedSession = false
+            hasOpenGraph = false
+            graphCatalogAutoRefresh?.stopPeriodic()
+        }
+        if (resolution.succeeded &&
+            effect.kind in setOf("open-graph", "unlock-graph", "create-graph")
+        ) {
+            hasOpenGraph = true
+            graphCatalogAutoRefresh?.stopPeriodic()
+        }
+        return resolution
+    }
+
+    // --- Bootstrap / restore ---
+
+    private fun restoreCore(hasStoredSession: Boolean, storage: AndroidStorageState? = null) {
+        val active = activeBootstrap
+        if (active != null) {
+            if (hasStoredSession && !activeBootstrapHadSession) {
+                scope.launch {
+                    active.join()
+                    restoreCore(hasStoredSession = true)
+                }
+            }
+            return
+        }
+        activeBootstrapHadSession = hasStoredSession
+        activeBootstrap = scope.launch {
+            try {
+                runCoreRestore(hasStoredSession, storage)
+            } finally {
+                activeBootstrap = null
+            }
+        }
+    }
+
+    private suspend fun runCoreRestore(hasStoredSession: Boolean, storage: AndroidStorageState?) {
+        var accessToken = ""
+        if (hasStoredSession) {
+            try {
+                accessToken = platformEffects.restoreAccessToken() ?: ""
+                if (accessToken.isBlank()) {
+                    error("The stored session did not return an access token")
+                }
+            } catch (error: Throwable) {
+                hasAuthenticatedSession = false
+                applyPatch(
+                    bridge.applyHostUpdate(
+                        kind = "authentication",
+                        payload = JSONObject()
+                            .put("state", "signedOut")
+                            .put("errorMessage", error.toString())
+                            .toString(),
+                    )
+                )
+                reportError(error)
+            }
+        }
+        hasAuthenticatedSession = accessToken.isNotBlank()
+        try {
+            logRuntime("info", "core", "Restoring core state")
+            val state = platformEffects.coreStartupState(accessToken, storage)
+            val restored = CoreBootstrap(
+                callCore = bridge::callCore,
+                trace = { traceGraphLifecycle("bootstrap $it") },
+            ).restore(state)
+            applyCoreResponse(restored.catalogResponse)
+            graphCatalogAutoRefresh?.rememberCatalog(restored.catalogResponse)
+            applyPatch(
+                bridge.applyHostUpdate(
+                    kind = "local-graph-ids",
+                    payload = org.json.JSONArray(restored.localGraphIds).toString(),
+                )
+            )
+            hasOpenGraph = restored.graphResponse != null
+            restored.graphResponse?.let { applyCoreResponse(it) }
+            applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+            logRuntime("info", "core", "Core state restored")
+            appEntries.markReady()
+            updateCatalogPolling("restore")
+        } catch (error: Throwable) {
+            logRuntime("error", "core", error.toString())
+            reportError(error)
+            applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+        }
+    }
+
+    private fun updateCatalogPolling(reason: String) {
+        if (shouldPollGraphCatalog(hasAuthenticatedSession, hasOpenGraph, appIsForeground)) {
+            graphCatalogAutoRefresh?.startPeriodic()
+            scope.launch { graphCatalogAutoRefresh?.refresh() }
+        } else {
+            graphCatalogAutoRefresh?.stopPeriodic()
+        }
+    }
+
+    // --- App entries (deep links + share intents) ---
+
+    private suspend fun handleAppEntry(entry: AndroidAppEntry) {
+        logRuntime("info", "ui", "Handling Android app entry ${entry.kind}")
+        when (entry.kind) {
+            AndroidAppEntryKind.OpenCapture ->
+                applyPatch(bridge.applyHostUpdate("open-capture", "{}"))
+            AndroidAppEntryKind.OpenJournal -> applyAppEntryCoreRequest(
+                JSONObject()
+                    .put("apiVersion", 1)
+                    .put("method", "dispatch")
+                    .put(
+                        "params",
+                        JSONObject().put("action", "clearSelectedPage"),
+                    )
+                    .toString()
+            )
+            AndroidAppEntryKind.SharedText -> applyAppEntryCoreRequest(
+                entry.coreRequest(newCoreUuid(), System.currentTimeMillis())
+            )
+            AndroidAppEntryKind.SharedAsset ->
+                addImportedAsset(requireNotNull(entry.asset), targetBlockId = null)
+        }
+    }
+
+    private suspend fun applyAppEntryCoreRequest(request: String) {
+        val response = bridge.callCore(request)
+        val decoded = JSONObject(response)
+        if (!decoded.optBoolean("ok")) {
+            error("The native core rejected the Android app entry")
+        }
+        applyCoreResponse(response)
+    }
+
+    // --- Attachments / audio ---
+
+    suspend fun presentAttachment(kind: String, targetBlockId: String?) {
+        logRuntime("info", "ui", "Requesting $kind attachment")
+        val assets = assetImporter.import(kind)
+        logRuntime("info", "ui", "Imported ${assets.size} $kind attachment(s)")
+        for (asset in assets) {
+            addImportedAsset(AndroidImportedAsset.fromMap(asset), targetBlockId)
+        }
+    }
+
+    private suspend fun addImportedAsset(asset: AndroidImportedAsset, targetBlockId: String?) {
+        val response = bridge.callCore(asset.coreRequest(targetBlockId))
+        if (!JSONObject(response).optBoolean("ok")) {
+            error("The native core rejected ${asset.title}")
+        }
+        logRuntime("info", "core", "Added attachment ${asset.title}")
+        applyCoreResponse(response)
+    }
+
+    suspend fun presentAudioRecording(targetBlockId: String?) {
+        // The recording sheet UI is presented by the app composable layer
+        // (ui/extensions/ChatDialogs + LogseqChatApp's dialog host).
+        val (asset, transcriptionEnabled) =
+            com.logseq.chat.ui.extensions.ChatDialogs.recordAudio(
+                audioRecorder,
+                supportsAudioTranscription,
+            ) ?: return
+        val response = bridge.callCore(asset.coreRequest(targetBlockId))
+        if (!JSONObject(response).optBoolean("ok")) {
+            error("The native core rejected the recorded audio asset")
+        }
+        applyCoreResponse(response)
+        if (transcriptionEnabled) {
+            scope.launch { transcribeRecording(asset) }
+        }
+    }
+
+    private suspend fun transcribeRecording(asset: RecordedAudioAsset) {
+        try {
+            logRuntime("info", "ui", "Audio transcription started")
+            val transcript = AndroidAudioTranscriber.transcribe(asset.localPath).trim()
+            if (transcript.isEmpty()) return
+            val response = bridge.callCore(
+                asset.transcriptCoreRequest(
+                    transcriptUuid = "${asset.uuid}-transcript",
+                    transcript = transcript,
+                )
+            )
+            applyCoreResponse(response)
+            logRuntime("info", "ui", "Audio transcription completed")
+        } catch (error: Throwable) {
+            reportError(error)
+        }
+    }
+
+    // --- Outliner platform commands ---
+
+    private suspend fun handleOutlinerCommandBatch(batch: OutlinerPlatformCommandBatch) {
+        for (command in batch.commands) {
+            when (command.type) {
+                "haptic" -> performHaptic(command.style)
+                "confirmDelete" -> confirmDeletion(command.uuids)
+                "setClipboardText" -> platformServices.copyText(command.text.orEmpty())
+                "setClipboardReferences" -> platformServices.copyText(
+                    command.uuids.joinToString("\n") { "[[$it]]" }
+                )
+                "setClipboardURLs" -> platformServices.copyText(
+                    command.uuids.joinToString("\n") {
+                        "logseq://graph/${batch.graphName}?block-id=$it"
+                    }
+                )
+                "pickAttachment" -> presentAttachment("files", command.uuid)
+                "takePhoto" -> presentAttachment("camera", command.uuid)
+                "recordAudio" -> presentAudioRecording(command.uuid)
+                "focusBlock" -> Unit // autofocus handles it in the retained editor
+            }
+        }
+    }
+
+    private fun performHaptic(style: String?) {
+        val view = activity.window.decorView
+        val constant = when (style) {
+            "selection" -> android.view.HapticFeedbackConstants.CLOCK_TICK
+            else -> android.view.HapticFeedbackConstants.LONG_PRESS
+        }
+        view.performHapticFeedback(constant)
+    }
+
+    private suspend fun confirmDeletion(blockIds: List<String>) {
+        if (blockIds.isEmpty()) return
+        val confirmed = com.logseq.chat.ui.extensions.ChatDialogs
+            .confirmDeletion(blockIds.size > 1)
+        if (confirmed) {
+            sendOutlinerEvent(JSONObject().put("type", "confirmDelete"))
+        }
+    }
+
+    // --- Tracing / logging ---
+
+    private fun reportError(error: Throwable) {
+        logRuntime("error", "ui", error.toString())
+        Log.e("ChatRuntime", "Effect failed", error)
+        com.logseq.chat.ui.extensions.ChatDialogs.notifyError(
+            "Something went wrong: $error"
+        )
+    }
+
+    private fun traceNativeEffect(message: String) {
+        val interesting = listOf(
+            "kind=open-graph", "kind=create-graph", "kind=unlock-graph",
+            "kind=refresh-graphs", "kind=send-capture", "kind=send-task",
+            "kind=search-nodes", "patch",
+        )
+        if (interesting.none(message::contains)) return
+        Log.d("NativeEffect", message)
+        logRuntime("info", "ui", message)
+    }
+
+    private fun traceGraphLifecycle(message: String) {
+        Log.d("GraphLifecycle", message)
+        logRuntime("info", "core", message)
+    }
+
+    private fun traceGraphCatalogRefresh(message: String) {
+        Log.d("GraphCatalog", message)
+        logRuntime("info", "core", message)
+    }
+
+    private fun logRuntime(level: String, source: String, message: String) {
+        platformServices.appendRuntimeLog(level, source, message)
+    }
+
+    fun dispose() {
+        graphCatalogAutoRefresh?.dispose()
+        effectDrain?.dispose()
+        bridge.onCoreIdle = null
+        bridge.close()
+    }
+
+    val effectiveAppearance: String get() = appearance
+}
+
+// Recorded audio asset produced by the recording sheet — payload shape
+// matches the former android_audio_recording.dart.
+internal data class RecordedAudioAsset(
+    val uuid: String,
+    val title: String,
+    val assetType: String,
+    val size: Long,
+    val checksum: String,
+    val localPath: String,
+) {
+    fun coreRequest(targetBlockId: String?): String = JSONObject()
+        .put("apiVersion", 1)
+        .put("method", "dispatch")
+        .put(
+            "params",
+            JSONObject()
+                .put("action", "addAsset")
+                .put(
+                    "payload",
+                    JSONObject()
+                        .put("uuid", uuid)
+                        .put("title", title)
+                        .put("assetType", assetType)
+                        .put("assetSize", size)
+                        .put("assetChecksum", checksum)
+                        .put("localPath", localPath)
+                        .apply {
+                            if (!targetBlockId.isNullOrEmpty()) {
+                                put("targetBlockId", targetBlockId)
+                            }
+                        }
+                        .toString(),
+                ),
+        )
+        .toString()
+
+    fun transcriptCoreRequest(transcriptUuid: String, transcript: String): String = JSONObject()
+        .put("apiVersion", 1)
+        .put("method", "dispatch")
+        .put(
+            "params",
+            JSONObject()
+                .put("action", "addChildBlock")
+                .put(
+                    "payload",
+                    JSONObject()
+                        .put("uuid", transcriptUuid)
+                        .put("title", transcript)
+                        .put("parentId", uuid)
+                        .toString(),
+                ),
+        )
+        .toString()
+}

@@ -423,12 +423,6 @@ jobs:
         if: steps.duniverse.outputs.cache-hit != 'true'
         run: echo "duniverse cache miss; the duniverse job should have populated it" >&2 && exit 1
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
