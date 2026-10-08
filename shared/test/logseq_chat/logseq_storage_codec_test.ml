@@ -29,7 +29,7 @@ let compact_map_key_cache_is_not_shifted () =
   with
   | Ds.Storage_node (Pset.Leaf datoms) ->
     check_eq
-      (List.map (fun (d : Ds.datom) -> d.a) datoms)
+      (List.map (fun (d : Ds.datom) -> d.a) (Array.to_list datoms))
       [ "block/title"; "block/title" ]
   | _ -> fail "unexpected storage node"
 
@@ -52,8 +52,9 @@ let all_value_types_and_storage_nodes_roundtrip () =
     ]
   in
   let datoms = List.map datom values in
-  roundtrip (Ds.Storage_node (Pset.Leaf datoms));
-  roundtrip (Ds.Storage_node (Pset.Branch (datoms, [ "3"; "4" ])));
+  roundtrip (Ds.Storage_node (Pset.Leaf (Array.of_list datoms)));
+  roundtrip
+    (Ds.Storage_node (Pset.Branch (Array.of_list datoms, [| "3"; "4" |])));
   roundtrip
     (Ds.Storage_tail [ datoms; []; [ datom ~added:true (Ds.String "added") ] ])
 
@@ -83,6 +84,7 @@ let root () : Ds.storage_root =
   in
   {
     Ds.storage_schema = [ ("user/tuple", schema) ];
+    storage_schema_idents = [];
     storage_max_eid = 7;
     storage_max_tx = 42;
     storage_eavt = "3";
@@ -126,18 +128,18 @@ let tuple_reference_normalization () =
     Codec.encode None
       (Ds.Storage_node
          (Pset.Leaf
-            [
+            [|
               datom ~added:true
                 (Ds.Tuple [ Some (Ds.Ref 9); None ]);
-            ]))
+            |]))
   in
   check_eq
     (Ds.Storage_node
        (Pset.Leaf
-          [
+          [|
             datom ~added:true
               (Ds.Vector [ Ds.Int64 9L; Ds.Nil ]);
-          ]))
+          |]))
     (Codec.decode None content)
 
 let raises_invalid_arg f =
@@ -150,11 +152,11 @@ let invalid_storage_is_rejected () =
     Codec.encode None
       (Ds.Storage_node
          (Pset.Leaf
-            [ datom ~added:true (Ds.Ref_to (Ds.Entity_id 1)) ]))
+            [| datom ~added:true (Ds.Ref_to (Ds.Entity_id 1)) |]))
     |> ignore);
   raises_invalid_arg (fun () ->
     Codec.encode None
-      (Ds.Storage_node (Pset.Branch ([], [ "invalid" ])))
+      (Ds.Storage_node (Pset.Branch ([||], [| "invalid" |])))
     |> ignore);
   raises_invalid_arg (fun () ->
     Codec.decode (Some "{}") "{\"~:keys\":[]}" |> ignore);

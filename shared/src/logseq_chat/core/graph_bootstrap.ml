@@ -317,7 +317,7 @@ let database graph_id e2ee encrypt_text =
         Ds.init_db ~schema:(Ds.schema plain)
           ~storage:(Ds.memory_storage ()) datoms
       in
-      Ds.store encrypted;
+      ignore (Ds.store encrypted);
       Ok encrypted
     end
     else Ok plain
@@ -328,7 +328,7 @@ let rec index_shift (storage : Ds.storage) (address : string) =
   match storage.Ds.storage_restore address with
   | Some (Ds.Storage_node (Pset.Leaf _)) -> 0
   | Some (Ds.Storage_node (Pset.Branch (_, children))) ->
-    let shifts = List.map (index_shift storage) children in
+    let shifts = List.map (index_shift storage) (Array.to_list children) in
     (match shifts with
      | [] ->
        invalid_arg "DataScript storage branch has no children"
@@ -379,7 +379,7 @@ let storage_row db (storage : Ds.storage) address =
 
 let snapshot_rows db =
   try
-    Ds.store db;
+    ignore (Ds.store db);
     match Ds.storage db with
     | Some storage ->
       Ok

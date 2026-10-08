@@ -47,7 +47,10 @@ let prepare_graph dir =
   let active = Filename.concat dir "graph.sqlite" in
   let saved = Filename.concat dir "checkpoint" in
   Sqlite_store.prepare_staging active;
-  Ds.store ~storage:(Store.storage active) (database ());
+  ignore
+    (Ds.store
+       (Ds.empty_db ~schema:Bootstrap.native_schema
+          ~storage:(Store.storage active) ()));
   expect_ok
     (Checkpoint.save_checkpoint_atomic saved (Checkpoint.create "graph" "1" 7))
 

@@ -1416,6 +1416,7 @@ let pending_task_status_is_visible_without_changing_the_authoritative_ref () =
           (base_db "Task")
       in
       let conn = Ds.conn_from_db db in
+      let authoritative = Ds.conn_db conn in
       let current = Runtime.create path 42 conn Runtime.default_options in
       let op =
         operation "status"
@@ -1435,7 +1436,7 @@ let pending_task_status_is_visible_without_changing_the_authoritative_ref () =
         (match (List.hd blocks).Model.status with
          | Some status -> status.Model.uuid = "status-doing"
          | None -> false);
-      check (db == Ds.conn_db conn))
+      check (authoritative == Ds.conn_db conn))
 
 let title_normalization_preserves_insert_and_non_title_intents () =
   with_runtime (fun _path conn _current ->
@@ -1520,6 +1521,7 @@ let property_classification_reads_the_pending_projection () =
           (base_db "Old")
       in
       let conn = Ds.conn_from_db db in
+      let authoritative = Ds.conn_db conn in
       let current = Runtime.create path 42 conn Runtime.default_options in
       let op =
         operation "classify-property"
@@ -1529,7 +1531,7 @@ let property_classification_reads_the_pending_projection () =
       check (is_ok (Runtime.stage current op));
       check (Runtime.node_is_property current "block");
       check (not (Runtime.node_is_property current "missing"));
-      check (db == Ds.conn_db conn))
+      check (authoritative == Ds.conn_db conn))
 
 let runtime_title_normalization_shares_new_tags_without_mutating_the_graph () =
   with_runtime (fun path conn current ->

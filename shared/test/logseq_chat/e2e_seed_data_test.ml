@@ -105,9 +105,10 @@ let command_line_fixture_persists_and_can_be_inspected_and_reseeded () =
     ~finally:(fun () -> if Sys.file_exists path then Sys.remove path)
     (fun () ->
       Graph_sqlite.prepare_staging path;
-      Ds.store
-        ~storage:(Store.storage path)
-        (Ds.conn_db (Ds.create_conn ~schema ()));
+      ignore
+        (Ds.store
+           ~storage:(Store.storage path)
+           (Ds.conn_db (Ds.create_conn ~schema ())));
       List.iter
         (fun mode ->
           let code, message = Cli.run [ "seed"; path; mode ] in

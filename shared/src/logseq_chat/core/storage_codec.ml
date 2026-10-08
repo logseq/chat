@@ -149,6 +149,19 @@ let schema_of_transit input =
       entries
   | _ -> []
 
+(* cljs stores each attribute's :db/ident datom inside the schema map as
+   int eid -> keyword ident entries; keep them so roots roundtrip. *)
+let schema_eids_of_transit input =
+  match input with
+  | Value.Map entries ->
+    List.filter_map
+      (fun (key, value) ->
+        match int_value key, keyword_value value with
+        | Some eid, Some ident -> Some (eid, ident)
+        | _ -> None)
+      entries
+  | _ -> []
+
 let transit_of_cardinality input =
   match input with
   | Ds.One -> Value.Keyword "db.cardinality/one"
@@ -159,8 +172,13 @@ let transit_of_unique input =
   | Ds.Value -> Value.Keyword "db.unique/value"
   | Ds.Identity -> Value.Keyword "db.unique/identity"
 
-let schema_attr_to_transit (attr : Ds.schema_attr) =
-  let entries = [] in
+let schema_attr_to_transit ~ident_backed (attr : Ds.schema_attr) ident =
+  let entries =
+    if ident_backed then
+      (* cljs update-schema merges {:db/ident ident} into the attr's spec map *)
+      [ (Value.Keyword "db/ident", Value.Keyword ident) ]
+    else []
+  in
   let entries =
     if attr.cardinality <> Ds.One then
       ( Value.Keyword "db/cardinality"
@@ -217,11 +235,17 @@ let schema_attr_to_transit (attr : Ds.schema_attr) =
   in
   Value.Map (List.rev entries)
 
-let schema_to_transit (schema : Ds.schema) =
+let schema_to_transit ?(eids = []) (schema : Ds.schema) =
   Value.Map
     (List.map
-       (fun (name, attr) -> (Value.Keyword name, schema_attr_to_transit attr))
-       schema)
+       (fun (name, attr) ->
+         ( Value.Keyword name
+         , schema_attr_to_transit
+             ~ident_backed:
+               (List.exists (fun (_, ident) -> String.equal ident name) eids)
+             attr name ))
+       schema
+     @ List.map (fun (eid, ident) -> (Value.Int eid, Value.Keyword ident)) eids)
 
 let rec value_of_transit input : Ds.value =
   match input with
@@ -365,6 +389,7 @@ let optional_metadata key entries =
 
 let root_of_transit entries : Ds.storage_root =
   { storage_schema = schema_of_transit (required "schema" entries)
+  ; storage_schema_idents = schema_eids_of_transit (required "schema" entries)
   ; storage_max_eid = required_int "root :max-eid" (required "max-eid" entries)
   ; storage_max_tx = required_int "root :max-tx" (required "max-tx" entries)
   ; storage_eavt = address_of_transit "root :eavt" (required "eavt" entries)
@@ -427,7 +452,8 @@ let root_to_transit index_metadata (root : Ds.storage_root) =
   in
   Value.Map
     ([
-       (Value.Keyword "schema", schema_to_transit root.storage_schema);
+       ( Value.Keyword "schema"
+       , schema_to_transit ~eids:root.storage_schema_idents root.storage_schema );
        (Value.Keyword "max-eid", Value.Int root.storage_max_eid);
        (Value.Keyword "max-tx", Value.Int root.storage_max_tx);
        (Value.Keyword "eavt", address_to_transit root.storage_eavt);
@@ -458,7 +484,9 @@ let decode addresses content : Ds.storage_payload =
       let keys = datoms_of_transit (required "keys" entries) in
       let children = addresses_of_json addresses in
       Ds.Storage_node
-        (if children = [] then Pset.Leaf keys else Pset.Branch (keys, children))
+        (if children = [] then
+           Pset.Leaf (Array.of_list keys)
+         else Pset.Branch (Array.of_list keys, Array.of_list children))
     end
     else invalid_arg "unknown Logseq storage payload"
   | Value.Array groups | Value.List groups ->
@@ -476,9 +504,11 @@ let encode root_index_metadata payload =
     ( Transit.to_string ~mode:Transit.Verbose
         (root_to_transit root_index_metadata root)
     , None )
-  | Ds.Storage_node (Pset.Leaf datoms) -> (encode_node datoms, None)
+  | Ds.Storage_node (Pset.Leaf datoms) ->
+    (encode_node (Array.to_list datoms), None)
   | Ds.Storage_node (Pset.Branch (keys, children)) ->
-    (encode_node keys, Some (addresses_to_json children))
+    ( encode_node (Array.to_list keys)
+    , Some (addresses_to_json (Array.to_list children)) )
   | Ds.Storage_tail groups ->
     ( Transit.to_string ~mode:Transit.Verbose
         (Value.Array

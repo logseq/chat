@@ -143,7 +143,7 @@ let materialize_plaintext_snapshot active_path decrypt encrypted_db =
   let* db = plaintext_snapshot_db decrypt encrypted_db in
   try
     let storage = Store.import_storage active_path in
-    Ds.store ~storage db;
+    ignore (Ds.store ~storage db);
     Ds.collect_garbage storage;
     Ok ()
   with error ->

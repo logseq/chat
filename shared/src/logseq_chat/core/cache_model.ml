@@ -155,8 +155,7 @@ let create storage =
        | Some db -> db
        | None ->
          let db = Ds.empty_db ~schema ~storage () in
-         Ds.store ~storage db;
-         db)
+         Ds.store ~storage db)
     | None -> Ds.empty_db ~schema ()
   in
   {
@@ -492,7 +491,7 @@ let commit model transactions =
   model.db <- report.Ds.db_after;
   model.revision <- model.revision + 1;
   (match Ds.storage model.db with
-   | Some storage -> Ds.store ~storage model.db
+   | Some storage -> ignore (Ds.store ~storage model.db)
    | None -> ());
   ()
 
