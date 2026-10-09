@@ -192,6 +192,15 @@ final class LGChatGraphLifecycle {
             ?? "http://127.0.0.1:8787"
         let accessToken = (try? await authentication.accessToken()) ?? ""
         if !accessToken.isEmpty {
+            // The encrypted graph opens without a sync checkpoint while locked,
+            // so re-open it now that the keyring is unlocked to populate
+            // appliedServerT before starting the WebSocket loop.
+            _ = await store.bootstrapSelectedGraph(
+                graphID: graphID,
+                baseURL: baseURL,
+                accessToken: accessToken,
+                isEncrypted: true
+            )
             startSync(graphID: graphID, baseURL: baseURL, isEncrypted: true)
         }
         return resolution(succeeded: true)
