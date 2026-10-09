@@ -29,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import com.logseq.chat.runtime.ChatRuntime
 import com.logseq.chat.runtime.RecordedAudioAsset
@@ -61,7 +63,10 @@ internal fun LogseqChatApp(runtime: ChatRuntime) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding)
-                        .windowInsetsPadding(WindowInsets.safeDrawing),
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        // Expose LUI accessibility-identifier testTags as
+                        // resource-ids so Maestro `id:` selectors resolve.
+                        .semantics { testTagsAsResourceId = true },
                 ) {
                     val rootId = runtime.rootNodeId
                     if (rootId != null) {
