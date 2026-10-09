@@ -62,6 +62,7 @@ val native_navigation_view :
   Model.chat_model Signal.signal ->
   (Model.chat_action -> bool) -> Lui_elements.t
 val authentication_content :
+  Lui_ui.ui_context ->
   Model.chat_model Signal.signal ->
   (Model.chat_action -> bool) -> Lui_elements.t
 val authentication_screen :

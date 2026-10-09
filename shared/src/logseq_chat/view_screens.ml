@@ -807,11 +807,20 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
           context (Some node));
      node)
 
-let authentication_content model_source send : t =
+let authentication_content (context : Lui_ui.ui_context) model_source
+    send : t =
   column ~cross:`center ~gap:0 ~max_width:400
     [
       row ~width:96 ~height:96 ~corner_radius:22
-        [ icon ~name:(`app "logo") ~width:96 ~height:96 [] ];
+        [
+          (if Lui_ui.host context = KotlinHost then
+             (* Android icon resolution is vector-only, so the product
+                logo rides the shared image-id channel instead; the host
+                registers logseq_logo under this id at startup. *)
+             image ~image:1 ~width:96 ~height:96 ~alt:"Logseq" []
+           else
+             icon ~name:(`app "logo") ~width:96 ~height:96 []);
+        ];
       box ~height:28 [];
       heading ~level:1 ~value:"Logseq Chat" [];
       box ~height:10 [];
@@ -846,12 +855,12 @@ let authentication_screen (context : Lui_ui.ui_context) model_source send
   if Lui_ui.host context = KotlinHost then
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
       ~main:`center ~cross:`stretch ~padding:32
-      [ authentication_content model_source send ]
+      [ authentication_content context model_source send ]
   else
     column ~accessibility_identifier:"screen.authentication" ~grow:1.0
       ~container_relative_frame:`vertical ~main:`center ~cross:`center
       ~padding:32
-      [ authentication_content model_source send ]
+      [ authentication_content context model_source send ]
 
 let application_main_content (context : Lui_ui.ui_context) model_source
     send : t =
