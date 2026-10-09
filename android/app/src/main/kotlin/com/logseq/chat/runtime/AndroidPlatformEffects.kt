@@ -131,6 +131,7 @@ internal class AndroidPlatformEffects(
     private val authentication: AndroidAuthentication,
     private val platform: AndroidPlatformServices,
     private val attachmentsImporter: suspend (String) -> List<Map<String, Any>>,
+    private val syncNow: () -> Boolean = { false },
 ) {
     suspend fun initialAuthenticationCode(): Int = try {
         if (authentication.hasStoredSession()) 3 else 1
@@ -194,14 +195,7 @@ internal class AndroidPlatformEffects(
                     metadata = effect.metadata ?: "[]",
                 ),
             )
-            "sync-now" -> {
-                val succeeded = platform.syncNow()
-                NativeEffectResolution.Discard(
-                    succeeded = succeeded,
-                    message = if (succeeded) "" else
-                        "Sync is unavailable while the WebSocket transport is being migrated",
-                )
-            }
+            "sync-now" -> NativeEffectResolution.Discard(succeeded = syncNow())
             "delete-local-graph" -> NativeEffectResolution.Discard(
                 succeeded = platform.deleteLocalGraph(effect.text),
             )

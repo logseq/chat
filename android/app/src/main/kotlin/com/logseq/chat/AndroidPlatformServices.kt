@@ -227,10 +227,6 @@ class AndroidPlatformServices(private val activity: Activity) {
         preferences.edit().putString("logseq.selectedGraphId", graphId).apply()
     }
 
-    // WebSocket sync transport is being migrated; the core treats a false
-    // resolution as "sync unavailable" (see AndroidPlatformEffects).
-    fun syncNow(): Boolean = false
-
     // Asset paths the core emits are files-directory-relative; absolute
     // paths pass through untouched.
     fun resolveAssetPath(path: String): String =

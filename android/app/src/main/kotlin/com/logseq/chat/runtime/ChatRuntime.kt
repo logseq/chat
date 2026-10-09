@@ -14,6 +14,7 @@ import com.logseq.chat.CognitoAuthProvider
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import logseq.chat.AndroidRuntimeLogLevel
 import logseq.chat.AndroidRuntimeLogSource
@@ -38,6 +39,7 @@ internal class ChatRuntime(
         authentication = CognitoAndroidAuthentication(authentication),
         platform = platformServices,
         attachmentsImporter = assetImporter::import,
+        syncNow = ::requestSyncNow,
     )
 
     val backend = LuiBackend(
@@ -64,6 +66,8 @@ internal class ChatRuntime(
     @Volatile private var hasAuthenticatedSession = false
     @Volatile private var hasOpenGraph = false
     @Volatile private var appIsForeground = true
+    @Volatile private var pendingSyncRequested = false
+    private var pendingSyncJob: kotlinx.coroutines.Job? = null
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
     private var appearance by mutableStateOf("system")
@@ -113,7 +117,10 @@ internal class ChatRuntime(
                     applyPatch = ::applyPatch,
                     onError = ::reportError,
                     trace = ::traceNativeEffect,
-                    afterCoreResponseApplied = outlinerCommands::deliver,
+                    afterCoreResponseApplied = { response ->
+                        outlinerCommands.deliver(response)
+                        if (hasPendingSyncWork(response)) requestSyncNow()
+                    },
                 )
                 drain.autosaveDrain = { scope.launch { drain.drain(scope) } }
                 effectDrain = drain
@@ -160,6 +167,43 @@ internal class ChatRuntime(
     private suspend fun applyCoreResponse(response: String) {
         applyPatch(bridge.applySnapshot(response))
         outlinerCommands.deliver(response)
+        if (hasPendingSyncWork(response)) requestSyncNow()
+    }
+
+    private fun hasPendingSyncWork(response: String): Boolean =
+        runCatching {
+            val result = JSONObject(response).optJSONObject("result") ?: return false
+            result.optBoolean("hasPendingSemanticOperations") ||
+                result.optJSONObject("pendingSyncRequest") != null
+        }.getOrDefault(false)
+
+    // --- Pending sync pump (port of iOS runPendingSyncPump) ---
+
+    fun requestSyncNow(): Boolean {
+        pendingSyncRequested = true
+        if (pendingSyncJob?.isActive != true) {
+            pendingSyncJob = scope.launch {
+                try {
+                    runPendingSyncPump()
+                } catch (error: Throwable) {
+                    reportError(error)
+                }
+            }
+        }
+        return true
+    }
+
+    private suspend fun runPendingSyncPump() {
+        val job = kotlinx.coroutines.currentCoroutineContext().job
+        do {
+            pendingSyncRequested = false
+            AndroidPendingSyncPump(
+                callCore = bridge::callCore,
+                applyResponse = ::applyCoreResponse,
+                isCancelled = { !job.isActive },
+                log = { level, message -> logRuntime(level, "sync", message) },
+            ).run()
+        } while (pendingSyncRequested && job.isActive)
     }
 
     private suspend fun sendOutlinerEvent(event: JSONObject) {
@@ -218,6 +262,12 @@ internal class ChatRuntime(
         ) {
             hasOpenGraph = true
             graphCatalogAutoRefresh?.stopPeriodic()
+            requestSyncNow()
+        }
+        if (resolution.succeeded &&
+            effect.kind in setOf("send-capture", "send-task", "sync-now")
+        ) {
+            requestSyncNow()
         }
         return resolution
     }
@@ -287,6 +337,7 @@ internal class ChatRuntime(
             restored.graphResponse?.let { applyCoreResponse(it) }
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
             logRuntime("info", "core", "Core state restored")
+            if (hasOpenGraph) requestSyncNow()
             appEntries.markReady()
             updateCatalogPolling("restore")
         } catch (error: Throwable) {
