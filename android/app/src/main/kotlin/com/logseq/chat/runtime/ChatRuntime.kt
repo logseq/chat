@@ -14,6 +14,7 @@ import com.logseq.chat.CognitoAuthProvider
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import logseq.chat.AndroidRuntimeLogLevel
@@ -67,7 +68,13 @@ internal class ChatRuntime(
     @Volatile private var hasOpenGraph = false
     @Volatile private var appIsForeground = true
     @Volatile private var pendingSyncRequested = false
+    @Volatile private var appliedServerT = -1L
+    @Volatile private var selectedGraphId = ""
+    @Volatile private var storageBaseUrl = ""
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
+    private var graphEventsJob: kotlinx.coroutines.Job? = null
+    private var graphEventsGraphId: String? = null
+    private var graphLifecycle: AndroidGraphLifecycle? = null
     private var activeBootstrap: kotlinx.coroutines.Job? = null
     private var activeBootstrapHadSession = false
     private var appearance by mutableStateOf("system")
@@ -85,17 +92,19 @@ internal class ChatRuntime(
                 val authenticationCode = platformEffects.initialAuthenticationCode()
                 val storage = platformEffects.loadStorageState()
                 appearance = storage.settings.appearance
+                storageBaseUrl = storage.baseUrl
 
-                val graphLifecycle = AndroidGraphLifecycle(
+                val lifecycle = AndroidGraphLifecycle(
                     callCore = bridge::callCore,
                     effects = platformEffects,
                     accessTokenProvider = platformEffects::restoreAccessToken,
                     trace = ::traceGraphLifecycle,
                 )
+                graphLifecycle = lifecycle
                 val executor = CoreEffectExecutor(
                     callCore = bridge::callCore,
                     executePlatformEffect = NativeEffectExecutor(platformEffects::execute),
-                    executeGraphEffect = NativeEffectExecutor(graphLifecycle::execute),
+                    executeGraphEffect = NativeEffectExecutor(lifecycle::execute),
                 )
                 coreEffects = executor
                 graphCatalogAutoRefresh = GraphCatalogAutoRefresh(
@@ -119,7 +128,9 @@ internal class ChatRuntime(
                     trace = ::traceNativeEffect,
                     afterCoreResponseApplied = { response ->
                         outlinerCommands.deliver(response)
+                        trackSyncState(response)
                         if (hasPendingSyncWork(response)) requestSyncNow()
+                        ensureGraphEventsSync()
                     },
                 )
                 drain.autosaveDrain = { scope.launch { drain.drain(scope) } }
@@ -167,7 +178,9 @@ internal class ChatRuntime(
     private suspend fun applyCoreResponse(response: String) {
         applyPatch(bridge.applySnapshot(response))
         outlinerCommands.deliver(response)
+        trackSyncState(response)
         if (hasPendingSyncWork(response)) requestSyncNow()
+        ensureGraphEventsSync()
     }
 
     private fun hasPendingSyncWork(response: String): Boolean =
@@ -176,6 +189,91 @@ internal class ChatRuntime(
             result.optBoolean("hasPendingSemanticOperations") ||
                 result.optJSONObject("pendingSyncRequest") != null
         }.getOrDefault(false)
+
+    // The core reports the sync cursor and selected graph on every
+    // snapshot; cache them so the WebSocket loop can pull entity changes
+    // without holding client-side state of its own (iOS snapshot fields).
+    private fun trackSyncState(response: String) {
+        runCatching {
+            val result = JSONObject(response).optJSONObject("result") ?: return
+            if (result.has("appliedServerT") && !result.isNull("appliedServerT")) {
+                appliedServerT = result.getLong("appliedServerT")
+            }
+            if (result.has("selectedGraphId") && !result.isNull("selectedGraphId")) {
+                selectedGraphId = result.getString("selectedGraphId")
+            }
+        }
+    }
+
+    // --- Graph events WebSocket (port of iOS startSync/runGraphEventsOnce) ---
+
+    private fun ensureGraphEventsSync() {
+        Log.d(
+            "GraphEvents",
+            "ensure open=$hasOpenGraph graph=$selectedGraphId " +
+                "base=$storageBaseUrl cursor=$appliedServerT " +
+                "job=${graphEventsJob?.isActive} jobGraph=$graphEventsGraphId",
+        )
+        if (!hasOpenGraph || selectedGraphId.isEmpty() || storageBaseUrl.isEmpty()) return
+        if (graphEventsJob?.isActive == true && graphEventsGraphId == selectedGraphId) return
+        graphEventsJob?.cancel()
+        graphEventsGraphId = selectedGraphId
+        val graphId = selectedGraphId
+        graphEventsJob = scope.launch {
+            var attempt = 0
+            while (isActive) {
+                val token = try {
+                    platformEffects.restoreAccessToken()
+                } catch (error: Throwable) {
+                    logRuntime("warn", "core", "access token unavailable: $error")
+                    null
+                }
+                if (token.isNullOrBlank() || !isActive) break
+                val outcome = try {
+                    AndroidGraphEventsSync(
+                        callCore = bridge::callCore,
+                        applyResponse = ::applyCoreResponse,
+                        appliedServerT = { appliedServerT },
+                        onChangesApplied = { requestSyncNow(); Unit },
+                        isCancelled = { !isActive },
+                        log = { level, message -> logRuntime(level, "core", message) },
+                    ).runSession(
+                        AndroidGraphEventsSync.Connection(
+                            graphId = graphId,
+                            baseUrl = storageBaseUrl,
+                            accessToken = token,
+                        )
+                    )
+                } catch (error: Throwable) {
+                    AndroidGraphEventsSync.SessionOutcome.Failed(
+                        error.message ?: error.toString()
+                    )
+                }
+                when (outcome) {
+                    is AndroidGraphEventsSync.SessionOutcome.SnapshotRequired -> {
+                        // The server rejected our cursor: re-open the graph
+                        // through the same lifecycle path an open-graph
+                        // effect uses (re-downloads the snapshot).
+                        logRuntime("info", "core", "snapshot required for $graphId")
+                        runCatching { graphLifecycle?.openGraphForResync(graphId) }
+                        attempt = 0
+                    }
+                    is AndroidGraphEventsSync.SessionOutcome.Failed -> {
+                        if (!isActive) break
+                        val wait = AndroidGraphEventsSync.backoffSeconds(attempt)
+                        attempt += 1
+                        logRuntime(
+                            "warn",
+                            "core",
+                            "graph events reconnect in ${wait}s: ${outcome.message}",
+                        )
+                        Log.d("GraphEvents", "reconnect in ${wait}s: ${outcome.message}")
+                        kotlinx.coroutines.delay(wait * 1000)
+                    }
+                }
+            }
+        }
+    }
 
     // --- Pending sync pump (port of iOS runPendingSyncPump) ---
 
@@ -201,7 +299,7 @@ internal class ChatRuntime(
                 callCore = bridge::callCore,
                 applyResponse = ::applyCoreResponse,
                 isCancelled = { !job.isActive },
-                log = { level, message -> logRuntime(level, "sync", message) },
+                log = { level, message -> logRuntime(level, "core", message) },
             ).run()
         } while (pendingSyncRequested && job.isActive)
     }

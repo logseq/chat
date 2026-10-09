@@ -51,6 +51,13 @@ internal class AndroidGraphLifecycle(
         else -> "graph_operation_failed"
     }
 
+    // Re-run the open flow (select + remote snapshot re-import when needed)
+    // after the sync WebSocket reports that our cursor fell off the
+    // server's retained range. iOS handles this by returning from
+    // runGraphEventsOnce so startSync re-bootstraps.
+    suspend fun openGraphForResync(graphId: String): NativeEffectResolution =
+        openGraph(graphId)
+
     private suspend fun openGraph(graphId: String): NativeEffectResolution {
         trace("open.start graphId=$graphId")
         val selected = call("selectGraph", payload = graphId)
