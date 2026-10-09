@@ -1,0 +1,9 @@
+# Cancelling the create-graph sheet returns to the picker without creating
+# a graph.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+wait prop:accessibility-identifier=sheet.graph-create
+expect prop:accessibility-identifier=form.graph-create
+press prop:accessibility-identifier=button.graph-add.cancel
+expect-absent prop:accessibility-identifier=sheet.graph-create
+expect prop:accessibility-identifier=button.graph-add

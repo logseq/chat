@@ -1,0 +1,13 @@
+# Editing the sync server base URL persists through SaveSettingsEffect
+# (resolved by the host stub) and the sheet stays open.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press kind:menu-item&text:"Settings"
+wait prop:accessibility-identifier=sheet.settings
+expect prop:accessibility-identifier=field.base-url
+type prop:accessibility-identifier=field.base-url "http://127.0.0.1:8787"
+expect-prop prop:accessibility-identifier=field.base-url text "http://127.0.0.1:8787"
+expect prop:accessibility-identifier=sheet.settings
