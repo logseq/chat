@@ -154,7 +154,8 @@ public final class LGChatRenderer {
         let backend = Self.makeBackend()
         self.backend = backend
         backend.onEvent = { [weak self] event in
-            self?.receive(Self.map(event))
+            guard let mapped = Self.map(event) else { return }
+            self?.receive(mapped)
         }
     }
 
@@ -197,7 +198,7 @@ public final class LGChatRenderer {
         onEvent(event)
     }
 
-    private static func map(_ event: LUIEvent) -> LGChatRendererEvent {
+    private static func map(_ event: LUIEvent) -> LGChatRendererEvent? {
         switch event {
         case .appear(let node):
             return LGChatRendererEvent(kind: .appear, nodeID: node)
@@ -247,6 +248,12 @@ public final class LGChatRenderer {
                 extensionName: name,
                 extensionValues: values
             )
+        // The chat core ABI exports no pointer-level or context-menu
+        // entries (see shared/native/logseq_chat_core_ffi.h), so these
+        // events are dropped — matching the Kotlin LuiDispatch.
+        case .pressDetail, .pointerDown, .pointerUp, .pointerEnter,
+             .pointerLeave, .contextMenuPress:
+            return nil
         }
     }
 }
