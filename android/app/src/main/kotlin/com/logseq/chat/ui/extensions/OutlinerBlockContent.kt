@@ -138,6 +138,9 @@ internal fun OutlinerBlockContent(
                 drawDragDecoration = {},
                 block = {
                     detectTapGestures(
+                        onTap = {
+                            context.emit("edit", "uuid" to uuid)
+                        },
                         onLongPress = {
                             dragging = true
                             context.emit("drag-start", "uuid" to uuid)
@@ -155,7 +158,6 @@ internal fun OutlinerBlockContent(
                 shouldStartDragAndDrop = { true },
                 target = dropTarget,
             )
-            .clickable { context.emit("edit", "uuid" to uuid) }
             .testTag("outliner-block-content-$uuid"),
     ) {
         Column(modifier = Modifier.alpha(if (dragging) 0.35f else 1f)) {
@@ -172,6 +174,7 @@ internal fun OutlinerBlockContent(
                     completedDecoration = decoration,
                     youtubeTargetUrl = context.string("youtube-target-url") ?: "",
                     onOpenNode = { context.emit("open-node", "uuid" to it) },
+                    onTapFallback = { context.emit("edit", "uuid" to uuid) },
                 )
             }
         }
@@ -196,6 +199,7 @@ private fun ProjectedMarkup(
     completedDecoration: TextDecoration?,
     youtubeTargetUrl: String,
     onOpenNode: (String) -> Unit,
+    onTapFallback: () -> Unit,
 ) {
     val nodes = remember(encoded) { decodeMarkup(encoded) }
     if (nodes.isEmpty()) {
@@ -220,6 +224,7 @@ private fun ProjectedMarkup(
                         .fillMaxWidth()
                         .testTag("block.rich.inline.$index"),
                     onOpenNode = onOpenNode,
+                    onTapFallback = onTapFallback,
                     youtubeTargetUrl = youtubeTargetUrl,
                 )
             }
@@ -344,6 +349,7 @@ private fun MarkupInlineText(
     nodes: List<JSONObject>,
     modifier: Modifier,
     onOpenNode: (String) -> Unit,
+    onTapFallback: () -> Unit,
     youtubeTargetUrl: String,
 ) {
     val context = LocalContext.current
@@ -367,6 +373,9 @@ private fun MarkupInlineText(
                             ?: it.item,
                     )
                 }
+            // ClickableText consumes every tap; unannotated taps still
+            // mean "edit this block" (iOS taps the row text to edit).
+            onTapFallback()
         },
     )
 }
