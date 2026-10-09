@@ -4,10 +4,24 @@
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <!-- Shown while the process starts; replaced by the first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
+        <item name="android:statusBarColor">#101318</item>
+        <item name="android:navigationBarColor">#101318</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has
          started: the background behind the Compose content. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:statusBarColor">#101318</item>
+        <item name="android:navigationBarColor">#101318</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 </resources>

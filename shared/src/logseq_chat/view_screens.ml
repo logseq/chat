@@ -522,10 +522,7 @@ let main_header_sync (context : Lui_ui.ui_context) model_source send : t =
         (View_base.with_label_signal
            (Signal.map View_base.sync_indicator_label model_source)
            (button
-              ~icon:
-                (if Lui_ui.host context = KotlinHost then
-                   `app "sync-status"
-                 else `app "status-dot")
+              ~icon:(`app "status-dot")
               ~variant:`ghost ~size:`icon
               ~foreground_signal:
                 (Signal.map View_base.sync_indicator_foreground

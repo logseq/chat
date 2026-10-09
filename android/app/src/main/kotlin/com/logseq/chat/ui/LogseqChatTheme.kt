@@ -20,6 +20,9 @@ internal object LogseqChatTheme {
     val lightScheme = lightColorScheme(
         primary = accent,
         surface = lightSurface,
+        // Match the iOS app chrome background (#fcfcfc) instead of the M3
+        // default pink-tinted surface.
+        background = Color(0xfffcfcfc),
         surfaceContainerLowest = Color(0xffffffff),
         surfaceContainerLow = Color(0xfff2f3f8),
         surfaceContainer = Color(0xffeceef4),
@@ -30,6 +33,7 @@ internal object LogseqChatTheme {
     val darkScheme = darkColorScheme(
         primary = Color(0xff8fb5ff),
         surface = darkSurface,
+        background = darkSurface,
         surfaceContainerLowest = Color(0xff0b0e12),
         surfaceContainerLow = Color(0xff14171d),
         surfaceContainer = Color(0xff181c22),

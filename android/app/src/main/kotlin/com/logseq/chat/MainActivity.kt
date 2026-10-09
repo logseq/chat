@@ -6,7 +6,6 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -31,7 +30,10 @@ class MainActivity : ComponentActivity() {
             "Android host started",
         )
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // The theme opts out of edge-to-edge enforcement and pins opaque
+        // light system bars; the runtime contrast flags keep them opaque.
+        window.isStatusBarContrastEnforced = false
+        window.isNavigationBarContrastEnforced = false
 
         runtime = ChatRuntime(this, lifecycleScope)
         runtime.start()
