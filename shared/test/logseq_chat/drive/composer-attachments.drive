@@ -1,0 +1,17 @@
+# Expanded composer exposes the attachment button and its camera/photos/
+# files/audio options.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=surface.composer.root
+wait prop:accessibility-identifier=button.composer.expand
+press prop:accessibility-identifier=button.composer.expand
+wait prop:accessibility-identifier=field.composer
+wait prop:accessibility-identifier=button.attachment
+press prop:accessibility-identifier=button.attachment
+expect prop:accessibility-identifier=button.attachment.camera
+expect prop:accessibility-identifier=button.attachment.photos
+expect prop:accessibility-identifier=button.attachment.files
+expect prop:accessibility-identifier=button.attachment.audio

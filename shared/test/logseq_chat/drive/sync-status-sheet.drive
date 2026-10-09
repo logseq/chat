@@ -1,0 +1,16 @@
+# The connection indicator (offline at mount) opens the sync status sheet;
+# sync-now issues SyncNowEffect and the Done button dismisses the sheet.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=sync.disconnected
+press prop:accessibility-identifier=sync.disconnected
+wait prop:accessibility-identifier=sheet.sync-status
+expect prop:accessibility-identifier=form.sync-status
+expect prop:accessibility-identifier=row.sync.cursor
+press prop:accessibility-identifier=button.sync-now
+wait prop:accessibility-identifier=button.sync.done
+press prop:accessibility-identifier=button.sync.done
+expect-absent prop:accessibility-identifier=sheet.sync-status

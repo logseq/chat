@@ -1,0 +1,18 @@
+# On an empty page node the add-first-block button issues AddRootBlockEffect;
+# the host appends a row and the new block renders. (Mounted with empty
+# seeded rows via the empty- filename prefix.)
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Alpha"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=button.search
+press prop:accessibility-identifier=button.search
+wait prop:accessibility-identifier=screen.search
+ext ext:native-search-presentation native-search-presentation query-changed '{"query":"alpha"}'
+wait prop:accessibility-identifier=search.result.page-1
+press prop:accessibility-identifier=search.result.page-1
+wait prop:accessibility-identifier=screen.node
+wait prop:accessibility-identifier=button.outliner.add-first-block
+press prop:accessibility-identifier=button.outliner.add-first-block
+wait text:"New block"

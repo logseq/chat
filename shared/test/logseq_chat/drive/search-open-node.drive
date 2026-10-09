@@ -1,0 +1,17 @@
+# Pressing a block search hit issues OpenSearchNodeEffect; the host projects
+# the node route and its outliner rows render. (iOS back is handled by the
+# native navigation bar — button.navigation.back only exists on Kotlin.)
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Alpha"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+wait prop:accessibility-identifier=button.search
+press prop:accessibility-identifier=button.search
+wait prop:accessibility-identifier=screen.search
+ext ext:native-search-presentation native-search-presentation query-changed '{"query":"alpha"}'
+wait prop:accessibility-identifier=search.result.block-1
+press prop:accessibility-identifier=search.result.block-1
+wait prop:accessibility-identifier=screen.node
+expect text:"First seeded block"
+expect text:"Linked references"

@@ -1,0 +1,13 @@
+# Sign-out cancel keeps the signed-in shell instead of leaving the app.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press kind:menu-item&text:"Settings"
+wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=button.sign-out
+wait prop:accessibility-identifier=dialog.sign-out
+press prop:accessibility-identifier=button.sign-out.cancel
+expect-absent prop:accessibility-identifier=dialog.sign-out
+expect-absent prop:accessibility-identifier=screen.authentication

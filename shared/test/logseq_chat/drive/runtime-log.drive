@@ -1,0 +1,19 @@
+# The runtime log sheet opens from Settings; refresh issues
+# RefreshRuntimeLogEffect and the injected record renders.
+expect prop:accessibility-identifier=button.graph-add
+press prop:accessibility-identifier=button.graph-add
+type prop:accessibility-identifier=field.graph-name "Drive Graph"
+press prop:accessibility-identifier=button.graph-add.confirm
+wait prop:accessibility-identifier=application.shell
+press kind:menu-item&text:"Settings"
+wait prop:accessibility-identifier=sheet.settings
+press prop:accessibility-identifier=button.runtime-log
+wait prop:accessibility-identifier=sheet.settings.log
+expect prop:accessibility-identifier=screen.runtime-log
+expect prop:accessibility-identifier=button.log-errors
+expect prop:accessibility-identifier=button.log-refresh
+expect prop:accessibility-identifier=button.log-copy
+press prop:accessibility-identifier=button.log-refresh
+wait text:"drive test log line"
+press kind:button&text:"Done"
+expect-absent prop:accessibility-identifier=screen.runtime-log
