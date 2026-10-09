@@ -18,7 +18,8 @@ import androidx.compose.ui.unit.dp
 import dev.lui.LuiIconResolver
 
 // Small filled dot (iOS status-dot size) inside the standard 24dp icon
-// slot — Material's Circle would fill the whole slot.
+// slot — Material's Circle would fill the whole slot. Radius matches the
+// iOS status_dot asset (r=5 in a 24 viewBox).
 private val statusDot: ImageVector = ImageVector.Builder(
     name = "StatusDot",
     defaultWidth = 24.dp,
@@ -26,11 +27,73 @@ private val statusDot: ImageVector = ImageVector.Builder(
     viewportWidth = 24f,
     viewportHeight = 24f,
 ).path(fill = SolidColor(Color.Black)) {
-    moveTo(12f, 9f)
-    curveTo(13.657f, 9f, 15f, 10.343f, 15f, 12f)
-    curveTo(15f, 13.657f, 13.657f, 15f, 12f, 15f)
-    curveTo(10.343f, 15f, 9f, 13.657f, 9f, 12f)
-    curveTo(9f, 10.343f, 10.343f, 9f, 12f, 9f)
+    moveTo(12f, 7f)
+    curveTo(14.761f, 7f, 17f, 9.239f, 17f, 12f)
+    curveTo(17f, 14.761f, 14.761f, 17f, 12f, 17f)
+    curveTo(9.239f, 17f, 7f, 14.761f, 7f, 12f)
+    curveTo(7f, 9.239f, 9.239f, 7f, 12f, 7f)
+    close()
+}.build()
+
+// Sidebar toggle drawn like the iOS sidebar_toggle asset: two rounded
+// horizontal strokes, the top one spanning the width and the bottom
+// one shorter.
+private val sidebarToggle: ImageVector = ImageVector.Builder(
+    name = "SidebarToggle",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).path(
+    fill = null,
+    stroke = SolidColor(Color.Black),
+    strokeLineWidth = 2.25f,
+    strokeLineCap = androidx.compose.ui.graphics.StrokeCap.Round,
+) {
+    moveTo(1f, 8f)
+    lineTo(23f, 8f)
+    moveTo(1f, 16f)
+    lineTo(16f, 16f)
+}.build()
+
+// Circled ellipsis matching the iOS overflow button: the view draws a
+// 24pt ring (border-width 2) around the ellipsis on Apple; Android folds
+// both into the icon so the capsule cell needs no stacked overlay.
+private val circledEllipsis: ImageVector = ImageVector.Builder(
+    name = "CircledEllipsis",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).path(
+    fill = null,
+    stroke = SolidColor(Color.Black),
+    strokeLineWidth = 2f,
+) {
+    moveTo(12f, 1f)
+    curveTo(18.075f, 1f, 23f, 5.925f, 23f, 12f)
+    curveTo(23f, 18.075f, 18.075f, 23f, 12f, 23f)
+    curveTo(5.925f, 23f, 1f, 18.075f, 1f, 12f)
+    curveTo(1f, 5.925f, 5.925f, 1f, 12f, 1f)
+    close()
+}.path(fill = SolidColor(Color.Black)) {
+    moveTo(7f, 13.6f)
+    curveTo(7.884f, 13.6f, 8.6f, 12.884f, 8.6f, 12f)
+    curveTo(8.6f, 11.116f, 7.884f, 10.4f, 7f, 10.4f)
+    curveTo(6.116f, 10.4f, 5.4f, 11.116f, 5.4f, 12f)
+    curveTo(5.4f, 12.884f, 6.116f, 13.6f, 7f, 13.6f)
+    close()
+    moveTo(12f, 13.6f)
+    curveTo(12.884f, 13.6f, 13.6f, 12.884f, 13.6f, 12f)
+    curveTo(13.6f, 11.116f, 12.884f, 10.4f, 12f, 10.4f)
+    curveTo(11.116f, 10.4f, 10.4f, 11.116f, 10.4f, 12f)
+    curveTo(10.4f, 12.884f, 11.116f, 13.6f, 12f, 13.6f)
+    close()
+    moveTo(17f, 13.6f)
+    curveTo(17.884f, 13.6f, 18.6f, 12.884f, 18.6f, 12f)
+    curveTo(18.6f, 11.116f, 17.884f, 10.4f, 17f, 10.4f)
+    curveTo(16.116f, 10.4f, 15.4f, 11.116f, 15.4f, 12f)
+    curveTo(15.4f, 12.884f, 16.116f, 13.6f, 17f, 13.6f)
     close()
 }.build()
 
@@ -99,7 +162,7 @@ internal val logseqChatAppIcons: Map<String, ImageVector> = mapOf(
     "history" to Icons.Outlined.History,
     "logo" to Icons.Outlined.Bolt,
     "more-horiz" to Icons.Filled.MoreHoriz,
-    "more-vert" to Icons.Filled.MoreHoriz,
+    "more-vert" to circledEllipsis,
     "navigation-back" to Icons.AutoMirrored.Filled.ArrowBack,
     "open-external" to Icons.AutoMirrored.Outlined.OpenInNew,
     "outliner-editor-done" to Icons.Filled.Check,
@@ -109,7 +172,7 @@ internal val logseqChatAppIcons: Map<String, ImageVector> = mapOf(
     "send" to Icons.AutoMirrored.Filled.Send,
     "settings" to Icons.Outlined.Settings,
     "share" to Icons.Outlined.Share,
-    "sidebar-toggle" to Icons.Filled.Menu,
+    "sidebar-toggle" to sidebarToggle,
     "sign-out" to Icons.AutoMirrored.Filled.Logout,
     "star" to Icons.Outlined.Star,
     "star-filled" to Icons.Filled.Star,
