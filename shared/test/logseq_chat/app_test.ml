@@ -10,7 +10,7 @@ let node (runtime : Lui_runtime.application) node_id =
 
 let children (runtime : Lui_runtime.application) node =
   match Hashtbl.find_opt runtime.Lui_runtime.runtime_children node with
-  | Some children -> children
+  | Some children -> Lui_sequence.to_list children
   | None -> []
 
 let property_string runtime node key =
