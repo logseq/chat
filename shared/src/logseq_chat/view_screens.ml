@@ -114,13 +114,13 @@ let search_screen model_source send : t =
 
 let capture_and_search_row (context : Lui_ui.ui_context) model_source send
     : t =
-  if Lui_ui.platform context = AndroidOS then
-    row ~gap:10 ~cross:`center
+  if Lui_ui.host context = KotlinHost then
+    row ~grow:1.0 ~gap:10 ~cross:`center
       ~accessibility_identifier:"row.bottom.capture"
       [
         View_composer.composer_view context model_source send;
-        button ~icon:(`app "search") ~variant:`secondary ~size:`icon
-          ~width:58 ~height:58 ~label:"Search"
+        button ~icon:(`app "search") ~variant:`ghost ~size:`icon ~width:58
+          ~height:58 ~background:"glass" ~corner_radius:29 ~label:"Search"
           ~accessibility_identifier:"button.search"
           ~on_press:(press send Model.OpenSearch)
           [];
@@ -505,9 +505,9 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
 
 let main_header_title (context : Lui_ui.ui_context) model_source : t =
   if Lui_ui.host context = KotlinHost then
-    heading
+    text
       ~value_signal:(Signal.map View_base.main_title model_source)
-      ~level:3 ~accessibility_identifier:"title.main" []
+      ~style_class:"headline" ~accessibility_identifier:"title.main" []
   else
     text
       ~value_signal:(Signal.map View_base.main_title model_source)
@@ -723,14 +723,23 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
            [
              column ~grow:1.0
                [
-                 row ~cross:`center ~gap:4 ~height:64 ~padding_horizontal:8
+                 row ~cross:`center ~gap:8 ~height:64 ~padding_horizontal:16
                    ~accessibility_identifier:"header.main"
                    [
-                     main_header_leading context model_source send;
+                     column ~width:44 ~height:44 ~corner_radius:22
+                       ~background:"glass" ~main:`center ~cross:`center
+                       [ main_header_leading context model_source send ];
                      main_header_title context model_source;
                      spacer ~grow:1.0 [];
-                     main_header_sync context model_source send;
-                     main_header_connection model_source send;
+                     box ~corner_radius:22 ~background:"glass"
+                       ~padding_horizontal:6
+                       [
+                         row ~cross:`center ~gap:4
+                           [
+                             main_header_sync context model_source send;
+                             main_header_connection model_source send;
+                           ];
+                       ];
                    ];
                  stack ~grow:1.0
                    [ native_search_view context model_source send ];

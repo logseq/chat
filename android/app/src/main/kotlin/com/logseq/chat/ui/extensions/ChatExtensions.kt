@@ -6,18 +6,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,7 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lui.LuiExtensionContext
 import dev.lui.LuiExtensionEventSchema
@@ -245,8 +251,10 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
 
 // Search presentation — the standard children are the app content and are
 // always rendered (mirroring the SwiftUI `baseContent`); `presented` adds
-// the modal search sheet on top, like iOS's fullScreenCover. The core
-// drives `query`; results are the same children rendered below the field.
+// the search chrome on top, matching iOS's .searchable layout: a close
+// circle top-left, centered bold title, the results list filling the
+// space, and a bottom capsule with a magnifier, the text field, and a
+// clear circle.
 @Composable
 private fun SearchPresentation(context: LuiExtensionContext) {
     val presented = context.flag("presented")
@@ -267,44 +275,102 @@ private fun SearchPresentation(context: LuiExtensionContext) {
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column {
-            Row(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                IconButton(onClick = { context.emit("back", "count" to 1) }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                    )
-                }
-                var fieldValue by remember(query) { mutableStateOf(query) }
-                TextField(
-                    value = fieldValue,
-                    onValueChange = {
-                        fieldValue = it
-                        context.emit("query-changed", "query" to it)
-                    },
+                Surface(
                     modifier = Modifier
-                        .weight(1f)
-                        .testTag("field.search"),
-                    placeholder = { Text(title.ifEmpty { "Search" }) },
-                    singleLine = true,
-                )
-                if (fieldValue.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            fieldValue = ""
-                            context.emit("query-changed", "query" to "")
-                        },
-                    ) {
-                        Icon(Icons.Filled.Close, contentDescription = "Clear")
+                        .align(Alignment.CenterStart)
+                        .size(44.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                ) {
+                    IconButton(onClick = { context.emit("dismiss") }) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Close search",
+                        )
                     }
                 }
+                Text(
+                    title.ifEmpty { "Search" },
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f)) {
                 context.Children()
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp, top = 8.dp),
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(58.dp),
+                    shape = RoundedCornerShape(29.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        var fieldValue by remember(query) { mutableStateOf(query) }
+                        TextField(
+                            value = fieldValue,
+                            onValueChange = {
+                                fieldValue = it
+                                context.emit("query-changed", "query" to it)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("field.search"),
+                            placeholder = { Text(title.ifEmpty { "Search" }) },
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                            ),
+                        )
+                        if (fieldValue.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier.size(32.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        fieldValue = ""
+                                        context.emit("query-changed", "query" to "")
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Close,
+                                        contentDescription = "Clear",
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
