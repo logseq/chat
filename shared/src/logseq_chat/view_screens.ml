@@ -496,6 +496,7 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
         (button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
            ~width:44 ~height:44
            ~label:"Toggle sidebar"
+           ~style_class:"drawer-toggle"
            ~accessibility_identifier:"button.sidebar"
            ~disabled_signal:
              (Signal.map View_base.sidebar_drag_disabled_ model_source)
