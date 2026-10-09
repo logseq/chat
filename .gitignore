@@ -87,3 +87,4 @@ duniverse/
 **/fastlane/README.md
 **/fastlane/Preview.html
 **/fastlane/test_output
+android/app/.cxx/

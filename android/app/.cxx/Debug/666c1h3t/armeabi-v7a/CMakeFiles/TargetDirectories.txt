@@ -1,3 +1,0 @@
-/home/ubuntu/repos/chat/android/app/.cxx/Debug/666c1h3t/armeabi-v7a/CMakeFiles/logseq_chat_jni.dir
-/home/ubuntu/repos/chat/android/app/.cxx/Debug/666c1h3t/armeabi-v7a/CMakeFiles/edit_cache.dir
-/home/ubuntu/repos/chat/android/app/.cxx/Debug/666c1h3t/armeabi-v7a/CMakeFiles/rebuild_cache.dir
