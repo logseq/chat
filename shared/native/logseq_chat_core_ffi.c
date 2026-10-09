@@ -569,3 +569,7 @@ const char *logseq_chat_lui_apply_host_update(const char *kind,
       call_lui_two_strings(
           "logseq_chat_lui_apply_host_update", kind, payload_json));
 }
+
+void logseq_chat_metric_log(const char *message) {
+  LOGSEQ_CHAT_LOG("%s", message);
+}

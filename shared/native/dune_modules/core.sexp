@@ -42,7 +42,7 @@
 "Sqlite"
 "Storage_codec"
 "String_kit"
-"Mobile_database"
+"Metric_log" "Mobile_database"
 "Mobile_graph"
 "Mobile_session"
 "Mobile_payload"
