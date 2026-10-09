@@ -1,10 +1,12 @@
 package com.logseq.chat.runtime
 
 import android.app.Activity
+import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
 import com.logseq.chat.AndroidAssetImporter
 import com.logseq.chat.AndroidAudioPlayer
 import com.logseq.chat.AndroidAudioRecorder
@@ -36,6 +38,10 @@ internal class ChatRuntime(
     val audioRecorder = AndroidAudioRecorder(activity)
     val audioPlayer = AndroidAudioPlayer(activity)
 
+    companion object {
+        private const val LOGO_IMAGE_ID = 1
+    }
+
     private val platformEffects = AndroidPlatformEffects(
         authentication = CognitoAndroidAuthentication(authentication),
         platform = platformServices,
@@ -50,6 +56,19 @@ internal class ChatRuntime(
         ),
         icons = logseqChatIconResolver,
     )
+
+    init {
+        // The product logo ships as a bundled raster (same PNG the iOS
+        // asset catalog carries); the shared view references it through
+        // the image-id channel.
+        backend.registerImage(
+            LOGO_IMAGE_ID,
+            BitmapFactory.decodeResource(
+                activity.resources,
+                com.logseq.chat.R.drawable.logseq_logo,
+            ).asImageBitmap(),
+        )
+    }
     private val patchFilter = LuiPatchFilter { patch -> backend.applyJson(patch) }
     private val bridge = LogseqChatNativeBridge(onPatch = ::applyPatch)
 
