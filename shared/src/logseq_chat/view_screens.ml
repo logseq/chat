@@ -713,35 +713,40 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    Lui_ui.on_event context node (fun input_event ->
        ignore
          (View_base.handle_native_navigation_event input_event send));
-   if Lui_ui.host context = KotlinHost then
-     let _ =
-       column ~grow:1.0
-         [
-           row ~cross:`center ~gap:4 ~height:64 ~padding_horizontal:8
-             ~accessibility_identifier:"header.main"
-             [
-               main_header_leading context model_source send;
-               main_header_title context model_source;
-               spacer ~grow:1.0 [];
-               main_header_sync context model_source send;
-               main_header_connection model_source send;
-             ];
-           stack ~grow:1.0
-             [ native_search_view context model_source send ];
-           main_bottom_chrome context model_source send;
-         ]
-         context (Some node)
-     in
+   if Lui_ui.host context = KotlinHost then (
+     (* Two extension children: [content, bottom chrome]. The host hoists
+        the second child to a bottom inset/overlay (mirroring the iOS
+        bottomChromeIndex); inside the content column its internal `grow`
+        props would starve the weighted journal content. *)
      ignore
-       ((if_
-           ~test:(Signal.map View_base.asset_preview_ model_source)
-           (file_preview
-              ~path_signal:
-                (Signal.map View_base.asset_preview_path model_source)
-              ~on_dismiss:(press send Model.DismissAssetPreview)
-              []))
+       ((stack ~grow:1.0
+           [
+             column ~grow:1.0
+               [
+                 row ~cross:`center ~gap:4 ~height:64 ~padding_horizontal:8
+                   ~accessibility_identifier:"header.main"
+                   [
+                     main_header_leading context model_source send;
+                     main_header_title context model_source;
+                     spacer ~grow:1.0 [];
+                     main_header_sync context model_source send;
+                     main_header_connection model_source send;
+                   ];
+                 stack ~grow:1.0
+                   [ native_search_view context model_source send ];
+               ];
+             if_
+               ~test:(Signal.map View_base.asset_preview_ model_source)
+               (file_preview
+                  ~path_signal:
+                    (Signal.map View_base.asset_preview_path model_source)
+                  ~on_dismiss:(press send Model.DismissAssetPreview)
+                  []);
+           ])
           context (Some node));
-     node
+     ignore
+       ((main_bottom_chrome context model_source send) context (Some node));
+     node)
    else (
      ignore
        ((column

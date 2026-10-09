@@ -3,8 +3,10 @@ package com.logseq.chat.ui.extensions
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -202,6 +204,7 @@ fun logseqChatExtensionRegistry(
 private fun NavigationBoundary(context: LuiExtensionContext) {
     val depth = context.int("depth") ?: 0
     val dismissesComposer = context.flag("composer-dismissal-enabled")
+    val occupies = context.flag("bottom-occupies-layout-space")
     BackHandler(enabled = depth > 0 || dismissesComposer) {
         if (dismissesComposer) {
             context.emit("dismiss-composer")
@@ -209,15 +212,48 @@ private fun NavigationBoundary(context: LuiExtensionContext) {
             context.emit("back", "count" to 1)
         }
     }
-    context.Children()
+    val childIds = context.children
+    if (childIds.size == 2) {
+        // Second child is the bottom chrome. Hoist it out of the content
+        // column like iOS's safeAreaInset/overlay so the composer's
+        // internal `grow` props can't starve the journal; intrinsic
+        // sizing keeps it at natural height instead of letting those
+        // props claim the whole screen.
+        if (occupies) {
+            Column(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(1f)) { context.child(childIds[0]) }
+                Box(Modifier.height(IntrinsicSize.Min)) {
+                    context.child(childIds[1])
+                }
+            }
+        } else {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) { context.child(childIds[0]) }
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .height(IntrinsicSize.Min),
+                ) {
+                    context.child(childIds[1])
+                }
+            }
+        }
+    } else {
+        context.Children()
+    }
 }
 
-// Modal search sheet — the core drives `query`; results are standard
-// children rendered below the field.
+// Search presentation — the standard children are the app content and are
+// always rendered (mirroring the SwiftUI `baseContent`); `presented` adds
+// the modal search sheet on top, like iOS's fullScreenCover. The core
+// drives `query`; results are the same children rendered below the field.
 @Composable
 private fun SearchPresentation(context: LuiExtensionContext) {
     val presented = context.flag("presented")
-    if (!presented) return
+    if (!presented) {
+        context.Children()
+        return
+    }
     val title = context.string("title") ?: ""
     val query = context.string("query") ?: ""
 

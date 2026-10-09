@@ -4788,7 +4788,7 @@ let kotlin_composer_uses_a_tonal_material_dock () =
   flush application;
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
-  let chrome = List.nth (children renderer navigation) 0 in
+  let chrome = List.nth (children renderer navigation) 1 in
   let placement =
     descendant_with_identifier renderer chrome "row.bottom.capture"
   in
@@ -5647,7 +5647,7 @@ let ios_node_navigation_is_owned_by_the_native_stack () =
   check_eq ~msg:"the native iOS back action pops the LG route"
     (App.model application).app_navigation_path []
 
-let kotlin_navigation_and_search_own_one_composed_standard_child () =
+let kotlin_navigation_and_search_own_composed_standard_children () =
   let application = App.create (kotlin_backend ()) in
   start application;
   send application
@@ -5663,17 +5663,18 @@ let kotlin_navigation_and_search_own_one_composed_standard_child () =
   let search = extension_node application "native-search-presentation" in
   let navigation_children = children renderer navigation in
   let search_children = children renderer search in
-  check_eq ~msg:"Kotlin navigation receives one composed child"
-    (List.length navigation_children) 1;
+  check_eq ~msg:"Kotlin navigation receives content plus bottom chrome"
+    (List.length navigation_children) 2;
   check_eq ~msg:"Kotlin search receives one composed child"
     (List.length search_children) 1;
   let navigation_content = List.nth navigation_children 0 in
+  let navigation_chrome = List.nth navigation_children 1 in
   let search_content = List.nth search_children 0 in
   let navigation_title =
     descendant_with_identifier renderer navigation_content "title.main"
   in
   let capture_row =
-    descendant_with_identifier renderer navigation_content
+    descendant_with_identifier renderer navigation_chrome
       "row.bottom.capture"
   in
   check_eq ~msg:"the composed Kotlin child uses Material title typography"
@@ -5683,7 +5684,7 @@ let kotlin_navigation_and_search_own_one_composed_standard_child () =
     (property_int renderer navigation_title Lui_protocol.HeadingLevel)
     3;
   check ~msg:"the composed Kotlin child owns the bottom controls"
-    (descendant_with_identifier renderer navigation_content "button.search"
+    (descendant_with_identifier renderer navigation_chrome "button.search"
     <> -1);
   check ~msg:"the closed Kotlin search child retains journal content"
     (descendant_with_identifier renderer search_content "list.outliner"
@@ -5695,7 +5696,7 @@ let kotlin_navigation_and_search_own_one_composed_standard_child () =
   send application Model.ExpandComposer;
   flush application;
   let expanded_row =
-    descendant_with_identifier renderer navigation_content
+    descendant_with_identifier renderer navigation_chrome
       "row.composer.placement"
   in
   check_eq
@@ -7920,7 +7921,7 @@ let kotlin_outliner_autocomplete_stacks_above_the_editor_toolbar () =
   flush application;
   let renderer = Lui_app.runtime application in
   let navigation = extension_node application "native-navigation-stack" in
-  let navigation_content = List.nth (children renderer navigation) 0 in
+  let navigation_content = List.nth (children renderer navigation) 1 in
   let editor_container =
     descendant_with_identifier renderer navigation_content
       "container.outliner.editor-chrome"
@@ -8650,7 +8651,7 @@ let cases =
     case "failed-navigation-effects-restore-the-optimistic-path" failed_navigation_effects_restore_the_optimistic_path;
     case "active-node-route-renders-a-core-backed-navigation-screen" active_node_route_renders_a_core_backed_navigation_screen;
     case "ios-node-navigation-is-owned-by-the-native-stack" ios_node_navigation_is_owned_by_the_native_stack;
-    case "kotlin-navigation-and-search-own-one-composed-standard-child" kotlin_navigation_and_search_own_one_composed_standard_child;
+    case "kotlin-navigation-and-search-own-composed-standard-children" kotlin_navigation_and_search_own_composed_standard_children;
     case "kotlin-navigation-renders-each-active-node-row-once" kotlin_navigation_renders_each_active_node_row_once;
     case "kotlin-selected-pages-unmount-the-hidden-journal-pane" kotlin_selected_pages_unmount_the_hidden_journal_pane;
     case "kotlin-selected-page-navigation-renders-the-opened-node" kotlin_selected_page_navigation_renders_the_opened_node;
