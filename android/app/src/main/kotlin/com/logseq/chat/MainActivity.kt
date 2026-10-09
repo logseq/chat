@@ -6,9 +6,11 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.logseq.chat.runtime.AndroidLaunchMetrics
 import com.logseq.chat.runtime.ChatRuntime
 import com.logseq.chat.ui.LogseqChatApp
 import kotlinx.coroutines.launch
@@ -38,8 +40,12 @@ class MainActivity : ComponentActivity() {
         runtime = ChatRuntime(this, lifecycleScope)
         runtime.start()
 
+        AndroidLaunchMetrics.activity = this
         setContent {
             LogseqChatApp(runtime)
+        }
+        window.decorView.doOnPreDraw {
+            AndroidLaunchMetrics.report("first_ui_rendered")
         }
 
         lifecycleScope.launch {

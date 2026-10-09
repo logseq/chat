@@ -66,3 +66,5 @@ val performance_page_uuid : int -> string
 val performance_block_uuid : int -> int -> string
 val performance_block_title : int -> int -> string
 val seed_performance : Datascript.conn -> int -> (unit, string) result
+val seed_performance_sized :
+  Datascript.conn -> int -> int -> int -> (unit, string) result

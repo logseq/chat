@@ -319,7 +319,7 @@ let performance_block_title page_index block_index =
       (page_index + block_index)
   | _ -> Printf.sprintf "```swift\nlet performanceRow = \"%s\"\n```" row
 
-let seed_performance conn now =
+let seed_performance_sized conn now journal_count block_count =
   attempt "Seed iOS performance graph: " (fun () ->
       reset_user_page_entities conn;
       transact conn
@@ -333,7 +333,7 @@ let seed_performance conn now =
                (page_attrs (performance_page_uuid page_index)
                   (String.lowercase_ascii title)
                   title day time)
-             :: List.init 8 (fun block_index ->
+             :: List.init block_count (fun block_index ->
                     entity None
                       (block_attrs
                          (performance_block_uuid page_index block_index)
@@ -341,4 +341,6 @@ let seed_performance conn now =
                          parent
                          (Printf.sprintf "a%02d" block_index)
                          (time + block_index + 1))))
-           (List.init 100 Fun.id)))
+           (List.init journal_count Fun.id)))
+
+let seed_performance conn now = seed_performance_sized conn now 100 8

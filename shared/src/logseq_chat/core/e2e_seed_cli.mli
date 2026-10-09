@@ -8,6 +8,7 @@ type seed_mode =
   | Outliner
   | Fixture
   | Performance
+  | PerformanceSized of int * int
   | Default
 
 val usage : string
