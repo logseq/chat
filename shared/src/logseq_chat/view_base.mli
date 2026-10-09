@@ -347,6 +347,7 @@ val journal_navigation_model : Model.chat_model -> Model.chat_model
 val node_route_model :
   Model.chat_model -> Model.node_projection -> Model.chat_model
 val app_navigation_depth : Model.chat_model -> int
+val app_back_depth : Model.chat_model -> int
 val search_navigation_depth : Model.chat_model -> int
 val search_node_routes : Model.chat_model -> Model.node_projection list
 val active_route_only : 'a list -> 'a list

@@ -104,6 +104,7 @@ let native_navigation_stack_schema () =
     true []
     [
       Lui_extension.property "depth" IntScalar true None;
+      Lui_extension.property "back-depth" IntScalar true None;
       Lui_extension.property "bottom-occupies-layout-space" BoolScalar true
         None;
       Lui_extension.property "composer-dismissal-enabled" BoolScalar true
