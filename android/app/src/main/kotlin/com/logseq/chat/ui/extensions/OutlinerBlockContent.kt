@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.logseq.chat.AndroidAudioPlayer
 import dev.lui.LuiExtensionContext
@@ -76,6 +77,13 @@ import org.json.JSONObject
 // Port of _OutlinerBlockContent + markup/asset/embedded hosts from
 // the former logseq_chat_extensions.dart, android_audio_playback.dart,
 // android_embedded_media.dart, android_math.dart, android_cloze.dart.
+
+// Block text matches iOS `.body` (17pt, ~22pt leading).
+private val outlinerBodyStyle: androidx.compose.ui.text.TextStyle
+    @Composable get() = MaterialTheme.typography.bodyLarge.copy(
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+    )
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -201,7 +209,7 @@ private fun ProjectedMarkup(
     if (nodes.isEmpty()) {
         Text(
             fallback,
-            style = MaterialTheme.typography.bodyMedium.copy(
+            style = outlinerBodyStyle.copy(
                 textDecoration = completedDecoration
             ),
         )
@@ -349,7 +357,7 @@ private fun MarkupInlineText(
     val context = LocalContext.current
     ClickableText(
         text = annotated,
-        style = MaterialTheme.typography.bodyMedium.copy(
+        style = outlinerBodyStyle.copy(
             color = MaterialTheme.colorScheme.onSurface
         ),
         modifier = modifier,
@@ -395,7 +403,7 @@ private fun MarkupRichNode(
             Text(
                 node.optString("text"),
                 modifier = Modifier.padding(start = 10.dp),
-                style = MaterialTheme.typography.bodyMedium.copy(
+                style = outlinerBodyStyle.copy(
                     fontStyle = FontStyle.Italic,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
@@ -418,7 +426,7 @@ private fun MarkupRichNode(
             AndroidEmbeddedMedia(url = url, isVideo = true, startSeconds = seconds)
         }
         "cloze" -> AndroidCloze(node.optString("text"))
-        else -> Text(node.optString("text"), style = MaterialTheme.typography.bodyMedium)
+        else -> Text(node.optString("text"), style = outlinerBodyStyle)
     }
 }
 
@@ -545,7 +553,7 @@ private fun AndroidAudioPlaybackRow(title: String, path: String) {
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                Text(title, style = outlinerBodyStyle, maxLines = 1)
                 androidx.compose.material3.LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier.fillMaxWidth(),
@@ -592,7 +600,7 @@ internal fun AndroidEmbeddedMedia(url: String, isVideo: Boolean, startSeconds: I
     if (uri == null) {
         Text(
             if (isVideo) "Invalid video URL" else "Invalid embed URL",
-            style = MaterialTheme.typography.bodyMedium.copy(
+            style = outlinerBodyStyle.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             ),
         )

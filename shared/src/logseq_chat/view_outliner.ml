@@ -497,7 +497,13 @@ let outliner_entry context model_source retained_row_source row_source
                   View_base.outliner_journal_button_identifier current r)
                 model_source row_source)
            [
-             box ~padding_horizontal:8 ~padding_vertical:12
+             (* iOS List rows get ~14pt default leading inset that Android's
+                LazyColumn lacks; block rows self-indent on both platforms,
+                so only the journal section title needs compensation. *)
+             box
+               ~padding_horizontal:
+                 (if Lui_ui.host context = KotlinHost then 22 else 8)
+               ~padding_vertical:12
                [
                  box ~height:14 [];
                  heading ~level:3 ~style_class:"scroll-section-title"

@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.sp
 import dev.lui.LuiExtensionContext
 import kotlinx.coroutines.delay
 
@@ -181,8 +182,11 @@ internal fun OutlinerEditor(context: LuiExtensionContext) {
                     false
                 }
             },
-        textStyle = MaterialTheme.typography.bodyMedium.copy(
-            color = MaterialTheme.colorScheme.onSurface
+        textStyle = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+            // Match iOS `.body` (17pt, ~22pt leading).
+            fontSize = 17.sp,
+            lineHeight = 22.sp,
         ),
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.Sentences
