@@ -64,7 +64,8 @@ private const val RICH_FINGERPRINT =
 private const val NAVIGATION_FINGERPRINT =
     "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin," +
         "ios/swiftui|standard-children:1|children:|" +
-        "properties:26:composer-dismissal-enabled:bool:required:none," +
+        "properties:10:back-depth:int:required:none," +
+        "26:composer-dismissal-enabled:bool:required:none," +
         "28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none," +
         "5:title:string:required:none|events:16:dismiss-composer[],4:back[" +
         "5:count:int:required]"
@@ -164,6 +165,7 @@ fun logseqChatExtensionRegistry(
         properties = listOf(
             LuiExtensionProperty("composer-dismissal-enabled", LuiExtensionValueKind.BOOLEAN),
             LuiExtensionProperty("bottom-occupies-layout-space", LuiExtensionValueKind.BOOLEAN),
+            LuiExtensionProperty("back-depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("depth", LuiExtensionValueKind.INTEGER),
             LuiExtensionProperty("title", LuiExtensionValueKind.STRING),
         ),
@@ -209,11 +211,17 @@ fun logseqChatExtensionRegistry(
 @Composable
 private fun NavigationBoundary(context: LuiExtensionContext) {
     val depth = context.int("depth") ?: 0
+    // back-depth adds one more level for transient shell state (editing,
+    // selection, non-journal panes) that back settles without popping a
+    // route; count=0 asks the core to settle instead of popping.
+    val backDepth = context.int("back-depth") ?: depth
     val dismissesComposer = context.flag("composer-dismissal-enabled")
     val occupies = context.flag("bottom-occupies-layout-space")
-    BackHandler(enabled = depth > 0 || dismissesComposer) {
+    BackHandler(enabled = backDepth > 0 || dismissesComposer) {
         if (dismissesComposer) {
             context.emit("dismiss-composer")
+        } else if (backDepth > depth) {
+            context.emit("back", "count" to 0)
         } else if (depth > 0) {
             context.emit("back", "count" to 1)
         }

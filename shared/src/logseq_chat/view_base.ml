@@ -1335,6 +1335,19 @@ let node_route_model (current : Model.chat_model)
 let app_navigation_depth (current : Model.chat_model) =
   navigation_path_depth current.app_navigation_path
 
+(* Navigation levels platform back should settle: pushed routes plus one
+   extra for editing, selection, or a non-journal pane so shell-edge back
+   reaches BackAppNavigation instead of leaving the app. *)
+let app_back_depth (current : Model.chat_model) =
+  app_navigation_depth current
+  +
+  if
+    current.destination = JournalsDestination
+    && current.outliner_selected_block_ids = []
+    && current.outliner_editing = None
+  then 0
+  else 1
+
 let search_navigation_depth (current : Model.chat_model) =
   navigation_path_depth current.search_navigation_path
 

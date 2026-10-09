@@ -695,6 +695,9 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    let depth_source =
      Signal.map View_base.app_navigation_depth model_source
    in
+   let back_depth_source =
+     Signal.map View_base.app_back_depth model_source
+   in
    let bottom_occupies_source =
      Signal.map View_base.bottom_chrome_occupies_layout_space_
        model_source
@@ -705,6 +708,8 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
    let title_source = Signal.map View_base.main_title model_source in
    Lui_ui.extension_property_signal context node "depth"
      (Signal.map View_base.int_wire_value depth_source);
+   Lui_ui.extension_property_signal context node "back-depth"
+     (Signal.map View_base.int_wire_value back_depth_source);
    Lui_ui.extension_property_signal context node
      "bottom-occupies-layout-space"
      (Signal.map View_base.bool_wire_value bottom_occupies_source);

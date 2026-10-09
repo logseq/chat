@@ -1280,7 +1280,23 @@ let cancel_outliner_editing (current : chat_model) =
   | None -> current
 
 let back_app_navigation (current : chat_model) requested =
-  let rec loop remaining updated =
+  if requested = 0 then
+    (* System back below the last pushed route: settle transient state
+       instead — leave editing/selection and return pane destinations to
+       journals. *)
+    if
+      current.destination = JournalsDestination
+      && current.outliner_selected_block_ids = []
+      && current.outliner_editing = None
+    then current
+    else
+      {
+        (cancel_outliner_editing current) with
+        outliner_selected_block_ids = [];
+        destination = JournalsDestination;
+      }
+  else
+    let rec loop remaining updated =
     if remaining = 0 then updated
     else begin
       let path = updated.app_navigation_path in

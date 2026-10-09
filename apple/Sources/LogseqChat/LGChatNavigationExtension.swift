@@ -27,7 +27,7 @@ enum LGChatNavigationSurfacePolicy {
 @MainActor
 enum LGChatNavigationExtension {
     static let identifier = "native-navigation-stack"
-    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
+    static let fingerprint = "lui-extension-v1|23:native-navigation-stack|profiles:android/kotlin,ios/swiftui|standard-children:1|children:|properties:10:back-depth:int:required:none,26:composer-dismissal-enabled:bool:required:none,28:bottom-occupies-layout-space:bool:required:none,5:depth:int:required:none,5:title:string:required:none|events:16:dismiss-composer[],4:back[5:count:int:required]"
 
     static func register(in registry: LUIAppleExtensionRegistry) throws {
         try registry.register(
@@ -36,6 +36,7 @@ enum LGChatNavigationExtension {
                 fingerprint: fingerprint,
                 acceptsStandardChildren: true,
                 properties: [
+                    .init(name: "back-depth", kind: .int, isRequired: true),
                     .init(name: "depth", kind: .int, isRequired: true),
                     .init(name: "bottom-occupies-layout-space", kind: .bool, isRequired: true),
                     .init(name: "composer-dismissal-enabled", kind: .bool, isRequired: true),
