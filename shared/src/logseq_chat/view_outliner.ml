@@ -497,12 +497,14 @@ let outliner_entry context model_source retained_row_source row_source
                   View_base.outliner_journal_button_identifier current r)
                 model_source row_source)
            [
-             (* iOS List rows get ~14pt default leading inset that Android's
-                LazyColumn lacks; block rows self-indent on both platforms,
-                so only the journal section title needs compensation. *)
+             (* Journal section titles align with the bullet column, not
+                the block text column: iOS's List leading inset puts both
+                at the same x; on Android the outliner row padding already
+                insets rows ~8dp, so 9 more puts the title glyph edge at
+                the bullet's left edge. *)
              box
                ~padding_horizontal:
-                 (if Lui_ui.host context = KotlinHost then 22 else 8)
+                 (if Lui_ui.host context = KotlinHost then 9 else 8)
                ~padding_vertical:12
                [
                  box ~height:14 [];
