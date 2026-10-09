@@ -54,6 +54,14 @@ internal fun LogseqChatApp(runtime: ChatRuntime) {
     ) {
         androidx.compose.runtime.CompositionLocalProvider(
             dev.lui.LocalLuiThemeDark provides dark,
+            // iOS draws `glass` with .regularMaterial — a neutral translucent
+            // surface; the LUI default maps it to the (bluish) M3 surface, so
+            // pin the token to the neutral value it reads as over #fcfcfc.
+            dev.lui.LocalLuiSemanticColors provides mapOf(
+                "glass" to
+                    if (dark) androidx.compose.ui.graphics.Color(0xFF26272C)
+                    else androidx.compose.ui.graphics.Color(0xFFF7F7F7),
+            ),
         ) {
             val snackbarHostState = remember { SnackbarHostState() }
             Scaffold(
