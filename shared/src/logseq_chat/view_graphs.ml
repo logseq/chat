@@ -667,7 +667,7 @@ let graph_picker_screen (context : Lui_ui.ui_context) model_source send : t
       ]
   else
     column ~accessibility_identifier:"screen.graph-picker" ~main:`start
-      ~grow:1.0 ~container_relative_frame:`vertical ~gap:20 ~padding:24
+      ~grow:1.0 ~max_width:560 ~container_relative_frame:`vertical ~gap:20 ~padding:24
       [
         row ~main:`space_between ~cross:`center
           [

@@ -495,11 +495,16 @@ let main_header_leading (context : Lui_ui.ui_context) model_source send :
              model_source)
         (button ~icon:(`app "sidebar-toggle") ~variant:`ghost ~size:`icon
            ~width:44 ~height:44
-           ~label:"Open sidebar"
+           ~label:"Toggle sidebar"
            ~accessibility_identifier:"button.sidebar"
            ~disabled_signal:
              (Signal.map View_base.sidebar_drag_disabled_ model_source)
-           ~on_press:(press send Model.OpenSidebar)
+           ~on_press:(fun _ ->
+             ignore
+               (send
+                  (if (Signal.sample model_source).Model.sidebar_open
+                   then Model.CloseSidebar
+                   else Model.OpenSidebar)))
            []);
     ]
 
@@ -800,7 +805,7 @@ let native_navigation_view (_context : Lui_ui.ui_context) model_source send
      node)
 
 let authentication_content model_source send : t =
-  column ~cross:`center ~gap:0
+  column ~cross:`center ~gap:0 ~max_width:400
     [
       row ~width:96 ~height:96 ~corner_radius:22
         [ icon ~name:(`app "logo") ~width:96 ~height:96 [] ];
