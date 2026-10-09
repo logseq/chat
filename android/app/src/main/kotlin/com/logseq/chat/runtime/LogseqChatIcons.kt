@@ -6,8 +6,29 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.unit.dp
 import dev.lui.LuiIconResolver
+
+// Small filled dot (iOS status-dot size) inside the standard 24dp icon
+// slot — Material's Circle would fill the whole slot.
+private val statusDot: ImageVector = ImageVector.Builder(
+    name = "StatusDot",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+).path(fill = SolidColor(Color.Black)) {
+    moveTo(12f, 9f)
+    curveTo(13.657f, 9f, 15f, 10.343f, 15f, 12f)
+    curveTo(15f, 13.657f, 13.657f, 15f, 12f, 15f)
+    curveTo(10.343f, 15f, 9f, 13.657f, 9f, 12f)
+    curveTo(9f, 10.343f, 10.343f, 9f, 12f, 9f)
+    close()
+}.build()
 
 // App icon vocabulary (the former logseq_chat_icons.dart) mapped onto
 // Material Symbols vectors — same symbolic names the core emits.
@@ -48,7 +69,7 @@ internal val logseqChatAppIcons: Map<String, ImageVector> = mapOf(
     "sign-out" to Icons.AutoMirrored.Filled.Logout,
     "star" to Icons.Outlined.Star,
     "star-filled" to Icons.Filled.Star,
-    "status-dot" to Icons.Filled.Circle,
+    "status-dot" to statusDot,
     "sync-status" to Icons.Filled.Refresh,
     "task-backlog" to Icons.Outlined.Circle,
     "task-canceled" to Icons.Outlined.Clear,
