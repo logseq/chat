@@ -431,6 +431,7 @@ internal class ChatRuntime(
                             .toString(),
                     )
                 )
+                AndroidLaunchMetrics.report("authentication_published")
                 reportError(error)
             }
         }
@@ -453,6 +454,9 @@ internal class ChatRuntime(
             hasOpenGraph = restored.graphResponse != null
             restored.graphResponse?.let { applyCoreResponse(it) }
             applyPatch(bridge.applyHostUpdate("graph-loading", "false"))
+            // The catalog patch carries the authentication snapshot the UI
+            // renders against; by now auth state is published either way.
+            AndroidLaunchMetrics.report("authentication_published")
             logRuntime("info", "core", "Core state restored")
             if (hasOpenGraph) requestSyncNow()
             appEntries.markReady()

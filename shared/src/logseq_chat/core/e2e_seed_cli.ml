@@ -7,7 +7,8 @@ module Projection = Pending_projection
 
 let usage =
   "usage: logseq_chat_e2e_seed <graph.sqlite> \
-   [--inspect|--header-navigation|--composer|--outliner|--fixture|--performance]"
+   [--inspect|--header-navigation|--composer|--outliner|--fixture|\
+--performance|--performance=<journals>x<blocks>]"
 
 type seed_mode =
   | Inspect
@@ -16,7 +17,17 @@ type seed_mode =
   | Outliner
   | Fixture
   | Performance
+  | PerformanceSized of int * int
   | Default
+
+let parse_performance_size flag =
+  match String.split_on_char 'x' flag with
+  | [ journals; blocks ] ->
+    (match int_of_string_opt journals, int_of_string_opt blocks with
+     | Some journals, Some blocks when journals > 0 && blocks > 0 ->
+       Some (PerformanceSized (journals, blocks))
+     | _ -> None)
+  | _ -> None
 
 let parse_args args =
   let count = List.length args in
@@ -32,7 +43,10 @@ let parse_args args =
       | "--outliner" -> Some Outliner
       | "--fixture" -> Some Fixture
       | "--performance" -> Some Performance
-      | _ -> None
+      | _ ->
+        (match String.split_on_char '=' flag with
+         | [ "--performance"; size ] -> parse_performance_size size
+         | _ -> None)
     in
     match mode with
     | Some mode -> Ok (List.nth args 1, mode)
@@ -48,6 +62,8 @@ let seed_mode conn mode =
   | Outliner -> Seed.seed_outliner conn (now_ms ())
   | Fixture -> Seed.seed_fixture conn
   | Performance -> Seed.seed_performance conn (now_ms ())
+  | PerformanceSized (journals, blocks) ->
+    Seed.seed_performance_sized conn (now_ms ()) journals blocks
   | Default -> Seed.seed conn
 
 let execute path mode =

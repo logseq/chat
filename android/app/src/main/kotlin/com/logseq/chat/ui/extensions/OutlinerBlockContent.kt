@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.logseq.chat.AndroidAudioPlayer
+import com.logseq.chat.runtime.AndroidLaunchMetrics
 import dev.lui.LuiExtensionContext
 import java.io.File
 import kotlinx.coroutines.delay
@@ -140,7 +141,11 @@ internal fun OutlinerBlockContent(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .onGloballyPositioned { rowHeightPx = it.size.height }
+            .onGloballyPositioned {
+                rowHeightPx = it.size.height
+                // First placed block ≈ first frame with real journal content.
+                AndroidLaunchMetrics.report("journals_ui_ready")
+            }
             .background(hoverColor, RoundedCornerShape(8.dp))
             .dragAndDropSource(
                 drawDragDecoration = {},
