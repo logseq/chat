@@ -60,30 +60,18 @@ let attachment_picker_menu send : t =
         [];
     ]
 
-let composer_attachment_button (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.platform context = AndroidOS then
-    button ~icon:(`app "add") ~variant:`ghost ~label:"Add attachment"
-      ~accessibility_identifier:"button.attachment"
-      ~on_press:(press send Model.OpenAttachmentPicker)
-      ~text:"Attach" [ attachment_menu send ]
-  else
-    button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:32
-      ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
-      ~on_press:(press send Model.OpenAttachmentPicker)
-      [ attachment_menu send ]
+let composer_attachment_button (_context : Lui_ui.ui_context) send : t =
+  button ~icon:(`app "composer-add") ~variant:`ghost ~width:32 ~height:32
+    ~label:"Add attachment" ~accessibility_identifier:"button.attachment"
+    ~on_press:(press send Model.OpenAttachmentPicker)
+    [ attachment_menu send ]
 
-let composer_task_status_button (context : Lui_ui.ui_context) send : t =
-  if Lui_ui.platform context = AndroidOS then
-    button ~icon:(`app "task-todo") ~variant:`ghost ~foreground:"border"
-      ~label:"Task status" ~accessibility_identifier:"button.task-status"
-      ~on_press:(press send Model.OpenTaskStatusPicker)
-      ~text:"Task" []
-  else
-    button ~icon:(`app "task-todo") ~variant:`ghost ~size:`icon ~width:32
-      ~height:32 ~foreground:"border" ~label:"Task status"
-      ~accessibility_identifier:"button.task-status"
-      ~on_press:(press send Model.OpenTaskStatusPicker)
-      []
+let composer_task_status_button (_context : Lui_ui.ui_context) send : t =
+  button ~icon:(`app "task-todo") ~variant:`ghost ~size:`icon ~width:32
+    ~height:32 ~foreground:"border" ~label:"Task status"
+    ~accessibility_identifier:"button.task-status"
+    ~on_press:(press send Model.OpenTaskStatusPicker)
+    []
 
 let composer_asset_preview (context : Lui_ui.ui_context) asset_source : t =
   let asset = Signal.sample asset_source in
@@ -168,14 +156,10 @@ let composer_send_button context ?send_icon send_disabled on_send : t =
   let android_icon = Option.value send_icon ~default:(`send : icon) in
   let apple_icon = Option.value send_icon ~default:(`arrow_up : icon) in
   if Lui_ui.platform context = Lui_protocol.AndroidOS then
-    if Lui_ui.host context = Lui_protocol.KotlinHost then
-      button ~icon:android_icon ~variant:`primary ~size:`icon ~width:48
-        ~height:48 ~label:"Send" ~accessibility_identifier:"button.send"
-        ?disabled_signal:send_disabled ~on_press:on_send []
-    else
-      button ~icon:android_icon ~variant:`primary ~label:"Send"
-        ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
-        ~on_press:on_send ~text:"Send" []
+    button ~icon:android_icon ~variant:`ghost ~width:36 ~height:36
+      ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:"Send"
+      ~accessibility_identifier:"button.send" ?disabled_signal:send_disabled
+      ~on_press:on_send []
   else
     button ~icon:apple_icon ~variant:`ghost ~width:36 ~height:36
       ~background:"black" ~foreground:"white" ~corner_radius:18 ~label:"Send"
@@ -188,7 +172,6 @@ let composer_surface ?key ?accessibility_identifier ?attachments
     ?send_icon ?send_disabled_signal ?on_input ?on_submit ?on_send ?on_press ()
     : t =
  fun context parent ->
-  let kotlin = Lui_ui.host context = Lui_protocol.KotlinHost in
   let attachment_strip =
     match attachments with
     | None -> []
@@ -222,9 +205,9 @@ let composer_surface ?key ?accessibility_identifier ?attachments
   let capsule =
     column ?key ?accessibility_identifier ~grow:1.0 ~min_height:58 ~main:`end_
       ~gap:0
-      ~padding_horizontal:(if kotlin then 12 else 16)
-      ~padding_vertical:(if kotlin then 12 else 8)
-      ~background:(if kotlin then "surface-container-high" else "glass")
+      ~padding_horizontal:16
+      ~padding_vertical:8
+      ~background:"glass"
       ~corner_radius:24
       ([ box ~height:6 ~accessibility_identifier:"spacer.composer.top" [] ]
        @ attachment_strip
@@ -291,9 +274,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
                      (task_status_picker_dialog model_source send);
                  ];
              ]
-           ~send_icon:
-             (if Lui_ui.platform context = AndroidOS then `app "send"
-              else `app "arrow-up")
+           ~send_icon:(`app "arrow-up")
            ~send_disabled_signal:
              (Signal.map View_base.composer_send_disabled_ model_source)
            ~on_input:(on_input send (fun text ->
@@ -305,12 +286,7 @@ let composer_view (context : Lui_ui.ui_context) model_source send : t =
       if_
         ~test:(Signal.map View_base.composer_collapsed_ model_source)
         (Lui_element_combine.composer_collapsed
-           ~label:
-             (if Lui_ui.host context = KotlinHost then "Capture a thought"
-              else "Capture")
-           ?icon:
-             (if Lui_ui.host context = KotlinHost then Some (`app "add")
-              else None)
+           ~label:"Capture"
            ~accessibility_identifier:"button.composer.expand"
            ~on_press:(press send Model.ExpandComposer) ());
     ]

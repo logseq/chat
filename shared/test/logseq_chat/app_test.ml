@@ -4775,7 +4775,7 @@ let composer_renders_autofocus_and_native_outside_dismissal () =
   check ~msg:"the native outside tap collapses the composer"
     (not (App.model application).composer_expanded)
 
-let kotlin_composer_uses_a_tonal_material_dock () =
+let kotlin_composer_matches_ios_chrome () =
   let application = App.create (kotlin_backend ()) in
   start application;
   send application
@@ -4796,18 +4796,18 @@ let kotlin_composer_uses_a_tonal_material_dock () =
     descendant_with_identifier renderer chrome "surface.composer.root"
   in
   let collapsed = List.nth (children renderer composer) 0 in
-  check_eq
-    ~msg:
-      "the Android bottom dock keeps intrinsic height inside an unbounded \
-       bottom slot"
+  check_eq ~msg:"the Android capture row fills its dock slot like iOS"
     (property_float renderer placement Lui_protocol.GrowValue)
-    (-1.0);
-  check_eq ~msg:"collapsed Capture is a tonal Material affordance"
+    1.0;
+  check_eq ~msg:"collapsed Capture is a ghost like iOS"
     (property_string renderer collapsed Lui_protocol.VariantValue)
-    "secondary";
-  check_eq ~msg:"collapsed Capture exposes its primary action"
-    (property_string renderer collapsed Lui_protocol.InlineIconName)
-    "app:add";
+    "ghost";
+  check_eq ~msg:"collapsed Capture uses the iOS glass surface"
+    (property_string renderer collapsed Lui_protocol.BackgroundValue)
+    "glass";
+  check_eq ~msg:"collapsed Capture keeps the iOS pill shape"
+    (property_int renderer collapsed Lui_protocol.CornerRadius)
+    999;
   check_eq ~msg:"collapsed Capture fills the available dock width"
     (property_float renderer collapsed Lui_protocol.GrowValue)
     1.0;
@@ -4820,18 +4820,18 @@ let kotlin_composer_uses_a_tonal_material_dock () =
   let send_button =
     descendant_with_identifier renderer expanded "button.send"
   in
-  check_eq ~msg:"expanded Capture uses a distinct Material surface"
+  check_eq ~msg:"expanded Capture uses the iOS glass surface"
     (property_string renderer expanded Lui_protocol.BackgroundValue)
-    "surface-container-high";
-  check_eq ~msg:"expanded Capture uses the Android large shape"
+    "glass";
+  check_eq ~msg:"expanded Capture uses the iOS capsule shape"
     (property_int renderer expanded Lui_protocol.CornerRadius)
     24;
-  check_eq ~msg:"Send keeps a 48-point Android touch target"
+  check_eq ~msg:"Send matches the 36-point iOS circle"
     (property_int renderer send_button Lui_protocol.WidthValue)
-    48;
-  check_eq ~msg:"Send is a compact trailing icon action"
-    (property_string renderer send_button Lui_protocol.SizeValue)
-    "icon"
+    36;
+  check_eq ~msg:"Send is a black iOS-style circle"
+    (property_string renderer send_button Lui_protocol.BackgroundValue)
+    "black"
 
 let kotlin_sidebar_uses_compact_material_drawer_metrics () =
   let application = App.create (kotlin_backend ()) in
@@ -5677,12 +5677,12 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
     descendant_with_identifier renderer navigation_chrome
       "row.bottom.capture"
   in
-  check_eq ~msg:"the composed Kotlin child uses Material title typography"
+  check_eq ~msg:"the composed Kotlin child uses iOS headline text"
     (node renderer navigation_title)
-    (Some Lui_protocol.Heading);
-  check_eq ~msg:"the Kotlin navigation title maps to Material titleLarge"
-    (property_int renderer navigation_title Lui_protocol.HeadingLevel)
-    3;
+    (Some Lui_protocol.Text);
+  check_eq ~msg:"the Kotlin navigation title maps to the iOS headline class"
+    (property_string renderer navigation_title Lui_protocol.StyleClass)
+    "headline";
   check ~msg:"the composed Kotlin child owns the bottom controls"
     (descendant_with_identifier renderer navigation_chrome "button.search"
     <> -1);
@@ -5690,9 +5690,9 @@ let kotlin_navigation_and_search_own_composed_standard_children () =
     (descendant_with_identifier renderer search_content "list.outliner"
     <> -1);
   check_eq
-    ~msg:"Kotlin capture keeps intrinsic height inside the bottom dock"
+    ~msg:"Kotlin capture fills the bottom dock like iOS"
     (property_float renderer capture_row Lui_protocol.GrowValue)
-    (-1.0);
+    1.0;
   send application Model.ExpandComposer;
   flush application;
   let expanded_row =
@@ -8626,7 +8626,7 @@ let cases =
     case "composer-draft-restore-focus-and-dismissal-are-owned-by-lg" composer_draft_restore_focus_and_dismissal_are_owned_by_lg;
     case "composer-refocus-always-emits-an-autofocus-edge" composer_refocus_always_emits_an_autofocus_edge;
     case "composer-renders-autofocus-and-native-outside-dismissal" composer_renders_autofocus_and_native_outside_dismissal;
-    case "kotlin-composer-uses-a-tonal-material-dock" kotlin_composer_uses_a_tonal_material_dock;
+    case "kotlin-composer-matches-ios-chrome" kotlin_composer_matches_ios_chrome;
     case "kotlin-sidebar-uses-compact-material-drawer-metrics" kotlin_sidebar_uses_compact_material_drawer_metrics;
     case "composer-attachment-selection-is-owned-by-lg" composer_attachment_selection_is_owned_by_lg;
     case "composer-attachment-menu-preserves-main-actions" composer_attachment_menu_preserves_main_actions;
