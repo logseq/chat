@@ -1083,8 +1083,10 @@ private struct DeletePagePayload: Encodable {
     ) async -> Bool {
         let cursor: Int = snapshot.appliedServerT ?? -1
         guard cursor >= 0 else {
-            lastError = LogseqChatCoreError(code: "sync_cursor_missing", message: "Graph checkpoint is not open")
-            return false
+            // No checkpoint/cursor yet (e.g. an e2ee graph opened while still
+            // locked). Ask the caller to re-bootstrap, which re-opens the
+            // graph and repopulates appliedServerT, instead of spinning here.
+            return true
         }
         do {
             let request = try LogseqGraphSyncHTTP.webSocketRequest(
