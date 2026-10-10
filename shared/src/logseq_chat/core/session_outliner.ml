@@ -5,9 +5,14 @@ module Ops = Pending_ops
 module Outliner = Outliner_state
 
 let sidebar_pages (session : Types.session) =
-  match (Types.host session).graph_sidebar_pages with
-  | Some load -> (match load () with Some sidebar -> sidebar | None -> Types.empty_sidebar)
-  | None -> Types.empty_sidebar
+  (* While deferred, snapshots ship an empty sidebar so the scan stays
+     off the launch path; the "loadSidebar" dispatch disarms this. *)
+  if (Types.state session).sidebar_deferred then Types.empty_sidebar
+  else
+    match (Types.host session).graph_sidebar_pages with
+    | Some load ->
+      (match load () with Some sidebar -> sidebar | None -> Types.empty_sidebar)
+    | None -> Types.empty_sidebar
 
 let summary_candidate (page : Model.entity_summary) =
   { Outliner.label = page.title; value = page.uuid }

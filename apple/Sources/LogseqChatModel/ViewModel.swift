@@ -683,6 +683,12 @@ private struct DeletePagePayload: Encodable {
             #if DEBUG
             print("LOGSEQ_DB_ROUTE launch_applied route=\(debugDatabaseRoute)")
             #endif
+            // The first snapshot after openGraph ships an empty sidebar so
+            // it stays off the launch critical path; fetch it right after
+            // the journal renders.
+            Task { [weak self] in
+                await self?.dispatchRawAndWait("loadSidebar")
+            }
         }
         let elapsedMilliseconds = Date().timeIntervalSince(startedAt) * 1_000
         print(

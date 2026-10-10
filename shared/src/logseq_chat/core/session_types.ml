@@ -138,6 +138,7 @@ type session_state =
   ; outliner_optimistic_blocks : Model.block list option
   ; outliner_commands : Effects.outliner_platform_command list
   ; outliner_revision : int
+  ; sidebar_deferred : bool
   }
 
 type session =
@@ -269,6 +270,7 @@ let create_session options =
           outliner_optimistic_blocks = None;
           outliner_commands = [];
           outliner_revision = 0;
+          sidebar_deferred = false;
         };
   }
 

@@ -8,7 +8,7 @@ type runtime_options =
   }
 
 type read_caches =
-  { blocks : (int, Cache_model.block list) Hashtbl.t
+  { blocks : (int * int option, Cache_model.block list) Hashtbl.t
   ; page_blocks : (string, Cache_model.block list) Hashtbl.t
   ; node_blocks : (string, Cache_model.block list) Hashtbl.t
   ; node_destinations :
@@ -26,6 +26,7 @@ type runtime_state =
   ; read_cache : (Datascript.db * read_caches) option
   ; prepared : (string, Pending_ops.pending_operation) Hashtbl.t
   ; journal_limit : int
+  ; journal_block_limit : int option
   ; search_index_is_fresh : bool
   }
 

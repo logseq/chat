@@ -1210,6 +1210,10 @@ let dispatch session action payload =
      | Some load -> load ()
      | None -> ());
     snapshot_visible session
+  | "loadSidebar" ->
+    session.Types.state :=
+      { !(session.Types.state) with Types.sidebar_deferred = false };
+    snapshot_visible session
   | "loadFlashcards" ->
     let now =
       match payload with

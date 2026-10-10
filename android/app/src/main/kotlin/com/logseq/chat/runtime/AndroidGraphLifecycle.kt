@@ -58,6 +58,10 @@ internal class AndroidGraphLifecycle(
     suspend fun openGraphForResync(graphId: String): NativeEffectResolution =
         openGraph(graphId)
 
+    // The first snapshots after open ship an empty sidebar so the scan
+    // stays off the launch path; this fills favorites/recent afterwards.
+    suspend fun loadSidebar(): String = call("loadSidebar")
+
     private suspend fun openGraph(graphId: String): NativeEffectResolution {
         trace("open.start graphId=$graphId")
         val selected = call("selectGraph", payload = graphId)
