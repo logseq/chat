@@ -323,7 +323,7 @@ pin-depends: [
   ]
   [
     "drive.dev"
-    "git+https://github.com/logseq/drive.git#7f407b07f18e68596cb0dcb3ba1781cb0572a2bb"
+    "git+https://github.com/logseq/drive.git#1e1653d5bdd0810e89d9e3a32b2e0ea2811c1cf5"
   ]
   [
     "dune-build-info.3.24.2"
@@ -476,7 +476,7 @@ pin-depends: [
   ]
   [
     "ocaml-signal.0.1.0"
-    "git+https://github.com/logseq/ocaml-signal.git#868c1459f865b4ba3b227eb440dba40f1c812899"
+    "git+https://github.com/logseq/ocaml-signal.git#df355e15869ceb7220c0365ae7057e4c3fc558b2"
   ]
   [
     "ocaml-syntax-shims.1.0.0"
@@ -1482,7 +1482,7 @@ x-opam-monorepo-duniverse-dirs: [
     "angstrom"
   ]
   [
-    "git+https://github.com/logseq/drive.git#7f407b07f18e68596cb0dcb3ba1781cb0572a2bb"
+    "git+https://github.com/logseq/drive.git#1e1653d5bdd0810e89d9e3a32b2e0ea2811c1cf5"
     "drive"
   ]
   [
@@ -1490,7 +1490,7 @@ x-opam-monorepo-duniverse-dirs: [
     "ocaml-fsrs"
   ]
   [
-    "git+https://github.com/logseq/ocaml-signal.git#868c1459f865b4ba3b227eb440dba40f1c812899"
+    "git+https://github.com/logseq/ocaml-signal.git#df355e15869ceb7220c0365ae7057e4c3fc558b2"
     "ocaml-signal"
   ]
   [
