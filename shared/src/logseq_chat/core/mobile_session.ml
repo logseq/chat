@@ -129,11 +129,10 @@ let create crypto_call =
       }
   in
   let database = Database.create graph in
-  {
-    database;
-    keyring = ring;
-    session = ref (Rpc.create_session (host_options database ring None));
-  }
+  let session = Rpc.create_session (host_options database ring None) in
+  session.Types.state :=
+    { !(session.Types.state) with Types.sidebar_deferred = true };
+  { database; keyring = ring; session = ref session }
 
 let call (host : mobile_session) request =
   match Payload.database_open_path request with
@@ -143,6 +142,8 @@ let call (host : mobile_session) request =
       Rpc.create_session
         (host_options host.database host.keyring (Some catalog))
     in
+    session.Types.state :=
+      { !(session.Types.state) with Types.sidebar_deferred = true };
     host.session := session;
     Rpc.call session snapshot_request
   | None -> Rpc.call !(host.session) request

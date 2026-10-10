@@ -380,6 +380,9 @@ internal class ChatRuntime(
             hasOpenGraph = true
             graphCatalogAutoRefresh?.stopPeriodic()
             requestSyncNow()
+            // First post-open snapshots ship an empty sidebar; fill it
+            // off the launch path once the journal is up.
+            scope.launch { runCatching { graphLifecycle?.loadSidebar() } }
         }
         if (resolution.succeeded &&
             effect.kind in setOf("send-capture", "send-task", "sync-now")

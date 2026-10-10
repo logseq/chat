@@ -42,6 +42,7 @@ val status_for_eid :
   int ->
   Cache_model.status option
 val block :
+  ?with_breadcrumbs:bool ->
   (string -> (string, string) result) ->
   Datascript.db ->
   int ->
@@ -86,6 +87,7 @@ val normalize_titles_creating_tags :
 val compare_blocks : Cache_model.block -> Cache_model.block -> int
 val compare_journal_blocks : Cache_model.block -> Cache_model.block -> int
 val blocks_referencing :
+  ?with_breadcrumbs:bool ->
   (string -> (string, string) result) ->
   Datascript.db ->
   string ->
@@ -115,6 +117,7 @@ val recent_journal_page_ids : int -> Datascript.db -> int list
 val journal_page_count : Datascript.db -> int
 val journal_page_uuid : Datascript.db -> int -> string option
 val blocks :
+  ?block_limit:int ->
   (string -> (string, string) result) ->
   int ->
   Datascript.db ->

@@ -153,7 +153,7 @@ let status_for_eid decrypt_title db eid =
     else None
   | None -> None
 
-let block decrypt_title db eid =
+let block ?(with_breadcrumbs = true) decrypt_title db eid =
   let uuid = uuid_for_eid db eid in
   let title = protected_string decrypt_title (value db eid "block/title") in
   let name = value db eid "block/name" in
@@ -178,15 +178,23 @@ let block decrypt_title db eid =
             | Some eid -> uuid_for_eid db eid
             | None -> None)
        in
-       let ancestors = breadcrumbs decrypt_title db eid in
+       let ancestors =
+         if with_breadcrumbs then breadcrumbs decrypt_title db eid else []
+       in
        let journal =
          match page_eid with
          | Some page_eid ->
            let title =
-             List.find_map
-               (fun (summary : Model.entity_summary) ->
-                 if summary.uuid = page_id then Some summary.title else None)
-               ancestors
+             match ancestors with
+             | [] ->
+               protected_string decrypt_title
+                 (value db page_eid "block/title")
+             | _ ->
+               List.find_map
+                 (fun (summary : Model.entity_summary) ->
+                   if summary.uuid = page_id then Some summary.title
+                   else None)
+                 ancestors
            in
            let day = int_value (value db page_eid "block/journal-day") in
            (match (title, day) with
@@ -317,7 +325,15 @@ let built_in_class db eid =
   | Some (Ds.Keyword ident) -> S.starts_with ~prefix:"logseq.class/" ident
   | _ -> false
 
+let trace_sidebar started stage =
+  if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
+    prerr_endline
+      ("LOGSEQ_SIDEBAR_METRIC stage=" ^ stage
+       ^ Printf.sprintf " elapsed_ms=%.3f"
+           ((Unix.gettimeofday () -. started) *. 1000.0))
+
 let sidebar_pages decrypt_title db =
+  let started = Unix.gettimeofday () in
   let favorites =
     match favorite_page_eid db with
     | Some eid ->
@@ -340,40 +356,64 @@ let sidebar_pages decrypt_title db =
       |> List.map snd
     | None -> []
   in
+  trace_sidebar started "favorites";
   let favorite_uuids =
     List.fold_left (fun set (page : Model.entity_summary) -> page.uuid :: set) [] favorites
   in
-  let candidates =
+  (* Set-scans instead of per-entity queries: collect the named eids
+     once, then pull ident / built-in / updated-at / journal-day for
+     just those eids while scanning each attr index. *)
+  let named =
     List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/name" ())
     |> List.filter_map (fun (datom : Ds.datom) ->
       match datom.v with
-      | Ds.String name ->
-        if S.starts_with ~prefix:"$$$" name then None
-        else (
-          let attrs =
-            List.of_seq (Ds.Db.datoms db Ds.Eavt ~e:datom.e ())
-            |> List.map (fun (datom : Ds.datom) -> (datom.a, datom.v))
-          in
-          let built_in =
-            match List.assoc_opt "db/ident" attrs with
-            | Some (Ds.Keyword ident) ->
-              S.starts_with ~prefix:"logseq.class/" ident
-            | _ -> false
-          in
-          if
-            (not built_in)
-            && List.assoc_opt "logseq.property/built-in?" attrs
-               <> Some (Ds.Bool true)
-          then
-            Some
-              ( Option.value ~default:0
-                  (int_value (List.assoc_opt "block/updated-at" attrs))
-              , Option.value ~default:0
-                  (int_value (List.assoc_opt "block/journal-day" attrs))
-              , datom.e )
-          else None)
+      | Ds.String name when not (S.starts_with ~prefix:"$$$" name) ->
+        Some datom.e
       | _ -> None)
   in
+  let named_set = Hashtbl.create (List.length named) in
+  List.iter (fun eid -> Hashtbl.replace named_set eid ()) named;
+  let for_named attr f =
+    let table = Hashtbl.create 64 in
+    Seq.iter
+      (fun (datom : Ds.datom) ->
+        if Hashtbl.mem named_set datom.e then f table datom)
+      (Ds.Db.datoms db Ds.Aevt ~a:attr ());
+    table
+  in
+  let mark attr pred =
+    for_named attr (fun table (datom : Ds.datom) ->
+      if pred datom.v then Hashtbl.replace table datom.e ())
+  in
+  let class_eids =
+    mark "db/ident" (fun v ->
+      match v with
+      | Ds.Keyword ident -> S.starts_with ~prefix:"logseq.class/" ident
+      | _ -> false)
+  in
+  let builtin_eids =
+    mark "logseq.property/built-in?" (fun v -> v = Ds.Bool true)
+  in
+  let ints attr =
+    for_named attr (fun table (datom : Ds.datom) ->
+      match int_value (Some datom.v) with
+      | Some value -> Hashtbl.replace table datom.e value
+      | None -> ())
+  in
+  let updated_map = ints "block/updated-at" in
+  let day_map = ints "block/journal-day" in
+  let candidates =
+    List.filter_map
+      (fun eid ->
+        if Hashtbl.mem class_eids eid || Hashtbl.mem builtin_eids eid then None
+        else
+          Some
+            ( Option.value ~default:0 (Hashtbl.find_opt updated_map eid)
+            , Option.value ~default:0 (Hashtbl.find_opt day_map eid)
+            , eid ))
+      named
+  in
+  trace_sidebar started "candidates";
   let ranked =
     List.sort
       (fun (left_updated, left_day, left_eid) (right_updated, right_day, right_eid) ->
@@ -384,6 +424,7 @@ let sidebar_pages decrypt_title db =
         else compare right_eid left_eid)
       candidates
   in
+  trace_sidebar started "ranked";
 
   (* Resolve and decrypt only enough ranked pages to fill the window:
      stay lazy like the original seq pipeline. *)
@@ -417,7 +458,9 @@ let sidebar_pages decrypt_title db =
       | Seq.Nil -> Seq.Nil
       | Seq.Cons (x, rest) -> Seq.Cons (x, take (n - 1) rest)
   in
-  { favorites; recent_pages = List.of_seq (take 15 recent_seq) }
+  let result = List.of_seq (take 15 recent_seq) in
+  trace_sidebar started "resolved";
+  { favorites; recent_pages = result }
 
 let page_block decrypt_title db eid =
   match page_summary decrypt_title db eid with
@@ -601,19 +644,21 @@ let related_candidate_is_visible db eid =
   (not (page_is_hidden db eid))
   && value db eid "logseq.property/view-for" = None
 
-let blocks_referencing decrypt_title db attr target_uuid =
+let blocks_referencing ?(with_breadcrumbs = true) decrypt_title db attr
+    target_uuid =
   match Ds.entid db "block/uuid" (Ds.Uuid target_uuid) with
   | Some eid ->
     List.of_seq (Ds_value.datoms_by_ref db Ds.Aevt attr eid)
     |> List.filter_map (fun (datom : Ds.datom) ->
       if related_candidate_is_visible db datom.e then
-        block decrypt_title db datom.e
+        block ~with_breadcrumbs decrypt_title db datom.e
       else None)
     |> List.sort compare_blocks
   | None -> []
 
 let blocks_for_page decrypt_title db uuid =
-  blocks_referencing decrypt_title db "block/page" uuid
+  blocks_referencing ~with_breadcrumbs:false decrypt_title db "block/page"
+    uuid
 
 let references_for_node decrypt_title db uuid =
   blocks_referencing decrypt_title db "block/refs" uuid
@@ -661,21 +706,30 @@ let objects_for_tag decrypt_title db uuid =
     |> List.sort compare_journal_blocks
   | None -> []
 
-let recent_journal_page_ids limit db =
+let rec take n list =
+  match (n, list) with
+  | 0, _ | _, [] -> []
+  | n, x :: rest -> x :: take (n - 1) rest
+
+let recent_journal_pages limit db =
   List.of_seq (Ds.Db.datoms db Ds.Aevt ~a:"block/journal-day" ())
   |> List.filter_map (fun (datom : Ds.datom) ->
     match datom.v with
-    | Ds.Int64 day ->
-      if page_is_hidden db datom.e then None else Some (day, datom.e)
+    | Ds.Int64 day -> Some (day, datom.e)
     | _ -> None)
   |> List.sort (fun (left, _) (right, _) -> compare right left)
-  |> fun pairs ->
-  let rec take n l =
-    match l with
-    | [] -> []
-    | x :: rest -> if n = 0 then [] else x :: take (n - 1) rest
+  |> fun sorted ->
+  let rec collect n acc entries =
+    match (n, entries) with
+    | 0, _ | _, [] -> List.rev acc
+    | n, (day, eid) :: rest ->
+      if page_is_hidden db eid then collect n acc rest
+      else collect (n - 1) ((day, eid) :: acc) rest
   in
-  take limit pairs |> List.map snd
+  collect limit [] sorted
+
+let recent_journal_page_ids limit db =
+  List.map snd (recent_journal_pages limit db)
 
 let journal_page_count db =
   List.fold_left
@@ -694,14 +748,41 @@ let journal_page_uuid db day =
       else None
     | _ -> None)
 
-let blocks decrypt_title journal_limit db =
-  let ids =
-    recent_journal_page_ids journal_limit db
-    |> List.concat_map (fun eid ->
-      List.of_seq (Ds_value.datoms_by_ref db Ds.Aevt "block/page" eid)
-      |> List.map (fun (datom : Ds.datom) -> datom.e))
-    |> List.sort_uniq compare
+let blocks ?block_limit decrypt_title journal_limit db =
+  let entries =
+    recent_journal_pages journal_limit db
+    |> List.concat_map (fun (day, page_eid) ->
+      List.of_seq (Ds_value.datoms_by_ref db Ds.Aevt "block/page" page_eid)
+      |> List.map (fun (datom : Ds.datom) -> (day, datom.e)))
   in
-  ids
-  |> List.filter_map (fun eid -> block decrypt_title db eid)
+  let eids =
+    match block_limit with
+    | Some limit when List.length entries > limit ->
+      entries
+      |> List.map (fun (day, eid) ->
+        ( day
+        , string_value (value db eid "block/order")
+        , int_value (value db eid "block/created-at")
+        , eid ))
+      |> List.stable_sort
+           (fun (day_left, order_left, created_left, _)
+                (day_right, order_right, created_right, _) ->
+             let by_day = compare day_right day_left in
+             if by_day <> 0 then by_day
+             else
+               (match (order_left, order_right) with
+                | Some left, Some right -> compare left right
+                | Some _, None -> -1
+                | None, Some _ -> 1
+                | None, None ->
+                  compare
+                    (Option.value ~default:0 created_left)
+                    (Option.value ~default:0 created_right)))
+      |> take limit
+      |> List.map (fun (_, _, _, eid) -> eid)
+    | _ -> List.map snd entries
+  in
+  eids
+  |> List.filter_map (fun eid ->
+    block ~with_breadcrumbs:false decrypt_title db eid)
   |> List.sort compare_journal_blocks

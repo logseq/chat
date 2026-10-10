@@ -15,7 +15,7 @@ type runtime_options =
   }
 
 type read_caches =
-  { blocks : (int, Model.block list) Hashtbl.t
+  { blocks : (int * int option, Model.block list) Hashtbl.t
   ; page_blocks : (string, Model.block list) Hashtbl.t
   ; node_blocks : (string, Model.block list) Hashtbl.t
   ; node_destinations :
@@ -33,6 +33,7 @@ type runtime_state =
   ; read_cache : (Ds.db * read_caches) option
   ; prepared : (string, Ops.pending_operation) Hashtbl.t
   ; journal_limit : int
+  ; journal_block_limit : int option
   ; search_index_is_fresh : bool
   }
 
@@ -43,6 +44,11 @@ type graph_runtime =
   ; search_index : Index.search_index option
   ; state : runtime_state ref
   }
+
+(* How many flattened journal blocks the first snapshot materializes:
+   enough for the screens the virtual list can show at launch. Any
+   loadOlderJournals clears this cap and loads whole pages again. *)
+let initial_journal_block_limit = 32
 
 let default_options =
   {
@@ -257,6 +263,7 @@ let create_base path server_t conn options =
             read_cache = None;
             prepared = Hashtbl.create 64;
             journal_limit = 1;
+            journal_block_limit = Some initial_journal_block_limit;
             search_index_is_fresh = false;
           };
     }
@@ -463,11 +470,14 @@ let create path server_t conn options =
 let blocks runtime =
   let caches = caches_for_db runtime (db runtime) in
   let limit = (state runtime).journal_limit in
-  match Hashtbl.find_opt caches.blocks limit with
+  let block_limit = (state runtime).journal_block_limit in
+  match Hashtbl.find_opt caches.blocks (limit, block_limit) with
   | Some blocks -> blocks
   | None ->
-    let blocks = Read.blocks (fun v -> Ok v) limit (db runtime) in
-    Hashtbl.replace caches.blocks limit blocks;
+    let blocks =
+      Read.blocks ?block_limit (fun v -> Ok v) limit (db runtime)
+    in
+    Hashtbl.replace caches.blocks (limit, block_limit) blocks;
     blocks
 
 let due_flashcards runtime now = Cards.due_cards (db runtime) now
@@ -523,19 +533,16 @@ let review_flashcard runtime uuid rating now operation_id =
   | None -> Error "block is not a flashcard"
 
 let has_older_journals runtime =
-  let caches = caches_for_db runtime (db runtime) in
-  match !(caches.journal_page_count) with
-  | Some count -> (state runtime).journal_limit < count
-  | None ->
-    let count = Read.journal_page_count (db runtime) in
-    caches.journal_page_count := Some count;
-    (state runtime).journal_limit < count
+  let limit = (state runtime).journal_limit in
+  List.length (Read.recent_journal_page_ids (limit + 1) (db runtime))
+  > limit
 
 let load_older_journals runtime =
   runtime.state :=
     {
       !(runtime.state) with
       journal_limit = (state runtime).journal_limit + 2;
+      journal_block_limit = None;
     }
 
 let blocks_for_page runtime page_uuid =
