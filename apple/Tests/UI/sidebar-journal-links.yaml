@@ -1,5 +1,5 @@
 # Start on Journals with a short first entry and the sidebar closed.
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - assertVisible:
     id: "button.sidebar"

@@ -1,7 +1,7 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - extendedWaitUntil:
     visible:
@@ -39,7 +39,7 @@ appId: com.logseq.chat
     visible: "Remote graphs:"
     timeout: 15000
 - tapOn:
-    text: "chat-local-e2e-.*"
+    text: "logseq-local-e2e-.*"
     index: 0
 - extendedWaitUntil:
     visible:

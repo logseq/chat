@@ -2,12 +2,12 @@
 
 set -euo pipefail
 
-app_id=com.logseq.chat
-activity="$app_id/logseq.chat.MainActivity"
+app_id=com.logseq.app
+activity="$app_id/logseq.app.MainActivity"
 device=${ANDROID_SERIAL:-}
-total_budget_ms=${LOGSEQ_CHAT_ANDROID_TOTAL_TIME_BUDGET_MS:-2000}
-first_ui_budget_ms=${LOGSEQ_CHAT_ANDROID_FIRST_UI_BUDGET_MS:-1200}
-authentication_budget_ms=${LOGSEQ_CHAT_ANDROID_AUTHENTICATION_BUDGET_MS:-1500}
+total_budget_ms=${LOGSEQ_ANDROID_TOTAL_TIME_BUDGET_MS:-2000}
+first_ui_budget_ms=${LOGSEQ_ANDROID_FIRST_UI_BUDGET_MS:-1200}
+authentication_budget_ms=${LOGSEQ_ANDROID_AUTHENTICATION_BUDGET_MS:-1500}
 
 die() {
   echo "error: $*" >&2

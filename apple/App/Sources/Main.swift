@@ -1,9 +1,9 @@
 import SwiftUI
-import LogseqChat
+import Logseq
 import AppIntents
 
-private typealias AppRootView = LogseqChatRootView
-private typealias AppDelegate = LogseqChatAppDelegate
+private typealias AppRootView = LogseqRootView
+private typealias AppDelegate = LogseqAppDelegate
 
 /// The entry point to the app simply loads the App implementation from SPM module.
 @main struct AppMain: App {
@@ -22,8 +22,8 @@ private typealias AppDelegate = LogseqChatAppDelegate
                 AppDelegate.shared.onPause()
             case .background:
                 AppDelegate.shared.onStop()
-                LogseqChatBackgroundRefresh.syncNow()
-                LogseqChatBackgroundRefresh.schedule()
+                LogseqBackgroundRefresh.syncNow()
+                LogseqBackgroundRefresh.schedule()
             @unknown default:
                 print("unknown app phase: \(newPhase)")
             }
@@ -45,9 +45,9 @@ typealias AppType = UIApplication
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         AppDelegate.shared.onLaunch()
-        LogseqChatBackgroundRefresh.register()
+        LogseqBackgroundRefresh.register()
         AppDelegate.shared.reportLaunchStage("background_registered")
-        LogseqChatBackgroundRefresh.schedule()
+        LogseqBackgroundRefresh.schedule()
         AppDelegate.shared.reportLaunchStage("background_scheduled")
         return true
     }
@@ -93,9 +93,9 @@ typealias AppType = UIApplication
     }
 
     private func perform(_ item: UIApplicationShortcutItem) -> Bool {
-        guard ["logseqchat://capture", "logseqchat://audio"].contains(item.type),
+        guard ["logseq://capture", "logseq://audio"].contains(item.type),
               let url = URL(string: item.type) else { return false }
-        LogseqChatRuntime.shared.acceptSharedCaptureURL(url)
+        LogseqLogseqRuntime.shared.acceptSharedCaptureURL(url)
         return true
     }
 }
@@ -116,7 +116,7 @@ struct CaptureToJournalIntent: AppIntent {
         guard ShortcutCapture.enqueue(text) else {
             return .result(dialog: "Enter some text to capture.")
         }
-        LogseqChatRuntime.shared.processSharedCaptures()
+        LogseqLogseqRuntime.shared.processSharedCaptures()
         return .result(dialog: "Added to today's journal.")
     }
 }

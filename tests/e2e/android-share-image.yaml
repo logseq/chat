@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.app
 ---
 - extendedWaitUntil:
     visible:

@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp
 - runFlow:
@@ -17,9 +17,9 @@ appId: com.logseq.chat
           visible: "Sign in with your username and password"
           timeout: 30000
       - tapOn: "Username Username"
-      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - inputText: "__LOGSEQ_E2E_USERNAME__"
       - pressKey: Enter
-      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - inputText: "__LOGSEQ_E2E_PASSWORD__"
       - tapOn: "Sign in with your username and password"
       - extendedWaitUntil:
           visible: "submit"
@@ -45,17 +45,17 @@ appId: com.logseq.chat
       visible: "Enter your username"
     commands:
       - tapOn: "Enter your username"
-      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - inputText: "__LOGSEQ_E2E_USERNAME__"
       - tapOn: "Enter your password"
-      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - inputText: "__LOGSEQ_E2E_PASSWORD__"
       - tapOn:
           text: "Sign In"
           index: 1
 - runFlow:
     when:
-      visible: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+      visible: "__LOGSEQ_E2E_GRAPH_NAME__"
     commands:
-      - tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+      - tapOn: "__LOGSEQ_E2E_GRAPH_NAME__"
 - waitForAnimationToEnd:
     timeout: 5000
 - extendedWaitUntil:
@@ -77,7 +77,7 @@ appId: com.logseq.chat
           timeout: 10000
       - tapOn:
           id: "field.graph-name"
-      - inputText: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+      - inputText: "__LOGSEQ_E2E_GRAPH_NAME__"
       - tapOn:
           id: "toggle.graph-encryption"
           point: "90%,50%"
@@ -91,7 +91,7 @@ appId: com.logseq.chat
       visible: "Unlock encrypted graphs"
     commands:
       - tapOn: "E2EE password"
-      - inputText: "__LOGSEQ_CHAT_E2EE_PASSWORD__"
+      - inputText: "__LOGSEQ_E2EE_PASSWORD__"
       - tapOn: "Unlock"
 - extendedWaitUntil:
     visible:

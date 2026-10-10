@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 all_flows=(
   tests/e2e/ios-capture-responsive.yaml
-  tests/e2e/ios-chat-send-regression.yaml
+  tests/e2e/ios-send-regression.yaml
   tests/e2e/ios-cold-start-composer.yaml
   tests/e2e/ios-outliner-mode.yaml
   tests/e2e/ios-page-outliner-only.yaml
@@ -36,7 +36,7 @@ all_flows=(
   tests/e2e/ios-sync-graph-create-regression.yaml
 )
 
-selector=${1:-${LOGSEQ_CHAT_IOS_E2E_MODULE:-all}}
+selector=${1:-${LOGSEQ_IOS_E2E_MODULE:-all}}
 case $selector in
   all)
     flows=("${all_flows[@]}")
@@ -52,7 +52,7 @@ case $selector in
   composer)
     flows=(
       tests/e2e/ios-capture-responsive.yaml
-      tests/e2e/ios-chat-send-regression.yaml
+      tests/e2e/ios-send-regression.yaml
       tests/e2e/ios-cold-start-composer.yaml
     )
     ;;
@@ -122,7 +122,7 @@ case $selector in
     ;;
 esac
 
-if [[ ${LOGSEQ_CHAT_IOS_SKIP_BUILD:-0} != 1 ]]; then
+if [[ ${LOGSEQ_IOS_SKIP_BUILD:-0} != 1 ]]; then
   "$repo_root/scripts/build-mobile-ios-simulator.sh" >/dev/null
 fi
 
@@ -130,16 +130,16 @@ fi
 # shared seed cache: the first flow per fixture mode drives the graph-setup
 # flow and caches the seeded graphs dir; later flows copy it into a fresh
 # container instead of re-running the Maestro setup.
-export LOGSEQ_CHAT_E2E_RUN_ID=${LOGSEQ_CHAT_E2E_RUN_ID:-$(date +%s)}
-if [[ ${LOGSEQ_CHAT_E2E_SEED_CACHE:-unset} == unset ]]; then
-  seed_cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-e2e-seed-cache.XXXXXX")
-  export LOGSEQ_CHAT_E2E_SEED_CACHE=$seed_cache_dir
+export LOGSEQ_E2E_RUN_ID=${LOGSEQ_E2E_RUN_ID:-$(date +%s)}
+if [[ ${LOGSEQ_E2E_SEED_CACHE:-unset} == unset ]]; then
+  seed_cache_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-e2e-seed-cache.XXXXXX")
+  export LOGSEQ_E2E_SEED_CACHE=$seed_cache_dir
   trap 'rm -rf "$seed_cache_dir"' EXIT
 fi
 
-start_index=${LOGSEQ_CHAT_IOS_E2E_START_INDEX:-0}
+start_index=${LOGSEQ_IOS_E2E_START_INDEX:-0}
 if (( start_index < 0 || start_index >= ${#flows[@]} )); then
-  echo "error: LOGSEQ_CHAT_IOS_E2E_START_INDEX must be between 0 and $((${#flows[@]} - 1))" >&2
+  echo "error: LOGSEQ_IOS_E2E_START_INDEX must be between 0 and $((${#flows[@]} - 1))" >&2
   exit 1
 fi
 
@@ -160,13 +160,13 @@ for ((flow_index = start_index; flow_index < ${#flows[@]}; flow_index++)); do
      || $flow == tests/e2e/ios-cold-start-composer.yaml \
      || $flow == tests/e2e/ios-search-status-regression.yaml \
      || $flow == tests/e2e/sidebar.yaml ]]; then
-    LOGSEQ_CHAT_IOS_SKIP_BUILD=1 \
-      LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH=1 \
-      LOGSEQ_CHAT_IOS_E2E_FLOW="$flow" \
+    LOGSEQ_IOS_SKIP_BUILD=1 \
+      LOGSEQ_IOS_E2E_SEED_GRAPH=1 \
+      LOGSEQ_IOS_E2E_FLOW="$flow" \
       "$repo_root/scripts/test-ios-e2e.sh"
   else
-    LOGSEQ_CHAT_IOS_SKIP_BUILD=1 \
-      LOGSEQ_CHAT_IOS_E2E_FLOW="$flow" \
+    LOGSEQ_IOS_SKIP_BUILD=1 \
+      LOGSEQ_IOS_E2E_FLOW="$flow" \
       "$repo_root/scripts/test-ios-e2e.sh"
   fi
 done

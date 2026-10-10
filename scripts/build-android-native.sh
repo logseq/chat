@@ -3,9 +3,9 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ocaml_version=${LOGSEQ_CHAT_ANDROID_OCAML_VERSION:-5.5.0}
-android_abi=${LOGSEQ_CHAT_ANDROID_ABI:-arm64-v8a}
-api_level=${LOGSEQ_CHAT_ANDROID_API_LEVEL:-21}
+ocaml_version=${LOGSEQ_ANDROID_OCAML_VERSION:-5.5.0}
+android_abi=${LOGSEQ_ANDROID_ABI:-arm64-v8a}
+api_level=${LOGSEQ_ANDROID_API_LEVEL:-21}
 android_home=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}
 
 die() {
@@ -29,7 +29,7 @@ target="${target_arch}-linux-android${api_level}"
 target_prefix="$repo_root/_build/android-toolchain/$target-$ocaml_version"
 build_dir="$repo_root/_build/android-core/$android_abi"
 jni_dir="$repo_root/android/app/src/main/jniLibs/$android_abi"
-library="$build_dir/liblogseq_chat_core.so"
+library="$build_dir/liblogseq_core.so"
 
 "$repo_root/scripts/bootstrap-android-ocaml.sh" >/dev/null
 
@@ -95,11 +95,11 @@ runtime_object=$(C_INCLUDE_PATH="$sqlite_source_dir${C_INCLUDE_PATH:+:$C_INCLUDE
   SQLITE3_DISABLE_LOADABLE_EXTENSIONS=1 \
   DATASCRIPT_SQLITE_LIB_DIR="$build_dir" \
   DUNE_PROFILE=android \
-  LOGSEQ_CHAT_SQLITE_LIB_DIR="$build_dir" \
-  LOGSEQ_CHAT_SQLITE_LINK_FILE="$build_dir/libsqlite3.a" \
+  LOGSEQ_SQLITE_LIB_DIR="$build_dir" \
+  LOGSEQ_SQLITE_LINK_FILE="$build_dir/libsqlite3.a" \
   "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" "$dune_context")
 
-for source in logseq_chat_crypto_android.c logseq_chat_https_android.c; do
+for source in logseq_crypto_android.c logseq_https_android.c; do
   "$ndk_bin/clang" \
     --target="$target" \
     -fPIC \
@@ -112,11 +112,11 @@ done
   --target="$target" \
   -shared \
   -Wl,--no-undefined \
-  -Wl,-soname,liblogseq_chat_core.so \
+  -Wl,-soname,liblogseq_core.so \
   -o "$library" \
   "$runtime_object" \
-  logseq_chat_crypto_android.o \
-  logseq_chat_https_android.o \
+  logseq_crypto_android.o \
+  logseq_https_android.o \
   "$ffi_prefix/lib/libffi.a" \
   -lm \
   -ldl \
@@ -124,11 +124,11 @@ done
   -pthread
 
 "$ndk_bin/llvm-strip" --strip-unneeded "$library"
-cp "$library" "$jni_dir/liblogseq_chat_core.so"
+cp "$library" "$jni_dir/liblogseq_core.so"
 
 "$ndk_bin/llvm-readelf" -h "$library" \
   | grep "Machine:.*AArch64\\|Machine:.*Advanced Micro Devices X86-64" \
   >/dev/null
-"$ndk_bin/llvm-readelf" -s "$library" | grep "logseq_chat_call" >/dev/null
+"$ndk_bin/llvm-readelf" -s "$library" | grep "logseq_call" >/dev/null
 
-echo "$jni_dir/liblogseq_chat_core.so"
+echo "$jni_dir/liblogseq_core.so"

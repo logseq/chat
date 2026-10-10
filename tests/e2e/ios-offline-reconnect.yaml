@@ -1,24 +1,24 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp
 - extendedWaitUntil:
-    visible: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+    visible: "__LOGSEQ_E2E_GRAPH_NAME__"
     timeout: 30000
 - extendedWaitUntil:
     visible: "Synced"
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
+      text: "__LOGSEQ_E2E_OFFLINE_BLOCK__"
     direction: DOWN
     timeout: 30000
-- assertVisible: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
+- assertVisible: "__LOGSEQ_E2E_OFFLINE_BLOCK__"
 - assertVisible:
     id: "sync.connected"
 - stopApp
 - launchApp
 - extendedWaitUntil:
-    visible: "__LOGSEQ_CHAT_E2E_OFFLINE_BLOCK__"
+    visible: "__LOGSEQ_E2E_OFFLINE_BLOCK__"
     timeout: 30000
 - assertVisible:
     id: "sync.connected"

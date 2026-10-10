@@ -10,10 +10,10 @@ fi
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 target_prefix=$(cd "$1" && pwd)
 context=$2
-target="_build/$context/shared/native/logseq_chat_mobile_entry.exe.o"
+target="_build/$context/shared/native/logseq_mobile_entry.exe.o"
 # Local opam switches (e.g. CI's _opam) are addressed by their parent dir, not
 # by name — the checked-in workspace pins the named `5.5.0` switch.
-switch=${LOGSEQ_CHAT_OPAM_SWITCH:-}
+switch=${LOGSEQ_OPAM_SWITCH:-}
 if [[ -z $switch ]] && command -v opam >/dev/null 2>&1; then
   switch=$(opam switch show 2>/dev/null || true)
 fi

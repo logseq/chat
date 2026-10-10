@@ -2,11 +2,11 @@
 set -euo pipefail
 
 # Requires an app with a selected graph already cached.
-# Set LOGSEQ_CHAT_IOS_DEVICE=iPhone to measure a physical device.
+# Set LOGSEQ_IOS_DEVICE=iPhone to measure a physical device.
 # Restart the process without clearing the graph or authentication state.
-device="${LOGSEQ_CHAT_IOS_SIMULATOR:-booted}"
-bundle_id="${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}"
-budget_ms="${LOGSEQ_CHAT_JOURNALS_READY_BUDGET_MS:-200}"
+device="${LOGSEQ_IOS_SIMULATOR:-booted}"
+bundle_id="${LOGSEQ_IOS_BUNDLE_ID:-com.logseq.logseq}"
+budget_ms="${LOGSEQ_JOURNALS_READY_BUDGET_MS:-200}"
 launch_log="$(mktemp -t logseq-journals-launch).log"
 launch_pid=""
 
@@ -18,14 +18,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ -n "${LOGSEQ_CHAT_IOS_DEVICE:-}" ]]; then
+if [[ -n "${LOGSEQ_IOS_DEVICE:-}" ]]; then
   xcrun devicectl device process launch --terminate-existing \
-    --device "$LOGSEQ_CHAT_IOS_DEVICE" --console \
-    --environment-variables '{"LOGSEQ_CHAT_TRACE_STARTUP":"1","LUI_TRACE_APPEAR_IDENTIFIER":"journals.graph-loaded"}' \
+    --device "$LOGSEQ_IOS_DEVICE" --console \
+    --environment-variables '{"LOGSEQ_TRACE_STARTUP":"1","LUI_TRACE_APPEAR_IDENTIFIER":"journals.graph-loaded"}' \
     "$bundle_id" >"$launch_log" 2>&1 &
 else
   xcrun simctl terminate "$device" "$bundle_id" >/dev/null 2>&1 || true
-  SIMCTL_CHILD_LUI_TRACE_APPEAR_IDENTIFIER=journals.graph-loaded SIMCTL_CHILD_LOGSEQ_CHAT_TRACE_STARTUP=1 \
+  SIMCTL_CHILD_LUI_TRACE_APPEAR_IDENTIFIER=journals.graph-loaded SIMCTL_CHILD_LOGSEQ_TRACE_STARTUP=1 \
     xcrun simctl launch --console-pty "$device" "$bundle_id" >"$launch_log" 2>&1 &
 fi
 launch_pid="$!"

@@ -3,14 +3,14 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ios_device_config=${LOGSEQ_CHAT_IOS_CONFIG:-$repo_root/.logseq-chat-ios-device.env}
+ios_device_config=${LOGSEQ_IOS_CONFIG:-$repo_root/.logseq-ios-device.env}
 if [[ -f $ios_device_config ]]; then
   source "$ios_device_config"
 fi
-bundle_id=${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}
-device=${LOGSEQ_CHAT_IOS_DEVICE:-iPhone}
-launch_app=${LOGSEQ_CHAT_IOS_LAUNCH:-1}
-profile=${LOGSEQ_CHAT_IOS_PROFILE:-}
+bundle_id=${LOGSEQ_IOS_BUNDLE_ID:-com.logseq.logseq}
+device=${LOGSEQ_IOS_DEVICE:-iPhone}
+launch_app=${LOGSEQ_IOS_LAUNCH:-1}
+profile=${LOGSEQ_IOS_PROFILE:-}
 
 die() {
   echo "error: $*" >&2
@@ -18,7 +18,7 @@ die() {
 }
 
 [[ $bundle_id != "com.logseq.logseq" ]] || die "refusing to install over the production Logseq bundle id"
-[[ -n $profile ]] || die "set LOGSEQ_CHAT_IOS_PROFILE to a development provisioning profile for $bundle_id"
+[[ -n $profile ]] || die "set LOGSEQ_IOS_PROFILE to a development provisioning profile for $bundle_id"
 [[ -f $profile ]] || die "provisioning profile was not found: $profile"
 
 devices=$(xcrun devicectl list devices)
@@ -35,7 +35,7 @@ $devices"
 [[ $device_state == "available" || $device_state == "connected" ]] || die "target iOS device '$device' is $device_state
 $devices"
 
-build_log=$(mktemp /tmp/logseq-chat-ios-device-build.XXXXXX)
+build_log=$(mktemp /tmp/logseq-ios-device-build.XXXXXX)
 "$repo_root/scripts/build-mobile-ios-device.sh" | tee "$build_log"
 app_dir=$(tail -n 1 "$build_log")
 

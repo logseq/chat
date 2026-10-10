@@ -1,6 +1,6 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
-- runFlow: __LOGSEQ_CHAT_E2E_SETUP_FLOW__
+- runFlow: __LOGSEQ_E2E_SETUP_FLOW__
 - runFlow:
     when:
       visible:
@@ -22,11 +22,11 @@ appId: com.logseq.chat
     timeout: 60000
 - tapOn:
     id: "field.graph-name"
-- inputText: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "wrangler-regression-__LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.graph-add.confirm"
 - extendedWaitUntil:
-    visible: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"
+    visible: "wrangler-regression-__LOGSEQ_E2E_RUN_ID__"
     timeout: 60000
 - assertNotVisible: "Add sync graph"
 - extendedWaitUntil:
@@ -92,4 +92,4 @@ appId: com.logseq.chat
     id: "sync.connected"
 - assertVisible: "Sync status"
 - assertVisible: "Up to date"
-- assertVisible: "wrangler-regression-__LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "wrangler-regression-__LOGSEQ_E2E_RUN_ID__"

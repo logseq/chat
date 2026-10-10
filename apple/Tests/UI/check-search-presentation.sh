@@ -5,15 +5,15 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 device=${1:?Pass the simulator UDID}
 build_dir=.build/arm64-apple-ios-simulator/debug
 check_dir=$(mktemp -d)
-app_id=com.logseq.chat.SearchPresentationCheck
+app_id=com.logseq.logseq.SearchPresentationCheck
 trap 'xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true; xcrun simctl uninstall "$device" "$app_id" >/dev/null 2>&1 || true; rm -rf "$check_dir"' EXIT
 mkdir -p "$check_dir/SearchCheck.app"
 xcrun --sdk iphonesimulator swiftc -parse-as-library \
   -target arm64-apple-ios17.0-simulator -I "$build_dir/Modules" \
-  Sources/LogseqChat/LGChatNavigationExtension.swift \
-  Sources/LogseqChat/LGChatLiquidGlassTweak.swift \
-  Sources/LogseqChat/LogseqThemeSettings.swift \
-  "$build_dir/LogseqChat.build/DerivedSources/resource_bundle_accessor.swift" \
+  Sources/Logseq/LGNavigationExtension.swift \
+  Sources/Logseq/LGLiquidGlassTweak.swift \
+  Sources/Logseq/LogseqThemeSettings.swift \
+  "$build_dir/Logseq.build/DerivedSources/resource_bundle_accessor.swift" \
   Tests/UI/search-presentation.swift "$build_dir"/LUIAppleBackend.build/*.o \
   -o "$check_dir/SearchCheck.app/SearchCheck"
 cat > "$check_dir/SearchCheck.app/Info.plist" <<PLIST

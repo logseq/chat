@@ -10,15 +10,15 @@ plugins {
 // takes minutes (and needs the OCaml cross toolchain), so Gradle calls it
 // at most once per ABI unless the script is re-run.
 val repoRoot = rootDir.parentFile
-val androidAbi = providers.gradleProperty("logseqChatAndroidAbi").orNull ?: "arm64-v8a"
-val nativeLibrary = File("src/main/jniLibs/$androidAbi/liblogseq_chat_core.so")
+val androidAbi = providers.gradleProperty("logseqAndroidAbi").orNull ?: "arm64-v8a"
+val nativeLibrary = File("src/main/jniLibs/$androidAbi/liblogseq_core.so")
 
 val buildAndroidNativeCore = tasks.register("buildAndroidNativeCore") {
     group = "build"
-    description = "Builds liblogseq_chat_core.so for $androidAbi via scripts/build-android-native.sh"
+    description = "Builds liblogseq_core.so for $androidAbi via scripts/build-android-native.sh"
     inputs.files(
         "src/main/cpp/CMakeLists.txt",
-        "src/main/cpp/logseq_chat_jni.c",
+        "src/main/cpp/logseq_jni.c",
     )
     inputs.dir(File(repoRoot, "shared"))
     inputs.files(File(repoRoot, "scripts/build-android-native.sh"))
@@ -26,7 +26,7 @@ val buildAndroidNativeCore = tasks.register("buildAndroidNativeCore") {
     doLast {
         val output = providers.exec {
             workingDir(repoRoot)
-            environment("LOGSEQ_CHAT_ANDROID_ABI", androidAbi)
+            environment("LOGSEQ_ANDROID_ABI", androidAbi)
             commandLine("bash", "scripts/build-android-native.sh")
         }
         output.result.get().assertNormalExitValue()
@@ -37,15 +37,15 @@ val buildAndroidNativeCore = tasks.register("buildAndroidNativeCore") {
 // device/emulator; JVM unit tests and lint must work without it. Allow
 // developers (and CI running `test`) to skip it.
 val nativeCoreRequired =
-    providers.gradleProperty("logseqChatRequireNativeCore").map(String::toBoolean).orElse(true)
+    providers.gradleProperty("logseqRequireNativeCore").map(String::toBoolean).orElse(true)
 
 android {
-    namespace = "com.logseq.chat"
+    namespace = "com.logseq.app"
     compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "com.logseq.chat"
+        applicationId = "com.logseq.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -75,7 +75,7 @@ android {
 
     packaging {
         jniLibs {
-            // The JNI shim dlopen()s liblogseq_chat_core.so by soname, so
+            // The JNI shim dlopen()s liblogseq_core.so by soname, so
             // native libraries must be extracted onto the device fs.
             useLegacyPackaging = true
         }

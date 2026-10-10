@@ -1,18 +1,18 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
-- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+    file: "__LOGSEQ_E2E_OUTLINER_ANCHOR_FLOW__"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
 - pressKey: ENTER
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "Hide keyboard"
 - assertVisible:
     id: "debug.keyboard-hide-count.0"
-- assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "E2E anchor B __LOGSEQ_E2E_RUN_ID__"
 - pressKey: ENTER
 - assertVisible: "Hide keyboard"
 - assertVisible:

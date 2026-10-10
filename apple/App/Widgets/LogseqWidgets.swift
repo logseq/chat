@@ -49,7 +49,7 @@ private struct TodayJournalWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .padding()
         .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(URL(string: "logseqchat://journal"))
+        .widgetURL(URL(string: "logseq://journal"))
     }
 }
 
@@ -77,7 +77,7 @@ private struct CaptureWidgetView: View {
             }
         }
         .containerBackground(Color(red: 0, green: 0.17, blue: 0.21), for: .widget)
-        .widgetURL(URL(string: "logseqchat://capture"))
+        .widgetURL(URL(string: "logseq://capture"))
     }
 
     private func action<I: AppIntent>(_ title: String, icon: String, intent: I) -> some View {
@@ -95,7 +95,7 @@ private struct CaptureWidgetView: View {
 @available(iOS 18.0, *)
 private struct QuickAddControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "com.logseq.chat.quickAdd") {
+        StaticControlConfiguration(kind: "com.logseq.logseq.quickAdd") {
             ControlWidgetButton(action: QuickAddIntent()) {
                 Label("Quick Add", systemImage: "plus.circle")
             }
@@ -108,7 +108,7 @@ private struct QuickAddControl: ControlWidget {
 @available(iOS 18.0, *)
 private struct RecordAudioControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "com.logseq.chat.recordAudio") {
+        StaticControlConfiguration(kind: "com.logseq.logseq.recordAudio") {
             ControlWidgetButton(action: RecordAudioIntent()) {
                 Label("Record Audio", systemImage: "waveform")
             }
@@ -144,7 +144,7 @@ private struct CaptureWidget: Widget {
     }
 }
 
-@main struct LogseqChatWidgetBundle: WidgetBundle {
+@main struct LogseqWidgetBundle: WidgetBundle {
     var body: some Widget {
         TodayJournalWidget()
         CaptureWidget()

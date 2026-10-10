@@ -1,10 +1,10 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
+    file: "__LOGSEQ_E2E_OUTLINER_ANCHOR_FLOW__"
 - swipe:
     start: 0%, 50%
     end: 75%, 50%
@@ -15,20 +15,20 @@ appId: com.logseq.chat
     id: "BackButton"
 - tapOn:
     id: "button.sidebar.dismiss"
-- assertVisible: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "E2E anchor A __LOGSEQ_E2E_RUN_ID__"
 - runFlow:
     when:
-      visible: "E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
+      visible: "E2E parent __LOGSEQ_E2E_RUN_ID__"
     commands:
-      - longPressOn: "E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
+      - longPressOn: "E2E parent __LOGSEQ_E2E_RUN_ID__"
       - tapOn:
           id: "button.outliner.selection.delete"
       - tapOn: "Delete"
-- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
 - pressKey: ENTER
-- inputText: "E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E parent __LOGSEQ_E2E_RUN_ID__"
 - pressKey: ENTER
-- inputText: "E2E child __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E child __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.outliner.editor.indent"
 - assertVisible:
@@ -43,20 +43,20 @@ appId: com.logseq.chat
 - assertNotVisible:
     id: "button.sidebar.dismiss"
 - tapOn: "Hide keyboard"
-- assertVisible: "E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "E2E child __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "E2E parent __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "E2E child __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
-    text: "Collapse E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertNotVisible: "E2E child __LOGSEQ_CHAT_E2E_RUN_ID__"
+    text: "Collapse E2E parent __LOGSEQ_E2E_RUN_ID__"
+- assertNotVisible: "E2E child __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
-    text: "Expand E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "E2E child __LOGSEQ_CHAT_E2E_RUN_ID__"
+    text: "Expand E2E parent __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "E2E child __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
-    text: "Zoom into E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "E2E parent __LOGSEQ_CHAT_E2E_RUN_ID__"
+    text: "Zoom into E2E parent __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "E2E parent __LOGSEQ_E2E_RUN_ID__"
 - assertNotVisible:
     id: "toolbar.outliner.editor"
-- longPressOn: "E2E child __LOGSEQ_CHAT_E2E_RUN_ID__"
+- longPressOn: "E2E child __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "toolbar.outliner.selection"
 - swipe:

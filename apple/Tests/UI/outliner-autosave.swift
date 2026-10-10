@@ -1,8 +1,8 @@
 import Foundation
-@testable import LogseqChat
+@testable import Logseq
 
 @MainActor
-private final class NativeQueue: LGChatNativeCalling {
+private final class NativeQueue: LGNativeCalling {
     var effects: [String] = []
     func initialize(platformCode: Int, hostCode: Int, authenticationCode: Int) -> String { "" }
     func appear(node: Int) -> String { "" }
@@ -27,12 +27,12 @@ private final class NativeQueue: LGChatNativeCalling {
 }
 
 @MainActor
-private final class Recorder: LGChatEffectExecuting {
+private final class Recorder: LGEffectExecuting {
     var effects: [String] = []
     var result = "{}"
-    func execute(_ effect: LGChatEffect) async -> LGChatEffectResolution {
+    func execute(_ effect: LGEffect) async -> LGEffectResolution {
         effects.append(effect.kind)
-        return LGChatEffectResolution(succeeded: true, message: "{\"apiVersion\":1,\"ok\":true,\"result\":\(result)}")
+        return LGEffectResolution(succeeded: true, message: "{\"apiVersion\":1,\"ok\":true,\"result\":\(result)}")
     }
 }
 
@@ -52,7 +52,7 @@ struct Check {
             native.effects = ["{\"id\":1,\"kind\":\"\(kind)\",\"text\":\"Project\"}"]
             let recorder = Recorder()
             recorder.result = result
-            let runtime = LGChatRuntime(native: native, effectExecutor: recorder, outlinerAutosaveDelayNanoseconds: 1_000_000)
+            let runtime = LGRuntime(native: native, effectExecutor: recorder, outlinerAutosaveDelayNanoseconds: 1_000_000)
             await runtime.drainEffectsForTesting()
             try? await Task.sleep(for: .milliseconds(50))
             await runtime.drainEffectsForTesting()
@@ -65,5 +65,5 @@ struct Check {
 }
 
 // This harness injects the effect boundary and must never initialize the native core.
-@_cdecl("logseq_chat_initialize")
+@_cdecl("logseq_initialize")
 func unexpectedCoreInitialization() { fatalError("Unexpected native core initialization") }

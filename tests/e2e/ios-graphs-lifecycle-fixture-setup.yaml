@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp
 - extendedWaitUntil:
@@ -17,7 +17,7 @@ appId: com.logseq.chat
     timeout: 15000
 - runFlow:
     when:
-      notVisible: "chat-local-e2e-fixture"
+      notVisible: "logseq-local-e2e-fixture"
     commands:
       - tapOn:
           id: "button.graph-add"
@@ -26,7 +26,7 @@ appId: com.logseq.chat
           timeout: 10000
       - tapOn:
           id: "field.graph-name"
-      - inputText: "chat-local-e2e-fixture"
+      - inputText: "logseq-local-e2e-fixture"
       - tapOn:
           id: "button.graph-add.confirm"
       - extendedWaitUntil:

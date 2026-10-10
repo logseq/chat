@@ -7,7 +7,7 @@ private struct InlineImageHost: View {
     let url: URL
 
     var body: some View {
-        LGChatInlineImage(url: url)
+        LGInlineImage(url: url)
             .frame(width: 326, alignment: .leading)
             .background(Color.white)
     }

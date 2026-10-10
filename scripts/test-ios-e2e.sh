@@ -3,24 +3,24 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-flow=${LOGSEQ_CHAT_IOS_E2E_FLOW:-tests/e2e/ios-capture-responsive.yaml}
-app_id=${LOGSEQ_CHAT_IOS_APP_ID:-com.logseq.chat}
-app_path=${LOGSEQ_CHAT_IOS_APP_PATH:-$repo_root/apple/.build/LogseqChat.app}
+flow=${LOGSEQ_IOS_E2E_FLOW:-tests/e2e/ios-capture-responsive.yaml}
+app_id=${LOGSEQ_IOS_APP_ID:-com.logseq.logseq}
+app_path=${LOGSEQ_IOS_APP_PATH:-$repo_root/apple/.build/Logseq.app}
 screenshots_dir="$repo_root/tests/e2e/screenshots"
-username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
-password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
-e2ee_password=${LOGSEQ_CHAT_E2EE_PASSWORD:-$password}
-run_id=${LOGSEQ_CHAT_E2E_RUN_ID:-$(date +%s)}
-base_url=${LOGSEQ_CHAT_E2E_BASE_URL:-http://127.0.0.1:8787}
-graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-sync-$run_id}
+username=${LOGSEQ_E2E_USERNAME:-e2etest}
+password=${LOGSEQ_E2E_PASSWORD:-Logseq-e2e}
+e2ee_password=${LOGSEQ_E2EE_PASSWORD:-$password}
+run_id=${LOGSEQ_E2E_RUN_ID:-$(date +%s)}
+base_url=${LOGSEQ_E2E_BASE_URL:-http://127.0.0.1:8787}
+graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-sync-$run_id}
 fixture_seed_mode=""
 case ${flow##*/} in
   ios-native-header-navigation.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-header-$run_id}
+    graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-header-$run_id}
     fixture_seed_mode=--header-navigation
     ;;
-  ios-capture-responsive.yaml|ios-chat-send-regression.yaml|ios-cold-start-composer.yaml|ios-search-status-regression.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-composer-$run_id}
+  ios-capture-responsive.yaml|ios-send-regression.yaml|ios-cold-start-composer.yaml|ios-search-status-regression.yaml)
+    graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-composer-$run_id}
     fixture_seed_mode=--composer
     ;;
   ios-outliner-mode.yaml|ios-outliner-interactions.yaml|\
@@ -28,7 +28,7 @@ case ${flow##*/} in
   ios-outliner-autocomplete-completion.yaml|ios-outliner-autocomplete-visual.yaml|\
   ios-outliner-selection-toolbar.yaml|ios-outliner-hierarchy-navigation.yaml|\
   ios-outliner-drag.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-outliner-$run_id}
+    graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-outliner-$run_id}
     fixture_seed_mode=--outliner
     ;;
   ios-page-outliner-only.yaml|ios-outliner-empty-block-caret.yaml|\
@@ -36,7 +36,7 @@ case ${flow##*/} in
   ios-sidebar-page-empty-block-delete.yaml|ios-node-tag-navigation.yaml|\
   ios-sidebar-node-navigation.yaml|ios-page-share.yaml|ios-page-favorite.yaml|\
   ios-rich-block-rendering.yaml)
-    graph_name=${LOGSEQ_CHAT_IOS_E2E_GRAPH_NAME:-chat-local-e2e-fixtures-$run_id}
+    graph_name=${LOGSEQ_IOS_E2E_GRAPH_NAME:-logseq-local-e2e-fixtures-$run_id}
     fixture_seed_mode=--fixture
     ;;
 esac
@@ -60,8 +60,8 @@ fi
 # The setup flow drives the Cognito hosted UI in the system browser, where
 # hierarchy queries occasionally stall or crash the XCTest driver on a
 # loaded runner. Retry the setup once so a driver flake does not fail the
-# whole suite; LOGSEQ_CHAT_IOS_E2E_SETUP_RETRIES=0 disables the retry.
-setup_retries=${LOGSEQ_CHAT_IOS_E2E_SETUP_RETRIES:-1}
+# whole suite; LOGSEQ_IOS_E2E_SETUP_RETRIES=0 disables the retry.
+setup_retries=${LOGSEQ_IOS_E2E_SETUP_RETRIES:-1}
 run_setup_flow() {
   local attempt=0
   while :; do
@@ -76,7 +76,7 @@ run_setup_flow() {
   done
 }
 
-device=${LOGSEQ_CHAT_IOS_SIMULATOR_UDID:-}
+device=${LOGSEQ_IOS_SIMULATOR_UDID:-}
 if [[ -z $device ]]; then
   device=$(
     xcrun simctl list devices booted \
@@ -85,15 +85,15 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no booted iOS simulator was found"
 
-if [[ ${LOGSEQ_CHAT_IOS_SKIP_BUILD:-0} != 1 ]]; then
+if [[ ${LOGSEQ_IOS_SKIP_BUILD:-0} != 1 ]]; then
   "$repo_root/scripts/build-mobile-ios-simulator.sh" >/dev/null
 fi
 # Reset app state between flows by wiping the data container instead of
 # reinstalling the (unchanged) binary — a copy of the .app bundle is the
-# slowest part of per-flow setup. LOGSEQ_CHAT_IOS_E2E_REINSTALL=1 restores
+# slowest part of per-flow setup. LOGSEQ_IOS_E2E_REINSTALL=1 restores
 # the old uninstall+install behavior.
 xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true
-if [[ ${LOGSEQ_CHAT_IOS_E2E_REINSTALL:-0} == 1 ]]; then
+if [[ ${LOGSEQ_IOS_E2E_REINSTALL:-0} == 1 ]]; then
   xcrun simctl uninstall "$device" "$app_id" >/dev/null 2>&1 || true
 fi
 data_container=$(xcrun simctl get_app_container "$device" "$app_id" data 2>/dev/null || true)
@@ -114,7 +114,7 @@ fi
 xcrun simctl spawn "$device" defaults write "$app_id" logseq.baseURL "$base_url"
 
 mkdir -p "$screenshots_dir"
-temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-ios-e2e.XXXXXX")
+temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-ios-e2e.XXXXXX")
 rendered_flow="$temporary_directory/flow.yaml"
 rendered_setup="$temporary_directory/setup.yaml"
 rendered_outliner_anchor="$temporary_directory/outliner-anchor.yaml"
@@ -126,32 +126,32 @@ else
   flow_path="$repo_root/$flow"
 fi
 sed \
-  -e "s|__LOGSEQ_CHAT_E2E_USERNAME__|$username|g" \
-  -e "s|__LOGSEQ_CHAT_E2E_PASSWORD__|$password|g" \
-  -e "s|__LOGSEQ_CHAT_E2EE_PASSWORD__|$e2ee_password|g" \
-  -e "s|__LOGSEQ_CHAT_E2E_GRAPH_NAME__|$graph_name|g" \
+  -e "s|__LOGSEQ_E2E_USERNAME__|$username|g" \
+  -e "s|__LOGSEQ_E2E_PASSWORD__|$password|g" \
+  -e "s|__LOGSEQ_E2EE_PASSWORD__|$e2ee_password|g" \
+  -e "s|__LOGSEQ_E2E_GRAPH_NAME__|$graph_name|g" \
   "$repo_root/tests/e2e/ios-local-graph-setup.yaml" > "$rendered_setup"
 sed \
-  -e "s|__LOGSEQ_CHAT_E2E_RUN_ID__|$run_id|g" \
+  -e "s|__LOGSEQ_E2E_RUN_ID__|$run_id|g" \
   "$repo_root/tests/e2e/ios-outliner-anchor-setup.yaml" > "$rendered_outliner_anchor"
 cp \
   "$repo_root/tests/e2e/ios-graphs-lifecycle-fixture-setup.yaml" \
   "$rendered_graphs_lifecycle_fixture"
 sed \
-  -e "s|__LOGSEQ_CHAT_E2E_USERNAME__|$username|g" \
-  -e "s|__LOGSEQ_CHAT_E2E_PASSWORD__|$password|g" \
-  -e "s|__LOGSEQ_CHAT_E2E_RUN_ID__|$run_id|g" \
-  -e "s|__LOGSEQ_CHAT_E2E_SETUP_FLOW__|$rendered_setup|g" \
-  -e "s|__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__|$rendered_outliner_anchor|g" \
+  -e "s|__LOGSEQ_E2E_USERNAME__|$username|g" \
+  -e "s|__LOGSEQ_E2E_PASSWORD__|$password|g" \
+  -e "s|__LOGSEQ_E2E_RUN_ID__|$run_id|g" \
+  -e "s|__LOGSEQ_E2E_SETUP_FLOW__|$rendered_setup|g" \
+  -e "s|__LOGSEQ_E2E_OUTLINER_ANCHOR_FLOW__|$rendered_outliner_anchor|g" \
   "$flow_path" > "$rendered_flow"
 # The graph-setup Maestro flow + sqlite/checkpoint wait is the slowest part
-# of a seeded flow (~30-60s). When LOGSEQ_CHAT_E2E_SEED_CACHE points at a
+# of a seeded flow (~30-60s). When LOGSEQ_E2E_SEED_CACHE points at a
 # directory, the seeded Documents/graphs tree is cached per fixture mode and
 # copied into a fresh container on the next flow instead of re-driving the
 # UI setup. The suite script sets this up so the cache spans the whole run.
-seed_cache_dir=${LOGSEQ_CHAT_E2E_SEED_CACHE:-}
+seed_cache_dir=${LOGSEQ_E2E_SEED_CACHE:-}
 seed_cache_key=${fixture_seed_mode:-default}-$graph_name
-if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
+if [[ ${LOGSEQ_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; then
   if [[ -n $seed_cache_dir && -d $seed_cache_dir/$seed_cache_key/graphs ]]; then
     data_container=$(xcrun simctl get_app_container "$device" "$app_id" data)
     mkdir -p "$data_container/Documents"
@@ -178,9 +178,9 @@ if [[ ${LOGSEQ_CHAT_IOS_E2E_SEED_GRAPH:-0} == 1 || -n $fixture_seed_mode ]]; the
       dune_seed=(opam exec --switch=5.5.0 -- dune exec)
     fi
     if [[ -n $fixture_seed_mode ]]; then
-      "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
+      "${dune_seed[@]}" shared/native/logseq_e2e_seed.exe -- "$graph_database" "$fixture_seed_mode"
     else
-      "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$graph_database"
+      "${dune_seed[@]}" shared/native/logseq_e2e_seed.exe -- "$graph_database"
     fi
     if [[ -n $seed_cache_dir ]]; then
       mkdir -p "$seed_cache_dir/$seed_cache_key"

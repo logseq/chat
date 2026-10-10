@@ -113,12 +113,12 @@ grep -Fq 'assertNotVisible: "Android E2E continuous second"' "$repo_root/tests/e
   || die "Android outliner E2E does not verify confirmed block deletion"
 grep -Fq 'assertVisible: "Card"' "$repo_root/tests/e2e/android-outliner-autocomplete-completion.yaml" \
   || die "Android autocomplete E2E does not cover the built-in Card tag"
-grep -Fq 'openLink: "logseqchat://capture"' "$repo_root/tests/e2e/android-shortcut-deep-links.yaml" \
+grep -Fq 'openLink: "logseq://capture"' "$repo_root/tests/e2e/android-shortcut-deep-links.yaml" \
   || die "Android shortcut E2E does not cover Capture"
-grep -Fq 'openLink: "logseqchat://journal"' "$repo_root/tests/e2e/android-shortcut-deep-links.yaml" \
+grep -Fq 'openLink: "logseq://journal"' "$repo_root/tests/e2e/android-shortcut-deep-links.yaml" \
   || die "Android shortcut E2E does not cover Journal"
 
-temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-android-e2e.XXXXXX")
+temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/logseq-android-e2e.XXXXXX")
 invalid_output="$temporary_directory/invalid-output"
 missing_output="$temporary_directory/missing-output"
 mock_bin="$temporary_directory/bin"
@@ -129,29 +129,29 @@ gradle_args="$temporary_directory/gradle-args"
 mkdir -p "$mock_bin"
 trap 'rm -rf "$temporary_directory"' EXIT
 
-if LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+if LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
   "$runner" unsupported >"$invalid_output" 2>&1; then
   die "Android E2E runner accepted an unknown module"
 fi
 grep -Fq "unknown Android E2E module or flow: unsupported" "$invalid_output" \
   || die "Android E2E runner did not explain the unknown module"
 
-if env -u LOGSEQ_CHAT_E2E_USERNAME \
-  -u LOGSEQ_CHAT_E2E_PASSWORD \
-  -u LOGSEQ_CHAT_E2E_BASE_URL \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+if env -u LOGSEQ_E2E_USERNAME \
+  -u LOGSEQ_E2E_PASSWORD \
+  -u LOGSEQ_E2E_BASE_URL \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
   "$runner" connect >"$missing_output" 2>&1; then
   die "Android E2E runner accepted missing connection parameters"
 fi
-grep -Fq "LOGSEQ_CHAT_E2E_USERNAME is required" "$missing_output" \
+grep -Fq "LOGSEQ_E2E_USERNAME is required" "$missing_output" \
   || die "Android E2E runner did not explain the missing connection parameter"
 
 cat >"$mock_bin/adb" <<'EOF'
 #!/usr/bin/env bash
-if [[ -n ${LOGSEQ_CHAT_ADB_ARGS:-} ]]; then
-  printf '%s\n' "$*" >>"$LOGSEQ_CHAT_ADB_ARGS"
+if [[ -n ${LOGSEQ_ADB_ARGS:-} ]]; then
+  printf '%s\n' "$*" >>"$LOGSEQ_ADB_ARGS"
 fi
 case "$*" in
   *"shell am start -W -S"*)
@@ -164,30 +164,30 @@ case "$*" in
     ;;
 esac
 EOF
-printf '#!/usr/bin/env bash\nprintf \"%%s\\n\" \"$@\" >\"$LOGSEQ_CHAT_MAESTRO_ARGS\"\n' >"$mock_bin/maestro"
+printf '#!/usr/bin/env bash\nprintf \"%%s\\n\" \"$@\" >\"$LOGSEQ_MAESTRO_ARGS\"\n' >"$mock_bin/maestro"
 cat >"$mock_bin/gradle" <<'GMOCK'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >"$LOGSEQ_CHAT_GRADLE_ARGS"
+printf '%s\n' "$*" >"$LOGSEQ_GRADLE_ARGS"
 GMOCK
 chmod +x "$mock_bin/adb" "$mock_bin/maestro" "$mock_bin/gradle"
-printf 'appId: com.logseq.chat\n---\n- launchApp\n' >"$custom_flow"
+printf 'appId: com.logseq.app\n---\n- launchApp\n' >"$custom_flow"
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
   "$runner" "$custom_flow" >/dev/null
 [[ $(tail -n 1 "$maestro_args") == "$custom_flow" ]] \
   || die "Android E2E runner changed an absolute custom flow path"
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_ANDROID_GRADLE=gradle \
-  LOGSEQ_CHAT_GRADLE_ARGS="$gradle_args" \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
+  LOGSEQ_ANDROID_GRADLE=gradle \
+  LOGSEQ_GRADLE_ARGS="$gradle_args" \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
   "$runner" signed-out >/dev/null
 [[ $(<"$gradle_args") == "-p $repo_root/android :app:assembleProfile" ]] \
   || die "Android E2E runner did not build the profile APK"
@@ -195,11 +195,11 @@ PATH="$mock_bin:$PATH" \
 : >"$adb_args"
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_ADB_ARGS="$adb_args" \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_ADB_ARGS="$adb_args" \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" sharing >/dev/null
 grep -Fq 'android.intent.action.SEND' "$adb_args" \
   || die "Android E2E runner did not inject a real ACTION_SEND intent"
@@ -209,11 +209,11 @@ grep -Fq 'android.intent.extra.TITLE Android\ share' "$adb_args" \
 : >"$adb_args"
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_ADB_ARGS="$adb_args" \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_ADB_ARGS="$adb_args" \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" sharing-image >/dev/null
 grep -Fq 'image/png' "$adb_args" \
   || die "Android E2E runner did not inject an image ACTION_SEND intent"
@@ -222,20 +222,20 @@ grep -Fq 'android.intent.extra.STREAM' "$adb_args" \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_VISUAL_GATES=1 \
   "$runner" signed-out >/dev/null
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_E2E_USERNAME=test-user \
-  LOGSEQ_CHAT_E2E_PASSWORD=test-password \
-  LOGSEQ_CHAT_E2E_BASE_URL=https://api.example \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_E2E_USERNAME=test-user \
+  LOGSEQ_E2E_PASSWORD=test-password \
+  LOGSEQ_E2E_BASE_URL=https://api.example \
   "$runner" connect >/dev/null
 expected_connect_args=$(printf '%s\n' \
   --device test-device test \
@@ -248,24 +248,24 @@ expected_connect_args=$(printf '%s\n' \
 : >"$adb_args"
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_ADB_ARGS="$adb_args" \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_E2E_USERNAME=test-user \
-  LOGSEQ_CHAT_E2E_PASSWORD=test-password \
-  LOGSEQ_CHAT_E2E_BASE_URL=http://127.0.0.1:8787 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_DB_SYNC_WAIT=1 \
+  LOGSEQ_ADB_ARGS="$adb_args" \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_E2E_USERNAME=test-user \
+  LOGSEQ_E2E_PASSWORD=test-password \
+  LOGSEQ_E2E_BASE_URL=http://127.0.0.1:8787 \
+  LOGSEQ_ANDROID_E2E_SKIP_DB_SYNC_WAIT=1 \
   "$runner" connect >/dev/null
 grep -Fxq -- '-s test-device reverse tcp:8787 tcp:8787' "$adb_args" \
   || die "Android E2E runner did not expose the host-local backend to the device"
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" navigation >/dev/null
 expected_navigation_args=$(printf '%s\n' \
   --device test-device test \
@@ -275,9 +275,9 @@ expected_navigation_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
   "$runner" graphs >/dev/null
 expected_graphs_args=$(printf '%s\n' \
   --device test-device test \
@@ -287,9 +287,9 @@ expected_graphs_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
   "$runner" settings >/dev/null
 expected_settings_args=$(printf '%s\n' \
   --device test-device test \
@@ -299,10 +299,10 @@ expected_settings_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" flashcards >/dev/null
 expected_flashcards_args=$(printf '%s\n' \
   --device test-device test \
@@ -312,10 +312,10 @@ expected_flashcards_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" search >/dev/null
 expected_search_args=$(printf '%s\n' \
   --device test-device test \
@@ -325,10 +325,10 @@ expected_search_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" outliner >/dev/null
 expected_outliner_args=$(printf '%s\n' \
   --device test-device test \
@@ -338,9 +338,9 @@ expected_outliner_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
   "$runner" composer >/dev/null
 expected_composer_args=$(printf '%s\n' \
   --device test-device test \
@@ -350,10 +350,10 @@ expected_composer_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" audio >/dev/null
 expected_audio_args=$(printf '%s\n' \
   --device test-device test \
@@ -363,10 +363,10 @@ expected_audio_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" rich-content >/dev/null
 expected_rich_content_args=$(printf '%s\n' \
   --device test-device test \
@@ -376,10 +376,10 @@ expected_rich_content_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" youtube >/dev/null
 expected_youtube_args=$(printf '%s\n' \
   --device test-device test \
@@ -389,10 +389,10 @@ expected_youtube_args=$(printf '%s\n' \
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" node-tag >/dev/null
 expected_node_tag_args=$(printf '%s\n' \
   --device test-device test \
@@ -403,8 +403,8 @@ expected_node_tag_args=$(printf '%s\n' \
 : >"$adb_args"
 cat >"$mock_bin/adb" <<'EOF'
 #!/usr/bin/env bash
-if [[ -n ${LOGSEQ_CHAT_ADB_ARGS:-} ]]; then
-  printf '%s\n' "$*" >>"$LOGSEQ_CHAT_ADB_ARGS"
+if [[ -n ${LOGSEQ_ADB_ARGS:-} ]]; then
+  printf '%s\n' "$*" >>"$LOGSEQ_ADB_ARGS"
 fi
 case "$*" in
   *"exec-out uiautomator dump"*)
@@ -413,25 +413,25 @@ case "$*" in
     ;;
 esac
 EOF
-printf '#!/usr/bin/env bash\nsleep 1\nprintf "%%s\\n" "$@" >"$LOGSEQ_CHAT_MAESTRO_ARGS"\n' >"$mock_bin/maestro"
+printf '#!/usr/bin/env bash\nsleep 1\nprintf "%%s\\n" "$@" >"$LOGSEQ_MAESTRO_ARGS"\n' >"$mock_bin/maestro"
 chmod +x "$mock_bin/adb" "$mock_bin/maestro"
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_ADB_ARGS="$adb_args" \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_ADB_ARGS="$adb_args" \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" settings >/dev/null
 grep -Fq -- '-s test-device shell input tap 225 912' "$adb_args" \
   || die "Android E2E runner's ANR watchdog did not tap the dialog's Close app button"
 
 PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_MAESTRO_ARGS="$maestro_args" \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL=1 \
-  LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED=1 \
+  LOGSEQ_MAESTRO_ARGS="$maestro_args" \
+  LOGSEQ_ANDROID_E2E_SKIP_BUILD=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_INSTALL=1 \
+  LOGSEQ_ANDROID_E2E_SKIP_SEED=1 \
   "$runner" page-actions >/dev/null
 expected_page_actions_args=$(printf '%s\n' \
   --device test-device test \

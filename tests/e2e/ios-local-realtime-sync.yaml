@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp:
     clearState: true
@@ -13,9 +13,9 @@ appId: com.logseq.chat
           visible: "Sign in with your username and password"
           timeout: 30000
       - tapOn: "Username Username"
-      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - inputText: "__LOGSEQ_E2E_USERNAME__"
       - pressKey: Enter
-      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - inputText: "__LOGSEQ_E2E_PASSWORD__"
       - hideKeyboard
       - tapOn: "submit"
 - runFlow:
@@ -24,10 +24,10 @@ appId: com.logseq.chat
     commands:
       - tapOn:
           text: "Enter your username"
-      - inputText: "__LOGSEQ_CHAT_E2E_USERNAME__"
+      - inputText: "__LOGSEQ_E2E_USERNAME__"
       - tapOn:
           text: "Enter your password"
-      - inputText: "__LOGSEQ_CHAT_E2E_PASSWORD__"
+      - inputText: "__LOGSEQ_E2E_PASSWORD__"
       - tapOn:
           text: "Sign In"
           index: 1
@@ -35,33 +35,33 @@ appId: com.logseq.chat
     visible:
       id: "screen.graph-picker"
     timeout: 30000
-- tapOn: "__LOGSEQ_CHAT_E2E_GRAPH_NAME__"
+- tapOn: "__LOGSEQ_E2E_GRAPH_NAME__"
 - extendedWaitUntil:
     visible:
       id: "sync.connected"
     timeout: 30000
 - scrollUntilVisible:
     element:
-      text: "__LOGSEQ_CHAT_E2E_DESKTOP_BLOCK__"
+      text: "__LOGSEQ_E2E_DESKTOP_BLOCK__"
     direction: DOWN
     timeout: 30000
 - tapOn:
     id: "button.composer.expand"
 - tapOn:
     id: "field.composer"
-- inputText: "__LOGSEQ_CHAT_E2E_MOBILE_BLOCK__"
+- inputText: "__LOGSEQ_E2E_MOBILE_BLOCK__"
 - tapOn:
     id: "button.send"
 - extendedWaitUntil:
     visible:
       id: "sync.cursor-advanced"
     timeout: 30000
-- assertVisible: "__LOGSEQ_CHAT_E2E_MOBILE_BLOCK__"
+- assertVisible: "__LOGSEQ_E2E_MOBILE_BLOCK__"
 - stopApp
 - launchApp
 - extendedWaitUntil:
-    visible: "__LOGSEQ_CHAT_E2E_DESKTOP_BLOCK__"
+    visible: "__LOGSEQ_E2E_DESKTOP_BLOCK__"
     timeout: 30000
-- assertVisible: "__LOGSEQ_CHAT_E2E_MOBILE_BLOCK__"
+- assertVisible: "__LOGSEQ_E2E_MOBILE_BLOCK__"
 - assertVisible:
     id: "sync.connected"

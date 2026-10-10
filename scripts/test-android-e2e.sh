@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-app_id=com.logseq.chat
+app_id=com.logseq.app
 signed_out_flow=tests/e2e/android-signed-out.yaml
 local_setup_flow=tests/e2e/android-local-graph-setup.yaml
 connect_flow=tests/e2e/android-staging-connect.yaml
@@ -32,7 +32,7 @@ die() {
   exit 1
 }
 
-selector=${1:-${LOGSEQ_CHAT_ANDROID_E2E_MODULE:-all}}
+selector=${1:-${LOGSEQ_ANDROID_E2E_MODULE:-all}}
 case $selector in
   all)
     flows=(
@@ -240,14 +240,14 @@ case $selector in
 esac
 
 if (( needs_connection )); then
-  : "${LOGSEQ_CHAT_E2E_USERNAME:?error: LOGSEQ_CHAT_E2E_USERNAME is required}"
-  : "${LOGSEQ_CHAT_E2E_PASSWORD:?error: LOGSEQ_CHAT_E2E_PASSWORD is required}"
-  : "${LOGSEQ_CHAT_E2E_BASE_URL:?error: LOGSEQ_CHAT_E2E_BASE_URL is required}"
+  : "${LOGSEQ_E2E_USERNAME:?error: LOGSEQ_E2E_USERNAME is required}"
+  : "${LOGSEQ_E2E_PASSWORD:?error: LOGSEQ_E2E_PASSWORD is required}"
+  : "${LOGSEQ_E2E_BASE_URL:?error: LOGSEQ_E2E_BASE_URL is required}"
 fi
 # Modules that still sign in through the in-app Cognito form (e.g. smoke's
 # local server setup) use the shared dev-account defaults.
-LOGSEQ_CHAT_E2E_USERNAME=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
-LOGSEQ_CHAT_E2E_PASSWORD=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
+LOGSEQ_E2E_USERNAME=${LOGSEQ_E2E_USERNAME:-e2etest}
+LOGSEQ_E2E_PASSWORD=${LOGSEQ_E2E_PASSWORD:-Logseq-e2e}
 
 command -v adb >/dev/null 2>&1 || die "adb is not installed"
 command -v maestro >/dev/null 2>&1 || die "Maestro CLI is not installed"
@@ -322,12 +322,12 @@ fi
 # Suppress ANR dialogs for background processes up front; the watchdog below
 # still closes foreground ANRs (e.g. Pixel Launcher) by force-stopping them.
 adb -s "$device" shell settings put global anr_show_background 0 >/dev/null 2>&1 || true
-if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_ANR_WATCHDOG:-0} != 1 ]]; then
+if [[ ${LOGSEQ_ANDROID_E2E_SKIP_ANR_WATCHDOG:-0} != 1 ]]; then
   start_anr_watchdog
 fi
 
-if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
-  && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
+if [[ -n ${LOGSEQ_E2E_BASE_URL:-} ]] \
+  && [[ $LOGSEQ_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
   local_backend_port=${BASH_REMATCH[4]:-}
   if [[ -z $local_backend_port ]]; then
     if [[ ${BASH_REMATCH[1]} == https ]]; then
@@ -339,18 +339,18 @@ if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
   adb -s "$device" reverse "tcp:$local_backend_port" "tcp:$local_backend_port"
 fi
 
-if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
-  gradle=${LOGSEQ_CHAT_ANDROID_GRADLE:-"$repo_root/android/gradlew"}
+if [[ ${LOGSEQ_ANDROID_E2E_SKIP_BUILD:-0} != 1 ]]; then
+  gradle=${LOGSEQ_ANDROID_GRADLE:-"$repo_root/android/gradlew"}
   ANDROID_SERIAL=$device "$gradle" -p "$repo_root/android" :app:assembleProfile
 fi
 
-if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
+if [[ ${LOGSEQ_ANDROID_E2E_SKIP_INSTALL:-0} != 1 ]]; then
   apk="$repo_root/android/app/build/outputs/apk/profile/app-profile.apk"
   [[ -f $apk ]] || die "Android profile APK was not produced at $apk"
   adb -s "$device" install -r "$apk" >/dev/null
 fi
 
-if (( needs_clear_state )) && [[ ${LOGSEQ_CHAT_ANDROID_E2E_CLEAR_STATE:-1} == 1 ]]; then
+if (( needs_clear_state )) && [[ ${LOGSEQ_ANDROID_E2E_CLEAR_STATE:-1} == 1 ]]; then
   adb -s "$device" shell pm clear "$app_id" >/dev/null
 fi
 
@@ -358,25 +358,25 @@ if (( needs_primary_button )); then
   ANDROID_SERIAL=$device "$repo_root/scripts/test-android-launch-performance.sh"
 fi
 
-if (( needs_connection )) && [[ ${LOGSEQ_CHAT_ANDROID_E2E_CLEAR_BROWSER_STATE:-1} == 1 ]]; then
-  browser_package=${LOGSEQ_CHAT_ANDROID_E2E_BROWSER_PACKAGE:-com.android.chrome}
+if (( needs_connection )) && [[ ${LOGSEQ_ANDROID_E2E_CLEAR_BROWSER_STATE:-1} == 1 ]]; then
+  browser_package=${LOGSEQ_ANDROID_E2E_BROWSER_PACKAGE:-com.android.chrome}
   if adb -s "$device" shell pm path "$browser_package" >/dev/null 2>&1; then
     adb -s "$device" shell pm clear "$browser_package" >/dev/null
   fi
 fi
 
-if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]]; then
-  [[ $LOGSEQ_CHAT_E2E_BASE_URL != *['<>&"']* ]] \
-    || die "LOGSEQ_CHAT_E2E_BASE_URL contains characters that are unsafe in Android preferences"
-  preferences_file=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-defaults.xml.XXXXXX")
+if [[ -n ${LOGSEQ_E2E_BASE_URL:-} ]]; then
+  [[ $LOGSEQ_E2E_BASE_URL != *['<>&"']* ]] \
+    || die "LOGSEQ_E2E_BASE_URL contains characters that are unsafe in Android preferences"
+  preferences_file=$(mktemp "${TMPDIR:-/tmp}/logseq-android-defaults.xml.XXXXXX")
   temporary_files+=("$preferences_file")
-  remote_preferences="/data/local/tmp/logseq-chat-android-defaults-$$.xml"
+  remote_preferences="/data/local/tmp/logseq-android-defaults-$$.xml"
   printf '%s\n' \
     "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>" \
     '<map>' \
     '    <string name="logseq.appearance">system</string>' \
     '    <string name="logseq.language">system</string>' \
-    "    <string name=\"logseq.baseURL\">$LOGSEQ_CHAT_E2E_BASE_URL</string>" \
+    "    <string name=\"logseq.baseURL\">$LOGSEQ_E2E_BASE_URL</string>" \
     '</map>' >"$preferences_file"
   adb -s "$device" push "$preferences_file" "$remote_preferences" >/dev/null
   adb -s "$device" shell run-as "$app_id" mkdir -p shared_prefs
@@ -393,7 +393,7 @@ seed_android_fixture() {
   local graph_ready=0
   for _ in {1..120}; do
     selected_graph_id=$(adb -s "$device" shell run-as "$app_id" \
-      cat shared_prefs/logseq_chat.xml 2>/dev/null \
+      cat shared_prefs/logseq.xml 2>/dev/null \
       | sed -n 's|.*<string name="logseq.selectedGraphId">\([^<]*\)</string>.*|\1|p' \
       | tr -d '\r' | head -1)
     if [[ $selected_graph_id =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -413,7 +413,7 @@ seed_android_fixture() {
 
   adb -s "$device" shell am force-stop "$app_id"
   local local_database
-  local_database=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-graph.XXXXXX")
+  local_database=$(mktemp "${TMPDIR:-/tmp}/logseq-android-graph.XXXXXX")
   temporary_files+=("$local_database")
   adb -s "$device" exec-out run-as "$app_id" cat "$graph_database" >"$local_database"
   local dune_seed=()
@@ -423,12 +423,12 @@ seed_android_fixture() {
     dune_seed=(opam exec --switch=5.5.0 -- dune exec)
   fi
   if [[ -n $seed_mode ]]; then
-    "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$local_database" "$seed_mode"
+    "${dune_seed[@]}" shared/native/logseq_e2e_seed.exe -- "$local_database" "$seed_mode"
   else
-    "${dune_seed[@]}" shared/native/logseq_chat_e2e_seed.exe -- "$local_database"
+    "${dune_seed[@]}" shared/native/logseq_e2e_seed.exe -- "$local_database"
   fi
 
-  local remote_database="/data/local/tmp/logseq-chat-android-graph-$$.sqlite"
+  local remote_database="/data/local/tmp/logseq-android-graph-$$.sqlite"
   adb -s "$device" push "$local_database" "$remote_database" >/dev/null
   adb -s "$device" shell run-as "$app_id" \
     rm -f "${graph_database}-wal" "${graph_database}-shm"
@@ -436,17 +436,17 @@ seed_android_fixture() {
   adb -s "$device" shell rm -f "$remote_database"
 }
 
-if [[ -n ${LOGSEQ_CHAT_E2E_BASE_URL:-} ]] \
-  && [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_DB_SYNC_WAIT:-0} != 1 ]] \
-  && [[ $LOGSEQ_CHAT_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
+if [[ -n ${LOGSEQ_E2E_BASE_URL:-} ]] \
+  && [[ ${LOGSEQ_ANDROID_E2E_SKIP_DB_SYNC_WAIT:-0} != 1 ]] \
+  && [[ $LOGSEQ_E2E_BASE_URL =~ ^(http|https)://(127\.0\.0\.1|localhost)(:([0-9]+))?([/?#]|$) ]]; then
   # CI builds db-sync in a background process; flows must not start before
   # it binds the port (a bound port returns any HTTP response, incl. 401/404).
   for attempt in $(seq 1 180); do
-    if curl -s -o /dev/null "${LOGSEQ_CHAT_E2E_BASE_URL}/"; then
+    if curl -s -o /dev/null "${LOGSEQ_E2E_BASE_URL}/"; then
       break
     fi
     if (( attempt == 180 )); then
-      die "db-sync server did not come up at $LOGSEQ_CHAT_E2E_BASE_URL"
+      die "db-sync server did not come up at $LOGSEQ_E2E_BASE_URL"
     fi
     sleep 2
   done
@@ -529,7 +529,7 @@ for flow in "${flows[@]}"; do
   else
     flow_path="$repo_root/$flow"
   fi
-  if [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_SEED:-0} != 1 ]]; then
+  if [[ ${LOGSEQ_ANDROID_E2E_SKIP_SEED:-0} != 1 ]]; then
     if [[ $flow == "$autocomplete_flow" ]]; then
       seed_android_fixture --outliner
     elif [[ $flow == "$outliner_flow" ]]; then
@@ -564,8 +564,8 @@ for flow in "${flows[@]}"; do
   elif [[ $flow == "$sharing_image_flow" ]]; then
     share_image="$repo_root/apple/App/Assets.xcassets/AppIcon.appiconset/AppIcon-20~ipad.png"
     [[ -f $share_image ]] || die "Android image-share fixture is missing"
-    remote_share_image="/data/local/tmp/logseq-chat-e2e-share.png"
-    app_share_image="files/logseq-chat-e2e-share.png"
+    remote_share_image="/data/local/tmp/logseq-e2e-share.png"
+    app_share_image="files/logseq-e2e-share.png"
     adb -s "$device" push "$share_image" "$remote_share_image" >/dev/null
     adb -s "$device" shell run-as "$app_id" cp "$remote_share_image" "$app_share_image"
     adb -s "$device" shell rm -f "$remote_share_image"
@@ -579,8 +579,8 @@ for flow in "${flows[@]}"; do
   maestro_args=(--device "$device" test)
   if [[ $flow == "$connect_flow" || $flow == "$local_setup_flow" ]]; then
     maestro_args+=(
-      -e "USERNAME=$LOGSEQ_CHAT_E2E_USERNAME"
-      -e "PASSWORD=$LOGSEQ_CHAT_E2E_PASSWORD"
+      -e "USERNAME=$LOGSEQ_E2E_USERNAME"
+      -e "PASSWORD=$LOGSEQ_E2E_PASSWORD"
     )
   fi
   adb -s "$device" logcat -c >/dev/null 2>&1 || true
@@ -592,8 +592,8 @@ for flow in "${flows[@]}"; do
   # The Android driver's default startup budget is only 15s — far too small
   # for a loaded CI emulator (it once failed to come up between two flows).
   # Per-flow retry additionally covers driver/device hiccups;
-  # LOGSEQ_CHAT_ANDROID_E2E_RETRIES=0 runs each flow exactly once.
-  flow_retries=${LOGSEQ_CHAT_ANDROID_E2E_RETRIES:-1}
+  # LOGSEQ_ANDROID_E2E_RETRIES=0 runs each flow exactly once.
+  flow_retries=${LOGSEQ_ANDROID_E2E_RETRIES:-1}
   flow_attempt=0
   while :; do
     maestro_log=$(mktemp)
@@ -629,7 +629,7 @@ for flow in "${flows[@]}"; do
   fi
   if (( needs_primary_button )) \
     && [[ $flow == "$signed_out_flow" ]] \
-    && [[ ${LOGSEQ_CHAT_ANDROID_E2E_SKIP_VISUAL_GATES:-0} != 1 ]]; then
+    && [[ ${LOGSEQ_ANDROID_E2E_SKIP_VISUAL_GATES:-0} != 1 ]]; then
     ANDROID_SERIAL=$device "$repo_root/scripts/test-android-primary-button.sh"
     ANDROID_SERIAL=$device "$repo_root/scripts/test-android-idle-rendering.sh"
   fi

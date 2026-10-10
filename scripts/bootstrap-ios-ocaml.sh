@@ -10,10 +10,10 @@ die() {
 [[ $# -eq 1 ]] || die "usage: $0 simulator|device"
 platform=$1
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
-ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
-deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
-jobs=${LOGSEQ_CHAT_IOS_BUILD_JOBS:-8}
+toolchain_root=${LOGSEQ_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
+ocaml_version=${LOGSEQ_IOS_OCAML_VERSION:-5.5.0}
+deployment_target=${LOGSEQ_IOS_DEPLOYMENT_TARGET:-17.0}
+jobs=${LOGSEQ_IOS_BUILD_JOBS:-8}
 
 case "$platform" in
   simulator)
@@ -36,8 +36,8 @@ host_prefix="$ios_root/host-$ocaml_version"
 target_prefix="$ios_root/$swift_target-$ocaml_version"
 host_source="$ios_root/ocaml-$ocaml_version-host"
 target_source="$ios_root/ocaml-$ocaml_version-$platform"
-host_stamp="$host_prefix/.logseq-chat-toolchain-complete"
-target_stamp="$target_prefix/.logseq-chat-toolchain-complete"
+host_stamp="$host_prefix/.logseq-toolchain-complete"
+target_stamp="$target_prefix/.logseq-toolchain-complete"
 
 [[ $(uname -s) == Darwin ]] || die "the iOS toolchain requires macOS"
 command -v xcrun >/dev/null 2>&1 || die "xcrun was not found"

@@ -38,41 +38,41 @@ require_file "scripts/build-android-sqlite.sh"
 require_file "scripts/build-mobile-ocaml.sh"
 require_file "scripts/build-android-native.sh"
 
-require_text "scripts/build-android-native.sh" "liblogseq_chat_core.so"
+require_text "scripts/build-android-native.sh" "liblogseq_core.so"
 require_text "scripts/build-android-native.sh" 'android/app/src/main/jniLibs/$android_abi'
-require_text "scripts/build-android-native.sh" "logseq_chat_call"
-require_text "shared/native/logseq_chat_core_ffi.h" "logseq_chat_lui_root_node"
-require_text "shared/native/logseq_chat_core_ffi.c" "logseq_chat_lui_root_node"
-require_text "scripts/build-android-native.sh" "logseq_chat_https_android.c"
-require_text "scripts/build-android-native.sh" "logseq_chat_crypto_android.c"
+require_text "scripts/build-android-native.sh" "logseq_call"
+require_text "shared/native/logseq_core_ffi.h" "logseq_lui_root_node"
+require_text "shared/native/logseq_core_ffi.c" "logseq_lui_root_node"
+require_text "scripts/build-android-native.sh" "logseq_https_android.c"
+require_text "scripts/build-android-native.sh" "logseq_crypto_android.c"
 require_text "scripts/build-android-native.sh" 'scripts/build-mobile-ocaml.sh'
 require_text "scripts/build-android-native.sh" 'DATASCRIPT_SQLITE_LIB_DIR="$build_dir"'
 require_text "scripts/build-android-native.sh" "-DSQLITE_ENABLE_FTS5"
 require_text "scripts/build-android-native.sh" 'llvm-nm" sqlite3.o'
 require_text "scripts/build-android-native.sh" 'sqlite3Fts5Init'
 require_text "shared/native/dune" "link_deps"
-require_text "shared/native/dune" '%{env:LOGSEQ_CHAT_SQLITE_LINK_FILE=./libsqlite3.a}'
-require_text "scripts/build-android-native.sh" 'LOGSEQ_CHAT_SQLITE_LINK_FILE="$build_dir/libsqlite3.a"'
-require_file "shared/native/logseq_chat_crypto_android.c"
-require_file "android/app/src/main/kotlin/logseq/chat/AndroidE2EECrypto.kt"
-require_text "shared/native/logseq_chat_https_android.c" "logseq_chat_crypto_jni_init"
-require_text "android/app/src/main/kotlin/logseq/chat/AndroidE2EECrypto.kt" "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
-reject_text "shared/native/logseq_chat_crypto_android.c" "Android crypto is not implemented"
+require_text "shared/native/dune" '%{env:LOGSEQ_SQLITE_LINK_FILE=./libsqlite3.a}'
+require_text "scripts/build-android-native.sh" 'LOGSEQ_SQLITE_LINK_FILE="$build_dir/libsqlite3.a"'
+require_file "shared/native/logseq_crypto_android.c"
+require_file "android/app/src/main/kotlin/logseq/app/AndroidE2EECrypto.kt"
+require_text "shared/native/logseq_https_android.c" "logseq_crypto_jni_init"
+require_text "android/app/src/main/kotlin/logseq/app/AndroidE2EECrypto.kt" "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
+reject_text "shared/native/logseq_crypto_android.c" "Android crypto is not implemented"
 for forbidden in ".cmx" "ocamlopt" "output-complete-obj" "link-objects.txt" "build-mobile-ocaml-deps.sh"; do
   reject_text "scripts/build-android-native.sh" "$forbidden"
 done
-require_text "shared/native/logseq_chat_https_android.c" "JNI_OnLoad"
-require_text "shared/native/logseq_chat_https_android.c" "AndroidHttpTransport"
-require_text "android/app/src/main/kotlin/logseq/chat/AndroidHttpTransport.kt" "connectTimeout = 30_000"
-require_text "android/app/src/main/kotlin/logseq/chat/AndroidHttpTransport.kt" "outputStream.use"
-require_text "android/app/src/main/kotlin/logseq/chat/AndroidHttpTransport.kt" "resolveAndroidFile"
-require_text "android/app/src/main/kotlin/com/logseq/chat/MainActivity.kt" "AndroidHttpTransport.initialize(applicationContext)"
-require_text "android/app/src/main/kotlin/com/logseq/chat/NativeCore.kt" 'System.loadLibrary("logseq_chat_jni")'
-require_text "android/app/src/main/cpp/logseq_chat_jni.c" 'dlopen("liblogseq_chat_core.so"'
-require_text "android/app/src/main/kotlin/com/logseq/chat/AndroidAssetImporter.kt" "Intent.ACTION_OPEN_DOCUMENT"
-require_text "android/app/src/main/kotlin/com/logseq/chat/AndroidAssetImporter.kt" "Intent.EXTRA_ALLOW_MULTIPLE"
-require_text "android/app/src/main/kotlin/com/logseq/chat/AndroidAssetImporter.kt" "contentResolver.openInputStream"
-reject_text "scripts/build-android-native.sh" "logseq_chat_https_stub.c"
+require_text "shared/native/logseq_https_android.c" "JNI_OnLoad"
+require_text "shared/native/logseq_https_android.c" "AndroidHttpTransport"
+require_text "android/app/src/main/kotlin/logseq/app/AndroidHttpTransport.kt" "connectTimeout = 30_000"
+require_text "android/app/src/main/kotlin/logseq/app/AndroidHttpTransport.kt" "outputStream.use"
+require_text "android/app/src/main/kotlin/logseq/app/AndroidHttpTransport.kt" "resolveAndroidFile"
+require_text "android/app/src/main/kotlin/com/logseq/app/MainActivity.kt" "AndroidHttpTransport.initialize(applicationContext)"
+require_text "android/app/src/main/kotlin/com/logseq/app/NativeCore.kt" 'System.loadLibrary("logseq_jni")'
+require_text "android/app/src/main/cpp/logseq_jni.c" 'dlopen("liblogseq_core.so"'
+require_text "android/app/src/main/kotlin/com/logseq/app/AndroidAssetImporter.kt" "Intent.ACTION_OPEN_DOCUMENT"
+require_text "android/app/src/main/kotlin/com/logseq/app/AndroidAssetImporter.kt" "Intent.EXTRA_ALLOW_MULTIPLE"
+require_text "android/app/src/main/kotlin/com/logseq/app/AndroidAssetImporter.kt" "contentResolver.openInputStream"
+reject_text "scripts/build-android-native.sh" "logseq_https_stub.c"
 require_text "android/app/build.gradle.kts" "buildAndroidNativeCore"
 require_text "android/app/build.gradle.kts" "scripts/build-android-native.sh"
 require_text "android/app/build.gradle.kts" 'dependsOn(buildAndroidNativeCore)'

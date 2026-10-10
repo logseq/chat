@@ -17,16 +17,16 @@ if [[ -z $device ]]; then
 fi
 [[ -n $device ]] || die "no online Android emulator or device was found"
 
-xml_file=${LOGSEQ_CHAT_ANDROID_UI_XML:-}
-png_file=${LOGSEQ_CHAT_ANDROID_SCREENSHOT:-}
+xml_file=${LOGSEQ_ANDROID_UI_XML:-}
+png_file=${LOGSEQ_ANDROID_SCREENSHOT:-}
 if [[ -n $xml_file || -n $png_file ]]; then
   [[ -f $xml_file && -f $png_file ]] \
-    || die "LOGSEQ_CHAT_ANDROID_UI_XML and LOGSEQ_CHAT_ANDROID_SCREENSHOT must both exist"
+    || die "LOGSEQ_ANDROID_UI_XML and LOGSEQ_ANDROID_SCREENSHOT must both exist"
 else
-  xml_file=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-primary.xml.XXXXXX")
-  png_file=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-primary.png.XXXXXX")
-  remote_xml=/sdcard/logseq-chat-primary.xml
-  remote_png=/sdcard/logseq-chat-primary.png
+  xml_file=$(mktemp "${TMPDIR:-/tmp}/logseq-android-primary.xml.XXXXXX")
+  png_file=$(mktemp "${TMPDIR:-/tmp}/logseq-android-primary.png.XXXXXX")
+  remote_xml=/sdcard/logseq-primary.xml
+  remote_png=/sdcard/logseq-primary.png
   trap 'rm -f "$xml_file" "$png_file"' EXIT
 
   adb -s "$device" shell uiautomator dump "$remote_xml" >/dev/null

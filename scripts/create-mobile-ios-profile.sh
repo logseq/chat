@@ -2,16 +2,16 @@
 
 set -euo pipefail
 
-bundle_id=${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}
-team_id=${LOGSEQ_CHAT_IOS_TEAM_ID:-}
-app_id_prefix=${LOGSEQ_CHAT_IOS_APP_ID_PREFIX:-}
-profile_name=${LOGSEQ_CHAT_IOS_PROFILE_NAME:-Logseq Chat Development}
-profile_filename=${LOGSEQ_CHAT_IOS_PROFILE_FILENAME:-logseq-chat-development.mobileprovision}
-output_path=${LOGSEQ_CHAT_IOS_PROFILE_OUTPUT_PATH:-$HOME/Library/MobileDevice/Provisioning Profiles}
+bundle_id=${LOGSEQ_IOS_BUNDLE_ID:-com.logseq.logseq}
+team_id=${LOGSEQ_IOS_TEAM_ID:-}
+app_id_prefix=${LOGSEQ_IOS_APP_ID_PREFIX:-}
+profile_name=${LOGSEQ_IOS_PROFILE_NAME:-Logseq Development}
+profile_filename=${LOGSEQ_IOS_PROFILE_FILENAME:-logseq-development.mobileprovision}
+output_path=${LOGSEQ_IOS_PROFILE_OUTPUT_PATH:-$HOME/Library/MobileDevice/Provisioning Profiles}
 api_key_id=${APP_STORE_CONNECT_API_KEY_ID:-}
 api_issuer_id=${APP_STORE_CONNECT_ISSUER_ID:-}
 api_key_path=${APP_STORE_CONNECT_API_KEY_PATH:-}
-dry_run=${LOGSEQ_CHAT_IOS_DRY_RUN:-0}
+dry_run=${LOGSEQ_IOS_DRY_RUN:-0}
 
 die() {
   echo "error: $*" >&2
@@ -31,7 +31,7 @@ if [[ $dry_run == "1" ]]; then
 fi
 
 mkdir -p "$output_path"
-api_json=$(mktemp /tmp/logseq-chat-asc-api.XXXXXX)
+api_json=$(mktemp /tmp/logseq-asc-api.XXXXXX)
 profile_path="$output_path/$profile_filename"
 
 python3 - <<'PY' "$api_json" "$api_key_id" "$api_issuer_id" "$api_key_path"
@@ -79,12 +79,12 @@ else
     bundle_ids = Spaceship::ConnectAPI::BundleId.all
     reusable = bundle_ids.find { |item| item.seed_id && item.identifier != "*" }
     reusable ||= bundle_ids.find { |item| item.seed_id }
-    raise "Could not infer an App ID prefix; set LOGSEQ_CHAT_IOS_APP_ID_PREFIX" unless reusable
+    raise "Could not infer an App ID prefix; set LOGSEQ_IOS_APP_ID_PREFIX" unless reusable
     app_id_prefix = reusable.seed_id
   end
 
   created = Spaceship::ConnectAPI::BundleId.create(
-    name: "LogseqChat",
+    name: "Logseq",
     platform: "IOS",
     identifier: bundle_id,
     seed_id: app_id_prefix

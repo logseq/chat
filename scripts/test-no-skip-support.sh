@@ -15,10 +15,10 @@ for path in \
   "$repo_root/Skip.env" \
   "$repo_root/Android/settings.gradle.kts" \
   "$repo_root/Android/app/build.gradle.kts" \
-  "$repo_root/apple/Sources/LogseqChat/Skip" \
-  "$repo_root/apple/Sources/LogseqChatModel/Skip" \
-  "$repo_root/apple/Tests/LogseqChatTests/Skip" \
-  "$repo_root/apple/Tests/LogseqChatModelTests/Skip"; do
+  "$repo_root/apple/Sources/Logseq/Skip" \
+  "$repo_root/apple/Sources/LogseqModel/Skip" \
+  "$repo_root/apple/Tests/LogseqTests/Skip" \
+  "$repo_root/apple/Tests/LogseqModelTests/Skip"; do
   [[ ! -e "$path" ]] || die "legacy Skip artifact remains: ${path#"$repo_root/"}"
 done
 
@@ -33,19 +33,19 @@ if grep -REn '#(if|elseif).*(^|[^A-Za-z])!?SKIP([^A-Za-z]|$)' \
 fi
 
 if grep -Eq 'profile[[:space:]]+AndroidOS[[:space:]]+SwiftUIHost' \
-  "$repo_root/shared/src/logseq_chat/view.ml"; then
+  "$repo_root/shared/src/logseq/view.ml"; then
   die "the extension registry still registers the removed Android SwiftUI host"
 fi
 
 if grep -Eq 'SkipStone|Run skip gradle|Skip\.env|skip gradle' \
-  "$repo_root/apple/App/LogseqChat.xcodeproj/project.pbxproj" \
-  "$repo_root/apple/App/LogseqChat.xcconfig"; then
+  "$repo_root/apple/App/Logseq.xcodeproj/project.pbxproj" \
+  "$repo_root/apple/App/Logseq.xcconfig"; then
   die "the Apple project still invokes Skip"
 fi
 
 manifest="$repo_root/android/app/src/main/AndroidManifest.xml"
 shortcuts="$repo_root/android/app/src/main/res/xml/shortcuts.xml"
-widgets="$repo_root/android/app/src/main/kotlin/com/logseq/chat/AndroidWidgets.kt"
+widgets="$repo_root/android/app/src/main/kotlin/com/logseq/app/AndroidWidgets.kt"
 
 grep -Fq 'android.app.shortcuts' "$manifest" \
   || die "Android manifest lost app shortcuts"
@@ -53,9 +53,9 @@ grep -Fq '.TodayJournalWidgetProvider' "$manifest" \
   || die "Android manifest lost the journal widget"
 grep -Fq '.CaptureWidgetProvider' "$manifest" \
   || die "Android manifest lost the capture widget"
-grep -Fq 'logseqchat://capture' "$shortcuts" \
+grep -Fq 'logseq://capture' "$shortcuts" \
   || die "Android shortcuts lost Capture"
-grep -Fq 'logseqchat://journal' "$shortcuts" \
+grep -Fq 'logseq://journal' "$shortcuts" \
   || die "Android shortcuts lost Journal"
 grep -Fq 'class TodayJournalWidgetProvider' "$widgets" \
   || die "Android journal widget provider is missing"

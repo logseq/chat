@@ -1,14 +1,14 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp
-- openLink: "logseqchat://capture"
+- openLink: "logseq://capture"
 - extendedWaitUntil:
     visible:
       id: "field.composer"
     timeout: 10000
 - assertVisible:
     id: "button.send"
-- openLink: "logseqchat://journal"
+- openLink: "logseq://journal"
 - extendedWaitUntil:
     visible:
       id: "journals.graph-loaded"

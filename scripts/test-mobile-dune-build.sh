@@ -7,7 +7,7 @@ workspace="$repo_root/dune-workspace.mobile"
 builder="$repo_root/scripts/build-mobile-ocaml.sh"
 core_dune="$repo_root/shared/native/dune"
 dune_project="$repo_root/dune-project"
-lockfile="$repo_root/logseq_chat.opam.locked"
+lockfile="$repo_root/logseq.opam.locked"
 legacy_builder="$repo_root/scripts/build-mobile-ocaml-deps.sh"
 legacy_mldoc_patch="$repo_root/scripts/patches/mldoc-wrapped.patch"
 
@@ -39,7 +39,7 @@ if grep -Fq "(name macos_arm64)" "$workspace"; then
   exit 1
 fi
 grep -Fq '"$dune" build' "$builder"
-grep -Fq 'target="_build/$context/shared/native/logseq_chat_mobile_entry.exe.o"' "$builder"
+grep -Fq 'target="_build/$context/shared/native/logseq_mobile_entry.exe.o"' "$builder"
 grep -Fq '(modes object)' "$core_dune"
 
 if grep -Eq '\(modes[^)]*(exe|shared_object)' "$core_dune"; then
@@ -58,7 +58,7 @@ if grep -Fq 'OPAM_SWITCH_PREFIX' "$core_dune"; then
 fi
 
 if grep -Fq '(depends' "$dune_project"; then
-  echo "error: OCaml dependencies must be declared only in logseq_chat.opam" >&2
+  echo "error: OCaml dependencies must be declared only in logseq.opam" >&2
   exit 1
 fi
 

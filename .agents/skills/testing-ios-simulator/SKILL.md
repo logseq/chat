@@ -1,9 +1,9 @@
 ---
 name: testing-ios-simulator
-description: Build and launch the Logseq Chat iOS app in an iOS simulator on macOS arm64 (Xcode + cross OCaml toolchain), including the iOS SDK function-detection pitfalls in bootstrap-ios-ocaml.sh.
+description: Build and launch the Logseq iOS app in an iOS simulator on macOS arm64 (Xcode + cross OCaml toolchain), including the iOS SDK function-detection pitfalls in bootstrap-ios-ocaml.sh.
 ---
 
-# Logseq Chat iOS Simulator Build & Launch
+# Logseq iOS Simulator Build & Launch
 
 ## Prerequisites
 - macOS arm64 with Xcode installed (`xcodebuild -version` works).
@@ -14,14 +14,14 @@ description: Build and launch the Logseq Chat iOS app in an iOS simulator on mac
 ## Build steps
 1. `scripts/bootstrap-ios-ocaml.sh simulator` — builds host + cross OCaml 5.5.0 under
    `_build/apple-toolchains/ios/` (long first run; stamps skip rebuilds).
-2. `scripts/build-mobile-ios-simulator.sh` — builds `shared/native/logseq_chat_mobile_entry.exe.o`
-   via dune context `ios_simulator`, then `swift build` (product `LogseqChatShell`),
+2. `scripts/build-mobile-ios-simulator.sh` — builds `shared/native/logseq_mobile_entry.exe.o`
+   via dune context `ios_simulator`, then `swift build` (product `LogseqShell`),
    xcodebuild for the share/widget extensions, and assembles+codesigns
-   `.build/LogseqChat.app`. Note: the script can exit non-zero at the end even when all
+   `.build/Logseq.app`. Note: the script can exit non-zero at the end even when all
    artifacts are produced correctly — re-running it (incremental) and checking for
-   `.build/LogseqChat.app/LogseqChat` is the practical check.
-3. `xcrun simctl install booted .build/LogseqChat.app`
-4. `xcrun simctl launch booted com.logseq.chat` → prints `com.logseq.chat: <pid>`;
+   `.build/Logseq.app/Logseq` is the practical check.
+3. `xcrun simctl install booted .build/Logseq.app`
+4. `xcrun simctl launch booted com.logseq.logseq` → prints `com.logseq.logseq: <pid>`;
    verify the process stays alive via
    `xcrun simctl spawn booted launchctl list | grep logseq`.
 5. Screenshot: `xcrun simctl io booted screenshot out.png`.
@@ -37,15 +37,15 @@ description: Build and launch the Logseq Chat iOS app in an iOS simulator on mac
   `xcrun --sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -isysroot <sdk> -c t.c`
   where t.c calls the function after including the SDK headers.
 - First launch may show a local-network permission alert; dismiss it via Simulator UI.
-- The app opens to a "Logseq Chat / Sign in" screen (Cognito hosted UI); going past it
+- The app opens to a "Logseq / Sign in" screen (Cognito hosted UI); going past it
   requires credentials.
 - `duniverse/` pulls only the lockfile dirs (129). The `logseq/*` pins NOT vendored
   (`datascript-ocaml`, `lg`, `lui`, `mldoc`, `persistent-sorted-set-ocaml`,
   `signal-lg`) must be cloned manually into `duniverse/` at the SHAs listed in
-  `logseq_chat.opam` — same loop as `.github/workflows/e2e.yml`. A fresh
+  `logseq.opam` — same loop as `.github/workflows/e2e.yml`. A fresh
   `opam-monorepo pull` wipes these dirs, so re-clone them after each pull.
 - `scripts/build-mobile-ocaml.sh` regenerates `_build/dune-workspace.mobile` from
-  `dune-workspace.mobile`; set `LOGSEQ_CHAT_OPAM_SWITCH=5.5.0` when running outside
+  `dune-workspace.mobile`; set `LOGSEQ_OPAM_SWITCH=5.5.0` when running outside
   `opam exec`.
 
 ## Maestro e2e (test-ios-e2e-suite.sh)
@@ -60,11 +60,11 @@ description: Build and launch the Logseq Chat iOS app in an iOS simulator on mac
   (needs `JAVA_HOME=$(/usr/libexec/java_home -v 21)`), then
   `DB_SYNC_PORT=8787 DB_SYNC_DATA_DIR=~/db-sync-data ./start.sh`;
   health check `curl http://127.0.0.1:8787/health`.
-- Run: `LOGSEQ_CHAT_IOS_SKIP_BUILD=1 LOGSEQ_CHAT_E2E_USERNAME=<u> LOGSEQ_CHAT_E2E_PASSWORD=<p> ./scripts/test-ios-e2e-suite.sh smoke`
+- Run: `LOGSEQ_IOS_SKIP_BUILD=1 LOGSEQ_E2E_USERNAME=<u> LOGSEQ_E2E_PASSWORD=<p> ./scripts/test-ios-e2e-suite.sh smoke`
   (4 flows: capture-responsive, cold-start-composer, search-status-regression, sidebar).
 - `scripts/test-ios-e2e.sh` wipes the app data container between flows; `<container>/tmp`
   must be recreated (the script does `mkdir -p`) or the OCaml core crashes writing the
-  initial graph snapshot via `Filename.temp_file` (`Sys_error ...tmp/logseq-chat-initial-*.snapshot`).
+  initial graph snapshot via `Filename.temp_file` (`Sys_error ...tmp/logseq-initial-*.snapshot`).
 
 ## Devin Secrets Needed
-- `LOGSEQ_CHAT_TEST_USERNAME` / `LOGSEQ_CHAT_TEST_PASSWORD` for hosted sign-in and e2e.
+- `LOGSEQ_TEST_USERNAME` / `LOGSEQ_TEST_PASSWORD` for hosted sign-in and e2e.

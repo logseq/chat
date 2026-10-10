@@ -8,10 +8,10 @@ check_dir=$(mktemp -d)
 trap 'rm -rf "$check_dir"' EXIT
 xcrun --sdk iphonesimulator swiftc -parse-as-library \
   -target arm64-apple-ios17.0-simulator \
-  -I "$build_dir/Modules" -I "$build_dir/LogseqChatCoreABI.build" \
-  Sources/LogseqChat/OutlinerEditing.swift \
-  Sources/LogseqChat/OutlinerNativeTextMeasurement.swift \
-  Sources/LogseqChat/OutlinerInlineEditor.swift \
+  -I "$build_dir/Modules" -I "$build_dir/LogseqCoreABI.build" \
+  Sources/Logseq/OutlinerEditing.swift \
+  Sources/Logseq/OutlinerNativeTextMeasurement.swift \
+  Sources/Logseq/OutlinerInlineEditor.swift \
   Tests/UI/outliner-return-handoff.swift \
-  "$build_dir/LogseqChatModel.build/Models.swift.o" -o "$check_dir/check"
+  "$build_dir/LogseqModel.build/Models.swift.o" -o "$check_dir/check"
 xcrun simctl spawn "$device" "$check_dir/check"

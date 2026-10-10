@@ -23,7 +23,7 @@ baseline on iOS and Android.
   elements.
 - Keep Android platform services in the Kotlin Android host and its Kotlin
   adapters.
-- Exclude Chat mode, its composer and send flow, and Chat-specific automatic
+- Exclude Logseq mode, its composer and send flow, and Logseq-specific automatic
   scrolling from this rewrite. The Outliner keeps its current scroll position
   when it opens and when blocks are added.
 

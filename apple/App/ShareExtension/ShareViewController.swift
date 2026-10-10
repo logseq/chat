@@ -5,8 +5,8 @@ import UIKit
 import UniformTypeIdentifiers
 
 private enum SharedCaptureConstants {
-    static let appGroup = "group.com.logseq.chat"
-    static let logger = Logger(subsystem: "com.logseq.chat.share", category: "SharedCapture")
+    static let appGroup = "group.com.logseq.logseq"
+    static let logger = Logger(subsystem: "com.logseq.logseq.ShareViewController", category: "SharedCapture")
 }
 
 private struct SharedAsset: Codable, Sendable {

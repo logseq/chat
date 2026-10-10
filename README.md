@@ -1,13 +1,13 @@
-# Logseq Chat
+# Logseq
 
-Logseq Chat is a native SwiftUI app for iOS and a Kotlin/Jetpack Compose
+Logseq is a native SwiftUI app for iOS and a Kotlin/Jetpack Compose
 app for Android. Both clients share an OCaml application model and core, backed by
 the OCaml DataScript library and the lui reactive UI layer.
 
-Shared core sources live in `shared/src/logseq_chat/core`, with executable entry points
-in `shared/src/logseq_chat/entry`. The `shared/native` directory contains Dune configuration and
+Shared core sources live in `shared/src/logseq/core`, with executable entry points
+in `shared/src/logseq/entry`. The `shared/native` directory contains Dune configuration and
 native platform bridges; generated OCaml stays under `_build`. Core tests live
-in `shared/test/logseq_chat`, one alcotest suite per core module. The core test gate also builds the seed and live-sync executables.
+in `shared/test/logseq`, one alcotest suite per core module. The core test gate also builds the seed and live-sync executables.
 
 ## Repository layout
 
@@ -23,7 +23,7 @@ in `shared/test/logseq_chat`, one alcotest suite per core module. The core test 
 
 ## iOS
 
-Open `apple/Project.xcworkspace` and run the `LogseqChat App` scheme in Xcode.
+Open `apple/Project.xcworkspace` and run the `Logseq App` scheme in Xcode.
 
 The Apple backend comes from the `LUIAppleBackendStatic` product of the LUI
 Swift package, pinned by Git revision in `apple/Package.swift` and `apple/Package.resolved`.
@@ -32,8 +32,8 @@ Use Swift 6.2 or later. Backend changes belong in the LUI repository.
 The first iOS build creates a deployment-targeted OCaml 5.5 toolchain under
 `_build/apple-toolchains`. Native dependencies and core objects are keyed by
 compiler, target, and source fingerprints, so later builds reuse them. Set
-`LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT` to share the toolchain cache, or provide
-`LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX` to use an existing compatible compiler
+`LOGSEQ_APPLE_TOOLCHAIN_ROOT` to share the toolchain cache, or provide
+`LOGSEQ_IOS_TOOLCHAIN_PREFIX` to use an existing compatible compiler
 directly.
 
 ## Android
@@ -53,9 +53,9 @@ profile APK used by `scripts/test-android-e2e.sh` is `:app:assembleProfile`
 
 The OCaml core shared library is built separately by
 `scripts/build-android-native.sh` (per ABI), which installs
-`liblogseq_chat_core.so` into `android/app/src/main/jniLibs/<abi>`; the Gradle
+`liblogseq_core.so` into `android/app/src/main/jniLibs/<abi>`; the Gradle
 `buildAndroidNativeCore` task invokes it automatically (set
-`-PlogseqChatRequireNativeCore=false` to compile Kotlin without it).
+`-PlogseqRequireNativeCore=false` to compile Kotlin without it).
 
 The Android host includes Capture and Journal app shortcuts, Capture and
 Today’s Journal home-screen widgets, inbound sharing, deep links, native
@@ -72,8 +72,8 @@ Screen. These entry points open the existing composer and recorder, including
 when the app needs to launch first.
 
 Both iOS build scripts include App Intents metadata and the widget extension.
-Device builds select a compatible development profile for `com.logseq.chat.widgets`;
-set `LOGSEQ_CHAT_IOS_WIDGET_PROFILE` in `.logseq-chat-ios-device.env` to specify one.
+Device builds select a compatible development profile for `com.logseq.logseq.shortcuts`;
+set `LOGSEQ_IOS_WIDGET_PROFILE` in `.logseq-ios-device.env` to specify one.
 The extension and app must be signed by the same team, and their profiles must
 include the target device.
 

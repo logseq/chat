@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-coverage_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-coverage.XXXXXX")
+coverage_dir=$(mktemp -d "${TMPDIR:-/tmp}/logseq-coverage.XXXXXX")
 trap 'rm -rf "$coverage_dir"' EXIT
 
 cd "$repo_root"
@@ -25,6 +25,6 @@ opam exec --switch=5.5.0 -- ocamlfind ocamlopt \
   -package compiler-libs.common -linkpkg -o "$coverage_dir/check.exe" \
   "$coverage_dir/check.cmx"
 "$coverage_dir/check.exe" \
-  shared/src/logseq_chat/core/graph_runtime.ml \
-  shared/src/logseq_chat/core/graph_runtime.ml \
+  shared/src/logseq/core/graph_runtime.ml \
+  shared/src/logseq/core/graph_runtime.ml \
   "" 7558 "$coverage_dir/merged.coverage"

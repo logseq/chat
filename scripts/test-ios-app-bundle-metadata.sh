@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-app_dir=${LOGSEQ_CHAT_IOS_APP_DIR:-$repo_root/apple/.build/LogseqChat-device.app}
+app_dir=${LOGSEQ_IOS_APP_DIR:-$repo_root/apple/.build/Logseq-device.app}
 info_plist="$app_dir/Info.plist"
 failures=0
 
@@ -57,7 +57,7 @@ check_plist "background fetch mode is present" "fetch" -c "Print :UIBackgroundMo
 check_plist "background audio mode is present" "audio" -c "Print :UIBackgroundModes:1"
 check_plist_exists "microphone usage description is present" -c "Print :NSMicrophoneUsageDescription"
 check_plist_exists "speech usage description is present" -c "Print :NSSpeechRecognitionUsageDescription"
-check_plist "background refresh task identifier is present" "com.logseq.chat.refresh" -c "Print :BGTaskSchedulerPermittedIdentifiers:0"
+check_plist "background refresh task identifier is present" "com.logseq.logseq.refresh" -c "Print :BGTaskSchedulerPermittedIdentifiers:0"
 
 if [[ $failures -ne 0 ]]; then
   exit 1

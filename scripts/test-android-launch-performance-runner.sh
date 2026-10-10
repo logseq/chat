@@ -4,8 +4,8 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 runner="$repo_root/scripts/test-android-launch-performance.sh"
-mock_bin=$(mktemp -d "${TMPDIR:-/tmp}/logseq-chat-android-launch-bin.XXXXXX")
-failure_output=$(mktemp "${TMPDIR:-/tmp}/logseq-chat-android-launch-failure.XXXXXX")
+mock_bin=$(mktemp -d "${TMPDIR:-/tmp}/logseq-android-launch-bin.XXXXXX")
+failure_output=$(mktemp "${TMPDIR:-/tmp}/logseq-android-launch-failure.XXXXXX")
 trap 'rm -rf "$mock_bin"; rm -f "$failure_output"' EXIT
 
 cat >"$mock_bin/adb" <<'EOF'
@@ -27,7 +27,7 @@ PATH="$mock_bin:$PATH" ANDROID_SERIAL=test-device "$runner" >/dev/null
 
 if PATH="$mock_bin:$PATH" \
   ANDROID_SERIAL=test-device \
-  LOGSEQ_CHAT_ANDROID_TOTAL_TIME_BUDGET_MS=800 \
+  LOGSEQ_ANDROID_TOTAL_TIME_BUDGET_MS=800 \
   "$runner" >"$failure_output" 2>&1; then
   echo "error: Android launch gate accepted a launch above budget" >&2
   exit 1

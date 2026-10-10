@@ -19,7 +19,7 @@ cxx=${4:-$cc}
 [[ -n $host_triple && -n $prefix && -n $cc ]] \
   || die "usage: $0 HOST_TRIPLE INSTALL_PREFIX CC [CXX]"
 
-version=${LOGSEQ_CHAT_LIBFFI_VERSION:-3.4.8}
+version=${LOGSEQ_LIBFFI_VERSION:-3.4.8}
 stamp="$prefix/.libffi-$version-complete"
 if [[ -f $stamp && -f $prefix/lib/libffi.a ]]; then
   echo "$prefix"
@@ -45,7 +45,7 @@ fi
     --disable-shared \
     --enable-static \
     --disable-multi-os-directory >&2
-  make -j"${LOGSEQ_CHAT_BUILD_JOBS:-8}" >&2
+  make -j"${LOGSEQ_BUILD_JOBS:-8}" >&2
   make install >&2
 )
 
