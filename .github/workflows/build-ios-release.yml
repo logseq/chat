@@ -120,6 +120,26 @@ jobs:
           eval $(opam env)
           ./scripts/bootstrap-ios-ocaml.sh device
 
+      - name: Restore iOS core build cache
+        # Dune rebuilds incrementally, so a stale object tree still saves most
+        # of the cross-compile time on unchanged sources.
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/ios-core
+          key: ios-core-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ios-core-${{ runner.os }}-
+
+      - name: Restore Xcode build caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apple/.build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ios-xcode-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ios-xcode-${{ runner.os }}-
+
       - name: Build OCaml iOS core (device)
         # Produces _build/ios-core/device/native-link-inputs.txt, which the
         # fastlane beta lane exports as LOGSEQ_NATIVE_LINK_INPUTS so the
@@ -137,11 +157,30 @@ jobs:
           path: _build/apple-toolchains
           key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-device-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
+      - name: Save iOS core build cache
+        uses: actions/cache/save@v4
+        with:
+          path: _build/ios-core
+          key: ios-core-${{ runner.os }}-${{ github.sha }}
+
+      - name: Restore bundler gems
+        uses: actions/cache/restore@v4
+        with:
+          path: apple/App/vendor/bundle
+          key: bundler-${{ hashFiles('apple/App/Gemfile', 'apple/App/Gemfile.lock', '.github/workflows/build-ios-release.yml') }}
+
       - name: Setup build tools
         run: |
           sudo gem install bundler -v 2.7.2 --no-document
+          bundle _2.7.2_ config set --local path 'vendor/bundle'
           bundle _2.7.2_ install
         working-directory: ./apple/App
+
+      - name: Save bundler gems
+        uses: actions/cache/save@v4
+        with:
+          path: apple/App/vendor/bundle
+          key: bundler-${{ hashFiles('apple/App/Gemfile', 'apple/App/Gemfile.lock', '.github/workflows/build-ios-release.yml') }}
 
       - name: Build and upload iOS app
         run: |
@@ -161,3 +200,12 @@ jobs:
           MATCH_GIT_URL: https://github.com/logseq/certificates.git
           LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
           XCODE_XCARGS: "-allowProvisioningUpdates"
+
+      - name: Save Xcode build caches
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apple/.build
+            ~/Library/Developer/Xcode/DerivedData
+          key: ios-xcode-${{ runner.os }}-${{ github.sha }}
