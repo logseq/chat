@@ -12,11 +12,12 @@ pluginManagement {
 // examples/components/android app, mirroring how apple/ path-deps
 // ../lui/platform/apple. The module resolves plugins from this build's
 // classpath (AGP 9 + builtInKotlin).
-val luiModuleDir = listOf(
-    File(rootDir, "../../lui/platform/android/lui"),
-    File(rootDir, "../duniverse/lui/platform/android/lui"),
-).firstOrNull { it.isDirectory && File(it, "build.gradle.kts").isFile }
-require(luiModuleDir != null) {
+val luiModuleDir = requireNotNull(
+    listOf(
+        File(rootDir, "../../lui/platform/android/lui"),
+        File(rootDir, "../duniverse/lui/platform/android/lui"),
+    ).firstOrNull { it.isDirectory && File(it, "build.gradle.kts").isFile }
+) {
     "Expected a logseq/lui checkout at ../lui or duniverse/lui with platform/android/lui"
 }
 
