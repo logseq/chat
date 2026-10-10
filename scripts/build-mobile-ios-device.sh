@@ -49,43 +49,49 @@ if [[ ${LOGSEQ_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
   exit 0
 fi
 
-[[ -n $profile ]] || die "set LOGSEQ_IOS_PROFILE to a development provisioning profile for $bundle_id"
-[[ -f $profile ]] || die "provisioning profile was not found: $profile"
-if [[ -n $signing_keychain && ! -f $signing_keychain ]]; then
-  die "signing keychain was not found: $signing_keychain"
-fi
-
-codesign_keychain_args=()
-[[ -n $signing_keychain ]] && codesign_keychain_args=(--keychain "$signing_keychain")
-original_keychain_search_list=()
-restore_keychain_search_list() {
-  local exit_status=$?
-  if ((${#original_keychain_search_list[@]} > 0)); then
-    security list-keychains -d user -s "${original_keychain_search_list[@]}" >/dev/null || true
+# Signing assets are only needed when assembling the dev-profile .app; the
+# LOGSEQ_IOS_LINK_INPUTS_ONLY release path produces OCaml objects for the
+# fastlane archive and skips all provisioning checks.
+if [[ ${LOGSEQ_IOS_LINK_INPUTS_ONLY:-0} != 1 ]]; then
+  [[ -n $profile ]] || die "set LOGSEQ_IOS_PROFILE to a development provisioning profile for $bundle_id"
+  [[ -f $profile ]] || die "provisioning profile was not found: $profile"
+  if [[ -n $signing_keychain && ! -f $signing_keychain ]]; then
+    die "signing keychain was not found: $signing_keychain"
   fi
-  return "$exit_status"
-}
 
-if [[ -n $signing_keychain ]]; then
-  while IFS='"' read -r _ keychain_path _; do
-    [[ -n $keychain_path ]] && original_keychain_search_list+=("$keychain_path")
-  done < <(security list-keychains -d user)
-  security list-keychains -d user -s \
-    "${original_keychain_search_list[@]}" "$signing_keychain"
-  trap restore_keychain_search_list EXIT
-  if [[ ${LOGSEQ_IOS_KEYCHAIN_PASSWORD+x} == x ]]; then
-    security unlock-keychain -p "$signing_keychain_password" "$signing_keychain"
+  codesign_keychain_args=()
+  [[ -n $signing_keychain ]] && codesign_keychain_args=(--keychain "$signing_keychain")
+  original_keychain_search_list=()
+  restore_keychain_search_list() {
+    local exit_status=$?
+    if ((${#original_keychain_search_list[@]} > 0)); then
+      security list-keychains -d user -s "${original_keychain_search_list[@]}" >/dev/null || true
+    fi
+    return "$exit_status"
+  }
+
+  if [[ -n $signing_keychain ]]; then
+    while IFS='"' read -r _ keychain_path _; do
+      [[ -n $keychain_path ]] && original_keychain_search_list+=("$keychain_path")
+    done < <(security list-keychains -d user)
+    security list-keychains -d user -s \
+      "${original_keychain_search_list[@]}" "$signing_keychain"
+    trap restore_keychain_search_list EXIT
+    if [[ ${LOGSEQ_IOS_KEYCHAIN_PASSWORD+x} == x ]]; then
+      security unlock-keychain -p "$signing_keychain_password" "$signing_keychain"
+    fi
+  fi
+
+  security cms -D -i "$profile" >"$profile_plist"
+  profile_app_id=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$profile_plist")
+  team_id=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile_plist")
+  expected_app_id="$team_id.$bundle_id"
+  if [[ $profile_app_id != "$expected_app_id" && $profile_app_id != "$team_id.*" ]]; then
+    die "profile app id is $profile_app_id, expected $expected_app_id or $team_id.*"
   fi
 fi
 
 mkdir -p "$core_build_dir"
-security cms -D -i "$profile" >"$profile_plist"
-profile_app_id=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$profile_plist")
-team_id=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile_plist")
-expected_app_id="$team_id.$bundle_id"
-if [[ $profile_app_id != "$expected_app_id" && $profile_app_id != "$team_id.*" ]]; then
-  die "profile app id is $profile_app_id, expected $expected_app_id or $team_id.*"
-fi
 
 if [[ ! -x $target_prefix/bin/ocamlopt.opt ]]; then
   "$repo_root/scripts/bootstrap-ios-ocaml.sh" device >/dev/null

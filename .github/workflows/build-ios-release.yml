@@ -44,7 +44,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
 
       # On a dual cache hit only the opam binary is needed (see e2e.yml).
       - name: Install opam binary
@@ -83,7 +83,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
 
       # opam-monorepo doesn't build on macOS arm64 (see e2e.yml): the linux
       # jobs populate this cache, so a plain restore is all we can do here.

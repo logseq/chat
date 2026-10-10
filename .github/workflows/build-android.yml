@@ -56,7 +56,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
 
       # See ci.yml: on a dual cache hit only the opam binary is needed.
       - name: Install opam binary
@@ -104,7 +104,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
 
       # Share ci.yml's duniverse cache key so a CI-populated cache is reused.
       - name: Restore duniverse
