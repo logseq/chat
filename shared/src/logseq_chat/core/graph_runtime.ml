@@ -78,8 +78,11 @@ let caches_for_db runtime database =
 let operation_statuses runtime = (state runtime).snapshot.statuses
 
 let trace_stage metric started stage =
-  if Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1" then
-    prerr_endline
+  if
+    Sys.getenv_opt "LOGSEQ_CHAT_TRACE_STARTUP" = Some "1"
+    || Metric_log.available ()
+  then
+    Metric_log.line
       (metric ^ " stage=" ^ stage
        ^ Printf.sprintf " elapsed_ms=%.3f"
            ((Unix.gettimeofday () -. started) *. 1000.0))

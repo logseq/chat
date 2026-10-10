@@ -159,7 +159,7 @@ let pending_operations (host : mobile_graph) =
   | None -> []
 
 let report_open started stage =
-  prerr_endline
+  Metric_log.line
     ("LOGSEQ_GRAPH_OPEN_METRIC stage=" ^ stage
      ^ Printf.sprintf " elapsed_ms=%.3f"
          ((Unix.gettimeofday () -. started) *. 1000.0))
