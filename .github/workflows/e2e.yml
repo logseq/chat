@@ -34,7 +34,6 @@ jobs:
     name: Vendor duniverse
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
     steps:
       - uses: actions/checkout@v4
 
