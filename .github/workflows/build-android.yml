@@ -168,6 +168,18 @@ jobs:
             _build/android-sqlite-host
           key: android-toolchain-${{ runner.os }}-arm64-v8a-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
 
+      - name: Restore Android native build cache
+        # CMake intermediate objects under .cxx survive source-unchanged
+        # rebuilds; the sha key falls back to the previous commit's tree.
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            android/app/.cxx
+            android/app/build/intermediates
+          key: android-native-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            android-native-${{ runner.os }}-
+
       - name: Build Android release APK
         # assembleRelease depends on buildAndroidNativeCore, which runs
         # scripts/build-android-native.sh for $LOGSEQ_ANDROID_ABI; the Kotlin
@@ -188,6 +200,15 @@ jobs:
             _build/android-dependency-sources
             _build/android-sqlite-host
           key: android-toolchain-${{ runner.os }}-arm64-v8a-5.5.0-${{ hashFiles('scripts/bootstrap-android-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+
+      - name: Save Android native build cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            android/app/.cxx
+            android/app/build/intermediates
+          key: android-native-${{ runner.os }}-${{ github.sha }}
 
       - name: Sign Android APK
         run: |
