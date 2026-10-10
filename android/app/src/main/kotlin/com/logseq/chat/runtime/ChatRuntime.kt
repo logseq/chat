@@ -2,6 +2,7 @@ package com.logseq.chat.runtime
 
 import android.app.Activity
 import android.graphics.BitmapFactory
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,9 +17,11 @@ import com.logseq.chat.CognitoAuthProvider
 import dev.lui.LuiBackend
 import dev.lui.LuiEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import logseq.chat.AndroidRuntimeLogLevel
 import logseq.chat.AndroidRuntimeLogSource
 import logseq.chat.AndroidRuntimeLogs
@@ -31,6 +34,8 @@ import org.json.JSONObject
 internal class ChatRuntime(
     private val activity: Activity,
     private val scope: CoroutineScope,
+    private val patchDispatcher: kotlinx.coroutines.CoroutineDispatcher =
+        Dispatchers.Default.limitedParallelism(1),
 ) {
     val platformServices = AndroidPlatformServices(activity)
     val authentication = CognitoAuthProvider(activity.applicationContext, activity)
@@ -187,7 +192,10 @@ internal class ChatRuntime(
     private fun applyPatch(patch: String) {
         if (patch.isEmpty()) return
         try {
+            val t0 = SystemClock.elapsedRealtimeNanos()
             patchFilter.applyJson(patch)
+            val ms = (SystemClock.elapsedRealtimeNanos() - t0) / 1_000_000.0
+            if (ms > 20) Log.d("GraphLifecycle", "applyJson took ${"%.1f".format(ms)}ms for ${patch.length} chars")
         } catch (error: Throwable) {
             reportError(error)
             startupError = error
@@ -195,7 +203,10 @@ internal class ChatRuntime(
     }
 
     private suspend fun applyCoreResponse(response: String) {
-        applyPatch(bridge.applySnapshot(response))
+        // Patch decode + retained-tree mutation are expensive on big graphs
+        // (~0.5s for a 461KB journal patch); keep them off the main thread on a
+        // single-threaded dispatcher so patch ordering stays serial.
+        withContext(patchDispatcher) { applyPatch(bridge.applySnapshot(response)) }
         outlinerCommands.deliver(response)
         trackSyncState(response)
         if (hasPendingSyncWork(response)) requestSyncNow()
