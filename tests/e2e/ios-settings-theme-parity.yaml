@@ -1,6 +1,6 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
-- runFlow: __LOGSEQ_CHAT_E2E_SETUP_FLOW__
+- runFlow: __LOGSEQ_E2E_SETUP_FLOW__
 - extendedWaitUntil:
     visible:
       text: "More"

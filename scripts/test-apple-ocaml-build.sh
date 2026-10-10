@@ -31,7 +31,7 @@ done
 echo "ok - iOS scripts delegate OCaml builds to Dune"
 
 for script in build-mobile-ios-simulator.sh build-mobile-ios-device.sh; do
-  grep -F 'LOGSEQ_CHAT_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd"' \
+  grep -F 'LOGSEQ_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd"' \
     "$repo_root/scripts/$script" >/dev/null || {
     echo "not ok - $script does not use the SDK SQLite text stub" >&2
     exit 1
@@ -47,13 +47,13 @@ for script in bootstrap-macos-ocaml.sh build-macos-app.sh test-macos-app-bundle.
 done
 echo "ok - desktop macOS build scripts are removed"
 
-simulator_settings=$(LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
+simulator_settings=$(LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
   "$repo_root/scripts/build-mobile-ios-simulator.sh")
 assert_contains "simulator uses OCaml 5.5" "$simulator_settings" "ocaml-version=5.5.0"
 assert_contains "simulator toolchain is workspace-local" "$simulator_settings" \
   "toolchain-root=$expected_root"
 
-device_settings=$(LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS=1 \
+device_settings=$(LOGSEQ_IOS_PRINT_BUILD_SETTINGS=1 \
   "$repo_root/scripts/build-mobile-ios-device.sh")
 assert_contains "device uses OCaml 5.5" "$device_settings" "ocaml-version=5.5.0"
 assert_contains "device toolchain is workspace-local" "$device_settings" \

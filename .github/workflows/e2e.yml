@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
 
       - name: Install opam binary
         if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
@@ -98,14 +98,14 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
 
       - name: Restore duniverse
         id: duniverse
         uses: actions/cache/restore@v4
         with:
           path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
           enableCrossOsArchive: true
 
       - name: Pull vendored dependencies
@@ -126,7 +126,7 @@ jobs:
             echo "opam-monorepo pull failed (attempt $attempt); retrying" >&2
             sleep 10
           done
-          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq_chat.opam | sort -u); do
+          for pin in $(grep -oE 'logseq/[A-Za-z0-9_-]+\.git#[A-Za-z0-9._/-]+' logseq.opam | sort -u); do
             url="${pin%%#*}"; sha="${pin##*#}"; name="$(basename "$url" .git)"
             if [ -d "duniverse/$name" ]; then
               continue
@@ -143,7 +143,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
           enableCrossOsArchive: true
 
   ios-e2e:
@@ -152,7 +152,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 90
     env:
-      LOGSEQ_CHAT_OPAM_SWITCH: ${{ github.workspace }}
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
       # SwiftPM clones lui over ssh://; rewrite to https (repos are public).
       GIT_CONFIG_COUNT: 3
       GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
@@ -181,7 +181,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
 
       # See ci.yml: on a dual cache hit only the opam binary is needed.
       - name: Install opam binary
@@ -225,7 +225,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
 
       # Produced by the linux `duniverse` job — opam-monorepo doesn't build on
       # macOS arm64, and a plain restore keeps this job off that toolchain.
@@ -234,7 +234,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
           enableCrossOsArchive: true
 
       - name: Require vendored dependencies
@@ -261,7 +261,7 @@ jobs:
           udid=$(xcrun simctl create "CI iPhone" \
             "com.apple.CoreSimulator.SimDeviceType.iPhone-16" "$runtime_id")
           xcrun simctl boot "$udid"
-          echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+          echo "LOGSEQ_IOS_SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
 
       - name: Start db-sync server (background)
         # Builds while the iOS app build runs; "Wait for db-sync" polls it.
@@ -282,7 +282,7 @@ jobs:
       - name: Build iOS app for the simulator
         run: |
           eval $(opam env)
-          export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
+          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
           export DUNE="$(command -v dune)"
           ./scripts/build-mobile-ios-simulator.sh
 
@@ -317,14 +317,14 @@ jobs:
             fi
             sleep 2
           done
-          xcrun simctl bootstatus "$LOGSEQ_CHAT_IOS_SIMULATOR_UDID" -b
+          xcrun simctl bootstatus "$LOGSEQ_IOS_SIMULATOR_UDID" -b
 
       - name: Run iOS e2e module
         run: |
           eval $(opam env)
-          export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
+          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
           export DUNE="$(command -v dune)"
-          LOGSEQ_CHAT_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
+          LOGSEQ_IOS_SKIP_BUILD=1 ./scripts/test-ios-e2e-suite.sh "$IOS_MODULE"
 
       - name: Upload Maestro debug artifacts
         if: failure()
@@ -341,9 +341,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      LOGSEQ_CHAT_OPAM_SWITCH: ${{ github.workspace }}
-      LOGSEQ_CHAT_ANDROID_ABI: x86_64
-      LOGSEQ_CHAT_E2E_BASE_URL: http://127.0.0.1:8787
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      LOGSEQ_ANDROID_ABI: x86_64
+      LOGSEQ_E2E_BASE_URL: http://127.0.0.1:8787
     steps:
       - uses: actions/checkout@v4
 
@@ -362,7 +362,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
 
       - name: Install opam binary
         if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
@@ -408,7 +408,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _opam
-          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam') }}
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam') }}
 
       # Produced by the `duniverse` job — shared via cross-OS cache.
       - name: Restore duniverse
@@ -416,7 +416,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: duniverse
-          key: duniverse-${{ hashFiles('logseq_chat.opam.locked', 'logseq_chat.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
+          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml', '.github/workflows/e2e.yml') }}
           enableCrossOsArchive: true
 
       - name: Require vendored dependencies
@@ -479,7 +479,7 @@ jobs:
           emulator-boot-timeout: 600
           script: |
             eval $(opam env)
-            export LOGSEQ_CHAT_OPAM_SWITCH="$(opam switch show)"
+            export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
             export DUNE="$(command -v dune)"
             ./scripts/test-android-e2e.sh "$ANDROID_MODULE"
 

@@ -1,12 +1,12 @@
 #if os(iOS)
 import AppIntents
 #if !WIDGET_EXTENSION
-import LogseqChat
+import Logseq
 #endif
 
 @MainActor private func openQuickAction(_ action: String) {
     #if !WIDGET_EXTENSION
-    LogseqChatRuntime.shared.acceptSharedCaptureURL(URL(string: "logseqchat://\(action)")!)
+    LogseqLogseqRuntime.shared.acceptSharedCaptureURL(URL(string: "logseq://\(action)")!)
     #endif
 }
 

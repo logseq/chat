@@ -1,5 +1,5 @@
 # Run with an open graph and the sidebar closed.
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp:
     stopApp: false

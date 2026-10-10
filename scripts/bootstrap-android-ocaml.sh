@@ -3,10 +3,10 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ocaml_version=${LOGSEQ_CHAT_ANDROID_OCAML_VERSION:-5.5.0}
-android_abi=${LOGSEQ_CHAT_ANDROID_ABI:-arm64-v8a}
-api_level=${LOGSEQ_CHAT_ANDROID_API_LEVEL:-21}
-jobs=${LOGSEQ_CHAT_BUILD_JOBS:-8}
+ocaml_version=${LOGSEQ_ANDROID_OCAML_VERSION:-5.5.0}
+android_abi=${LOGSEQ_ANDROID_ABI:-arm64-v8a}
+api_level=${LOGSEQ_ANDROID_API_LEVEL:-21}
+jobs=${LOGSEQ_BUILD_JOBS:-8}
 android_home=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}
 toolchain_root="$repo_root/_build/android-toolchain"
 

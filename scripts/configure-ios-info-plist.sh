@@ -28,10 +28,10 @@ reset_key() {
 }
 
 set_string "CFBundleDevelopmentRegion" "en"
-set_string "CFBundleExecutable" "LogseqChat"
+set_string "CFBundleExecutable" "Logseq"
 set_string "CFBundleIdentifier" "$bundle_id"
 set_string "CFBundleInfoDictionaryVersion" "6.0"
-set_string "CFBundleName" "LogseqChat"
+set_string "CFBundleName" "Logseq"
 set_string "CFBundlePackageType" "APPL"
 set_string "CFBundleShortVersionString" "0.0.1"
 set_string "CFBundleVersion" "1"
@@ -78,4 +78,4 @@ reset_key "UIBackgroundModes"
 
 reset_key "BGTaskSchedulerPermittedIdentifiers"
 "$plistbuddy" -c "Add :BGTaskSchedulerPermittedIdentifiers array" "$info_plist"
-"$plistbuddy" -c "Add :BGTaskSchedulerPermittedIdentifiers:0 string com.logseq.chat.refresh" "$info_plist"
+"$plistbuddy" -c "Add :BGTaskSchedulerPermittedIdentifiers:0 string com.logseq.logseq.refresh" "$info_plist"

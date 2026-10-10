@@ -1,11 +1,11 @@
-appId: com.logseq.chat
+appId: com.logseq.app
 ---
 - launchApp
 - extendedWaitUntil:
     visible:
       id: "button.sidebar"
     timeout: 45000
-- openLink: "logseqchat://capture"
+- openLink: "logseq://capture"
 - inputText: "x"
 - eraseText: 1
 - hideKeyboard
@@ -15,7 +15,7 @@ appId: com.logseq.chat
     timeout: 10000
 - assertNotVisible:
     id: "button.composer.expand"
-- openLink: "logseqchat://journal"
+- openLink: "logseq://journal"
 - extendedWaitUntil:
     visible:
       id: "pane.journals"

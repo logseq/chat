@@ -3,27 +3,27 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-ios_device_config=${LOGSEQ_CHAT_IOS_CONFIG:-$repo_root/.logseq-chat-ios-device.env}
+ios_device_config=${LOGSEQ_IOS_CONFIG:-$repo_root/.logseq-ios-device.env}
 [[ -f $ios_device_config ]] && source "$ios_device_config"
 
-toolchain_root=${LOGSEQ_CHAT_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
-ocaml_version=${LOGSEQ_CHAT_IOS_OCAML_VERSION:-5.5.0}
-deployment_target=${LOGSEQ_CHAT_IOS_DEPLOYMENT_TARGET:-17.0}
-bundle_id=${LOGSEQ_CHAT_IOS_BUNDLE_ID:-com.logseq.chat}
-build_configuration=${LOGSEQ_CHAT_IOS_BUILD_CONFIGURATION:-debug}
-profile=${LOGSEQ_CHAT_IOS_PROFILE:-}
-signing_identity=${LOGSEQ_CHAT_IOS_SIGNING_IDENTITY:-Apple Development}
-signing_keychain=${LOGSEQ_CHAT_IOS_KEYCHAIN:-}
-signing_keychain_password=${LOGSEQ_CHAT_IOS_KEYCHAIN_PASSWORD-}
+toolchain_root=${LOGSEQ_APPLE_TOOLCHAIN_ROOT:-$repo_root/_build/apple-toolchains}
+ocaml_version=${LOGSEQ_IOS_OCAML_VERSION:-5.5.0}
+deployment_target=${LOGSEQ_IOS_DEPLOYMENT_TARGET:-17.0}
+bundle_id=${LOGSEQ_IOS_BUNDLE_ID:-com.logseq.logseq}
+build_configuration=${LOGSEQ_IOS_BUILD_CONFIGURATION:-debug}
+profile=${LOGSEQ_IOS_PROFILE:-}
+signing_identity=${LOGSEQ_IOS_SIGNING_IDENTITY:-Apple Development}
+signing_keychain=${LOGSEQ_IOS_KEYCHAIN:-}
+signing_keychain_password=${LOGSEQ_IOS_KEYCHAIN_PASSWORD-}
 sdk_path=$(xcrun --sdk iphoneos --show-sdk-path)
 triple="arm64-apple-ios${deployment_target}"
-target_prefix=${LOGSEQ_CHAT_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
-swift_scratch_dir=${LOGSEQ_CHAT_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build/ios-device}
+target_prefix=${LOGSEQ_IOS_TOOLCHAIN_PREFIX:-$toolchain_root/ios/$triple-$ocaml_version}
+swift_scratch_dir=${LOGSEQ_IOS_SWIFT_SCRATCH_PATH:-$repo_root/apple/.build/ios-device}
 swift_build_dir="$swift_scratch_dir/arm64-apple-ios/$build_configuration"
 core_build_dir="$repo_root/_build/ios-core/device"
-https_object="$core_build_dir/logseq_chat_https_darwin.o"
-crypto_object="$core_build_dir/logseq_chat_crypto_darwin.o"
-app_dir="$repo_root/apple/.build/LogseqChat-device.app"
+https_object="$core_build_dir/logseq_https_darwin.o"
+crypto_object="$core_build_dir/logseq_crypto_darwin.o"
+app_dir="$repo_root/apple/.build/Logseq-device.app"
 profile_plist="$core_build_dir/profile.plist"
 entitlements="$core_build_dir/entitlements.plist"
 
@@ -44,49 +44,54 @@ prune_stale_swift_resource_bundles() {
 [[ $build_configuration == debug || $build_configuration == release ]] \
   || die "unsupported iOS build configuration: $build_configuration"
 
-if [[ ${LOGSEQ_CHAT_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
+if [[ ${LOGSEQ_IOS_PRINT_BUILD_SETTINGS:-0} == 1 ]]; then
   echo "configuration=$build_configuration swift-build-dir=$swift_build_dir ocaml-version=$ocaml_version target=$triple toolchain-root=$toolchain_root toolchain-prefix=$target_prefix profile=$profile signing-identity=$signing_identity"
   exit 0
 fi
 
-[[ $bundle_id != "com.logseq.logseq" ]] || die "refusing to build the production Logseq bundle id"
-[[ -n $profile ]] || die "set LOGSEQ_CHAT_IOS_PROFILE to a development provisioning profile for $bundle_id"
-[[ -f $profile ]] || die "provisioning profile was not found: $profile"
-if [[ -n $signing_keychain && ! -f $signing_keychain ]]; then
-  die "signing keychain was not found: $signing_keychain"
-fi
-
-codesign_keychain_args=()
-[[ -n $signing_keychain ]] && codesign_keychain_args=(--keychain "$signing_keychain")
-original_keychain_search_list=()
-restore_keychain_search_list() {
-  local exit_status=$?
-  if ((${#original_keychain_search_list[@]} > 0)); then
-    security list-keychains -d user -s "${original_keychain_search_list[@]}" >/dev/null || true
+# Signing assets are only needed when assembling the dev-profile .app; the
+# LOGSEQ_IOS_LINK_INPUTS_ONLY release path produces OCaml objects for the
+# fastlane archive and skips all provisioning checks.
+if [[ ${LOGSEQ_IOS_LINK_INPUTS_ONLY:-0} != 1 ]]; then
+  [[ -n $profile ]] || die "set LOGSEQ_IOS_PROFILE to a development provisioning profile for $bundle_id"
+  [[ -f $profile ]] || die "provisioning profile was not found: $profile"
+  if [[ -n $signing_keychain && ! -f $signing_keychain ]]; then
+    die "signing keychain was not found: $signing_keychain"
   fi
-  return "$exit_status"
-}
 
-if [[ -n $signing_keychain ]]; then
-  while IFS='"' read -r _ keychain_path _; do
-    [[ -n $keychain_path ]] && original_keychain_search_list+=("$keychain_path")
-  done < <(security list-keychains -d user)
-  security list-keychains -d user -s \
-    "${original_keychain_search_list[@]}" "$signing_keychain"
-  trap restore_keychain_search_list EXIT
-  if [[ ${LOGSEQ_CHAT_IOS_KEYCHAIN_PASSWORD+x} == x ]]; then
-    security unlock-keychain -p "$signing_keychain_password" "$signing_keychain"
+  codesign_keychain_args=()
+  [[ -n $signing_keychain ]] && codesign_keychain_args=(--keychain "$signing_keychain")
+  original_keychain_search_list=()
+  restore_keychain_search_list() {
+    local exit_status=$?
+    if ((${#original_keychain_search_list[@]} > 0)); then
+      security list-keychains -d user -s "${original_keychain_search_list[@]}" >/dev/null || true
+    fi
+    return "$exit_status"
+  }
+
+  if [[ -n $signing_keychain ]]; then
+    while IFS='"' read -r _ keychain_path _; do
+      [[ -n $keychain_path ]] && original_keychain_search_list+=("$keychain_path")
+    done < <(security list-keychains -d user)
+    security list-keychains -d user -s \
+      "${original_keychain_search_list[@]}" "$signing_keychain"
+    trap restore_keychain_search_list EXIT
+    if [[ ${LOGSEQ_IOS_KEYCHAIN_PASSWORD+x} == x ]]; then
+      security unlock-keychain -p "$signing_keychain_password" "$signing_keychain"
+    fi
+  fi
+
+  security cms -D -i "$profile" >"$profile_plist"
+  profile_app_id=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$profile_plist")
+  team_id=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile_plist")
+  expected_app_id="$team_id.$bundle_id"
+  if [[ $profile_app_id != "$expected_app_id" && $profile_app_id != "$team_id.*" ]]; then
+    die "profile app id is $profile_app_id, expected $expected_app_id or $team_id.*"
   fi
 fi
 
 mkdir -p "$core_build_dir"
-security cms -D -i "$profile" >"$profile_plist"
-profile_app_id=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$profile_plist")
-team_id=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile_plist")
-expected_app_id="$team_id.$bundle_id"
-if [[ $profile_app_id != "$expected_app_id" && $profile_app_id != "$team_id.*" ]]; then
-  die "profile app id is $profile_app_id, expected $expected_app_id or $team_id.*"
-fi
 
 if [[ ! -x $target_prefix/bin/ocamlopt.opt ]]; then
   "$repo_root/scripts/bootstrap-ios-ocaml.sh" device >/dev/null
@@ -94,11 +99,11 @@ fi
 
 ocaml_lib="$target_prefix/lib/ocaml"
 clang=$(xcrun --sdk iphoneos --find clang)
-core_object=$(LOGSEQ_CHAT_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
-  LOGSEQ_CHAT_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd" \
+core_object=$(LOGSEQ_SQLITE_LIB_DIR="$sdk_path/usr/lib" \
+  LOGSEQ_SQLITE_LINK_FILE="$sdk_path/usr/lib/libsqlite3.tbd" \
   "$repo_root/scripts/build-mobile-ocaml.sh" "$target_prefix" ios_device)
 
-for source in logseq_chat_https_darwin.m logseq_chat_crypto_darwin.m; do
+for source in logseq_https_darwin.m logseq_crypto_darwin.m; do
   "$clang" \
     -target "$triple" \
     -isysroot "$sdk_path" \
@@ -113,19 +118,29 @@ native_link_fingerprint=$(shasum -a 256 \
   "$core_object" "$https_object" "$crypto_object" "$ocaml_lib/libthreadsnat.a" \
   | shasum -a 256 | cut -d ' ' -f 1)
 native_link_dir="$core_build_dir/native-link-inputs/$native_link_fingerprint"
-fingerprinted_core_object="$native_link_dir/logseq_chat_runtime.o"
+fingerprinted_core_object="$native_link_dir/logseq_runtime.o"
 mkdir -p "$native_link_dir"
 [[ -s $fingerprinted_core_object ]] || cp "$core_object" "$fingerprinted_core_object"
 native_link_inputs="$fingerprinted_core_object:$https_object:$crypto_object:$ocaml_lib/libthreadsnat.a"
 
+# Release path: xcodebuild archives the app via the Xcode project and links
+# the OCaml core through LOGSEQ_NATIVE_LINK_INPUTS. Emit just the inputs so
+# the fastlane lane can pass them on without running the dev-profile .app
+# assembly below.
+if [[ ${LOGSEQ_IOS_LINK_INPUTS_ONLY:-0} == 1 ]]; then
+  printf '%s' "$native_link_inputs" > "$core_build_dir/native-link-inputs.txt"
+  echo "wrote $core_build_dir/native-link-inputs.txt"
+  exit 0
+fi
+
 prune_stale_swift_resource_bundles
-LOGSEQ_CHAT_NATIVE_LINK_INPUTS="$native_link_inputs" \
+LOGSEQ_NATIVE_LINK_INPUTS="$native_link_inputs" \
 swift build \
   -c "$build_configuration" \
   --scratch-path "$swift_scratch_dir" \
   --disable-keychain \
   --package-path "$repo_root/apple" \
-  --product LogseqChatShell \
+  --product LogseqShell \
   --triple "$triple" \
   --sdk "$sdk_path"
 
@@ -137,14 +152,14 @@ mkdir -p "$app_dir"
 cp "$repo_root/apple/App/Info.plist" "$app_dir/Info.plist"
 cp "$profile" "$app_dir/embedded.mobileprovision"
 "$repo_root/scripts/configure-ios-info-plist.sh" "$app_dir/Info.plist" "$bundle_id" "$deployment_target" "iPhoneOS"
-cp "$swift_build_dir/LogseqChatShell" "$app_dir/LogseqChat"
+cp "$swift_build_dir/LogseqShell" "$app_dir/Logseq"
 
 for bundle in "$swift_build_dir"/*.bundle; do
   [[ -d $bundle ]] || continue
   cp -R "$bundle" "$app_dir/"
 done
 
-logseq_resource_bundle="$app_dir/logseq-chat_LogseqChat.bundle"
+logseq_resource_bundle="$app_dir/logseq_Logseq.bundle"
 if [[ -d $logseq_resource_bundle ]]; then
   xcrun actool \
     --compile "$logseq_resource_bundle" \
@@ -152,22 +167,22 @@ if [[ -d $logseq_resource_bundle ]]; then
     --minimum-deployment-target "$deployment_target" \
     --target-device iphone \
     --target-device ipad \
-    "$repo_root/apple/Sources/LogseqChat/Resources/Icons.xcassets" \
-    "$repo_root/apple/Sources/LogseqChat/Resources/Module.xcassets" >/dev/null
+    "$repo_root/apple/Sources/Logseq/Resources/Icons.xcassets" \
+    "$repo_root/apple/Sources/Logseq/Resources/Module.xcassets" >/dev/null
 fi
 
 # SwiftPM does not run Xcode's App Intents metadata build phase.
-"$repo_root/scripts/extract-app-intents.sh" LogseqChatShell "$sdk_path" "$triple" \
+"$repo_root/scripts/extract-app-intents.sh" LogseqShell "$sdk_path" "$triple" \
   "$deployment_target" "$app_dir" \
   -I "$swift_build_dir/Modules" \
-  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqChatCoreABI.build/module.modulemap" \
-  -I "$repo_root/apple/Sources/LogseqChatCoreABI/include" \
+  -Xcc "-fmodule-map-file=$swift_build_dir/LogseqCoreABI.build/module.modulemap" \
+  -I "$repo_root/apple/Sources/LogseqCoreABI/include" \
   "$repo_root/apple/App/Sources/Main.swift" "$repo_root/apple/App/Sources/QuickActions.swift"
 
-widget_bundle_id="$bundle_id.widgets"
+widget_bundle_id=${LOGSEQ_IOS_WIDGET_BUNDLE_ID:-com.logseq.logseq.shortcuts}
 widget_profile=$(python3 "$repo_root/scripts/select-widget-profile.py" \
-  "$profile_plist" "$widget_bundle_id" "${LOGSEQ_CHAT_IOS_WIDGET_PROFILE:-}")
-widget_dir="$app_dir/PlugIns/LogseqChatWidgets.appex"
+  "$profile_plist" "$widget_bundle_id" "${LOGSEQ_IOS_WIDGET_PROFILE:-}")
+widget_dir="$app_dir/PlugIns/LogseqWidgets.appex"
 widget_profile_plist="$core_build_dir/widget-profile.plist"
 widget_entitlements="$core_build_dir/widget-entitlements.plist"
 # Use Xcode's extension build pipeline so WidgetKit receives the same platform
@@ -175,14 +190,14 @@ widget_entitlements="$core_build_dir/widget-entitlements.plist"
 widget_build_dir="$repo_root/apple/.build/ios-device-extensions"
 configuration_name=Debug
 [[ $build_configuration == release ]] && configuration_name=Release
-xcodebuild -project "$repo_root/apple/App/LogseqChat.xcodeproj" \
-  -target LogseqChatWidgets -configuration "$configuration_name" \
+xcodebuild -project "$repo_root/apple/App/Logseq.xcodeproj" \
+  -target LogseqWidgets -configuration "$configuration_name" \
   -sdk iphoneos -arch arm64 ONLY_ACTIVE_ARCH=YES \
   IPHONEOS_DEPLOYMENT_TARGET="$deployment_target" \
   PRODUCT_BUNDLE_IDENTIFIER="$widget_bundle_id" \
   CONFIGURATION_BUILD_DIR="$widget_build_dir" CODE_SIGNING_ALLOWED=NO -quiet build
 mkdir -p "$app_dir/PlugIns"
-cp -R "$widget_build_dir/LogseqChatWidgets.appex" "$widget_dir"
+cp -R "$widget_build_dir/LogseqWidgets.appex" "$widget_dir"
 for key in CFBundleShortVersionString CFBundleVersion; do
   value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$app_dir/Info.plist")
   /usr/libexec/PlistBuddy -c "Set :$key $value" "$widget_dir/Info.plist"

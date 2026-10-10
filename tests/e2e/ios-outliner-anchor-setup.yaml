@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
     when:
@@ -27,12 +27,12 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - tapOn:
     id: "field.composer"
-- inputText: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E anchor A __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - assertNotVisible:
     id: "BackButton"
-- inputText: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E anchor B __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - assertNotVisible:
@@ -49,7 +49,7 @@ appId: com.logseq.chat
     id: "pane.journals"
 - scrollUntilVisible:
     element:
-      text: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+      text: "E2E anchor B __LOGSEQ_E2E_RUN_ID__"
     direction: DOWN
     timeout: 60000
     speed: 50
@@ -59,7 +59,7 @@ appId: com.logseq.chat
     id: "BackButton"
 - scrollUntilVisible:
     element:
-      text: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+      text: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
     direction: UP
     timeout: 60000
     speed: 50
@@ -73,5 +73,5 @@ appId: com.logseq.chat
     duration: 1000
 - assertNotVisible:
     id: "BackButton"
-- assertVisible: "E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "E2E anchor B __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "E2E anchor A __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "E2E anchor B __LOGSEQ_E2E_RUN_ID__"

@@ -6,7 +6,7 @@
     <array>
         <dict>
             <key>UIApplicationShortcutItemType</key>
-            <string>logseqchat://audio</string>
+            <string>logseq://audio</string>
             <key>UIApplicationShortcutItemTitle</key>
             <string>Voice</string>
             <key>UIApplicationShortcutItemIconSymbolName</key>
@@ -14,7 +14,7 @@
         </dict>
         <dict>
             <key>UIApplicationShortcutItemType</key>
-            <string>logseqchat://capture</string>
+            <string>logseq://capture</string>
             <key>UIApplicationShortcutItemTitle</key>
             <string>Quick Add</string>
             <key>UIApplicationShortcutItemIconSymbolName</key>
@@ -25,16 +25,16 @@
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>com.logseq.chat.capture</string>
+            <string>com.logseq.logseq.capture</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>logseqchat</string>
+                <string>logseq</string>
             </array>
         </dict>
     </array>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
-        <string>com.logseq.chat.refresh</string>
+        <string>com.logseq.logseq.refresh</string>
     </array>
     <key>UIFileSharingEnabled</key>
     <true/>

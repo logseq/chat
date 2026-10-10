@@ -1,4 +1,4 @@
-(copy_files logseq_chat/*.ml)
+(copy_files logseq/*.ml)
 
 (executable
  (name test_main)
@@ -6,10 +6,10 @@
  (flags (:standard -w -27-32-37-39-69))
  (foreign_stubs
   (language c)
-  (names logseq_chat_platform_crypto_test_stubs))
+  (names logseq_platform_crypto_test_stubs))
  (libraries
-  logseq_chat_core
-  logseq_chat_app
+  logseq_core
+  logseq_app
   drive
   lui
   ocaml-signal
@@ -29,10 +29,10 @@
 (rule
  (alias runtest)
  (deps
-  ../native/logseq_chat_e2e_seed.exe
-  ../native/logseq_chat_live_sync.exe
+  ../native/logseq_e2e_seed.exe
+  ../native/logseq_live_sync.exe
   ../native/pending_ops_golden.jsonl
   test_main.exe
-  (source_tree logseq_chat/drive))
+  (source_tree logseq/drive))
  (action
   (run ./test_main.exe)))

@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 device=${1:?Pass the simulator UDID}
 build_dir=.build/arm64-apple-ios-simulator/debug
 check_dir=$(mktemp -d)
-app_id=com.logseq.chat.NodeStateCheck
+app_id=com.logseq.logseq.NodeStateCheck
 trap 'xcrun simctl terminate "$device" "$app_id" >/dev/null 2>&1 || true; xcrun simctl uninstall "$device" "$app_id" >/dev/null 2>&1 || true; rm -rf "$check_dir"' EXIT
 mkdir -p "$check_dir/NodeStateCheck.app"
 xcrun --sdk iphonesimulator swiftc -parse-as-library \

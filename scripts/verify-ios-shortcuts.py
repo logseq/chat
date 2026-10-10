@@ -6,7 +6,7 @@ import plistlib
 import sys
 
 app = pathlib.Path(sys.argv[1])
-widget = app / "PlugIns/LogseqChatWidgets.appex"
+widget = app / "PlugIns/LogseqWidgets.appex"
 def metadata(bundle):
     return json.loads((bundle / "Metadata.appintents/extract.actionsdata").read_bytes())
 
@@ -25,7 +25,7 @@ assert info.get("UIDeviceFamily") == [1, 2], "Widget must declare iPhone and iPa
 assert info.get("CFBundleSupportedPlatforms") == host_info["CFBundleSupportedPlatforms"], "Widget platform must match host"
 items = host_info.get("UIApplicationShortcutItems", [])
 assert [(item["UIApplicationShortcutItemType"], item["UIApplicationShortcutItemTitle"]) for item in items] == [
-    ("logseqchat://audio", "Voice"), ("logseqchat://capture", "Quick Add")
+    ("logseq://audio", "Voice"), ("logseq://capture", "Quick Add")
 ], "Home Screen must expose Voice and Quick Add"
 assert info["CFBundleIdentifier"] == host_info["CFBundleIdentifier"] + ".widgets"
 assert info["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"

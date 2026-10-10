@@ -1,0 +1,33 @@
+appId: com.logseq.logseq
+---
+- runFlow:
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "pane.journals"
+    timeout: 30000
+- assertVisible:
+    id: "button.composer.expand"
+- tapOn:
+    id: "button.composer.expand"
+- tapOn:
+    id: "field.composer"
+- inputText: "Logseq send regression __LOGSEQ_E2E_RUN_ID__"
+- tapOn:
+    id: "button.send"
+- tapOn:
+    id: "surface.composer.dismiss"
+- assertVisible:
+    id: "button.composer.expand"
+- scrollUntilVisible:
+    element:
+      text: "Logseq send regression __LOGSEQ_E2E_RUN_ID__"
+    direction: DOWN
+    timeout: 30000
+    speed: 50
+    visibilityPercentage: 50
+    centerElement: true
+- assertVisible: "Logseq send regression __LOGSEQ_E2E_RUN_ID__"
+- assertNotVisible: "invalid_json"
+- stopApp

@@ -1,7 +1,7 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - extendedWaitUntil:
     visible:
@@ -14,7 +14,7 @@ appId: com.logseq.chat
 - tapOn: "Todo"
 - tapOn:
     id: "field.composer"
-- inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "Search task __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - tapOn:
@@ -23,13 +23,13 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - scrollUntilVisible:
     element:
-      text: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+      text: "Search task __LOGSEQ_E2E_RUN_ID__"
     direction: DOWN
     timeout: 30000
     speed: 50
     visibilityPercentage: 50
     centerElement: true
-- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Search task __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "button.block-task-status"
 - tapOn:
@@ -45,7 +45,7 @@ appId: com.logseq.chat
 - waitForAnimationToEnd
 - inputText: "x"
 - eraseText: 1
-- inputText: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "Search task __LOGSEQ_E2E_RUN_ID__"
 - tapOn: "Search"
 - extendedWaitUntil:
     visible:
@@ -54,7 +54,7 @@ appId: com.logseq.chat
 - swipe:
     direction: UP
     duration: 400
-- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Search task __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "search.result.*"
 - extendedWaitUntil:
@@ -67,7 +67,7 @@ appId: com.logseq.chat
     visible:
       id: "screen.search"
     timeout: 10000
-- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Search task __LOGSEQ_E2E_RUN_ID__"
 - tapOn: "close"
 - assertNotVisible:
     id: "screen.search"
@@ -75,7 +75,7 @@ appId: com.logseq.chat
     visible:
       id: "button.composer.expand"
     timeout: 10000
-- assertVisible: "Search task __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Search task __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "button.block-task-status"
 - takeScreenshot: "ios-search-status-regression"

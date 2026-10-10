@@ -1,4 +1,4 @@
-# Android Dogfood Report: Logseq Chat
+# Android Dogfood Report: Logseq
 
 | Field | Value |
 |-------|-------|
@@ -203,7 +203,7 @@ LUI now maps `muted-foreground` to Material 3 `onSurfaceVariant`. The fix and a
 backend regression test are pushed as commit
 `09631149799f358f55fb6fc13bfa73dfb07e9cf2`; the app pins only its Android
 backend to that compatible revision. All 74 tests on that LUI revision pass,
-the Logseq Chat Android suite passes 68 tests, and physical-device screenshots
+the Logseq Android suite passes 68 tests, and physical-device screenshots
 show both page guidance and empty-state descriptions at the expected secondary
 contrast.
 
@@ -250,7 +250,7 @@ empty-state presence, action priority, and Material icon names.
 
 **Description**
 
-The Android manifest and launcher identified the package as **Logseq Chat**, but
+The Android manifest and launcher identified the package as **Logseq**, but
 the shared authentication surface still rendered the old **Logseq** name. This
 made the new app difficult to distinguish from an existing Logseq installation.
 
@@ -258,14 +258,14 @@ made the new app difficult to distinguish from an existing Logseq installation.
 
 **Fix Verification**
 
-Both Android and Apple LG profiles now render **Logseq Chat** from the shared
+Both Android and Apple LG profiles now render **Logseq** from the shared
 authentication view. A cross-host LG regression rejects the old standalone
 name. Android also uses the full product name for clipboard content and the
 system share chooser. The signed-out Maestro flow asserts the product name
 against the rebuilt native library. The rebuilt debug APK is installed on both
 the emulator and physical device.
 
-![Correct Logseq Chat name](android-dogfood/screenshots/issue-008-product-name-fixed.png)
+![Correct Logseq name](android-dogfood/screenshots/issue-008-product-name-fixed.png)
 
 ### ISSUE-009: Adaptive launcher foreground is cramped under OEM masks
 
@@ -513,7 +513,7 @@ Android now maps `list` to a native lazy `ListView`, matching SwiftUI's native
 `List` semantics without changing the Apple backend. The full page scrolls,
 starts at the Refresh action, and logs no RenderFlex error. The LUI fix is
 pushed as commit `9512238e40248f664d7a870565360436818410ac`; all 77 LUI tests
-and all 112 Logseq Chat Android tests pass.
+and all 112 Logseq Android tests pass.
 
 ![Scrollable Graphs page](android-dogfood/screenshots/issue-017-graphs-scrollable-fixed.png)
 
@@ -640,7 +640,7 @@ a persistent Material `InputDecorator` label; the Apple backend accepts the
 same accessibility metadata without changing its visual SwiftUI picker. The
 Android form uses tonal cards, readable supporting text, native switches, and
 an anchored equal-width secondary/primary action row. LUI passes 201 tests,
-Logseq Chat LG passes 144 tests, Android passes 112 tests, and the rebuilt debug
+Logseq LG passes 144 tests, Android passes 112 tests, and the rebuilt debug
 app renders Theme and Language distinctly with no protocol or layout error.
 
 ![Settings form after redesign](android-dogfood/screenshots/issue-020-settings-form-fixed.png)
@@ -825,7 +825,7 @@ Search, return to Journals, and find the captured task.
 **Description**
 
 Rapid composer edits overlap the 15-second automatic graph refresh. Input is
-dropped or delayed and Android can show **Logseq Chat isn't responding**.
+dropped or delayed and Android can show **Logseq isn't responding**.
 
 **Root Cause**
 
@@ -893,14 +893,14 @@ the complete Android Material Navigation E2E pass on the rebuilt APK.
 **Description**
 
 Refreshing the app could render Journals and then stop accepting input until
-Android displayed **Logseq Chat isn't responding**. The failure remained even
+Android displayed **Logseq isn't responding**. The failure remained even
 after catalog polling was disabled for an open graph.
 
 **Root Cause**
 
 The 22:14 Android ANR shows the Dart/UI thread blocked in
 `pthread_mutex_lock`, while Dart workers were executing the same
-`liblogseq_chat_core.so`. Core and LG share one OCaml runtime lock, but the
+`liblogseq_core.so`. Core and LG share one OCaml runtime lock, but the
 Android bridge allowed background Core FFI and foreground LG FFI to enter it
 concurrently. Startup `appear`, accessibility, or input dispatch therefore
 waited on long graph restore work. The platform log recorded 398 and 169

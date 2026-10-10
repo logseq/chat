@@ -1,0 +1,163 @@
+# Builds the Logseq iOS app as a signed .ipa and uploads it to TestFlight via
+# fastlane match + the App Store Connect API key. Modeled on logseq/logseq's
+# build-ios-release.yml; signing ids and accounts are identical to the mobile
+# app in logseq/logseq.
+
+name: Build-iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      git-ref:
+        description: "Release Git Ref (Which branch or tag to build?)"
+        required: true
+        default: "main"
+
+jobs:
+  build-app:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      LOGSEQ_OPAM_SWITCH: ${{ github.workspace }}
+      GIT_TERMINAL_PROMPT: "0"
+      GIT_CONFIG_COUNT: 3
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: "git@github.com:"
+      GIT_CONFIG_KEY_1: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_1: "ssh://git@github.com/"
+      GIT_CONFIG_KEY_2: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_2: "git+ssh://git@github.com/"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.git-ref }}
+
+      - name: Restore opam root
+        id: opam-root
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Restore opam switch
+        id: opam-switch
+        uses: actions/cache/restore@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
+
+      # On a dual cache hit only the opam binary is needed (see e2e.yml).
+      - name: Install opam binary
+        if: steps.opam-root.outputs.cache-hit == 'true' && steps.opam-switch.outputs.cache-hit == 'true'
+        run: |
+          brew install opam
+          eval $(opam env)
+          opam --version && ocaml -version
+
+      - uses: ocaml/setup-ocaml@v3
+        if: steps.opam-root.outputs.cache-hit != 'true' || steps.opam-switch.outputs.cache-hit != 'true'
+        with:
+          ocaml-compiler: "5.5"
+          opam-pin: false
+
+      - name: Save opam root
+        if: steps.opam-root.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.opam
+          key: opam-root-${{ runner.os }}-ocaml-5.5
+
+      - name: Install opam dependencies
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        run: |
+          eval $(opam env)
+          opam pin add -n -y melange-edn-core git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-edn-native git+https://github.com/logseq/melange-edn.git#main
+          opam pin add -n -y melange-transit-core git+https://github.com/logseq/melange-transit.git#main
+          opam pin add -n -y melange-transit-native git+https://github.com/logseq/melange-transit.git#main
+          opam install -y melange.7.0.1-55
+          opam install . --deps-only --yes --with-test --assume-depexts
+
+      - name: Save opam switch
+        if: steps.opam-switch.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _opam
+          key: opam-switch-${{ runner.os }}-ocaml-5.5-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
+
+      # opam-monorepo doesn't build on macOS arm64 (see e2e.yml): the linux
+      # jobs populate this cache, so a plain restore is all we can do here.
+      - name: Restore duniverse
+        id: duniverse
+        uses: actions/cache/restore@v4
+        with:
+          path: duniverse
+          key: duniverse-${{ hashFiles('logseq.opam.locked', 'logseq.opam', '.github/workflows/ci.yml') }}
+          enableCrossOsArchive: true
+
+      - name: Require vendored dependencies
+        if: steps.duniverse.outputs.cache-hit != 'true'
+        run: echo "duniverse cache miss; run CI for this ref first so the duniverse cache is populated" >&2 && exit 1
+
+      - name: Select Xcode 26
+        # lui declares swift-tools-version 6.2; the image default (16.4) ships
+        # Swift 6.1, so select the Xcode 26 toolchain (Swift 6.2).
+        run: sudo xcode-select --switch /Applications/Xcode_26.3.app
+
+      - name: Install iOS platform
+        run: xcodebuild -downloadPlatform iOS || true
+
+      - name: Restore iOS OCaml toolchain
+        id: ios-toolchain
+        uses: actions/cache/restore@v4
+        with:
+          path: _build/apple-toolchains
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-device-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+
+      - name: Bootstrap iOS OCaml toolchain (device)
+        if: steps.ios-toolchain.outputs.cache-hit != 'true'
+        run: |
+          eval $(opam env)
+          ./scripts/bootstrap-ios-ocaml.sh device
+
+      - name: Build OCaml iOS core (device)
+        # Produces _build/ios-core/device/native-link-inputs.txt, which the
+        # fastlane beta lane exports as LOGSEQ_NATIVE_LINK_INPUTS so the
+        # SwiftPM manifest links the OCaml core into the archive.
+        run: |
+          eval $(opam env)
+          export LOGSEQ_OPAM_SWITCH="$(opam switch show)"
+          export DUNE="$(command -v dune)"
+          LOGSEQ_IOS_LINK_INPUTS_ONLY=1 ./scripts/build-mobile-ios-device.sh
+
+      - name: Save iOS OCaml toolchain
+        if: always() && steps.ios-toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _build/apple-toolchains
+          key: apple-toolchain-${{ runner.os }}-xcode26.3-ios-device-5.5.0-${{ hashFiles('scripts/bootstrap-ios-ocaml.sh', 'scripts/build-mobile-libffi.sh') }}
+
+      - name: Setup build tools
+        run: |
+          sudo gem install bundler -v 2.7.2 --no-document
+          bundle _2.7.2_ install
+        working-directory: ./apple/App
+
+      - name: Build and upload iOS app
+        run: |
+          : "${LOGSEQ_GITHUB_PAT:?LOGSEQ_GITHUB_PAT is required for the certificates repository}"
+          MATCH_GIT_BASIC_AUTHORIZATION="$(printf '%s' "x-access-token:${LOGSEQ_GITHUB_PAT}" | base64 | tr -d '\n')"
+          echo "::add-mask::${MATCH_GIT_BASIC_AUTHORIZATION}"
+          export MATCH_GIT_BASIC_AUTHORIZATION
+          bundle exec fastlane beta
+        working-directory: ./apple/App
+        env:
+          APP_STORE_CONNECT_API_KEY_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_KEY }}
+          APP_STORE_CONNECT_API_KEY_IS_KEY_CONTENT_BASE64: true
+          SLACK_URL: ${{ secrets.SLACK_URL }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: https://github.com/logseq/certificates.git
+          LOGSEQ_GITHUB_PAT: ${{ secrets.LOGSEQ_GITHUB_PAT }}
+          XCODE_XCARGS: "-allowProvisioningUpdates"

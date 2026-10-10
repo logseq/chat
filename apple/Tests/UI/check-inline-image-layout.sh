@@ -7,6 +7,6 @@ check_dir=$(mktemp -d)
 trap 'rm -rf "$check_dir"' EXIT
 xcrun --sdk iphonesimulator swiftc -parse-as-library \
   -target arm64-apple-ios17.0-simulator \
-  Sources/LogseqChat/LGChatInlineImage.swift \
+  Sources/Logseq/LGInlineImage.swift \
   Tests/UI/inline-image-layout.swift -o "$check_dir/check"
 xcrun simctl spawn "$device" "$check_dir/check"

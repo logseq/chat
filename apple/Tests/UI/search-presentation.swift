@@ -3,7 +3,7 @@ import SwiftUI
 import OSLog
 import LUIAppleBackend
 
-let logger = Logger(subsystem: "com.logseq.chat.tests", category: "Search")
+let logger = Logger(subsystem: "com.logseq.logseq.tests", category: "Search")
 
 @main struct SearchPresentationCheck {
     static func main() { UIApplicationMain(CommandLine.argc, CommandLine.unsafeArgv, nil, NSStringFromClass(SearchCheckDelegate.self)) }
@@ -24,11 +24,11 @@ let logger = Logger(subsystem: "com.logseq.chat.tests", category: "Search")
     }
     func run() async throws {
         let registry = LUIAppleExtensionRegistry()
-        try LGChatSearchPresentationExtension.register(in: registry)
+        try LGSearchPresentationExtension.register(in: registry)
         let backend = try LUIAppleBackend(extensionRegistry: registry)
         try backend.apply(json: """
         {"generation":1,"ops":[
-          {"op":"create-extension","id":1,"identifier":"native-search-presentation","fingerprint":"\(LGChatSearchPresentationExtension.fingerprint)"},
+          {"op":"create-extension","id":1,"identifier":"native-search-presentation","fingerprint":"\(LGSearchPresentationExtension.fingerprint)"},
           {"op":"set-extension-prop","id":1,"property":"presented","value":false},
           {"op":"set-extension-prop","id":1,"property":"depth","value":0},
           {"op":"set-extension-prop","id":1,"property":"query","value":""},

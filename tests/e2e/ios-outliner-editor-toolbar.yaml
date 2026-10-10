@@ -1,11 +1,11 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_OUTLINER_ANCHOR_FLOW__"
-- tapOn: "Edit block E2E anchor A __LOGSEQ_CHAT_E2E_RUN_ID__"
+    file: "__LOGSEQ_E2E_OUTLINER_ANCHOR_FLOW__"
+- tapOn: "Edit block E2E anchor A __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible: "Task: None"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 control_source="$(rtk sed -n '/^let main_header_leading /,/^let main_header_title /p' \
-  "${repo_root}/shared/src/logseq_chat/view_screens.ml")"
+  "${repo_root}/shared/src/logseq/view_screens.ml")"
 if printf '%s\n' "${control_source}" | rtk rg -q '~corner_radius'; then
   echo "main-header-leading overrides the native toolbar button shape" >&2
   exit 1
@@ -14,9 +14,9 @@ if printf '%s\n' "${control_source}" \
   exit 1
 fi
 
-simulator_udid="${LOGSEQ_CHAT_IOS_SIMULATOR_UDID:-}"
+simulator_udid="${LOGSEQ_IOS_SIMULATOR_UDID:-}"
 if [[ -z "${simulator_udid}" ]]; then
-  echo "LOGSEQ_CHAT_IOS_SIMULATOR_UDID is required" >&2
+  echo "LOGSEQ_IOS_SIMULATOR_UDID is required" >&2
   exit 2
 fi
 

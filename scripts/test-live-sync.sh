@@ -5,11 +5,11 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 logseq1_root=${LOGSEQ_1_ROOT:-$(cd "$repo_root/../logseq-1" && pwd)}
 db_sync_root="$logseq1_root/deps/db-sync"
-base_url=${LOGSEQ_CHAT_LIVE_BASE_URL:-http://127.0.0.1:8787}
-username=${LOGSEQ_CHAT_E2E_USERNAME:-e2etest}
-password=${LOGSEQ_CHAT_E2E_PASSWORD:-Logseq-e2e}
-client_id=${LOGSEQ_CHAT_COGNITO_CLIENT_ID:-69cs1lgme7p8kbgld8n5kseii6}
-cognito_endpoint=${LOGSEQ_CHAT_COGNITO_ENDPOINT:-https://cognito-idp.us-east-1.amazonaws.com/}
+base_url=${LOGSEQ_LIVE_BASE_URL:-http://127.0.0.1:8787}
+username=${LOGSEQ_E2E_USERNAME:-e2etest}
+password=${LOGSEQ_E2E_PASSWORD:-Logseq-e2e}
+client_id=${LOGSEQ_COGNITO_CLIENT_ID:-69cs1lgme7p8kbgld8n5kseii6}
+cognito_endpoint=${LOGSEQ_COGNITO_ENDPOINT:-https://cognito-idp.us-east-1.amazonaws.com/}
 
 if [[ ! -d $db_sync_root ]]; then
   echo "error: Logseq-1 db-sync is missing at $db_sync_root" >&2
@@ -18,7 +18,7 @@ fi
 
 eval "$(opam env --switch=5.5.0 --set-switch)"
 
-token=${LOGSEQ_CHAT_LIVE_TOKEN:-}
+token=${LOGSEQ_LIVE_TOKEN:-}
 if [[ -z $token ]]; then
   auth_json=$(
     curl -fsS "$cognito_endpoint" \
@@ -49,7 +49,7 @@ if ! curl -fsS "$base_url/health" >/dev/null 2>&1; then
     cd "$db_sync_root"
     DB_SYNC_PORT="${base_url##*:}" \
       DB_SYNC_DATA_DIR="$data_dir" \
-      LOGSEQ_CHAT_COGNITO_CLIENT_ID="$client_id" \
+      LOGSEQ_COGNITO_CLIENT_ID="$client_id" \
       COGNITO_CLIENT_ID="$client_id" \
       ./start.sh
   ) >"$server_log" 2>&1 &
@@ -82,7 +82,7 @@ if ! curl -fsS "$base_url/health" >/dev/null 2>&1; then
   fi
 fi
 
-dune build --root "$repo_root" shared/native/logseq_chat_live_sync.exe
-LOGSEQ_CHAT_LIVE_TOKEN=$token \
-  LOGSEQ_CHAT_LIVE_BASE_URL=$base_url \
-  dune exec --root "$repo_root" shared/native/logseq_chat_live_sync.exe
+dune build --root "$repo_root" shared/native/logseq_live_sync.exe
+LOGSEQ_LIVE_TOKEN=$token \
+  LOGSEQ_LIVE_BASE_URL=$base_url \
+  dune exec --root "$repo_root" shared/native/logseq_live_sync.exe

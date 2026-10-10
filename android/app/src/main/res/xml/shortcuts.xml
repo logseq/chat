@@ -8,9 +8,9 @@
         android:shortcutLongLabel="@string/shortcut_capture_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.logseq.chat"
-            android:targetClass="com.logseq.chat.MainActivity"
-            android:data="logseqchat://capture" />
+            android:targetPackage="com.logseq.app"
+            android:targetClass="com.logseq.app.MainActivity"
+            android:data="logseq://capture" />
     </shortcut>
     <shortcut
         android:shortcutId="journal"
@@ -20,8 +20,8 @@
         android:shortcutLongLabel="@string/shortcut_journal_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:targetPackage="com.logseq.chat"
-            android:targetClass="com.logseq.chat.MainActivity"
-            android:data="logseqchat://journal" />
+            android:targetPackage="com.logseq.app"
+            android:targetClass="com.logseq.app.MainActivity"
+            android:data="logseq://journal" />
     </shortcut>
 </shortcuts>

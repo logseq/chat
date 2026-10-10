@@ -2,12 +2,12 @@
 
 - Status: Proposed
 - Date: 2026-08-16
-- Owners: Logseq Chat and db-sync teams
+- Owners: Logseq and db-sync teams
 - Amends: ADR 001, section 3 (local pending persistence) and section 7 (client write restrictions)
 
 ## Context
 
-Logseq Chat currently presents journal and page blocks as chat-oriented cards. Mobile users also need
+Logseq currently presents journal and page blocks as Logseq-oriented cards. Mobile users also need
 an outliner view that follows the core interaction model of the Logseq mobile app: page or journal
 headings, ordered nested blocks, bullets, task states, disclosure controls, and direct block editing.
 The reference is the Logseq mobile journal layout supplied for this work on 2026-08-16.
@@ -19,18 +19,18 @@ deletion. ADR 001 deliberately prohibited move and delete requests while the syn
 being established.
 
 A mobile outliner is not useful if it merely resembles an outline but cannot safely perform the small
-set of structural operations users need while editing. At the same time, Logseq Chat should not port
+set of structural operations users need while editing. At the same time, Logseq should not port
 the complete desktop editor, command system, plugin API, selection model, or undo engine. The design
-must therefore define a minimal mobile operation set and one safe mutation path shared by Chat and
+must therefore define a minimal mobile operation set and one safe mutation path shared by Logseq and
 Outliner modes.
 
 ## Decision drivers
 
-- Journals can switch between Chat and Outliner modes from an icon button in the header. Regular pages
-  are Outliner-only and never show Chat mode or the Chat composer.
+- Journals can switch between Logseq and Outliner modes from an icon button in the header. Regular pages
+  are Outliner-only and never show Logseq mode or the Logseq composer.
 - Outliner ordering and nesting match the selected local Logseq graph rather than a second UI-owned
   copy of the tree.
-- Chat and Outliner modes use the same mutation commands and safety checks.
+- Logseq and Outliner modes use the same mutation commands and safety checks.
 - Ordinary block deletion is supported in both modes through Logseq's `delete-blocks` outliner
   operation. Recycle remains page-only and is not used for blocks.
 - Structural edits remain local-first, durable, idempotent, and compatible with WebSocket reconciliation.
@@ -68,17 +68,17 @@ shell can use the same reducer, selectors, command interpreter, projection, and 
 
 Journals have one content surface with two presentation modes:
 
-- `chat`: the existing chronological card presentation and composer;
+- `Logseq`: the existing chronological card presentation and composer;
 - `outliner`: a Logseq-style hierarchical block presentation.
 
 An icon-only button in the existing header toggles the mode. It uses a bundled vector-drawn icon,
 has the accessibility identifier `button.content-mode`, and announces the destination mode, for
-example, "Show outliner" or "Show chat". The selected mode is app-local presentation state. It is not
+example, "Show outliner" or "Show Logseq". The selected mode is app-local presentation state. It is not
 written into the graph or sent to the server.
 
-The last selected journal mode is persisted locally. Chat remains the default for existing
+The last selected journal mode is persisted locally. Logseq remains the default for existing
 installations until the user switches. Regular pages always render the Outliner and hide the mode
-button and Chat composer. Search results and the graph picker do not expose a mode switch.
+button and Logseq composer. Search results and the graph picker do not expose a mode switch.
 
 Switching mode does not change the selected graph, page, search query, block selection, sync cursor,
 or graph data. It only changes how the current block projection is rendered.
@@ -120,14 +120,14 @@ Outliner mode renders:
 - existing pending and failed-sync feedback without turning it into graph data.
 
 The supplied screenshot is a visual direction, not a requirement to reproduce unrelated Logseq mobile
-navigation, author metadata, bottom tabs, or menus. Logseq Chat must not fabricate author information
+navigation, author metadata, bottom tabs, or menus. Logseq must not fabricate author information
 that is absent from its projection.
 
-Tapping a title enters the inline Outliner editor; it never opens the Chat composer. Tapping a task
+Tapping a title enters the inline Outliner editor; it never opens the Logseq composer. Tapping a task
 marker uses the shared task-status operation. Tapping a disclosure control changes only local
 collapsed state. A long press enters block-selection mode, and subsequent taps extend or reduce a
 multiple selection. Buttons, toolbar commands, zoom, collapse/expand, and selection activation emit
-native iOS haptic feedback. Chat cards retain their existing composer editing and destructive delete
+native iOS haptic feedback. Logseq cards retain their existing composer editing and destructive delete
 command.
 
 ### 4. Support only the mobile outliner operation set
@@ -144,7 +144,7 @@ types.
 | `split-block` | Split title at the caret and insert the suffix as the next block | Atomic title update plus insert | Return in the editor |
 | `merge-backward` | Merge a block into its previous visible block at title start | Atomic title update, child move, and deletion of the emptied block | Backspace at title start |
 | `move-block` | Move before, after, or inside another block | Update parent, page, and order atomically | Indent, outdent, move up/down, and drag/drop |
-| `delete-block-subtree` | Delete a block and its descendants after confirmation | Logseq `delete-blocks` outliner operation | Chat card and Outliner action menu |
+| `delete-block-subtree` | Delete a block and its descendants after confirmation | Logseq `delete-blocks` outliner operation | Logseq card and Outliner action menu |
 | `collapse-block` / `expand-block` | Hide or reveal descendants | None in this version | Disclosure control |
 
 `indent`, `outdent`, `move-up`, and `move-down` are not separate graph mutations. The OCaml reducer
@@ -285,7 +285,7 @@ not cache a second journal tree. Window expansion preserves the current immutabl
 is covered for thousands of journals, pending operations, collapse state, and zoom destinations.
 
 The minimum projection contract is defined by Logseq DB-graph attributes, not by the fields currently
-rendered in Chat:
+rendered in Logseq:
 
 | Read behavior | Datoms that semantic projection must keep coherent |
 | --- | --- |
@@ -360,7 +360,7 @@ operation-specific expected values and delete guards remain the durable fallback
 The checked-in `datascript-ocaml` runtime cannot currently be relied upon for this: its compatibility
 `history` returns current facts and `is_history` is false, as documented in
 `datascript-ocaml/docs/upstream_differences.md`. Therefore the initial design stores operation-specific
-expected identities/attributes and guards in `logseq_chat_pending_ops` and uses WebSocket change identities for conflict
+expected identities/attributes and guards in `logseq_pending_ops` and uses WebSocket change identities for conflict
 detection. A future real history implementation may replace some duplicated version evidence, but it
 must not change the projection or operation lifecycle contracts.
 
@@ -399,7 +399,7 @@ in one file allows graph persistence, cursor update, and op reconciliation to sh
 transaction:
 
 ```sql
-CREATE TABLE logseq_chat_pending_ops (
+CREATE TABLE logseq_pending_ops (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   operation_id TEXT NOT NULL UNIQUE,
   graph_id TEXT NOT NULL,
@@ -416,16 +416,16 @@ CREATE TABLE logseq_chat_pending_ops (
   last_error TEXT
 );
 
-CREATE INDEX logseq_chat_pending_ops_graph_queue
-  ON logseq_chat_pending_ops (graph_id, state, sequence);
+CREATE INDEX logseq_pending_ops_graph_queue
+  ON logseq_pending_ops (graph_id, state, sequence);
 
-CREATE TABLE logseq_chat_pending_op_dependencies (
-  operation_id TEXT NOT NULL REFERENCES logseq_chat_pending_ops(operation_id) ON DELETE CASCADE,
-  depends_on TEXT NOT NULL REFERENCES logseq_chat_pending_ops(operation_id) ON DELETE CASCADE,
+CREATE TABLE logseq_pending_op_dependencies (
+  operation_id TEXT NOT NULL REFERENCES logseq_pending_ops(operation_id) ON DELETE CASCADE,
+  depends_on TEXT NOT NULL REFERENCES logseq_pending_ops(operation_id) ON DELETE CASCADE,
   PRIMARY KEY (operation_id, depends_on)
 );
 
-CREATE TABLE logseq_chat_sync_state (
+CREATE TABLE logseq_sync_state (
   graph_id TEXT PRIMARY KEY,
   schema_version INTEGER NOT NULL,
   applied_server_t INTEGER NOT NULL,
@@ -470,14 +470,14 @@ and delete are still a valid incremental implementation of this ADR.
 
 ### 6. Make ordinary block delete shared, explicit, and subtree-aware
 
-Chat and Outliner modes call exactly the same `delete-block-subtree` command. There is no separate
-chat delete implementation and no view-specific request shape.
+Logseq and Outliner modes call exactly the same `delete-block-subtree` command. There is no separate
+Logseq delete implementation and no view-specific request shape.
 
 Delete follows Logseq's ordinary block semantics, not its page Recycle semantics. The semantic route
 calls Logseq outliner's `delete-blocks` operation. That operation filters the requested roots to
 top-level roots, computes each complete subtree, validates protected built-in entities, and removes
 the selected roots and descendants from the outline transaction. Page deletion is a different
-operation and remains unsupported in Logseq Chat.
+operation and remains unsupported in Logseq.
 
 Before submission, both modes show a destructive confirmation. The message identifies the block and
 the number of descendants that will be deleted. Empty unsynchronized draft blocks may be discarded
@@ -499,7 +499,7 @@ version may use real DataScript history or a server-generated delete-impact toke
 conflicts, but it must preserve the same fail-closed behavior.
 
 The existing `DELETE /api/v1/graphs/:graph-id/blocks/:block-id` route is extended to accept this
-guarded-delete body. Logseq Chat never invokes it without `expectedServerT`. Other callers may keep
+guarded-delete body. Logseq never invokes it without `expectedServerT`. Other callers may keep
 the existing behavior until the server API version removes unguarded deletion.
 
 ```json
@@ -606,14 +606,14 @@ ADR 001 remain unchanged.
 - rich-text editor parity beyond the existing shared title editor.
 
 These exclusions do not weaken the required operations. In particular, delete is required in both
-Chat and Outliner modes and cannot be deferred behind the absence of undo/redo.
+Logseq and Outliner modes and cannot be deferred behind the absence of undo/redo.
 
 ## Rejected alternatives
 
 ### Make the first outliner read-only
 
 A read-only tree would satisfy the visual part of the request but not the mobile outliner workflow.
-It would also make Chat and Outliner behavior diverge immediately. The small typed operation set is
+It would also make Logseq and Outliner behavior diverge immediately. The small typed operation set is
 preferred.
 
 ### Port Logseq's complete outliner and editor namespaces
@@ -646,7 +646,7 @@ changing the authoritative mirror.
 ### Positive
 
 - Journal and page content gain a familiar mobile Logseq outline without a second graph model.
-- Chat and Outliner cannot drift into different mutation or deletion semantics.
+- Logseq and Outliner cannot drift into different mutation or deletion semantics.
 - A small operation algebra covers Return, Backspace, indent, outdent, reorder, task changes, and
   deletion without exposing raw transactions.
 - Server-owned order generation preserves Logseq ordering behavior across Apple, Android, and other
@@ -662,7 +662,7 @@ changing the authoritative mirror.
 - Split, merge, move, and delete need atomic conflict handling and broader integration tests than the
   current capture/property paths.
 - A pending-operation overlay must derive a coherent tree without mutating the local graph mirror.
-- Deleted ordinary blocks cannot be restored in Logseq Chat because undo/redo is out of scope and
+- Deleted ordinary blocks cannot be restored in Logseq because undo/redo is out of scope and
   Recycle does not apply to them.
 - Collapse state does not initially follow the user between devices or launches.
 
@@ -680,12 +680,12 @@ Implementation proceeds in this order:
    the UI.
 4. Add Outliner rendering and the header mode button on Apple and Android.
 5. Enable title/status/insert/split/merge/move operations.
-6. Enable the shared Chat/Outliner delete command only after server-`t` CAS, every conflict case above,
+6. Enable the shared Logseq/Outliner delete command only after server-`t` CAS, every conflict case above,
    failure rollback, idempotent retry, and WebSocket-echo tests pass.
 
 The ADR is complete when automated tests demonstrate:
 
-- the mode button switches the same journal and regular page between Chat and Outliner without data
+- the mode button switches the same journal and regular page between Logseq and Outliner without data
   loss or navigation changes;
 - nested blocks render in deterministic Logseq order, and collapse hides exactly the descendants of
   the collapsed block;
@@ -700,7 +700,7 @@ The ADR is complete when automated tests demonstrate:
   implicit supporting entities, subtree effects, and encrypted value representation;
 - split and merge are atomic under failure and process termination;
 - indent, outdent, move up/down, and insert cannot create cycles or cross-page corruption;
-- Chat and Outliner invoke the same delete operation and confirmation policy;
+- Logseq and Outliner invoke the same delete operation and confirmation policy;
 - deleting a parent removes the expected ordinary-block subtree through Logseq `delete-blocks`;
 - any intervening server `t`, duplicate-tap, pending-local-write, and transaction-failure case follows
   the fail-closed table above, including conservative conflicts caused by unrelated server writes;
@@ -723,6 +723,6 @@ The ADR is complete when automated tests demonstrate:
 - `../logseq-1/deps/outliner/src/logseq/outliner/recycle.cljs`
 - `../logseq-1/src/main/frontend/handler/editor.cljs`
 - `../logseq-1/src/main/frontend/modules/outliner/op.cljs`
-- `apple/Sources/LogseqChatModel/Models.swift`
-- `apple/Sources/LogseqChatModel/ViewModel.swift`
-- `apple/Sources/LogseqChat/ContentView.swift`
+- `apple/Sources/LogseqModel/Models.swift`
+- `apple/Sources/LogseqModel/ViewModel.swift`
+- `apple/Sources/Logseq/ContentView.swift`

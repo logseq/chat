@@ -1,7 +1,7 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - runFlow:
-    file: "__LOGSEQ_CHAT_E2E_SETUP_FLOW__"
+    file: "__LOGSEQ_E2E_SETUP_FLOW__"
 - launchApp
 - extendedWaitUntil:
     visible:
@@ -33,7 +33,7 @@ appId: com.logseq.chat
     id: "button.attachment"
 - assertVisible:
     id: "button.task-status"
-- inputText: "Preserved draft __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "Preserved draft __LOGSEQ_E2E_RUN_ID__"
 - assertNotVisible: "Unsupported LG effect: persist-composer-draft"
 - tapOn:
     id: "surface.composer.dismiss"
@@ -41,12 +41,12 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - tapOn:
     id: "button.composer.expand"
-- assertVisible: "Preserved draft __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "Preserved draft __LOGSEQ_E2E_RUN_ID__"
 - eraseText: 26
 - inputText: "Clear me"
 - eraseText: 8
-- inputText: "After clear __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "After clear __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "After clear __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "After clear __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - assertVisible:
@@ -57,40 +57,40 @@ appId: com.logseq.chat
     id: "button.composer.expand"
 - scrollUntilVisible:
     element:
-      text: "After clear __LOGSEQ_CHAT_E2E_RUN_ID__"
+      text: "After clear __LOGSEQ_E2E_RUN_ID__"
     direction: DOWN
     timeout: 30000
     speed: 50
     visibilityPercentage: 50
     centerElement: true
-- assertVisible: "After clear __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "After clear __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.composer.expand"
 - assertVisible:
     id: "field.composer"
-- inputText: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E capture __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "button.send"
 - assertVisible:
     id: "field.composer"
-- assertVisible: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
+- assertVisible: "E2E capture __LOGSEQ_E2E_RUN_ID__"
 - tapOn:
     id: "surface.composer.dismiss"
 - assertVisible:
     id: "button.composer.expand"
 - scrollUntilVisible:
     element:
-      text: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
+      text: "E2E capture __LOGSEQ_E2E_RUN_ID__"
     direction: DOWN
     timeout: 30000
     speed: 50
     visibilityPercentage: 50
     centerElement: true
-- tapOn: "E2E capture __LOGSEQ_CHAT_E2E_RUN_ID__"
+- tapOn: "E2E capture __LOGSEQ_E2E_RUN_ID__"
 - assertVisible:
     id: "toolbar.outliner.editor"
 - assertVisible:
     id: "field.outliner.block.*"
 - eraseText: 22
-- inputText: "E2E edited __LOGSEQ_CHAT_E2E_RUN_ID__"
-- assertVisible: "E2E edited __LOGSEQ_CHAT_E2E_RUN_ID__"
+- inputText: "E2E edited __LOGSEQ_E2E_RUN_ID__"
+- assertVisible: "E2E edited __LOGSEQ_E2E_RUN_ID__"

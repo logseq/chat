@@ -3,11 +3,11 @@
 - Status: Accepted; implementation in progress
 - Date: 2026-08-14
 - Last updated: 2026-08-31
-- Owners: Logseq Chat and db-sync teams
+- Owners: Logseq and db-sync teams
 
 ## Context
 
-At the time of this decision, Logseq Chat read and wrote a small, chat-specific projection through the
+At the time of this decision, Logseq read and wrote a small, Logseq-specific projection through the
 Graph API and authenticates those requests with a personal access token (PAT). Its
 local database also defines a reduced schema whose property types do not always
 match the graph database on the server. Refreshing is periodic, so a change made by
@@ -21,24 +21,24 @@ interchangeable. The earlier platform-to-core call and HTTP adapter also buffere
 complete JSON response. Incremental delivery now reuses db-sync's existing authorized
 WebSocket and adds an entity-change pull message instead of another streaming endpoint.
 
-Logseq Chat needs a local, queryable copy of the selected graph and near-real-time
+Logseq needs a local, queryable copy of the selected graph and near-real-time
 updates from db-sync. The design must work for both encrypted and unencrypted
 graphs, preserve the server graph schema exactly, and add as little protocol and
 server complexity as possible.
 
 ## Decision drivers
 
-- Users sign in inside Logseq Chat with their Cognito credentials; they do not open
+- Users sign in inside Logseq with their Cognito credentials; they do not open
   an external login page or create or paste a PAT.
 - An authorized user can open any graph available to that account.
 - The local graph uses the server-provided schema. Attribute cardinality, uniqueness,
-  value type, reference semantics, and values are not coerced for the chat app.
+  value type, reference semantics, and values are not coerced for the Logseq app.
 - The first use of a graph creates a complete local copy before incremental sync
   begins.
 - Incremental messages describe the latest affected entities, not DataScript tx-data.
 - Incremental delivery is resumable, idempotent, ordered, and small.
 - The server never receives graph decryption keys or plaintext for protected values.
-- Logseq Chat can create blocks and modify block properties, but cannot request an
+- Logseq can create blocks and modify block properties, but cannot request an
   entity deletion.
 - Authentication, networking, and operating-system integration are platform
   adapters; sync protocol, codecs, state transitions, encryption orchestration,
@@ -69,7 +69,7 @@ support:
 
 ### 1. Authenticate inside the app with Amazon Cognito
 
-Logseq Chat uses Cognito Hosted UI instead of implementing password, challenge,
+Logseq uses Cognito Hosted UI instead of implementing password, challenge,
 account-recovery, and federated sign-in screens. Apple opens the authorization
 endpoint with `ASWebAuthenticationSession`; Android uses Custom Tabs. Both use the
 authorization-code flow with S256 PKCE and a public app client without a secret.
@@ -81,7 +81,7 @@ the OCaml core requests an authenticated transport operation.
 
 The Cognito app client is a public native client with no client secret and allows
 authorization-code and refresh-token grants. Cognito Hosted UI owns sign-in and
-challenge presentation. Logseq Chat persists tokens in Keychain or an Android
+challenge presentation. Logseq persists tokens in Keychain or an Android
 Keystore-backed encrypted store and refreshes them shortly before expiry. Every
 Graph API, db-sync, asset, and key-management request will use:
 
@@ -101,17 +101,17 @@ HTTP APIs. Amplify and the AWS SDK are not app dependencies.
 
 PAT configuration and the PAT input screen will be removed after Cognito login is
 available. PATs may remain supported by existing APIs during migration, but Logseq
-Chat will not use or persist them. Federated social sign-in is outside this decision
+Logseq will not use or persist them. Federated social sign-in is outside this decision
 because Cognito User Pool federation normally uses a browser redirect; it must not
 be added by silently changing the built-in-login requirement.
 
 ### 2. Use one server schema and keep sync metadata outside the graph
 
-The db-sync server and Logseq Chat local graph will use the exact schema encoded in
+The db-sync server and Logseq local graph will use the exact schema encoded in
 the snapshot root for the server-reported Logseq schema version. It must match the
 corresponding `logseq.db.frontend.schema/schema` definition. Schema datoms and
 property-definition entities already stored in the graph remain part of the
-existing snapshot. Logseq Chat will not maintain a reduced or chat-specific copy of
+existing snapshot. Logseq will not maintain a reduced or Logseq-specific copy of
 graph attributes.
 
 The existing snapshot and tx-log formats use Transit. The new entity-change payload
@@ -122,7 +122,7 @@ strings. Cardinality-many values retain set semantics. The client will reject a
 snapshot or change set when a value does not conform to the shared schema instead
 of coercing it.
 
-The chat cache is retained as a rebuildable UI projection,
+The Logseq cache is retained as a rebuildable UI projection,
 but it is not the graph mirror and is never a sync source of truth. Each selected
 graph currently has `graph.sqlite` for the Logseq-layout KVS graph and an atomically
 replaced Transit `sync.checkpoint` sidecar containing graph id, schema version, and
@@ -136,7 +136,7 @@ rebuilt from the selected graph or server. This does not change the graph SQLite
 layout, server schema, or the type of any graph property.
 
 No local-only attributes such as sync status or cached JSON projections will be
-added to the graph database. This prevents the chat app from changing the meaning
+added to the graph database. This prevents the Logseq app from changing the meaning
 or type of any server property.
 
 Schema changes are a synchronization boundary. A WebSocket `reset` message with reason
@@ -163,7 +163,7 @@ The OCaml core owns:
 - E2EE key-state and protected-value transformation, using platform crypto
   primitives where required;
 - validation that outgoing mutations are block creation or block-property updates;
-- local query projections consumed by the chat UI.
+- local query projections consumed by the Logseq UI.
 
 Platform code is limited to Cognito UI and SDK calls, HTTP/WebSocket transport,
 secure key and token storage, file handles, OS cryptographic primitives, background
@@ -184,7 +184,7 @@ do not pass through `Yojson.Basic`; keeping them as typed OCaml values avoids th
 property-type loss this ADR forbids.
 
 Both codec projects are cross-target OCaml implementations supporting native OCaml,
-js_of_ocaml, and Melange; they are not Melange-only libraries. Logseq Chat's mobile
+js_of_ocaml, and Melange; they are not Melange-only libraries. Logseq's mobile
 core uses their native backends:
 
 - `melange-transit-native` for the existing db-sync Transit JSON protocol, snapshot
@@ -208,14 +208,14 @@ and contains `Logseq_sqlite_storage`, which recognizes Logseq's Transit root, ta
 and persistent-sorted-set nodes and has tests against generated and real Logseq
 graphs. That implementation will be promoted from its example library into a
 supported package and reused. The existing `datascript-ocaml-native.sqlite` adapter
-and Logseq Chat's `Marshal` codec cannot open a db-sync snapshot directly and will
+and Logseq's `Marshal` codec cannot open a db-sync snapshot directly and will
 not be used to decode it.
 
 ### 4. Bootstrap with the existing db-sync snapshot download
 
 When a user opens a graph that has no completed local copy for its graph id and
 schema version, the client will follow the existing db-sync snapshot contract used
-by Logseq Chat:
+by Logseq:
 
 1. `GET /sync/:graph-id/snapshot/download` to obtain the existing snapshot stream
    URL together with the current server transaction number `t`, schema version,
@@ -253,7 +253,7 @@ opened.
 ### 5. Support encrypted and unencrypted graphs with the same sync protocol
 
 The existing graph-list metadata identifies whether a graph is encrypted. For an
-encrypted graph, Logseq Chat will use the existing Logseq E2EE key flow:
+encrypted graph, Logseq will use the existing Logseq E2EE key flow:
 
 1. Fetch the user's encrypted private key with the Cognito access token.
 2. Unlock it locally with the user's E2EE password.
@@ -272,7 +272,7 @@ with plaintext during snapshot import or WebSocket event application. Local quer
 separate decrypted UI projection on demand. This avoids a second persisted graph
 shape and ensures restart, replay, and export preserve the same values the server
 stores. Existing Logseq encryption metadata, Transit value envelopes, and algorithms
-are reused rather than introducing a chat-specific format. Non-protected values keep
+are reused rather than introducing a Logseq-specific format. Non-protected values keep
 their original DataScript types; encrypted values keep the server's existing E2EE
 representation unchanged in the mirror.
 
@@ -290,7 +290,7 @@ Upgrade: websocket
 Authorization: Bearer <cognito-access-token>
 ```
 
-After connecting, Logseq Chat requests entity changes from its last committed cursor:
+After connecting, Logseq requests entity changes from its last committed cursor:
 
 ```json
 {"type":"entity/pull","since":48192}
@@ -350,7 +350,7 @@ graph's serialized writer prevents a transaction from being present in one and
 absent from the other.
 
 Raw datoms and tx-data remain an internal change index and are never sent to Logseq
-Chat. Multiple writes to an entity in the range produce one final upsert. If an
+Logseq. Multiple writes to an entity in the range produce one final upsert. If an
 entity was changed and then deleted, only its id is included in `deleted`. No
 unchanged entity is included. Transactions that affect no graph entity can advance
 `t` with an empty change set so continuity is preserved.
@@ -378,14 +378,14 @@ replay is at least once; the cursor and idempotent entity upserts make duplicate
 
 ### 7. Restrict client writes to block creation and property modification
 
-Logseq Chat may submit only these mutations through authenticated server APIs:
+Logseq may submit only these mutations through authenticated server APIs:
 
 - add a new block;
 - modify properties of an existing block.
 
 Writes use the existing semantic REST resources under `/api/v1/graphs/:graph-id`.
 Block creation uses `capture` (and the corresponding task or asset operation), and
-property changes use the block property update resource. Logseq Chat does not call
+property changes use the block property update resource. Logseq does not call
 the db-sync tx-batch endpoint and does not submit raw DataScript transactions.
 
 The client will not expose or call entity-delete, page-delete, block-delete,
@@ -403,7 +403,7 @@ idempotent. The pending block is then sent through capture, task, or asset REST 
 that page UUID. This avoids both raw tx submission and server-side plaintext
 generation.
 
-This restriction applies to mutations initiated by Logseq Chat. The local database
+This restriction applies to mutations initiated by Logseq. The local database
 is still a mirror, so it must apply deletions received over WebSocket sync when another
 authorized Logseq client or server process deletes an entity. A remote deletion is
 never converted into or replayed as a client-originated delete request.
@@ -474,7 +474,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 ## Required server changes
 
 - Reuse the existing Cognito JWT verification and graph access checks, and add the
-  Logseq Chat Cognito app client id to the allowed client ids.
+  Logseq Cognito app client id to the allowed client ids.
 - Expose graph encryption and schema-version metadata in the graph list.
 - Keep `GET /sync/:graph-id/snapshot/download` and its framed Transit `kvs` stream as
   the only full-download path. Its metadata response includes the pre-stream `t`,
@@ -485,15 +485,15 @@ delivery would require a later APNs silent-push capability and is not part of th
 - Use `storage/fetch-tx-since` and `storage/get-t` to find affected stable entity
   identities, then pull their latest values from the current DataScript connection;
   do not introduce a second change database, cursor, or an `as-of` query.
-- Use the Cognito `client_id` claim to enforce that Logseq Chat may call only
+- Use the Cognito `client_id` claim to enforce that Logseq may call only
   block-create and block-property-update mutations.
-- Allow encrypted semantic writes only for the explicit Chat operations. Encrypted
+- Allow encrypted semantic writes only for the explicit Logseq operations. Encrypted
   journal creation requires a deterministic UUID, encrypted title and name, and the
   existing integer journal-day attribute; it does not accept arbitrary tx-data.
 - Emit metrics for connected streams, replay lag, event size, reset reason,
   authorization failure, and snapshot duration.
 
-## Required Logseq Chat changes
+## Required Logseq changes
 
 - Replace PAT configuration with Cognito Hosted UI login, OAuth refresh and logout,
   and platform secure storage.
@@ -515,7 +515,7 @@ delivery would require a later APNs silent-push capability and is not part of th
   handling.
 - Add byte-stream platform adapters and short serialized FFI entry points so the
   current blocking JSON RPC mutex is never held by a live stream.
-- Query the local full graph for chat views and expose only add-block and
+- Query the local full graph for Logseq views and expose only add-block and
   modify-block-properties mutations.
 - Persist every mutation before presentation, send queued writes only through the
   semantic REST API, and retain optimistic values until authoritative WebSocket echo.
@@ -529,7 +529,7 @@ delivery would require a later APNs silent-push capability and is not part of th
 
 ### Positive
 
-- The chat app sees changes shortly after they commit without periodic full refresh.
+- The Logseq app sees changes shortly after they commit without periodic full refresh.
 - Full local data enables offline and low-latency queries.
 - Reusing db-sync snapshot download and the DataScript tx-data log avoids a second
   snapshot or change-history subsystem.
@@ -588,7 +588,7 @@ Patches are smaller in some cases but require explicit attribute-retraction and
 cardinality-many merge rules. Those rules become another form of tx-data. Complete
 latest entities are idempotent and unambiguous.
 
-### Maintain a chat-specific graph schema
+### Maintain a Logseq-specific graph schema
 
 A projection is attractive for UI code but changes types, drops data needed by
 references, and creates a second schema that must migrate independently. UI models
@@ -629,7 +629,7 @@ The implementation is complete when automated integration tests demonstrate:
   deletion produce minimal, latest-state events with no tx-data on the wire;
 - the server derives those events solely from the existing DataScript tx-data log,
   existing server transaction numbers, and a captured current database value;
-- Logseq Chat can add blocks and modify block properties, while all delete and
+- Logseq can add blocks and modify block properties, while all delete and
   arbitrary transaction requests are rejected by the server;
 - duplicate and replayed events are idempotent and cursor gaps trigger reset;
 - disconnect/reconnect does not lose committed changes;
@@ -651,8 +651,8 @@ The implementation is complete when automated integration tests demonstrate:
 - `logseq-1/deps/db-sync/src/logseq/db_sync/worker/handler/sync.cljs`
 - `logseq-1/src/main/frontend/worker/sync/download.cljs`
 - `datascript-ocaml/examples/logseq_sqlite_storage.ml`
-- `logseq-chat/shared/native/logseq_chat_sqlite.ml`
-- `logseq-chat/shared/native/logseq_chat_core_ffi.c`
+- `logseq/shared/native/logseq_sqlite.ml`
+- `logseq/shared/native/logseq_core_ffi.c`
 - [melange-transit: native OCaml, js_of_ocaml, and Melange Transit JSON](https://github.com/logseq/melange-transit)
 - [melange-edn: native OCaml, js_of_ocaml, and Melange EDN](https://github.com/logseq/melange-edn)
 - [Amazon Cognito authorization endpoint](https://docs.aws.amazon.com/cognito/latest/developerguide/authorization-endpoint.html)

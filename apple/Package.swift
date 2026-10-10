@@ -2,21 +2,21 @@
 import PackageDescription
 import Foundation
 
-let logseqChatNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_NATIVE_LINK_INPUTS"]?
+let logseqNativeLinkInputs = ProcessInfo.processInfo.environment["LOGSEQ_NATIVE_LINK_INPUTS"]?
     .split(separator: ":")
     .map(String.init) ?? []
-let logseqChatSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_CHAT_SIMULATOR_ENTITLEMENTS"]
-let logseqChatLinkerSettings: [LinkerSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
-    .unsafeFlags(logseqChatNativeLinkInputs, .when(platforms: [.iOS])),
+let logseqSimulatorEntitlements = ProcessInfo.processInfo.environment["LOGSEQ_SIMULATOR_ENTITLEMENTS"]
+let logseqLinkerSettings: [LinkerSetting] = logseqNativeLinkInputs.isEmpty ? [] : [
+    .unsafeFlags(logseqNativeLinkInputs, .when(platforms: [.iOS])),
     .linkedFramework("Foundation", .when(platforms: [.iOS])),
     .linkedFramework("Security", .when(platforms: [.iOS])),
     .linkedLibrary("sqlite3", .when(platforms: [.iOS])),
     .linkedLibrary("ffi", .when(platforms: [.iOS]))
 ]
-let logseqChatCoreSwiftSettings: [SwiftSetting] = logseqChatNativeLinkInputs.isEmpty ? [] : [
-    .define("LOGSEQ_CHAT_CORE", .when(platforms: [.iOS]))
+let logseqCoreSwiftSettings: [SwiftSetting] = logseqNativeLinkInputs.isEmpty ? [] : [
+    .define("LOGSEQ_CORE", .when(platforms: [.iOS]))
 ]
-let logseqChatShellLinkerSettings: [LinkerSetting] = logseqChatSimulatorEntitlements.map {
+let logseqShellLinkerSettings: [LinkerSetting] = logseqSimulatorEntitlements.map {
     [.unsafeFlags([
         "-Xlinker", "-sectcreate",
         "-Xlinker", "__TEXT", "-Xlinker", "__entitlements",
@@ -25,28 +25,28 @@ let logseqChatShellLinkerSettings: [LinkerSetting] = logseqChatSimulatorEntitlem
 } ?? []
 
 let package = Package(
-    name: "logseq-chat",
+    name: "logseq",
     defaultLocalization: "en",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
-        .executable(name: "LogseqChatShell", targets: ["LogseqChatShell"]),
-        .library(name: "LogseqChat", type: .static, targets: ["LogseqChat"]),
-        .library(name: "LogseqChatModel", type: .dynamic, targets: ["LogseqChatModel"]),
+        .executable(name: "LogseqShell", targets: ["LogseqShell"]),
+        .library(name: "Logseq", type: .static, targets: ["Logseq"]),
+        .library(name: "LogseqModel", type: .dynamic, targets: ["LogseqModel"]),
     ],
     dependencies: [
-        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "654c54f6b17fec4edeb22513e7de85c143581e1f"),
+        .package(url: "ssh://git@github.com/logseq/lui.git", revision: "a8cc58c717db080ac5c9494dff6f9db98439a4ef"),
         .package(url: "https://github.com/gonzalezreal/swiftui-math", from: "0.1.0"),
         .package(url: "https://github.com/appstefan/highlightswift.git", from: "1.1.0")
     ],
     targets: [
         .executableTarget(
-            name: "LogseqChatShell",
-            dependencies: ["LogseqChat"],
+            name: "LogseqShell",
+            dependencies: ["Logseq"],
             path: "App/Sources",
-            linkerSettings: logseqChatShellLinkerSettings
+            linkerSettings: logseqShellLinkerSettings
         ),
-        .target(name: "LogseqChat", dependencies: [
-            "LogseqChatModel",
+        .target(name: "Logseq", dependencies: [
+            "LogseqModel",
             .product(name: "LUIAppleBackendStatic", package: "lui"),
             .product(
                 name: "SwiftUIMath",
@@ -60,25 +60,25 @@ let package = Package(
             )
         ],
         resources: [.process("Resources")],
-        linkerSettings: logseqChatLinkerSettings),
+        linkerSettings: logseqLinkerSettings),
         .testTarget(
-            name: "LogseqChatTests",
-            dependencies: ["LogseqChat", .product(name: "LUIAppleBackendStatic", package: "lui")],
+            name: "LogseqTests",
+            dependencies: ["Logseq", .product(name: "LUIAppleBackendStatic", package: "lui")],
             resources: [.process("Resources")]
         ),
-        .target(name: "LogseqChatModel", dependencies: [
-            "LogseqChatCoreABI"
+        .target(name: "LogseqModel", dependencies: [
+            "LogseqCoreABI"
         ], resources: [.process("Resources")],
-        swiftSettings: logseqChatCoreSwiftSettings),
+        swiftSettings: logseqCoreSwiftSettings),
         .target(
-            name: "LogseqChatCoreABI",
-            path: "Sources/LogseqChatCoreABI",
+            name: "LogseqCoreABI",
+            path: "Sources/LogseqCoreABI",
             publicHeadersPath: "include",
             linkerSettings: [.linkedLibrary("z")]
         ),
         .testTarget(
-            name: "LogseqChatModelTests",
-            dependencies: ["LogseqChatModel"],
+            name: "LogseqModelTests",
+            dependencies: ["LogseqModel"],
             resources: [.process("Resources")]
         ),
     ]

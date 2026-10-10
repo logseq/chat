@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.app
 ---
 - launchApp
 - extendedWaitUntil:
@@ -6,7 +6,7 @@ appId: com.logseq.chat
       id: "button.hosted-sign-in"
     # Cold-start on a CI emulator can take >5s for the core to boot.
     timeout: 30000
-- assertVisible: ".*Logseq Chat.*"
+- assertVisible: ".*Logseq.*"
 - assertVisible: "Sign in"
 - assertNotVisible: ".*LogseqAuthenticationError.*"
 - assertNotVisible:

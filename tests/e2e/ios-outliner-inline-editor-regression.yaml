@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp
 - runFlow:
@@ -7,7 +7,7 @@ appId: com.logseq.chat
         id: "screen.graphs"
     commands:
       - tapOn:
-          text: "${LOGSEQ_CHAT_E2E_GRAPH_NAME}"
+          text: "${LOGSEQ_E2E_GRAPH_NAME}"
           index: 0
 - extendedWaitUntil:
     visible:
@@ -18,7 +18,7 @@ appId: com.logseq.chat
     id: "field.outliner.block.*"
 - assertVisible:
     id: "toolbar.outliner.editor"
-- inputText: "E2E inline editor ${LOGSEQ_CHAT_E2E_RUN_ID}"
+- inputText: "E2E inline editor ${LOGSEQ_E2E_RUN_ID}"
 - pressKey: ENTER
 - pressKey: ENTER
 - pressKey: ENTER

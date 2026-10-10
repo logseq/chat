@@ -1,4 +1,4 @@
-appId: com.logseq.chat
+appId: com.logseq.logseq
 ---
 - launchApp
 - runFlow:
@@ -21,14 +21,14 @@ appId: com.logseq.chat
     timeout: 30000
 - tapOn:
     id: "field.graph-name"
-- inputText: "asset-raw-${LOGSEQ_CHAT_E2E_RUN_ID}"
+- inputText: "asset-raw-${LOGSEQ_E2E_RUN_ID}"
 - tapOn:
     id: "button.graph-add.confirm"
 - extendedWaitUntil:
-    visible: "asset-raw-${LOGSEQ_CHAT_E2E_RUN_ID}"
+    visible: "asset-raw-${LOGSEQ_E2E_RUN_ID}"
     timeout: 60000
 - tapOn:
-    text: "asset-raw-${LOGSEQ_CHAT_E2E_RUN_ID}"
+    text: "asset-raw-${LOGSEQ_E2E_RUN_ID}"
     index: 1
     retryTapIfNoChange: true
 - extendedWaitUntil:
