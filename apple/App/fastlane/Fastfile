@@ -39,7 +39,7 @@ platform :ios do
 
     # The OCaml core objects are linked through the SwiftPM manifest's
     # LOGSEQ_NATIVE_LINK_INPUTS env lookup; the workflow builds them first.
-    link_inputs_file = File.expand_path("../../../_build/ios-core/device/native-link-inputs.txt", __FILE__)
+    link_inputs_file = File.expand_path("../../../../_build/ios-core/device/native-link-inputs.txt", __FILE__)
     ENV["LOGSEQ_NATIVE_LINK_INPUTS"] = File.read(link_inputs_file).strip
 
     # CURRENT_PROJECT_VERSION is overridden on the command line so every
